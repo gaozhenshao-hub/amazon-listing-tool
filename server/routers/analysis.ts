@@ -3,28 +3,33 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import * as db from "../db";
 import { COMPETITOR_ANALYSIS_PROMPT, REVIEW_ANALYSIS_PROMPT } from "../prompts";
+import { scrapeAmazonProduct } from "../scraper";
 
 export const analysisRouter = router({
   // Get all analyses for a project
   listByProject: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      // Verify project ownership
       const project = await db.getProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
       return db.getCompetitorAnalysesByProject(input.projectId);
     }),
 
-  // Analyze a competitor ASIN - uses LLM to simulate data extraction and analysis
+  // Scrape Amazon product data by ASIN
+  scrapeAsin: protectedProcedure
+    .input(z.object({
+      asin: z.string().min(10).max(10),
+    }))
+    .mutation(async ({ input }) => {
+      const data = await scrapeAmazonProduct(input.asin);
+      return data;
+    }),
+
+  // Analyze a competitor ASIN - auto-scrape + LLM analysis
   analyzeAsin: protectedProcedure
     .input(z.object({
       projectId: z.number(),
       asin: z.string().min(10).max(10),
-      competitorTitle: z.string().optional(),
-      competitorBulletPoints: z.string().optional(),
-      competitorReviews: z.string().optional(),
-      competitorPrice: z.string().optional(),
-      competitorRating: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const project = await db.getProjectById(input.projectId, ctx.user.id);
@@ -33,15 +38,33 @@ export const analysisRouter = router({
       // Update project status
       await db.updateProject(input.projectId, ctx.user.id, { status: "analyzing" });
 
-      // Build context for LLM analysis
+      // Step 1: Auto-scrape Amazon product data
+      let scrapedData;
+      try {
+        scrapedData = await scrapeAmazonProduct(input.asin);
+      } catch (error: any) {
+        console.warn(`[Analysis] Scraping failed for ${input.asin}: ${error.message}`);
+        scrapedData = null;
+      }
+
+      // Step 2: Build context for LLM analysis
       const contextParts: string[] = [];
       contextParts.push(`ASIN: ${input.asin}`);
-      if (input.competitorTitle) contextParts.push(`Title: ${input.competitorTitle}`);
-      if (input.competitorBulletPoints) contextParts.push(`Bullet Points:\n${input.competitorBulletPoints}`);
-      if (input.competitorPrice) contextParts.push(`Price: ${input.competitorPrice}`);
-      if (input.competitorRating) contextParts.push(`Rating: ${input.competitorRating}`);
 
-      // Analyze competitor data with LLM
+      if (scrapedData) {
+        if (scrapedData.title) contextParts.push(`Title: ${scrapedData.title}`);
+        if (scrapedData.brand) contextParts.push(`Brand: ${scrapedData.brand}`);
+        if (scrapedData.bulletPoints.length > 0) {
+          contextParts.push(`Bullet Points:\n${scrapedData.bulletPoints.map((bp, i) => `${i + 1}. ${bp}`).join("\n")}`);
+        }
+        if (scrapedData.price) contextParts.push(`Price: ${scrapedData.price}`);
+        if (scrapedData.rating) contextParts.push(`Rating: ${scrapedData.rating}/5`);
+        if (scrapedData.reviewCount) contextParts.push(`Review Count: ${scrapedData.reviewCount}`);
+        if (scrapedData.description) contextParts.push(`Description: ${scrapedData.description}`);
+        if (scrapedData.category) contextParts.push(`Category: ${scrapedData.category}`);
+      }
+
+      // Step 3: Analyze competitor data with LLM
       const analysisResponse = await invokeLLM({
         messages: [
           { role: "system", content: COMPETITOR_ANALYSIS_PROMPT },
@@ -61,13 +84,14 @@ export const analysisRouter = router({
         analysisData = { raw: analysisContent };
       }
 
-      // If reviews are provided, analyze them separately
+      // Step 4: Analyze reviews if available
       let reviewAnalysis: any = null;
-      if (input.competitorReviews) {
+      const reviewTexts = scrapedData?.reviews || [];
+      if (reviewTexts.length > 0) {
         const reviewResponse = await invokeLLM({
           messages: [
             { role: "system", content: REVIEW_ANALYSIS_PROMPT },
-            { role: "user", content: `Analyze these customer reviews:\n\n${input.competitorReviews}` },
+            { role: "user", content: `Analyze these customer reviews:\n\n${reviewTexts.join("\n\n---\n\n")}` },
           ],
           response_format: { type: "json_object" },
         });
@@ -83,21 +107,36 @@ export const analysisRouter = router({
         }
       }
 
-      // Save analysis to database
+      // Step 5: Save analysis to database
       const saved = await db.createCompetitorAnalysis({
         projectId: input.projectId,
         asin: input.asin,
-        title: input.competitorTitle ?? null,
-        bulletPoints: input.competitorBulletPoints ? JSON.stringify(input.competitorBulletPoints.split("\n").filter(Boolean)) : null,
-        price: input.competitorPrice ?? null,
-        rating: input.competitorRating ?? null,
+        title: scrapedData?.title ?? null,
+        bulletPoints: scrapedData?.bulletPoints ? JSON.stringify(scrapedData.bulletPoints) : null,
+        price: scrapedData?.price ?? null,
+        rating: scrapedData?.rating ?? null,
+        reviewCount: scrapedData?.reviewCount ?? null,
         reviewAnalysis: reviewAnalysis ? JSON.stringify(reviewAnalysis) : null,
         keywords: analysisData.keywords ? JSON.stringify(analysisData.keywords) : null,
-        rawData: JSON.stringify(analysisData),
+        imageUrls: scrapedData?.imageUrls ? JSON.stringify(scrapedData.imageUrls) : null,
+        rawData: JSON.stringify({
+          ...analysisData,
+          scrapedData: scrapedData ? {
+            title: scrapedData.title,
+            brand: scrapedData.brand,
+            price: scrapedData.price,
+            rating: scrapedData.rating,
+            reviewCount: scrapedData.reviewCount,
+            bulletPointsCount: scrapedData.bulletPoints.length,
+            reviewsCount: scrapedData.reviews.length,
+            category: scrapedData.category,
+          } : null,
+        }),
       });
 
       return {
         ...saved,
+        scrapedData,
         parsedAnalysis: analysisData,
         parsedReviewAnalysis: reviewAnalysis,
       };

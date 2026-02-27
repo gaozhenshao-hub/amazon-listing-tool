@@ -14,3 +14,6 @@
 - [x] Frontend - Results preview and export
 - [x] Design system - Color palette, typography, theme
 - [x] Unit tests for core backend procedures
+- [x] Backend - ASIN auto-scraping service (fetch title, bullet points, price, rating, reviews from Amazon)
+- [x] Frontend - Simplify competitor analysis page to ASIN-only input with auto-fetch
+- [x] Update analysis router to use auto-scraping instead of manual input
