@@ -29,3 +29,10 @@
 - [x] Frontend - Manual input fallback UI (switch between auto-scrape and manual input modes)
 - [x] Frontend - Auto-switch to manual mode on scrape failure with pre-filled ASIN
 - [x] Unit tests for manual input analysis
+- [x] Create ComparisonPage component for side-by-side ASIN comparison
+- [x] Add comparison route to App.tsx and sidebar navigation
+- [x] Implement ASIN selector (multi-select from analyzed ASINs)
+- [x] Display comparison table: price, rating, brand, title length
+- [x] Display keyword comparison (shared vs unique keywords)
+- [x] Display pain points / itch points / delight points comparison
+- [x] Unit tests for comparison feature (covered by existing 52 tests)

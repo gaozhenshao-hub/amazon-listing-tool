@@ -29,6 +29,7 @@ import {
   FileText,
   Image,
   Sparkles,
+  GitCompareArrows,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -38,6 +39,7 @@ import { Button } from "./ui/button";
 const menuItems = [
   { icon: LayoutDashboard, label: "项目管理", path: "/" },
   { icon: Search, label: "竞品分析", path: "/analysis" },
+  { icon: GitCompareArrows, label: "竞品对比", path: "/comparison" },
   { icon: Image, label: "图片识别", path: "/image-analysis" },
   { icon: Sparkles, label: "Listing生成", path: "/generate" },
   { icon: FileText, label: "结果预览", path: "/preview" },
