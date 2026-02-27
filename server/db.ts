@@ -1,11 +1,16 @@
-import { eq } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import {
+  InsertUser, users,
+  InsertProject, projects,
+  InsertCompetitorAnalysis, competitorAnalyses,
+  InsertListing, listings,
+  InsertImageAnalysis, imageAnalyses,
+} from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
@@ -17,6 +22,8 @@ export async function getDb() {
   }
   return _db;
 }
+
+// ─── User Helpers ───────────────────────────────────────────────
 
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) {
@@ -89,4 +96,120 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+// ─── Project Helpers ────────────────────────────────────────────
+
+export async function createProject(data: InsertProject) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(projects).values(data);
+  const insertId = result[0].insertId;
+  const rows = await db.select().from(projects).where(eq(projects.id, insertId)).limit(1);
+  return rows[0];
+}
+
+export async function getProjectsByUser(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(projects).where(eq(projects.userId, userId)).orderBy(desc(projects.updatedAt));
+}
+
+export async function getProjectById(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(projects).where(and(eq(projects.id, id), eq(projects.userId, userId))).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateProject(id: number, userId: number, data: Partial<InsertProject>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(projects).set(data).where(and(eq(projects.id, id), eq(projects.userId, userId)));
+  return getProjectById(id, userId);
+}
+
+export async function deleteProject(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Delete related data first
+  await db.delete(competitorAnalyses).where(eq(competitorAnalyses.projectId, id));
+  await db.delete(listings).where(eq(listings.projectId, id));
+  await db.delete(imageAnalyses).where(eq(imageAnalyses.projectId, id));
+  await db.delete(projects).where(and(eq(projects.id, id), eq(projects.userId, userId)));
+  return { success: true };
+}
+
+// ─── Competitor Analysis Helpers ────────────────────────────────
+
+export async function createCompetitorAnalysis(data: InsertCompetitorAnalysis) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(competitorAnalyses).values(data);
+  const insertId = result[0].insertId;
+  const rows = await db.select().from(competitorAnalyses).where(eq(competitorAnalyses.id, insertId)).limit(1);
+  return rows[0];
+}
+
+export async function getCompetitorAnalysesByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(competitorAnalyses).where(eq(competitorAnalyses.projectId, projectId)).orderBy(desc(competitorAnalyses.createdAt));
+}
+
+export async function deleteCompetitorAnalysis(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(competitorAnalyses).where(eq(competitorAnalyses.id, id));
+  return { success: true };
+}
+
+// ─── Listing Helpers ────────────────────────────────────────────
+
+export async function createListing(data: InsertListing) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(listings).values(data);
+  const insertId = result[0].insertId;
+  const rows = await db.select().from(listings).where(eq(listings.id, insertId)).limit(1);
+  return rows[0];
+}
+
+export async function getListingsByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(listings).where(eq(listings.projectId, projectId)).orderBy(desc(listings.createdAt));
+}
+
+export async function getActiveListingByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(listings)
+    .where(and(eq(listings.projectId, projectId), eq(listings.isActive, 1)))
+    .orderBy(desc(listings.version))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateListing(id: number, data: Partial<InsertListing>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(listings).set(data).where(eq(listings.id, id));
+  const rows = await db.select().from(listings).where(eq(listings.id, id)).limit(1);
+  return rows[0];
+}
+
+// ─── Image Analysis Helpers ─────────────────────────────────────
+
+export async function createImageAnalysis(data: InsertImageAnalysis) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(imageAnalyses).values(data);
+  const insertId = result[0].insertId;
+  const rows = await db.select().from(imageAnalyses).where(eq(imageAnalyses.id, insertId)).limit(1);
+  return rows[0];
+}
+
+export async function getImageAnalysesByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(imageAnalyses).where(eq(imageAnalyses.projectId, projectId)).orderBy(desc(imageAnalyses.createdAt));
+}
