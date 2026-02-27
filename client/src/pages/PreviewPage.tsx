@@ -291,11 +291,11 @@ export default function PreviewPage() {
                                 ? `${bp.subtitle} ${bp.fullText}`
                                 : bp.fullText || bp.subtitle || "";
                               const count = fullBullet.length;
-                              const inRange = count >= 250 && count <= 300;
-                              const tooShort = count < 250;
+                              const inRange = count >= 200 && count <= 280;
+                              const tooShort = count < 200;
                               return (
                                 <Badge variant={inRange ? "default" : "destructive"} className={`text-xs mt-2 ${inRange ? "bg-green-600" : tooShort ? "bg-amber-500" : "bg-red-500"}`}>
-                                  {count} / 250-300 字符 {inRange ? "✓" : tooShort ? "↑偏短" : "↓偏长"}
+                                  {count} / 200-280 字符 {inRange ? "✓" : tooShort ? "↑偏短" : "↓偏长"}
                                 </Badge>
                               );
                             })()}

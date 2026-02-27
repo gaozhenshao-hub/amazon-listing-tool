@@ -153,7 +153,7 @@ export default function GeneratePage() {
 
   const generationParts = [
     { key: "title", label: "标题", desc: "180-200字符", icon: Type, color: "text-blue-600" },
-    { key: "bulletPoints", label: "五点描述", desc: "每条250-300字符", icon: List, color: "text-green-600" },
+    { key: "bulletPoints", label: "五点描述", desc: "每条200-280字符", icon: List, color: "text-green-600" },
     { key: "description", label: "产品描述", desc: "2000字符内", icon: FileText, color: "text-purple-600" },
     { key: "searchTerms", label: "搜索关键词", desc: "250字节内", icon: Key, color: "text-amber-600" },
     { key: "imageAdvice", label: "图片建议", desc: "首图+辅图+A+", icon: Image, color: "text-pink-600" },
@@ -189,7 +189,7 @@ export default function GeneratePage() {
                   <p className="text-sm font-medium text-blue-900">亚马逊字符数规则</p>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-blue-700">
                     <span>标题：<strong>180-200</strong> 字符（充分利用空间）</span>
-                    <span>五点描述：每条 <strong>250-300</strong> 字符</span>
+                    <span>五点描述：每条 <strong>200-280</strong> 字符（不超过280）</span>
                     <span>搜索词：<strong>250</strong> 字节内</span>
                   </div>
                 </div>
@@ -367,7 +367,7 @@ export default function GeneratePage() {
                         <List className="h-4 w-4 text-green-600" />
                         五点描述
                       </CardTitle>
-                      <span className="text-xs text-muted-foreground">目标: 每条 250-300 字符</span>
+                      <span className="text-xs text-muted-foreground">目标: 每条 200-280 字符</span>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
@@ -384,7 +384,7 @@ export default function GeneratePage() {
                               {" — "}
                               <span className="text-muted-foreground">{bp.fullText || bp.sellingPoint || ""}</span>
                             </p>
-                            <CharCountBadge count={actualCount} min={250} max={300} />
+                            <CharCountBadge count={actualCount} min={200} max={280} />
                           </div>
                         </div>
                       );

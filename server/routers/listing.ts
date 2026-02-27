@@ -138,7 +138,7 @@ export const listingRouter = router({
       const response = await invokeLLM({
         messages: [
           { role: "system", content: BULLET_POINTS_PROMPT },
-          { role: "user", content: `Generate 5 optimized Amazon bullet points for this product. REMEMBER: Each bullet point (subtitle + fullText) MUST be exactly 250-300 characters long. Count carefully.\n\n${context}` },
+          { role: "user", content: `Generate 5 optimized Amazon bullet points for this product. REMEMBER: Each bullet point (subtitle + fullText) MUST be between 200-280 characters. NEVER exceed 280 characters. Count carefully.\n\n${context}` },
         ],
         response_format: { type: "json_object" },
       });
@@ -158,7 +158,7 @@ export const listingRouter = router({
               : bp.fullText || bp.subtitle || "";
             bp.actualCharacterCount = fullBullet.length;
             bp.characterCount = bp.actualCharacterCount;
-            bp.inRange = bp.actualCharacterCount >= 250 && bp.actualCharacterCount <= 300;
+            bp.inRange = bp.actualCharacterCount >= 200 && bp.actualCharacterCount <= 280;
             totalCount += bp.actualCharacterCount;
           }
           parsed.totalCharacterCount = totalCount;
@@ -288,7 +288,7 @@ export const listingRouter = router({
         invokeLLM({
           messages: [
             { role: "system", content: BULLET_POINTS_PROMPT },
-            { role: "user", content: `Generate 5 optimized Amazon bullet points. REMEMBER: Each bullet point (subtitle + fullText) MUST be exactly 250-300 characters long. Count carefully.\n\n${context}` },
+            { role: "user", content: `Generate 5 optimized Amazon bullet points. REMEMBER: Each bullet point (subtitle + fullText) MUST be between 200-280 characters. NEVER exceed 280 characters. Count carefully.\n\n${context}` },
           ],
           response_format: { type: "json_object" },
         }),
@@ -350,7 +350,7 @@ export const listingRouter = router({
             : bp.fullText || bp.subtitle || "";
           bp.actualCharacterCount = fullBullet.length;
           bp.characterCount = bp.actualCharacterCount;
-          bp.inRange = bp.actualCharacterCount >= 250 && bp.actualCharacterCount <= 300;
+          bp.inRange = bp.actualCharacterCount >= 200 && bp.actualCharacterCount <= 280;
           totalCount += bp.actualCharacterCount;
         }
         bulletData.totalCharacterCount = totalCount;

@@ -41,3 +41,6 @@
 - [x] Frontend - Add AI summary button on ComparisonPage
 - [x] Frontend - Display AI summary results with markdown rendering
 - [x] Unit tests for AI comparison summary
+- [x] Update bullet points character limit from 250-300 to 200-280 (max 280) in backend prompts
+- [x] Update bullet points character validation in listing router
+- [x] Update bullet points character count display in frontend (GeneratePage, PreviewPage, ComparisonPage)

@@ -98,17 +98,18 @@ export const BULLET_POINTS_PROMPT = `You are an expert Amazon listing copywriter
 - Include data comparisons where relevant
 - Add trust signals (certifications, materials, testing)
 - AI-friendly format: use phrases like "used for", "capable of", "is a", "designed for"
-- **CRITICAL: Each bullet point (subtitle + fullText combined) MUST be between 250-300 characters (inclusive). This is the MOST IMPORTANT requirement.**
-- You MUST fully utilize the character space. Bullet points shorter than 250 characters are NOT acceptable.
-- If a bullet point is too short, expand with more specific details, data points, usage scenarios, or benefit descriptions to reach 250+ characters.
+- **CRITICAL: Each bullet point (subtitle + fullText combined) MUST be between 200-280 characters (inclusive). NEVER exceed 280 characters. This is the MOST IMPORTANT requirement.**
+- You MUST fully utilize the character space. Bullet points shorter than 200 characters are NOT acceptable.
+- If a bullet point is too short, expand with more specific details, data points, usage scenarios, or benefit descriptions to reach 200+ characters.
+- If a bullet point exceeds 280 characters, you MUST trim it. 280 is the absolute maximum.
 - Use natural, benefit-focused language
 
 **Character Count Strategy for Each Bullet:**
 - The subtitle (e.g., "【PREMIUM QUALITY MATERIAL】") counts toward the total
 - Draft the full bullet point text including subtitle
 - Count characters precisely (including spaces, punctuation, and the subtitle brackets)
-- If under 250 characters: add more specific benefits, usage details, compatible scenarios, or evidence/data
-- If over 300 characters: trim less critical details while keeping the FABE structure intact
+- If under 200 characters: add more specific benefits, usage details, compatible scenarios, or evidence/data
+- If over 280 characters: trim less critical details while keeping the FABE structure intact. NEVER exceed 280 characters.
 - Double-check each bullet's character count before submitting
 
 **Structure each bullet point as:**
