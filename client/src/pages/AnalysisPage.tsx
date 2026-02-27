@@ -3,8 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
@@ -23,20 +23,35 @@ import {
   Globe,
   DollarSign,
   Star,
-  ShoppingCart,
-  Plus,
   Zap,
   Package,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  AlertCircle,
+  List,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useCallback, useRef } from "react";
 import { toast } from "sonner";
+
+type BatchItemStatus = "pending" | "scraping" | "analyzing" | "done" | "failed";
+
+interface BatchItem {
+  asin: string;
+  status: BatchItemStatus;
+  title?: string;
+  error?: string;
+}
 
 export default function AnalysisPage() {
   const { selectedProjectId } = useProject();
   const [asinInput, setAsinInput] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [scrapeProgress, setScrapeProgress] = useState(0);
-  const [scrapeStatus, setScrapeStatus] = useState("");
+  const [isBatchMode, setIsBatchMode] = useState(false);
+  const [batchItems, setBatchItems] = useState<BatchItem[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [currentBatchIndex, setCurrentBatchIndex] = useState(-1);
+  const abortRef = useRef(false);
 
   const { data: analyses, isLoading: loadingAnalyses } = trpc.analysis.listByProject.useQuery(
     { projectId: selectedProjectId! },
@@ -45,38 +60,7 @@ export default function AnalysisPage() {
 
   const utils = trpc.useUtils();
 
-  const analyzeAsin = trpc.analysis.analyzeAsin.useMutation({
-    onMutate: () => {
-      setScrapeProgress(10);
-      setScrapeStatus("正在连接亚马逊...");
-    },
-    onSuccess: (data) => {
-      setScrapeProgress(100);
-      setScrapeStatus("分析完成！");
-      utils.analysis.listByProject.invalidate({ projectId: selectedProjectId! });
-
-      const scrapedInfo = data.scrapedData;
-      if (scrapedInfo?.title) {
-        toast.success("竞品分析完成", {
-          description: `已成功爬取并分析 ${data.asin} 的产品数据`,
-        });
-      } else {
-        toast.success("竞品分析完成", {
-          description: "已基于ASIN完成AI分析（部分数据可能未爬取到）",
-        });
-      }
-      setAsinInput("");
-      setTimeout(() => {
-        setScrapeProgress(0);
-        setScrapeStatus("");
-      }, 2000);
-    },
-    onError: (err) => {
-      setScrapeProgress(0);
-      setScrapeStatus("");
-      toast.error("分析失败: " + err.message);
-    },
-  });
+  const analyzeAsin = trpc.analysis.analyzeAsin.useMutation();
 
   const deleteAnalysis = trpc.analysis.delete.useMutation({
     onSuccess: () => {
@@ -85,53 +69,191 @@ export default function AnalysisPage() {
     },
   });
 
-  // Simulate progress updates during analysis
-  const handleAnalyze = () => {
+  // Parse ASINs from input
+  const parseAsins = useCallback((input: string): string[] => {
+    return input
+      .toUpperCase()
+      .split(/[\s,;\n]+/)
+      .map(s => s.trim())
+      .filter(s => s.length === 10 && /^[A-Z0-9]{10}$/.test(s));
+  }, []);
+
+  // Count parsed ASINs for display
+  const parsedAsins = parseAsins(asinInput);
+  const uniqueAsins = Array.from(new Set(parsedAsins));
+
+  // Process batch sequentially on the frontend
+  const handleBatchAnalyze = useCallback(async () => {
     if (!selectedProjectId) {
       toast.error("请先选择一个项目");
       return;
     }
 
-    // Parse multiple ASINs (comma, space, or newline separated)
-    const asins = asinInput
-      .toUpperCase()
-      .split(/[\s,;\n]+/)
-      .map(s => s.trim())
-      .filter(s => s.length === 10 && /^[A-Z0-9]{10}$/.test(s));
-
-    if (asins.length === 0) {
+    if (uniqueAsins.length === 0) {
       toast.error("请输入有效的10位ASIN码");
       return;
     }
 
-    // Analyze the first ASIN (batch support can be added later)
-    const asin = asins[0];
+    if (uniqueAsins.length > 20) {
+      toast.error("单次最多支持20个ASIN");
+      return;
+    }
 
-    // Start progress simulation
-    let progress = 10;
-    const progressInterval = setInterval(() => {
-      progress += Math.random() * 15;
-      if (progress > 90) progress = 90;
-      setScrapeProgress(Math.round(progress));
+    // Initialize batch items
+    const items: BatchItem[] = uniqueAsins.map(asin => ({
+      asin,
+      status: "pending" as BatchItemStatus,
+    }));
+    setBatchItems(items);
+    setIsProcessing(true);
+    abortRef.current = false;
 
-      if (progress < 30) setScrapeStatus("正在爬取产品页面...");
-      else if (progress < 50) setScrapeStatus("正在提取产品信息...");
-      else if (progress < 70) setScrapeStatus("正在爬取客户评论...");
-      else setScrapeStatus("AI正在分析竞品数据...");
-    }, 1500);
+    let successCount = 0;
+    let failCount = 0;
 
-    analyzeAsin.mutate(
-      { projectId: selectedProjectId, asin },
-      {
-        onSettled: () => clearInterval(progressInterval),
+    for (let i = 0; i < items.length; i++) {
+      if (abortRef.current) break;
+
+      setCurrentBatchIndex(i);
+
+      // Update status to scraping
+      setBatchItems(prev => prev.map((item, idx) =>
+        idx === i ? { ...item, status: "scraping" } : item
+      ));
+
+      // Wait a moment then update to analyzing
+      setTimeout(() => {
+        setBatchItems(prev => prev.map((item, idx) =>
+          idx === i && item.status === "scraping" ? { ...item, status: "analyzing" } : item
+        ));
+      }, 3000);
+
+      try {
+        const result = await analyzeAsin.mutateAsync({
+          projectId: selectedProjectId,
+          asin: items[i].asin,
+        });
+
+        setBatchItems(prev => prev.map((item, idx) =>
+          idx === i ? {
+            ...item,
+            status: "done",
+            title: result.title || "分析完成",
+          } : item
+        ));
+        successCount++;
+      } catch (error: any) {
+        setBatchItems(prev => prev.map((item, idx) =>
+          idx === i ? {
+            ...item,
+            status: "failed",
+            error: error.message || "分析失败",
+          } : item
+        ));
+        failCount++;
       }
-    );
+
+      // Small delay between ASINs
+      if (i < items.length - 1 && !abortRef.current) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+    setIsProcessing(false);
+    setCurrentBatchIndex(-1);
+    utils.analysis.listByProject.invalidate({ projectId: selectedProjectId! });
+
+    if (abortRef.current) {
+      toast.info("批量分析已取消");
+    } else {
+      toast.success(`批量分析完成`, {
+        description: `成功 ${successCount} 个，失败 ${failCount} 个，共 ${items.length} 个ASIN`,
+      });
+    }
+
+    setAsinInput("");
+  }, [selectedProjectId, uniqueAsins, analyzeAsin, utils]);
+
+  // Single ASIN analysis
+  const handleSingleAnalyze = useCallback(async () => {
+    if (!selectedProjectId) {
+      toast.error("请先选择一个项目");
+      return;
+    }
+
+    if (uniqueAsins.length === 0) {
+      toast.error("请输入有效的10位ASIN码");
+      return;
+    }
+
+    // If multiple ASINs detected, switch to batch mode
+    if (uniqueAsins.length > 1) {
+      handleBatchAnalyze();
+      return;
+    }
+
+    const asin = uniqueAsins[0];
+    setBatchItems([{ asin, status: "scraping" }]);
+    setIsProcessing(true);
+
+    setTimeout(() => {
+      setBatchItems(prev => prev.map(item =>
+        item.status === "scraping" ? { ...item, status: "analyzing" } : item
+      ));
+    }, 3000);
+
+    try {
+      const result = await analyzeAsin.mutateAsync({
+        projectId: selectedProjectId,
+        asin,
+      });
+
+      setBatchItems([{ asin, status: "done", title: result.title || "分析完成" }]);
+      utils.analysis.listByProject.invalidate({ projectId: selectedProjectId! });
+      toast.success("竞品分析完成", {
+        description: `已成功爬取并分析 ${asin} 的产品数据`,
+      });
+      setAsinInput("");
+    } catch (error: any) {
+      setBatchItems([{ asin, status: "failed", error: error.message }]);
+      toast.error("分析失败: " + error.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [selectedProjectId, uniqueAsins, analyzeAsin, utils, handleBatchAnalyze]);
+
+  const handleCancel = () => {
+    abortRef.current = true;
   };
 
   const parseJson = (str: string | null) => {
     if (!str) return null;
     try { return JSON.parse(str); } catch { return null; }
   };
+
+  const getStatusIcon = (status: BatchItemStatus) => {
+    switch (status) {
+      case "pending": return <Clock className="h-4 w-4 text-muted-foreground" />;
+      case "scraping": return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
+      case "analyzing": return <Loader2 className="h-4 w-4 animate-spin text-primary" />;
+      case "done": return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+      case "failed": return <XCircle className="h-4 w-4 text-red-500" />;
+    }
+  };
+
+  const getStatusText = (status: BatchItemStatus) => {
+    switch (status) {
+      case "pending": return "等待中";
+      case "scraping": return "爬取数据中...";
+      case "analyzing": return "AI分析中...";
+      case "done": return "完成";
+      case "failed": return "失败";
+    }
+  };
+
+  const batchProgress = batchItems.length > 0
+    ? Math.round((batchItems.filter(i => i.status === "done" || i.status === "failed").length / batchItems.length) * 100)
+    : 0;
 
   return (
     <div className="space-y-6">
@@ -154,68 +276,167 @@ export default function AnalysisPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          {/* Input Form - Simplified to ASIN only */}
+          {/* Input Form */}
           <div className="lg:col-span-2 space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Globe className="h-4 w-4" />
-                  输入竞品ASIN
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Globe className="h-4 w-4" />
+                    输入竞品ASIN
+                  </CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs h-7"
+                    onClick={() => setIsBatchMode(!isBatchMode)}
+                    disabled={isProcessing}
+                  >
+                    <List className="h-3.5 w-3.5 mr-1" />
+                    {isBatchMode ? "单个模式" : "批量模式"}
+                  </Button>
+                </div>
                 <CardDescription>
-                  只需输入ASIN码，工具将自动从亚马逊爬取产品标题、五点描述、价格、评分和客户评论，然后进行AI深度分析。
+                  {isBatchMode
+                    ? "输入多个ASIN码（每行一个，或用逗号/空格分隔），最多20个，工具将依次自动爬取分析。"
+                    : "输入ASIN码，工具将自动从亚马逊爬取产品数据并进行AI深度分析。"
+                  }
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>竞品ASIN *</Label>
-                  <Input
-                    placeholder="例如: B0XXXXXXXXX"
-                    value={asinInput}
-                    onChange={(e) => setAsinInput(e.target.value.toUpperCase())}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !analyzeAsin.isPending) handleAnalyze();
-                    }}
-                    disabled={analyzeAsin.isPending}
-                    className="font-mono text-base tracking-wider"
-                  />
+                  <div className="flex items-center justify-between">
+                    <Label>竞品ASIN *</Label>
+                    {uniqueAsins.length > 0 && (
+                      <Badge variant="secondary" className="text-xs">
+                        {uniqueAsins.length} 个ASIN
+                      </Badge>
+                    )}
+                  </div>
+                  {isBatchMode ? (
+                    <Textarea
+                      placeholder={"每行一个ASIN，或用逗号/空格分隔\n例如:\nB0XXXXXXXXX\nB0YYYYYYYYY\nB0ZZZZZZZZZ"}
+                      value={asinInput}
+                      onChange={(e) => setAsinInput(e.target.value.toUpperCase())}
+                      disabled={isProcessing}
+                      className="font-mono text-sm tracking-wider min-h-[120px]"
+                      rows={6}
+                    />
+                  ) : (
+                    <Input
+                      placeholder="例如: B0XXXXXXXXX"
+                      value={asinInput}
+                      onChange={(e) => setAsinInput(e.target.value.toUpperCase())}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !isProcessing) handleSingleAnalyze();
+                      }}
+                      disabled={isProcessing}
+                      className="font-mono text-base tracking-wider"
+                    />
+                  )}
                   <p className="text-xs text-muted-foreground">
-                    输入10位亚马逊产品标识码，按回车或点击按钮开始分析
+                    {isBatchMode
+                      ? `已识别 ${uniqueAsins.length} 个有效ASIN（最多20个）`
+                      : "输入10位亚马逊产品标识码，支持输入多个自动切换批量模式"
+                    }
                   </p>
                 </div>
 
-                {/* Progress indicator */}
-                {analyzeAsin.isPending && (
+                {/* Batch Progress */}
+                {isProcessing && batchItems.length > 0 && (
                   <div className="space-y-3 p-4 bg-muted/30 rounded-lg border">
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                      <span className="text-sm font-medium">{scrapeStatus}</span>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        <span className="text-sm font-medium">
+                          {batchItems.length === 1
+                            ? getStatusText(batchItems[0].status)
+                            : `批量分析中 (${batchItems.filter(i => i.status === "done" || i.status === "failed").length}/${batchItems.length})`
+                          }
+                        </span>
+                      </div>
+                      {batchItems.length > 1 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs text-destructive"
+                          onClick={handleCancel}
+                        >
+                          取消
+                        </Button>
+                      )}
                     </div>
-                    <Progress value={scrapeProgress} className="h-2" />
-                    <div className="grid grid-cols-4 gap-1 text-xs text-muted-foreground">
-                      <span className={scrapeProgress >= 10 ? "text-primary font-medium" : ""}>爬取页面</span>
-                      <span className={scrapeProgress >= 30 ? "text-primary font-medium" : ""}>提取数据</span>
-                      <span className={scrapeProgress >= 50 ? "text-primary font-medium" : ""}>爬取评论</span>
-                      <span className={scrapeProgress >= 70 ? "text-primary font-medium" : ""}>AI分析</span>
-                    </div>
+                    <Progress value={batchProgress} className="h-2" />
+
+                    {/* Per-ASIN status list */}
+                    {batchItems.length > 1 && (
+                      <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                        {batchItems.map((item, idx) => (
+                          <div
+                            key={item.asin}
+                            className={`flex items-center justify-between text-xs p-2 rounded ${
+                              item.status === "done" ? "bg-green-50 border border-green-100" :
+                              item.status === "failed" ? "bg-red-50 border border-red-100" :
+                              item.status === "scraping" || item.status === "analyzing" ? "bg-blue-50 border border-blue-100" :
+                              "bg-muted/20 border border-transparent"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              {getStatusIcon(item.status)}
+                              <span className="font-mono">{item.asin}</span>
+                            </div>
+                            <span className={`text-xs ${
+                              item.status === "done" ? "text-green-600" :
+                              item.status === "failed" ? "text-red-600" :
+                              "text-muted-foreground"
+                            }`}>
+                              {item.status === "done" && item.title
+                                ? item.title.substring(0, 30) + (item.title.length > 30 ? "..." : "")
+                                : item.status === "failed" && item.error
+                                  ? item.error.substring(0, 30)
+                                  : getStatusText(item.status)
+                              }
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Single ASIN progress steps */}
+                    {batchItems.length === 1 && (
+                      <div className="grid grid-cols-3 gap-1 text-xs text-muted-foreground">
+                        <span className={batchItems[0].status !== "pending" ? "text-primary font-medium" : ""}>
+                          爬取数据
+                        </span>
+                        <span className={batchItems[0].status === "analyzing" || batchItems[0].status === "done" ? "text-primary font-medium" : ""}>
+                          AI分析
+                        </span>
+                        <span className={batchItems[0].status === "done" ? "text-primary font-medium" : ""}>
+                          保存结果
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
 
                 <Button
                   className="w-full"
                   size="lg"
-                  onClick={handleAnalyze}
-                  disabled={analyzeAsin.isPending || !asinInput.trim()}
+                  onClick={uniqueAsins.length > 1 ? handleBatchAnalyze : handleSingleAnalyze}
+                  disabled={isProcessing || uniqueAsins.length === 0}
                 >
-                  {analyzeAsin.isPending ? (
+                  {isProcessing ? (
                     <>
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      自动爬取分析中...
+                      {batchItems.length > 1 ? "批量分析中..." : "自动爬取分析中..."}
                     </>
                   ) : (
                     <>
                       <Zap className="h-4 w-4 mr-2" />
-                      一键爬取 & 分析
+                      {uniqueAsins.length > 1
+                        ? `批量爬取 & 分析 (${uniqueAsins.length}个)`
+                        : "一键爬取 & 分析"
+                      }
                     </>
                   )}
                 </Button>

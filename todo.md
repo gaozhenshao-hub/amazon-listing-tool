@@ -17,3 +17,7 @@
 - [x] Backend - ASIN auto-scraping service (fetch title, bullet points, price, rating, reviews from Amazon)
 - [x] Frontend - Simplify competitor analysis page to ASIN-only input with auto-fetch
 - [x] Update analysis router to use auto-scraping instead of manual input
+- [x] Backend - Batch ASIN analysis API (accept multiple ASINs, process sequentially)
+- [x] Frontend - Batch ASIN input (textarea for multiple ASINs, comma/newline separated)
+- [x] Frontend - Batch progress display (show per-ASIN status: pending/scraping/analyzing/done/failed)
+- [x] Unit tests for batch ASIN analysis

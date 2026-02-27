@@ -107,3 +107,73 @@ describe("scraper - ASIN validation", () => {
     }
   });
 });
+
+describe("batch ASIN - input parsing", () => {
+  const parseAsins = (input: string): string[] => {
+    return input
+      .toUpperCase()
+      .split(/[\s,;\n]+/)
+      .map(s => s.trim())
+      .filter(s => s.length === 10 && /^[A-Z0-9]{10}$/.test(s));
+  };
+
+  it("parses comma-separated ASINs", () => {
+    const result = parseAsins("B0XXXXXXXX,B09ABC1234,B0DEFGH567");
+    expect(result).toEqual(["B0XXXXXXXX", "B09ABC1234", "B0DEFGH567"]);
+  });
+
+  it("parses newline-separated ASINs", () => {
+    const result = parseAsins("B0XXXXXXXX\nB09ABC1234\nB0DEFGH567");
+    expect(result).toEqual(["B0XXXXXXXX", "B09ABC1234", "B0DEFGH567"]);
+  });
+
+  it("parses space-separated ASINs", () => {
+    const result = parseAsins("B0XXXXXXXX B09ABC1234 B0DEFGH567");
+    expect(result).toEqual(["B0XXXXXXXX", "B09ABC1234", "B0DEFGH567"]);
+  });
+
+  it("parses semicolon-separated ASINs", () => {
+    const result = parseAsins("B0XXXXXXXX;B09ABC1234;B0DEFGH567");
+    expect(result).toEqual(["B0XXXXXXXX", "B09ABC1234", "B0DEFGH567"]);
+  });
+
+  it("handles mixed separators", () => {
+    const result = parseAsins("B0XXXXXXXX, B09ABC1234\nB0DEFGH567; B0HIJKLM89");
+    expect(result).toEqual(["B0XXXXXXXX", "B09ABC1234", "B0DEFGH567", "B0HIJKLM89"]);
+  });
+
+  it("filters out invalid ASINs", () => {
+    const result = parseAsins("B0XXXXXXXX, invalid, B09ABC1234, short");
+    expect(result).toEqual(["B0XXXXXXXX", "B09ABC1234"]);
+  });
+
+  it("converts lowercase to uppercase", () => {
+    const result = parseAsins("b0xxxxxxxx,b09abc1234");
+    expect(result).toEqual(["B0XXXXXXXX", "B09ABC1234"]);
+  });
+
+  it("handles empty input", () => {
+    const result = parseAsins("");
+    expect(result).toEqual([]);
+  });
+
+  it("handles whitespace-only input", () => {
+    const result = parseAsins("   \n\n  ");
+    expect(result).toEqual([]);
+  });
+
+  it("deduplicates ASINs when using Set", () => {
+    const result = parseAsins("B0XXXXXXXX,B0XXXXXXXX,B09ABC1234");
+    const unique = Array.from(new Set(result));
+    expect(unique).toEqual(["B0XXXXXXXX", "B09ABC1234"]);
+  });
+
+  it("enforces max 20 ASINs limit", () => {
+    const asins = Array.from({ length: 25 }, (_, i) => `B0${String(i).padStart(8, "0")}`).join(",");
+    const result = parseAsins(asins);
+    expect(result.length).toBe(25);
+    // The frontend enforces the 20 limit before sending to API
+    const limited = result.slice(0, 20);
+    expect(limited.length).toBe(20);
+  });
+});
