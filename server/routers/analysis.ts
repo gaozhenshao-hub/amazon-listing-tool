@@ -211,6 +211,109 @@ export const analysisRouter = router({
       };
     }),
 
+  // Manual input analysis - fallback when auto-scrape fails
+  analyzeManual: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      asin: z.string().min(10).max(10),
+      title: z.string().optional(),
+      bulletPoints: z.string().optional(),
+      price: z.string().optional(),
+      rating: z.string().optional(),
+      reviews: z.string().optional(),
+      description: z.string().optional(),
+      brand: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      await db.updateProject(input.projectId, ctx.user.id, { status: "analyzing" });
+
+      // Build context from manual input
+      const contextParts: string[] = [];
+      contextParts.push(`ASIN: ${input.asin}`);
+      if (input.title) contextParts.push(`Title: ${input.title}`);
+      if (input.brand) contextParts.push(`Brand: ${input.brand}`);
+      if (input.bulletPoints) contextParts.push(`Bullet Points:\n${input.bulletPoints}`);
+      if (input.price) contextParts.push(`Price: ${input.price}`);
+      if (input.rating) contextParts.push(`Rating: ${input.rating}/5`);
+      if (input.description) contextParts.push(`Description: ${input.description}`);
+
+      // Analyze competitor data with LLM
+      const analysisResponse = await invokeLLM({
+        messages: [
+          { role: "system", content: COMPETITOR_ANALYSIS_PROMPT },
+          { role: "user", content: `Analyze this competitor product:\n\n${contextParts.join("\n\n")}` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const analysisContent = typeof analysisResponse.choices[0].message.content === "string"
+        ? analysisResponse.choices[0].message.content
+        : JSON.stringify(analysisResponse.choices[0].message.content);
+
+      let analysisData: any = {};
+      try {
+        analysisData = JSON.parse(analysisContent);
+      } catch {
+        analysisData = { raw: analysisContent };
+      }
+
+      // Analyze reviews if provided
+      let reviewAnalysis: any = null;
+      if (input.reviews && input.reviews.trim().length > 0) {
+        const reviewResponse = await invokeLLM({
+          messages: [
+            { role: "system", content: REVIEW_ANALYSIS_PROMPT },
+            { role: "user", content: `Analyze these customer reviews:\n\n${input.reviews}` },
+          ],
+          response_format: { type: "json_object" },
+        });
+
+        const reviewContent = typeof reviewResponse.choices[0].message.content === "string"
+          ? reviewResponse.choices[0].message.content
+          : JSON.stringify(reviewResponse.choices[0].message.content);
+
+        try {
+          reviewAnalysis = JSON.parse(reviewContent);
+        } catch {
+          reviewAnalysis = { raw: reviewContent };
+        }
+      }
+
+      // Parse bullet points into array
+      const bulletPointsArray = input.bulletPoints
+        ? input.bulletPoints.split("\n").filter((line: string) => line.trim().length > 0)
+        : [];
+
+      // Save analysis to database
+      const saved = await db.createCompetitorAnalysis({
+        projectId: input.projectId,
+        asin: input.asin,
+        title: input.title ?? null,
+        bulletPoints: bulletPointsArray.length > 0 ? JSON.stringify(bulletPointsArray) : null,
+        price: input.price ?? null,
+        rating: input.rating ?? null,
+        reviewCount: null,
+        reviewAnalysis: reviewAnalysis ? JSON.stringify(reviewAnalysis) : null,
+        keywords: analysisData.keywords ? JSON.stringify(analysisData.keywords) : null,
+        imageUrls: null,
+        rawData: JSON.stringify({
+          ...analysisData,
+          manualInput: true,
+        }),
+      });
+
+      return {
+        asin: input.asin,
+        status: "success" as const,
+        analysisId: saved.id,
+        title: input.title,
+        manualInput: true,
+      };
+    }),
+
   // Delete an analysis
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))

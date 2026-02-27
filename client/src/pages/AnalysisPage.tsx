@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
+import { Separator } from "@/components/ui/separator";
 import ProjectSelector from "@/components/ProjectSelector";
 import { useProject } from "@/contexts/ProjectContext";
 import {
@@ -28,8 +29,10 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  AlertCircle,
   List,
+  PenLine,
+  ArrowRight,
+  RotateCcw,
 } from "lucide-react";
 import { useState, useCallback, useRef } from "react";
 import { toast } from "sonner";
@@ -43,6 +46,8 @@ interface BatchItem {
   error?: string;
 }
 
+type InputMode = "auto" | "manual";
+
 export default function AnalysisPage() {
   const { selectedProjectId } = useProject();
   const [asinInput, setAsinInput] = useState("");
@@ -53,6 +58,18 @@ export default function AnalysisPage() {
   const [currentBatchIndex, setCurrentBatchIndex] = useState(-1);
   const abortRef = useRef(false);
 
+  // Manual input mode state
+  const [inputMode, setInputMode] = useState<InputMode>("auto");
+  const [manualAsin, setManualAsin] = useState("");
+  const [manualTitle, setManualTitle] = useState("");
+  const [manualBulletPoints, setManualBulletPoints] = useState("");
+  const [manualPrice, setManualPrice] = useState("");
+  const [manualRating, setManualRating] = useState("");
+  const [manualReviews, setManualReviews] = useState("");
+  const [manualBrand, setManualBrand] = useState("");
+  const [manualDescription, setManualDescription] = useState("");
+  const [failedAsin, setFailedAsin] = useState<string | null>(null);
+
   const { data: analyses, isLoading: loadingAnalyses } = trpc.analysis.listByProject.useQuery(
     { projectId: selectedProjectId! },
     { enabled: !!selectedProjectId }
@@ -61,6 +78,7 @@ export default function AnalysisPage() {
   const utils = trpc.useUtils();
 
   const analyzeAsin = trpc.analysis.analyzeAsin.useMutation();
+  const analyzeManual = trpc.analysis.analyzeManual.useMutation();
 
   const deleteAnalysis = trpc.analysis.delete.useMutation({
     onSuccess: () => {
@@ -78,9 +96,84 @@ export default function AnalysisPage() {
       .filter(s => s.length === 10 && /^[A-Z0-9]{10}$/.test(s));
   }, []);
 
-  // Count parsed ASINs for display
   const parsedAsins = parseAsins(asinInput);
   const uniqueAsins = Array.from(new Set(parsedAsins));
+
+  // Switch to manual mode with failed ASIN pre-filled
+  const switchToManualMode = useCallback((asin?: string) => {
+    setInputMode("manual");
+    if (asin) {
+      setManualAsin(asin);
+      setFailedAsin(asin);
+    }
+  }, []);
+
+  // Switch back to auto mode
+  const switchToAutoMode = useCallback(() => {
+    setInputMode("auto");
+    setFailedAsin(null);
+  }, []);
+
+  // Reset manual form
+  const resetManualForm = useCallback(() => {
+    setManualAsin("");
+    setManualTitle("");
+    setManualBulletPoints("");
+    setManualPrice("");
+    setManualRating("");
+    setManualReviews("");
+    setManualBrand("");
+    setManualDescription("");
+    setFailedAsin(null);
+  }, []);
+
+  // Handle manual input analysis
+  const handleManualAnalyze = useCallback(async () => {
+    if (!selectedProjectId) {
+      toast.error("请先选择一个项目");
+      return;
+    }
+
+    const asin = manualAsin.trim().toUpperCase();
+    if (asin.length !== 10 || !/^[A-Z0-9]{10}$/.test(asin)) {
+      toast.error("请输入有效的10位ASIN码");
+      return;
+    }
+
+    if (!manualTitle.trim() && !manualBulletPoints.trim() && !manualReviews.trim()) {
+      toast.error("请至少填写标题、五点描述或评论中的一项");
+      return;
+    }
+
+    setIsProcessing(true);
+    setBatchItems([{ asin, status: "analyzing" }]);
+
+    try {
+      const result = await analyzeManual.mutateAsync({
+        projectId: selectedProjectId,
+        asin,
+        title: manualTitle.trim() || undefined,
+        bulletPoints: manualBulletPoints.trim() || undefined,
+        price: manualPrice.trim() || undefined,
+        rating: manualRating.trim() || undefined,
+        reviews: manualReviews.trim() || undefined,
+        brand: manualBrand.trim() || undefined,
+        description: manualDescription.trim() || undefined,
+      });
+
+      setBatchItems([{ asin, status: "done", title: result.title || "分析完成" }]);
+      utils.analysis.listByProject.invalidate({ projectId: selectedProjectId! });
+      toast.success("手动输入分析完成", {
+        description: `已成功分析 ${asin} 的产品数据`,
+      });
+      resetManualForm();
+    } catch (error: any) {
+      setBatchItems([{ asin, status: "failed", error: error.message }]);
+      toast.error("分析失败: " + error.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [selectedProjectId, manualAsin, manualTitle, manualBulletPoints, manualPrice, manualRating, manualReviews, manualBrand, manualDescription, analyzeManual, utils, resetManualForm]);
 
   // Process batch sequentially on the frontend
   const handleBatchAnalyze = useCallback(async () => {
@@ -99,7 +192,6 @@ export default function AnalysisPage() {
       return;
     }
 
-    // Initialize batch items
     const items: BatchItem[] = uniqueAsins.map(asin => ({
       asin,
       status: "pending" as BatchItemStatus,
@@ -110,18 +202,17 @@ export default function AnalysisPage() {
 
     let successCount = 0;
     let failCount = 0;
+    const failedAsins: string[] = [];
 
     for (let i = 0; i < items.length; i++) {
       if (abortRef.current) break;
 
       setCurrentBatchIndex(i);
 
-      // Update status to scraping
       setBatchItems(prev => prev.map((item, idx) =>
         idx === i ? { ...item, status: "scraping" } : item
       ));
 
-      // Wait a moment then update to analyzing
       setTimeout(() => {
         setBatchItems(prev => prev.map((item, idx) =>
           idx === i && item.status === "scraping" ? { ...item, status: "analyzing" } : item
@@ -151,9 +242,9 @@ export default function AnalysisPage() {
           } : item
         ));
         failCount++;
+        failedAsins.push(items[i].asin);
       }
 
-      // Small delay between ASINs
       if (i < items.length - 1 && !abortRef.current) {
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
@@ -169,6 +260,13 @@ export default function AnalysisPage() {
       toast.success(`批量分析完成`, {
         description: `成功 ${successCount} 个，失败 ${failCount} 个，共 ${items.length} 个ASIN`,
       });
+      // If there are failed ASINs, offer manual fallback
+      if (failedAsins.length > 0) {
+        toast.info("部分ASIN爬取失败", {
+          description: "您可以切换到手动输入模式，粘贴产品数据进行分析",
+          duration: 8000,
+        });
+      }
     }
 
     setAsinInput("");
@@ -186,7 +284,6 @@ export default function AnalysisPage() {
       return;
     }
 
-    // If multiple ASINs detected, switch to batch mode
     if (uniqueAsins.length > 1) {
       handleBatchAnalyze();
       return;
@@ -216,7 +313,12 @@ export default function AnalysisPage() {
       setAsinInput("");
     } catch (error: any) {
       setBatchItems([{ asin, status: "failed", error: error.message }]);
-      toast.error("分析失败: " + error.message);
+      toast.error("自动爬取失败", {
+        description: "您可以切换到手动输入模式，粘贴产品数据进行分析",
+        duration: 6000,
+      });
+      // Auto-offer manual mode switch
+      setFailedAsin(asin);
     } finally {
       setIsProcessing(false);
     }
@@ -278,190 +380,438 @@ export default function AnalysisPage() {
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
           {/* Input Form */}
           <div className="lg:col-span-2 space-y-4">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Globe className="h-4 w-4" />
-                    输入竞品ASIN
-                  </CardTitle>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs h-7"
-                    onClick={() => setIsBatchMode(!isBatchMode)}
-                    disabled={isProcessing}
-                  >
-                    <List className="h-3.5 w-3.5 mr-1" />
-                    {isBatchMode ? "单个模式" : "批量模式"}
-                  </Button>
-                </div>
-                <CardDescription>
-                  {isBatchMode
-                    ? "输入多个ASIN码（每行一个，或用逗号/空格分隔），最多20个，工具将依次自动爬取分析。"
-                    : "输入ASIN码，工具将自动从亚马逊爬取产品数据并进行AI深度分析。"
-                  }
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
+            {/* Mode Switcher */}
+            <div className="flex rounded-lg border overflow-hidden">
+              <button
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors ${
+                  inputMode === "auto"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background text-muted-foreground hover:bg-muted/50"
+                }`}
+                onClick={switchToAutoMode}
+                disabled={isProcessing}
+              >
+                <Zap className="h-4 w-4" />
+                自动爬取
+              </button>
+              <button
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors ${
+                  inputMode === "manual"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-background text-muted-foreground hover:bg-muted/50"
+                }`}
+                onClick={() => switchToManualMode()}
+                disabled={isProcessing}
+              >
+                <PenLine className="h-4 w-4" />
+                手动输入
+              </button>
+            </div>
+
+            {/* Auto-scrape Mode */}
+            {inputMode === "auto" && (
+              <Card>
+                <CardHeader>
                   <div className="flex items-center justify-between">
-                    <Label>竞品ASIN *</Label>
-                    {uniqueAsins.length > 0 && (
-                      <Badge variant="secondary" className="text-xs">
-                        {uniqueAsins.length} 个ASIN
-                      </Badge>
-                    )}
-                  </div>
-                  {isBatchMode ? (
-                    <Textarea
-                      placeholder={"每行一个ASIN，或用逗号/空格分隔\n例如:\nB0XXXXXXXXX\nB0YYYYYYYYY\nB0ZZZZZZZZZ"}
-                      value={asinInput}
-                      onChange={(e) => setAsinInput(e.target.value.toUpperCase())}
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Globe className="h-4 w-4" />
+                      自动爬取分析
+                    </CardTitle>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs h-7"
+                      onClick={() => setIsBatchMode(!isBatchMode)}
                       disabled={isProcessing}
-                      className="font-mono text-sm tracking-wider min-h-[120px]"
-                      rows={6}
-                    />
-                  ) : (
+                    >
+                      <List className="h-3.5 w-3.5 mr-1" />
+                      {isBatchMode ? "单个模式" : "批量模式"}
+                    </Button>
+                  </div>
+                  <CardDescription>
+                    {isBatchMode
+                      ? "输入多个ASIN码（每行一个，或用逗号/空格分隔），最多20个。"
+                      : "输入ASIN码，工具将自动从亚马逊爬取产品数据并进行AI深度分析。"
+                    }
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>竞品ASIN *</Label>
+                      {uniqueAsins.length > 0 && (
+                        <Badge variant="secondary" className="text-xs">
+                          {uniqueAsins.length} 个ASIN
+                        </Badge>
+                      )}
+                    </div>
+                    {isBatchMode ? (
+                      <Textarea
+                        placeholder={"每行一个ASIN，或用逗号/空格分隔\n例如:\nB0XXXXXXXXX\nB0YYYYYYYYY\nB0ZZZZZZZZZ"}
+                        value={asinInput}
+                        onChange={(e) => setAsinInput(e.target.value.toUpperCase())}
+                        disabled={isProcessing}
+                        className="font-mono text-sm tracking-wider min-h-[120px]"
+                        rows={6}
+                      />
+                    ) : (
+                      <Input
+                        placeholder="例如: B0XXXXXXXXX"
+                        value={asinInput}
+                        onChange={(e) => setAsinInput(e.target.value.toUpperCase())}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !isProcessing) handleSingleAnalyze();
+                        }}
+                        disabled={isProcessing}
+                        className="font-mono text-base tracking-wider"
+                      />
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      {isBatchMode
+                        ? `已识别 ${uniqueAsins.length} 个有效ASIN（最多20个）`
+                        : "输入10位亚马逊产品标识码，支持输入多个自动切换批量模式"
+                      }
+                    </p>
+                  </div>
+
+                  {/* Batch Progress */}
+                  {isProcessing && batchItems.length > 0 && (
+                    <div className="space-y-3 p-4 bg-muted/30 rounded-lg border">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                          <span className="text-sm font-medium">
+                            {batchItems.length === 1
+                              ? getStatusText(batchItems[0].status)
+                              : `批量分析中 (${batchItems.filter(i => i.status === "done" || i.status === "failed").length}/${batchItems.length})`
+                            }
+                          </span>
+                        </div>
+                        {batchItems.length > 1 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs text-destructive"
+                            onClick={handleCancel}
+                          >
+                            取消
+                          </Button>
+                        )}
+                      </div>
+                      <Progress value={batchProgress} className="h-2" />
+
+                      {batchItems.length > 1 && (
+                        <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                          {batchItems.map((item) => (
+                            <div
+                              key={item.asin}
+                              className={`flex items-center justify-between text-xs p-2 rounded ${
+                                item.status === "done" ? "bg-green-50 border border-green-100" :
+                                item.status === "failed" ? "bg-red-50 border border-red-100" :
+                                item.status === "scraping" || item.status === "analyzing" ? "bg-blue-50 border border-blue-100" :
+                                "bg-muted/20 border border-transparent"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                {getStatusIcon(item.status)}
+                                <span className="font-mono">{item.asin}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-xs ${
+                                  item.status === "done" ? "text-green-600" :
+                                  item.status === "failed" ? "text-red-600" :
+                                  "text-muted-foreground"
+                                }`}>
+                                  {item.status === "done" && item.title
+                                    ? item.title.substring(0, 30) + (item.title.length > 30 ? "..." : "")
+                                    : item.status === "failed" && item.error
+                                      ? item.error.substring(0, 30)
+                                      : getStatusText(item.status)
+                                  }
+                                </span>
+                                {item.status === "failed" && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-5 px-1.5 text-xs text-primary"
+                                    onClick={() => switchToManualMode(item.asin)}
+                                  >
+                                    手动输入
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {batchItems.length === 1 && (
+                        <div className="grid grid-cols-3 gap-1 text-xs text-muted-foreground">
+                          <span className={batchItems[0].status !== "pending" ? "text-primary font-medium" : ""}>
+                            爬取数据
+                          </span>
+                          <span className={batchItems[0].status === "analyzing" || batchItems[0].status === "done" ? "text-primary font-medium" : ""}>
+                            AI分析
+                          </span>
+                          <span className={batchItems[0].status === "done" ? "text-primary font-medium" : ""}>
+                            保存结果
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Failed ASIN - offer manual fallback */}
+                  {!isProcessing && failedAsin && inputMode === "auto" && (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg space-y-3">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium text-amber-800">
+                            ASIN {failedAsin} 自动爬取失败
+                          </p>
+                          <p className="text-xs text-amber-600 mt-1">
+                            亚马逊可能限制了数据访问。您可以切换到手动输入模式，从亚马逊页面复制产品信息进行分析。
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full border-amber-300 text-amber-800 hover:bg-amber-100"
+                        onClick={() => switchToManualMode(failedAsin)}
+                      >
+                        <PenLine className="h-3.5 w-3.5 mr-2" />
+                        切换到手动输入模式
+                        <ArrowRight className="h-3.5 w-3.5 ml-2" />
+                      </Button>
+                    </div>
+                  )}
+
+                  <Button
+                    className="w-full"
+                    size="lg"
+                    onClick={uniqueAsins.length > 1 ? handleBatchAnalyze : handleSingleAnalyze}
+                    disabled={isProcessing || uniqueAsins.length === 0}
+                  >
+                    {isProcessing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        {batchItems.length > 1 ? "批量分析中..." : "自动爬取分析中..."}
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="h-4 w-4 mr-2" />
+                        {uniqueAsins.length > 1
+                          ? `批量爬取 & 分析 (${uniqueAsins.length}个)`
+                          : "一键爬取 & 分析"
+                        }
+                      </>
+                    )}
+                  </Button>
+
+                  <div className="pt-2 space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">自动爬取内容：</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { icon: Package, label: "产品标题" },
+                        { icon: TrendingUp, label: "五点描述" },
+                        { icon: DollarSign, label: "价格信息" },
+                        { icon: Star, label: "评分评论" },
+                        { icon: Key, label: "关键词提取" },
+                        { icon: MessageSquare, label: "痛点分析" },
+                      ].map(({ icon: Icon, label }) => (
+                        <div key={label} className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Icon className="h-3 w-3 text-primary/60" />
+                          <span>{label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Manual Input Mode */}
+            {inputMode === "manual" && (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <PenLine className="h-4 w-4" />
+                      手动输入产品数据
+                    </CardTitle>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs h-7"
+                      onClick={resetManualForm}
+                      disabled={isProcessing}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                      重置
+                    </Button>
+                  </div>
+                  <CardDescription>
+                    从亚马逊产品页面复制粘贴产品信息，工具将基于您提供的数据进行AI分析。
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {failedAsin && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                      <p className="text-xs text-amber-700">
+                        <AlertTriangle className="h-3.5 w-3.5 inline mr-1" />
+                        ASIN <span className="font-mono font-bold">{failedAsin}</span> 自动爬取失败，请手动粘贴该产品的信息。
+                      </p>
+                    </div>
+                  )}
+
+                  {/* ASIN */}
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">竞品ASIN *</Label>
                     <Input
                       placeholder="例如: B0XXXXXXXXX"
-                      value={asinInput}
-                      onChange={(e) => setAsinInput(e.target.value.toUpperCase())}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !isProcessing) handleSingleAnalyze();
-                      }}
+                      value={manualAsin}
+                      onChange={(e) => setManualAsin(e.target.value.toUpperCase())}
                       disabled={isProcessing}
                       className="font-mono text-base tracking-wider"
                     />
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    {isBatchMode
-                      ? `已识别 ${uniqueAsins.length} 个有效ASIN（最多20个）`
-                      : "输入10位亚马逊产品标识码，支持输入多个自动切换批量模式"
-                    }
-                  </p>
-                </div>
+                    <p className="text-xs text-muted-foreground">10位亚马逊产品标识码</p>
+                  </div>
 
-                {/* Batch Progress */}
-                {isProcessing && batchItems.length > 0 && (
-                  <div className="space-y-3 p-4 bg-muted/30 rounded-lg border">
-                    <div className="flex items-center justify-between">
+                  <Separator />
+
+                  {/* Brand */}
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">品牌名称</Label>
+                    <Input
+                      placeholder="例如: Anker"
+                      value={manualBrand}
+                      onChange={(e) => setManualBrand(e.target.value)}
+                      disabled={isProcessing}
+                    />
+                  </div>
+
+                  {/* Title */}
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">竞品标题</Label>
+                    <Textarea
+                      placeholder="粘贴竞品的产品标题..."
+                      value={manualTitle}
+                      onChange={(e) => setManualTitle(e.target.value)}
+                      disabled={isProcessing}
+                      rows={3}
+                    />
+                    {manualTitle && (
+                      <p className="text-xs text-muted-foreground">{manualTitle.length} 字符</p>
+                    )}
+                  </div>
+
+                  {/* Bullet Points */}
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">五点描述（Bullet Points）</Label>
+                    <Textarea
+                      placeholder={"粘贴竞品的五点描述，每条一行...\n\n例如:\n【PREMIUM QUALITY】High-grade material...\n【EASY TO USE】Simply plug in and...\n【VERSATILE DESIGN】Works with..."}
+                      value={manualBulletPoints}
+                      onChange={(e) => setManualBulletPoints(e.target.value)}
+                      disabled={isProcessing}
+                      rows={6}
+                      className="text-sm"
+                    />
+                    {manualBulletPoints && (
+                      <p className="text-xs text-muted-foreground">
+                        {manualBulletPoints.split("\n").filter(l => l.trim()).length} 条描述
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Price & Rating */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">价格</Label>
+                      <Input
+                        placeholder="$29.99"
+                        value={manualPrice}
+                        onChange={(e) => setManualPrice(e.target.value)}
+                        disabled={isProcessing}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-sm">评分</Label>
+                      <Input
+                        placeholder="4.5"
+                        value={manualRating}
+                        onChange={(e) => setManualRating(e.target.value)}
+                        disabled={isProcessing}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Description */}
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">产品描述</Label>
+                    <Textarea
+                      placeholder="粘贴产品详情页的描述内容（可选）..."
+                      value={manualDescription}
+                      onChange={(e) => setManualDescription(e.target.value)}
+                      disabled={isProcessing}
+                      rows={3}
+                      className="text-sm"
+                    />
+                  </div>
+
+                  {/* Reviews */}
+                  <div className="space-y-1.5">
+                    <Label className="text-sm">客户评论内容</Label>
+                    <Textarea
+                      placeholder={"粘贴客户评论内容，用于痛点/痒点/爽点分析...\n\n建议粘贴10-20条有代表性的评论，包含好评和差评"}
+                      value={manualReviews}
+                      onChange={(e) => setManualReviews(e.target.value)}
+                      disabled={isProcessing}
+                      rows={6}
+                      className="text-sm"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      建议粘贴10-20条有代表性的评论，包含好评和差评
+                    </p>
+                  </div>
+
+                  {/* Progress */}
+                  {isProcessing && batchItems.length > 0 && (
+                    <div className="space-y-3 p-4 bg-muted/30 rounded-lg border">
                       <div className="flex items-center gap-2">
                         <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                        <span className="text-sm font-medium">
-                          {batchItems.length === 1
-                            ? getStatusText(batchItems[0].status)
-                            : `批量分析中 (${batchItems.filter(i => i.status === "done" || i.status === "failed").length}/${batchItems.length})`
-                          }
-                        </span>
+                        <span className="text-sm font-medium">AI分析中...</span>
                       </div>
-                      {batchItems.length > 1 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 text-xs text-destructive"
-                          onClick={handleCancel}
-                        >
-                          取消
-                        </Button>
-                      )}
+                      <Progress value={50} className="h-2" />
                     </div>
-                    <Progress value={batchProgress} className="h-2" />
-
-                    {/* Per-ASIN status list */}
-                    {batchItems.length > 1 && (
-                      <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
-                        {batchItems.map((item, idx) => (
-                          <div
-                            key={item.asin}
-                            className={`flex items-center justify-between text-xs p-2 rounded ${
-                              item.status === "done" ? "bg-green-50 border border-green-100" :
-                              item.status === "failed" ? "bg-red-50 border border-red-100" :
-                              item.status === "scraping" || item.status === "analyzing" ? "bg-blue-50 border border-blue-100" :
-                              "bg-muted/20 border border-transparent"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              {getStatusIcon(item.status)}
-                              <span className="font-mono">{item.asin}</span>
-                            </div>
-                            <span className={`text-xs ${
-                              item.status === "done" ? "text-green-600" :
-                              item.status === "failed" ? "text-red-600" :
-                              "text-muted-foreground"
-                            }`}>
-                              {item.status === "done" && item.title
-                                ? item.title.substring(0, 30) + (item.title.length > 30 ? "..." : "")
-                                : item.status === "failed" && item.error
-                                  ? item.error.substring(0, 30)
-                                  : getStatusText(item.status)
-                              }
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Single ASIN progress steps */}
-                    {batchItems.length === 1 && (
-                      <div className="grid grid-cols-3 gap-1 text-xs text-muted-foreground">
-                        <span className={batchItems[0].status !== "pending" ? "text-primary font-medium" : ""}>
-                          爬取数据
-                        </span>
-                        <span className={batchItems[0].status === "analyzing" || batchItems[0].status === "done" ? "text-primary font-medium" : ""}>
-                          AI分析
-                        </span>
-                        <span className={batchItems[0].status === "done" ? "text-primary font-medium" : ""}>
-                          保存结果
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <Button
-                  className="w-full"
-                  size="lg"
-                  onClick={uniqueAsins.length > 1 ? handleBatchAnalyze : handleSingleAnalyze}
-                  disabled={isProcessing || uniqueAsins.length === 0}
-                >
-                  {isProcessing ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      {batchItems.length > 1 ? "批量分析中..." : "自动爬取分析中..."}
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="h-4 w-4 mr-2" />
-                      {uniqueAsins.length > 1
-                        ? `批量爬取 & 分析 (${uniqueAsins.length}个)`
-                        : "一键爬取 & 分析"
-                      }
-                    </>
                   )}
-                </Button>
 
-                {/* Auto-scrape feature highlights */}
-                <div className="pt-2 space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">自动爬取内容：</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { icon: Package, label: "产品标题" },
-                      { icon: TrendingUp, label: "五点描述" },
-                      { icon: DollarSign, label: "价格信息" },
-                      { icon: Star, label: "评分评论" },
-                      { icon: Key, label: "关键词提取" },
-                      { icon: MessageSquare, label: "痛点分析" },
-                    ].map(({ icon: Icon, label }) => (
-                      <div key={label} className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Icon className="h-3 w-3 text-primary/60" />
-                        <span>{label}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                  <Button
+                    className="w-full"
+                    size="lg"
+                    onClick={handleManualAnalyze}
+                    disabled={isProcessing || !manualAsin.trim()}
+                  >
+                    {isProcessing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        AI分析中...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="h-4 w-4 mr-2" />
+                        提交手动数据 & 分析
+                      </>
+                    )}
+                  </Button>
+
+                  <p className="text-xs text-muted-foreground text-center">
+                    至少填写标题、五点描述或评论中的一项即可进行分析
+                  </p>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           {/* Results */}
@@ -497,6 +847,7 @@ export default function AnalysisPage() {
                     const rawData = parseJson(analysis.rawData);
                     const bulletPoints = parseJson(analysis.bulletPoints);
                     const scrapedInfo = rawData?.scrapedData;
+                    const isManual = rawData?.manualInput === true;
 
                     return (
                       <Card key={analysis.id} className="overflow-hidden">
@@ -510,6 +861,12 @@ export default function AnalysisPage() {
                                 <Badge variant="outline" className="font-mono shrink-0">
                                   {analysis.asin}
                                 </Badge>
+                                {isManual && (
+                                  <Badge variant="secondary" className="text-xs shrink-0 bg-amber-100 text-amber-700">
+                                    <PenLine className="h-3 w-3 mr-0.5" />
+                                    手动
+                                  </Badge>
+                                )}
                                 {analysis.price && (
                                   <Badge variant="secondary" className="text-xs shrink-0">
                                     {analysis.price}
@@ -523,7 +880,7 @@ export default function AnalysisPage() {
                                 )}
                               </div>
                               <p className="text-sm text-muted-foreground truncate">
-                                {analysis.title || "标题爬取中..."}
+                                {analysis.title || "标题未提供"}
                               </p>
                             </div>
                             <div className="flex items-center gap-2 shrink-0 ml-3">
@@ -548,7 +905,9 @@ export default function AnalysisPage() {
                             {/* Scraped Data Summary */}
                             {(analysis.title || scrapedInfo) && (
                               <div className="mb-4 p-3 bg-muted/30 rounded-lg border">
-                                <h4 className="text-xs font-medium text-muted-foreground mb-2">爬取数据摘要</h4>
+                                <h4 className="text-xs font-medium text-muted-foreground mb-2">
+                                  {isManual ? "手动输入数据摘要" : "爬取数据摘要"}
+                                </h4>
                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                                   {scrapedInfo?.brand && (
                                     <div>
@@ -710,8 +1069,15 @@ export default function AnalysisPage() {
                                 ) : (
                                   <div className="text-center py-6">
                                     <MessageSquare className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
-                                    <p className="text-sm text-muted-foreground">未爬取到客户评论数据</p>
-                                    <p className="text-xs text-muted-foreground mt-1">亚马逊可能限制了评论页面的访问</p>
+                                    <p className="text-sm text-muted-foreground">
+                                      {isManual ? "未提供客户评论数据" : "未爬取到客户评论数据"}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      {isManual
+                                        ? "可在手动输入模式中粘贴评论内容进行分析"
+                                        : "亚马逊可能限制了评论页面的访问"
+                                      }
+                                    </p>
                                   </div>
                                 )}
                               </TabsContent>

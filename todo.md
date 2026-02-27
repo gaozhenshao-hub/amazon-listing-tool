@@ -25,3 +25,7 @@
 - [x] Update bullet points generation prompt to target 250-300 characters per bullet
 - [x] Add character count display and validation in frontend preview
 - [x] Unit tests for character count requirements
+- [x] Backend - Manual input analysis API (accept manually pasted product data)
+- [x] Frontend - Manual input fallback UI (switch between auto-scrape and manual input modes)
+- [x] Frontend - Auto-switch to manual mode on scrape failure with pre-filled ASIN
+- [x] Unit tests for manual input analysis
