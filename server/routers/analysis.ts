@@ -4,6 +4,7 @@ import { invokeLLM } from "../_core/llm";
 import * as db from "../db";
 import { COMPETITOR_ANALYSIS_PROMPT, REVIEW_ANALYSIS_PROMPT, COMPARISON_SUMMARY_PROMPT } from "../prompts";
 import { scrapeAmazonProduct, type AmazonProductData } from "../scraper";
+import { parseReviewFile, reviewsToText, type ParseResult } from "../reviewParser";
 
 // Helper: run a single ASIN analysis (scrape + LLM)
 async function analyzeSingleAsin(
@@ -402,6 +403,187 @@ export const analysisRouter = router({
         summary: summaryContent,
         analyzedAsins: selectedAnalyses.map(a => a.asin),
         analyzedCount: selectedAnalyses.length,
+      };
+    }),
+
+  // Import reviews from Excel/CSV file (base64 encoded)
+  importReviews: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      asin: z.string().min(10).max(10),
+      fileBase64: z.string(),
+      filename: z.string(),
+      // Optional: existing analysis ID to update with imported reviews
+      analysisId: z.number().optional(),
+      // Optional: additional product info for new analysis
+      title: z.string().optional(),
+      bulletPoints: z.string().optional(),
+      price: z.string().optional(),
+      rating: z.string().optional(),
+      brand: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      // Decode base64 file
+      const buffer = Buffer.from(input.fileBase64, "base64");
+
+      // Parse the file
+      let parseResult: ParseResult;
+      try {
+        parseResult = parseReviewFile(buffer, input.filename);
+      } catch (error: any) {
+        throw new Error(`文件解析失败: ${error.message}`);
+      }
+
+      if (parseResult.reviews.length === 0) {
+        throw new Error("文件中未找到有效的评论数据。请确保文件包含评论内容列。");
+      }
+
+      // Convert reviews to text for LLM analysis
+      const reviewText = reviewsToText(parseResult.reviews);
+
+      // Build context for competitor analysis
+      const contextParts: string[] = [];
+      contextParts.push(`ASIN: ${input.asin}`);
+      if (input.title) contextParts.push(`Title: ${input.title}`);
+      if (input.brand) contextParts.push(`Brand: ${input.brand}`);
+      if (input.bulletPoints) contextParts.push(`Bullet Points:\n${input.bulletPoints}`);
+      if (input.price) contextParts.push(`Price: ${input.price}`);
+      if (input.rating) contextParts.push(`Rating: ${input.rating}/5`);
+
+      // Run competitor analysis LLM
+      const analysisResponse = await invokeLLM({
+        messages: [
+          { role: "system", content: COMPETITOR_ANALYSIS_PROMPT },
+          { role: "user", content: `Analyze this competitor product:\n\n${contextParts.join("\n\n")}\n\nCustomer Reviews Summary (${parseResult.reviews.length} reviews imported from file):\n${reviewText.substring(0, 8000)}` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const analysisContent = typeof analysisResponse.choices[0].message.content === "string"
+        ? analysisResponse.choices[0].message.content
+        : JSON.stringify(analysisResponse.choices[0].message.content);
+
+      let analysisData: any = {};
+      try {
+        analysisData = JSON.parse(analysisContent);
+      } catch {
+        analysisData = { raw: analysisContent };
+      }
+
+      // Run review analysis LLM
+      const reviewResponse = await invokeLLM({
+        messages: [
+          { role: "system", content: REVIEW_ANALYSIS_PROMPT },
+          { role: "user", content: `Analyze these ${parseResult.reviews.length} customer reviews imported from a seller tool (卖家精灵/SellerSprite):\n\n${reviewText.substring(0, 12000)}` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const reviewContent = typeof reviewResponse.choices[0].message.content === "string"
+        ? reviewResponse.choices[0].message.content
+        : JSON.stringify(reviewResponse.choices[0].message.content);
+
+      let reviewAnalysis: any = null;
+      try {
+        reviewAnalysis = JSON.parse(reviewContent);
+      } catch {
+        reviewAnalysis = { raw: reviewContent };
+      }
+
+      // Parse bullet points into array
+      const bulletPointsArray = input.bulletPoints
+        ? input.bulletPoints.split("\n").filter((line: string) => line.trim().length > 0)
+        : [];
+
+      // If updating existing analysis, delete old one first
+      if (input.analysisId) {
+        try {
+          await db.deleteCompetitorAnalysis(input.analysisId);
+        } catch {
+          // Ignore if not found
+        }
+      }
+
+      // Save new analysis
+      const saved = await db.createCompetitorAnalysis({
+        projectId: input.projectId,
+        asin: input.asin,
+        title: input.title ?? null,
+        bulletPoints: bulletPointsArray.length > 0 ? JSON.stringify(bulletPointsArray) : null,
+        price: input.price ?? null,
+        rating: input.rating ?? null,
+        reviewCount: String(parseResult.reviews.length),
+        reviewAnalysis: reviewAnalysis ? JSON.stringify(reviewAnalysis) : null,
+        keywords: analysisData.keywords ? JSON.stringify(analysisData.keywords) : null,
+        imageUrls: null,
+        rawData: JSON.stringify({
+          ...analysisData,
+          manualInput: true,
+          importedReviews: true,
+          reviewImport: {
+            filename: input.filename,
+            totalRows: parseResult.totalRows,
+            parsedRows: parseResult.parsedRows,
+            skippedRows: parseResult.skippedRows,
+            detectedFormat: parseResult.detectedFormat,
+            columns: parseResult.columns,
+          },
+          scrapedData: {
+            brand: input.brand || null,
+            reviewsCount: parseResult.reviews.length,
+          },
+        }),
+      });
+
+      return {
+        asin: input.asin,
+        status: "success" as const,
+        analysisId: saved.id,
+        title: input.title,
+        importedReviews: true,
+        reviewStats: {
+          totalRows: parseResult.totalRows,
+          parsedRows: parseResult.parsedRows,
+          skippedRows: parseResult.skippedRows,
+          detectedFormat: parseResult.detectedFormat,
+          columns: parseResult.columns,
+        },
+      };
+    }),
+
+  // Preview review file parsing (without running analysis)
+  previewReviewFile: protectedProcedure
+    .input(z.object({
+      fileBase64: z.string(),
+      filename: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const buffer = Buffer.from(input.fileBase64, "base64");
+
+      let parseResult: ParseResult;
+      try {
+        parseResult = parseReviewFile(buffer, input.filename);
+      } catch (error: any) {
+        throw new Error(`文件解析失败: ${error.message}`);
+      }
+
+      // Return preview with first 5 reviews
+      return {
+        totalRows: parseResult.totalRows,
+        parsedRows: parseResult.parsedRows,
+        skippedRows: parseResult.skippedRows,
+        detectedFormat: parseResult.detectedFormat,
+        columns: parseResult.columns,
+        previewReviews: parseResult.reviews.slice(0, 5).map(r => ({
+          title: r.title,
+          content: r.content.substring(0, 200) + (r.content.length > 200 ? "..." : ""),
+          rating: r.rating,
+          date: r.date,
+          author: r.author,
+        })),
       };
     }),
 

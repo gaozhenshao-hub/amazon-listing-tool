@@ -44,3 +44,10 @@
 - [x] Update bullet points character limit from 250-300 to 200-280 (max 280) in backend prompts
 - [x] Update bullet points character validation in listing router
 - [x] Update bullet points character count display in frontend (GeneratePage, PreviewPage, ComparisonPage)
+- [x] Backend - Add file upload endpoint for review Excel/CSV import
+- [x] Backend - Parse seller sprite review export format (Excel/CSV)
+- [x] Backend - Store imported reviews and link to competitor analysis
+- [x] Backend - Trigger AI review analysis on imported reviews
+- [x] Frontend - Add review import UI with file drag-and-drop on AnalysisPage
+- [x] Frontend - Show imported review count and preview
+- [x] Unit tests for review import functionality
