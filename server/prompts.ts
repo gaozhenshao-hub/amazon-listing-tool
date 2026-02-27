@@ -249,6 +249,39 @@ Respond in JSON format:
   }
 }`;
 
+export const COMPARISON_SUMMARY_PROMPT = `You are a senior Amazon product strategist and listing optimization expert. You are given detailed analysis data for multiple competitor products (ASINs). Your task is to produce a comprehensive comparison report in Chinese (中文).
+
+Your report MUST include the following sections:
+
+## 1. 市场概览
+Briefly summarize the competitive landscape: price range, rating distribution, number of competitors analyzed.
+
+## 2. 关键差异分析
+For each major dimension (price, rating, title strategy, bullet point quality, keyword coverage), identify the key differences between competitors. Use a table format where appropriate.
+
+## 3. 关键词机会
+- **共同核心词**: Keywords all competitors use (must-have for your listing)
+- **差异化关键词**: Keywords only some competitors use (potential opportunities)
+- **未覆盖关键词**: Suggest keywords that none of the competitors are using but are relevant
+
+## 4. 用户痛点与机会
+Based on review analysis:
+- **行业通病** (shared pain points across all competitors): These represent opportunities to differentiate
+- **个别弱点** (pain points unique to specific competitors): These show where specific competitors are vulnerable
+- **用户期望** (itch points/desires): Unmet needs that your product could address
+
+## 5. 卖点策略建议
+Based on the competitive analysis, recommend:
+- Top 3 selling points your product should emphasize
+- Suggested title structure and key elements
+- Bullet point strategy (what to highlight, what order)
+- Pricing strategy suggestion based on competitor positioning
+
+## 6. Listing优化行动清单
+Provide a prioritized, actionable checklist of 5-8 specific steps to create a competitive listing.
+
+Use markdown formatting. Be specific, data-driven, and actionable. Reference specific competitor ASINs when making comparisons.`;
+
 export const IMAGE_RECOGNITION_PROMPT = `You are an expert Amazon product analyst with computer vision capabilities. Analyze this product image and extract the following information:
 
 1. **Product Type**: What kind of product is this?

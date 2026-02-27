@@ -36,3 +36,8 @@
 - [x] Display keyword comparison (shared vs unique keywords)
 - [x] Display pain points / itch points / delight points comparison
 - [x] Unit tests for comparison feature (covered by existing 52 tests)
+- [x] Backend - AI comparison summary API (accept multiple analysis IDs, generate diff report)
+- [x] Add comparison summary LLM prompt (key differences, opportunities, optimization suggestions)
+- [x] Frontend - Add AI summary button on ComparisonPage
+- [x] Frontend - Display AI summary results with markdown rendering
+- [x] Unit tests for AI comparison summary

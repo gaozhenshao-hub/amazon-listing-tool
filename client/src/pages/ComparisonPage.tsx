@@ -21,7 +21,12 @@ import {
   XCircle,
   Minus,
   Package,
+  Sparkles,
+  Loader2,
+  Copy,
+  Check,
 } from "lucide-react";
+import { Streamdown } from "streamdown";
 import { useState, useMemo } from "react";
 
 // Type for parsed analysis data
@@ -91,9 +96,170 @@ const ASIN_COLORS = [
   "bg-orange-100 text-orange-800 border-orange-200",
 ];
 
+// AI Summary Section Component
+function AISummarySection({
+  projectId,
+  selectedIds,
+  selectedAnalyses,
+  aiSummary,
+  setAiSummary,
+}: {
+  projectId: number;
+  selectedIds: Set<number>;
+  selectedAnalyses: ParsedAnalysis[];
+  aiSummary: string | null;
+  setAiSummary: (s: string | null) => void;
+}) {
+  const [isCopied, setIsCopied] = useState(false);
+  const summaryMutation = trpc.analysis.comparisonSummary.useMutation({
+    onSuccess: (data) => {
+      setAiSummary(data.summary);
+    },
+  });
+
+  const handleGenerate = () => {
+    setAiSummary(null);
+    summaryMutation.mutate({
+      projectId,
+      analysisIds: Array.from(selectedIds),
+    });
+  };
+
+  const handleCopy = async () => {
+    if (!aiSummary) return;
+    try {
+      await navigator.clipboard.writeText(aiSummary);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch {
+      // fallback
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Generate Button Card */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                AI 竞品对比总结
+              </CardTitle>
+              <CardDescription className="mt-1">
+                基于已选的 {selectedAnalyses.length} 个竞品分析数据，AI将自动提炼关键差异、发现市场机会并生成优化建议
+              </CardDescription>
+            </div>
+            <Button
+              onClick={handleGenerate}
+              disabled={summaryMutation.isPending || selectedAnalyses.length < 2}
+              className="shrink-0"
+            >
+              {summaryMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  AI 分析中...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4 mr-2" />
+                  {aiSummary ? "重新生成" : "生成AI总结"}
+                </>
+              )}
+            </Button>
+          </div>
+        </CardHeader>
+        {summaryMutation.isPending && (
+          <CardContent className="pt-0">
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span>正在分析 {selectedAnalyses.length} 个竞品数据，提炼关键差异和优化建议...</span>
+              </div>
+              <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                <div className="bg-primary h-full rounded-full animate-pulse" style={{ width: "60%" }} />
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {["分析价格与评分差异", "对比关键词覆盖", "提炼用户痛点机会"].map((step, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-lg p-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                    {step}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        )}
+      </Card>
+
+      {/* Error Display */}
+      {summaryMutation.isError && (
+        <Card className="border-red-200 bg-red-50/50">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-2 text-sm text-red-700">
+              <XCircle className="h-4 w-4 shrink-0" />
+              <span>生成失败：{summaryMutation.error?.message || "未知错误，请重试"}</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Summary Result */}
+      {aiSummary && (
+        <Card className="border-primary/20">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-green-600" />
+                分析报告
+              </CardTitle>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="text-xs">
+                  已分析 {selectedAnalyses.map(a => a.asin).join(", ")}
+                </Badge>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCopy}
+                  className="h-7 text-xs"
+                >
+                  {isCopied ? (
+                    <><Check className="h-3 w-3 mr-1" />已复制</>
+                  ) : (
+                    <><Copy className="h-3 w-3 mr-1" />复制报告</>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <Separator />
+          <CardContent className="pt-4">
+            <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:text-foreground prose-p:text-foreground/90 prose-strong:text-foreground prose-li:text-foreground/90 prose-table:text-sm">
+              <Streamdown>{aiSummary}</Streamdown>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Empty State */}
+      {!aiSummary && !summaryMutation.isPending && !summaryMutation.isError && (
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <Sparkles className="h-8 w-8 text-muted-foreground mb-4" />
+            <p className="text-muted-foreground text-sm">点击上方「生成AI总结」按钮，获取竞品差异分析报告</p>
+            <p className="text-muted-foreground text-xs mt-1">报告将包含市场概览、关键差异、关键词机会、痛点分析和优化建议</p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 export default function ComparisonPage() {
   const { selectedProjectId } = useProject();
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
 
   const { data: analyses, isLoading } = trpc.analysis.listByProject.useQuery(
     { projectId: selectedProjectId! },
@@ -330,6 +496,10 @@ export default function ComparisonPage() {
                 <TabsTrigger value="bullets">
                   <TrendingUp className="h-3.5 w-3.5 mr-1.5" />
                   五点描述对比
+                </TabsTrigger>
+                <TabsTrigger value="ai-summary">
+                  <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+                  AI智能总结
                 </TabsTrigger>
               </TabsList>
 
@@ -881,6 +1051,17 @@ export default function ComparisonPage() {
                     </ScrollArea>
                   </CardContent>
                 </Card>
+              </TabsContent>
+
+              {/* AI Summary Tab */}
+              <TabsContent value="ai-summary">
+                <AISummarySection
+                  projectId={selectedProjectId!}
+                  selectedIds={selectedIds}
+                  selectedAnalyses={selectedAnalyses}
+                  aiSummary={aiSummary}
+                  setAiSummary={setAiSummary}
+                />
               </TabsContent>
             </Tabs>
           )}

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import * as db from "../db";
-import { COMPETITOR_ANALYSIS_PROMPT, REVIEW_ANALYSIS_PROMPT } from "../prompts";
+import { COMPETITOR_ANALYSIS_PROMPT, REVIEW_ANALYSIS_PROMPT, COMPARISON_SUMMARY_PROMPT } from "../prompts";
 import { scrapeAmazonProduct, type AmazonProductData } from "../scraper";
 
 // Helper: run a single ASIN analysis (scrape + LLM)
@@ -311,6 +311,97 @@ export const analysisRouter = router({
         analysisId: saved.id,
         title: input.title,
         manualInput: true,
+      };
+    }),
+
+  // AI comparison summary - generate diff report and optimization suggestions
+  comparisonSummary: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      analysisIds: z.array(z.number()).min(2).max(8),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      // Fetch all selected analyses
+      const allAnalyses = await db.getCompetitorAnalysesByProject(input.projectId);
+      const selectedAnalyses = allAnalyses.filter(a => input.analysisIds.includes(a.id));
+
+      if (selectedAnalyses.length < 2) {
+        throw new Error("At least 2 analyses are required for comparison");
+      }
+
+      // Build comprehensive context for LLM
+      const competitorSummaries = selectedAnalyses.map(a => {
+        const keywords = a.keywords ? JSON.parse(a.keywords) : null;
+        const reviewAnalysis = a.reviewAnalysis ? JSON.parse(a.reviewAnalysis) : null;
+        const rawData = a.rawData ? JSON.parse(a.rawData) : null;
+        const bulletPoints = a.bulletPoints ? JSON.parse(a.bulletPoints) : [];
+
+        const parts: string[] = [];
+        parts.push(`### ASIN: ${a.asin}`);
+        parts.push(`- Title: ${a.title || "N/A"}`);
+        parts.push(`- Brand: ${rawData?.scrapedData?.brand || rawData?.brand || "N/A"}`);
+        parts.push(`- Price: ${a.price || "N/A"}`);
+        parts.push(`- Rating: ${a.rating || "N/A"}`);
+        parts.push(`- Review Count: ${a.reviewCount || "N/A"}`);
+
+        if (bulletPoints.length > 0) {
+          parts.push(`- Bullet Points (${bulletPoints.length}):`);
+          bulletPoints.forEach((bp: string, i: number) => {
+            parts.push(`  ${i + 1}. ${bp}`);
+          });
+        }
+
+        if (keywords) {
+          const coreKws = (keywords.core || []).map((k: any) => typeof k === "string" ? k : k.keyword || k.term).join(", ");
+          const longTailKws = (keywords.longTail || []).map((k: any) => typeof k === "string" ? k : k.keyword || k.term).join(", ");
+          const trafficKws = (keywords.traffic || []).map((k: any) => typeof k === "string" ? k : k.keyword || k.term).join(", ");
+          if (coreKws) parts.push(`- Core Keywords: ${coreKws}`);
+          if (longTailKws) parts.push(`- Long-tail Keywords: ${longTailKws}`);
+          if (trafficKws) parts.push(`- Traffic Keywords: ${trafficKws}`);
+        }
+
+        if (reviewAnalysis) {
+          if (reviewAnalysis.painPoints?.length) {
+            parts.push(`- Pain Points: ${reviewAnalysis.painPoints.map((p: any) => p.issue).join("; ")}`);
+          }
+          if (reviewAnalysis.itchPoints?.length) {
+            parts.push(`- Itch Points: ${reviewAnalysis.itchPoints.map((p: any) => p.desire).join("; ")}`);
+          }
+          if (reviewAnalysis.delightPoints?.length) {
+            parts.push(`- Delight Points: ${reviewAnalysis.delightPoints.map((p: any) => p.feature).join("; ")}`);
+          }
+        }
+
+        if (rawData?.advantages?.length) {
+          parts.push(`- Advantages: ${rawData.advantages.join("; ")}`);
+        }
+        if (rawData?.weaknesses?.length) {
+          parts.push(`- Weaknesses: ${rawData.weaknesses.join("; ")}`);
+        }
+
+        return parts.join("\n");
+      });
+
+      const userMessage = `Please analyze and compare the following ${selectedAnalyses.length} competitor products and generate a comprehensive comparison report with optimization suggestions:\n\n${competitorSummaries.join("\n\n---\n\n")}`;
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: COMPARISON_SUMMARY_PROMPT },
+          { role: "user", content: userMessage },
+        ],
+      });
+
+      const summaryContent = typeof response.choices[0].message.content === "string"
+        ? response.choices[0].message.content
+        : JSON.stringify(response.choices[0].message.content);
+
+      return {
+        summary: summaryContent,
+        analyzedAsins: selectedAnalyses.map(a => a.asin),
+        analyzedCount: selectedAnalyses.length,
       };
     }),
 
