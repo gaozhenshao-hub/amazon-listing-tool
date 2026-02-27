@@ -21,3 +21,7 @@
 - [x] Frontend - Batch ASIN input (textarea for multiple ASINs, comma/newline separated)
 - [x] Frontend - Batch progress display (show per-ASIN status: pending/scraping/analyzing/done/failed)
 - [x] Unit tests for batch ASIN analysis
+- [x] Update title generation prompt to target 180-200 characters
+- [x] Update bullet points generation prompt to target 250-300 characters per bullet
+- [x] Add character count display and validation in frontend preview
+- [x] Unit tests for character count requirements

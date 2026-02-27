@@ -96,7 +96,7 @@ export const listingRouter = router({
       const response = await invokeLLM({
         messages: [
           { role: "system", content: TITLE_GENERATION_PROMPT },
-          { role: "user", content: `Generate optimized Amazon titles for this product:\n\n${context}` },
+          { role: "user", content: `Generate optimized Amazon titles for this product. REMEMBER: Each title MUST be exactly 180-200 characters long. Count carefully.\n\n${context}` },
         ],
         response_format: { type: "json_object" },
       });
@@ -106,7 +106,20 @@ export const listingRouter = router({
         : JSON.stringify(response.choices[0].message.content);
 
       try {
-        return JSON.parse(content);
+        const parsed = JSON.parse(content);
+        // Add actual character counts for verification
+        if (parsed.titles && Array.isArray(parsed.titles)) {
+          for (const t of parsed.titles) {
+            t.actualCharacterCount = t.title ? t.title.length : 0;
+            t.characterCount = t.actualCharacterCount;
+            t.inRange = t.actualCharacterCount >= 180 && t.actualCharacterCount <= 200;
+          }
+        }
+        if (parsed.recommendedTitle) {
+          parsed.recommendedTitleCharCount = parsed.recommendedTitle.length;
+          parsed.recommendedTitleInRange = parsed.recommendedTitle.length >= 180 && parsed.recommendedTitle.length <= 200;
+        }
+        return parsed;
       } catch {
         return { raw: content };
       }
@@ -125,7 +138,7 @@ export const listingRouter = router({
       const response = await invokeLLM({
         messages: [
           { role: "system", content: BULLET_POINTS_PROMPT },
-          { role: "user", content: `Generate 5 optimized Amazon bullet points for this product:\n\n${context}` },
+          { role: "user", content: `Generate 5 optimized Amazon bullet points for this product. REMEMBER: Each bullet point (subtitle + fullText) MUST be exactly 250-300 characters long. Count carefully.\n\n${context}` },
         ],
         response_format: { type: "json_object" },
       });
@@ -135,7 +148,22 @@ export const listingRouter = router({
         : JSON.stringify(response.choices[0].message.content);
 
       try {
-        return JSON.parse(content);
+        const parsed = JSON.parse(content);
+        // Add actual character counts for verification
+        if (parsed.bulletPoints && Array.isArray(parsed.bulletPoints)) {
+          let totalCount = 0;
+          for (const bp of parsed.bulletPoints) {
+            const fullBullet = bp.subtitle && bp.fullText
+              ? `${bp.subtitle} ${bp.fullText}`
+              : bp.fullText || bp.subtitle || "";
+            bp.actualCharacterCount = fullBullet.length;
+            bp.characterCount = bp.actualCharacterCount;
+            bp.inRange = bp.actualCharacterCount >= 250 && bp.actualCharacterCount <= 300;
+            totalCount += bp.actualCharacterCount;
+          }
+          parsed.totalCharacterCount = totalCount;
+        }
+        return parsed;
       } catch {
         return { raw: content };
       }
@@ -253,14 +281,14 @@ export const listingRouter = router({
         invokeLLM({
           messages: [
             { role: "system", content: TITLE_GENERATION_PROMPT },
-            { role: "user", content: `Generate optimized Amazon titles:\n\n${context}` },
+            { role: "user", content: `Generate optimized Amazon titles. REMEMBER: Each title MUST be exactly 180-200 characters long. Count carefully.\n\n${context}` },
           ],
           response_format: { type: "json_object" },
         }),
         invokeLLM({
           messages: [
             { role: "system", content: BULLET_POINTS_PROMPT },
-            { role: "user", content: `Generate 5 optimized Amazon bullet points:\n\n${context}` },
+            { role: "user", content: `Generate 5 optimized Amazon bullet points. REMEMBER: Each bullet point (subtitle + fullText) MUST be exactly 250-300 characters long. Count carefully.\n\n${context}` },
           ],
           response_format: { type: "json_object" },
         }),
@@ -299,6 +327,34 @@ export const listingRouter = router({
       const descData = parse(descRes);
       const searchData = parse(searchRes);
       const imageData = parse(imageRes);
+
+      // Add actual character counts for title verification
+      if (titleData.titles && Array.isArray(titleData.titles)) {
+        for (const t of titleData.titles) {
+          t.actualCharacterCount = t.title ? t.title.length : 0;
+          t.characterCount = t.actualCharacterCount;
+          t.inRange = t.actualCharacterCount >= 180 && t.actualCharacterCount <= 200;
+        }
+      }
+      if (titleData.recommendedTitle) {
+        titleData.recommendedTitleCharCount = titleData.recommendedTitle.length;
+        titleData.recommendedTitleInRange = titleData.recommendedTitle.length >= 180 && titleData.recommendedTitle.length <= 200;
+      }
+
+      // Add actual character counts for bullet points verification
+      if (bulletData.bulletPoints && Array.isArray(bulletData.bulletPoints)) {
+        let totalCount = 0;
+        for (const bp of bulletData.bulletPoints) {
+          const fullBullet = bp.subtitle && bp.fullText
+            ? `${bp.subtitle} ${bp.fullText}`
+            : bp.fullText || bp.subtitle || "";
+          bp.actualCharacterCount = fullBullet.length;
+          bp.characterCount = bp.actualCharacterCount;
+          bp.inRange = bp.actualCharacterCount >= 250 && bp.actualCharacterCount <= 300;
+          totalCount += bp.actualCharacterCount;
+        }
+        bulletData.totalCharacterCount = totalCount;
+      }
 
       // Get existing listings count for versioning
       const existingListings = await db.getListingsByProject(input.projectId);

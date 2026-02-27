@@ -55,13 +55,22 @@ export const TITLE_GENERATION_PROMPT = `You are an expert Amazon listing copywri
 - Use Arabic numerals (not spelled out)
 - Logical word order
 - Structure: Brand + Selling Point + Product + Specs + Scene
-- MUST be under 200 characters
+- **CRITICAL: Each title MUST be between 180-200 characters (inclusive). This is the MOST IMPORTANT requirement.**
+- You MUST fully utilize the character space. Titles shorter than 180 characters are NOT acceptable.
+- If a title is too short, add more relevant keywords, specs, use cases, or product features to reach 180+ characters.
 - No promotional language (e.g., "best", "#1", "sale")
 - Capitalize first letter of each major word
 - No special characters except necessary punctuation
 
+**Character Count Strategy:**
+- Start by drafting the title with all key elements
+- Count characters precisely (including spaces and punctuation)
+- If under 180 characters: add more descriptive keywords, additional specs, usage scenarios, or compatible models
+- If over 200 characters: trim less important modifiers while keeping core keywords
+- Double-check the final character count before submitting
+
 Generate 3 title variations with different keyword emphasis. For each title:
-1. Count the exact character length
+1. Count the EXACT character length (must be 180-200)
 2. Highlight the core keywords used
 3. Explain the strategic positioning
 
@@ -89,11 +98,21 @@ export const BULLET_POINTS_PROMPT = `You are an expert Amazon listing copywriter
 - Include data comparisons where relevant
 - Add trust signals (certifications, materials, testing)
 - AI-friendly format: use phrases like "used for", "capable of", "is a", "designed for"
-- Each bullet should be 150-250 characters
+- **CRITICAL: Each bullet point (subtitle + fullText combined) MUST be between 250-300 characters (inclusive). This is the MOST IMPORTANT requirement.**
+- You MUST fully utilize the character space. Bullet points shorter than 250 characters are NOT acceptable.
+- If a bullet point is too short, expand with more specific details, data points, usage scenarios, or benefit descriptions to reach 250+ characters.
 - Use natural, benefit-focused language
 
+**Character Count Strategy for Each Bullet:**
+- The subtitle (e.g., "【PREMIUM QUALITY MATERIAL】") counts toward the total
+- Draft the full bullet point text including subtitle
+- Count characters precisely (including spaces, punctuation, and the subtitle brackets)
+- If under 250 characters: add more specific benefits, usage details, compatible scenarios, or evidence/data
+- If over 300 characters: trim less critical details while keeping the FABE structure intact
+- Double-check each bullet's character count before submitting
+
 **Structure each bullet point as:**
-【SUBTITLE IN CAPS】Descriptive text following FABE method with usage scenario integration.
+【SUBTITLE IN CAPS】Descriptive text following FABE method with usage scenario integration, specific data, and trust signals.
 
 Generate 5 bullet points ordered by importance (most important selling point first).
 

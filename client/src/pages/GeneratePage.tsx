@@ -2,7 +2,6 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import ProjectSelector from "@/components/ProjectSelector";
 import { useProject } from "@/contexts/ProjectContext";
@@ -17,7 +16,7 @@ import {
   Image,
   Zap,
   CheckCircle2,
-  RefreshCw,
+  AlertCircle,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -31,6 +30,24 @@ type GenerationResult = {
   searchTermsData?: any;
   imageAdviceData?: any;
 };
+
+function CharCountBadge({ count, min, max, label }: { count: number; min: number; max: number; label?: string }) {
+  const inRange = count >= min && count <= max;
+  const tooShort = count < min;
+  const tooLong = count > max;
+
+  return (
+    <Badge
+      variant={inRange ? "default" : "destructive"}
+      className={`text-xs ${inRange ? "bg-green-600" : tooShort ? "bg-amber-500" : "bg-red-500"}`}
+    >
+      {count} / {min}-{max} {label || "字符"}
+      {inRange && " ✓"}
+      {tooShort && " ↑偏短"}
+      {tooLong && " ↓偏长"}
+    </Badge>
+  );
+}
 
 export default function GeneratePage() {
   const { selectedProjectId } = useProject();
@@ -135,11 +152,11 @@ export default function GeneratePage() {
   const hasResult = result || Object.keys(partResults).length > 0;
 
   const generationParts = [
-    { key: "title", label: "标题", icon: Type, color: "text-blue-600" },
-    { key: "bulletPoints", label: "五点描述", icon: List, color: "text-green-600" },
-    { key: "description", label: "产品描述", icon: FileText, color: "text-purple-600" },
-    { key: "searchTerms", label: "搜索关键词", icon: Key, color: "text-amber-600" },
-    { key: "imageAdvice", label: "图片建议", icon: Image, color: "text-pink-600" },
+    { key: "title", label: "标题", desc: "180-200字符", icon: Type, color: "text-blue-600" },
+    { key: "bulletPoints", label: "五点描述", desc: "每条250-300字符", icon: List, color: "text-green-600" },
+    { key: "description", label: "产品描述", desc: "2000字符内", icon: FileText, color: "text-purple-600" },
+    { key: "searchTerms", label: "搜索关键词", desc: "250字节内", icon: Key, color: "text-amber-600" },
+    { key: "imageAdvice", label: "图片建议", desc: "首图+辅图+A+", icon: Image, color: "text-pink-600" },
   ];
 
   return (
@@ -163,6 +180,23 @@ export default function GeneratePage() {
         </Card>
       ) : (
         <div className="space-y-6">
+          {/* Character count rules reminder */}
+          <Card className="bg-blue-50/50 border-blue-200">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-blue-900">亚马逊字符数规则</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-blue-700">
+                    <span>标题：<strong>180-200</strong> 字符（充分利用空间）</span>
+                    <span>五点描述：每条 <strong>250-300</strong> 字符</span>
+                    <span>搜索词：<strong>250</strong> 字节内</span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Project Info Summary */}
           <Card>
             <CardContent className="p-4">
@@ -261,7 +295,9 @@ export default function GeneratePage() {
                         <p className="text-sm font-medium">{part.label}</p>
                         <p className="text-xs text-muted-foreground">
                           {generatingPart === part.key ? "生成中..." :
-                            partResults[part.key] || (result && (result as any)[part.key + "Data"]) ? "已生成 · 点击重新生成" : "点击生成"}
+                            partResults[part.key] || (result && (result as any)[part.key + "Data"])
+                              ? `已生成 · 点击重新生成`
+                              : part.desc}
                         </p>
                       </div>
                     </Button>
@@ -286,32 +322,38 @@ export default function GeneratePage() {
               {(partResults.title || result?.titleOptions) && (
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <Type className="h-4 w-4 text-blue-600" />
-                      标题选项
-                    </CardTitle>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Type className="h-4 w-4 text-blue-600" />
+                        标题选项
+                      </CardTitle>
+                      <span className="text-xs text-muted-foreground">目标: 180-200 字符</span>
+                    </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {((partResults.title || result?.titleOptions)?.titles || []).map((t: any, i: number) => (
-                      <div key={i} className={`p-3 rounded-lg border ${i === 0 ? "border-primary/30 bg-primary/5" : "bg-muted/30"}`}>
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-medium flex-1">{t.title}</p>
-                          <Badge variant={i === 0 ? "default" : "secondary"} className="shrink-0 text-xs">
-                            {t.characterCount || t.title?.length || 0} 字符
-                          </Badge>
-                        </div>
-                        {t.strategy && (
-                          <p className="text-xs text-muted-foreground mt-2">{t.strategy}</p>
-                        )}
-                        {t.coreKeywords && (
-                          <div className="flex gap-1.5 mt-2">
-                            {t.coreKeywords.map((k: string, j: number) => (
-                              <Badge key={j} variant="outline" className="text-xs">{k}</Badge>
-                            ))}
+                    {((partResults.title || result?.titleOptions)?.titles || []).map((t: any, i: number) => {
+                      const actualCount = t.title ? t.title.length : 0;
+                      return (
+                        <div key={i} className={`p-3 rounded-lg border ${
+                          i === 0 ? "border-primary/30 bg-primary/5" : "bg-muted/30"
+                        }`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-sm font-medium flex-1">{t.title}</p>
+                            <CharCountBadge count={actualCount} min={180} max={200} />
                           </div>
-                        )}
-                      </div>
-                    ))}
+                          {t.strategy && (
+                            <p className="text-xs text-muted-foreground mt-2">{t.strategy}</p>
+                          )}
+                          {t.coreKeywords && (
+                            <div className="flex gap-1.5 mt-2 flex-wrap">
+                              {t.coreKeywords.map((k: string, j: number) => (
+                                <Badge key={j} variant="outline" className="text-xs">{k}</Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </CardContent>
                 </Card>
               )}
@@ -320,24 +362,38 @@ export default function GeneratePage() {
               {(partResults.bulletPoints || result?.bulletPointsData) && (
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <List className="h-4 w-4 text-green-600" />
-                      五点描述
-                    </CardTitle>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <List className="h-4 w-4 text-green-600" />
+                        五点描述
+                      </CardTitle>
+                      <span className="text-xs text-muted-foreground">目标: 每条 250-300 字符</span>
+                    </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {((partResults.bulletPoints || result?.bulletPointsData)?.bulletPoints || []).map((bp: any, i: number) => (
-                      <div key={i} className="p-3 bg-muted/30 rounded-lg border">
-                        <p className="text-sm">
-                          <span className="font-bold">{bp.subtitle || `卖点 ${i + 1}`}</span>
-                          {" — "}
-                          <span className="text-muted-foreground">{bp.fullText || bp.sellingPoint || ""}</span>
-                        </p>
-                        {bp.characterCount && (
-                          <Badge variant="outline" className="text-xs mt-2">{bp.characterCount} 字符</Badge>
-                        )}
+                    {((partResults.bulletPoints || result?.bulletPointsData)?.bulletPoints || []).map((bp: any, i: number) => {
+                      const fullBullet = bp.subtitle && bp.fullText
+                        ? `${bp.subtitle} ${bp.fullText}`
+                        : bp.fullText || bp.subtitle || "";
+                      const actualCount = fullBullet.length;
+                      return (
+                        <div key={i} className="p-3 bg-muted/30 rounded-lg border">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-sm flex-1">
+                              <span className="font-bold">{bp.subtitle || `卖点 ${i + 1}`}</span>
+                              {" — "}
+                              <span className="text-muted-foreground">{bp.fullText || bp.sellingPoint || ""}</span>
+                            </p>
+                            <CharCountBadge count={actualCount} min={250} max={300} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {((partResults.bulletPoints || result?.bulletPointsData)?.totalCharacterCount) && (
+                      <div className="text-xs text-muted-foreground text-right">
+                        五点总字符数: {(partResults.bulletPoints || result?.bulletPointsData).totalCharacterCount}
                       </div>
-                    ))}
+                    )}
                   </CardContent>
                 </Card>
               )}
@@ -357,7 +413,7 @@ export default function GeneratePage() {
                         {(partResults.searchTerms || result?.searchTermsData)?.searchTerms || ""}
                       </p>
                       <Badge variant="outline" className="text-xs mt-2">
-                        {(partResults.searchTerms || result?.searchTermsData)?.byteCount || 0} bytes
+                        {(partResults.searchTerms || result?.searchTermsData)?.byteCount || 0} / 250 bytes
                       </Badge>
                     </div>
                   </CardContent>

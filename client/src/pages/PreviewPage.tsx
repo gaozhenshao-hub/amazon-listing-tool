@@ -200,9 +200,16 @@ export default function PreviewPage() {
                     产品标题
                   </CardTitle>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-xs">
-                      {(isEditing ? editData.title : listing.title)?.length || 0} / 200 字符
-                    </Badge>
+                    {(() => {
+                      const count = (isEditing ? editData.title : listing.title)?.length || 0;
+                      const inRange = count >= 180 && count <= 200;
+                      const tooShort = count < 180;
+                      return (
+                        <Badge variant={inRange ? "default" : "destructive"} className={`text-xs ${inRange ? "bg-green-600" : tooShort ? "bg-amber-500" : "bg-red-500"}`}>
+                          {count} / 180-200 字符 {inRange ? "✓" : tooShort ? "↑偏短" : "↓偏长"}
+                        </Badge>
+                      );
+                    })()}
                     {!isEditing && (
                       <Button
                         variant="ghost"
@@ -279,9 +286,19 @@ export default function PreviewPage() {
                               {bp.fullText && <span className="text-muted-foreground"> — {bp.fullText}</span>}
                               {!bp.fullText && bp.sellingPoint && <span className="text-muted-foreground"> — {bp.sellingPoint}</span>}
                             </p>
-                            {bp.characterCount && (
-                              <Badge variant="outline" className="text-xs mt-2">{bp.characterCount} 字符</Badge>
-                            )}
+                            {(() => {
+                              const fullBullet = bp.subtitle && bp.fullText
+                                ? `${bp.subtitle} ${bp.fullText}`
+                                : bp.fullText || bp.subtitle || "";
+                              const count = fullBullet.length;
+                              const inRange = count >= 250 && count <= 300;
+                              const tooShort = count < 250;
+                              return (
+                                <Badge variant={inRange ? "default" : "destructive"} className={`text-xs mt-2 ${inRange ? "bg-green-600" : tooShort ? "bg-amber-500" : "bg-red-500"}`}>
+                                  {count} / 250-300 字符 {inRange ? "✓" : tooShort ? "↑偏短" : "↓偏长"}
+                                </Badge>
+                              );
+                            })()}
                           </>
                         )}
                       </div>
