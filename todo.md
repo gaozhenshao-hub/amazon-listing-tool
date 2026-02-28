@@ -62,3 +62,5 @@
 - [x] Unit tests for review import history management (91 tests passing)
 - [x] Fix bullet points generation too long - strengthen LLM prompt constraints
 - [x] Add stricter character count enforcement in backend validation/retry logic (auto-truncate at 280)
+- [x] Update all Listing generation prompts with Ogilvy copywriter expert role persona
+- [x] Role: native English speaker, fluent in Chinese, expert in US market, 10+ years at Ogilvy & Mather
