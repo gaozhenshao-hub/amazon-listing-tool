@@ -10,67 +10,158 @@ import {
   IMAGE_ADVICE_PROMPT,
 } from "../prompts";
 
-// Truncate a bullet point to fit within maxLen characters while keeping it readable
-function truncateBullet(subtitle: string, fullText: string, maxLen: number): { subtitle: string; fullText: string } {
-  const combined = `${subtitle} ${fullText}`;
-  if (combined.length <= maxLen) return { subtitle, fullText };
-  
-  // Calculate how much space fullText can use
-  const availableForText = maxLen - subtitle.length - 1; // -1 for space
-  if (availableForText <= 0) {
-    // Subtitle itself is too long, truncate it
-    return { subtitle: subtitle.substring(0, maxLen - 3) + '】', fullText: '' };
-  }
-  
-  // Truncate fullText at last complete word/sentence boundary
-  let truncated = fullText.substring(0, availableForText);
-  // Try to cut at last period, comma, or space
-  const lastPeriod = truncated.lastIndexOf('.');
-  const lastComma = truncated.lastIndexOf(',');
-  const lastSpace = truncated.lastIndexOf(' ');
-  const cutPoint = Math.max(lastPeriod, lastComma, lastSpace);
-  if (cutPoint > availableForText * 0.7) {
-    truncated = truncated.substring(0, cutPoint + 1).trim();
-  } else {
-    truncated = truncated.trim();
-  }
-  
-  return { subtitle, fullText: truncated };
-}
+const MAX_RETRIES = 2;
 
-// Enforce character limits on bullet points, truncating any that exceed 280 chars
-function enforceBulletLimits(bulletData: any): any {
-  if (!bulletData?.bulletPoints || !Array.isArray(bulletData.bulletPoints)) return bulletData;
-  
-  let totalCount = 0;
-  for (const bp of bulletData.bulletPoints) {
-    const fullBullet = bp.subtitle && bp.fullText
+// Validate bullet points character counts, returns list of out-of-range bullets
+function validateBullets(bulletData: any): { valid: boolean; issues: string[] } {
+  if (!bulletData?.bulletPoints || !Array.isArray(bulletData.bulletPoints)) {
+    return { valid: false, issues: ["No bullet points found"] };
+  }
+  const issues: string[] = [];
+  for (let i = 0; i < bulletData.bulletPoints.length; i++) {
+    const bp = bulletData.bulletPoints[i];
+    const combined = bp.subtitle && bp.fullText
       ? `${bp.subtitle} ${bp.fullText}`
       : bp.fullText || bp.subtitle || '';
-    
-    if (fullBullet.length > 280) {
-      // Truncate to fit within 280
-      const { subtitle, fullText } = truncateBullet(
-        bp.subtitle || '',
-        bp.fullText || fullBullet,
-        280
-      );
-      bp.subtitle = subtitle;
-      bp.fullText = fullText;
-      const newFull = subtitle ? `${subtitle} ${fullText}` : fullText;
-      bp.actualCharacterCount = newFull.length;
-      bp.characterCount = newFull.length;
-      bp.inRange = newFull.length >= 200 && newFull.length <= 280;
-      bp.wasTruncated = true;
-    } else {
-      bp.actualCharacterCount = fullBullet.length;
-      bp.characterCount = fullBullet.length;
-      bp.inRange = fullBullet.length >= 200 && fullBullet.length <= 280;
+    bp.actualCharacterCount = combined.length;
+    bp.characterCount = combined.length;
+    bp.inRange = combined.length >= 200 && combined.length <= 280;
+    if (combined.length > 280) {
+      issues.push(`Bullet ${i + 1} is ${combined.length} chars (max 280). Content: "${combined.substring(0, 50)}..."`);
+    } else if (combined.length < 200) {
+      issues.push(`Bullet ${i + 1} is only ${combined.length} chars (min 200). Content: "${combined.substring(0, 50)}..."`);
     }
-    totalCount += bp.actualCharacterCount;
   }
-  bulletData.totalCharacterCount = totalCount;
-  return bulletData;
+  // Calculate total
+  bulletData.totalCharacterCount = bulletData.bulletPoints.reduce(
+    (sum: number, bp: any) => sum + (bp.actualCharacterCount || 0), 0
+  );
+  return { valid: issues.length === 0, issues };
+}
+
+// Validate title character counts
+function validateTitles(titleData: any): { valid: boolean; issues: string[] } {
+  const issues: string[] = [];
+  if (titleData.titles && Array.isArray(titleData.titles)) {
+    for (let i = 0; i < titleData.titles.length; i++) {
+      const t = titleData.titles[i];
+      t.actualCharacterCount = t.title ? t.title.length : 0;
+      t.characterCount = t.actualCharacterCount;
+      t.inRange = t.actualCharacterCount >= 180 && t.actualCharacterCount <= 200;
+      if (t.actualCharacterCount > 200) {
+        issues.push(`Title ${i + 1} is ${t.actualCharacterCount} chars (max 200)`);
+      } else if (t.actualCharacterCount < 180) {
+        issues.push(`Title ${i + 1} is only ${t.actualCharacterCount} chars (min 180)`);
+      }
+    }
+  }
+  if (titleData.recommendedTitle) {
+    titleData.recommendedTitleCharCount = titleData.recommendedTitle.length;
+    titleData.recommendedTitleInRange = titleData.recommendedTitle.length >= 180 && titleData.recommendedTitle.length <= 200;
+  }
+  return { valid: issues.length === 0, issues };
+}
+
+// Ask AI to refine bullet points that are out of range
+async function refineBullets(bulletData: any, issues: string[]): Promise<any> {
+  const refinementPrompt = `You previously generated Amazon bullet points, but some do NOT meet the character requirements.
+
+ISSUES:
+${issues.join("\n")}
+
+CURRENT BULLET POINTS:
+${JSON.stringify(bulletData.bulletPoints, null, 2)}
+
+RULES:
+- Each bullet = subtitle + " " + fullText
+- Each bullet MUST be 200-280 characters total. NO EXCEPTIONS.
+- If a bullet is TOO LONG (>280): condense the text, remove redundant words, simplify phrases. Do NOT just cut off the end.
+- If a bullet is TOO SHORT (<200): add more specific details, materials, dimensions, use cases, or benefits.
+- Keep the same selling points and FABE structure, just adjust the length.
+- Keep subtitles short (under 30 chars including brackets).
+- Count EVERY character including spaces, brackets, and punctuation.
+
+Return the CORRECTED bullet points in the same JSON format:
+{
+  "bulletPoints": [
+    {
+      "subtitle": "",
+      "fullText": "",
+      "sellingPoint": "",
+      "fabeBreakdown": { "feature": "", "advantage": "", "benefit": "", "evidence": "" },
+      "characterCount": 0
+    }
+  ],
+  "totalCharacterCount": 0
+}`;
+
+  const response = await invokeLLM({
+    messages: [
+      { role: "system", content: `You are an expert Amazon listing copywriter. Your ONLY job right now is to fix character count issues in bullet points. Each bullet (subtitle + space + fullText) MUST be 200-280 characters. Count precisely.` },
+      { role: "user", content: refinementPrompt },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const content = typeof response.choices[0].message.content === "string"
+    ? response.choices[0].message.content
+    : JSON.stringify(response.choices[0].message.content);
+
+  try {
+    return JSON.parse(content);
+  } catch {
+    return bulletData; // Return original if parsing fails
+  }
+}
+
+// Ask AI to refine titles that are out of range
+async function refineTitles(titleData: any, issues: string[]): Promise<any> {
+  const refinementPrompt = `You previously generated Amazon product titles, but some do NOT meet the character requirements.
+
+ISSUES:
+${issues.join("\n")}
+
+CURRENT TITLES:
+${JSON.stringify(titleData.titles, null, 2)}
+
+RULES:
+- Each title MUST be 180-200 characters. NO EXCEPTIONS.
+- If a title is TOO LONG (>200): condense by removing less important modifiers, combining phrases, or using shorter synonyms. Do NOT just cut off the end.
+- If a title is TOO SHORT (<180): add more relevant keywords, specs, use cases, compatible models, or descriptive details.
+- Keep the same core keywords and brand positioning.
+- Count EVERY character including spaces, commas, and hyphens.
+
+Return the CORRECTED titles in the same JSON format:
+{
+  "titles": [
+    {
+      "title": "",
+      "characterCount": 0,
+      "coreKeywords": [],
+      "strategy": ""
+    }
+  ],
+  "recommendedTitle": "",
+  "reasoning": ""
+}`;
+
+  const response = await invokeLLM({
+    messages: [
+      { role: "system", content: `You are an expert Amazon listing copywriter. Your ONLY job right now is to fix character count issues in titles. Each title MUST be 180-200 characters. Count precisely.` },
+      { role: "user", content: refinementPrompt },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const content = typeof response.choices[0].message.content === "string"
+    ? response.choices[0].message.content
+    : JSON.stringify(response.choices[0].message.content);
+
+  try {
+    return JSON.parse(content);
+  } catch {
+    return titleData;
+  }
 }
 
 function buildProductContext(project: any, analyses: any[]) {
@@ -146,7 +237,7 @@ export const listingRouter = router({
       return db.getActiveListingByProject(input.projectId);
     }),
 
-  // Generate title
+  // Generate title with AI retry
   generateTitle: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
@@ -159,7 +250,7 @@ export const listingRouter = router({
       const response = await invokeLLM({
         messages: [
           { role: "system", content: TITLE_GENERATION_PROMPT },
-          { role: "user", content: `Generate optimized Amazon titles for this product. REMEMBER: Each title MUST be exactly 180-200 characters long. Count carefully.\n\n${context}` },
+          { role: "user", content: `Generate optimized Amazon titles for this product. Each title MUST be exactly 180-200 characters. Count every character precisely before outputting.\n\n${context}` },
         ],
         response_format: { type: "json_object" },
       });
@@ -168,27 +259,26 @@ export const listingRouter = router({
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
 
+      let parsed;
       try {
-        const parsed = JSON.parse(content);
-        // Add actual character counts for verification
-        if (parsed.titles && Array.isArray(parsed.titles)) {
-          for (const t of parsed.titles) {
-            t.actualCharacterCount = t.title ? t.title.length : 0;
-            t.characterCount = t.actualCharacterCount;
-            t.inRange = t.actualCharacterCount >= 180 && t.actualCharacterCount <= 200;
-          }
-        }
-        if (parsed.recommendedTitle) {
-          parsed.recommendedTitleCharCount = parsed.recommendedTitle.length;
-          parsed.recommendedTitleInRange = parsed.recommendedTitle.length >= 180 && parsed.recommendedTitle.length <= 200;
-        }
-        return parsed;
+        parsed = JSON.parse(content);
       } catch {
         return { raw: content };
       }
+
+      // Validate and retry if needed
+      let validation = validateTitles(parsed);
+      if (!validation.valid) {
+        for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
+          parsed = await refineTitles(parsed, validation.issues);
+          validation = validateTitles(parsed);
+        }
+      }
+
+      return parsed;
     }),
 
-  // Generate bullet points
+  // Generate bullet points with AI retry
   generateBulletPoints: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
@@ -201,7 +291,7 @@ export const listingRouter = router({
       const response = await invokeLLM({
         messages: [
           { role: "system", content: BULLET_POINTS_PROMPT },
-          { role: "user", content: `Generate 5 optimized Amazon bullet points for this product.\n\nCRITICAL RULES:\n1. Each bullet = subtitle + space + fullText\n2. Each bullet MUST be 200-280 characters total. HARD MAX = 280.\n3. Keep subtitles SHORT (under 25 chars including 【】 brackets)\n4. Count EVERY character including spaces and punctuation\n5. If any bullet exceeds 280, SHORTEN IT before responding\n\n${context}` },
+          { role: "user", content: `Generate 5 optimized Amazon bullet points for this product.\n\nCRITICAL: Each bullet (subtitle + space + fullText) MUST be 200-280 characters. Count every character precisely before outputting. If any bullet is outside 200-280, revise it before responding.\n\n${context}` },
         ],
         response_format: { type: "json_object" },
       });
@@ -210,14 +300,23 @@ export const listingRouter = router({
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
 
+      let parsed;
       try {
-        const parsed = JSON.parse(content);
-        // Enforce character limits - truncate any bullet that exceeds 280
-        const enforced = enforceBulletLimits(parsed);
-        return enforced;
+        parsed = JSON.parse(content);
       } catch {
         return { raw: content };
       }
+
+      // Validate and retry if needed
+      let validation = validateBullets(parsed);
+      if (!validation.valid) {
+        for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
+          parsed = await refineBullets(parsed, validation.issues);
+          validation = validateBullets(parsed);
+        }
+      }
+
+      return parsed;
     }),
 
   // Generate description
@@ -315,7 +414,7 @@ export const listingRouter = router({
       }
     }),
 
-  // Generate full listing (all components at once)
+  // Generate full listing (all components at once) with AI retry for char limits
   generateFull: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
@@ -332,14 +431,14 @@ export const listingRouter = router({
         invokeLLM({
           messages: [
             { role: "system", content: TITLE_GENERATION_PROMPT },
-            { role: "user", content: `Generate optimized Amazon titles. REMEMBER: Each title MUST be exactly 180-200 characters long. Count carefully.\n\n${context}` },
+            { role: "user", content: `Generate optimized Amazon titles. Each title MUST be exactly 180-200 characters. Count every character precisely before outputting.\n\n${context}` },
           ],
           response_format: { type: "json_object" },
         }),
         invokeLLM({
           messages: [
             { role: "system", content: BULLET_POINTS_PROMPT },
-            { role: "user", content: `Generate 5 optimized Amazon bullet points.\n\nCRITICAL: Each bullet (subtitle + space + fullText) = 200-280 chars. HARD MAX 280. Keep subtitles under 25 chars. Count carefully.\n\n${context}` },
+            { role: "user", content: `Generate 5 optimized Amazon bullet points. Each bullet (subtitle + space + fullText) MUST be 200-280 characters. Count every character precisely before outputting.\n\n${context}` },
           ],
           response_format: { type: "json_object" },
         }),
@@ -373,27 +472,29 @@ export const listingRouter = router({
         try { return JSON.parse(c); } catch { return { raw: c }; }
       };
 
-      const titleData = parse(titleRes);
-      const bulletData = parse(bulletRes);
+      let titleData = parse(titleRes);
+      let bulletData = parse(bulletRes);
       const descData = parse(descRes);
       const searchData = parse(searchRes);
       const imageData = parse(imageRes);
 
-      // Add actual character counts for title verification
-      if (titleData.titles && Array.isArray(titleData.titles)) {
-        for (const t of titleData.titles) {
-          t.actualCharacterCount = t.title ? t.title.length : 0;
-          t.characterCount = t.actualCharacterCount;
-          t.inRange = t.actualCharacterCount >= 180 && t.actualCharacterCount <= 200;
+      // Validate titles and retry if needed
+      let titleValidation = validateTitles(titleData);
+      if (!titleValidation.valid) {
+        for (let retry = 0; retry < MAX_RETRIES && !titleValidation.valid; retry++) {
+          titleData = await refineTitles(titleData, titleValidation.issues);
+          titleValidation = validateTitles(titleData);
         }
       }
-      if (titleData.recommendedTitle) {
-        titleData.recommendedTitleCharCount = titleData.recommendedTitle.length;
-        titleData.recommendedTitleInRange = titleData.recommendedTitle.length >= 180 && titleData.recommendedTitle.length <= 200;
-      }
 
-      // Enforce character limits on bullet points - truncate any exceeding 280
-      enforceBulletLimits(bulletData);
+      // Validate bullets and retry if needed
+      let bulletValidation = validateBullets(bulletData);
+      if (!bulletValidation.valid) {
+        for (let retry = 0; retry < MAX_RETRIES && !bulletValidation.valid; retry++) {
+          bulletData = await refineBullets(bulletData, bulletValidation.issues);
+          bulletValidation = validateBullets(bulletData);
+        }
+      }
 
       // Get existing listings count for versioning
       const existingListings = await db.getListingsByProject(input.projectId);

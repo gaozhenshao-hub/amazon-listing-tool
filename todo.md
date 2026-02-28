@@ -64,3 +64,6 @@
 - [x] Add stricter character count enforcement in backend validation/retry logic (auto-truncate at 280)
 - [x] Update all Listing generation prompts with Ogilvy copywriter expert role persona
 - [x] Role: native English speaker, fluent in Chinese, expert in US market, 10+ years at Ogilvy & Mather
+- [x] Remove backend auto-truncate logic for bullet points
+- [x] Add AI retry mechanism: if generated content exceeds char limits, ask AI to refine/shorten (max 2 retries)
+- [x] Strengthen LLM prompts to generate content within exact character ranges

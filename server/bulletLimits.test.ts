@@ -1,191 +1,213 @@
 import { describe, expect, it } from "vitest";
 
-// We need to test the truncateBullet and enforceBulletLimits functions
-// Since they're not exported, we'll replicate the logic for testing
-
-function truncateBullet(subtitle: string, fullText: string, maxLen: number): { subtitle: string; fullText: string } {
-  const combined = `${subtitle} ${fullText}`;
-  if (combined.length <= maxLen) return { subtitle, fullText };
-  
-  const availableForText = maxLen - subtitle.length - 1;
-  if (availableForText <= 0) {
-    return { subtitle: subtitle.substring(0, maxLen - 3) + '】', fullText: '' };
+// Test the validateBullets logic (replicated from listing.ts since not exported)
+function validateBullets(bulletData: any): { valid: boolean; issues: string[] } {
+  if (!bulletData?.bulletPoints || !Array.isArray(bulletData.bulletPoints)) {
+    return { valid: false, issues: ["No bullet points found"] };
   }
-  
-  let truncated = fullText.substring(0, availableForText);
-  const lastPeriod = truncated.lastIndexOf('.');
-  const lastComma = truncated.lastIndexOf(',');
-  const lastSpace = truncated.lastIndexOf(' ');
-  const cutPoint = Math.max(lastPeriod, lastComma, lastSpace);
-  if (cutPoint > availableForText * 0.7) {
-    truncated = truncated.substring(0, cutPoint + 1).trim();
-  } else {
-    truncated = truncated.trim();
-  }
-  
-  return { subtitle, fullText: truncated };
-}
-
-function enforceBulletLimits(bulletData: any): any {
-  if (!bulletData?.bulletPoints || !Array.isArray(bulletData.bulletPoints)) return bulletData;
-  
-  let totalCount = 0;
-  for (const bp of bulletData.bulletPoints) {
-    const fullBullet = bp.subtitle && bp.fullText
+  const issues: string[] = [];
+  for (let i = 0; i < bulletData.bulletPoints.length; i++) {
+    const bp = bulletData.bulletPoints[i];
+    const combined = bp.subtitle && bp.fullText
       ? `${bp.subtitle} ${bp.fullText}`
       : bp.fullText || bp.subtitle || '';
-    
-    if (fullBullet.length > 280) {
-      const { subtitle, fullText } = truncateBullet(
-        bp.subtitle || '',
-        bp.fullText || fullBullet,
-        280
-      );
-      bp.subtitle = subtitle;
-      bp.fullText = fullText;
-      const newFull = subtitle ? `${subtitle} ${fullText}` : fullText;
-      bp.actualCharacterCount = newFull.length;
-      bp.characterCount = newFull.length;
-      bp.inRange = newFull.length >= 200 && newFull.length <= 280;
-      bp.wasTruncated = true;
-    } else {
-      bp.actualCharacterCount = fullBullet.length;
-      bp.characterCount = fullBullet.length;
-      bp.inRange = fullBullet.length >= 200 && fullBullet.length <= 280;
+    bp.actualCharacterCount = combined.length;
+    bp.characterCount = combined.length;
+    bp.inRange = combined.length >= 200 && combined.length <= 280;
+    if (combined.length > 280) {
+      issues.push(`Bullet ${i + 1} is ${combined.length} chars (max 280)`);
+    } else if (combined.length < 200) {
+      issues.push(`Bullet ${i + 1} is only ${combined.length} chars (min 200)`);
     }
-    totalCount += bp.actualCharacterCount;
   }
-  bulletData.totalCharacterCount = totalCount;
-  return bulletData;
+  bulletData.totalCharacterCount = bulletData.bulletPoints.reduce(
+    (sum: number, bp: any) => sum + (bp.actualCharacterCount || 0), 0
+  );
+  return { valid: issues.length === 0, issues };
 }
 
-describe("truncateBullet", () => {
-  it("returns unchanged if within limit", () => {
-    const result = truncateBullet("【Test】", "Short text here.", 280);
-    expect(result.subtitle).toBe("【Test】");
-    expect(result.fullText).toBe("Short text here.");
+function validateTitles(titleData: any): { valid: boolean; issues: string[] } {
+  const issues: string[] = [];
+  if (titleData.titles && Array.isArray(titleData.titles)) {
+    for (let i = 0; i < titleData.titles.length; i++) {
+      const t = titleData.titles[i];
+      t.actualCharacterCount = t.title ? t.title.length : 0;
+      t.characterCount = t.actualCharacterCount;
+      t.inRange = t.actualCharacterCount >= 180 && t.actualCharacterCount <= 200;
+      if (t.actualCharacterCount > 200) {
+        issues.push(`Title ${i + 1} is ${t.actualCharacterCount} chars (max 200)`);
+      } else if (t.actualCharacterCount < 180) {
+        issues.push(`Title ${i + 1} is only ${t.actualCharacterCount} chars (min 180)`);
+      }
+    }
+  }
+  if (titleData.recommendedTitle) {
+    titleData.recommendedTitleCharCount = titleData.recommendedTitle.length;
+    titleData.recommendedTitleInRange = titleData.recommendedTitle.length >= 180 && titleData.recommendedTitle.length <= 200;
+  }
+  return { valid: issues.length === 0, issues };
+}
+
+describe("validateBullets", () => {
+  it("returns invalid if no bulletPoints", () => {
+    const result = validateBullets({ someField: "value" });
+    expect(result.valid).toBe(false);
+    expect(result.issues).toContain("No bullet points found");
   });
 
-  it("truncates fullText when combined exceeds maxLen", () => {
-    const longText = "A".repeat(300);
-    const result = truncateBullet("【Test】", longText, 280);
-    const combined = `${result.subtitle} ${result.fullText}`;
-    expect(combined.length).toBeLessThanOrEqual(280);
+  it("returns invalid if bulletPoints is not an array", () => {
+    const result = validateBullets({ bulletPoints: "not an array" });
+    expect(result.valid).toBe(false);
   });
 
-  it("truncates at word boundary when possible", () => {
-    const text = "This is a long sentence that goes on and on with many words and details about the product features and benefits that customers will enjoy when they purchase this amazing item from our store today. Extra padding text here to make it longer than needed for the test.";
-    const result = truncateBullet("【Quality】", text, 280);
-    const combined = `${result.subtitle} ${result.fullText}`;
-    expect(combined.length).toBeLessThanOrEqual(280);
-    // Should not end mid-word
-    expect(result.fullText).not.toMatch(/[a-zA-Z]$/);
-  });
-
-  it("handles very long subtitle gracefully", () => {
-    const longSubtitle = "【" + "A".repeat(290) + "】";
-    const result = truncateBullet(longSubtitle, "text", 280);
-    const combined = `${result.subtitle} ${result.fullText}`;
-    expect(combined.length).toBeLessThanOrEqual(280);
-  });
-});
-
-describe("enforceBulletLimits", () => {
-  it("returns data unchanged if no bulletPoints", () => {
-    const data = { someField: "value" };
-    const result = enforceBulletLimits(data);
-    expect(result).toEqual(data);
-  });
-
-  it("returns data unchanged if bulletPoints is not an array", () => {
-    const data = { bulletPoints: "not an array" };
-    const result = enforceBulletLimits(data);
-    expect(result).toEqual(data);
-  });
-
-  it("does not modify bullets within range (200-280)", () => {
-    const text240 = "A".repeat(230); // subtitle(~8) + space(1) + 230 = ~239
+  it("returns valid for bullets within 200-280 range", () => {
+    const text230 = "A".repeat(222); // subtitle(~8) + space(1) + 222 = ~231
     const data = {
       bulletPoints: [
-        { subtitle: "【Test】", fullText: text240 },
+        { subtitle: "【Test】", fullText: text230 },
       ],
     };
-    const result = enforceBulletLimits(data);
-    expect(result.bulletPoints[0].fullText).toBe(text240);
-    expect(result.bulletPoints[0].wasTruncated).toBeUndefined();
+    const result = validateBullets(data);
+    expect(result.valid).toBe(true);
+    expect(result.issues).toHaveLength(0);
+    expect(data.bulletPoints[0].inRange).toBe(true);
   });
 
-  it("truncates bullets exceeding 280 characters", () => {
+  it("reports issue for bullets exceeding 280 chars (no truncation)", () => {
     const longText = "A".repeat(300);
     const data = {
       bulletPoints: [
         { subtitle: "【Test】", fullText: longText },
       ],
     };
-    const result = enforceBulletLimits(data);
-    const combined = `${result.bulletPoints[0].subtitle} ${result.bulletPoints[0].fullText}`;
-    expect(combined.length).toBeLessThanOrEqual(280);
-    expect(result.bulletPoints[0].wasTruncated).toBe(true);
+    const result = validateBullets(data);
+    expect(result.valid).toBe(false);
+    expect(result.issues.length).toBeGreaterThan(0);
+    expect(result.issues[0]).toContain("max 280");
+    // Verify NO truncation happened - text should remain unchanged
+    expect(data.bulletPoints[0].fullText).toBe(longText);
+    expect(data.bulletPoints[0].fullText.length).toBe(300);
   });
 
-  it("marks short bullets as not in range", () => {
+  it("reports issue for bullets under 200 chars (no padding)", () => {
     const data = {
       bulletPoints: [
-        { subtitle: "【Test】", fullText: "Short" },
+        { subtitle: "【Test】", fullText: "Short text" },
       ],
     };
-    const result = enforceBulletLimits(data);
-    expect(result.bulletPoints[0].inRange).toBe(false);
-    expect(result.bulletPoints[0].actualCharacterCount).toBeLessThan(200);
+    const result = validateBullets(data);
+    expect(result.valid).toBe(false);
+    expect(result.issues[0]).toContain("min 200");
+    // Verify NO modification happened
+    expect(data.bulletPoints[0].fullText).toBe("Short text");
   });
 
   it("correctly calculates totalCharacterCount", () => {
-    const text1 = "A".repeat(230);
-    const text2 = "B".repeat(230);
+    const text1 = "A".repeat(222);
+    const text2 = "B".repeat(222);
     const data = {
       bulletPoints: [
         { subtitle: "【One】", fullText: text1 },
         { subtitle: "【Two】", fullText: text2 },
       ],
     };
-    const result = enforceBulletLimits(data);
-    const expected = result.bulletPoints.reduce((sum: number, bp: any) => sum + bp.actualCharacterCount, 0);
-    expect(result.totalCharacterCount).toBe(expected);
+    validateBullets(data);
+    const expected = data.bulletPoints.reduce((sum: number, bp: any) => sum + bp.actualCharacterCount, 0);
+    expect(data.totalCharacterCount).toBe(expected);
   });
 
-  it("handles mixed bullets - some within range, some exceeding", () => {
-    const normalText = "A".repeat(230);
+  it("handles mixed bullets - reports only out-of-range ones", () => {
+    const normalText = "A".repeat(222); // ~231 total with subtitle
     const longText = "B".repeat(350);
+    const shortText = "C".repeat(10);
     const data = {
       bulletPoints: [
         { subtitle: "【OK】", fullText: normalText },
         { subtitle: "【Long】", fullText: longText },
+        { subtitle: "【Short】", fullText: shortText },
       ],
     };
-    const result = enforceBulletLimits(data);
-    
-    // First bullet should be unchanged
-    expect(result.bulletPoints[0].fullText).toBe(normalText);
-    expect(result.bulletPoints[0].wasTruncated).toBeUndefined();
-    
-    // Second bullet should be truncated
-    const combined2 = `${result.bulletPoints[1].subtitle} ${result.bulletPoints[1].fullText}`;
-    expect(combined2.length).toBeLessThanOrEqual(280);
-    expect(result.bulletPoints[1].wasTruncated).toBe(true);
+    const result = validateBullets(data);
+    expect(result.valid).toBe(false);
+    expect(result.issues).toHaveLength(2); // long and short
+    // Original text should be UNCHANGED
+    expect(data.bulletPoints[1].fullText).toBe(longText);
+    expect(data.bulletPoints[2].fullText).toBe(shortText);
   });
 
-  it("enforces 280 hard ceiling on all 5 bullets", () => {
+  it("validates all 5 bullets correctly when all in range", () => {
+    const makeText = (len: number) => "X".repeat(len);
     const data = {
       bulletPoints: Array.from({ length: 5 }, (_, i) => ({
-        subtitle: `【Point ${i + 1}】`,
-        fullText: "X".repeat(300), // All exceed 280
+        subtitle: `【P${i + 1}】`,
+        fullText: makeText(230), // ~235 total
       })),
     };
-    const result = enforceBulletLimits(data);
-    for (const bp of result.bulletPoints) {
-      const combined = `${bp.subtitle} ${bp.fullText}`;
-      expect(combined.length).toBeLessThanOrEqual(280);
-      expect(bp.wasTruncated).toBe(true);
-    }
+    const result = validateBullets(data);
+    expect(result.valid).toBe(true);
+    expect(result.issues).toHaveLength(0);
+  });
+});
+
+describe("validateTitles", () => {
+  it("returns valid for titles within 180-200 range", () => {
+    const title190 = "A".repeat(190);
+    const data = {
+      titles: [{ title: title190 }],
+      recommendedTitle: title190,
+    };
+    const result = validateTitles(data);
+    expect(result.valid).toBe(true);
+    expect(data.titles[0].inRange).toBe(true);
+    expect(data.recommendedTitleInRange).toBe(true);
+  });
+
+  it("reports issue for titles exceeding 200 chars (no truncation)", () => {
+    const longTitle = "A".repeat(220);
+    const data = {
+      titles: [{ title: longTitle }],
+    };
+    const result = validateTitles(data);
+    expect(result.valid).toBe(false);
+    expect(result.issues[0]).toContain("max 200");
+    // Verify NO truncation
+    expect(data.titles[0].title).toBe(longTitle);
+  });
+
+  it("reports issue for titles under 180 chars (no padding)", () => {
+    const shortTitle = "A".repeat(100);
+    const data = {
+      titles: [{ title: shortTitle }],
+    };
+    const result = validateTitles(data);
+    expect(result.valid).toBe(false);
+    expect(result.issues[0]).toContain("min 180");
+    expect(data.titles[0].title).toBe(shortTitle);
+  });
+
+  it("handles multiple titles with mixed validity", () => {
+    const data = {
+      titles: [
+        { title: "A".repeat(190) }, // valid
+        { title: "B".repeat(210) }, // too long
+        { title: "C".repeat(150) }, // too short
+      ],
+    };
+    const result = validateTitles(data);
+    expect(result.valid).toBe(false);
+    expect(result.issues).toHaveLength(2);
+    expect(data.titles[0].inRange).toBe(true);
+    expect(data.titles[1].inRange).toBe(false);
+    expect(data.titles[2].inRange).toBe(false);
+  });
+
+  it("sets recommendedTitle metadata correctly", () => {
+    const data = {
+      titles: [{ title: "A".repeat(190) }],
+      recommendedTitle: "B".repeat(195),
+    };
+    validateTitles(data);
+    expect(data.recommendedTitleCharCount).toBe(195);
+    expect(data.recommendedTitleInRange).toBe(true);
   });
 });
