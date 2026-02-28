@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `reviewImports` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`projectId` int NOT NULL,\n\t`userId` int NOT NULL,\n\t`asin` varchar(20) NOT NULL,\n\t`filename` varchar(500) NOT NULL,\n\t`fileSize` int,\n\t`totalRows` int,\n\t`parsedRows` int,\n\t`skippedRows` int,\n\t`detectedFormat` varchar(100),\n\t`columns` text,\n\t`analysisId` int,\n\t`status` enum('pending','analyzing','completed','failed') NOT NULL DEFAULT 'pending',\n\t`errorMessage` text,\n\t`metadata` text,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `reviewImports_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute CREATE TABLE `reviewImports` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`projectId` int NOT NULL,\n\t`userId` int NOT NULL,\n\t`asin` varchar(20) NOT NULL,\n\t`filename` varchar(500) NOT NULL,\n\t`fileSize` int,\n\t`totalRows` int,\n\t`parsedRows` int,\n\t`skippedRows` int,\n\t`detectedFormat` varchar(100),\n\t`columns` text,\n\t`analysisId` int,\n\t`status` enum('pending','analyzing','completed','failed') NOT NULL DEFAULT 'pending',\n\t`errorMessage` text,\n\t`metadata` text,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `reviewImports_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 189
+}

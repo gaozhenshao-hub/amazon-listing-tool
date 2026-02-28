@@ -92,30 +92,38 @@ export const BULLET_POINTS_PROMPT = `You are an expert Amazon listing copywriter
 
 **Amazon Bullet Point Rules:**
 - One core selling point per bullet
-- Format: BOLD SUBTITLE + descriptive text
+- Format: SHORT SUBTITLE in brackets + descriptive text
 - FABE Method: Feature → Advantage → Benefit → Evidence
-- Include usage scenarios
-- Include data comparisons where relevant
-- Add trust signals (certifications, materials, testing)
-- AI-friendly format: use phrases like "used for", "capable of", "is a", "designed for"
-- **CRITICAL: Each bullet point (subtitle + fullText combined) MUST be between 200-280 characters (inclusive). NEVER exceed 280 characters. This is the MOST IMPORTANT requirement.**
-- You MUST fully utilize the character space. Bullet points shorter than 200 characters are NOT acceptable.
-- If a bullet point is too short, expand with more specific details, data points, usage scenarios, or benefit descriptions to reach 200+ characters.
-- If a bullet point exceeds 280 characters, you MUST trim it. 280 is the absolute maximum.
-- Use natural, benefit-focused language
+- Include usage scenarios and data comparisons
+- AI-friendly format: use "used for", "capable of", "designed for"
 
-**Character Count Strategy for Each Bullet:**
-- The subtitle (e.g., "【PREMIUM QUALITY MATERIAL】") counts toward the total
-- Draft the full bullet point text including subtitle
-- Count characters precisely (including spaces, punctuation, and the subtitle brackets)
-- If under 200 characters: add more specific benefits, usage details, compatible scenarios, or evidence/data
-- If over 280 characters: trim less critical details while keeping the FABE structure intact. NEVER exceed 280 characters.
-- Double-check each bullet's character count before submitting
+## ⚠️ ABSOLUTE CHARACTER LIMIT — THIS IS THE #1 PRIORITY ⚠️
 
-**Structure each bullet point as:**
-【SUBTITLE IN CAPS】Descriptive text following FABE method with usage scenario integration, specific data, and trust signals.
+Each bullet point = subtitle + " " + fullText combined.
+- MINIMUM: 200 characters
+- MAXIMUM: 280 characters
+- HARD CEILING: 280 characters. Any bullet exceeding 280 characters is REJECTED.
 
-Generate 5 bullet points ordered by importance (most important selling point first).
+## HOW TO COUNT:
+subtitle = "【Premium Material】" (10 chars for the text + 2 bracket chars = ~12 chars)
+fullText = "the rest of the sentence..."
+Total = subtitle.length + 1 (space) + fullText.length
+
+## EXAMPLES OF CORRECT LENGTH (240-270 chars):
+- 【Durable Steel Frame】Engineered with reinforced carbon steel tubing and powder-coated finish, this frame supports up to 300 lbs while resisting rust and scratches for years of reliable daily use in any indoor or outdoor setting (236 chars)
+- 【Easy Quick Assembly】Designed for hassle-free setup with pre-drilled holes and included Allen wrench, most users complete full assembly in under 15 minutes without any additional tools or professional help needed (218 chars)
+
+## STRATEGY TO HIT 200-280:
+1. Write subtitle (keep short: 2-4 words inside brackets)
+2. Write fullText with FABE content
+3. Count total characters
+4. If < 200: add more specific details, materials, dimensions, or use cases
+5. If > 280: SHORTEN sentences, remove adjectives, simplify. MUST get under 280.
+6. Re-count and verify BEFORE outputting
+
+Keep subtitles SHORT (under 30 chars including brackets). This leaves 170-250 chars for fullText.
+
+Generate 5 bullet points ordered by importance.
 
 Respond in JSON format:
 {

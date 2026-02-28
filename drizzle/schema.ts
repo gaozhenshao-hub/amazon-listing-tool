@@ -83,3 +83,27 @@ export const imageAnalyses = mysqlTable("imageAnalyses", {
 
 export type ImageAnalysis = typeof imageAnalyses.$inferSelect;
 export type InsertImageAnalysis = typeof imageAnalyses.$inferInsert;
+
+// Review import history
+export const reviewImports = mysqlTable("reviewImports", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  asin: varchar("asin", { length: 20 }).notNull(),
+  filename: varchar("filename", { length: 500 }).notNull(),
+  fileSize: int("fileSize"), // bytes
+  totalRows: int("totalRows"),
+  parsedRows: int("parsedRows"),
+  skippedRows: int("skippedRows"),
+  detectedFormat: varchar("detectedFormat", { length: 100 }),
+  columns: text("columns"), // JSON array of column names
+  analysisId: int("analysisId"), // linked competitor analysis ID
+  status: mysqlEnum("status", ["pending", "analyzing", "completed", "failed"]).default("pending").notNull(),
+  errorMessage: text("errorMessage"),
+  metadata: text("metadata"), // JSON: additional info like brand, title, etc.
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ReviewImport = typeof reviewImports.$inferSelect;
+export type InsertReviewImport = typeof reviewImports.$inferInsert;

@@ -538,10 +538,33 @@ export const analysisRouter = router({
         }),
       });
 
+      // Save import record to reviewImports table
+      const importRecord = await db.createReviewImport({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        asin: input.asin,
+        filename: input.filename,
+        fileSize: buffer.length,
+        totalRows: parseResult.totalRows,
+        parsedRows: parseResult.parsedRows,
+        skippedRows: parseResult.skippedRows,
+        detectedFormat: parseResult.detectedFormat,
+        columns: JSON.stringify(parseResult.columns),
+        analysisId: saved.id,
+        status: "completed",
+        metadata: JSON.stringify({
+          brand: input.brand || null,
+          title: input.title || null,
+          price: input.price || null,
+          rating: input.rating || null,
+        }),
+      });
+
       return {
         asin: input.asin,
         status: "success" as const,
         analysisId: saved.id,
+        importId: importRecord.id,
         title: input.title,
         importedReviews: true,
         reviewStats: {
@@ -592,5 +615,89 @@ export const analysisRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       return db.deleteCompetitorAnalysis(input.id);
+    }),
+
+  // ─── Review Import History ─────────────────────────────────────
+
+  // List all review imports for a project
+  listReviewImports: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      return db.getReviewImportsByProject(input.projectId);
+    }),
+
+  // Get a single review import detail
+  getReviewImport: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const record = await db.getReviewImportById(input.id);
+      if (!record) throw new Error("Review import not found");
+      return record;
+    }),
+
+  // Delete a review import record
+  deleteReviewImport: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      return db.deleteReviewImport(input.id);
+    }),
+
+  // Re-analyze reviews from a previous import (uses stored analysisId to find reviews)
+  reAnalyzeImport: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const record = await db.getReviewImportById(input.id);
+      if (!record) throw new Error("Review import not found");
+
+      const project = await db.getProjectById(record.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      // Get the linked analysis to access review data
+      if (!record.analysisId) throw new Error("No linked analysis found for this import");
+
+      const analysis = await db.getCompetitorAnalysesByProject(record.projectId);
+      const linkedAnalysis = analysis.find(a => a.id === record.analysisId);
+      if (!linkedAnalysis) throw new Error("Linked analysis not found");
+
+      // Re-run review analysis with LLM
+      const rawData = linkedAnalysis.rawData ? JSON.parse(linkedAnalysis.rawData) : {};
+      const contextParts: string[] = [];
+      contextParts.push(`ASIN: ${record.asin}`);
+      if (linkedAnalysis.title) contextParts.push(`Title: ${linkedAnalysis.title}`);
+      if (linkedAnalysis.bulletPoints) contextParts.push(`Bullet Points: ${linkedAnalysis.bulletPoints}`);
+      if (linkedAnalysis.price) contextParts.push(`Price: ${linkedAnalysis.price}`);
+      if (linkedAnalysis.rating) contextParts.push(`Rating: ${linkedAnalysis.rating}`);
+
+      // Re-run the competitor analysis
+      const analysisResponse = await invokeLLM({
+        messages: [
+          { role: "system", content: COMPETITOR_ANALYSIS_PROMPT },
+          { role: "user", content: `Re-analyze this competitor product with updated insights:\n\n${contextParts.join("\n\n")}` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const analysisContent = typeof analysisResponse.choices[0].message.content === "string"
+        ? analysisResponse.choices[0].message.content
+        : JSON.stringify(analysisResponse.choices[0].message.content);
+
+      let analysisData: any = {};
+      try {
+        analysisData = JSON.parse(analysisContent);
+      } catch {
+        analysisData = { raw: analysisContent };
+      }
+
+      // Update the review import status
+      await db.updateReviewImport(input.id, { status: "completed" });
+
+      return {
+        success: true,
+        importId: input.id,
+        analysisId: record.analysisId,
+        asin: record.asin,
+      };
     }),
 });

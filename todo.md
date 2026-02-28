@@ -51,3 +51,14 @@
 - [x] Frontend - Add review import UI with file drag-and-drop on AnalysisPage
 - [x] Frontend - Show imported review count and preview
 - [x] Unit tests for review import functionality
+- [x] Database - Add reviewImports table to store import history (filename, reviewCount, status, createdAt)
+- [x] Backend - API to list review import history for a project
+- [x] Backend - API to delete review import record
+- [x] Backend - API to re-analyze imported reviews
+- [x] Backend - API to append new reviews to existing import (via re-import)
+- [x] Frontend - Review import history list with file info, review count, status, date
+- [x] Frontend - Actions: view details, re-analyze, delete, append reviews
+- [x] Frontend - Import detail view showing parsed reviews
+- [x] Unit tests for review import history management (91 tests passing)
+- [x] Fix bullet points generation too long - strengthen LLM prompt constraints
+- [x] Add stricter character count enforcement in backend validation/retry logic (auto-truncate at 280)

@@ -12,6 +12,7 @@ import GeneratePage from "./pages/GeneratePage";
 import PreviewPage from "./pages/PreviewPage";
 import ProjectDetailPage from "./pages/ProjectDetailPage";
 import ComparisonPage from "./pages/ComparisonPage";
+import ReviewHistoryPage from "./pages/ReviewHistoryPage";
 
 function Router() {
   return (
@@ -23,6 +24,7 @@ function Router() {
         <Route path="/generate" component={GeneratePage} />
         <Route path="/preview" component={PreviewPage} />
         <Route path="/comparison" component={ComparisonPage} />
+        <Route path="/review-history" component={ReviewHistoryPage} />
         <Route path="/project/:id" component={ProjectDetailPage} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />

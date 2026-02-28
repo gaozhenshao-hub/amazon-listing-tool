@@ -6,6 +6,7 @@ import {
   InsertCompetitorAnalysis, competitorAnalyses,
   InsertListing, listings,
   InsertImageAnalysis, imageAnalyses,
+  InsertReviewImport, reviewImports,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -212,4 +213,43 @@ export async function getImageAnalysesByProject(projectId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   return db.select().from(imageAnalyses).where(eq(imageAnalyses.projectId, projectId)).orderBy(desc(imageAnalyses.createdAt));
+}
+
+// ─── Review Import Helpers ─────────────────────────────────────
+
+export async function createReviewImport(data: InsertReviewImport) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(reviewImports).values(data);
+  const insertId = result[0].insertId;
+  const rows = await db.select().from(reviewImports).where(eq(reviewImports.id, insertId)).limit(1);
+  return rows[0];
+}
+
+export async function getReviewImportsByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(reviewImports).where(eq(reviewImports.projectId, projectId)).orderBy(desc(reviewImports.createdAt));
+}
+
+export async function getReviewImportById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(reviewImports).where(eq(reviewImports.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateReviewImport(id: number, data: Partial<InsertReviewImport>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(reviewImports).set(data).where(eq(reviewImports.id, id));
+  const rows = await db.select().from(reviewImports).where(eq(reviewImports.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function deleteReviewImport(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(reviewImports).where(eq(reviewImports.id, id));
+  return { success: true };
 }

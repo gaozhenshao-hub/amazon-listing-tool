@@ -10,6 +10,69 @@ import {
   IMAGE_ADVICE_PROMPT,
 } from "../prompts";
 
+// Truncate a bullet point to fit within maxLen characters while keeping it readable
+function truncateBullet(subtitle: string, fullText: string, maxLen: number): { subtitle: string; fullText: string } {
+  const combined = `${subtitle} ${fullText}`;
+  if (combined.length <= maxLen) return { subtitle, fullText };
+  
+  // Calculate how much space fullText can use
+  const availableForText = maxLen - subtitle.length - 1; // -1 for space
+  if (availableForText <= 0) {
+    // Subtitle itself is too long, truncate it
+    return { subtitle: subtitle.substring(0, maxLen - 3) + '】', fullText: '' };
+  }
+  
+  // Truncate fullText at last complete word/sentence boundary
+  let truncated = fullText.substring(0, availableForText);
+  // Try to cut at last period, comma, or space
+  const lastPeriod = truncated.lastIndexOf('.');
+  const lastComma = truncated.lastIndexOf(',');
+  const lastSpace = truncated.lastIndexOf(' ');
+  const cutPoint = Math.max(lastPeriod, lastComma, lastSpace);
+  if (cutPoint > availableForText * 0.7) {
+    truncated = truncated.substring(0, cutPoint + 1).trim();
+  } else {
+    truncated = truncated.trim();
+  }
+  
+  return { subtitle, fullText: truncated };
+}
+
+// Enforce character limits on bullet points, truncating any that exceed 280 chars
+function enforceBulletLimits(bulletData: any): any {
+  if (!bulletData?.bulletPoints || !Array.isArray(bulletData.bulletPoints)) return bulletData;
+  
+  let totalCount = 0;
+  for (const bp of bulletData.bulletPoints) {
+    const fullBullet = bp.subtitle && bp.fullText
+      ? `${bp.subtitle} ${bp.fullText}`
+      : bp.fullText || bp.subtitle || '';
+    
+    if (fullBullet.length > 280) {
+      // Truncate to fit within 280
+      const { subtitle, fullText } = truncateBullet(
+        bp.subtitle || '',
+        bp.fullText || fullBullet,
+        280
+      );
+      bp.subtitle = subtitle;
+      bp.fullText = fullText;
+      const newFull = subtitle ? `${subtitle} ${fullText}` : fullText;
+      bp.actualCharacterCount = newFull.length;
+      bp.characterCount = newFull.length;
+      bp.inRange = newFull.length >= 200 && newFull.length <= 280;
+      bp.wasTruncated = true;
+    } else {
+      bp.actualCharacterCount = fullBullet.length;
+      bp.characterCount = fullBullet.length;
+      bp.inRange = fullBullet.length >= 200 && fullBullet.length <= 280;
+    }
+    totalCount += bp.actualCharacterCount;
+  }
+  bulletData.totalCharacterCount = totalCount;
+  return bulletData;
+}
+
 function buildProductContext(project: any, analyses: any[]) {
   const parts: string[] = [];
   parts.push(`Product: ${project.productName || project.name}`);
@@ -138,7 +201,7 @@ export const listingRouter = router({
       const response = await invokeLLM({
         messages: [
           { role: "system", content: BULLET_POINTS_PROMPT },
-          { role: "user", content: `Generate 5 optimized Amazon bullet points for this product. REMEMBER: Each bullet point (subtitle + fullText) MUST be between 200-280 characters. NEVER exceed 280 characters. Count carefully.\n\n${context}` },
+          { role: "user", content: `Generate 5 optimized Amazon bullet points for this product.\n\nCRITICAL RULES:\n1. Each bullet = subtitle + space + fullText\n2. Each bullet MUST be 200-280 characters total. HARD MAX = 280.\n3. Keep subtitles SHORT (under 25 chars including 【】 brackets)\n4. Count EVERY character including spaces and punctuation\n5. If any bullet exceeds 280, SHORTEN IT before responding\n\n${context}` },
         ],
         response_format: { type: "json_object" },
       });
@@ -149,21 +212,9 @@ export const listingRouter = router({
 
       try {
         const parsed = JSON.parse(content);
-        // Add actual character counts for verification
-        if (parsed.bulletPoints && Array.isArray(parsed.bulletPoints)) {
-          let totalCount = 0;
-          for (const bp of parsed.bulletPoints) {
-            const fullBullet = bp.subtitle && bp.fullText
-              ? `${bp.subtitle} ${bp.fullText}`
-              : bp.fullText || bp.subtitle || "";
-            bp.actualCharacterCount = fullBullet.length;
-            bp.characterCount = bp.actualCharacterCount;
-            bp.inRange = bp.actualCharacterCount >= 200 && bp.actualCharacterCount <= 280;
-            totalCount += bp.actualCharacterCount;
-          }
-          parsed.totalCharacterCount = totalCount;
-        }
-        return parsed;
+        // Enforce character limits - truncate any bullet that exceeds 280
+        const enforced = enforceBulletLimits(parsed);
+        return enforced;
       } catch {
         return { raw: content };
       }
@@ -288,7 +339,7 @@ export const listingRouter = router({
         invokeLLM({
           messages: [
             { role: "system", content: BULLET_POINTS_PROMPT },
-            { role: "user", content: `Generate 5 optimized Amazon bullet points. REMEMBER: Each bullet point (subtitle + fullText) MUST be between 200-280 characters. NEVER exceed 280 characters. Count carefully.\n\n${context}` },
+            { role: "user", content: `Generate 5 optimized Amazon bullet points.\n\nCRITICAL: Each bullet (subtitle + space + fullText) = 200-280 chars. HARD MAX 280. Keep subtitles under 25 chars. Count carefully.\n\n${context}` },
           ],
           response_format: { type: "json_object" },
         }),
@@ -341,20 +392,8 @@ export const listingRouter = router({
         titleData.recommendedTitleInRange = titleData.recommendedTitle.length >= 180 && titleData.recommendedTitle.length <= 200;
       }
 
-      // Add actual character counts for bullet points verification
-      if (bulletData.bulletPoints && Array.isArray(bulletData.bulletPoints)) {
-        let totalCount = 0;
-        for (const bp of bulletData.bulletPoints) {
-          const fullBullet = bp.subtitle && bp.fullText
-            ? `${bp.subtitle} ${bp.fullText}`
-            : bp.fullText || bp.subtitle || "";
-          bp.actualCharacterCount = fullBullet.length;
-          bp.characterCount = bp.actualCharacterCount;
-          bp.inRange = bp.actualCharacterCount >= 200 && bp.actualCharacterCount <= 280;
-          totalCount += bp.actualCharacterCount;
-        }
-        bulletData.totalCharacterCount = totalCount;
-      }
+      // Enforce character limits on bullet points - truncate any exceeding 280
+      enforceBulletLimits(bulletData);
 
       // Get existing listings count for versioning
       const existingListings = await db.getListingsByProject(input.projectId);
