@@ -17,6 +17,7 @@ import {
   Zap,
   CheckCircle2,
   AlertCircle,
+  Languages,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -29,6 +30,12 @@ type GenerationResult = {
   descriptionData?: any;
   searchTermsData?: any;
   imageAdviceData?: any;
+  chineseTranslation?: {
+    titleCn: string;
+    bulletPointsCn: any[];
+    descriptionCn: string;
+    searchTermsCn: string;
+  };
 };
 
 function CharCountBadge({ count, min, max, label }: { count: number; min: number; max: number; label?: string }) {
@@ -233,7 +240,7 @@ export default function GeneratePage() {
                   一键生成
                 </CardTitle>
                 <CardDescription>
-                  同时生成标题、五点、描述、关键词和图片建议
+                  同时生成标题、五点、描述、关键词、图片建议及中文翻译
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -318,7 +325,7 @@ export default function GeneratePage() {
                 </Button>
               </div>
 
-              {/* Title Preview */}
+              {/* Title Preview - Bilingual */}
               {(partResults.title || result?.titleOptions) && (
                 <Card>
                   <CardHeader className="pb-3">
@@ -354,11 +361,21 @@ export default function GeneratePage() {
                         </div>
                       );
                     })}
+                    {/* Chinese title translation */}
+                    {result?.chineseTranslation?.titleCn && (
+                      <div className="mt-3 p-3 rounded-lg border border-orange-200 bg-orange-50/50">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Languages className="h-3.5 w-3.5 text-orange-600" />
+                          <span className="text-xs font-medium text-orange-700">中文翻译</span>
+                        </div>
+                        <p className="text-sm text-orange-900">{result.chineseTranslation.titleCn}</p>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )}
 
-              {/* Bullet Points Preview */}
+              {/* Bullet Points Preview - Bilingual */}
               {(partResults.bulletPoints || result?.bulletPointsData) && (
                 <Card>
                   <CardHeader className="pb-3">
@@ -366,6 +383,12 @@ export default function GeneratePage() {
                       <CardTitle className="text-base flex items-center gap-2">
                         <List className="h-4 w-4 text-green-600" />
                         五点描述
+                        {(result?.chineseTranslation?.bulletPointsCn?.length ?? 0) > 0 && (
+                          <Badge variant="outline" className="text-xs ml-2 border-orange-300 text-orange-600">
+                            <Languages className="h-3 w-3 mr-1" />
+                            中英对照
+                          </Badge>
+                        )}
                       </CardTitle>
                       <span className="text-xs text-muted-foreground">目标: 每条 200-280 字符</span>
                     </div>
@@ -376,16 +399,33 @@ export default function GeneratePage() {
                         ? `${bp.subtitle} ${bp.fullText}`
                         : bp.fullText || bp.subtitle || "";
                       const actualCount = fullBullet.length;
+                      const cnBp = result?.chineseTranslation?.bulletPointsCn?.[i];
                       return (
-                        <div key={i} className="p-3 bg-muted/30 rounded-lg border">
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="text-sm flex-1">
-                              <span className="font-bold">{bp.subtitle || `卖点 ${i + 1}`}</span>
-                              {" — "}
-                              <span className="text-muted-foreground">{bp.fullText || bp.sellingPoint || ""}</span>
-                            </p>
-                            <CharCountBadge count={actualCount} min={200} max={280} />
+                        <div key={i} className="rounded-lg border overflow-hidden">
+                          {/* English */}
+                          <div className="p-3 bg-muted/30">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-sm flex-1">
+                                <span className="font-bold">{bp.subtitle || `卖点 ${i + 1}`}</span>
+                                {" — "}
+                                <span className="text-muted-foreground">{bp.fullText || bp.sellingPoint || ""}</span>
+                              </p>
+                              <CharCountBadge count={actualCount} min={200} max={280} />
+                            </div>
                           </div>
+                          {/* Chinese */}
+                          {cnBp && (
+                            <div className="p-3 bg-orange-50/50 border-t border-orange-200">
+                              <div className="flex items-start gap-2">
+                                <Languages className="h-3.5 w-3.5 text-orange-500 mt-0.5 shrink-0" />
+                                <p className="text-sm text-orange-900">
+                                  <span className="font-bold">{cnBp.subtitle || ""}</span>
+                                  {cnBp.subtitle && cnBp.fullText && " — "}
+                                  <span className="text-orange-700">{cnBp.fullText || ""}</span>
+                                </p>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -398,7 +438,7 @@ export default function GeneratePage() {
                 </Card>
               )}
 
-              {/* Search Terms Preview */}
+              {/* Search Terms Preview - Bilingual */}
               {(partResults.searchTerms || result?.searchTermsData) && (
                 <Card>
                   <CardHeader className="pb-3">
@@ -407,8 +447,9 @@ export default function GeneratePage() {
                       后台搜索词
                     </CardTitle>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="space-y-3">
                     <div className="p-3 bg-muted/30 rounded-lg border">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">English</p>
                       <p className="text-sm font-mono break-all">
                         {(partResults.searchTerms || result?.searchTermsData)?.searchTerms || ""}
                       </p>
@@ -416,6 +457,17 @@ export default function GeneratePage() {
                         {(partResults.searchTerms || result?.searchTermsData)?.byteCount || 0} / 250 bytes
                       </Badge>
                     </div>
+                    {result?.chineseTranslation?.searchTermsCn && (
+                      <div className="p-3 bg-orange-50/50 rounded-lg border border-orange-200">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Languages className="h-3.5 w-3.5 text-orange-600" />
+                          <span className="text-xs font-medium text-orange-700">中文搜索词</span>
+                        </div>
+                        <p className="text-sm font-mono break-all text-orange-900">
+                          {result.chineseTranslation.searchTermsCn}
+                        </p>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               )}

@@ -331,3 +331,39 @@ Respond in JSON format:
   "competitivePositioning": "",
   "additionalNotes": ""
 }`;
+
+export const CHINESE_TRANSLATION_PROMPT = `${EXPERT_ROLE}
+
+Your task: Translate the following Amazon product listing content from English to Chinese (Simplified Chinese / 简体中文).
+
+**Translation Guidelines:**
+1. **Maintain Marketing Power**: The Chinese translation must retain the same persuasive force, emotional appeal, and conversion-focused messaging as the English original. Do NOT produce a flat, literal translation.
+2. **Preserve Structure**: Keep the same structure (title format, bullet point count, description sections). Each English bullet point maps to exactly one Chinese bullet point.
+3. **Adapt for Chinese Readers**: Use natural Chinese expressions and phrasing that resonate with Chinese-speaking audiences. Avoid awkward literal translations.
+4. **Keep Technical Terms Accurate**: Product specifications, dimensions, materials, and technical terms must be accurately translated.
+5. **Brand Names**: Keep brand names in English (do not transliterate unless there is a well-known Chinese name).
+6. **Numbers and Units**: Keep Arabic numerals. Convert imperial units to metric where appropriate (e.g., inches → cm, lbs → kg), but keep both if space allows.
+7. **Selling Points**: Ensure all key selling points and benefits are clearly communicated in Chinese.
+8. **Tone**: Professional yet approachable, matching the original English tone.
+
+You will receive the English content as a JSON object. Return the Chinese translation in the same JSON structure.
+
+Input format:
+{
+  "title": "English title",
+  "bulletPoints": [
+    { "subtitle": "English subtitle", "fullText": "English full text" }
+  ],
+  "description": "English description (HTML)",
+  "searchTerms": "English search terms"
+}
+
+Output format (return ONLY this JSON):
+{
+  "titleCn": "Chinese title translation",
+  "bulletPointsCn": [
+    { "subtitle": "Chinese subtitle", "fullText": "Chinese full text" }
+  ],
+  "descriptionCn": "Chinese description (HTML)",
+  "searchTermsCn": "Chinese search terms"
+}`;

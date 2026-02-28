@@ -67,3 +67,10 @@
 - [x] Remove backend auto-truncate logic for bullet points
 - [x] Add AI retry mechanism: if generated content exceeds char limits, ask AI to refine/shorten (max 2 retries)
 - [x] Strengthen LLM prompts to generate content within exact character ranges
+- [x] Backend - Add Chinese translation generation for title, bullet points, description
+- [x] Backend - Include Chinese version in listing generation response
+- [x] Frontend - Bilingual comparison layout (English left, Chinese right) on GeneratePage
+- [x] Frontend - Bilingual comparison layout on PreviewPage
+- [x] Store Chinese translations in database alongside English content
+- [x] Backend - translateToChinese API for existing listings
+- [x] Unit tests for bilingual translation feature (4 tests)

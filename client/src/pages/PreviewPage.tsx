@@ -1,11 +1,8 @@
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ProjectSelector from "@/components/ProjectSelector";
 import { useProject } from "@/contexts/ProjectContext";
@@ -22,6 +19,7 @@ import {
   Loader2,
   Edit3,
   Eye,
+  Languages,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
@@ -51,6 +49,14 @@ export default function PreviewPage() {
     onError: (err) => toast.error("更新失败: " + err.message),
   });
 
+  const translateToChinese = trpc.listing.translateToChinese.useMutation({
+    onSuccess: () => {
+      utils.listing.getActive.invalidate({ projectId: selectedProjectId! });
+      toast.success("中文翻译生成完成！");
+    },
+    onError: (err) => toast.error("翻译失败: " + err.message),
+  });
+
   useEffect(() => {
     if (listing) {
       setEditData({
@@ -73,6 +79,17 @@ export default function PreviewPage() {
     }
   }, [listing?.bulletPoints]);
 
+  const bulletPointsCnArray = useMemo(() => {
+    if (!listing?.bulletPointsCn) return [];
+    try {
+      const parsed = JSON.parse(listing.bulletPointsCn);
+      if (Array.isArray(parsed)) return parsed;
+      return [];
+    } catch {
+      return [];
+    }
+  }, [listing?.bulletPointsCn]);
+
   const imageAdvice = useMemo(() => {
     if (!listing?.imageAdvice) return null;
     try {
@@ -81,6 +98,8 @@ export default function PreviewPage() {
       return null;
     }
   }, [listing?.imageAdvice]);
+
+  const hasChinese = !!(listing?.titleCn || listing?.bulletPointsCn || listing?.descriptionCn || listing?.searchTermsCn);
 
   const handleSave = () => {
     if (!listing) return;
@@ -93,14 +112,14 @@ export default function PreviewPage() {
     });
   };
 
+  const handleTranslate = () => {
+    if (!selectedProjectId) return;
+    translateToChinese.mutate({ projectId: selectedProjectId });
+  };
+
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     toast.success(`${label}已复制到剪贴板`);
-  };
-
-  const parseJson = (str: string | null) => {
-    if (!str) return null;
-    try { return JSON.parse(str); } catch { return null; }
   };
 
   return (
@@ -109,13 +128,28 @@ export default function PreviewPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">结果预览</h1>
           <p className="text-muted-foreground mt-1">
-            查看、编辑和导出生成的Listing内容
+            查看、编辑和导出生成的Listing内容（中英文对比）
           </p>
         </div>
         <div className="flex items-center gap-3">
           <ProjectSelector />
           {listing && (
             <div className="flex gap-2">
+              {!hasChinese && !isEditing && (
+                <Button
+                  variant="outline"
+                  onClick={handleTranslate}
+                  disabled={translateToChinese.isPending}
+                  className="border-orange-300 text-orange-700 hover:bg-orange-50"
+                >
+                  {translateToChinese.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Languages className="h-4 w-4 mr-2" />
+                  )}
+                  生成中文翻译
+                </Button>
+              )}
               <Button
                 variant={isEditing ? "default" : "outline"}
                 onClick={() => {
@@ -184,12 +218,17 @@ export default function PreviewPage() {
               <Eye className="h-3.5 w-3.5 mr-1.5" />
               预览模式
             </TabsTrigger>
+            <TabsTrigger value="bilingual">
+              <Languages className="h-3.5 w-3.5 mr-1.5" />
+              中英对比
+            </TabsTrigger>
             <TabsTrigger value="images">
               <Image className="h-3.5 w-3.5 mr-1.5" />
               图片建议
             </TabsTrigger>
           </TabsList>
 
+          {/* Preview Mode - English only with editing */}
           <TabsContent value="preview" className="space-y-4">
             {/* Title */}
             <Card>
@@ -394,6 +433,260 @@ export default function PreviewPage() {
             </div>
           </TabsContent>
 
+          {/* Bilingual Comparison Mode */}
+          <TabsContent value="bilingual" className="space-y-4">
+            {!hasChinese ? (
+              <Card className="border-dashed border-orange-300">
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <Languages className="h-8 w-8 text-orange-400 mb-4" />
+                  <p className="text-muted-foreground mb-3">暂无中文翻译</p>
+                  <Button
+                    onClick={handleTranslate}
+                    disabled={translateToChinese.isPending}
+                    className="bg-orange-600 hover:bg-orange-700"
+                  >
+                    {translateToChinese.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Languages className="h-4 w-4 mr-2" />
+                    )}
+                    {translateToChinese.isPending ? "翻译中..." : "一键生成中文翻译"}
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                {/* Title Comparison */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Type className="h-4 w-4 text-blue-600" />
+                      产品标题
+                      <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
+                        <Languages className="h-3 w-3 mr-1" />
+                        中英对照
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {/* English */}
+                      <div className="p-4 rounded-lg border bg-blue-50/30 border-blue-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">English</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.title || "", "英文标题")}>
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <p className="text-sm font-medium leading-relaxed">{listing.title}</p>
+                        {(() => {
+                          const count = listing.title?.length || 0;
+                          const inRange = count >= 180 && count <= 200;
+                          const tooShort = count < 180;
+                          return (
+                            <Badge variant={inRange ? "default" : "destructive"} className={`text-xs mt-2 ${inRange ? "bg-green-600" : tooShort ? "bg-amber-500" : "bg-red-500"}`}>
+                              {count} / 180-200 字符 {inRange ? "✓" : tooShort ? "↑偏短" : "↓偏长"}
+                            </Badge>
+                          );
+                        })()}
+                      </div>
+                      {/* Chinese */}
+                      <div className="p-4 rounded-lg border bg-orange-50/30 border-orange-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">中文</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.titleCn || "", "中文标题")}>
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <p className="text-sm font-medium leading-relaxed">{listing.titleCn}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Bullet Points Comparison */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <List className="h-4 w-4 text-green-600" />
+                        五点描述
+                        <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
+                          <Languages className="h-3 w-3 mr-1" />
+                          中英对照
+                        </Badge>
+                      </CardTitle>
+                      <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => {
+                        const enText = bulletPointsArray.map((bp: any) =>
+                          typeof bp === "string" ? bp : `${bp.subtitle || ""} ${bp.fullText || bp.sellingPoint || ""}`
+                        ).join("\n\n");
+                        const cnText = bulletPointsCnArray.map((bp: any) =>
+                          typeof bp === "string" ? bp : `${bp.subtitle || ""} ${bp.fullText || ""}`
+                        ).join("\n\n");
+                        copyToClipboard(`=== English ===\n${enText}\n\n=== 中文 ===\n${cnText}`, "中英文五点描述");
+                      }}>
+                        <Copy className="h-3 w-3 mr-1" />
+                        复制全部
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {bulletPointsArray.map((bp: any, i: number) => {
+                      const cnBp = bulletPointsCnArray[i];
+                      const fullBullet = typeof bp === "string" ? bp : (bp.subtitle && bp.fullText ? `${bp.subtitle} ${bp.fullText}` : bp.fullText || bp.subtitle || "");
+                      const count = fullBullet.length;
+                      const inRange = count >= 200 && count <= 280;
+                      const tooShort = count < 200;
+                      return (
+                        <div key={i} className="rounded-lg border overflow-hidden">
+                          <div className="grid grid-cols-1 lg:grid-cols-2">
+                            {/* English */}
+                            <div className="p-3 bg-blue-50/30 border-b lg:border-b-0 lg:border-r border-blue-200">
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <Badge variant="secondary" className="text-xs">EN {i + 1}</Badge>
+                                <Badge variant={inRange ? "default" : "destructive"} className={`text-xs ${inRange ? "bg-green-600" : tooShort ? "bg-amber-500" : "bg-red-500"}`}>
+                                  {count}字符 {inRange ? "✓" : tooShort ? "↑" : "↓"}
+                                </Badge>
+                              </div>
+                              {typeof bp === "string" ? (
+                                <p className="text-sm">{bp}</p>
+                              ) : (
+                                <p className="text-sm">
+                                  <span className="font-bold">{bp.subtitle || `Bullet ${i + 1}`}</span>
+                                  {bp.fullText && <span className="text-muted-foreground"> — {bp.fullText}</span>}
+                                  {!bp.fullText && bp.sellingPoint && <span className="text-muted-foreground"> — {bp.sellingPoint}</span>}
+                                </p>
+                              )}
+                            </div>
+                            {/* Chinese */}
+                            <div className="p-3 bg-orange-50/30">
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-700">中 {i + 1}</Badge>
+                              </div>
+                              {cnBp ? (
+                                typeof cnBp === "string" ? (
+                                  <p className="text-sm">{cnBp}</p>
+                                ) : (
+                                  <p className="text-sm">
+                                    <span className="font-bold">{cnBp.subtitle || `卖点 ${i + 1}`}</span>
+                                    {cnBp.fullText && <span className="text-orange-700"> — {cnBp.fullText}</span>}
+                                  </p>
+                                )
+                              ) : (
+                                <p className="text-sm text-muted-foreground italic">暂无翻译</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+
+                {/* Description Comparison */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-purple-600" />
+                      产品描述
+                      <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
+                        <Languages className="h-3 w-3 mr-1" />
+                        中英对照
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {/* English */}
+                      <div className="p-4 rounded-lg border bg-blue-50/30 border-blue-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">English</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.description || "", "英文描述")}>
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <div className="prose prose-sm max-w-none text-sm leading-relaxed text-muted-foreground"
+                          dangerouslySetInnerHTML={{ __html: listing.description || "" }}
+                        />
+                      </div>
+                      {/* Chinese */}
+                      <div className="p-4 rounded-lg border bg-orange-50/30 border-orange-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">中文</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.descriptionCn || "", "中文描述")}>
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <div className="prose prose-sm max-w-none text-sm leading-relaxed text-orange-900"
+                          dangerouslySetInnerHTML={{ __html: listing.descriptionCn || "" }}
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Search Terms Comparison */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Key className="h-4 w-4 text-amber-600" />
+                      后台搜索词
+                      <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
+                        <Languages className="h-3 w-3 mr-1" />
+                        中英对照
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {/* English */}
+                      <div className="p-4 rounded-lg border bg-blue-50/30 border-blue-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">English</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.searchTerms || "", "英文搜索词")}>
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <p className="text-sm font-mono break-all">{listing.searchTerms}</p>
+                        <Badge variant="outline" className="text-xs mt-2">
+                          {new Blob([listing.searchTerms || ""].map(String)).size} / 250 bytes
+                        </Badge>
+                      </div>
+                      {/* Chinese */}
+                      <div className="p-4 rounded-lg border bg-orange-50/30 border-orange-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">中文</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.searchTermsCn || "", "中文搜索词")}>
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <p className="text-sm font-mono break-all text-orange-900">{listing.searchTermsCn || "暂无翻译"}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Regenerate translation button */}
+                <div className="flex justify-center">
+                  <Button
+                    variant="outline"
+                    onClick={handleTranslate}
+                    disabled={translateToChinese.isPending}
+                    className="border-orange-300 text-orange-700 hover:bg-orange-50"
+                  >
+                    {translateToChinese.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Languages className="h-4 w-4 mr-2" />
+                    )}
+                    {translateToChinese.isPending ? "重新翻译中..." : "重新生成中文翻译"}
+                  </Button>
+                </div>
+              </>
+            )}
+          </TabsContent>
+
+          {/* Image Advice Tab */}
           <TabsContent value="images" className="space-y-4">
             {imageAdvice ? (
               <>

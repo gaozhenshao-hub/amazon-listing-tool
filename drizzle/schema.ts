@@ -63,6 +63,11 @@ export const listings = mysqlTable("listings", {
   description: text("description"),
   searchTerms: text("searchTerms"), // Backend keywords
   imageAdvice: text("imageAdvice"), // JSON: main image, sub images, A+ suggestions
+  // Chinese translation fields
+  titleCn: text("titleCn"),
+  bulletPointsCn: text("bulletPointsCn"), // JSON array of 5 bullet points in Chinese
+  descriptionCn: text("descriptionCn"),
+  searchTermsCn: text("searchTermsCn"),
   version: int("version").default(1).notNull(),
   isActive: int("isActive").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

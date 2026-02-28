@@ -8,6 +8,7 @@ import {
   DESCRIPTION_PROMPT,
   SEARCH_TERMS_PROMPT,
   IMAGE_ADVICE_PROMPT,
+  CHINESE_TRANSLATION_PROMPT,
 } from "../prompts";
 
 const MAX_RETRIES = 2;
@@ -161,6 +162,48 @@ Return the CORRECTED titles in the same JSON format:
     return JSON.parse(content);
   } catch {
     return titleData;
+  }
+}
+
+// Generate Chinese translation for listing content
+async function generateChineseTranslation(
+  title: string,
+  bulletPoints: any[],
+  description: string,
+  searchTerms: string
+): Promise<{ titleCn: string; bulletPointsCn: any[]; descriptionCn: string; searchTermsCn: string }> {
+  const inputContent = {
+    title,
+    bulletPoints: bulletPoints.map(bp => ({
+      subtitle: bp.subtitle || "",
+      fullText: bp.fullText || bp.sellingPoint || "",
+    })),
+    description,
+    searchTerms,
+  };
+
+  const response = await invokeLLM({
+    messages: [
+      { role: "system", content: CHINESE_TRANSLATION_PROMPT },
+      { role: "user", content: `Please translate the following Amazon listing content into Chinese:\n\n${JSON.stringify(inputContent, null, 2)}` },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const content = typeof response.choices[0].message.content === "string"
+    ? response.choices[0].message.content
+    : JSON.stringify(response.choices[0].message.content);
+
+  try {
+    const parsed = JSON.parse(content);
+    return {
+      titleCn: parsed.titleCn || "",
+      bulletPointsCn: parsed.bulletPointsCn || [],
+      descriptionCn: parsed.descriptionCn || "",
+      searchTermsCn: parsed.searchTermsCn || "",
+    };
+  } catch {
+    return { titleCn: "", bulletPointsCn: [], descriptionCn: "", searchTermsCn: "" };
   }
 }
 
@@ -496,6 +539,25 @@ export const listingRouter = router({
         }
       }
 
+      // Generate Chinese translation
+      const englishTitle = titleData.recommendedTitle || titleData.titles?.[0]?.title || "";
+      const englishBullets = bulletData.bulletPoints || [];
+      const englishDesc = descData.description || descData.htmlDescription || "";
+      const englishSearchTerms = searchData.searchTerms || "";
+
+      let cnData = { titleCn: "", bulletPointsCn: [] as any[], descriptionCn: "", searchTermsCn: "" };
+      try {
+        cnData = await generateChineseTranslation(
+          englishTitle,
+          englishBullets,
+          englishDesc,
+          englishSearchTerms
+        );
+      } catch (err) {
+        console.error("Chinese translation failed:", err);
+        // Continue without Chinese translation - it can be generated later
+      }
+
       // Get existing listings count for versioning
       const existingListings = await db.getListingsByProject(input.projectId);
       const nextVersion = existingListings.length + 1;
@@ -507,14 +569,18 @@ export const listingRouter = router({
         }
       }
 
-      // Save the new listing
+      // Save the new listing with Chinese translations
       const savedListing = await db.createListing({
         projectId: input.projectId,
-        title: titleData.recommendedTitle || titleData.titles?.[0]?.title || "",
+        title: englishTitle,
         bulletPoints: JSON.stringify(bulletData.bulletPoints || []),
-        description: descData.description || descData.htmlDescription || "",
-        searchTerms: searchData.searchTerms || "",
+        description: englishDesc,
+        searchTerms: englishSearchTerms,
         imageAdvice: JSON.stringify(imageData),
+        titleCn: cnData.titleCn || null,
+        bulletPointsCn: cnData.bulletPointsCn.length > 0 ? JSON.stringify(cnData.bulletPointsCn) : null,
+        descriptionCn: cnData.descriptionCn || null,
+        searchTermsCn: cnData.searchTermsCn || null,
         version: nextVersion,
         isActive: 1,
       });
@@ -528,6 +594,45 @@ export const listingRouter = router({
         descriptionData: descData,
         searchTermsData: searchData,
         imageAdviceData: imageData,
+        chineseTranslation: cnData,
+      };
+    }),
+
+  // Translate existing listing to Chinese
+  translateToChinese: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      const listing = await db.getActiveListingByProject(input.projectId);
+      if (!listing) throw new Error("No active listing found. Please generate a listing first.");
+
+      let bulletPoints: any[] = [];
+      try {
+        bulletPoints = listing.bulletPoints ? JSON.parse(listing.bulletPoints) : [];
+      } catch {
+        bulletPoints = [];
+      }
+
+      const cnData = await generateChineseTranslation(
+        listing.title || "",
+        bulletPoints,
+        listing.description || "",
+        listing.searchTerms || ""
+      );
+
+      // Save Chinese translations to the listing
+      const updated = await db.updateListing(listing.id, {
+        titleCn: cnData.titleCn,
+        bulletPointsCn: JSON.stringify(cnData.bulletPointsCn),
+        descriptionCn: cnData.descriptionCn,
+        searchTermsCn: cnData.searchTermsCn,
+      });
+
+      return {
+        ...cnData,
+        listing: updated,
       };
     }),
 
@@ -539,6 +644,10 @@ export const listingRouter = router({
       bulletPoints: z.string().optional(),
       description: z.string().optional(),
       searchTerms: z.string().optional(),
+      titleCn: z.string().optional(),
+      bulletPointsCn: z.string().optional(),
+      descriptionCn: z.string().optional(),
+      searchTermsCn: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
