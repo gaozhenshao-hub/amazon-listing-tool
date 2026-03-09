@@ -34,7 +34,7 @@ import {
 import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 
-type FileType = "product_attributes" | "competitor_listings" | "search_term_report" | "aba_keywords";
+type FileType = "product_attributes";
 
 const FILE_TYPE_CONFIG: Record<FileType, {
   label: string;
@@ -62,48 +62,10 @@ const FILE_TYPE_CONFIG: Record<FileType, {
     templateUrl: "https://d2xsxph8kpxj0f.cloudfront.net/310419663030562636/a79tkwusxJ5HWpLxCXSSXN/本品属性表_模板_bb914ab3.txt",
     templateFilename: "本品属性表_模板.txt",
   },
-  competitor_listings: {
-    label: "竞品Listing文本",
-    description: "多竞品格局分析 — 找共性(Parity)和找缺口(Gap)，发现差异化机会",
-    accept: ".txt",
-    icon: Layers,
-    color: "text-green-600",
-    bgColor: "bg-green-50",
-    borderColor: "border-green-200",
-    module: "Module 2: Multi-Competitor",
-    expectedFile: "竞品Listing文本.txt",
-    templateUrl: "https://d2xsxph8kpxj0f.cloudfront.net/310419663030562636/a79tkwusxJ5HWpLxCXSSXN/竞品Listing文本_模板_72027457.txt",
-    templateFilename: "竞品Listing文本_模板.txt",
-  },
-  search_term_report: {
-    label: "竞品出单词报告",
-    description: "COSMO 场景映射 — 锁定用户最关心的真实使用场景和搜索意图",
-    accept: ".csv",
-    icon: Search,
-    color: "text-purple-600",
-    bgColor: "bg-purple-50",
-    borderColor: "border-purple-200",
-    module: "Module 3: COSMO",
-    expectedFile: "竞品出单词报告.csv",
-    templateUrl: "https://d2xsxph8kpxj0f.cloudfront.net/310419663030562636/a79tkwusxJ5HWpLxCXSSXN/竞品出单词报告_模板_cc5a632c.csv",
-    templateFilename: "竞品出单词报告_模板.csv",
-  },
-  aba_keywords: {
-    label: "ABA关键词数据",
-    description: "A9 关键词分级 — 基于ABA数据锁定高权重核心词，分级放置",
-    accept: ".csv",
-    icon: BarChart3,
-    color: "text-amber-600",
-    bgColor: "bg-amber-50",
-    borderColor: "border-amber-200",
-    module: "Module 4: A9",
-    expectedFile: "ABA关键词数据.csv",
-    templateUrl: "https://d2xsxph8kpxj0f.cloudfront.net/310419663030562636/a79tkwusxJ5HWpLxCXSSXN/ABA关键词数据_模板_f863aedf.csv",
-    templateFilename: "ABA关键词数据_模板.csv",
-  },
+
 };
 
-const FILE_TYPES: FileType[] = ["product_attributes", "competitor_listings", "search_term_report", "aba_keywords"];
+const FILE_TYPES: FileType[] = ["product_attributes"];
 
 function StatusBadge({ status }: { status: string }) {
   const config: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline"; className: string }> = {
@@ -559,146 +521,7 @@ function AnalysisResultCard({
           </div>
         );
 
-      case "competitor_listings":
-        return (
-          <div className="space-y-3">
-            {data.parityPoints?.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-green-700 mb-1">共性卖点 (Parity) — 必须包含</p>
-                <div className="space-y-1">
-                  {data.parityPoints.slice(0, 6).map((p: any, i: number) => (
-                    <div key={i} className="flex items-center gap-2 text-xs">
-                      <Badge variant="outline" className="text-xs shrink-0 border-green-300">{p.frequency}</Badge>
-                      <span>{p.sellingPoint}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {data.gapOpportunities?.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-green-700 mb-1">缺口机会 (Gap) — 差异化</p>
-                <div className="space-y-1">
-                  {data.gapOpportunities.slice(0, 5).map((g: any, i: number) => (
-                    <div key={i} className="flex items-center gap-2 text-xs">
-                      <Badge variant="outline" className={`text-xs shrink-0 ${
-                        g.opportunityLevel === "high" ? "border-red-300 text-red-600" :
-                        g.opportunityLevel === "medium" ? "border-amber-300 text-amber-600" :
-                        "border-gray-300"
-                      }`}>{g.opportunityLevel}</Badge>
-                      <span>{g.gap}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {data.strategicRecommendations && (
-              <div>
-                <p className="text-xs font-semibold text-green-700 mb-1">策略建议</p>
-                {data.strategicRecommendations.mustInclude?.length > 0 && (
-                  <div className="mb-1">
-                    <span className="text-xs text-muted-foreground">必须包含: </span>
-                    <span className="text-xs">{data.strategicRecommendations.mustInclude.join("; ")}</span>
-                  </div>
-                )}
-                {data.strategicRecommendations.differentiators?.length > 0 && (
-                  <div>
-                    <span className="text-xs text-muted-foreground">差异化: </span>
-                    <span className="text-xs">{data.strategicRecommendations.differentiators.join("; ")}</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
 
-      case "search_term_report":
-        return (
-          <div className="space-y-3">
-            {data.scenesClusters?.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-purple-700 mb-1">使用场景聚类</p>
-                <div className="space-y-1.5">
-                  {data.scenesClusters.slice(0, 6).map((sc: any, i: number) => (
-                    <div key={i} className="flex items-start gap-2 text-xs">
-                      <Badge variant="outline" className={`text-xs shrink-0 ${
-                        sc.priority === "high" ? "border-purple-400 text-purple-700" :
-                        "border-purple-200 text-purple-500"
-                      }`}>{sc.priority}</Badge>
-                      <div>
-                        <span className="font-medium">{sc.sceneName}</span>
-                        {sc.sceneNameCn && <span className="text-muted-foreground ml-1">({sc.sceneNameCn})</span>}
-                        {sc.buyerIntent && <p className="text-muted-foreground mt-0.5">{sc.buyerIntent}</p>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {data.topScenesByVolume?.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-purple-700 mb-1">搜索量TOP场景</p>
-                <div className="flex flex-wrap gap-1">
-                  {data.topScenesByVolume.slice(0, 6).map((s: string, i: number) => (
-                    <Badge key={i} variant="secondary" className="text-xs">{s}</Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-
-      case "aba_keywords":
-        return (
-          <div className="space-y-3">
-            {data.titleMustHaveKeywords?.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-amber-700 mb-1">标题必含关键词 (Tier 1)</p>
-                <div className="flex flex-wrap gap-1">
-                  {data.titleMustHaveKeywords.map((k: string, i: number) => (
-                    <Badge key={i} className="text-xs bg-amber-600">{k}</Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-            {data.bulletPriorityKeywords?.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-amber-700 mb-1">五点优先关键词 (Tier 2)</p>
-                <div className="flex flex-wrap gap-1">
-                  {data.bulletPriorityKeywords.slice(0, 8).map((k: string, i: number) => (
-                    <Badge key={i} variant="outline" className="text-xs border-amber-300 text-amber-700">{k}</Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-            {data.goldenKeywords?.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-amber-700 mb-1">黄金关键词 (高搜索+低竞争)</p>
-                <div className="flex flex-wrap gap-1">
-                  {data.goldenKeywords.slice(0, 6).map((k: string, i: number) => (
-                    <Badge key={i} variant="secondary" className="text-xs bg-yellow-100 text-yellow-800">{k}</Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-            {data.backendKeywords?.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-amber-700 mb-1">后台搜索词</p>
-                <div className="flex flex-wrap gap-1">
-                  {data.backendKeywords.slice(0, 8).map((k: string, i: number) => (
-                    <Badge key={i} variant="outline" className="text-xs border-gray-300">{k}</Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-            {data.keywordStrategy && (
-              <div>
-                <p className="text-xs font-semibold text-amber-700 mb-1">关键词策略</p>
-                <p className="text-xs text-muted-foreground">{data.keywordStrategy}</p>
-              </div>
-            )}
-          </div>
-        );
 
       default:
         return <pre className="text-xs overflow-auto max-h-40">{JSON.stringify(data, null, 2)}</pre>;
@@ -751,136 +574,7 @@ function AnalysisResultCard({
           </div>
         );
 
-      case "competitor_listings":
-        return (
-          <div className="space-y-4">
-            <div>
-              <p className="text-xs font-semibold text-green-700 mb-1.5">共性卖点 (Parity)</p>
-              <EditableParityList
-                items={editData.parityPoints || []}
-                onChange={(items) => setEditData({ ...editData, parityPoints: items })}
-              />
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-green-700 mb-1.5">缺口机会 (Gap)</p>
-              <EditableGapList
-                items={editData.gapOpportunities || []}
-                onChange={(items) => setEditData({ ...editData, gapOpportunities: items })}
-              />
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-green-700 mb-1.5">策略建议 — 必须包含</p>
-              <EditableTagList
-                items={editData.strategicRecommendations?.mustInclude || []}
-                onChange={(items) => setEditData({
-                  ...editData,
-                  strategicRecommendations: { ...editData.strategicRecommendations, mustInclude: items },
-                })}
-                colorClass="border-green-300 text-green-700"
-                placeholder="输入必含要素后按回车"
-              />
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-green-700 mb-1.5">策略建议 — 差异化</p>
-              <EditableTagList
-                items={editData.strategicRecommendations?.differentiators || []}
-                onChange={(items) => setEditData({
-                  ...editData,
-                  strategicRecommendations: { ...editData.strategicRecommendations, differentiators: items },
-                })}
-                colorClass="border-green-300 text-green-700"
-                placeholder="输入差异化要素后按回车"
-              />
-            </div>
-          </div>
-        );
 
-      case "search_term_report":
-        return (
-          <div className="space-y-4">
-            <div>
-              <p className="text-xs font-semibold text-purple-700 mb-1.5">使用场景聚类</p>
-              <EditableSceneList
-                items={(editData.scenesClusters || []).map((sc: any) => ({
-                  sceneName: sc.sceneName || "",
-                  sceneNameCn: sc.sceneNameCn || "",
-                  priority: sc.priority || "medium",
-                  buyerIntent: sc.buyerIntent || "",
-                }))}
-                onChange={(items) => {
-                  // Merge back with existing cluster data to preserve other fields
-                  const updated = items.map((item, i) => ({
-                    ...(editData.scenesClusters?.[i] || {}),
-                    ...item,
-                  }));
-                  setEditData({ ...editData, scenesClusters: updated });
-                }}
-              />
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-purple-700 mb-1.5">搜索量TOP场景</p>
-              <EditableTagList
-                items={editData.topScenesByVolume || []}
-                onChange={(items) => setEditData({ ...editData, topScenesByVolume: items })}
-                colorClass="border-purple-300 text-purple-700"
-                placeholder="输入场景名后按回车"
-              />
-            </div>
-          </div>
-        );
-
-      case "aba_keywords":
-        return (
-          <div className="space-y-4">
-            <div>
-              <p className="text-xs font-semibold text-amber-700 mb-1.5">标题必含关键词 (Tier 1)</p>
-              <EditableTagList
-                items={editData.titleMustHaveKeywords || []}
-                onChange={(items) => setEditData({ ...editData, titleMustHaveKeywords: items })}
-                colorClass="border-amber-400 text-amber-800"
-                badgeClass="bg-amber-50"
-                placeholder="输入关键词后按回车"
-              />
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-amber-700 mb-1.5">五点优先关键词 (Tier 2)</p>
-              <EditableTagList
-                items={editData.bulletPriorityKeywords || []}
-                onChange={(items) => setEditData({ ...editData, bulletPriorityKeywords: items })}
-                colorClass="border-amber-300 text-amber-700"
-                placeholder="输入关键词后按回车"
-              />
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-amber-700 mb-1.5">黄金关键词 (高搜索+低竞争)</p>
-              <EditableTagList
-                items={editData.goldenKeywords || []}
-                onChange={(items) => setEditData({ ...editData, goldenKeywords: items })}
-                colorClass="border-yellow-400 text-yellow-800"
-                badgeClass="bg-yellow-50"
-                placeholder="输入关键词后按回车"
-              />
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-amber-700 mb-1.5">后台搜索词</p>
-              <EditableTagList
-                items={editData.backendKeywords || []}
-                onChange={(items) => setEditData({ ...editData, backendKeywords: items })}
-                colorClass="border-gray-300"
-                placeholder="输入搜索词后按回车"
-              />
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-amber-700 mb-1.5">关键词策略</p>
-              <Textarea
-                value={editData.keywordStrategy || ""}
-                onChange={(e) => setEditData({ ...editData, keywordStrategy: e.target.value })}
-                placeholder="描述关键词策略..."
-                className="text-xs min-h-[60px]"
-              />
-            </div>
-          </div>
-        );
 
       default:
         return (
@@ -1280,12 +974,7 @@ export default function DataFilesPage() {
     { enabled: !!selectedProjectId }
   );
 
-  const completedModules = [
-    summary?.productAttributes ? 1 : 0,
-    summary?.competitorListings ? 1 : 0,
-    summary?.cosmoScenes ? 1 : 0,
-    summary?.a9Keywords ? 1 : 0,
-  ].reduce((a, b) => a + b, 0);
+  const completedModules = summary?.productAttributes ? 1 : 0;
 
   return (
     <div className="space-y-6">
@@ -1293,7 +982,7 @@ export default function DataFilesPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">数据文件管理</h1>
           <p className="text-muted-foreground mt-1">
-            上传产品属性表、竞品Listing、出单词报告和ABA关键词数据，AI自动分析并整合到Listing生成
+            上传本品属性表，AI自动提取产品参数并整合到Listing生成流程
           </p>
         </div>
         <ProjectSelector />
@@ -1312,42 +1001,31 @@ export default function DataFilesPage() {
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1.5">
-                    {FILE_TYPES.map((ft) => {
-                      const done = ft === "product_attributes" ? !!summary?.productAttributes :
-                                   ft === "competitor_listings" ? !!summary?.competitorListings :
-                                   ft === "search_term_report" ? !!summary?.cosmoScenes :
-                                   !!summary?.a9Keywords;
-                      return (
-                        <div
-                          key={ft}
-                          className={`h-2.5 w-8 rounded-full transition-colors ${
-                            done ? "bg-green-500" : "bg-gray-200"
-                          }`}
-                        />
-                      );
-                    })}
-                  </div>
+                  <div
+                    className={`h-2.5 w-8 rounded-full transition-colors ${
+                      completedModules ? "bg-green-500" : "bg-gray-200"
+                    }`}
+                  />
                   <span className="text-sm font-medium text-indigo-900">
-                    {completedModules}/4 模块已完成
+                    {completedModules ? "Rufus属性提取已完成" : "Rufus属性提取待完成"}
                   </span>
                 </div>
-                {summary?.hasAllFiles && (
+                {completedModules ? (
                   <Badge className="bg-green-600">
                     <CheckCircle2 className="h-3 w-3 mr-1" />
-                    全部就绪
+                    已就绪
                   </Badge>
-                )}
+                ) : null}
               </div>
               <p className="text-xs text-indigo-700 mt-2">
-                {summary?.hasAllFiles
-                  ? "所有四大分析模块数据已就绪，生成Listing时将自动整合这些分析结果。点击「编辑」可手动修正分析内容。"
-                  : "上传并分析文件后，生成Listing时将自动整合已完成的分析模块数据。分析完成后可手动编辑修正。"}
+                {completedModules
+                  ? "产品属性已分析完成，生成Listing时将自动整合属性数据。点击「编辑」可手动修正分析内容。"
+                  : "上传本品属性表后，AI将自动提取产品参数、规格和卖点，作为Listing生成的基础数据。"}
               </p>
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             {FILE_TYPES.map((ft) => (
               <FileUploadCard key={ft} fileType={ft} projectId={selectedProjectId} />
             ))}

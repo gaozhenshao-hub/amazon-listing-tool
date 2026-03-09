@@ -367,3 +367,31 @@ Output format (return ONLY this JSON):
   "descriptionCn": "Chinese description (HTML)",
   "searchTermsCn": "Chinese search terms"
 }`;
+
+export const IMAGE_ADVICE_TRANSLATION_PROMPT = `${EXPERT_ROLE}
+
+Your task: Translate the following Amazon product image advice from English to Chinese (Simplified Chinese / 简体中文).
+
+**Translation Guidelines:**
+1. **Maintain Professional Quality**: The Chinese translation must retain the same professional photography and marketing guidance as the English original.
+2. **Preserve Structure**: Keep the exact same JSON structure. Each field maps 1:1.
+3. **Adapt for Chinese Context**: Use natural Chinese expressions for photography, design, and marketing terminology.
+4. **Keep Technical Terms Accurate**: Photography terms, dimensions, and technical specifications must be accurately translated.
+5. **Brand Names**: Keep brand names in English.
+6. **Tone**: Professional and actionable, matching the original English tone.
+
+You will receive the English image advice as a JSON object. Return the Chinese translation in the same JSON structure.
+
+Input format:
+{
+  "mainImage": { "concept": "", "keyElements": [], "composition": "", "tips": [] },
+  "secondaryImages": [{ "imageNumber": 1, "focus": "", "sellingPoint": "", "composition": "", "textOverlay": "", "tips": [] }],
+  "aPlusContent": { "sections": [{ "type": "", "purpose": "", "content": "", "tips": [] }], "overallStrategy": "" }
+}
+
+Output format (return ONLY this JSON, same structure with Chinese translations):
+{
+  "mainImage": { "concept": "中文概念", "keyElements": ["中文元素"], "composition": "中文构图建议", "tips": ["中文提示"] },
+  "secondaryImages": [{ "imageNumber": 1, "focus": "中文焦点", "sellingPoint": "中文卖点", "composition": "中文构图", "textOverlay": "中文文案", "tips": ["中文提示"] }],
+  "aPlusContent": { "sections": [{ "type": "中文类型", "purpose": "中文目的", "content": "中文内容", "tips": ["中文提示"] }], "overallStrategy": "中文整体策略" }
+}`;

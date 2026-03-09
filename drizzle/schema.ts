@@ -63,6 +63,7 @@ export const listings = mysqlTable("listings", {
   description: text("description"),
   searchTerms: text("searchTerms"), // Backend keywords
   imageAdvice: text("imageAdvice"), // JSON: main image, sub images, A+ suggestions
+  imageAdviceCn: text("imageAdviceCn"), // JSON: Chinese translation of image advice
   // Chinese translation fields
   titleCn: text("titleCn"),
   bulletPointsCn: text("bulletPointsCn"), // JSON array of 5 bullet points in Chinese

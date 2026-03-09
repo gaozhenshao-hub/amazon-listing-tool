@@ -141,8 +141,8 @@ describe("listing.translateToChinese", () => {
     expect(result.descriptionCn).toContain("产品描述");
     expect(result.searchTermsCn).toContain("小部件");
 
-    // Verify LLM was called with Chinese translation prompt
-    expect(mockedInvokeLLM).toHaveBeenCalledTimes(1);
+    // Verify LLM was called with Chinese translation prompt (text + image advice = 2 calls)
+    expect(mockedInvokeLLM).toHaveBeenCalledTimes(2);
     const llmCall = mockedInvokeLLM.mock.calls[0][0];
     expect(llmCall.messages[0].content).toContain("Translate");
 

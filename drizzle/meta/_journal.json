@@ -50,6 +50,13 @@
       "when": 1773037237977,
       "tag": "0006_chubby_hellion",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1773039531445,
+      "tag": "0007_wakeful_flatman",
+      "breakpoints": true
     }
   ]
 }

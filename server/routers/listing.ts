@@ -9,6 +9,7 @@ import {
   SEARCH_TERMS_PROMPT,
   IMAGE_ADVICE_PROMPT,
   CHINESE_TRANSLATION_PROMPT,
+  IMAGE_ADVICE_TRANSLATION_PROMPT,
 } from "../prompts";
 
 const MAX_RETRIES = 2;
@@ -204,6 +205,29 @@ async function generateChineseTranslation(
     };
   } catch {
     return { titleCn: "", bulletPointsCn: [], descriptionCn: "", searchTermsCn: "" };
+  }
+}
+
+async function translateImageAdviceToChinese(imageAdviceJson: string): Promise<string | null> {
+  try {
+    const imageAdvice = JSON.parse(imageAdviceJson);
+    const response = await invokeLLM({
+      messages: [
+        { role: "system", content: IMAGE_ADVICE_TRANSLATION_PROMPT },
+        { role: "user", content: `Please translate the following Amazon product image advice into Chinese:\n\n${JSON.stringify(imageAdvice, null, 2)}` },
+      ],
+      response_format: { type: "json_object" },
+    });
+
+    const content = typeof response.choices[0].message.content === "string"
+      ? response.choices[0].message.content
+      : JSON.stringify(response.choices[0].message.content);
+
+    // Validate it's valid JSON
+    JSON.parse(content);
+    return content;
+  } catch {
+    return null;
   }
 }
 
@@ -886,6 +910,10 @@ export const listingRouter = router({
         }
       }
 
+      // Translate image advice to Chinese
+      const imageAdviceJsonStr = JSON.stringify(imageData);
+      const imageAdviceCnStr = await translateImageAdviceToChinese(imageAdviceJsonStr);
+
       // Save the new listing with Chinese translations
       const savedListing = await db.createListing({
         projectId: input.projectId,
@@ -893,7 +921,8 @@ export const listingRouter = router({
         bulletPoints: JSON.stringify(bulletData.bulletPoints || []),
         description: englishDesc,
         searchTerms: englishSearchTerms,
-        imageAdvice: JSON.stringify(imageData),
+        imageAdvice: imageAdviceJsonStr,
+        imageAdviceCn: imageAdviceCnStr || null,
         titleCn: cnData.titleCn || null,
         bulletPointsCn: cnData.bulletPointsCn.length > 0 ? JSON.stringify(cnData.bulletPointsCn) : null,
         descriptionCn: cnData.descriptionCn || null,
@@ -939,12 +968,19 @@ export const listingRouter = router({
         listing.searchTerms || ""
       );
 
+      // Translate image advice to Chinese if available
+      let imageAdviceCnStr: string | null = null;
+      if (listing.imageAdvice) {
+        imageAdviceCnStr = await translateImageAdviceToChinese(listing.imageAdvice);
+      }
+
       // Save Chinese translations to the listing
       const updated = await db.updateListing(listing.id, {
         titleCn: cnData.titleCn,
         bulletPointsCn: JSON.stringify(cnData.bulletPointsCn),
         descriptionCn: cnData.descriptionCn,
         searchTermsCn: cnData.searchTermsCn,
+        imageAdviceCn: imageAdviceCnStr,
       });
 
       return {

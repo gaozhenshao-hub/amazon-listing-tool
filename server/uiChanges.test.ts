@@ -1,0 +1,94 @@
+import { describe, it, expect } from "vitest";
+
+// Test: DataFilesPage only supports product_attributes file type
+describe("DataFilesPage simplification", () => {
+  it("should only have product_attributes file type config", async () => {
+    const fs = await import("fs");
+    const content = fs.readFileSync("client/src/pages/DataFilesPage.tsx", "utf-8");
+    
+    // product_attributes should exist
+    expect(content).toContain("product_attributes");
+    
+    // Other file types should NOT exist in FILE_TYPE_CONFIG
+    expect(content).not.toContain('"competitor_listings"');
+    expect(content).not.toContain('"search_term_report"');
+    expect(content).not.toContain('"aba_keywords"');
+  });
+
+  it("FILE_TYPES should only contain product_attributes", async () => {
+    const fs = await import("fs");
+    const content = fs.readFileSync("client/src/pages/DataFilesPage.tsx", "utf-8");
+    
+    // Check FILE_TYPES definition line
+    const fileTypesLine = content.split("\n").find(l => l.includes("const FILE_TYPES"));
+    expect(fileTypesLine).toBeTruthy();
+    expect(fileTypesLine).toContain("product_attributes");
+    expect(fileTypesLine).not.toContain("competitor_listings");
+    expect(fileTypesLine).not.toContain("search_term_report");
+    expect(fileTypesLine).not.toContain("aba_keywords");
+  });
+});
+
+// Test: Sidebar navigation order
+describe("Sidebar navigation order", () => {
+  it("should have 关键词管理 before 数据文件 in DashboardLayout", async () => {
+    const fs = await import("fs");
+    const content = fs.readFileSync("client/src/components/DashboardLayout.tsx", "utf-8");
+    
+    const keywordIndex = content.indexOf("关键词管理");
+    const dataFileIndex = content.indexOf("数据文件");
+    
+    expect(keywordIndex).toBeGreaterThan(-1);
+    expect(dataFileIndex).toBeGreaterThan(-1);
+    expect(keywordIndex).toBeLessThan(dataFileIndex);
+  });
+});
+
+// Test: Image advice bilingual support
+describe("Image advice bilingual support", () => {
+  it("should have imageAdviceCn field in schema", async () => {
+    const fs = await import("fs");
+    const schema = fs.readFileSync("drizzle/schema.ts", "utf-8");
+    expect(schema).toContain("imageAdviceCn");
+  });
+
+  it("should have IMAGE_ADVICE_TRANSLATION_PROMPT in prompts", async () => {
+    const fs = await import("fs");
+    const prompts = fs.readFileSync("server/prompts.ts", "utf-8");
+    expect(prompts).toContain("IMAGE_ADVICE_TRANSLATION_PROMPT");
+    expect(prompts).toContain("export const IMAGE_ADVICE_TRANSLATION_PROMPT");
+  });
+
+  it("should have translateImageAdviceToChinese function in listing router", async () => {
+    const fs = await import("fs");
+    const listing = fs.readFileSync("server/routers/listing.ts", "utf-8");
+    expect(listing).toContain("translateImageAdviceToChinese");
+    expect(listing).toContain("IMAGE_ADVICE_TRANSLATION_PROMPT");
+  });
+
+  it("should save imageAdviceCn in generateFull", async () => {
+    const fs = await import("fs");
+    const listing = fs.readFileSync("server/routers/listing.ts", "utf-8");
+    expect(listing).toContain("imageAdviceCn: imageAdviceCnStr");
+  });
+
+  it("should translate imageAdviceCn in translateToChinese", async () => {
+    const fs = await import("fs");
+    const listing = fs.readFileSync("server/routers/listing.ts", "utf-8");
+    expect(listing).toContain("imageAdviceCn: imageAdviceCnStr");
+    // Check that translateToChinese calls translateImageAdviceToChinese
+    const translateSection = listing.substring(
+      listing.indexOf("translateToChinese:"),
+      listing.indexOf("update: protectedProcedure")
+    );
+    expect(translateSection).toContain("translateImageAdviceToChinese");
+  });
+
+  it("should display imageAdviceCn in PreviewPage bilingual tab", async () => {
+    const fs = await import("fs");
+    const preview = fs.readFileSync("client/src/pages/PreviewPage.tsx", "utf-8");
+    expect(preview).toContain("imageAdviceCn");
+    // Check for bilingual comparison layout in image advice
+    expect(preview).toContain("图片建议");
+  });
+});

@@ -47,11 +47,11 @@ const menuItems = [
   { icon: GitCompareArrows, label: "竞品对比", path: "/comparison" },
   { icon: History, label: "导入历史", path: "/review-history" },
   { icon: Image, label: "图片识别", path: "/image-analysis" },
+  { icon: Key, label: "关键词管理", path: "/keywords" },
   { icon: Database, label: "数据文件", path: "/data-files" },
   { icon: Sparkles, label: "Listing生成", path: "/generate" },
   { icon: FileText, label: "结果预览", path: "/preview" },
   { icon: Gauge, label: "Listing评分", path: "/score" },
-  { icon: Key, label: "关键词管理", path: "/keywords" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

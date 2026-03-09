@@ -100,6 +100,15 @@ export default function PreviewPage() {
     }
   }, [listing?.imageAdvice]);
 
+  const imageAdviceCn = useMemo(() => {
+    if (!listing?.imageAdviceCn) return null;
+    try {
+      return JSON.parse(listing.imageAdviceCn);
+    } catch {
+      return null;
+    }
+  }, [listing?.imageAdviceCn]);
+
   const hasChinese = !!(listing?.titleCn || listing?.bulletPointsCn || listing?.descriptionCn || listing?.searchTermsCn);
 
   const generateReport = trpc.report.generateReport.useMutation({
@@ -726,109 +735,280 @@ export default function PreviewPage() {
             )}
           </TabsContent>
 
-          {/* Image Advice Tab */}
+          {/* Image Advice Tab - Bilingual */}
           <TabsContent value="images" className="space-y-4">
             {imageAdvice ? (
               <>
-                {/* Main Image */}
+                {/* Main Image - Bilingual */}
                 {imageAdvice.mainImage && (
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">首图建议</CardTitle>
-                      <CardDescription>{imageAdvice.mainImage.concept}</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {imageAdvice.mainImage.composition && (
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">构图建议</p>
-                          <p className="text-sm">{imageAdvice.mainImage.composition}</p>
-                        </div>
-                      )}
-                      {imageAdvice.mainImage.keyElements && (
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">关键元素</p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {imageAdvice.mainImage.keyElements.map((e: string, i: number) => (
-                              <Badge key={i} variant="secondary" className="text-xs">{e}</Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      {imageAdvice.mainImage.tips && (
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">拍摄提示</p>
-                          <ul className="text-sm space-y-1 text-muted-foreground">
-                            {imageAdvice.mainImage.tips.map((t: string, i: number) => (
-                              <li key={i} className="flex items-start gap-2">
-                                <span className="text-primary mt-0.5">•</span>
-                                {t}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* Secondary Images */}
-                {imageAdvice.secondaryImages && imageAdvice.secondaryImages.length > 0 && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">辅图建议</CardTitle>
-                      <CardDescription>按卖点重要性排序的辅图方案</CardDescription>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        首图建议
+                        {imageAdviceCn?.mainImage && (
+                          <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
+                            <Languages className="h-3 w-3 mr-1" />
+                            中英对照
+                          </Badge>
+                        )}
+                      </CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-4">
-                        {imageAdvice.secondaryImages.map((img: any, i: number) => (
-                          <div key={i} className="p-4 bg-muted/30 rounded-lg border">
-                            <div className="flex items-center gap-3 mb-2">
-                              <Badge variant="default" className="text-xs">图 {img.imageNumber || i + 2}</Badge>
-                              <span className="text-sm font-medium">{img.focus || img.sellingPoint}</span>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        {/* English */}
+                        <div className="p-4 rounded-lg border bg-blue-50/30 border-blue-200 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">English</span>
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(
+                              `Concept: ${imageAdvice.mainImage.concept}\nComposition: ${imageAdvice.mainImage.composition || ''}\nKey Elements: ${(imageAdvice.mainImage.keyElements || []).join(', ')}\nTips: ${(imageAdvice.mainImage.tips || []).join('; ')}`,
+                              "英文首图建议"
+                            )}>
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          </div>
+                          <div>
+                            <p className="text-xs font-medium text-blue-700 mb-1">概念</p>
+                            <p className="text-sm">{imageAdvice.mainImage.concept}</p>
+                          </div>
+                          {imageAdvice.mainImage.composition && (
+                            <div>
+                              <p className="text-xs font-medium text-blue-700 mb-1">构图</p>
+                              <p className="text-sm">{imageAdvice.mainImage.composition}</p>
                             </div>
-                            {img.composition && (
-                              <p className="text-sm text-muted-foreground mb-1">构图: {img.composition}</p>
-                            )}
-                            {img.textOverlay && (
-                              <p className="text-sm text-muted-foreground mb-1">文案: {img.textOverlay}</p>
-                            )}
-                            {img.tips && img.tips.length > 0 && (
-                              <ul className="text-xs text-muted-foreground mt-2 space-y-0.5">
-                                {img.tips.map((t: string, j: number) => (
-                                  <li key={j}>• {t}</li>
+                          )}
+                          {imageAdvice.mainImage.keyElements && (
+                            <div>
+                              <p className="text-xs font-medium text-blue-700 mb-1">关键元素</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {imageAdvice.mainImage.keyElements.map((e: string, i: number) => (
+                                  <Badge key={i} variant="secondary" className="text-xs">{e}</Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {imageAdvice.mainImage.tips && (
+                            <div>
+                              <p className="text-xs font-medium text-blue-700 mb-1">拍摄提示</p>
+                              <ul className="text-sm space-y-1 text-muted-foreground">
+                                {imageAdvice.mainImage.tips.map((t: string, i: number) => (
+                                  <li key={i} className="flex items-start gap-2">
+                                    <span className="text-primary mt-0.5">•</span>{t}
+                                  </li>
                                 ))}
                               </ul>
+                            </div>
+                          )}
+                        </div>
+                        {/* Chinese */}
+                        <div className="p-4 rounded-lg border bg-orange-50/30 border-orange-200 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">中文</span>
+                            {imageAdviceCn?.mainImage && (
+                              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(
+                                `概念: ${imageAdviceCn.mainImage.concept}\n构图: ${imageAdviceCn.mainImage.composition || ''}\n关键元素: ${(imageAdviceCn.mainImage.keyElements || []).join(', ')}\n拍摄提示: ${(imageAdviceCn.mainImage.tips || []).join('; ')}`,
+                                "中文首图建议"
+                              )}>
+                                <Copy className="h-3 w-3" />
+                              </Button>
                             )}
                           </div>
-                        ))}
+                          {imageAdviceCn?.mainImage ? (
+                            <>
+                              <div>
+                                <p className="text-xs font-medium text-orange-700 mb-1">概念</p>
+                                <p className="text-sm text-orange-900">{imageAdviceCn.mainImage.concept}</p>
+                              </div>
+                              {imageAdviceCn.mainImage.composition && (
+                                <div>
+                                  <p className="text-xs font-medium text-orange-700 mb-1">构图</p>
+                                  <p className="text-sm text-orange-900">{imageAdviceCn.mainImage.composition}</p>
+                                </div>
+                              )}
+                              {imageAdviceCn.mainImage.keyElements && (
+                                <div>
+                                  <p className="text-xs font-medium text-orange-700 mb-1">关键元素</p>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {imageAdviceCn.mainImage.keyElements.map((e: string, i: number) => (
+                                      <Badge key={i} variant="secondary" className="text-xs bg-orange-100 text-orange-800">{e}</Badge>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {imageAdviceCn.mainImage.tips && (
+                                <div>
+                                  <p className="text-xs font-medium text-orange-700 mb-1">拍摄提示</p>
+                                  <ul className="text-sm space-y-1 text-orange-800">
+                                    {imageAdviceCn.mainImage.tips.map((t: string, i: number) => (
+                                      <li key={i} className="flex items-start gap-2">
+                                        <span className="text-orange-500 mt-0.5">•</span>{t}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <p className="text-sm text-muted-foreground italic">暂无中文翻译，请点击“生成中文翻译”</p>
+                          )}
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
                 )}
 
-                {/* A+ Content */}
+                {/* Secondary Images - Bilingual */}
+                {imageAdvice.secondaryImages && imageAdvice.secondaryImages.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        辅图建议
+                        {imageAdviceCn?.secondaryImages && (
+                          <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
+                            <Languages className="h-3 w-3 mr-1" />
+                            中英对照
+                          </Badge>
+                        )}
+                      </CardTitle>
+                      <CardDescription>按卖点重要性排序的辅图方案</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-6">
+                        {imageAdvice.secondaryImages.map((img: any, i: number) => {
+                          const imgCn = imageAdviceCn?.secondaryImages?.[i];
+                          return (
+                            <div key={i} className="rounded-lg border overflow-hidden">
+                              <div className="px-4 py-2 bg-muted/50 border-b flex items-center gap-3">
+                                <Badge variant="default" className="text-xs">图 {img.imageNumber || i + 2}</Badge>
+                                <span className="text-sm font-medium">{img.focus || img.sellingPoint}</span>
+                              </div>
+                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-x">
+                                {/* English */}
+                                <div className="p-4 bg-blue-50/20 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">English</span>
+                                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(
+                                      `Image ${img.imageNumber || i + 2}: ${img.focus || img.sellingPoint}\nComposition: ${img.composition || ''}\nText Overlay: ${img.textOverlay || ''}\nTips: ${(img.tips || []).join('; ')}`,
+                                      `英文图${img.imageNumber || i + 2}建议`
+                                    )}>
+                                      <Copy className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                  {img.composition && <p className="text-sm"><span className="text-xs text-blue-600 font-medium">构图:</span> {img.composition}</p>}
+                                  {img.textOverlay && <p className="text-sm"><span className="text-xs text-blue-600 font-medium">文案:</span> {img.textOverlay}</p>}
+                                  {img.tips && img.tips.length > 0 && (
+                                    <ul className="text-xs text-muted-foreground space-y-0.5">
+                                      {img.tips.map((t: string, j: number) => <li key={j}>• {t}</li>)}
+                                    </ul>
+                                  )}
+                                </div>
+                                {/* Chinese */}
+                                <div className="p-4 bg-orange-50/20 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">中文</span>
+                                    {imgCn && (
+                                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(
+                                        `图${img.imageNumber || i + 2}: ${imgCn.focus || imgCn.sellingPoint || ''}\n构图: ${imgCn.composition || ''}\n文案: ${imgCn.textOverlay || ''}\n提示: ${(imgCn.tips || []).join('; ')}`,
+                                        `中文图${img.imageNumber || i + 2}建议`
+                                      )}>
+                                        <Copy className="h-3 w-3" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                  {imgCn ? (
+                                    <>
+                                      {imgCn.focus && <p className="text-sm font-medium text-orange-900">{imgCn.focus || imgCn.sellingPoint}</p>}
+                                      {imgCn.composition && <p className="text-sm text-orange-800"><span className="text-xs text-orange-600 font-medium">构图:</span> {imgCn.composition}</p>}
+                                      {imgCn.textOverlay && <p className="text-sm text-orange-800"><span className="text-xs text-orange-600 font-medium">文案:</span> {imgCn.textOverlay}</p>}
+                                      {imgCn.tips && imgCn.tips.length > 0 && (
+                                        <ul className="text-xs text-orange-700 space-y-0.5">
+                                          {imgCn.tips.map((t: string, j: number) => <li key={j}>• {t}</li>)}
+                                        </ul>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <p className="text-sm text-muted-foreground italic">暂无中文翻译</p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* A+ Content - Bilingual */}
                 {imageAdvice.aPlusContent && (
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base">A+ 内容建议</CardTitle>
-                      <CardDescription>{imageAdvice.aPlusContent.overallStrategy}</CardDescription>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        A+ 内容建议
+                        {imageAdviceCn?.aPlusContent && (
+                          <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
+                            <Languages className="h-3 w-3 mr-1" />
+                            中英对照
+                          </Badge>
+                        )}
+                      </CardTitle>
                     </CardHeader>
                     <CardContent>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                        <div className="p-3 rounded-lg border bg-blue-50/30 border-blue-200">
+                          <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">English Strategy</span>
+                          <p className="text-sm mt-1">{imageAdvice.aPlusContent.overallStrategy}</p>
+                        </div>
+                        <div className="p-3 rounded-lg border bg-orange-50/30 border-orange-200">
+                          <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">中文策略</span>
+                          <p className="text-sm mt-1 text-orange-900">{imageAdviceCn?.aPlusContent?.overallStrategy || "暂无中文翻译"}</p>
+                        </div>
+                      </div>
                       {imageAdvice.aPlusContent.sections && (
-                        <div className="space-y-3">
-                          {imageAdvice.aPlusContent.sections.map((section: any, i: number) => (
-                            <div key={i} className="p-3 bg-muted/30 rounded-lg border">
-                              <div className="flex items-center gap-2 mb-1">
-                                <Badge variant="outline" className="text-xs">{section.type}</Badge>
-                                <span className="text-sm font-medium">{section.purpose}</span>
+                        <div className="space-y-4">
+                          {imageAdvice.aPlusContent.sections.map((section: any, i: number) => {
+                            const sectionCn = imageAdviceCn?.aPlusContent?.sections?.[i];
+                            return (
+                              <div key={i} className="rounded-lg border overflow-hidden">
+                                <div className="px-4 py-2 bg-muted/50 border-b flex items-center gap-2">
+                                  <Badge variant="outline" className="text-xs">{section.type}</Badge>
+                                  <span className="text-sm font-medium">{section.purpose}</span>
+                                </div>
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-x">
+                                  <div className="p-3 bg-blue-50/20">
+                                    <span className="text-xs font-semibold text-blue-700 uppercase">English</span>
+                                    <p className="text-sm mt-1">{section.content}</p>
+                                  </div>
+                                  <div className="p-3 bg-orange-50/20">
+                                    <span className="text-xs font-semibold text-orange-700 uppercase">中文</span>
+                                    <p className="text-sm mt-1 text-orange-900">{sectionCn?.content || "暂无中文翻译"}</p>
+                                  </div>
+                                </div>
                               </div>
-                              <p className="text-sm text-muted-foreground">{section.content}</p>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </CardContent>
                   </Card>
+                )}
+
+                {/* Regenerate translation for image advice */}
+                {!imageAdviceCn && (
+                  <div className="flex justify-center">
+                    <Button
+                      variant="outline"
+                      onClick={handleTranslate}
+                      disabled={translateToChinese.isPending}
+                      className="border-orange-300 text-orange-700 hover:bg-orange-50"
+                    >
+                      {translateToChinese.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Languages className="h-4 w-4 mr-2" />
+                      )}
+                      生成图片建议中文翻译
+                    </Button>
+                  </div>
                 )}
               </>
             ) : (

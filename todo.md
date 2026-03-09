@@ -139,3 +139,9 @@
 - [x] Update Listing generation data sources - A9 keyword grading now references keyword module 3D strategy matrix and listing layout suggestions (keywords.strategyCategory + listingPlacement)
 - [x] Refactored buildProductContext → uses loadEnrichedData instead of loadFileAnalyses
 - [x] Unit tests for updated Listing generation data flow (8 tests, 166 total passing)
+- [x] DataFilesPage - Remove competitor_listings, search_term_report, aba_keywords upload cards, keep only product_attributes
+- [x] Sidebar - Move 关键词管理 nav item above 数据文件
+- [x] PreviewPage - Add bilingual (EN/CN) comparison for image advice section
+- [x] Backend - translateImageAdviceToChinese function and IMAGE_ADVICE_TRANSLATION_PROMPT
+- [x] Backend - imageAdviceCn translation in generateFull and translateToChinese
+- [x] Unit tests for UI changes (9 tests, 175 total passing)
