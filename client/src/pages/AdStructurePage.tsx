@@ -504,13 +504,14 @@ export default function AdStructurePage() {
 
           {/* Main Content Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid grid-cols-6 w-full max-w-3xl">
+            <TabsList className="grid grid-cols-7 w-full max-w-4xl">
               <TabsTrigger value="matrix">矩阵视图</TabsTrigger>
               <TabsTrigger value="targeting">定投预估</TabsTrigger>
               <TabsTrigger value="campaigns">广告活动</TabsTrigger>
               <TabsTrigger value="budget">预算分配</TabsTrigger>
               <TabsTrigger value="negative">否定词策略</TabsTrigger>
               <TabsTrigger value="strategy">阶段策略</TabsTrigger>
+              <TabsTrigger value="orderVolume">单量预估</TabsTrigger>
             </TabsList>
 
             {/* Targeting Estimation Tab */}
@@ -1300,6 +1301,212 @@ export default function AdStructurePage() {
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm leading-relaxed">{displayData.overallStrategy}</p>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            {/* Order Volume Projection Tab */}
+            <TabsContent value="orderVolume" className="space-y-4">
+              {displayData.orderVolumeProjection ? (
+                <div className="space-y-4">
+                  {/* Assumptions & Key Metrics */}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Info className="h-4 w-4 text-blue-500" />
+                        预估假设与核心指标
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground mb-3">{displayData.orderVolumeProjection.assumptions}</p>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        <div className="p-3 rounded-lg bg-muted/50">
+                          <p className="text-xs text-muted-foreground">预估转化率</p>
+                          <p className="text-lg font-semibold">{displayData.orderVolumeProjection.conversionRate || '-'}</p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-muted/50">
+                          <p className="text-xs text-muted-foreground">平均CPC</p>
+                          <p className="text-lg font-semibold">{displayData.orderVolumeProjection.avgCPC || '-'}</p>
+                        </div>
+                        <div className="p-3 rounded-lg bg-muted/50">
+                          <p className="text-xs text-muted-foreground">每日总预算</p>
+                          <p className="text-lg font-semibold">{displayData.budgetAllocation?.totalDailyBudget || '-'}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Phase-by-Phase Order Volume */}
+                  {displayData.orderVolumeProjection.phases && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {[
+                        { key: 'newProduct', label: '新品期', icon: Zap, color: 'border-blue-200 bg-blue-50/30 dark:border-blue-800 dark:bg-blue-950/20', iconColor: 'text-blue-500' },
+                        { key: 'growth', label: '成长期', icon: TrendingUp, color: 'border-green-200 bg-green-50/30 dark:border-green-800 dark:bg-green-950/20', iconColor: 'text-green-500' },
+                        { key: 'mature', label: '成熟期', icon: Star, color: 'border-amber-200 bg-amber-50/30 dark:border-amber-800 dark:bg-amber-950/20', iconColor: 'text-amber-500' },
+                      ].map(({ key, label, icon: Icon, color, iconColor }) => {
+                        const phase = (displayData.orderVolumeProjection.phases as any)?.[key];
+                        if (!phase) return null;
+                        return (
+                          <Card key={key} className={color}>
+                            <CardHeader className="pb-2">
+                              <CardTitle className="text-base flex items-center gap-2">
+                                <Icon className={`h-4 w-4 ${iconColor}`} />
+                                {label}
+                                <Badge variant="outline" className="ml-auto text-xs">{phase.period}</Badge>
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                              {/* Ad Orders */}
+                              <div className="space-y-1">
+                                <p className="text-xs font-medium text-muted-foreground">广告出单</p>
+                                <div className="grid grid-cols-3 gap-2">
+                                  <div className="text-center p-2 rounded bg-background/80">
+                                    <p className="text-sm font-bold">{phase.dailyAdOrders}</p>
+                                    <p className="text-[10px] text-muted-foreground">日均</p>
+                                  </div>
+                                  <div className="text-center p-2 rounded bg-background/80">
+                                    <p className="text-sm font-bold">{phase.weeklyAdOrders}</p>
+                                    <p className="text-[10px] text-muted-foreground">周均</p>
+                                  </div>
+                                  <div className="text-center p-2 rounded bg-background/80">
+                                    <p className="text-sm font-bold">{phase.monthlyAdOrders}</p>
+                                    <p className="text-[10px] text-muted-foreground">月均</p>
+                                  </div>
+                                </div>
+                              </div>
+                              {/* Organic Orders */}
+                              <div className="space-y-1">
+                                <p className="text-xs font-medium text-muted-foreground">自然出单</p>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="text-center p-2 rounded bg-background/80">
+                                    <p className="text-sm font-bold">{phase.dailyOrganicOrders}</p>
+                                    <p className="text-[10px] text-muted-foreground">日均自然单</p>
+                                  </div>
+                                  <div className="text-center p-2 rounded bg-background/80">
+                                    <p className="text-sm font-bold">{phase.organicOrderRatio}</p>
+                                    <p className="text-[10px] text-muted-foreground">自然单占比</p>
+                                  </div>
+                                </div>
+                              </div>
+                              {/* Total & Spend */}
+                              <Separator />
+                              <div className="grid grid-cols-3 gap-2">
+                                <div className="text-center">
+                                  <p className="text-lg font-bold text-primary">{phase.totalDailyOrders}</p>
+                                  <p className="text-[10px] text-muted-foreground">日均总单量</p>
+                                </div>
+                                <div className="text-center">
+                                  <p className="text-lg font-bold text-orange-600">{phase.dailyAdSpend}</p>
+                                  <p className="text-[10px] text-muted-foreground">日均广告花费</p>
+                                </div>
+                                <div className="text-center">
+                                  <p className="text-lg font-bold text-red-600">{phase.estimatedACoS}</p>
+                                  <p className="text-[10px] text-muted-foreground">预估ACoS</p>
+                                </div>
+                              </div>
+                              {phase.notes && (
+                                <p className="text-xs text-muted-foreground italic border-l-2 border-muted pl-2">{phase.notes}</p>
+                              )}
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Organic Ranking Estimate */}
+                  {displayData.orderVolumeProjection.organicRankingEstimate && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <TrendingUp className="h-4 w-4 text-green-500" />
+                          自然排名预估与首页出单量
+                        </CardTitle>
+                        <CardDescription>基于关键词搜索量和SPR数据预估自然排名提升路径</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {/* Top Keywords Ranking Table */}
+                        {displayData.orderVolumeProjection.organicRankingEstimate.topKeywords?.length > 0 && (
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>核心关键词</TableHead>
+                                <TableHead className="text-center">当前排名</TableHead>
+                                <TableHead className="text-center">30天目标</TableHead>
+                                <TableHead className="text-center">90天目标</TableHead>
+                                <TableHead className="text-center">目标日单量</TableHead>
+                                <TableHead className="text-center">首页所需日单</TableHead>
+                                <TableHead className="text-center">难度</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {displayData.orderVolumeProjection.organicRankingEstimate.topKeywords.map((kw: any, i: number) => (
+                                <TableRow key={i}>
+                                  <TableCell className="font-medium text-sm">{kw.keyword}</TableCell>
+                                  <TableCell className="text-center text-sm">{kw.currentEstimatedRank}</TableCell>
+                                  <TableCell className="text-center">
+                                    <Badge variant="outline" className="text-xs">{kw.targetRankAfter30Days}</Badge>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <Badge variant="outline" className="text-xs bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300">{kw.targetRankAfter90Days}</Badge>
+                                  </TableCell>
+                                  <TableCell className="text-center text-sm font-medium">{kw.estimatedDailyOrdersAtTarget}</TableCell>
+                                  <TableCell className="text-center text-sm font-medium text-orange-600">{kw.requiredDailySales}</TableCell>
+                                  <TableCell className="text-center">
+                                    <Badge className={`text-xs ${kw.difficulty === '高' ? 'bg-red-100 text-red-700' : kw.difficulty === '中' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                                      {kw.difficulty}
+                                    </Badge>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        )}
+
+                        {/* Strategy Cards */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {displayData.orderVolumeProjection.organicRankingEstimate.firstPageStrategy && (
+                            <Card className="border-green-200 bg-green-50/30 dark:border-green-800 dark:bg-green-950/20">
+                              <CardHeader className="pb-2">
+                                <CardTitle className="text-sm flex items-center gap-2">
+                                  <ArrowUpRight className="h-4 w-4 text-green-500" />
+                                  上首页策略
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <p className="text-sm leading-relaxed">{displayData.orderVolumeProjection.organicRankingEstimate.firstPageStrategy}</p>
+                              </CardContent>
+                            </Card>
+                          )}
+                          {displayData.orderVolumeProjection.organicRankingEstimate.topOfSearchStrategy && (
+                            <Card className="border-amber-200 bg-amber-50/30 dark:border-amber-800 dark:bg-amber-950/20">
+                              <CardHeader className="pb-2">
+                                <CardTitle className="text-sm flex items-center gap-2">
+                                  <Star className="h-4 w-4 text-amber-500" />
+                                  冲首页首位策略
+                                </CardTitle>
+                              </CardHeader>
+                              <CardContent>
+                                <p className="text-sm leading-relaxed">{displayData.orderVolumeProjection.organicRankingEstimate.topOfSearchStrategy}</p>
+                              </CardContent>
+                            </Card>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              ) : (
+                <Card>
+                  <CardContent className="p-8 text-center">
+                    <BarChart3 className="h-12 w-12 mx-auto mb-3 text-muted-foreground/40" />
+                    <p className="text-lg font-medium mb-1">暂无单量预估数据</p>
+                    <p className="text-sm text-muted-foreground mb-3">请重新生成广告架构以获取单量预估数据</p>
+                    <Button variant="outline" size="sm" onClick={handleGenerate} disabled={generateMutation.isPending}>
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      重新生成
+                    </Button>
                   </CardContent>
                 </Card>
               )}

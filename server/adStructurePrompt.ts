@@ -102,7 +102,65 @@ export const AD_STRUCTURE_PROMPT = `你是一位拥有10年经验的亚马逊PPC
     },
     "rules": "否定词管理规则说明"
   },
-  "overallStrategy": "整体广告架构策略总结，包括投放节奏、预算调整建议、ACoS目标等"
+  "overallStrategy": "整体广告架构策略总结，包括投放节奏、预算调整建议、ACoS目标等",
+  "orderVolumeProjection": {
+    "assumptions": "预估假设说明（基于关键词搜索量、预估CTR、转化率等）",
+    "conversionRate": "预估转化率范围（如8%-15%）",
+    "avgCPC": "$X.XX",
+    "phases": {
+      "newProduct": {
+        "period": "第1-4周",
+        "dailyAdOrders": "X-X单/天",
+        "weeklyAdOrders": "X-X单/周",
+        "monthlyAdOrders": "X-X单/月",
+        "dailyAdSpend": "$XX-$XX",
+        "estimatedACoS": "XX%-XX%",
+        "dailyOrganicOrders": "X-X单/天",
+        "organicOrderRatio": "XX%",
+        "totalDailyOrders": "X-X单/天",
+        "notes": "新品期说明"
+      },
+      "growth": {
+        "period": "第2-3个月",
+        "dailyAdOrders": "X-X单/天",
+        "weeklyAdOrders": "X-X单/周",
+        "monthlyAdOrders": "X-X单/月",
+        "dailyAdSpend": "$XX-$XX",
+        "estimatedACoS": "XX%-XX%",
+        "dailyOrganicOrders": "X-X单/天",
+        "organicOrderRatio": "XX%",
+        "totalDailyOrders": "X-X单/天",
+        "notes": "成长期说明"
+      },
+      "mature": {
+        "period": "第4个月+",
+        "dailyAdOrders": "X-X单/天",
+        "weeklyAdOrders": "X-X单/周",
+        "monthlyAdOrders": "X-X单/月",
+        "dailyAdSpend": "$XX-$XX",
+        "estimatedACoS": "XX%-XX%",
+        "dailyOrganicOrders": "X-X单/天",
+        "organicOrderRatio": "XX%",
+        "totalDailyOrders": "X-X单/天",
+        "notes": "成熟期说明"
+      }
+    },
+    "organicRankingEstimate": {
+      "topKeywords": [
+        {
+          "keyword": "核心关键词",
+          "currentEstimatedRank": "N/A（新品）",
+          "targetRankAfter30Days": "XX-XX位",
+          "targetRankAfter90Days": "XX-XX位",
+          "estimatedDailyOrdersAtTarget": "X-X单",
+          "requiredDailySales": "需要X单/天才能稳定首页",
+          "difficulty": "高/中/低"
+        }
+      ],
+      "firstPageStrategy": "上首页策略说明，包括SPR（Sales Per Ranking）要求",
+      "topOfSearchStrategy": "冲首页首位策略说明，包括需要的单量和时间"
+    }
+  }
 }
 
 ## 注意事项：
@@ -114,7 +172,11 @@ export const AD_STRUCTURE_PROMPT = `你是一位拥有10年经验的亚马逊PPC
 6. 否定词策略要防止广告组之间的内部竞争
 7. 预算分配要根据产品所处阶段给出不同建议
 8. 竞价建议要合理，参考PPC bid数据（如果有）
-9. 所有金额使用美元`;
+9. 所有金额使用美元
+10. orderVolumeProjection必须基于关键词搜索量数据合理预估，给出保守和乐观两个范围
+11. organicRankingEstimate中的topKeywords选取搜索量最高的3-5个核心词，预估自然排名提升路径
+12. 每个阶段的自然出单占比应随时间递增（新品期10-20%，成长期30-50%，成熟期50-70%）
+13. 首页首位出单量预估要结合SPR数据和关键词搜索量`;
 
 export const AD_STRUCTURE_TRANSLATION_PROMPT = `你是一位专业的亚马逊广告翻译专家。将以下广告架构建议从中文翻译为英文，保持专业术语的准确性。
 

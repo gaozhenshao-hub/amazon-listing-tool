@@ -1013,6 +1013,11 @@ export const listingRouter = router({
       projectId: z.number(),
       // Which components to generate variants for
       components: z.array(z.enum(["title", "bulletPoints"])).default(["title", "bulletPoints"]),
+      // Optional custom style instruction from user
+      customStyle: z.object({
+        name: z.string(),
+        instruction: z.string(),
+      }).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const project = await db.getProjectById(input.projectId, ctx.user.id);
@@ -1022,7 +1027,10 @@ export const listingRouter = router({
       const enrichedData = await loadEnrichedData(input.projectId);
       const context = buildProductContext(project, analyses, enrichedData);
 
-      const styles = [
+      const styles: Array<{
+        id: string; name: string; nameEn: string; description: string;
+        titleInstruction: string; bulletInstruction: string;
+      }> = [
         {
           id: "professional",
           name: "专业技术型",
@@ -1049,9 +1057,21 @@ export const listingRouter = router({
         },
       ];
 
+      // Add custom style if provided by user
+      if (input.customStyle) {
+        styles.push({
+          id: "custom",
+          name: input.customStyle.name || "自定义风格",
+          nameEn: "Custom Style",
+          description: input.customStyle.instruction,
+          titleInstruction: input.customStyle.instruction + " Write the title following this custom style direction from the user.",
+          bulletInstruction: input.customStyle.instruction + " Write the bullet points following this custom style direction from the user.",
+        });
+      }
+
       const variants: any[] = [];
 
-      // Generate all 3 style variants in parallel
+      // Generate all style variants in parallel (3 default + optional custom)
       const variantPromises = styles.map(async (style) => {
         const variant: any = { id: style.id, name: style.name, nameEn: style.nameEn, description: style.description };
 

@@ -30,7 +30,11 @@ import {
   BarChart3,
   Shuffle,
   Eye,
+  PenLine,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -90,6 +94,10 @@ export default function GeneratePage() {
   const [selectedTitleIdx, setSelectedTitleIdx] = useState<number>(0);
   const [selectedBullets, setSelectedBullets] = useState<Array<{ variantId: string; bulletIdx: number }>>([]);
   const [mixedMode, setMixedMode] = useState<"browse" | "mix">("browse");
+  // Custom style state
+  const [customStyleEnabled, setCustomStyleEnabled] = useState(false);
+  const [customStyleName, setCustomStyleName] = useState("");
+  const [customStyleInstruction, setCustomStyleInstruction] = useState("");
 
   const { data: project } = trpc.project.getById.useQuery(
     { id: selectedProjectId! },
@@ -204,7 +212,14 @@ export default function GeneratePage() {
 
   const handleGenerateABTest = () => {
     if (!selectedProjectId) return;
-    generateABTest.mutate({ projectId: selectedProjectId, components: ["title", "bulletPoints"] });
+    const params: any = { projectId: selectedProjectId, components: ["title", "bulletPoints"] };
+    if (customStyleEnabled && customStyleInstruction.trim()) {
+      params.customStyle = {
+        name: customStyleName.trim() || "自定义风格",
+        instruction: customStyleInstruction.trim(),
+      };
+    }
+    generateABTest.mutate(params);
   };
 
   const handleApplyVariant = (variant: any) => {
@@ -550,11 +565,12 @@ export default function GeneratePage() {
                 A/B 测试版本
               </CardTitle>
               <CardDescription>
-                同时生成3种不同风格的标题和五点描述，对比选择最佳版本应用到当前Listing
+                同时生成多种不同风格的标题和五点描述，对比选择最佳版本应用到当前Listing
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <CardContent className="space-y-4">
+              {/* Built-in styles */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {[
                   { id: "professional", name: "专业技术型", icon: Cpu, color: "text-blue-600", desc: "规格参数、技术优势、认证标准" },
                   { id: "emotional", name: "情感场景型", icon: Heart, color: "text-rose-600", desc: "使用场景、情感共鸣、生活方式" },
@@ -569,6 +585,48 @@ export default function GeneratePage() {
                   </div>
                 ))}
               </div>
+
+              {/* Custom style toggle */}
+              <div className="border rounded-lg p-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <Checkbox
+                    id="customStyle"
+                    checked={customStyleEnabled}
+                    onCheckedChange={(checked) => setCustomStyleEnabled(!!checked)}
+                  />
+                  <label htmlFor="customStyle" className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+                    <PenLine className="h-4 w-4 text-purple-600" />
+                    添加自定义风格（第4个变体）
+                  </label>
+                </div>
+                {customStyleEnabled && (
+                  <div className="space-y-3 pl-7">
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">风格名称</label>
+                      <Input
+                        placeholder="例如：简约极简风、奢华高端风、幽默趣味风..."
+                        value={customStyleName}
+                        onChange={(e) => setCustomStyleName(e.target.value)}
+                        className="h-9"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">风格指令 <span className="text-red-500">*</span></label>
+                      <Textarea
+                        placeholder="描述你想要的写作风格，例如：\n- 用简短的句子，每个卖点不超过20个单词\n- 突出奢华感和高端定位\n- 使用短句和有力的动词\n- 模仿 Apple 产品文案风格"
+                        value={customStyleInstruction}
+                        onChange={(e) => setCustomStyleInstruction(e.target.value)}
+                        rows={4}
+                        className="resize-none"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        详细描述你想要的写作风格、语调、关注点等，AI会按此生成第4个变体
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <Button
                 className="w-full"
                 variant="outline"
@@ -578,12 +636,12 @@ export default function GeneratePage() {
                 {generateABTest.isPending ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    正在生成3种风格变体...
+                    正在生成{customStyleEnabled && customStyleInstruction.trim() ? "4" : "3"}种风格变体...
                   </>
                 ) : (
                   <>
                     <FlaskConical className="h-4 w-4 mr-2" />
-                    生成 A/B 测试版本
+                    生成 A/B 测试版本（{customStyleEnabled && customStyleInstruction.trim() ? "3+1 风格" : "3 风格"}）
                   </>
                 )}
               </Button>
@@ -591,7 +649,7 @@ export default function GeneratePage() {
                 <div className="mt-3">
                   <Progress value={undefined} className="h-1" />
                   <p className="text-xs text-muted-foreground text-center mt-2">
-                    正在并行生成3种风格的标题和五点描述，预计需要30-60秒...
+                    正在并行生成{customStyleEnabled && customStyleInstruction.trim() ? "4" : "3"}种风格的标题和五点描述，预计需要30-60秒...
                   </p>
                 </div>
               )}

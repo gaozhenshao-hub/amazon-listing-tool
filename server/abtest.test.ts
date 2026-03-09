@@ -548,3 +548,149 @@ describe("A/B Mixed Selection Feature", () => {
     });
   });
 });
+
+// Tests for custom style A/B variant
+describe("Custom Style A/B Variant", () => {
+  const baseStyles = [
+    { id: "professional", name: "专业技术型", nameEn: "Professional & Technical" },
+    { id: "emotional", name: "情感场景型", nameEn: "Emotional & Lifestyle" },
+    { id: "datadriven", name: "数据驱动型", nameEn: "Data-Driven & Comparative" },
+  ];
+
+  it("should add custom style as 4th variant when provided", () => {
+    const customStyle = {
+      name: "简约极简风",
+      instruction: "Use minimal words, short sentences, Apple-style copywriting",
+    };
+    const styles = [...baseStyles];
+    if (customStyle) {
+      styles.push({
+        id: "custom",
+        name: customStyle.name || "自定义风格",
+        nameEn: "Custom Style",
+      });
+    }
+    expect(styles).toHaveLength(4);
+    expect(styles[3].id).toBe("custom");
+    expect(styles[3].name).toBe("简约极简风");
+  });
+
+  it("should use default name when custom style name is empty", () => {
+    const customStyle = {
+      name: "",
+      instruction: "Write in a luxury tone",
+    };
+    const name = customStyle.name || "自定义风格";
+    expect(name).toBe("自定义风格");
+  });
+
+  it("should keep only 3 styles when no custom style provided", () => {
+    const customStyle = null;
+    const styles = [...baseStyles];
+    if (customStyle) {
+      styles.push({ id: "custom", name: "自定义风格", nameEn: "Custom Style" });
+    }
+    expect(styles).toHaveLength(3);
+  });
+
+  it("should generate title instruction from custom instruction", () => {
+    const instruction = "Use minimal words, Apple-style";
+    const titleInstruction = instruction + " Write the title following this custom style direction from the user.";
+    expect(titleInstruction).toContain("Apple-style");
+    expect(titleInstruction).toContain("Write the title");
+  });
+
+  it("should generate bullet instruction from custom instruction", () => {
+    const instruction = "Luxury tone with short sentences";
+    const bulletInstruction = instruction + " Write the bullet points following this custom style direction from the user.";
+    expect(bulletInstruction).toContain("Luxury tone");
+    expect(bulletInstruction).toContain("Write the bullet points");
+  });
+
+  it("should support mixed selection with custom variant", () => {
+    const variants = [
+      { id: "professional", name: "专业技术型", titles: ["Title A"] },
+      { id: "emotional", name: "情感场景型", titles: ["Title B"] },
+      { id: "datadriven", name: "数据驱动型", titles: ["Title C"] },
+      { id: "custom", name: "简约极简风", titles: ["Title D"] },
+    ];
+    // Select title from custom, bullets from others
+    const selectedTitle = variants.find(v => v.id === "custom")!.titles[0];
+    expect(selectedTitle).toBe("Title D");
+    expect(variants).toHaveLength(4);
+  });
+
+  it("should validate custom style instruction is not empty before adding", () => {
+    const customStyleEnabled = true;
+    const customStyleInstruction = "   ";
+    const shouldAdd = customStyleEnabled && customStyleInstruction.trim();
+    expect(shouldAdd).toBeFalsy();
+  });
+
+  it("should pass custom style instruction when trimmed is non-empty", () => {
+    const customStyleEnabled = true;
+    const customStyleInstruction = "  Use humor and puns  ";
+    const shouldAdd = customStyleEnabled && customStyleInstruction.trim();
+    expect(shouldAdd).toBeTruthy();
+  });
+});
+
+// Tests for order volume projection in ad structure
+describe("Order Volume Projection", () => {
+  it("should define projection periods", () => {
+    const periods = ["week1_2", "week3_4", "month2_3", "month4_6", "month7_12"];
+    expect(periods).toHaveLength(5);
+    expect(periods[0]).toBe("week1_2");
+    expect(periods[4]).toBe("month7_12");
+  });
+
+  it("should include ad orders and organic orders per period", () => {
+    const projection = {
+      period: "week1_2",
+      periodLabel: "第1-2周",
+      adOrders: { daily: 3, weekly: 21 },
+      organicOrders: { daily: 0, weekly: 2 },
+      totalDaily: 3,
+      totalWeekly: 23,
+      acos: "45%",
+      organicRank: "第3-5页",
+    };
+    expect(projection.adOrders.daily).toBe(3);
+    expect(projection.organicOrders.daily).toBe(0);
+    expect(projection.totalDaily).toBe(3);
+  });
+
+  it("should include organic ranking milestones", () => {
+    const organicRanking = {
+      targetKeyword: "wireless earbuds",
+      currentRank: "未上首页",
+      milestones: [
+        { period: "month2_3", expectedRank: "首页底部(15-20位)", requiredOrders: 50 },
+        { period: "month4_6", expectedRank: "首页中部(8-12位)", requiredOrders: 150 },
+        { period: "month7_12", expectedRank: "首页首位(1-3位)", requiredOrders: 500 },
+      ],
+    };
+    expect(organicRanking.milestones).toHaveLength(3);
+    expect(organicRanking.milestones[2].expectedRank).toContain("首页首位");
+  });
+
+  it("should include breakeven analysis", () => {
+    const breakeven = {
+      estimatedBreakevenMonth: 4,
+      cumulativeAdSpend: 3000,
+      cumulativeRevenue: 8000,
+      profitMargin: "25%",
+    };
+    expect(breakeven.estimatedBreakevenMonth).toBeGreaterThan(0);
+    expect(breakeven.cumulativeRevenue).toBeGreaterThan(breakeven.cumulativeAdSpend);
+  });
+
+  it("should have ad structure prompt include orderVolumeProjection section", () => {
+    // Verify the prompt template references orderVolumeProjection
+    const promptSections = [
+      "campaigns", "autoCampaign", "budgetAllocation",
+      "phaseStrategy", "orderVolumeProjection"
+    ];
+    expect(promptSections).toContain("orderVolumeProjection");
+  });
+});

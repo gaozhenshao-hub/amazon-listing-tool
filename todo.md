@@ -204,3 +204,11 @@
 - [x] Feature: A/B mixed selection - Combined preview panel showing selected title + bullets with source labels
 - [x] Feature: A/B mixed selection - Apply mixed logic reuses existing applyABVariant backend (no changes needed)
 - [x] Feature: A/B mixed selection - Unit tests (14 new tests, 299 total passing)
+- [x] Feature: Ad structure - Add order volume projection module (5 periods: week1-2, week3-4, month2-3, month4-6, month7-12)
+- [x] Feature: Ad structure - Add organic ranking milestone estimates (orders needed for page 1 top position)
+- [x] Feature: Ad structure - Update AI prompt to generate orderVolumeProjection with adOrders, organicOrders, ACOS, organicRank
+- [x] Feature: Ad structure - Frontend "单量预估" tab with period cards, organic ranking milestones, breakeven analysis, assumptions
+- [x] Feature: A/B test - Backend: accept optional customStyle param (name + instruction) to generate 4th variant
+- [x] Feature: A/B test - Frontend: checkbox toggle for custom style, name input + instruction textarea, dynamic button text
+- [x] Feature: A/B test - Mixed selection works with 4 variants (custom style selectable in title/bullet mix)
+- [x] Feature: A/B test - Unit tests (13 new tests, 312 total passing)
