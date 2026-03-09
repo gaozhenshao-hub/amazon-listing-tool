@@ -8,6 +8,7 @@ import { listingRouter } from "./routers/listing";
 import { imageAnalysisRouter } from "./routers/imageAnalysis";
 import { projectFileRouter } from "./routers/projectFile";
 import { reportRouter } from "./routers/report";
+import { scoringRouter } from "./routers/scoring";
 
 export const appRouter = router({
   system: systemRouter,
@@ -25,6 +26,7 @@ export const appRouter = router({
   imageAnalysis: imageAnalysisRouter,
   projectFile: projectFileRouter,
   report: reportRouter,
+  scoring: scoringRouter,
 });
 
 export type AppRouter = typeof appRouter;

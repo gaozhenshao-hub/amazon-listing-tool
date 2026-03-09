@@ -32,6 +32,8 @@ import {
   GitCompareArrows,
   History,
   Database,
+  BarChart3,
+  Gauge,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -47,6 +49,7 @@ const menuItems = [
   { icon: Database, label: "数据文件", path: "/data-files" },
   { icon: Sparkles, label: "Listing生成", path: "/generate" },
   { icon: FileText, label: "结果预览", path: "/preview" },
+  { icon: Gauge, label: "Listing评分", path: "/score" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

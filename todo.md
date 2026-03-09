@@ -108,3 +108,9 @@
 - [x] Feature: Analysis version history - Backend API for listing/restoring versions (getVersionHistory, restoreVersion)
 - [x] Feature: Analysis version history - Frontend UI with history panel and rollback buttons
 - [x] Unit tests for all three new features (10 tests, 126 total passing)
+- [x] Feature: Listing Score System - Design scoring algorithm (6 dimensions based on A9 rules)
+- [x] Feature: Listing Score System - Backend scoring engine (title optimization, bullet quality, description quality, search terms, keyword coverage, overall SEO)
+- [x] Feature: Listing Score System - Backend API endpoint (scoring.scoreListing)
+- [x] Feature: Listing Score System - Frontend ScorePage with radar chart, score cards, dimension details, optimization suggestions
+- [x] Feature: Listing Score System - Sidebar navigation for Listing评分
+- [x] Unit tests for Listing scoring system (11 tests, 137 total passing)
