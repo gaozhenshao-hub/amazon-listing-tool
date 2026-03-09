@@ -138,3 +138,18 @@ export const projectFiles = mysqlTable("projectFiles", {
 
 export type ProjectFile = typeof projectFiles.$inferSelect;
 export type InsertProjectFile = typeof projectFiles.$inferInsert;
+
+// Analysis result version history
+export const analysisVersions = mysqlTable("analysisVersions", {
+  id: int("id").autoincrement().primaryKey(),
+  projectFileId: int("projectFileId").notNull(),
+  userId: int("userId").notNull(),
+  version: int("version").default(1).notNull(),
+  analysisResult: text("analysisResult").notNull(), // JSON snapshot of analysis result
+  changeType: mysqlEnum("changeType", ["auto_analysis", "manual_edit", "re_analysis"]).default("auto_analysis").notNull(),
+  changeNote: text("changeNote"), // Optional user note about what changed
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AnalysisVersion = typeof analysisVersions.$inferSelect;
+export type InsertAnalysisVersion = typeof analysisVersions.$inferInsert;

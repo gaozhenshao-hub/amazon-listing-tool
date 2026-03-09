@@ -98,3 +98,13 @@
 - [x] Frontend - Editable analysis result UI for aba_keywords (title keywords, bullet keywords, golden keywords)
 - [x] Frontend - Save/Cancel/Reset controls for each editable section
 - [x] Unit tests for analysis result editing (9 tests)
+- [x] Feature: File template download - Create 4 standard format template files
+- [x] Feature: File template download - Upload templates to CDN
+- [x] Feature: File template download - Add download button in each upload card on DataFilesPage
+- [x] Feature: Export full report - Backend API to generate comprehensive HTML report
+- [x] Feature: Export full report - Include 4 analysis modules + Listing + bilingual comparison
+- [x] Feature: Export full report - Frontend export button on PreviewPage with print-to-PDF
+- [x] Feature: Analysis version history - Database table (analysisVersions) for storing edit history
+- [x] Feature: Analysis version history - Backend API for listing/restoring versions (getVersionHistory, restoreVersion)
+- [x] Feature: Analysis version history - Frontend UI with history panel and rollback buttons
+- [x] Unit tests for all three new features (10 tests, 126 total passing)

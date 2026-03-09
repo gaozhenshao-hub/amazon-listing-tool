@@ -20,6 +20,7 @@ import {
   Edit3,
   Eye,
   Languages,
+  Download,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
@@ -101,6 +102,30 @@ export default function PreviewPage() {
 
   const hasChinese = !!(listing?.titleCn || listing?.bulletPointsCn || listing?.descriptionCn || listing?.searchTermsCn);
 
+  const generateReport = trpc.report.generateReport.useMutation({
+    onSuccess: (data) => {
+      // Open HTML in new window for printing/saving as PDF
+      const blob = new Blob([data.html], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, "_blank");
+      if (win) {
+        win.onload = () => {
+          // Auto-trigger print dialog for PDF saving
+          setTimeout(() => {
+            win.print();
+          }, 500);
+        };
+      }
+      toast.success("报告已生成，请在弹出窗口中保存为PDF");
+    },
+    onError: (err) => toast.error("报告生成失败: " + err.message),
+  });
+
+  const handleExportReport = () => {
+    if (!selectedProjectId) return;
+    generateReport.mutate({ projectId: selectedProjectId });
+  };
+
   const handleSave = () => {
     if (!listing) return;
     updateListing.mutate({
@@ -148,6 +173,21 @@ export default function PreviewPage() {
                     <Languages className="h-4 w-4 mr-2" />
                   )}
                   生成中文翻译
+                </Button>
+              )}
+              {!isEditing && (
+                <Button
+                  variant="outline"
+                  onClick={handleExportReport}
+                  disabled={generateReport.isPending}
+                  className="border-amber-300 text-amber-700 hover:bg-amber-50"
+                >
+                  {generateReport.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4 mr-2" />
+                  )}
+                  导出完整报告
                 </Button>
               )}
               <Button

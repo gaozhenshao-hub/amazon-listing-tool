@@ -334,6 +334,17 @@ export const projectFileRouter = router({
           status: "completed",
         });
 
+        // Save version history
+        const latestVersion = await db.getLatestVersionNumber(file.id);
+        await db.createAnalysisVersion({
+          projectFileId: file.id,
+          userId: ctx.user.id,
+          version: latestVersion + 1,
+          analysisResult: JSON.stringify(analysisResult),
+          changeType: "re_analysis",
+          changeNote: "Re-analyzed by AI",
+        });
+
         return updated;
       } catch (err: any) {
         await db.updateProjectFile(file.id, {
@@ -426,6 +437,16 @@ export const projectFileRouter = router({
           status: "completed",
         });
 
+        // Save initial version history
+        await db.createAnalysisVersion({
+          projectFileId: record.id,
+          userId: ctx.user.id,
+          version: 1,
+          analysisResult: JSON.stringify(analysisResult),
+          changeType: "auto_analysis",
+          changeNote: "Initial AI analysis",
+        });
+
         return updated;
       } catch (err: any) {
         await db.updateProjectFile(record.id, {
@@ -441,6 +462,7 @@ export const projectFileRouter = router({
     .input(z.object({
       fileId: z.number(),
       analysisResult: z.string(), // JSON string of the updated analysis result
+      changeNote: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const file = await db.getProjectFileById(input.fileId);
@@ -461,6 +483,63 @@ export const projectFileRouter = router({
         status: "completed",
       });
 
+      // Save version history for manual edit
+      const latestVersion = await db.getLatestVersionNumber(file.id);
+      await db.createAnalysisVersion({
+        projectFileId: file.id,
+        userId: ctx.user.id,
+        version: latestVersion + 1,
+        analysisResult: input.analysisResult,
+        changeType: "manual_edit",
+        changeNote: input.changeNote || "Manual edit",
+      });
+
+      return updated;
+    }),
+
+  // Get version history for a file
+  getVersionHistory: protectedProcedure
+    .input(z.object({ fileId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const file = await db.getProjectFileById(input.fileId);
+      if (!file) throw new Error("File not found");
+
+      const project = await db.getProjectById(file.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      return db.getAnalysisVersionsByFileId(file.id);
+    }),
+
+  // Restore a specific version
+  restoreVersion: protectedProcedure
+    .input(z.object({ versionId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const version = await db.getAnalysisVersionById(input.versionId);
+      if (!version) throw new Error("Version not found");
+
+      const file = await db.getProjectFileById(version.projectFileId);
+      if (!file) throw new Error("File not found");
+
+      const project = await db.getProjectById(file.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      // Update the file's analysis result to the restored version
+      const updated = await db.updateProjectFile(file.id, {
+        analysisResult: version.analysisResult,
+        status: "completed",
+      });
+
+      // Create a new version entry for the restore action
+      const latestVersion = await db.getLatestVersionNumber(file.id);
+      await db.createAnalysisVersion({
+        projectFileId: file.id,
+        userId: ctx.user.id,
+        version: latestVersion + 1,
+        analysisResult: version.analysisResult,
+        changeType: "manual_edit",
+        changeNote: `Restored from version ${version.version}`,
+      });
+
       return updated;
     }),
 
@@ -474,6 +553,8 @@ export const projectFileRouter = router({
       const project = await db.getProjectById(file.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
 
+      // Also delete version history
+      await db.deleteAnalysisVersionsByFileId(file.id);
       return db.deleteProjectFile(file.id);
     }),
 

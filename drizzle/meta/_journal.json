@@ -36,6 +36,13 @@
       "when": 1773022336539,
       "tag": "0004_majestic_freak",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1773024681007,
+      "tag": "0005_premium_christian_walker",
+      "breakpoints": true
     }
   ]
 }

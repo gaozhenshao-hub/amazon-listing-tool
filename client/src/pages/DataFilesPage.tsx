@@ -25,6 +25,11 @@ import {
   X,
   Plus,
   Minus,
+  Download,
+  History,
+  RotateCcw,
+  Clock,
+  FileDown,
 } from "lucide-react";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
@@ -41,6 +46,8 @@ const FILE_TYPE_CONFIG: Record<FileType, {
   borderColor: string;
   module: string;
   expectedFile: string;
+  templateUrl: string;
+  templateFilename: string;
 }> = {
   product_attributes: {
     label: "本品属性表",
@@ -52,6 +59,8 @@ const FILE_TYPE_CONFIG: Record<FileType, {
     borderColor: "border-blue-200",
     module: "Module 1: Rufus",
     expectedFile: "本品属性表.txt",
+    templateUrl: "https://d2xsxph8kpxj0f.cloudfront.net/310419663030562636/a79tkwusxJ5HWpLxCXSSXN/本品属性表_模板_bb914ab3.txt",
+    templateFilename: "本品属性表_模板.txt",
   },
   competitor_listings: {
     label: "竞品Listing文本",
@@ -63,6 +72,8 @@ const FILE_TYPE_CONFIG: Record<FileType, {
     borderColor: "border-green-200",
     module: "Module 2: Multi-Competitor",
     expectedFile: "竞品Listing文本.txt",
+    templateUrl: "https://d2xsxph8kpxj0f.cloudfront.net/310419663030562636/a79tkwusxJ5HWpLxCXSSXN/竞品Listing文本_模板_72027457.txt",
+    templateFilename: "竞品Listing文本_模板.txt",
   },
   search_term_report: {
     label: "竞品出单词报告",
@@ -74,6 +85,8 @@ const FILE_TYPE_CONFIG: Record<FileType, {
     borderColor: "border-purple-200",
     module: "Module 3: COSMO",
     expectedFile: "竞品出单词报告.csv",
+    templateUrl: "https://d2xsxph8kpxj0f.cloudfront.net/310419663030562636/a79tkwusxJ5HWpLxCXSSXN/竞品出单词报告_模板_cc5a632c.csv",
+    templateFilename: "竞品出单词报告_模板.csv",
   },
   aba_keywords: {
     label: "ABA关键词数据",
@@ -85,6 +98,8 @@ const FILE_TYPE_CONFIG: Record<FileType, {
     borderColor: "border-amber-200",
     module: "Module 4: A9",
     expectedFile: "ABA关键词数据.csv",
+    templateUrl: "https://d2xsxph8kpxj0f.cloudfront.net/310419663030562636/a79tkwusxJ5HWpLxCXSSXN/ABA关键词数据_模板_f863aedf.csv",
+    templateFilename: "ABA关键词数据_模板.csv",
   },
 };
 
@@ -431,14 +446,33 @@ function AnalysisResultCard({
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState<any>(null);
   const [saving, setSaving] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   const utils = trpc.useUtils();
+
+  const { data: versionHistory, isLoading: historyLoading } = trpc.projectFile.getVersionHistory.useQuery(
+    { fileId },
+    { enabled: showHistory }
+  );
+
+  const restoreVersion = trpc.projectFile.restoreVersion.useMutation({
+    onSuccess: () => {
+      utils.projectFile.listByType.invalidate({ projectId, fileType });
+      utils.projectFile.listByProject.invalidate({ projectId });
+      utils.projectFile.getAnalysisSummary.invalidate({ projectId });
+      utils.projectFile.getVersionHistory.invalidate({ fileId });
+      toast.success("已恢复到指定版本");
+      setShowHistory(false);
+    },
+    onError: (err) => toast.error(`恢复失败: ${err.message}`),
+  });
 
   const updateMutation = trpc.projectFile.updateAnalysisResult.useMutation({
     onSuccess: () => {
       utils.projectFile.listByType.invalidate({ projectId, fileType });
       utils.projectFile.listByProject.invalidate({ projectId });
       utils.projectFile.getAnalysisSummary.invalidate({ projectId });
+      utils.projectFile.getVersionHistory.invalidate({ fileId });
       toast.success("分析结果已保存");
       setEditing(false);
       setSaving(false);
@@ -466,6 +500,7 @@ function AnalysisResultCard({
     updateMutation.mutate({
       fileId,
       analysisResult: JSON.stringify(editData),
+      changeNote: "手动编辑",
     });
   };
 
@@ -872,15 +907,26 @@ function AnalysisResultCard({
         </button>
         <div className="flex items-center gap-1">
           {!editing ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
-              onClick={startEdit}
-            >
-              <Pencil className="h-3 w-3 mr-1" />
-              编辑
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setShowHistory(!showHistory)}
+              >
+                <History className="h-3 w-3 mr-1" />
+                历史
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={startEdit}
+              >
+                <Pencil className="h-3 w-3 mr-1" />
+                编辑
+              </Button>
+            </>
           ) : (
             <>
               <Button
@@ -906,6 +952,68 @@ function AnalysisResultCard({
           )}
         </div>
       </div>
+      {showHistory && (
+        <div className="p-3 rounded-lg border border-amber-200 bg-amber-50/30 space-y-2">
+          <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-amber-200">
+            <History className="h-3.5 w-3.5 text-amber-600" />
+            <span className="text-xs font-medium text-amber-700">版本历史</span>
+          </div>
+          {historyLoading ? (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              加载中...
+            </div>
+          ) : !versionHistory || versionHistory.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-2">暂无版本历史记录</p>
+          ) : (
+            <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+              {versionHistory.map((v: any, i: number) => (
+                <div key={v.id} className={`flex items-center justify-between text-xs p-2 rounded ${
+                  i === 0 ? "bg-amber-100/50 border border-amber-200" : "bg-background border"
+                }`}>
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <Badge variant="outline" className={`text-[10px] shrink-0 ${
+                      v.changeType === "auto_analysis" ? "border-green-300 text-green-600" :
+                      v.changeType === "re_analysis" ? "border-purple-300 text-purple-600" :
+                      "border-blue-300 text-blue-600"
+                    }`}>
+                      {v.changeType === "auto_analysis" ? "AI分析" :
+                       v.changeType === "re_analysis" ? "重新分析" : "手动编辑"}
+                    </Badge>
+                    <span className="text-muted-foreground">v{v.version}</span>
+                    {v.changeNote && (
+                      <span className="truncate text-muted-foreground">{v.changeNote}</span>
+                    )}
+                    <span className="text-muted-foreground shrink-0">
+                      <Clock className="h-3 w-3 inline mr-0.5" />
+                      {new Date(v.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  {i !== 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-5 px-1.5 text-[10px] text-amber-700 hover:text-amber-900 hover:bg-amber-100 shrink-0 ml-2"
+                      onClick={() => {
+                        if (confirm(`确定恢复到版本 v${v.version}？当前分析结果将被覆盖。`)) {
+                          restoreVersion.mutate({ versionId: v.id });
+                        }
+                      }}
+                      disabled={restoreVersion.isPending}
+                    >
+                      <RotateCcw className="h-2.5 w-2.5 mr-0.5" />
+                      恢复
+                    </Button>
+                  )}
+                  {i === 0 && (
+                    <Badge variant="secondary" className="text-[10px] shrink-0 ml-2">当前</Badge>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {expanded && (
         <div className={`p-3 rounded-lg border ${editing ? "border-blue-300 bg-blue-50/30" : "bg-muted/20"}`}>
           {editing ? (
@@ -1062,6 +1170,23 @@ function FileUploadCard({ fileType, projectId }: { fileType: FileType; projectId
                 {latestFile ? "重新上传" : `上传 ${config.expectedFile}`}
               </>
             )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              const a = document.createElement("a");
+              a.href = config.templateUrl;
+              a.download = config.templateFilename;
+              a.target = "_blank";
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+            }}
+          >
+            <Download className="h-3.5 w-3.5 mr-1" />
+            模板
           </Button>
         </div>
 

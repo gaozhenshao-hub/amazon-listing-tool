@@ -8,6 +8,7 @@ import {
   InsertImageAnalysis, imageAnalyses,
   InsertReviewImport, reviewImports,
   InsertProjectFile, projectFiles,
+  InsertAnalysisVersion, analysisVersions,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -299,5 +300,48 @@ export async function deleteProjectFile(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(projectFiles).where(eq(projectFiles.id, id));
+  return { success: true };
+}
+
+// ─── Analysis Version Helpers ─────────────────────────────────
+
+export async function createAnalysisVersion(data: InsertAnalysisVersion) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(analysisVersions).values(data);
+  const insertId = result[0].insertId;
+  const rows = await db.select().from(analysisVersions).where(eq(analysisVersions.id, insertId)).limit(1);
+  return rows[0];
+}
+
+export async function getAnalysisVersionsByFileId(projectFileId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(analysisVersions)
+    .where(eq(analysisVersions.projectFileId, projectFileId))
+    .orderBy(desc(analysisVersions.version));
+}
+
+export async function getAnalysisVersionById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(analysisVersions).where(eq(analysisVersions.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getLatestVersionNumber(projectFileId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(analysisVersions)
+    .where(eq(analysisVersions.projectFileId, projectFileId))
+    .orderBy(desc(analysisVersions.version))
+    .limit(1);
+  return rows.length > 0 ? rows[0].version : 0;
+}
+
+export async function deleteAnalysisVersionsByFileId(projectFileId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(analysisVersions).where(eq(analysisVersions.projectFileId, projectFileId));
   return { success: true };
 }
