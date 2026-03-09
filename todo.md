@@ -145,3 +145,11 @@
 - [x] Backend - translateImageAdviceToChinese function and IMAGE_ADVICE_TRANSLATION_PROMPT
 - [x] Backend - imageAdviceCn translation in generateFull and translateToChinese
 - [x] Unit tests for UI changes (9 tests, 175 total passing)
+- [x] Update IMAGE_ADVICE_PROMPT - Add 10-year design expert Amazon operator role
+- [x] Update IMAGE_ADVICE_PROMPT - Add requirements: short attractive titles, clear USP expression, color scheme, composition, data visualization
+- [x] Frontend - Display new image advice fields in PreviewPage: title, colorScheme, expressionMethod, dataVisualization, icons
+- [x] Frontend - Display designGuidelines section (font, color palette, brand tone, mobile optimization)
+- [x] Frontend - Color swatch preview for colorScheme fields
+- [x] Frontend - expressionMethod badge in secondary image headers
+- [x] Update IMAGE_ADVICE_TRANSLATION_PROMPT to include new fields (colorScheme, expressionMethod, dataVisualization, icons, designGuidelines)
+- [x] Unit tests for enhanced image advice fields (8 new tests, 183 total passing)

@@ -21,6 +21,12 @@ import {
   Eye,
   Languages,
   Download,
+  Palette,
+  Lightbulb,
+  BarChart3,
+  Layout,
+  Smartphone,
+  TypeIcon,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
@@ -760,7 +766,7 @@ export default function PreviewPage() {
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">English</span>
                             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(
-                              `Concept: ${imageAdvice.mainImage.concept}\nComposition: ${imageAdvice.mainImage.composition || ''}\nKey Elements: ${(imageAdvice.mainImage.keyElements || []).join(', ')}\nTips: ${(imageAdvice.mainImage.tips || []).join('; ')}`,
+                              `Concept: ${imageAdvice.mainImage.concept}\nTitle: ${imageAdvice.mainImage.title || ''}\nComposition: ${imageAdvice.mainImage.composition || ''}\nKey Elements: ${(imageAdvice.mainImage.keyElements || []).join(', ')}\nColor Scheme: ${imageAdvice.mainImage.colorScheme ? `Primary: ${imageAdvice.mainImage.colorScheme.primary}, Secondary: ${imageAdvice.mainImage.colorScheme.secondary}, Accent: ${imageAdvice.mainImage.colorScheme.accent}` : ''}\nTips: ${(imageAdvice.mainImage.tips || []).join('; ')}`,
                               "英文首图建议"
                             )}>
                               <Copy className="h-3 w-3" />
@@ -770,10 +776,41 @@ export default function PreviewPage() {
                             <p className="text-xs font-medium text-blue-700 mb-1">概念</p>
                             <p className="text-sm">{imageAdvice.mainImage.concept}</p>
                           </div>
+                          {imageAdvice.mainImage.title && (
+                            <div>
+                              <p className="text-xs font-medium text-blue-700 mb-1">标题</p>
+                              <p className="text-sm font-semibold">{imageAdvice.mainImage.title}</p>
+                            </div>
+                          )}
                           {imageAdvice.mainImage.composition && (
                             <div>
-                              <p className="text-xs font-medium text-blue-700 mb-1">构图</p>
+                              <p className="text-xs font-medium text-blue-700 mb-1">构图方式</p>
                               <p className="text-sm">{imageAdvice.mainImage.composition}</p>
+                            </div>
+                          )}
+                          {imageAdvice.mainImage.colorScheme && (
+                            <div>
+                              <p className="text-xs font-medium text-blue-700 mb-1">配色方案</p>
+                              <div className="flex flex-wrap gap-2">
+                                {imageAdvice.mainImage.colorScheme.primary && (
+                                  <div className="flex items-center gap-1.5">
+                                    <div className="w-4 h-4 rounded-full border border-gray-300" style={{ backgroundColor: imageAdvice.mainImage.colorScheme.primary.match(/#[0-9A-Fa-f]{3,8}/)?.[0] || '#ccc' }} />
+                                    <span className="text-xs">主色: {imageAdvice.mainImage.colorScheme.primary}</span>
+                                  </div>
+                                )}
+                                {imageAdvice.mainImage.colorScheme.secondary && (
+                                  <div className="flex items-center gap-1.5">
+                                    <div className="w-4 h-4 rounded-full border border-gray-300" style={{ backgroundColor: imageAdvice.mainImage.colorScheme.secondary.match(/#[0-9A-Fa-f]{3,8}/)?.[0] || '#ccc' }} />
+                                    <span className="text-xs">辅色: {imageAdvice.mainImage.colorScheme.secondary}</span>
+                                  </div>
+                                )}
+                                {imageAdvice.mainImage.colorScheme.accent && (
+                                  <div className="flex items-center gap-1.5">
+                                    <div className="w-4 h-4 rounded-full border border-gray-300" style={{ backgroundColor: imageAdvice.mainImage.colorScheme.accent.match(/#[0-9A-Fa-f]{3,8}/)?.[0] || '#ccc' }} />
+                                    <span className="text-xs">点缀色: {imageAdvice.mainImage.colorScheme.accent}</span>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           )}
                           {imageAdvice.mainImage.keyElements && (
@@ -805,7 +842,7 @@ export default function PreviewPage() {
                             <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">中文</span>
                             {imageAdviceCn?.mainImage && (
                               <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(
-                                `概念: ${imageAdviceCn.mainImage.concept}\n构图: ${imageAdviceCn.mainImage.composition || ''}\n关键元素: ${(imageAdviceCn.mainImage.keyElements || []).join(', ')}\n拍摄提示: ${(imageAdviceCn.mainImage.tips || []).join('; ')}`,
+                                `概念: ${imageAdviceCn.mainImage.concept}\n标题: ${imageAdviceCn.mainImage.title || ''}\n构图: ${imageAdviceCn.mainImage.composition || ''}\n关键元素: ${(imageAdviceCn.mainImage.keyElements || []).join(', ')}\n拍摄提示: ${(imageAdviceCn.mainImage.tips || []).join('; ')}`,
                                 "中文首图建议"
                               )}>
                                 <Copy className="h-3 w-3" />
@@ -818,10 +855,32 @@ export default function PreviewPage() {
                                 <p className="text-xs font-medium text-orange-700 mb-1">概念</p>
                                 <p className="text-sm text-orange-900">{imageAdviceCn.mainImage.concept}</p>
                               </div>
+                              {imageAdviceCn.mainImage.title && (
+                                <div>
+                                  <p className="text-xs font-medium text-orange-700 mb-1">标题</p>
+                                  <p className="text-sm font-semibold text-orange-900">{imageAdviceCn.mainImage.title}</p>
+                                </div>
+                              )}
                               {imageAdviceCn.mainImage.composition && (
                                 <div>
-                                  <p className="text-xs font-medium text-orange-700 mb-1">构图</p>
+                                  <p className="text-xs font-medium text-orange-700 mb-1">构图方式</p>
                                   <p className="text-sm text-orange-900">{imageAdviceCn.mainImage.composition}</p>
+                                </div>
+                              )}
+                              {imageAdviceCn.mainImage.colorScheme && (
+                                <div>
+                                  <p className="text-xs font-medium text-orange-700 mb-1">配色方案</p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {imageAdviceCn.mainImage.colorScheme.primary && (
+                                      <span className="text-xs text-orange-800">主色: {imageAdviceCn.mainImage.colorScheme.primary}</span>
+                                    )}
+                                    {imageAdviceCn.mainImage.colorScheme.secondary && (
+                                      <span className="text-xs text-orange-800">辅色: {imageAdviceCn.mainImage.colorScheme.secondary}</span>
+                                    )}
+                                    {imageAdviceCn.mainImage.colorScheme.accent && (
+                                      <span className="text-xs text-orange-800">点缀色: {imageAdviceCn.mainImage.colorScheme.accent}</span>
+                                    )}
+                                  </div>
                                 </div>
                               )}
                               {imageAdviceCn.mainImage.keyElements && (
@@ -848,7 +907,7 @@ export default function PreviewPage() {
                               )}
                             </>
                           ) : (
-                            <p className="text-sm text-muted-foreground italic">暂无中文翻译，请点击“生成中文翻译”</p>
+                            <p className="text-sm text-muted-foreground italic">暂无中文翻译，请点击"生成中文翻译"</p>
                           )}
                         </div>
                       </div>
@@ -869,7 +928,7 @@ export default function PreviewPage() {
                           </Badge>
                         )}
                       </CardTitle>
-                      <CardDescription>按卖点重要性排序的辅图方案</CardDescription>
+                      <CardDescription>按卖点重要性排序的辅图方案（含配色、构图、表达方式、数据可视化建议）</CardDescription>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-6">
@@ -879,22 +938,75 @@ export default function PreviewPage() {
                             <div key={i} className="rounded-lg border overflow-hidden">
                               <div className="px-4 py-2 bg-muted/50 border-b flex items-center gap-3">
                                 <Badge variant="default" className="text-xs">图 {img.imageNumber || i + 2}</Badge>
-                                <span className="text-sm font-medium">{img.focus || img.sellingPoint}</span>
+                                <span className="text-sm font-semibold">{img.title || img.focus || img.sellingPoint}</span>
+                                {img.expressionMethod && (
+                                  <Badge variant="outline" className="text-xs border-purple-300 text-purple-600">
+                                    {img.expressionMethod}
+                                  </Badge>
+                                )}
                               </div>
                               <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-x">
                                 {/* English */}
-                                <div className="p-4 bg-blue-50/20 space-y-2">
+                                <div className="p-4 bg-blue-50/20 space-y-2.5">
                                   <div className="flex items-center justify-between">
                                     <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">English</span>
                                     <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(
-                                      `Image ${img.imageNumber || i + 2}: ${img.focus || img.sellingPoint}\nComposition: ${img.composition || ''}\nText Overlay: ${img.textOverlay || ''}\nTips: ${(img.tips || []).join('; ')}`,
+                                      `Image ${img.imageNumber || i + 2}: ${img.title || img.focus || img.sellingPoint}\nExpression: ${img.expressionMethod || ''}\nComposition: ${img.composition || ''}\nText Overlay: ${img.textOverlay || ''}\nData Visualization: ${img.dataVisualization || ''}\nTips: ${(img.tips || []).join('; ')}`,
                                       `英文图${img.imageNumber || i + 2}建议`
                                     )}>
                                       <Copy className="h-3 w-3" />
                                     </Button>
                                   </div>
-                                  {img.composition && <p className="text-sm"><span className="text-xs text-blue-600 font-medium">构图:</span> {img.composition}</p>}
-                                  {img.textOverlay && <p className="text-sm"><span className="text-xs text-blue-600 font-medium">文案:</span> {img.textOverlay}</p>}
+                                  {img.focus && (
+                                    <p className="text-sm"><span className="text-xs text-blue-600 font-medium">核心卖点:</span> {img.focus}</p>
+                                  )}
+                                  {img.sellingPoint && img.sellingPoint !== img.focus && (
+                                    <p className="text-sm"><span className="text-xs text-blue-600 font-medium">FABE分析:</span> {img.sellingPoint}</p>
+                                  )}
+                                  {img.composition && (
+                                    <p className="text-sm"><span className="text-xs text-blue-600 font-medium">构图方式:</span> {img.composition}</p>
+                                  )}
+                                  {img.textOverlay && (
+                                    <p className="text-sm"><span className="text-xs text-blue-600 font-medium">文案:</span> {img.textOverlay}</p>
+                                  )}
+                                  {img.colorScheme && (
+                                    <div>
+                                      <span className="text-xs text-blue-600 font-medium">配色方案:</span>
+                                      <div className="flex flex-wrap gap-2 mt-1">
+                                        {img.colorScheme.primary && (
+                                          <div className="flex items-center gap-1">
+                                            <div className="w-3 h-3 rounded-full border border-gray-300" style={{ backgroundColor: img.colorScheme.primary.match(/#[0-9A-Fa-f]{3,8}/)?.[0] || '#ccc' }} />
+                                            <span className="text-xs">{img.colorScheme.primary}</span>
+                                          </div>
+                                        )}
+                                        {img.colorScheme.secondary && (
+                                          <div className="flex items-center gap-1">
+                                            <div className="w-3 h-3 rounded-full border border-gray-300" style={{ backgroundColor: img.colorScheme.secondary.match(/#[0-9A-Fa-f]{3,8}/)?.[0] || '#ccc' }} />
+                                            <span className="text-xs">{img.colorScheme.secondary}</span>
+                                          </div>
+                                        )}
+                                        {img.colorScheme.accent && (
+                                          <div className="flex items-center gap-1">
+                                            <div className="w-3 h-3 rounded-full border border-gray-300" style={{ backgroundColor: img.colorScheme.accent.match(/#[0-9A-Fa-f]{3,8}/)?.[0] || '#ccc' }} />
+                                            <span className="text-xs">{img.colorScheme.accent}</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {img.dataVisualization && (
+                                    <p className="text-sm"><span className="text-xs text-blue-600 font-medium">数据可视化:</span> {img.dataVisualization}</p>
+                                  )}
+                                  {img.icons && img.icons.length > 0 && (
+                                    <div>
+                                      <span className="text-xs text-blue-600 font-medium">图标建议:</span>
+                                      <div className="flex flex-wrap gap-1.5 mt-1">
+                                        {img.icons.map((icon: string, j: number) => (
+                                          <Badge key={j} variant="secondary" className="text-xs">{icon}</Badge>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
                                   {img.tips && img.tips.length > 0 && (
                                     <ul className="text-xs text-muted-foreground space-y-0.5">
                                       {img.tips.map((t: string, j: number) => <li key={j}>• {t}</li>)}
@@ -902,12 +1014,12 @@ export default function PreviewPage() {
                                   )}
                                 </div>
                                 {/* Chinese */}
-                                <div className="p-4 bg-orange-50/20 space-y-2">
+                                <div className="p-4 bg-orange-50/20 space-y-2.5">
                                   <div className="flex items-center justify-between">
                                     <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">中文</span>
                                     {imgCn && (
                                       <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(
-                                        `图${img.imageNumber || i + 2}: ${imgCn.focus || imgCn.sellingPoint || ''}\n构图: ${imgCn.composition || ''}\n文案: ${imgCn.textOverlay || ''}\n提示: ${(imgCn.tips || []).join('; ')}`,
+                                        `图${img.imageNumber || i + 2}: ${imgCn.title || imgCn.focus || imgCn.sellingPoint || ''}\n表达方式: ${imgCn.expressionMethod || ''}\n构图: ${imgCn.composition || ''}\n文案: ${imgCn.textOverlay || ''}\n数据可视化: ${imgCn.dataVisualization || ''}\n提示: ${(imgCn.tips || []).join('; ')}`,
                                         `中文图${img.imageNumber || i + 2}建议`
                                       )}>
                                         <Copy className="h-3 w-3" />
@@ -916,9 +1028,44 @@ export default function PreviewPage() {
                                   </div>
                                   {imgCn ? (
                                     <>
-                                      {imgCn.focus && <p className="text-sm font-medium text-orange-900">{imgCn.focus || imgCn.sellingPoint}</p>}
-                                      {imgCn.composition && <p className="text-sm text-orange-800"><span className="text-xs text-orange-600 font-medium">构图:</span> {imgCn.composition}</p>}
-                                      {imgCn.textOverlay && <p className="text-sm text-orange-800"><span className="text-xs text-orange-600 font-medium">文案:</span> {imgCn.textOverlay}</p>}
+                                      {(imgCn.title || imgCn.focus) && (
+                                        <p className="text-sm font-semibold text-orange-900">{imgCn.title || imgCn.focus || imgCn.sellingPoint}</p>
+                                      )}
+                                      {imgCn.sellingPoint && imgCn.sellingPoint !== imgCn.focus && (
+                                        <p className="text-sm text-orange-800"><span className="text-xs text-orange-600 font-medium">FABE分析:</span> {imgCn.sellingPoint}</p>
+                                      )}
+                                      {imgCn.expressionMethod && (
+                                        <p className="text-sm text-orange-800"><span className="text-xs text-orange-600 font-medium">表达方式:</span> {imgCn.expressionMethod}</p>
+                                      )}
+                                      {imgCn.composition && (
+                                        <p className="text-sm text-orange-800"><span className="text-xs text-orange-600 font-medium">构图:</span> {imgCn.composition}</p>
+                                      )}
+                                      {imgCn.textOverlay && (
+                                        <p className="text-sm text-orange-800"><span className="text-xs text-orange-600 font-medium">文案:</span> {imgCn.textOverlay}</p>
+                                      )}
+                                      {imgCn.colorScheme && (
+                                        <div>
+                                          <span className="text-xs text-orange-600 font-medium">配色方案:</span>
+                                          <div className="flex flex-wrap gap-2 mt-1">
+                                            {imgCn.colorScheme.primary && <span className="text-xs text-orange-800">主色: {imgCn.colorScheme.primary}</span>}
+                                            {imgCn.colorScheme.secondary && <span className="text-xs text-orange-800">辅色: {imgCn.colorScheme.secondary}</span>}
+                                            {imgCn.colorScheme.accent && <span className="text-xs text-orange-800">点缀色: {imgCn.colorScheme.accent}</span>}
+                                          </div>
+                                        </div>
+                                      )}
+                                      {imgCn.dataVisualization && (
+                                        <p className="text-sm text-orange-800"><span className="text-xs text-orange-600 font-medium">数据可视化:</span> {imgCn.dataVisualization}</p>
+                                      )}
+                                      {imgCn.icons && imgCn.icons.length > 0 && (
+                                        <div>
+                                          <span className="text-xs text-orange-600 font-medium">图标建议:</span>
+                                          <div className="flex flex-wrap gap-1.5 mt-1">
+                                            {imgCn.icons.map((icon: string, j: number) => (
+                                              <Badge key={j} variant="secondary" className="text-xs bg-orange-100 text-orange-800">{icon}</Badge>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
                                       {imgCn.tips && imgCn.tips.length > 0 && (
                                         <ul className="text-xs text-orange-700 space-y-0.5">
                                           {imgCn.tips.map((t: string, j: number) => <li key={j}>• {t}</li>)}
@@ -974,13 +1121,19 @@ export default function PreviewPage() {
                                   <span className="text-sm font-medium">{section.purpose}</span>
                                 </div>
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-x">
-                                  <div className="p-3 bg-blue-50/20">
+                                  <div className="p-3 bg-blue-50/20 space-y-2">
                                     <span className="text-xs font-semibold text-blue-700 uppercase">English</span>
                                     <p className="text-sm mt-1">{section.content}</p>
+                                    {section.dataVisualization && (
+                                      <p className="text-sm mt-1"><span className="text-xs text-blue-600 font-medium">数据可视化:</span> {section.dataVisualization}</p>
+                                    )}
                                   </div>
-                                  <div className="p-3 bg-orange-50/20">
+                                  <div className="p-3 bg-orange-50/20 space-y-2">
                                     <span className="text-xs font-semibold text-orange-700 uppercase">中文</span>
                                     <p className="text-sm mt-1 text-orange-900">{sectionCn?.content || "暂无中文翻译"}</p>
+                                    {sectionCn?.dataVisualization && (
+                                      <p className="text-sm mt-1 text-orange-800"><span className="text-xs text-orange-600 font-medium">数据可视化:</span> {sectionCn.dataVisualization}</p>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -988,6 +1141,115 @@ export default function PreviewPage() {
                           })}
                         </div>
                       )}
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Design Guidelines - Bilingual */}
+                {imageAdvice.designGuidelines && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Palette className="h-4 w-4 text-violet-600" />
+                        整体设计指南
+                        {imageAdviceCn?.designGuidelines && (
+                          <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
+                            <Languages className="h-3 w-3 mr-1" />
+                            中英对照
+                          </Badge>
+                        )}
+                      </CardTitle>
+                      <CardDescription>统一的品牌视觉规范，确保全套图片风格一致</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        {/* English */}
+                        <div className="p-4 rounded-lg border bg-blue-50/30 border-blue-200 space-y-3">
+                          <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">English</span>
+                          {imageAdvice.designGuidelines.fontRecommendation && (
+                            <div className="flex items-start gap-2">
+                              <TypeIcon className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
+                              <div>
+                                <p className="text-xs font-medium text-blue-700">推荐字体</p>
+                                <p className="text-sm">{imageAdvice.designGuidelines.fontRecommendation}</p>
+                              </div>
+                            </div>
+                          )}
+                          {imageAdvice.designGuidelines.overallColorPalette && (
+                            <div className="flex items-start gap-2">
+                              <Palette className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
+                              <div>
+                                <p className="text-xs font-medium text-blue-700">整体配色方案</p>
+                                <p className="text-sm">{imageAdvice.designGuidelines.overallColorPalette}</p>
+                              </div>
+                            </div>
+                          )}
+                          {imageAdvice.designGuidelines.brandTone && (
+                            <div className="flex items-start gap-2">
+                              <Lightbulb className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
+                              <div>
+                                <p className="text-xs font-medium text-blue-700">品牌调性</p>
+                                <p className="text-sm">{imageAdvice.designGuidelines.brandTone}</p>
+                              </div>
+                            </div>
+                          )}
+                          {imageAdvice.designGuidelines.mobileOptimization && (
+                            <div className="flex items-start gap-2">
+                              <Smartphone className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
+                              <div>
+                                <p className="text-xs font-medium text-blue-700">手机端优化</p>
+                                <p className="text-sm">{imageAdvice.designGuidelines.mobileOptimization}</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        {/* Chinese */}
+                        <div className="p-4 rounded-lg border bg-orange-50/30 border-orange-200 space-y-3">
+                          <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">中文</span>
+                          {imageAdviceCn?.designGuidelines ? (
+                            <>
+                              {imageAdviceCn.designGuidelines.fontRecommendation && (
+                                <div className="flex items-start gap-2">
+                                  <TypeIcon className="h-4 w-4 text-orange-500 mt-0.5 shrink-0" />
+                                  <div>
+                                    <p className="text-xs font-medium text-orange-700">推荐字体</p>
+                                    <p className="text-sm text-orange-900">{imageAdviceCn.designGuidelines.fontRecommendation}</p>
+                                  </div>
+                                </div>
+                              )}
+                              {imageAdviceCn.designGuidelines.overallColorPalette && (
+                                <div className="flex items-start gap-2">
+                                  <Palette className="h-4 w-4 text-orange-500 mt-0.5 shrink-0" />
+                                  <div>
+                                    <p className="text-xs font-medium text-orange-700">整体配色方案</p>
+                                    <p className="text-sm text-orange-900">{imageAdviceCn.designGuidelines.overallColorPalette}</p>
+                                  </div>
+                                </div>
+                              )}
+                              {imageAdviceCn.designGuidelines.brandTone && (
+                                <div className="flex items-start gap-2">
+                                  <Lightbulb className="h-4 w-4 text-orange-500 mt-0.5 shrink-0" />
+                                  <div>
+                                    <p className="text-xs font-medium text-orange-700">品牌调性</p>
+                                    <p className="text-sm text-orange-900">{imageAdviceCn.designGuidelines.brandTone}</p>
+                                  </div>
+                                </div>
+                              )}
+                              {imageAdviceCn.designGuidelines.mobileOptimization && (
+                                <div className="flex items-start gap-2">
+                                  <Smartphone className="h-4 w-4 text-orange-500 mt-0.5 shrink-0" />
+                                  <div>
+                                    <p className="text-xs font-medium text-orange-700">手机端优化</p>
+                                    <p className="text-sm text-orange-900">{imageAdviceCn.designGuidelines.mobileOptimization}</p>
+                                  </div>
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <p className="text-sm text-muted-foreground italic">暂无中文翻译</p>
+                          )}
+                        </div>
+                      </div>
                     </CardContent>
                   </Card>
                 )}

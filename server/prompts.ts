@@ -201,7 +201,21 @@ Respond in JSON format:
 
 export const IMAGE_ADVICE_PROMPT = `${EXPERT_ROLE}
 
-Your task: Provide detailed Amazon product image recommendations. Apply Ogilvy's visual communication principles—every image should tell a story, demonstrate a benefit, and create desire.
+接下来你作为一名拥有10年设计经验且优秀的亚马逊运营，根据listing的卖点，规划该产品的每张主图表达内容及表达方式，以及文案。
+
+**核心要求：**
+1. **标题简短，有吸引力** — 每张图的标题/文案标题必须简洁有力，一句话抓住眼球，避免冗长描述。
+2. **卖点表达清晰** — 每张图聚焦一个核心卖点，用最直观的方式让消费者秒懂产品优势。采用FABE法则（Feature特征 → Advantage优势 → Benefit利益 → Evidence证据）。
+3. **配色方案** — 为每张图提供具体的配色建议（主色、辅色、点缀色），确保品牌一致性和视觉冲击力。考虑产品品类特性（如食品用暖色调、科技产品用冷色调）。
+4. **构图方式** — 明确每张图的构图方法（三分法、对称构图、对角线构图、留白构图等），说明产品、文案、图标的具体摆放位置和比例。
+5. **数据可视化** — 利用图表、图标、数据等可视化元素增强说服力。例如：对比图表展示性能优势、百分比数据突出效果、图标矩阵展示多功能、进度条展示满意度等。
+
+**设计流程（画境宗思路）：**
+1. **确定卖点** — 分析竞品listing、竞品图片和竞品评论，找出重合度高的信息，确认卖点涵盖需求、痛点、差异化和增值。
+2. **规划内容** — 区分主卖点和次要卖点，主卖点可通过不同方式重复表达，次卖点可合并展示。
+3. **确定风格** — 明确字体、配色、背景、场景风格，确保整套图片视觉统一。
+4. **内容与表达方式** — 每张图明确：卖点内容、文案文字、icon图标、表达方式（原理展示/直接展示/用户获利/场景展示/对比展示/数据展示）。
+5. **精益求精** — 检查卖点表达是否清晰、画面构图是否美观、是否需要加入设计元素。
 
 **Amazon Image Rules:**
 
@@ -210,64 +224,78 @@ Your task: Provide detailed Amazon product image recommendations. Apply Ogilvy's
 - Product fills 85%+ of frame
 - High resolution (2000x2000px minimum)
 - Show product clearly with key features visible
-- Scene-based presentation for lifestyle products
-- Show usage effect to create desire and satisfaction
-- Highlight product differentiation
-- For furniture: use accessories/decorations to enhance visual appeal
-- Zoom in on specific selling point details
-- Test multiple angles for multi-functional products
-- Consider seasonal elements
+- 角度选择：展示产品最具吸引力的角度
+- 光影处理：专业打光，突出产品质感和细节
 
-**Secondary Images (辅图):**
-- One image = one selling point, comprehensive coverage
-- Order by customer priority (most important first)
-- Visual and intuitive - no second guessing needed
-- Clean, concise text with correct grammar
-- Appropriate text size for mobile and PC viewing
-- Multiple scenes matching local culture and habits
-- Visual elements, avoid text overload
-- Include size/spec comparison with reference objects (phone, credit card)
-- Realistic installation/usage scenes
-- Consistent brand tone
-- Proper lighting, shadows, background, product placement
-- Use reference objects to show actual product size
+**Secondary Images (辅图 2-7):**
+- 一图一卖点，全面覆盖核心卖点
+- 按消费者关注优先级排序（最重要的卖点放前面）
+- 视觉直观 — 让消费者不用思考就能理解
+- 文案简洁有力，语法正确，字号适配手机和PC端
+- 场景图匹配目标市场文化和使用习惯
+- 善用数据可视化：图表、图标、数据对比、进度条等
+- 包含尺寸/规格对比（用手机、信用卡等参照物）
+- 真实使用场景展示
+- 品牌调性统一
 
 **A+ Content:**
-- Follow logical flow: Attract → Show Benefits → Resolve Doubts → Build Trust
-- Rich media with comparison charts
-- Brand story integration
-- Cross-sell opportunities
+- 逻辑流程：吸引注意 → 展示利益 → 消除疑虑 → 建立信任
+- 丰富的多媒体内容和对比图表
+- 品牌故事融入
+- 交叉销售机会
 
-Provide specific recommendations for this product.
+请根据以上要求，为该产品提供详细的图片规划建议。
 
 Respond in JSON format:
 {
   "mainImage": {
-    "concept": "",
-    "keyElements": [],
-    "composition": "",
+    "concept": "主图创意概念",
+    "title": "简短有吸引力的标题",
+    "keyElements": ["关键视觉元素"],
+    "composition": "构图方式详细说明（三分法/对称/对角线等）",
+    "colorScheme": {
+      "primary": "主色（含色值）",
+      "secondary": "辅色（含色值）",
+      "accent": "点缀色（含色值）"
+    },
     "tips": []
   },
   "secondaryImages": [
     {
       "imageNumber": 1,
-      "focus": "",
-      "sellingPoint": "",
-      "composition": "",
-      "textOverlay": "",
+      "title": "简短有吸引力的图片标题",
+      "focus": "本图聚焦的核心卖点",
+      "sellingPoint": "卖点FABE分析",
+      "expressionMethod": "表达方式（原理展示/直接展示/用户获利/场景展示/对比展示/数据展示）",
+      "composition": "构图方式和元素摆放位置",
+      "colorScheme": {
+        "primary": "主色",
+        "secondary": "辅色",
+        "accent": "点缀色"
+      },
+      "textOverlay": "图片上的文案内容",
+      "dataVisualization": "数据可视化建议（图表类型、数据展示方式、图标使用等）",
+      "icons": ["建议使用的图标"],
       "tips": []
     }
   ],
   "aPlusContent": {
     "sections": [
       {
-        "type": "",
-        "purpose": "",
-        "content": "",
+        "type": "模块类型",
+        "purpose": "模块目的",
+        "content": "内容描述",
+        "dataVisualization": "数据可视化建议",
         "tips": []
       }
     ],
-    "overallStrategy": ""
+    "overallStrategy": "整体A+内容策略"
+  },
+  "designGuidelines": {
+    "fontRecommendation": "推荐字体",
+    "overallColorPalette": "整套图片统一配色方案",
+    "brandTone": "品牌调性描述",
+    "mobileOptimization": "手机端优化建议"
   }
 }`;
 
@@ -384,14 +412,16 @@ You will receive the English image advice as a JSON object. Return the Chinese t
 
 Input format:
 {
-  "mainImage": { "concept": "", "keyElements": [], "composition": "", "tips": [] },
-  "secondaryImages": [{ "imageNumber": 1, "focus": "", "sellingPoint": "", "composition": "", "textOverlay": "", "tips": [] }],
-  "aPlusContent": { "sections": [{ "type": "", "purpose": "", "content": "", "tips": [] }], "overallStrategy": "" }
+  "mainImage": { "concept": "", "title": "", "keyElements": [], "composition": "", "colorScheme": { "primary": "", "secondary": "", "accent": "" }, "tips": [] },
+  "secondaryImages": [{ "imageNumber": 1, "title": "", "focus": "", "sellingPoint": "", "expressionMethod": "", "composition": "", "colorScheme": { "primary": "", "secondary": "", "accent": "" }, "textOverlay": "", "dataVisualization": "", "icons": [], "tips": [] }],
+  "aPlusContent": { "sections": [{ "type": "", "purpose": "", "content": "", "dataVisualization": "", "tips": [] }], "overallStrategy": "" },
+  "designGuidelines": { "fontRecommendation": "", "overallColorPalette": "", "brandTone": "", "mobileOptimization": "" }
 }
 
 Output format (return ONLY this JSON, same structure with Chinese translations):
 {
-  "mainImage": { "concept": "中文概念", "keyElements": ["中文元素"], "composition": "中文构图建议", "tips": ["中文提示"] },
-  "secondaryImages": [{ "imageNumber": 1, "focus": "中文焦点", "sellingPoint": "中文卖点", "composition": "中文构图", "textOverlay": "中文文案", "tips": ["中文提示"] }],
-  "aPlusContent": { "sections": [{ "type": "中文类型", "purpose": "中文目的", "content": "中文内容", "tips": ["中文提示"] }], "overallStrategy": "中文整体策略" }
+  "mainImage": { "concept": "中文概念", "title": "中文标题", "keyElements": ["中文元素"], "composition": "中文构图建议", "colorScheme": { "primary": "中文主色", "secondary": "中文辅色", "accent": "中文点缀色" }, "tips": ["中文提示"] },
+  "secondaryImages": [{ "imageNumber": 1, "title": "中文标题", "focus": "中文焦点", "sellingPoint": "中文卖点", "expressionMethod": "中文表达方式", "composition": "中文构图", "colorScheme": { "primary": "中文主色", "secondary": "中文辅色", "accent": "中文点缀色" }, "textOverlay": "中文文案", "dataVisualization": "中文数据可视化建议", "icons": ["中文图标"], "tips": ["中文提示"] }],
+  "aPlusContent": { "sections": [{ "type": "中文类型", "purpose": "中文目的", "content": "中文内容", "dataVisualization": "中文数据可视化建议", "tips": ["中文提示"] }], "overallStrategy": "中文整体策略" },
+  "designGuidelines": { "fontRecommendation": "中文字体推荐", "overallColorPalette": "中文配色方案", "brandTone": "中文品牌调性", "mobileOptimization": "中文手机端优化建议" }
 }`;

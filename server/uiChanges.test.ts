@@ -92,3 +92,88 @@ describe("Image advice bilingual support", () => {
     expect(preview).toContain("图片建议");
   });
 });
+
+// Test: Enhanced image advice fields display
+describe("Enhanced image advice fields", () => {
+  it("should display colorScheme fields in PreviewPage", async () => {
+    const fs = await import("fs");
+    const preview = fs.readFileSync("client/src/pages/PreviewPage.tsx", "utf-8");
+    expect(preview).toContain("colorScheme");
+    expect(preview).toContain("配色方案");
+    expect(preview).toContain("主色");
+    expect(preview).toContain("辅色");
+    expect(preview).toContain("点缀色");
+  });
+
+  it("should display expressionMethod in secondary images", async () => {
+    const fs = await import("fs");
+    const preview = fs.readFileSync("client/src/pages/PreviewPage.tsx", "utf-8");
+    expect(preview).toContain("expressionMethod");
+    expect(preview).toContain("表达方式");
+  });
+
+  it("should display dataVisualization in secondary images and A+ content", async () => {
+    const fs = await import("fs");
+    const preview = fs.readFileSync("client/src/pages/PreviewPage.tsx", "utf-8");
+    expect(preview).toContain("dataVisualization");
+    expect(preview).toContain("数据可视化");
+  });
+
+  it("should display icons in secondary images", async () => {
+    const fs = await import("fs");
+    const preview = fs.readFileSync("client/src/pages/PreviewPage.tsx", "utf-8");
+    expect(preview).toContain("img.icons");
+    expect(preview).toContain("图标建议");
+  });
+
+  it("should display designGuidelines section", async () => {
+    const fs = await import("fs");
+    const preview = fs.readFileSync("client/src/pages/PreviewPage.tsx", "utf-8");
+    expect(preview).toContain("designGuidelines");
+    expect(preview).toContain("整体设计指南");
+    expect(preview).toContain("fontRecommendation");
+    expect(preview).toContain("overallColorPalette");
+    expect(preview).toContain("brandTone");
+    expect(preview).toContain("mobileOptimization");
+    expect(preview).toContain("推荐字体");
+    expect(preview).toContain("品牌调性");
+    expect(preview).toContain("手机端优化");
+  });
+
+  it("should display title field in main and secondary images", async () => {
+    const fs = await import("fs");
+    const preview = fs.readFileSync("client/src/pages/PreviewPage.tsx", "utf-8");
+    expect(preview).toContain("imageAdvice.mainImage.title");
+    expect(preview).toContain("img.title");
+  });
+
+  it("should have new fields in IMAGE_ADVICE_PROMPT", async () => {
+    const fs = await import("fs");
+    const prompts = fs.readFileSync("server/prompts.ts", "utf-8");
+    expect(prompts).toContain('"colorScheme"');
+    expect(prompts).toContain('"expressionMethod"');
+    expect(prompts).toContain('"dataVisualization"');
+    expect(prompts).toContain('"icons"');
+    expect(prompts).toContain('"designGuidelines"');
+    expect(prompts).toContain('"fontRecommendation"');
+    expect(prompts).toContain('"overallColorPalette"');
+    expect(prompts).toContain('"brandTone"');
+    expect(prompts).toContain('"mobileOptimization"');
+  });
+
+  it("should have new fields in IMAGE_ADVICE_TRANSLATION_PROMPT", async () => {
+    const fs = await import("fs");
+    const prompts = fs.readFileSync("server/prompts.ts", "utf-8");
+    const translationPrompt = prompts.substring(
+      prompts.indexOf("IMAGE_ADVICE_TRANSLATION_PROMPT"),
+      prompts.length
+    );
+    expect(translationPrompt).toContain("colorScheme");
+    expect(translationPrompt).toContain("expressionMethod");
+    expect(translationPrompt).toContain("dataVisualization");
+    expect(translationPrompt).toContain("icons");
+    expect(translationPrompt).toContain("designGuidelines");
+    expect(translationPrompt).toContain("fontRecommendation");
+    expect(translationPrompt).toContain("mobileOptimization");
+  });
+});
