@@ -133,3 +133,9 @@
 - [x] Feature: Keyword Module - Sidebar navigation for 关键词管理
 - [x] Unit tests for keyword module (21 tests, 158 total passing)
 - [x] Bug fix: Relevance parsing order (极低 before 低)
+- [x] Update Listing generation data sources - Keep Rufus attribute extraction from 本品属性表.txt
+- [x] Update Listing generation data sources - Multi-competitor analysis now references 竞品对比 comparison results (competitorAnalyses table)
+- [x] Update Listing generation data sources - COSMO scene mapping now references keyword module AI scene tags (keywords.sceneTags)
+- [x] Update Listing generation data sources - A9 keyword grading now references keyword module 3D strategy matrix and listing layout suggestions (keywords.strategyCategory + listingPlacement)
+- [x] Refactored buildProductContext → uses loadEnrichedData instead of loadFileAnalyses
+- [x] Unit tests for updated Listing generation data flow (8 tests, 166 total passing)

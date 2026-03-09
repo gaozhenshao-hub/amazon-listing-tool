@@ -207,11 +207,11 @@ async function generateChineseTranslation(
   }
 }
 
-function buildProductContext(project: any, analyses: any[], fileAnalyses?: {
+function buildProductContext(project: any, analyses: any[], enrichedData?: {
   productAttributes?: any;
-  competitorListings?: any;
-  cosmoScenes?: any;
-  a9Keywords?: any;
+  competitorComparison?: any;
+  keywordSceneTags?: any;
+  keywordStrategyMatrix?: any;
 }) {
   const parts: string[] = [];
   parts.push(`Product: ${project.productName || project.name}`);
@@ -241,9 +241,9 @@ function buildProductContext(project: any, analyses: any[], fileAnalyses?: {
     }
   }
 
-  // ─── Module 1: Rufus Attribute Extraction ─────────────────────
-  if (fileAnalyses?.productAttributes) {
-    const attrs = fileAnalyses.productAttributes;
+  // ─── Module 1: Rufus Attribute Extraction (本品属性表.txt) ─────────
+  if (enrichedData?.productAttributes) {
+    const attrs = enrichedData.productAttributes;
     parts.push("\n--- [Module 1] Rufus Product Attributes (本品属性表分析) ---");
     if (attrs.uniqueSellingPoints?.length) {
       parts.push(`Unique Selling Points: ${attrs.uniqueSellingPoints.join("; ")}`);
@@ -268,98 +268,219 @@ function buildProductContext(project: any, analyses: any[], fileAnalyses?: {
     }
   }
 
-  // ─── Module 2: Multi-Competitor Analysis ──────────────────────
-  if (fileAnalyses?.competitorListings) {
-    const comp = fileAnalyses.competitorListings;
-    parts.push("\n--- [Module 2] Multi-Competitor Analysis (竞品格局分析) ---");
-    if (comp.parityPoints?.length) {
-      parts.push("Parity (Must-Have Selling Points):");
-      comp.parityPoints.slice(0, 10).forEach((p: any) => {
-        parts.push(`  - ${p.sellingPoint} [${p.frequency}, ${p.importance}]`);
-      });
-    }
-    if (comp.gapOpportunities?.length) {
-      parts.push("Gap Opportunities (Differentiation):");
-      comp.gapOpportunities.slice(0, 8).forEach((g: any) => {
-        parts.push(`  - ${g.gap} [${g.type}, opportunity: ${g.opportunityLevel}]`);
-      });
-    }
-    if (comp.strategicRecommendations) {
-      const sr = comp.strategicRecommendations;
-      if (sr.mustInclude?.length) parts.push(`Must Include: ${sr.mustInclude.join("; ")}`);
-      if (sr.differentiators?.length) parts.push(`Differentiators: ${sr.differentiators.join("; ")}`);
-      if (sr.avoidCopying?.length) parts.push(`Avoid Copying: ${sr.avoidCopying.join("; ")}`);
-    }
-  }
-
-  // ─── Module 3: COSMO Scene Mapping ───────────────────────────
-  if (fileAnalyses?.cosmoScenes) {
-    const cosmo = fileAnalyses.cosmoScenes;
-    parts.push("\n--- [Module 3] COSMO Scene Mapping (场景映射) ---");
-    if (cosmo.scenesClusters?.length) {
-      parts.push("Top Usage Scenes:");
-      cosmo.scenesClusters.slice(0, 8).forEach((sc: any) => {
-        parts.push(`  - ${sc.sceneName} (${sc.sceneNameCn || ""}) [priority: ${sc.priority}]`);
-        if (sc.buyerIntent) parts.push(`    Intent: ${sc.buyerIntent}`);
-        if (sc.listingMapping) {
-          if (sc.listingMapping.titleKeywords?.length) parts.push(`    Title Keywords: ${sc.listingMapping.titleKeywords.join(", ")}`);
-          if (sc.listingMapping.bulletAngle) parts.push(`    Bullet Angle: ${sc.listingMapping.bulletAngle}`);
-        }
-      });
-    }
-    if (cosmo.topScenesByVolume?.length) {
-      parts.push(`Top Scenes by Volume: ${cosmo.topScenesByVolume.join(", ")}`);
-    }
-    if (cosmo.seasonalPatterns?.length) {
-      parts.push(`Seasonal Patterns: ${cosmo.seasonalPatterns.join(", ")}`);
-    }
-  }
-
-  // ─── Module 4: A9 Keyword Grading ────────────────────────────
-  if (fileAnalyses?.a9Keywords) {
-    const a9 = fileAnalyses.a9Keywords;
-    parts.push("\n--- [Module 4] A9 Keyword Grading (关键词分级) ---");
-    if (a9.titleMustHaveKeywords?.length) {
-      parts.push(`Title MUST-HAVE Keywords: ${a9.titleMustHaveKeywords.join(", ")}`);
-    }
-    if (a9.bulletPriorityKeywords?.length) {
-      parts.push(`Bullet Priority Keywords: ${a9.bulletPriorityKeywords.join(", ")}`);
-    }
-    if (a9.backendKeywords?.length) {
-      parts.push(`Backend Search Keywords: ${a9.backendKeywords.join(", ")}`);
-    }
-    if (a9.goldenKeywords?.length) {
-      parts.push(`Golden Keywords (high volume + low competition): ${a9.goldenKeywords.join(", ")}`);
-    }
-    if (a9.keywordClusters?.length) {
-      parts.push("Keyword Clusters:");
-      a9.keywordClusters.slice(0, 6).forEach((c: any) => {
-        parts.push(`  - ${c.clusterName}: ${(c.keywords || []).join(", ")} [${c.bestPlacement}]`);
-      });
-    }
-    if (a9.keywordStrategy) {
-      parts.push(`Keyword Strategy: ${a9.keywordStrategy}`);
-    }
-  }
-
-  // Add competitor insights from ASIN analyses
+  // ─── Module 2: Multi-Competitor Analysis (竞品对比结果) ────────
+  // Data source: competitor ASIN analyses + review analysis results
   if (analyses.length > 0) {
-    parts.push("\n--- Competitor ASIN Insights ---");
+    parts.push("\n--- [Module 2] Multi-Competitor Analysis (竞品格局分析 - 基于竞品对比结果) ---");
+
+    // Extract parity (common selling points across competitors)
+    const allSellingPoints: Record<string, number> = {};
+    const allPainPoints: string[] = [];
+    const allDelightPoints: string[] = [];
+    const allWeaknesses: string[] = [];
+    const allAdvantages: string[] = [];
+
     for (const analysis of analyses) {
-      parts.push(`\nCompetitor ASIN: ${analysis.asin}`);
-      if (analysis.title) parts.push(`Competitor Title: ${analysis.title}`);
-      if (analysis.keywords) {
+      // Extract bullet points as selling points
+      if (analysis.bulletPoints) {
         try {
-          const kw = JSON.parse(analysis.keywords);
-          if (kw.core) parts.push(`Core Keywords: ${kw.core.map((k: any) => k.keyword || k).join(", ")}`);
+          const bps = JSON.parse(analysis.bulletPoints);
+          if (Array.isArray(bps)) {
+            bps.forEach((bp: string) => {
+              const key = bp.substring(0, 80).toLowerCase();
+              allSellingPoints[key] = (allSellingPoints[key] || 0) + 1;
+            });
+          }
         } catch {}
       }
+
+      // Extract review insights
       if (analysis.reviewAnalysis) {
         try {
           const ra = JSON.parse(analysis.reviewAnalysis);
-          if (ra.painPoints) parts.push(`Customer Pain Points: ${ra.painPoints.map((p: any) => p.issue).join("; ")}`);
-          if (ra.delightPoints) parts.push(`Customer Delight Points: ${ra.delightPoints.map((p: any) => p.feature).join("; ")}`);
+          if (ra.painPoints) allPainPoints.push(...ra.painPoints.map((p: any) => p.issue || p));
+          if (ra.delightPoints) allDelightPoints.push(...ra.delightPoints.map((p: any) => p.feature || p));
         } catch {}
+      }
+
+      // Extract raw data insights
+      if (analysis.rawData) {
+        try {
+          const raw = JSON.parse(analysis.rawData);
+          if (raw.advantages) allAdvantages.push(...raw.advantages);
+          if (raw.weaknesses) allWeaknesses.push(...raw.weaknesses);
+        } catch {}
+      }
+    }
+
+    // Parity: selling points mentioned by multiple competitors
+    const parityPoints = Object.entries(allSellingPoints)
+      .filter(([_, count]) => count >= 2)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10);
+    if (parityPoints.length > 0) {
+      parts.push("Parity (Must-Have Selling Points - common across competitors):");
+      parityPoints.forEach(([point, count]) => {
+        parts.push(`  - ${point} [mentioned by ${count} competitors]`);
+      });
+    }
+
+    // Gap: pain points from reviews = opportunities for differentiation
+    if (allPainPoints.length > 0) {
+      const uniquePains = Array.from(new Set(allPainPoints)).slice(0, 8);
+      parts.push("Gap Opportunities (from competitor review pain points):");
+      uniquePains.forEach(pain => {
+        parts.push(`  - ${pain}`);
+      });
+    }
+
+    // Competitor weaknesses as differentiation opportunities
+    if (allWeaknesses.length > 0) {
+      const uniqueWeaknesses = Array.from(new Set(allWeaknesses)).slice(0, 6);
+      parts.push("Competitor Weaknesses (differentiation opportunities):");
+      uniqueWeaknesses.forEach(w => {
+        parts.push(`  - ${w}`);
+      });
+    }
+
+    // Delight points to emulate
+    if (allDelightPoints.length > 0) {
+      const uniqueDelights = Array.from(new Set(allDelightPoints)).slice(0, 6);
+      parts.push("Customer Delight Points (features to emphasize):");
+      uniqueDelights.forEach(d => {
+        parts.push(`  - ${d}`);
+      });
+    }
+
+    // Individual competitor details
+    parts.push("\nDetailed Competitor Data:");
+    for (const analysis of analyses) {
+      parts.push(`\n  Competitor ASIN: ${analysis.asin}`);
+      if (analysis.title) parts.push(`  Title: ${analysis.title}`);
+      if (analysis.price) parts.push(`  Price: ${analysis.price}`);
+      if (analysis.rating) parts.push(`  Rating: ${analysis.rating}`);
+      if (analysis.keywords) {
+        try {
+          const kw = JSON.parse(analysis.keywords);
+          if (kw.core) parts.push(`  Core Keywords: ${kw.core.map((k: any) => k.keyword || k).join(", ")}`);
+        } catch {}
+      }
+    }
+  }
+
+  // Also include file-based competitor analysis if available (legacy support)
+  if (enrichedData?.competitorComparison) {
+    const comp = enrichedData.competitorComparison;
+    if (comp.parityPoints?.length || comp.gapOpportunities?.length) {
+      parts.push("\n--- [Module 2 Supplement] File-based Competitor Analysis ---");
+      if (comp.parityPoints?.length) {
+        parts.push("Additional Parity Points:");
+        comp.parityPoints.slice(0, 10).forEach((p: any) => {
+          parts.push(`  - ${p.sellingPoint} [${p.frequency}, ${p.importance}]`);
+        });
+      }
+      if (comp.gapOpportunities?.length) {
+        parts.push("Additional Gap Opportunities:");
+        comp.gapOpportunities.slice(0, 8).forEach((g: any) => {
+          parts.push(`  - ${g.gap} [${g.type}, opportunity: ${g.opportunityLevel}]`);
+        });
+      }
+    }
+  }
+
+  // ─── Module 3: COSMO Scene Mapping (关键词模块场景打标) ───────
+  // Data source: keyword module AI scene tags
+  if (enrichedData?.keywordSceneTags) {
+    const scenes = enrichedData.keywordSceneTags;
+    parts.push("\n--- [Module 3] COSMO Scene Mapping (关键词场景打标结果) ---");
+
+    if (scenes.sceneGroups && Object.keys(scenes.sceneGroups).length > 0) {
+      parts.push("Scene Groups (from keyword AI scene tagging):");
+      const sortedScenes = Object.entries(scenes.sceneGroups)
+        .sort(([, a]: any, [, b]: any) => (b as string[]).length - (a as string[]).length)
+        .slice(0, 10);
+      sortedScenes.forEach(([scene, kws]: [string, any]) => {
+        parts.push(`  - ${scene} (${(kws as string[]).length} keywords): ${(kws as string[]).slice(0, 5).join(", ")}${(kws as string[]).length > 5 ? ` (+${(kws as string[]).length - 5} more)` : ""}`);
+      });
+    }
+
+    if (scenes.intentGroups && Object.keys(scenes.intentGroups).length > 0) {
+      parts.push("Purchase Intent Groups:");
+      Object.entries(scenes.intentGroups).forEach(([intent, kws]: [string, any]) => {
+        parts.push(`  - ${intent}: ${(kws as string[]).slice(0, 5).join(", ")}`);
+      });
+    }
+
+    if (scenes.topScenes?.length) {
+      parts.push(`Top Scenes by Keyword Volume: ${scenes.topScenes.join(", ")}`);
+    }
+  }
+
+  // ─── Module 4: A9 Keyword Grading (关键词3D策略矩阵 + Listing布局建议) ───
+  // Data source: keyword module 3D strategy matrix and listing placement
+  if (enrichedData?.keywordStrategyMatrix) {
+    const matrix = enrichedData.keywordStrategyMatrix;
+    parts.push("\n--- [Module 4] A9 Keyword Grading (关键词3D策略矩阵 + Listing布局建议) ---");
+
+    // Strategy categories
+    if (matrix.strategyGroups) {
+      const categoryLabels: Record<string, string> = {
+        core_main: "核心主词 (Core Main)",
+        sub_core: "次核心词 (Sub-Core)",
+        precise_longtail: "精准长尾词 (Precise Long-tail)",
+        scene_intent: "场景意图词 (Scene Intent)",
+        longtail_main: "长尾主词 (Long-tail Main)",
+        observe_test: "观察测试词 (Observe/Test)",
+      };
+
+      for (const [cat, label] of Object.entries(categoryLabels)) {
+        const kws = matrix.strategyGroups[cat];
+        if (kws?.length) {
+          parts.push(`${label}: ${kws.slice(0, 10).join(", ")}${kws.length > 10 ? ` (+${kws.length - 10} more)` : ""}`);
+        }
+      }
+    }
+
+    // Listing placement suggestions
+    if (matrix.placementGroups) {
+      const placementLabels: Record<string, string> = {
+        title_front: "Title Front Keywords",
+        title_mid: "Title Mid Keywords",
+        title_end: "Title End Keywords",
+        bullet_first: "Bullet First-line Keywords",
+        bullet_body: "Bullet Body Keywords",
+        aplus: "A+ Content Keywords",
+        backend: "Backend Search Terms",
+        ppc_only: "PPC-Only Keywords",
+      };
+
+      parts.push("\nListing Keyword Placement Strategy:");
+      for (const [placement, label] of Object.entries(placementLabels)) {
+        const kws = matrix.placementGroups[placement];
+        if (kws?.length) {
+          parts.push(`  ${label}: ${kws.slice(0, 8).join(", ")}${kws.length > 8 ? ` (+${kws.length - 8} more)` : ""}`);
+        }
+      }
+    }
+
+    // Root classification for semantic map
+    if (matrix.rootGroups) {
+      const rootLabels: Record<string, string> = {
+        core: "核心词根 (Core Roots)",
+        function: "功能词根 (Function Roots)",
+        scene: "场景词根 (Scene Roots)",
+        audience: "人群词根 (Audience Roots)",
+        spec: "规格词根 (Spec Roots)",
+        painpoint: "痛点词根 (Pain Point Roots)",
+        gift_holiday: "节日礼品词根 (Gift/Holiday Roots)",
+      };
+
+      parts.push("\nKeyword Root Classification (Semantic Map):");
+      for (const [root, label] of Object.entries(rootLabels)) {
+        const kws = matrix.rootGroups[root];
+        if (kws?.length) {
+          parts.push(`  ${label}: ${kws.slice(0, 8).join(", ")}`);
+        }
       }
     }
   }
@@ -367,35 +488,85 @@ function buildProductContext(project: any, analyses: any[], fileAnalyses?: {
   return parts.join("\n");
 }
 
-// Helper: load file analysis data for a project
-async function loadFileAnalyses(projectId: number) {
-  const files = await db.getProjectFilesByProject(projectId);
+// Helper: load enriched data for a project from multiple sources
+async function loadEnrichedData(projectId: number) {
   const result: {
     productAttributes?: any;
-    competitorListings?: any;
-    cosmoScenes?: any;
-    a9Keywords?: any;
+    competitorComparison?: any;
+    keywordSceneTags?: any;
+    keywordStrategyMatrix?: any;
   } = {};
 
+  // Module 1: Load product attributes from file analysis (unchanged)
+  const files = await db.getProjectFilesByProject(projectId);
   for (const file of files) {
     if (file.status !== "completed" || !file.analysisResult) continue;
     try {
       const parsed = JSON.parse(file.analysisResult);
-      switch (file.fileType) {
-        case "product_attributes":
-          result.productAttributes = parsed;
-          break;
-        case "competitor_listings":
-          result.competitorListings = parsed;
-          break;
-        case "search_term_report":
-          result.cosmoScenes = parsed;
-          break;
-        case "aba_keywords":
-          result.a9Keywords = parsed;
-          break;
+      if (file.fileType === "product_attributes") {
+        result.productAttributes = parsed;
+      }
+      // Legacy: also load competitor_listings file analysis as supplement
+      if (file.fileType === "competitor_listings") {
+        result.competitorComparison = parsed;
       }
     } catch {}
+  }
+
+  // Module 3 & 4: Load keyword module data (scene tags + strategy matrix + placement)
+  const allKeywords = await db.getKeywordsByProject(projectId);
+  if (allKeywords.length > 0) {
+    // Build scene tag groups
+    const sceneGroups: Record<string, string[]> = {};
+    const intentGroups: Record<string, string[]> = {};
+    for (const kw of allKeywords) {
+      if (kw.sceneTags) {
+        try {
+          const tags = JSON.parse(kw.sceneTags);
+          if (Array.isArray(tags)) {
+            tags.forEach((tag: string) => {
+              if (!sceneGroups[tag]) sceneGroups[tag] = [];
+              sceneGroups[tag].push(kw.keyword);
+            });
+          }
+        } catch {}
+      }
+      if (kw.intentTag) {
+        if (!intentGroups[kw.intentTag]) intentGroups[kw.intentTag] = [];
+        intentGroups[kw.intentTag].push(kw.keyword);
+      }
+    }
+    const topScenes = Object.entries(sceneGroups)
+      .sort(([, a], [, b]) => b.length - a.length)
+      .slice(0, 8)
+      .map(([scene]) => scene);
+
+    if (Object.keys(sceneGroups).length > 0 || Object.keys(intentGroups).length > 0) {
+      result.keywordSceneTags = { sceneGroups, intentGroups, topScenes };
+    }
+
+    // Build strategy matrix groups and placement groups
+    const strategyGroups: Record<string, string[]> = {};
+    const placementGroups: Record<string, string[]> = {};
+    const rootGroups: Record<string, string[]> = {};
+    for (const kw of allKeywords) {
+      if (kw.strategyCategory && kw.strategyCategory !== "negative") {
+        if (!strategyGroups[kw.strategyCategory]) strategyGroups[kw.strategyCategory] = [];
+        strategyGroups[kw.strategyCategory].push(kw.keyword);
+      }
+      if (kw.listingPlacement) {
+        if (!placementGroups[kw.listingPlacement]) placementGroups[kw.listingPlacement] = [];
+        placementGroups[kw.listingPlacement].push(kw.keyword);
+      }
+      if (kw.rootCategory) {
+        if (!rootGroups[kw.rootCategory]) rootGroups[kw.rootCategory] = [];
+        rootGroups[kw.rootCategory].push(kw.keyword);
+      }
+    }
+
+    if (Object.keys(strategyGroups).length > 0 || Object.keys(placementGroups).length > 0) {
+      result.keywordStrategyMatrix = { strategyGroups, placementGroups, rootGroups };
+    }
   }
 
   return result;
@@ -428,8 +599,8 @@ export const listingRouter = router({
       if (!project) throw new Error("Project not found");
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
-      const fileAnalyses = await loadFileAnalyses(input.projectId);
-      const context = buildProductContext(project, analyses, fileAnalyses);
+      const enrichedData = await loadEnrichedData(input.projectId);
+      const context = buildProductContext(project, analyses, enrichedData);
 
       const response = await invokeLLM({
         messages: [
@@ -470,8 +641,8 @@ export const listingRouter = router({
       if (!project) throw new Error("Project not found");
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
-      const fileAnalyses = await loadFileAnalyses(input.projectId);
-      const context = buildProductContext(project, analyses, fileAnalyses);
+      const enrichedData = await loadEnrichedData(input.projectId);
+      const context = buildProductContext(project, analyses, enrichedData);
 
       const response = await invokeLLM({
         messages: [
@@ -512,8 +683,8 @@ export const listingRouter = router({
       if (!project) throw new Error("Project not found");
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
-      const fileAnalyses = await loadFileAnalyses(input.projectId);
-      const context = buildProductContext(project, analyses, fileAnalyses);
+      const enrichedData = await loadEnrichedData(input.projectId);
+      const context = buildProductContext(project, analyses, enrichedData);
 
       const response = await invokeLLM({
         messages: [
@@ -545,8 +716,8 @@ export const listingRouter = router({
       if (!project) throw new Error("Project not found");
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
-      const fileAnalyses = await loadFileAnalyses(input.projectId);
-      const context = buildProductContext(project, analyses, fileAnalyses);
+      const enrichedData = await loadEnrichedData(input.projectId);
+      const context = buildProductContext(project, analyses, enrichedData);
 
       let extraContext = "";
       if (input.existingTitle) {
@@ -580,8 +751,8 @@ export const listingRouter = router({
       if (!project) throw new Error("Project not found");
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
-      const fileAnalyses = await loadFileAnalyses(input.projectId);
-      const context = buildProductContext(project, analyses, fileAnalyses);
+      const enrichedData = await loadEnrichedData(input.projectId);
+      const context = buildProductContext(project, analyses, enrichedData);
 
       const response = await invokeLLM({
         messages: [
@@ -612,8 +783,8 @@ export const listingRouter = router({
       await db.updateProject(input.projectId, ctx.user.id, { status: "generating" });
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
-      const fileAnalyses = await loadFileAnalyses(input.projectId);
-      const context = buildProductContext(project, analyses, fileAnalyses);
+      const enrichedData = await loadEnrichedData(input.projectId);
+      const context = buildProductContext(project, analyses, enrichedData);
 
       // Generate all components in parallel
       const [titleRes, bulletRes, descRes, searchRes, imageRes] = await Promise.all([
