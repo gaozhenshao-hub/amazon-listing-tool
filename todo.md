@@ -198,3 +198,9 @@
 - [x] Feature: A/B test versions - Frontend comparison dialog with tabs (title + bullet points per variant)
 - [x] Feature: A/B test versions - Frontend apply variant with loading state and auto-close
 - [x] Feature: A/B test versions - Unit tests (22 new tests, 285 total passing)
+- [x] Feature: A/B mixed selection - Redesign comparison dialog with browse/mix mode toggle
+- [x] Feature: A/B mixed selection - Title selection UI: click to select from any variant, with sub-options
+- [x] Feature: A/B mixed selection - Bullet point selection UI: per-bullet pick from any variant with source badges
+- [x] Feature: A/B mixed selection - Combined preview panel showing selected title + bullets with source labels
+- [x] Feature: A/B mixed selection - Apply mixed logic reuses existing applyABVariant backend (no changes needed)
+- [x] Feature: A/B mixed selection - Unit tests (14 new tests, 299 total passing)

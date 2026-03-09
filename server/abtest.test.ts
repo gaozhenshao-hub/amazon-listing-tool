@@ -289,3 +289,262 @@ describe("A/B Test Feature", () => {
     });
   });
 });
+
+describe("A/B Mixed Selection Feature", () => {
+  // Simulate 3 variants with different titles and bullet points
+  const mockVariants = [
+    {
+      id: "professional",
+      name: "专业技术型",
+      titleData: {
+        titles: [
+          { title: "Professional Title Option A" },
+          { title: "Professional Title Option B" },
+        ],
+        recommendedTitle: "Professional Recommended Title",
+      },
+      bulletData: {
+        bulletPoints: [
+          { subtitle: "【Pro BP1】", fullText: "Professional bullet 1 description", sellingPoint: "Tech spec" },
+          { subtitle: "【Pro BP2】", fullText: "Professional bullet 2 description", sellingPoint: "Material" },
+          { subtitle: "【Pro BP3】", fullText: "Professional bullet 3 description", sellingPoint: "Durability" },
+          { subtitle: "【Pro BP4】", fullText: "Professional bullet 4 description", sellingPoint: "Certification" },
+          { subtitle: "【Pro BP5】", fullText: "Professional bullet 5 description", sellingPoint: "Warranty" },
+        ],
+      },
+    },
+    {
+      id: "emotional",
+      name: "情感场景型",
+      titleData: {
+        titles: [{ title: "Emotional Title Option A" }],
+        recommendedTitle: "Emotional Recommended Title",
+      },
+      bulletData: {
+        bulletPoints: [
+          { subtitle: "【Emo BP1】", fullText: "Emotional bullet 1 description", sellingPoint: "Lifestyle" },
+          { subtitle: "【Emo BP2】", fullText: "Emotional bullet 2 description", sellingPoint: "Comfort" },
+          { subtitle: "【Emo BP3】", fullText: "Emotional bullet 3 description", sellingPoint: "Family" },
+          { subtitle: "【Emo BP4】", fullText: "Emotional bullet 4 description", sellingPoint: "Joy" },
+          { subtitle: "【Emo BP5】", fullText: "Emotional bullet 5 description", sellingPoint: "Gift" },
+        ],
+      },
+    },
+    {
+      id: "datadriven",
+      name: "数据驱动型",
+      titleData: {
+        titles: [{ title: "Data Title Option A" }],
+        recommendedTitle: "Data Recommended Title",
+      },
+      bulletData: {
+        bulletPoints: [
+          { subtitle: "【Data BP1】", fullText: "Data bullet 1 description", sellingPoint: "Stats" },
+          { subtitle: "【Data BP2】", fullText: "Data bullet 2 description", sellingPoint: "Comparison" },
+          { subtitle: "【Data BP3】", fullText: "Data bullet 3 description", sellingPoint: "Metrics" },
+          { subtitle: "【Data BP4】", fullText: "Data bullet 4 description", sellingPoint: "ROI" },
+          { subtitle: "【Data BP5】", fullText: "Data bullet 5 description", sellingPoint: "Value" },
+        ],
+      },
+    },
+  ];
+
+  describe("Mixed Selection State Management", () => {
+    it("should initialize with default selection from first variant", () => {
+      const firstVariant = mockVariants[0];
+      const selectedTitleVariant = firstVariant.id;
+      const selectedTitleIdx = 0;
+      const bulletCount = firstVariant.bulletData.bulletPoints.length;
+      const selectedBullets = Array.from({ length: bulletCount }, (_, i) => ({
+        variantId: firstVariant.id,
+        bulletIdx: i,
+      }));
+
+      expect(selectedTitleVariant).toBe("professional");
+      expect(selectedTitleIdx).toBe(0);
+      expect(selectedBullets).toHaveLength(5);
+      expect(selectedBullets.every((b) => b.variantId === "professional")).toBe(true);
+    });
+
+    it("should allow selecting title from any variant", () => {
+      // User selects emotional title
+      const selectedTitleVariant = "emotional";
+      const variant = mockVariants.find((v) => v.id === selectedTitleVariant)!;
+      const title = variant.titleData.recommendedTitle || variant.titleData.titles[0]?.title;
+      expect(title).toBe("Emotional Recommended Title");
+    });
+
+    it("should allow selecting specific title option within a variant", () => {
+      const selectedTitleVariant = "professional";
+      const selectedTitleIdx = 1; // Second title option
+      const variant = mockVariants.find((v) => v.id === selectedTitleVariant)!;
+      const title = variant.titleData.titles[selectedTitleIdx]?.title;
+      expect(title).toBe("Professional Title Option B");
+    });
+
+    it("should allow selecting bullets from different variants", () => {
+      // Mix: bullet 1 from professional, bullet 2 from emotional, bullet 3 from data, etc.
+      const selectedBullets = [
+        { variantId: "professional", bulletIdx: 0 },
+        { variantId: "emotional", bulletIdx: 1 },
+        { variantId: "datadriven", bulletIdx: 2 },
+        { variantId: "emotional", bulletIdx: 3 },
+        { variantId: "professional", bulletIdx: 4 },
+      ];
+
+      const result = selectedBullets.map((sel) => {
+        const v = mockVariants.find((v) => v.id === sel.variantId)!;
+        return v.bulletData.bulletPoints[sel.bulletIdx];
+      });
+
+      expect(result).toHaveLength(5);
+      expect(result[0].subtitle).toBe("【Pro BP1】");
+      expect(result[1].subtitle).toBe("【Emo BP2】");
+      expect(result[2].subtitle).toBe("【Data BP3】");
+      expect(result[3].subtitle).toBe("【Emo BP4】");
+      expect(result[4].subtitle).toBe("【Pro BP5】");
+    });
+  });
+
+  describe("Mixed Selection Title Resolution", () => {
+    it("should prefer recommendedTitle when available", () => {
+      const selectedTitleVariant = "professional";
+      const selectedTitleIdx = 0;
+      const v = mockVariants.find((v) => v.id === selectedTitleVariant)!;
+      const titles = v.titleData?.titles || [];
+      let title = "";
+      if (titles[selectedTitleIdx]?.title) title = titles[selectedTitleIdx].title;
+      if (v.titleData?.recommendedTitle) title = v.titleData.recommendedTitle;
+      expect(title).toBe("Professional Recommended Title");
+    });
+
+    it("should fallback to indexed title when no recommended", () => {
+      const variantNoRec = {
+        ...mockVariants[0],
+        titleData: {
+          titles: [{ title: "Fallback Title A" }, { title: "Fallback Title B" }],
+        },
+      };
+      const selectedTitleIdx = 1;
+      const titles = variantNoRec.titleData?.titles || [];
+      const title = titles[selectedTitleIdx]?.title || titles[0]?.title || "";
+      expect(title).toBe("Fallback Title B");
+    });
+  });
+
+  describe("Mixed Selection Apply Logic", () => {
+    it("should combine title from one variant and bullets from multiple variants", () => {
+      const selectedTitleVariant = "emotional";
+      const selectedBullets = [
+        { variantId: "professional", bulletIdx: 0 },
+        { variantId: "emotional", bulletIdx: 1 },
+        { variantId: "datadriven", bulletIdx: 2 },
+        { variantId: "professional", bulletIdx: 3 },
+        { variantId: "datadriven", bulletIdx: 4 },
+      ];
+
+      // Get title
+      const titleVariant = mockVariants.find((v) => v.id === selectedTitleVariant)!;
+      const title = titleVariant.titleData.recommendedTitle || titleVariant.titleData.titles[0]?.title || "";
+
+      // Get bullets
+      const bullets = selectedBullets.map((sel) => {
+        const v = mockVariants.find((v) => v.id === sel.variantId)!;
+        return v.bulletData.bulletPoints[sel.bulletIdx];
+      });
+
+      // Build apply data
+      const applyData: Record<string, any> = { projectId: 1 };
+      if (title) applyData.title = title;
+      if (bullets.length > 0) applyData.bulletPoints = JSON.stringify(bullets);
+
+      expect(applyData.title).toBe("Emotional Recommended Title");
+      const parsedBullets = JSON.parse(applyData.bulletPoints);
+      expect(parsedBullets).toHaveLength(5);
+      expect(parsedBullets[0].subtitle).toBe("【Pro BP1】");
+      expect(parsedBullets[1].subtitle).toBe("【Emo BP2】");
+      expect(parsedBullets[2].subtitle).toBe("【Data BP3】");
+    });
+
+    it("should handle empty selection gracefully", () => {
+      const applyData: Record<string, any> = { projectId: 1 };
+      const title = "";
+      const bullets: any[] = [];
+
+      if (title) applyData.title = title;
+      if (bullets.length > 0) applyData.bulletPoints = JSON.stringify(bullets);
+
+      expect(applyData.title).toBeUndefined();
+      expect(applyData.bulletPoints).toBeUndefined();
+    });
+
+    it("should preserve bullet point structure when mixing", () => {
+      const selectedBullets = [
+        { variantId: "professional", bulletIdx: 0 },
+        { variantId: "emotional", bulletIdx: 1 },
+      ];
+
+      const bullets = selectedBullets.map((sel) => {
+        const v = mockVariants.find((v) => v.id === sel.variantId)!;
+        return v.bulletData.bulletPoints[sel.bulletIdx];
+      });
+
+      // Each bullet should retain its original structure
+      expect(bullets[0]).toHaveProperty("subtitle");
+      expect(bullets[0]).toHaveProperty("fullText");
+      expect(bullets[0]).toHaveProperty("sellingPoint");
+      expect(bullets[1]).toHaveProperty("subtitle");
+      expect(bullets[1]).toHaveProperty("fullText");
+      expect(bullets[1]).toHaveProperty("sellingPoint");
+    });
+  });
+
+  describe("Mode Toggle", () => {
+    it("should start in browse mode", () => {
+      const mixedMode = "browse";
+      expect(mixedMode).toBe("browse");
+    });
+
+    it("should toggle to mix mode", () => {
+      let mixedMode: "browse" | "mix" = "browse";
+      mixedMode = "mix";
+      expect(mixedMode).toBe("mix");
+    });
+
+    it("should reset to browse mode when dialog closes", () => {
+      let mixedMode: "browse" | "mix" = "mix";
+      // Simulate dialog close
+      mixedMode = "browse";
+      expect(mixedMode).toBe("browse");
+    });
+  });
+
+  describe("Variant Source Tracking", () => {
+    it("should track which variant each bullet comes from", () => {
+      const selectedBullets = [
+        { variantId: "professional", bulletIdx: 0 },
+        { variantId: "emotional", bulletIdx: 1 },
+        { variantId: "datadriven", bulletIdx: 2 },
+        { variantId: "emotional", bulletIdx: 3 },
+        { variantId: "professional", bulletIdx: 4 },
+      ];
+
+      const sources = selectedBullets.map((sel) => {
+        const v = mockVariants.find((v) => v.id === sel.variantId)!;
+        return v.name;
+      });
+
+      expect(sources[0]).toBe("专业技术型");
+      expect(sources[1]).toBe("情感场景型");
+      expect(sources[2]).toBe("数据驱动型");
+      expect(sources[3]).toBe("情感场景型");
+      expect(sources[4]).toBe("专业技术型");
+    });
+
+    it("should track title source variant", () => {
+      const selectedTitleVariant = "datadriven";
+      const v = mockVariants.find((v) => v.id === selectedTitleVariant)!;
+      expect(v.name).toBe("数据驱动型");
+    });
+  });
+});

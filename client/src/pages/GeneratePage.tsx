@@ -28,6 +28,8 @@ import {
   Cpu,
   Heart,
   BarChart3,
+  Shuffle,
+  Eye,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -83,6 +85,11 @@ export default function GeneratePage() {
   const [abVariants, setAbVariants] = useState<any[] | null>(null);
   const [abDialogOpen, setAbDialogOpen] = useState(false);
   const [applyingVariant, setApplyingVariant] = useState<string | null>(null);
+  // Mixed selection state: pick title from one variant, each bullet from any variant
+  const [selectedTitleVariant, setSelectedTitleVariant] = useState<string | null>(null);
+  const [selectedTitleIdx, setSelectedTitleIdx] = useState<number>(0);
+  const [selectedBullets, setSelectedBullets] = useState<Array<{ variantId: string; bulletIdx: number }>>([]);
+  const [mixedMode, setMixedMode] = useState<"browse" | "mix">("browse");
 
   const { data: project } = trpc.project.getById.useQuery(
     { id: selectedProjectId! },
@@ -179,6 +186,7 @@ export default function GeneratePage() {
     onSuccess: (data) => {
       setAbVariants(data.variants);
       setAbDialogOpen(true);
+      setMixedMode("browse");
       toast.success("A/B测试版本生成完成！");
     },
     onError: (err) => toast.error("A/B生成失败: " + err.message),
@@ -211,6 +219,53 @@ export default function GeneratePage() {
     if (variant.bulletData?.bulletPoints) {
       applyData.bulletPoints = JSON.stringify(variant.bulletData.bulletPoints);
     }
+    applyABVariant.mutate(applyData);
+  };
+
+  // Initialize mixed selection when entering mix mode
+  const initMixedSelection = () => {
+    if (!abVariants || abVariants.length === 0) return;
+    setSelectedTitleVariant(abVariants[0].id);
+    setSelectedTitleIdx(0);
+    // Default: all 5 bullets from first variant
+    const firstVariant = abVariants[0];
+    const bulletCount = firstVariant.bulletData?.bulletPoints?.length || 5;
+    setSelectedBullets(
+      Array.from({ length: bulletCount }, (_, i) => ({ variantId: firstVariant.id, bulletIdx: i }))
+    );
+    setMixedMode("mix");
+  };
+
+  // Get selected title text
+  const getSelectedTitle = () => {
+    if (!abVariants || !selectedTitleVariant) return "";
+    const v = abVariants.find((v: any) => v.id === selectedTitleVariant);
+    if (!v) return "";
+    const titles = v.titleData?.titles || [];
+    if (titles[selectedTitleIdx]?.title) return titles[selectedTitleIdx].title;
+    if (v.titleData?.recommendedTitle) return v.titleData.recommendedTitle;
+    return titles[0]?.title || "";
+  };
+
+  // Get selected bullet points as array
+  const getSelectedBulletPoints = () => {
+    if (!abVariants || selectedBullets.length === 0) return [];
+    return selectedBullets.map((sel) => {
+      const v = abVariants.find((v: any) => v.id === sel.variantId);
+      if (!v) return null;
+      return v.bulletData?.bulletPoints?.[sel.bulletIdx] || null;
+    }).filter(Boolean);
+  };
+
+  // Apply mixed selection
+  const handleApplyMixed = () => {
+    if (!selectedProjectId) return;
+    setApplyingVariant("mixed");
+    const applyData: any = { projectId: selectedProjectId };
+    const title = getSelectedTitle();
+    if (title) applyData.title = title;
+    const bullets = getSelectedBulletPoints();
+    if (bullets.length > 0) applyData.bulletPoints = JSON.stringify(bullets);
     applyABVariant.mutate(applyData);
   };
 
@@ -705,7 +760,7 @@ export default function GeneratePage() {
         </div>
       )}
       {/* A/B Test Comparison Dialog */}
-      <Dialog open={abDialogOpen} onOpenChange={setAbDialogOpen}>
+      <Dialog open={abDialogOpen} onOpenChange={(open) => { setAbDialogOpen(open); if (!open) setMixedMode("browse"); }}>
         <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -713,11 +768,36 @@ export default function GeneratePage() {
               A/B 测试版本对比
             </DialogTitle>
             <DialogDescription>
-              对比3种不同风格的标题和五点描述，选择最佳版本应用到当前Listing
+              {mixedMode === "browse" ? "浏览3种风格，整体应用或切换到混合模式自由组合" : "从不同风格中自由挑选标题和五点描述，组合成最佳版本"}
             </DialogDescription>
           </DialogHeader>
 
+          {/* Mode toggle */}
           {abVariants && (
+            <div className="flex gap-2 mt-2">
+              <Button
+                variant={mixedMode === "browse" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setMixedMode("browse")}
+                className="text-xs"
+              >
+                <Eye className="h-3.5 w-3.5 mr-1.5" />
+                浏览模式
+              </Button>
+              <Button
+                variant={mixedMode === "mix" ? "default" : "outline"}
+                size="sm"
+                onClick={initMixedSelection}
+                className="text-xs"
+              >
+                <Shuffle className="h-3.5 w-3.5 mr-1.5" />
+                自由组合模式
+              </Button>
+            </div>
+          )}
+
+          {/* Browse Mode - original tab-based view */}
+          {abVariants && mixedMode === "browse" && (
             <Tabs defaultValue={abVariants[0]?.id} className="mt-4">
               <TabsList className="grid grid-cols-3 w-full">
                 {abVariants.map((v: any) => {
@@ -737,7 +817,6 @@ export default function GeneratePage() {
                 const badgeColor = styleBadgeColors[variant.id] || "";
                 return (
                   <TabsContent key={variant.id} value={variant.id} className="space-y-4 mt-4">
-                    {/* Style description */}
                     <div className={`flex items-center gap-3 p-3 rounded-lg border ${colorClass}`}>
                       <Icon className="h-5 w-5 shrink-0" />
                       <div>
@@ -746,56 +825,37 @@ export default function GeneratePage() {
                       </div>
                     </div>
 
-                    {/* Title section */}
                     {variant.titleData?.titles && (
                       <div className="space-y-2">
                         <h4 className="text-sm font-semibold flex items-center gap-2">
-                          <Type className="h-4 w-4 text-blue-600" />
-                          标题选项
+                          <Type className="h-4 w-4 text-blue-600" /> 标题选项
                         </h4>
-                        {variant.titleData.titles.map((t: any, i: number) => {
-                          const count = t.title?.length || 0;
-                          return (
-                            <div key={i} className={`p-3 rounded-lg border ${
-                              i === 0 ? "border-primary/30 bg-primary/5" : "bg-muted/30"
-                            }`}>
-                              <div className="flex items-start justify-between gap-2">
-                                <p className="text-sm flex-1">{t.title}</p>
-                                <CharCountBadge count={count} min={180} max={200} />
-                              </div>
-                              {t.strategy && (
-                                <p className="text-xs text-muted-foreground mt-1.5">{t.strategy}</p>
-                              )}
-                              {t.coreKeywords && (
-                                <div className="flex gap-1 mt-1.5 flex-wrap">
-                                  {t.coreKeywords.map((k: string, j: number) => (
-                                    <Badge key={j} variant="outline" className={`text-[10px] ${badgeColor}`}>{k}</Badge>
-                                  ))}
-                                </div>
-                              )}
+                        {variant.titleData.titles.map((t: any, i: number) => (
+                          <div key={i} className={`p-3 rounded-lg border ${i === 0 ? "border-primary/30 bg-primary/5" : "bg-muted/30"}`}>
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-sm flex-1">{t.title}</p>
+                              <CharCountBadge count={t.title?.length || 0} min={180} max={200} />
                             </div>
-                          );
-                        })}
-                        {variant.titleData.recommendedTitle && (
-                          <div className="p-2 rounded border border-dashed border-primary/40 bg-primary/5">
-                            <p className="text-xs font-medium text-primary mb-1">推荐标题:</p>
-                            <p className="text-sm">{variant.titleData.recommendedTitle}</p>
+                            {t.strategy && <p className="text-xs text-muted-foreground mt-1.5">{t.strategy}</p>}
+                            {t.coreKeywords && (
+                              <div className="flex gap-1 mt-1.5 flex-wrap">
+                                {t.coreKeywords.map((k: string, j: number) => (
+                                  <Badge key={j} variant="outline" className={`text-[10px] ${badgeColor}`}>{k}</Badge>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        )}
+                        ))}
                       </div>
                     )}
 
-                    {/* Bullet Points section */}
                     {variant.bulletData?.bulletPoints && (
                       <div className="space-y-2">
                         <h4 className="text-sm font-semibold flex items-center gap-2">
-                          <List className="h-4 w-4 text-green-600" />
-                          五点描述
+                          <List className="h-4 w-4 text-green-600" /> 五点描述
                         </h4>
                         {variant.bulletData.bulletPoints.map((bp: any, i: number) => {
-                          const fullBullet = bp.subtitle && bp.fullText
-                            ? `${bp.subtitle} ${bp.fullText}`
-                            : bp.fullText || bp.subtitle || "";
+                          const fullBullet = bp.subtitle && bp.fullText ? `${bp.subtitle} ${bp.fullText}` : bp.fullText || bp.subtitle || "";
                           return (
                             <div key={i} className="p-3 rounded-lg border bg-muted/30">
                               <div className="flex items-start justify-between gap-2">
@@ -809,11 +869,7 @@ export default function GeneratePage() {
                               {bp.fabeBreakdown && (
                                 <div className="grid grid-cols-2 gap-1.5 mt-2">
                                   {Object.entries(bp.fabeBreakdown).map(([key, val]) => (
-                                    val ? (
-                                      <div key={key} className="text-[10px] text-muted-foreground">
-                                        <span className="font-medium uppercase">{key}:</span> {val as string}
-                                      </div>
-                                    ) : null
+                                    val ? <div key={key} className="text-[10px] text-muted-foreground"><span className="font-medium uppercase">{key}:</span> {val as string}</div> : null
                                   ))}
                                 </div>
                               )}
@@ -823,30 +879,213 @@ export default function GeneratePage() {
                       </div>
                     )}
 
-                    {/* Apply button */}
-                    <div className="flex justify-end pt-2 border-t">
-                      <Button
-                        onClick={() => handleApplyVariant(variant)}
-                        disabled={applyingVariant !== null}
-                        className="min-w-[160px]"
-                      >
-                        {applyingVariant === variant.id ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            应用中...
-                          </>
-                        ) : (
-                          <>
-                            <Check className="h-4 w-4 mr-2" />
-                            应用此版本
-                          </>
-                        )}
+                    <div className="flex justify-between pt-2 border-t">
+                      <Button variant="outline" size="sm" onClick={initMixedSelection}>
+                        <Shuffle className="h-4 w-4 mr-2" /> 自由组合
+                      </Button>
+                      <Button onClick={() => handleApplyVariant(variant)} disabled={applyingVariant !== null} className="min-w-[160px]">
+                        {applyingVariant === variant.id ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />应用中...</>) : (<><Check className="h-4 w-4 mr-2" />应用此版本</>)}
                       </Button>
                     </div>
                   </TabsContent>
                 );
               })}
             </Tabs>
+          )}
+
+          {/* Mixed Selection Mode */}
+          {abVariants && mixedMode === "mix" && (
+            <div className="mt-4 space-y-6">
+              {/* Title Selection */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold flex items-center gap-2">
+                  <Type className="h-4 w-4 text-blue-600" />
+                  选择标题
+                  <span className="text-xs text-muted-foreground font-normal">（从任意风格中选择一个标题）</span>
+                </h4>
+                <div className="space-y-2">
+                  {abVariants.map((variant: any) => {
+                    const Icon = styleIcons[variant.id] || Cpu;
+                    const colorClass = styleColors[variant.id] || "";
+                    const titles = variant.titleData?.titles || [];
+                    const recTitle = variant.titleData?.recommendedTitle;
+                    // Use recommended title or first title
+                    const displayTitle = recTitle || titles[0]?.title || "";
+                    const displayIdx = recTitle ? -1 : 0;
+                    const isSelected = selectedTitleVariant === variant.id;
+                    return (
+                      <div
+                        key={variant.id}
+                        className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                          isSelected
+                            ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                            : "border-muted hover:border-muted-foreground/30"
+                        }`}
+                        onClick={() => {
+                          setSelectedTitleVariant(variant.id);
+                          setSelectedTitleIdx(displayIdx === -1 ? 0 : displayIdx);
+                        }}
+                      >
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${colorClass}`}>
+                            <Icon className="h-3 w-3" />
+                            {variant.name}
+                          </div>
+                          {isSelected && <Badge className="text-[10px] bg-primary text-primary-foreground">已选</Badge>}
+                          <CharCountBadge count={displayTitle.length} min={180} max={200} />
+                        </div>
+                        <p className="text-sm">{displayTitle}</p>
+                        {titles.length > 1 && (
+                          <div className="mt-2 space-y-1">
+                            {titles.map((t: any, ti: number) => {
+                              if (recTitle && ti === 0 && t.title === recTitle) return null;
+                              const isTitleSelected = isSelected && selectedTitleIdx === ti;
+                              return (
+                                <div
+                                  key={ti}
+                                  className={`p-2 rounded text-xs border cursor-pointer transition-all ${
+                                    isTitleSelected ? "border-primary/50 bg-primary/10" : "border-transparent hover:bg-muted/50"
+                                  }`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedTitleVariant(variant.id);
+                                    setSelectedTitleIdx(ti);
+                                  }}
+                                >
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-muted-foreground">备选 {ti + 1}:</span>
+                                    {isTitleSelected && <Badge className="text-[9px] bg-primary text-primary-foreground">已选</Badge>}
+                                  </div>
+                                  <p className="mt-0.5">{t.title}</p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Bullet Points Selection */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold flex items-center gap-2">
+                  <List className="h-4 w-4 text-green-600" />
+                  选择五点描述
+                  <span className="text-xs text-muted-foreground font-normal">（每条可从不同风格中选择）</span>
+                </h4>
+                {(() => {
+                  const maxBullets = Math.max(...abVariants.map((v: any) => v.bulletData?.bulletPoints?.length || 0));
+                  return Array.from({ length: maxBullets }, (_, bulletIdx) => (
+                    <div key={bulletIdx} className="space-y-1.5">
+                      <p className="text-xs font-medium text-muted-foreground">卖点 {bulletIdx + 1}</p>
+                      <div className="grid gap-2">
+                        {abVariants.map((variant: any) => {
+                          const bp = variant.bulletData?.bulletPoints?.[bulletIdx];
+                          if (!bp) return null;
+                          const Icon = styleIcons[variant.id] || Cpu;
+                          const colorClass = styleColors[variant.id] || "";
+                          const isSelected = selectedBullets[bulletIdx]?.variantId === variant.id && selectedBullets[bulletIdx]?.bulletIdx === bulletIdx;
+                          const fullBullet = bp.subtitle && bp.fullText ? `${bp.subtitle} ${bp.fullText}` : bp.fullText || bp.subtitle || "";
+                          return (
+                            <div
+                              key={variant.id}
+                              className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                                isSelected
+                                  ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                                  : "border-muted hover:border-muted-foreground/30"
+                              }`}
+                              onClick={() => {
+                                setSelectedBullets((prev) => {
+                                  const next = [...prev];
+                                  // Ensure array is long enough
+                                  while (next.length <= bulletIdx) {
+                                    next.push({ variantId: abVariants[0].id, bulletIdx: next.length });
+                                  }
+                                  next[bulletIdx] = { variantId: variant.id, bulletIdx };
+                                  return next;
+                                });
+                              }}
+                            >
+                              <div className="flex items-center gap-2 mb-1">
+                                <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${colorClass}`}>
+                                  <Icon className="h-2.5 w-2.5" />
+                                  {variant.name}
+                                </div>
+                                {isSelected && <Badge className="text-[9px] bg-primary text-primary-foreground">已选</Badge>}
+                                <CharCountBadge count={fullBullet.length} min={200} max={280} />
+                              </div>
+                              <p className="text-sm">
+                                <span className="font-bold">{bp.subtitle || `卖点 ${bulletIdx + 1}`}</span>
+                                {" \u2014 "}
+                                <span className="text-muted-foreground">{bp.fullText || bp.sellingPoint || ""}</span>
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+
+              {/* Combined Preview */}
+              <div className="space-y-3 p-4 rounded-lg border-2 border-dashed border-primary/30 bg-primary/5">
+                <h4 className="text-sm font-semibold flex items-center gap-2">
+                  <Eye className="h-4 w-4 text-primary" />
+                  组合预览
+                </h4>
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">标题</p>
+                    <p className="text-sm font-medium">{getSelectedTitle() || "未选择标题"}</p>
+                    {selectedTitleVariant && (
+                      <Badge variant="outline" className={`text-[9px] mt-1 ${styleBadgeColors[selectedTitleVariant] || ""}`}>
+                        来自: {abVariants.find((v: any) => v.id === selectedTitleVariant)?.name}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="border-t pt-2">
+                    <p className="text-xs text-muted-foreground mb-1.5">五点描述</p>
+                    {getSelectedBulletPoints().map((bp: any, i: number) => {
+                      const fromVariant = selectedBullets[i]?.variantId;
+                      return (
+                        <div key={i} className="flex items-start gap-2 mb-1.5">
+                          <span className="text-xs text-muted-foreground mt-0.5 shrink-0">{i + 1}.</span>
+                          <div className="flex-1">
+                            <p className="text-sm">
+                              <span className="font-bold">{bp.subtitle}</span>
+                              {" \u2014 "}
+                              <span className="text-muted-foreground">{bp.fullText || bp.sellingPoint || ""}</span>
+                            </p>
+                            {fromVariant && (
+                              <Badge variant="outline" className={`text-[9px] mt-0.5 ${styleBadgeColors[fromVariant] || ""}`}>
+                                {abVariants.find((v: any) => v.id === fromVariant)?.name}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Apply mixed button */}
+              <div className="flex justify-between pt-2 border-t">
+                <Button variant="outline" size="sm" onClick={() => setMixedMode("browse")}>
+                  <Eye className="h-4 w-4 mr-2" /> 返回浏览
+                </Button>
+                <Button onClick={handleApplyMixed} disabled={applyingVariant !== null} className="min-w-[180px]">
+                  {applyingVariant === "mixed" ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />应用中...</>
+                  ) : (
+                    <><Shuffle className="h-4 w-4 mr-2" />应用组合版本</>
+                  )}
+                </Button>
+              </div>
+            </div>
           )}
         </DialogContent>
       </Dialog>
