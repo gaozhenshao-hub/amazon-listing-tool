@@ -34,6 +34,7 @@ import {
   Database,
   BarChart3,
   Gauge,
+  Key,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -50,6 +51,7 @@ const menuItems = [
   { icon: Sparkles, label: "Listing生成", path: "/generate" },
   { icon: FileText, label: "结果预览", path: "/preview" },
   { icon: Gauge, label: "Listing评分", path: "/score" },
+  { icon: Key, label: "关键词管理", path: "/keywords" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

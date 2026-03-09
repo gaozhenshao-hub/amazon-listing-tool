@@ -153,3 +153,84 @@ export const analysisVersions = mysqlTable("analysisVersions", {
 
 export type AnalysisVersion = typeof analysisVersions.$inferSelect;
 export type InsertAnalysisVersion = typeof analysisVersions.$inferInsert;
+
+// Keywords table - stores all keywords for a project with multi-dimensional scoring
+export const keywords = mysqlTable("keywords", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  keyword: varchar("keyword", { length: 500 }).notNull(),
+  // Source tracking
+  source: mysqlEnum("source", ["manual", "csv_import", "asin_reverse", "search_suggest", "review_extract", "ai_expand"]).default("manual").notNull(),
+  sourceDetail: text("sourceDetail"), // e.g., which ASIN or tool
+  // Three-dimensional scoring
+  relevance: mysqlEnum("relevance", ["high", "medium", "low", "none"]).default("medium").notNull(),
+  trafficLevel: mysqlEnum("trafficLevel", ["high", "medium", "low"]).default("medium").notNull(),
+  competition: mysqlEnum("competition", ["high", "medium", "low"]).default("medium").notNull(),
+  // Metrics from tools (卖家精灵/西柚找词)
+  monthlySearchVolume: int("monthlySearchVolume"),
+  spr: int("spr"), // SellerSprite Product Rank
+  ppcBid: varchar("ppcBid", { length: 20 }), // PPC bid price
+  naturalRank: int("naturalRank"), // organic rank from 西柚找词
+  trafficScore: int("trafficScore"), // traffic score from 西柚找词
+  // AI scene tagging (COSMO)
+  sceneTags: text("sceneTags"), // JSON array: ["送礼", "户外旅行", "办公桌面"]
+  intentTag: varchar("intentTag", { length: 100 }), // purchase intent tag
+  // Word root classification (7 types)
+  rootCategory: mysqlEnum("rootCategory", [
+    "core",       // 核心词根
+    "function",   // 功能词根
+    "scene",      // 场景词根 (COSMO)
+    "audience",   // 人群词根
+    "spec",       // 规格词根
+    "painpoint",  // 痛点词根
+    "gift_holiday" // 节日/礼品词根
+  ]),
+  rootWord: varchar("rootWord", { length: 200 }), // extracted root word
+  rootImpact: mysqlEnum("rootImpact", ["high", "medium", "low"]),
+  // 3D Strategy Matrix category
+  strategyCategory: mysqlEnum("strategyCategory", [
+    "core_main",        // 核心主词
+    "sub_core",         // 次核心词
+    "precise_longtail", // 精准长尾词
+    "scene_intent",     // 场景意图词
+    "longtail_main",    // 长尾主词
+    "observe_test",     // 观察测试词
+    "negative"          // 可删除/否定词
+  ]),
+  // Listing placement suggestion
+  listingPlacement: mysqlEnum("listingPlacement", [
+    "title_front",      // 标题前段
+    "title_mid",        // 标题中后段
+    "title_end",        // 标题末尾
+    "bullet_first",     // 五点描述首句
+    "bullet_body",      // 五点描述自然融入
+    "aplus",            // A+ 核心文案
+    "search_term",      // 后台 Search Term
+    "not_use"           // 绝对不使用
+  ]),
+  // Status
+  status: mysqlEnum("status", ["raw", "cleaned", "scored", "tagged", "finalized", "negative"]).default("raw").notNull(),
+  isNegative: int("isNegative").default(0).notNull(), // 0=normal, 1=negative keyword
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Keyword = typeof keywords.$inferSelect;
+export type InsertKeyword = typeof keywords.$inferInsert;
+
+// Negative keywords library
+export const negativeKeywords = mysqlTable("negativeKeywords", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  keyword: varchar("keyword", { length: 500 }).notNull(),
+  isRoot: int("isRoot").default(0).notNull(), // 1=word root, 0=exact keyword
+  reason: text("reason"), // why it's negative
+  source: mysqlEnum("source", ["auto_filter", "manual", "ai_suggest", "word_freq"]).default("manual").notNull(),
+  matchType: mysqlEnum("matchType", ["exact", "phrase", "broad"]).default("exact").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type NegativeKeyword = typeof negativeKeywords.$inferSelect;
+export type InsertNegativeKeyword = typeof negativeKeywords.$inferInsert;

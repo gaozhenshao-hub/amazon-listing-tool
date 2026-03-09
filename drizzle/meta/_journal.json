@@ -43,6 +43,13 @@
       "when": 1773024681007,
       "tag": "0005_premium_christian_walker",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1773037237977,
+      "tag": "0006_chubby_hellion",
+      "breakpoints": true
     }
   ]
 }

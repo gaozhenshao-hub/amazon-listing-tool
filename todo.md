@@ -114,3 +114,22 @@
 - [x] Feature: Listing Score System - Frontend ScorePage with radar chart, score cards, dimension details, optimization suggestions
 - [x] Feature: Listing Score System - Sidebar navigation for Listing评分
 - [x] Unit tests for Listing scoring system (11 tests, 137 total passing)
+- [x] Feature: Keyword Module - Database schema design (keywords, negativeKeywords tables)
+- [x] Feature: Keyword Module - Database migration execution
+- [x] Feature: Keyword Module - Backend CRUD API for keywords (add, update, delete, list, bulk import, bulkUpdate)
+- [x] Feature: Keyword Module - CSV import for keyword data (西柚找词/卖家精灵 export format, auto column detection)
+- [x] Feature: Keyword Module - Three-dimensional scoring (traffic × relevance × competition/SPR auto-classification)
+- [x] Feature: Keyword Module - AI semantic filtering (remove non-purchase-intent, generic words)
+- [x] Feature: Keyword Module - AI scene tagging (COSMO-aligned scene tags)
+- [x] Feature: Keyword Module - Negative keyword library management (add/delete/clear/moveToNegative)
+- [x] Feature: Keyword Module - 3D Strategy Matrix generation (7 categories via AI)
+- [x] Feature: Keyword Module - Word root classification (7 types via AI)
+- [x] Feature: Keyword Module - Listing semantic map & layout suggestions (AI-powered)
+- [x] Feature: Keyword Module - Full pipeline (one-click run all AI steps)
+- [x] Feature: Keyword Module - Frontend keyword management page with 6 tabs
+- [x] Feature: Keyword Module - Frontend 3D strategy matrix visualization
+- [x] Feature: Keyword Module - Frontend word root classification view
+- [x] Feature: Keyword Module - Frontend negative keyword library UI
+- [x] Feature: Keyword Module - Sidebar navigation for 关键词管理
+- [x] Unit tests for keyword module (21 tests, 158 total passing)
+- [x] Bug fix: Relevance parsing order (极低 before 低)

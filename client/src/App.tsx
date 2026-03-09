@@ -15,6 +15,7 @@ import ComparisonPage from "./pages/ComparisonPage";
 import ReviewHistoryPage from "./pages/ReviewHistoryPage";
 import DataFilesPage from "./pages/DataFilesPage";
 import ScorePage from "./pages/ScorePage";
+import KeywordPage from "./pages/KeywordPage";
 
 function Router() {
   return (
@@ -29,6 +30,7 @@ function Router() {
         <Route path="/review-history" component={ReviewHistoryPage} />
         <Route path="/data-files" component={DataFilesPage} />
         <Route path="/score" component={ScorePage} />
+        <Route path="/keywords" component={KeywordPage} />
         <Route path="/project/:id" component={ProjectDetailPage} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
