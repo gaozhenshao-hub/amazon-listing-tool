@@ -317,6 +317,33 @@ export const scoringRouter = router({
       // Save optimized content
       await db.updateListing(listing.id, { [updateField]: optimizedContent });
 
+      // Save version snapshot after optimization
+      try {
+        const updatedListing = await db.getListingById(listing.id);
+        if (updatedListing) {
+          const dimMap: Record<string, string> = { "Title Optimization": "标题", "Bullet Points Quality": "卖点", "Description Quality": "描述", "Search Terms Optimization": "搜索词" };
+          const latestVer = await db.getLatestListingVersionNumber(listing.id);
+          await db.createListingVersion({
+            listingId: listing.id,
+            projectId: updatedListing.projectId,
+            userId: ctx.user.id,
+            versionNumber: latestVer + 1,
+            changeType: "optimize",
+            changeDescription: `AI优化: ${dimMap[input.dimension] || input.dimension}`,
+            title: updatedListing.title || null,
+            bulletPoints: updatedListing.bulletPoints || null,
+            description: updatedListing.description || null,
+            searchTerms: updatedListing.searchTerms || null,
+            titleCn: updatedListing.titleCn || null,
+            bulletPointsCn: updatedListing.bulletPointsCn || null,
+            descriptionCn: updatedListing.descriptionCn || null,
+            searchTermsCn: updatedListing.searchTermsCn || null,
+          });
+        }
+      } catch (err) {
+        console.error("Failed to save version after optimization:", err);
+      }
+
       return {
         dimension: input.dimension,
         field: updateField,

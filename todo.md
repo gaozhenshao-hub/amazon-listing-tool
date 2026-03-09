@@ -212,3 +212,12 @@
 - [x] Feature: A/B test - Frontend: checkbox toggle for custom style, name input + instruction textarea, dynamic button text
 - [x] Feature: A/B test - Mixed selection works with 4 variants (custom style selectable in title/bullet mix)
 - [x] Feature: A/B test - Unit tests (13 new tests, 312 total passing)
+- [x] Feature: Ad structure - Export Amazon Bulk Sheet Excel (SP ads bulk upload format)
+- [x] Feature: Ad structure - Generate Excel with Campaign/Ad Group/Keyword/Match Type/Bid columns
+- [x] Feature: Ad structure - Frontend "导出Bulk Sheet" button on AdStructurePage
+- [x] Feature: Version history - Database table (listingVersions) for listing content snapshots
+- [x] Feature: Version history - Backend API (getVersionHistory, rollbackToVersion)
+- [x] Feature: Version history - Auto-save version on generate/AB-apply/optimize/manual-edit
+- [x] Feature: Version history - Frontend version history panel on PreviewPage
+- [x] Feature: Version history - Version comparison and one-click rollback UI
+- [x] Unit tests for Bulk Sheet export and version history features (12 new tests, 324 total passing)

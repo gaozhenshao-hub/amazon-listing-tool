@@ -14,6 +14,37 @@ import {
 
 const MAX_RETRIES = 2;
 
+// Helper: create a version snapshot of the current listing state
+async function saveListingVersion(
+  listing: any,
+  userId: number,
+  changeType: "generate" | "ab_apply" | "optimize" | "manual_edit" | "translate",
+  changeDescription: string
+) {
+  try {
+    const latestVersion = await db.getLatestListingVersionNumber(listing.id);
+    await db.createListingVersion({
+      listingId: listing.id,
+      projectId: listing.projectId,
+      userId,
+      versionNumber: latestVersion + 1,
+      changeType,
+      changeDescription,
+      title: listing.title || null,
+      bulletPoints: listing.bulletPoints || null,
+      description: listing.description || null,
+      searchTerms: listing.searchTerms || null,
+      titleCn: listing.titleCn || null,
+      bulletPointsCn: listing.bulletPointsCn || null,
+      descriptionCn: listing.descriptionCn || null,
+      searchTermsCn: listing.searchTermsCn || null,
+    });
+  } catch (err) {
+    console.error("Failed to save listing version:", err);
+    // Non-critical - don't throw
+  }
+}
+
 // Validate bullet points character counts, returns list of out-of-range bullets
 function validateBullets(bulletData: any): { valid: boolean; issues: string[] } {
   if (!bulletData?.bulletPoints || !Array.isArray(bulletData.bulletPoints)) {
@@ -933,6 +964,9 @@ export const listingRouter = router({
 
       await db.updateProject(input.projectId, ctx.user.id, { status: "completed" });
 
+      // Save version snapshot
+      await saveListingVersion(savedListing, ctx.user.id, "generate", `全量生成 v${nextVersion}`);
+
       return {
         listing: savedListing,
         titleOptions: titleData,
@@ -983,6 +1017,12 @@ export const listingRouter = router({
         imageAdviceCn: imageAdviceCnStr,
       });
 
+      // Save version snapshot after translation
+      await saveListingVersion(
+        { ...listing, titleCn: cnData.titleCn, bulletPointsCn: JSON.stringify(cnData.bulletPointsCn), descriptionCn: cnData.descriptionCn, searchTermsCn: cnData.searchTermsCn },
+        ctx.user.id, "translate", "添加中文翻译"
+      );
+
       return {
         ...cnData,
         listing: updated,
@@ -1002,9 +1042,17 @@ export const listingRouter = router({
       descriptionCn: z.string().optional(),
       searchTermsCn: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
-      return db.updateListing(id, data);
+      const result = await db.updateListing(id, data);
+      // Save version snapshot after manual edit
+      if (result && ctx.user) {
+        const updatedFields = Object.keys(data).filter(k => (data as any)[k] !== undefined);
+        const fieldMap: Record<string, string> = { title: '标题', bulletPoints: '卖点', description: '描述', searchTerms: '搜索词', titleCn: '中文标题', bulletPointsCn: '中文卖点', descriptionCn: '中文描述', searchTermsCn: '中文搜索词' };
+        const fieldNames = updatedFields.map(f => fieldMap[f] || f).join('、');
+        await saveListingVersion(result, ctx.user.id, "manual_edit", `手动编辑: ${fieldNames}`);
+      }
+      return result;
     }),
 
   // Generate A/B test variants - 3 different styles for title and bullet points
@@ -1198,6 +1246,64 @@ export const listingRouter = router({
       }
 
       const updated = await db.updateListing(listing.id, updateData);
+
+      // Save version snapshot after A/B variant applied
+      if (updated) {
+        const appliedParts = [];
+        if (input.title) appliedParts.push("标题");
+        if (input.bulletPoints) appliedParts.push("卖点");
+        await saveListingVersion(updated, ctx.user.id, "ab_apply", `应用A/B测试方案: ${appliedParts.join("、")}`);
+      }
+
       return { listing: updated, applied: Object.keys(updateData) };
+    }),
+
+  // ─── Version History Procedures ───
+
+  // Get version history for a project
+  getVersionHistory: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ input }) => {
+      return db.getListingVersionsByProject(input.projectId);
+    }),
+
+  // Rollback to a specific version
+  rollbackToVersion: protectedProcedure
+    .input(z.object({
+      versionId: z.number(),
+      projectId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      const version = await db.getListingVersionById(input.versionId);
+      if (!version) throw new Error("Version not found");
+      if (version.projectId !== input.projectId) throw new Error("Version does not belong to this project");
+
+      const listing = await db.getActiveListingByProject(input.projectId);
+      if (!listing) throw new Error("No active listing found");
+
+      // Save current state as a version before rollback
+      await saveListingVersion(listing, ctx.user.id, "manual_edit", `回滚前的状态备份`);
+
+      // Apply the version snapshot to the active listing
+      const updated = await db.updateListing(listing.id, {
+        title: version.title,
+        bulletPoints: version.bulletPoints,
+        description: version.description,
+        searchTerms: version.searchTerms,
+        titleCn: version.titleCn,
+        bulletPointsCn: version.bulletPointsCn,
+        descriptionCn: version.descriptionCn,
+        searchTermsCn: version.searchTermsCn,
+      });
+
+      // Save the rollback as a new version
+      if (updated) {
+        await saveListingVersion(updated, ctx.user.id, "manual_edit", `回滚到版本 #${version.versionNumber}`);
+      }
+
+      return { listing: updated, rolledBackTo: version.versionNumber };
     }),
 });

@@ -47,22 +47,15 @@
     {
       "idx": 6,
       "version": "5",
-      "when": 1773037237977,
-      "tag": "0006_chubby_hellion",
+      "when": 1773059087513,
+      "tag": "0006_tan_titania",
       "breakpoints": true
     },
     {
       "idx": 7,
       "version": "5",
-      "when": 1773039531445,
-      "tag": "0007_wakeful_flatman",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "5",
-      "when": 1773053186586,
-      "tag": "0008_superb_blue_shield",
+      "when": 1773059622060,
+      "tag": "0007_free_chronomancer",
       "breakpoints": true
     }
   ]

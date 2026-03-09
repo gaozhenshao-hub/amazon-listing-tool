@@ -16,7 +16,7 @@ import {
   DollarSign, TrendingUp, AlertTriangle, ChevronDown, ChevronUp,
   Trash2, RefreshCw, BarChart3, PieChart, Clock, Info, Copy, Check,
   Pencil, Save, X, Plus, GripVertical, Radar, Star, Download,
-  ArrowUpRight, ArrowDownRight, Minus
+  ArrowUpRight, ArrowDownRight, Minus, FileSpreadsheet
 } from "lucide-react";
 
 // Ad group type labels and colors
@@ -318,6 +318,171 @@ export default function AdStructurePage() {
     toast.success(`已导出 ${displayData.adStructure.campaigns.length} 个Campaign，${kwCount} 个关键词`);
   };
 
+  // Export Amazon Seller Central Bulk Sheet (SP Ads format)
+  const exportBulkSheet = async () => {
+    if (!displayData?.adStructure?.campaigns) { toast.error("没有可导出的广告架构数据"); return; }
+
+    // Dynamic import xlsx
+    const XLSX = await import("xlsx");
+
+    const rows: any[][] = [];
+
+    // Header row matching Amazon SP Bulk Sheet format
+    const headers = [
+      "Record Type", "Campaign Name", "Campaign Daily Budget",
+      "Campaign Start Date", "Campaign Targeting Type", "Campaign Status",
+      "Bidding Strategy", "Ad Group Name", "Ad Group Default Bid",
+      "Keyword or Product Targeting", "Match Type", "Keyword Bid",
+      "Product Targeting ID", "Status", "Operation",
+    ];
+    rows.push(headers);
+
+    const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+
+    // Process each campaign
+    for (const campaign of displayData.adStructure.campaigns) {
+      const campaignName = campaign.campaignName || `SP-${AD_GROUP_LABELS[campaign.adGroupType]?.label || campaign.adGroupType}-${MATCH_TYPE_LABELS[campaign.matchType]?.label || campaign.matchType}`;
+      const dailyBudget = (campaign.dailyBudget || "$10").replace("$", "");
+      const isAuto = campaign.adGroupType === "auto_campaign";
+      const targetingType = isAuto ? "Auto" : "Manual";
+
+      // Campaign row
+      rows.push([
+        "Campaign", campaignName, dailyBudget,
+        today, targetingType, "enabled",
+        "legacyForSales", "", "",
+        "", "", "",
+        "", "", "Create",
+      ]);
+
+      // Ad Group row
+      const adGroupName = `${campaignName}-AdGroup`;
+      const defaultBid = "0.75";
+      rows.push([
+        "Ad Group", campaignName, "",
+        "", "", "",
+        "", adGroupName, defaultBid,
+        "", "", "",
+        "", "enabled", "Create",
+      ]);
+
+      // Keyword rows
+      if (!isAuto && campaign.keywords && campaign.keywords.length > 0) {
+        for (const kw of campaign.keywords) {
+          if (!kw.keyword) continue;
+          // Check if it's an ASIN targeting (competitor ASIN group)
+          const isAsin = /^B0[A-Z0-9]{8}$/i.test(kw.keyword.trim());
+          const bid = (kw.suggestedBid || "$0.75").replace("$", "");
+
+          if (isAsin) {
+            // Product targeting row
+            rows.push([
+              "Product Targeting", campaignName, "",
+              "", "", "",
+              "", adGroupName, "",
+              "", "", bid,
+              `asin="${kw.keyword.trim()}"`, "enabled", "Create",
+            ]);
+          } else {
+            // Keyword row
+            rows.push([
+              "Keyword", campaignName, "",
+              "", "", "",
+              "", adGroupName, "",
+              kw.keyword.trim(), campaign.matchType || "broad", bid,
+              "", "enabled", "Create",
+            ]);
+          }
+        }
+      }
+
+      // Negative keyword rows
+      if (campaign.negativeKeywords && campaign.negativeKeywords.length > 0) {
+        for (const negKw of campaign.negativeKeywords) {
+          rows.push([
+            "Negative Keyword", campaignName, "",
+            "", "", "",
+            "", adGroupName, "",
+            negKw, "negative exact", "",
+            "", "", "Create",
+          ]);
+        }
+      }
+    }
+
+    // Auto campaign from autoCompaign section
+    if (displayData.adStructure.autoCompaign) {
+      const auto = displayData.adStructure.autoCompaign;
+      const autoCampaignName = "SP-Auto-Campaign";
+      const autoBudget = (auto.dailyBudget || "$15").replace("$", "");
+      const autoBid = (auto.defaultBid || "$0.50").replace("$", "");
+
+      rows.push([
+        "Campaign", autoCampaignName, autoBudget,
+        today, "Auto", "enabled",
+        "legacyForSales", "", "",
+        "", "", "",
+        "", "", "Create",
+      ]);
+
+      rows.push([
+        "Ad Group", autoCampaignName, "",
+        "", "", "",
+        "", `${autoCampaignName}-AdGroup`, autoBid,
+        "", "", "",
+        "", "enabled", "Create",
+      ]);
+
+      // Negative exact keywords for auto campaign
+      if (auto.negativeExact && auto.negativeExact.length > 0) {
+        for (const negKw of auto.negativeExact) {
+          rows.push([
+            "Negative Keyword", autoCampaignName, "",
+            "", "", "",
+            "", `${autoCampaignName}-AdGroup`, "",
+            negKw, "negative exact", "",
+            "", "", "Create",
+          ]);
+        }
+      }
+
+      // Negative phrase keywords for auto campaign
+      if (auto.negativePhrase && auto.negativePhrase.length > 0) {
+        for (const negKw of auto.negativePhrase) {
+          rows.push([
+            "Negative Keyword", autoCampaignName, "",
+            "", "", "",
+            "", `${autoCampaignName}-AdGroup`, "",
+            negKw, "negative phrase", "",
+            "", "", "Create",
+          ]);
+        }
+      }
+    }
+
+    // Create workbook
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+
+    // Set column widths
+    ws["!cols"] = [
+      { wch: 18 }, { wch: 35 }, { wch: 18 },
+      { wch: 16 }, { wch: 20 }, { wch: 12 },
+      { wch: 18 }, { wch: 35 }, { wch: 18 },
+      { wch: 40 }, { wch: 14 }, { wch: 12 },
+      { wch: 25 }, { wch: 10 }, { wch: 10 },
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Sponsored Products Campaigns");
+
+    // Download
+    XLSX.writeFile(wb, `SP_BulkSheet_${projectId}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+
+    const kwCount = rows.filter(r => r[0] === "Keyword" || r[0] === "Product Targeting").length;
+    const campaignCount = rows.filter(r => r[0] === "Campaign").length;
+    toast.success(`已导出Bulk Sheet: ${campaignCount} 个Campaign，${kwCount} 个关键词/定投目标`);
+  };
+
   // Reset edit mode when switching projects
   useEffect(() => {
     setIsEditing(false);
@@ -351,6 +516,10 @@ export default function AdStructurePage() {
             <Button variant="outline" onClick={exportAdCsv}>
               <Download className="h-4 w-4 mr-2" />
               导出CSV
+            </Button>
+            <Button variant="outline" onClick={exportBulkSheet} className="border-orange-300 text-orange-700 hover:bg-orange-50">
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              导出Bulk Sheet
             </Button>
             <Button variant="outline" onClick={startEditing}>
               <Pencil className="h-4 w-4 mr-2" />

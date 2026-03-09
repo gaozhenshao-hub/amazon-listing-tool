@@ -12,6 +12,7 @@ import {
   InsertKeyword, keywords,
   InsertNegativeKeyword, negativeKeywords,
   InsertAdStructure, adStructures,
+  InsertListingVersion, listingVersions,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -192,6 +193,13 @@ export async function getActiveListingByProject(projectId: number) {
     .where(and(eq(listings.projectId, projectId), eq(listings.isActive, 1)))
     .orderBy(desc(listings.version))
     .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getListingById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(listings).where(eq(listings.id, id)).limit(1);
   return rows[0] ?? null;
 }
 
@@ -506,4 +514,37 @@ export async function deleteAdStructure(id: number) {
   if (!db) throw new Error("Database not available");
   await db.delete(adStructures).where(eq(adStructures.id, id));
   return { success: true };
+}
+
+// ─── Listing Version History ───
+
+export async function createListingVersion(data: InsertListingVersion) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(listingVersions).values(data);
+  return { id: result[0].insertId, ...data };
+}
+
+export async function getListingVersionsByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(listingVersions).where(eq(listingVersions.projectId, projectId)).orderBy(desc(listingVersions.id));
+}
+
+export async function getListingVersionById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(listingVersions).where(eq(listingVersions.id, id));
+  return rows[0] || null;
+}
+
+export async function getLatestListingVersionNumber(listingId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const rows = await db.select({ versionNumber: listingVersions.versionNumber })
+    .from(listingVersions)
+    .where(eq(listingVersions.listingId, listingId))
+    .orderBy(desc(listingVersions.versionNumber))
+    .limit(1);
+  return rows[0]?.versionNumber || 0;
 }

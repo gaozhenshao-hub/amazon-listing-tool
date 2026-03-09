@@ -1,0 +1,13 @@
+{
+  "query": "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listings' AND COLUMN_NAME = 'imageAdviceCn';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'listings' AND COLUMN_NAME = 'imageAdviceCn';",
+  "rows": [
+    {
+      "COLUMN_NAME": "imageAdviceCn"
+    }
+  ],
+  "messages": [],
+  "stdout": "COLUMN_NAME\nimageAdviceCn\n",
+  "stderr": "",
+  "execution_time_ms": 134
+}

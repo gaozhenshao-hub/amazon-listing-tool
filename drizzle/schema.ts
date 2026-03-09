@@ -253,3 +253,32 @@ export const negativeKeywords = mysqlTable("negativeKeywords", {
 
 export type NegativeKeyword = typeof negativeKeywords.$inferSelect;
 export type InsertNegativeKeyword = typeof negativeKeywords.$inferInsert;
+
+// Listing version history - snapshots of listing content for each change
+export const listingVersions = mysqlTable("listingVersions", {
+  id: int("id").autoincrement().primaryKey(),
+  listingId: int("listingId").notNull(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  versionNumber: int("versionNumber").default(1).notNull(),
+  changeType: mysqlEnum("changeType", [
+    "generate",       // Initial full generation
+    "ab_apply",       // A/B test variant applied
+    "optimize",       // AI optimization applied
+    "manual_edit",    // Manual user edit
+    "translate",      // Chinese translation added
+  ]).notNull(),
+  changeDescription: text("changeDescription"),
+  // Snapshot of listing content at this version
+  title: text("title"),
+  bulletPoints: text("bulletPoints"),
+  description: text("description"),
+  searchTerms: text("searchTerms"),
+  titleCn: text("titleCn"),
+  bulletPointsCn: text("bulletPointsCn"),
+  descriptionCn: text("descriptionCn"),
+  searchTermsCn: text("searchTermsCn"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type ListingVersion = typeof listingVersions.$inferSelect;
+export type InsertListingVersion = typeof listingVersions.$inferInsert;

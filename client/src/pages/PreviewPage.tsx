@@ -27,8 +27,20 @@ import {
   Layout,
   Smartphone,
   TypeIcon,
+  History,
+  RotateCcw,
+  Sparkles,
+  Pencil,
+  GitBranch,
+  Globe,
+  Wand2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
-import { useState, useEffect, useMemo } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { toast } from "sonner";
 
 export default function PreviewPage() {
@@ -116,6 +128,25 @@ export default function PreviewPage() {
   }, [listing?.imageAdviceCn]);
 
   const hasChinese = !!(listing?.titleCn || listing?.bulletPointsCn || listing?.descriptionCn || listing?.searchTermsCn);
+
+  // Version history
+  const [expandedVersionId, setExpandedVersionId] = useState<number | null>(null);
+  const [rollbackConfirmId, setRollbackConfirmId] = useState<number | null>(null);
+
+  const versionsQuery = trpc.listing.getVersionHistory.useQuery(
+    { projectId: selectedProjectId! },
+    { enabled: !!selectedProjectId && !!listing }
+  );
+
+  const rollbackMutation = trpc.listing.rollbackToVersion.useMutation({
+    onSuccess: (data: any) => {
+      utils.listing.getActive.invalidate({ projectId: selectedProjectId! });
+      versionsQuery.refetch();
+      setRollbackConfirmId(null);
+      toast.success(`已回滚到版本 #${data.rolledBackTo}`);
+    },
+    onError: (err: any) => toast.error("回滚失败: " + err.message),
+  });
 
   const generateReport = trpc.report.generateReport.useMutation({
     onSuccess: (data) => {
@@ -280,6 +311,10 @@ export default function PreviewPage() {
             <TabsTrigger value="images">
               <Image className="h-3.5 w-3.5 mr-1.5" />
               图片建议
+            </TabsTrigger>
+            <TabsTrigger value="history">
+              <History className="h-3.5 w-3.5 mr-1.5" />
+              版本历史
             </TabsTrigger>
           </TabsList>
 
@@ -1281,6 +1316,189 @@ export default function PreviewPage() {
                 </CardContent>
               </Card>
             )}
+          </TabsContent>
+
+          {/* Version History Tab */}
+          <TabsContent value="history" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <History className="h-4 w-4 text-purple-600" />
+                  版本历史
+                </CardTitle>
+                <CardDescription>
+                  记录每次生成、A/B测试应用、AI优化、手动编辑的内容变更，支持一键回滚
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {versionsQuery.isLoading ? (
+                  <div className="space-y-3">
+                    {[1, 2, 3].map(i => (
+                      <div key={i} className="h-16 bg-muted animate-pulse rounded-lg" />
+                    ))}
+                  </div>
+                ) : !versionsQuery.data || versionsQuery.data.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <History className="h-8 w-8 text-muted-foreground mb-3" />
+                    <p className="text-muted-foreground text-sm">暂无版本历史</p>
+                    <p className="text-xs text-muted-foreground mt-1">生成、编辑或优化Listing后会自动记录版本</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {versionsQuery.data.map((version: any, idx: number) => {
+                      const isExpanded = expandedVersionId === version.id;
+                      const isLatest = idx === 0;
+                      const changeIconMap: Record<string, React.ReactNode> = {
+                        generate: <Sparkles className="h-4 w-4 text-blue-500" />,
+                        ab_apply: <GitBranch className="h-4 w-4 text-green-500" />,
+                        optimize: <Wand2 className="h-4 w-4 text-purple-500" />,
+                        manual_edit: <Pencil className="h-4 w-4 text-amber-500" />,
+                        translate: <Globe className="h-4 w-4 text-orange-500" />,
+                      };
+                      const changeIcon = changeIconMap[version.changeType] || <History className="h-4 w-4 text-gray-500" />;
+                      const changeLabelMap: Record<string, string> = {
+                        generate: "生成",
+                        ab_apply: "A/B应用",
+                        optimize: "AI优化",
+                        manual_edit: "手动编辑",
+                        translate: "翻译",
+                      };
+                      const changeLabel = changeLabelMap[version.changeType] || version.changeType;
+                      const changeColor = ({
+                        generate: "bg-blue-100 text-blue-700",
+                        ab_apply: "bg-green-100 text-green-700",
+                        optimize: "bg-purple-100 text-purple-700",
+                        manual_edit: "bg-amber-100 text-amber-700",
+                        translate: "bg-orange-100 text-orange-700",
+                      } as Record<string, string>)[version.changeType] || "bg-gray-100 text-gray-700";
+
+                      return (
+                        <div key={version.id} className={`border rounded-lg transition-all ${isLatest ? "border-primary/30 bg-primary/5" : ""}`}>
+                          <div
+                            className="flex items-center justify-between p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                            onClick={() => setExpandedVersionId(isExpanded ? null : version.id)}
+                          >
+                            <div className="flex items-center gap-3">
+                              {changeIcon}
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-medium text-sm">#{version.versionNumber}</span>
+                                  <Badge variant="secondary" className={`text-xs ${changeColor}`}>{changeLabel}</Badge>
+                                  {isLatest && <Badge variant="outline" className="text-xs border-primary text-primary">当前</Badge>}
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  {version.changeDescription || "无描述"}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">
+                                {new Date(version.createdAt).toLocaleString()}
+                              </span>
+                              {!isLatest && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 text-xs"
+                                  onClick={(e) => { e.stopPropagation(); setRollbackConfirmId(version.id); }}
+                                >
+                                  <RotateCcw className="h-3 w-3 mr-1" />
+                                  回滚
+                                </Button>
+                              )}
+                              {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                            </div>
+                          </div>
+                          {isExpanded && (
+                            <div className="px-3 pb-3 border-t">
+                              <div className="grid gap-3 mt-3">
+                                {version.title && (
+                                  <div>
+                                    <p className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                                      <Type className="h-3 w-3" /> 标题
+                                    </p>
+                                    <p className="text-sm bg-muted/50 p-2 rounded">{version.title}</p>
+                                  </div>
+                                )}
+                                {version.bulletPoints && (() => {
+                                  try {
+                                    const bps = JSON.parse(version.bulletPoints);
+                                    if (Array.isArray(bps) && bps.length > 0) {
+                                      return (
+                                        <div>
+                                          <p className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                                            <List className="h-3 w-3" /> 卖点 ({bps.length}条)
+                                          </p>
+                                          <div className="space-y-1">
+                                            {bps.map((bp: any, i: number) => (
+                                              <p key={i} className="text-sm bg-muted/50 p-2 rounded">
+                                                {typeof bp === "string" ? bp : bp.subtitle ? `${bp.subtitle} ${bp.fullText || ""}` : bp.fullText || JSON.stringify(bp)}
+                                              </p>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+                                  } catch {}
+                                  return null;
+                                })()}
+                                {version.description && (
+                                  <div>
+                                    <p className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                                      <FileText className="h-3 w-3" /> 描述
+                                    </p>
+                                    <p className="text-sm bg-muted/50 p-2 rounded line-clamp-4">{version.description}</p>
+                                  </div>
+                                )}
+                                {version.searchTerms && (
+                                  <div>
+                                    <p className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                                      <Key className="h-3 w-3" /> 搜索词
+                                    </p>
+                                    <p className="text-sm bg-muted/50 p-2 rounded line-clamp-2">{version.searchTerms}</p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Rollback Confirmation Dialog */}
+            <Dialog open={!!rollbackConfirmId} onOpenChange={(open) => !open && setRollbackConfirmId(null)}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>确认回滚</DialogTitle>
+                  <DialogDescription>
+                    回滚将把当前Listing内容替换为所选版本的内容。当前状态会自动保存为一个新版本以便后续恢复。
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setRollbackConfirmId(null)}>取消</Button>
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      if (rollbackConfirmId && selectedProjectId) {
+                        rollbackMutation.mutate({ versionId: rollbackConfirmId, projectId: selectedProjectId });
+                      }
+                    }}
+                    disabled={rollbackMutation.isPending}
+                  >
+                    {rollbackMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <RotateCcw className="h-4 w-4 mr-2" />
+                    )}
+                    确认回滚
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
         </Tabs>
       )}

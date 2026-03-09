@@ -1,0 +1,22 @@
+{
+  "query": "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('adStructures', 'keywords', 'negativeKeywords', 'listingVersions');",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('adStructures', 'keywords', 'negativeKeywords', 'listingVersions');",
+  "rows": [
+    {
+      "TABLE_NAME": "negativeKeywords"
+    },
+    {
+      "TABLE_NAME": "listingVersions"
+    },
+    {
+      "TABLE_NAME": "keywords"
+    },
+    {
+      "TABLE_NAME": "adStructures"
+    }
+  ],
+  "messages": [],
+  "stdout": "TABLE_NAME\nnegativeKeywords\nlistingVersions\nkeywords\nadStructures\n",
+  "stderr": "",
+  "execution_time_ms": 103
+}

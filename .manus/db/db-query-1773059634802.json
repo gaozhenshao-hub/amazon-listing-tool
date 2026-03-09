@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS `listingVersions` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`listingId` int NOT NULL,\n\t`projectId` int NOT NULL,\n\t`userId` int NOT NULL,\n\t`versionNumber` int NOT NULL DEFAULT 1,\n\t`changeType` enum('generate','ab_apply','optimize','manual_edit','translate') NOT NULL,\n\t`changeDescription` text,\n\t`title` text,\n\t`bulletPoints` text,\n\t`description` text,\n\t`searchTerms` text,\n\t`titleCn` text,\n\t`bulletPointsCn` text,\n\t`descriptionCn` text,\n\t`searchTermsCn` text,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `listingVersions_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute CREATE TABLE IF NOT EXISTS `listingVersions` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`listingId` int NOT NULL,\n\t`projectId` int NOT NULL,\n\t`userId` int NOT NULL,\n\t`versionNumber` int NOT NULL DEFAULT 1,\n\t`changeType` enum('generate','ab_apply','optimize','manual_edit','translate') NOT NULL,\n\t`changeDescription` text,\n\t`title` text,\n\t`bulletPoints` text,\n\t`description` text,\n\t`searchTerms` text,\n\t`titleCn` text,\n\t`bulletPointsCn` text,\n\t`descriptionCn` text,\n\t`searchTermsCn` text,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `listingVersions_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 65
+}
