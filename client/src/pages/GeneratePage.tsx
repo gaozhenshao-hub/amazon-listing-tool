@@ -23,7 +23,20 @@ import {
   GitBranch,
   LayoutGrid,
   Search,
+  FlaskConical,
+  Check,
+  Cpu,
+  Heart,
+  BarChart3,
 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -67,6 +80,9 @@ export default function GeneratePage() {
   const [result, setResult] = useState<GenerationResult | null>(null);
   const [generatingPart, setGeneratingPart] = useState<string | null>(null);
   const [partResults, setPartResults] = useState<Record<string, any>>({});
+  const [abVariants, setAbVariants] = useState<any[] | null>(null);
+  const [abDialogOpen, setAbDialogOpen] = useState(false);
+  const [applyingVariant, setApplyingVariant] = useState<string | null>(null);
 
   const { data: project } = trpc.project.getById.useQuery(
     { id: selectedProjectId! },
@@ -158,6 +174,63 @@ export default function GeneratePage() {
     },
     onError: (err) => { setGeneratingPart(null); toast.error("生成失败: " + err.message); },
   });
+
+  const generateABTest = trpc.listing.generateABTest.useMutation({
+    onSuccess: (data) => {
+      setAbVariants(data.variants);
+      setAbDialogOpen(true);
+      toast.success("A/B测试版本生成完成！");
+    },
+    onError: (err) => toast.error("A/B生成失败: " + err.message),
+  });
+
+  const applyABVariant = trpc.listing.applyABVariant.useMutation({
+    onSuccess: (data) => {
+      setApplyingVariant(null);
+      setAbDialogOpen(false);
+      setAbVariants(null);
+      toast.success(`已应用所选版本，更新了: ${data.applied.join(", ")}`);
+    },
+    onError: (err) => { setApplyingVariant(null); toast.error("应用失败: " + err.message); },
+  });
+
+  const handleGenerateABTest = () => {
+    if (!selectedProjectId) return;
+    generateABTest.mutate({ projectId: selectedProjectId, components: ["title", "bulletPoints"] });
+  };
+
+  const handleApplyVariant = (variant: any) => {
+    if (!selectedProjectId) return;
+    setApplyingVariant(variant.id);
+    const applyData: any = { projectId: selectedProjectId };
+    if (variant.titleData?.recommendedTitle) {
+      applyData.title = variant.titleData.recommendedTitle;
+    } else if (variant.titleData?.titles?.[0]?.title) {
+      applyData.title = variant.titleData.titles[0].title;
+    }
+    if (variant.bulletData?.bulletPoints) {
+      applyData.bulletPoints = JSON.stringify(variant.bulletData.bulletPoints);
+    }
+    applyABVariant.mutate(applyData);
+  };
+
+  const styleIcons: Record<string, any> = {
+    professional: Cpu,
+    emotional: Heart,
+    datadriven: BarChart3,
+  };
+
+  const styleColors: Record<string, string> = {
+    professional: "text-blue-600 bg-blue-50 border-blue-200",
+    emotional: "text-rose-600 bg-rose-50 border-rose-200",
+    datadriven: "text-emerald-600 bg-emerald-50 border-emerald-200",
+  };
+
+  const styleBadgeColors: Record<string, string> = {
+    professional: "bg-blue-100 text-blue-700 border-blue-300",
+    emotional: "bg-rose-100 text-rose-700 border-rose-300",
+    datadriven: "bg-emerald-100 text-emerald-700 border-emerald-300",
+  };
 
   const handleGenerateFull = () => {
     if (!selectedProjectId) return;
@@ -414,6 +487,62 @@ export default function GeneratePage() {
             </Card>
           </div>
 
+          {/* A/B Test Section */}
+          <Card className="border-purple-200 bg-gradient-to-br from-purple-50/50 to-transparent dark:from-purple-950/20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FlaskConical className="h-5 w-5 text-purple-600" />
+                A/B 测试版本
+              </CardTitle>
+              <CardDescription>
+                同时生成3种不同风格的标题和五点描述，对比选择最佳版本应用到当前Listing
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                {[
+                  { id: "professional", name: "专业技术型", icon: Cpu, color: "text-blue-600", desc: "规格参数、技术优势、认证标准" },
+                  { id: "emotional", name: "情感场景型", icon: Heart, color: "text-rose-600", desc: "使用场景、情感共鸣、生活方式" },
+                  { id: "datadriven", name: "数据驱动型", icon: BarChart3, color: "text-emerald-600", desc: "数据对比、量化优势、竞品差异" },
+                ].map((s) => (
+                  <div key={s.id} className="flex items-start gap-3 p-3 rounded-lg border bg-background/50">
+                    <s.icon className={`h-5 w-5 ${s.color} shrink-0 mt-0.5`} />
+                    <div>
+                      <p className="text-sm font-medium">{s.name}</p>
+                      <p className="text-xs text-muted-foreground">{s.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Button
+                className="w-full"
+                variant="outline"
+                onClick={handleGenerateABTest}
+                disabled={generateABTest.isPending || isGenerating}
+              >
+                {generateABTest.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    正在生成3种风格变体...
+                  </>
+                ) : (
+                  <>
+                    <FlaskConical className="h-4 w-4 mr-2" />
+                    生成 A/B 测试版本
+                  </>
+                )}
+              </Button>
+              {generateABTest.isPending && (
+                <div className="mt-3">
+                  <Progress value={undefined} className="h-1" />
+                  <p className="text-xs text-muted-foreground text-center mt-2">
+                    正在并行生成3种风格的标题和五点描述，预计需要30-60秒...
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Results Preview */}
           {hasResult && (
             <div className="space-y-4">
@@ -575,6 +704,152 @@ export default function GeneratePage() {
           )}
         </div>
       )}
+      {/* A/B Test Comparison Dialog */}
+      <Dialog open={abDialogOpen} onOpenChange={setAbDialogOpen}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FlaskConical className="h-5 w-5 text-purple-600" />
+              A/B 测试版本对比
+            </DialogTitle>
+            <DialogDescription>
+              对比3种不同风格的标题和五点描述，选择最佳版本应用到当前Listing
+            </DialogDescription>
+          </DialogHeader>
+
+          {abVariants && (
+            <Tabs defaultValue={abVariants[0]?.id} className="mt-4">
+              <TabsList className="grid grid-cols-3 w-full">
+                {abVariants.map((v: any) => {
+                  const Icon = styleIcons[v.id] || Cpu;
+                  return (
+                    <TabsTrigger key={v.id} value={v.id} className="flex items-center gap-1.5 text-xs">
+                      <Icon className="h-3.5 w-3.5" />
+                      {v.name}
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
+
+              {abVariants.map((variant: any) => {
+                const Icon = styleIcons[variant.id] || Cpu;
+                const colorClass = styleColors[variant.id] || "";
+                const badgeColor = styleBadgeColors[variant.id] || "";
+                return (
+                  <TabsContent key={variant.id} value={variant.id} className="space-y-4 mt-4">
+                    {/* Style description */}
+                    <div className={`flex items-center gap-3 p-3 rounded-lg border ${colorClass}`}>
+                      <Icon className="h-5 w-5 shrink-0" />
+                      <div>
+                        <p className="text-sm font-semibold">{variant.name} ({variant.nameEn})</p>
+                        <p className="text-xs opacity-80">{variant.description}</p>
+                      </div>
+                    </div>
+
+                    {/* Title section */}
+                    {variant.titleData?.titles && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-semibold flex items-center gap-2">
+                          <Type className="h-4 w-4 text-blue-600" />
+                          标题选项
+                        </h4>
+                        {variant.titleData.titles.map((t: any, i: number) => {
+                          const count = t.title?.length || 0;
+                          return (
+                            <div key={i} className={`p-3 rounded-lg border ${
+                              i === 0 ? "border-primary/30 bg-primary/5" : "bg-muted/30"
+                            }`}>
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="text-sm flex-1">{t.title}</p>
+                                <CharCountBadge count={count} min={180} max={200} />
+                              </div>
+                              {t.strategy && (
+                                <p className="text-xs text-muted-foreground mt-1.5">{t.strategy}</p>
+                              )}
+                              {t.coreKeywords && (
+                                <div className="flex gap-1 mt-1.5 flex-wrap">
+                                  {t.coreKeywords.map((k: string, j: number) => (
+                                    <Badge key={j} variant="outline" className={`text-[10px] ${badgeColor}`}>{k}</Badge>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {variant.titleData.recommendedTitle && (
+                          <div className="p-2 rounded border border-dashed border-primary/40 bg-primary/5">
+                            <p className="text-xs font-medium text-primary mb-1">推荐标题:</p>
+                            <p className="text-sm">{variant.titleData.recommendedTitle}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Bullet Points section */}
+                    {variant.bulletData?.bulletPoints && (
+                      <div className="space-y-2">
+                        <h4 className="text-sm font-semibold flex items-center gap-2">
+                          <List className="h-4 w-4 text-green-600" />
+                          五点描述
+                        </h4>
+                        {variant.bulletData.bulletPoints.map((bp: any, i: number) => {
+                          const fullBullet = bp.subtitle && bp.fullText
+                            ? `${bp.subtitle} ${bp.fullText}`
+                            : bp.fullText || bp.subtitle || "";
+                          return (
+                            <div key={i} className="p-3 rounded-lg border bg-muted/30">
+                              <div className="flex items-start justify-between gap-2">
+                                <p className="text-sm flex-1">
+                                  <span className="font-bold">{bp.subtitle || `卖点 ${i + 1}`}</span>
+                                  {" \u2014 "}
+                                  <span className="text-muted-foreground">{bp.fullText || bp.sellingPoint || ""}</span>
+                                </p>
+                                <CharCountBadge count={fullBullet.length} min={200} max={280} />
+                              </div>
+                              {bp.fabeBreakdown && (
+                                <div className="grid grid-cols-2 gap-1.5 mt-2">
+                                  {Object.entries(bp.fabeBreakdown).map(([key, val]) => (
+                                    val ? (
+                                      <div key={key} className="text-[10px] text-muted-foreground">
+                                        <span className="font-medium uppercase">{key}:</span> {val as string}
+                                      </div>
+                                    ) : null
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Apply button */}
+                    <div className="flex justify-end pt-2 border-t">
+                      <Button
+                        onClick={() => handleApplyVariant(variant)}
+                        disabled={applyingVariant !== null}
+                        className="min-w-[160px]"
+                      >
+                        {applyingVariant === variant.id ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            应用中...
+                          </>
+                        ) : (
+                          <>
+                            <Check className="h-4 w-4 mr-2" />
+                            应用此版本
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </TabsContent>
+                );
+              })}
+            </Tabs>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

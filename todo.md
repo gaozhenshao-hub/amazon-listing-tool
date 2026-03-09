@@ -190,3 +190,11 @@
 - [x] Feature 4: Backend - LLM-based content optimization for 4 dimensions (title, bullets, description, search terms)
 - [x] Feature 4: Frontend - inline optimize buttons on dimension cards and suggestion cards, auto-refetch scores after optimization
 - [x] Unit tests for all 4 features (31 new tests, 263 total passing)
+- [x] Feature: A/B test versions - Design: no new DB table needed, variants generated on-the-fly and applied to existing listing
+- [x] Feature: A/B test versions - Backend AI prompt: 3 style instructions injected into existing title/bullet prompts
+- [x] Feature: A/B test versions - Backend generateABTest procedure (3 styles: professional, emotional, data-driven)
+- [x] Feature: A/B test versions - Backend applyABVariant procedure with auto Chinese translation
+- [x] Feature: A/B test versions - Frontend A/B test card on GeneratePage with 3 style previews
+- [x] Feature: A/B test versions - Frontend comparison dialog with tabs (title + bullet points per variant)
+- [x] Feature: A/B test versions - Frontend apply variant with loading state and auto-close
+- [x] Feature: A/B test versions - Unit tests (22 new tests, 285 total passing)
