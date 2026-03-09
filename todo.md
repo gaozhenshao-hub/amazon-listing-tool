@@ -91,3 +91,10 @@
 - [x] Unit tests for file parsing and analysis modules (11 tests)
 - [x] Backend - Image advice bilingual (中英文对比) support
 - [x] Database - Add imageAdviceCn field to listings table
+- [x] Backend - Add updateAnalysisResult API to update file analysis result
+- [x] Frontend - Editable analysis result UI for product_attributes (USP, specs, Rufus attributes)
+- [x] Frontend - Editable analysis result UI for competitor_listings (parity points, gap opportunities)
+- [x] Frontend - Editable analysis result UI for search_term_report (scene clusters, top scenes)
+- [x] Frontend - Editable analysis result UI for aba_keywords (title keywords, bullet keywords, golden keywords)
+- [x] Frontend - Save/Cancel/Reset controls for each editable section
+- [x] Unit tests for analysis result editing (9 tests)

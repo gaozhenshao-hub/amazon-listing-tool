@@ -2,12 +2,13 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import ProjectSelector from "@/components/ProjectSelector";
 import { useProject } from "@/contexts/ProjectContext";
 import {
   Upload,
   FileText,
-  FileSpreadsheet,
   Loader2,
   CheckCircle2,
   AlertTriangle,
@@ -19,8 +20,13 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronUp,
+  Pencil,
+  Save,
+  X,
+  Plus,
+  Minus,
 } from "lucide-react";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 
 type FileType = "product_attributes" | "competitor_listings" | "search_term_report" | "aba_keywords";
@@ -97,31 +103,397 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge variant={c.variant} className={c.className}>{c.label}</Badge>;
 }
 
-function AnalysisResultCard({ fileType, result }: { fileType: FileType; result: any }) {
+// ─── Editable Tag List ──────────────────────────────────────────
+function EditableTagList({
+  items,
+  onChange,
+  colorClass = "border-gray-300 text-gray-700",
+  badgeClass = "",
+  placeholder = "输入后按回车添加",
+}: {
+  items: string[];
+  onChange: (items: string[]) => void;
+  colorClass?: string;
+  badgeClass?: string;
+  placeholder?: string;
+}) {
+  const [inputValue, setInputValue] = useState("");
+
+  const handleAdd = () => {
+    const val = inputValue.trim();
+    if (val && !items.includes(val)) {
+      onChange([...items, val]);
+      setInputValue("");
+    }
+  };
+
+  const handleRemove = (index: number) => {
+    onChange(items.filter((_, i) => i !== index));
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleAdd();
+    }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap gap-1.5">
+        {items.map((item, i) => (
+          <Badge key={i} variant="outline" className={`text-xs ${colorClass} ${badgeClass} pr-1 gap-1`}>
+            {item}
+            <button
+              onClick={() => handleRemove(i)}
+              className="ml-0.5 hover:text-red-500 transition-colors"
+            >
+              <X className="h-2.5 w-2.5" />
+            </button>
+          </Badge>
+        ))}
+      </div>
+      <div className="flex gap-1.5">
+        <Input
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          className="h-7 text-xs"
+        />
+        <Button variant="outline" size="sm" className="h-7 px-2 shrink-0" onClick={handleAdd} disabled={!inputValue.trim()}>
+          <Plus className="h-3 w-3" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Editable Spec List (attribute: value pairs) ────────────────
+function EditableSpecList({
+  items,
+  onChange,
+  attrKey = "attribute",
+  valKey = "value",
+}: {
+  items: Array<Record<string, string>>;
+  onChange: (items: Array<Record<string, string>>) => void;
+  attrKey?: string;
+  valKey?: string;
+}) {
+  const handleChange = (index: number, field: string, value: string) => {
+    const updated = [...items];
+    updated[index] = { ...updated[index], [field]: value };
+    onChange(updated);
+  };
+
+  const handleAdd = () => {
+    onChange([...items, { [attrKey]: "", [valKey]: "" }]);
+  };
+
+  const handleRemove = (index: number) => {
+    onChange(items.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="space-y-1.5">
+      {items.map((item, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <Input
+            value={item[attrKey] || ""}
+            onChange={(e) => handleChange(i, attrKey, e.target.value)}
+            placeholder="属性名"
+            className="h-7 text-xs flex-1"
+          />
+          <span className="text-xs text-muted-foreground">:</span>
+          <Input
+            value={item[valKey] || ""}
+            onChange={(e) => handleChange(i, valKey, e.target.value)}
+            placeholder="值"
+            className="h-7 text-xs flex-1"
+          />
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-red-500" onClick={() => handleRemove(i)}>
+            <Minus className="h-3 w-3" />
+          </Button>
+        </div>
+      ))}
+      <Button variant="outline" size="sm" className="h-7 text-xs w-full" onClick={handleAdd}>
+        <Plus className="h-3 w-3 mr-1" /> 添加
+      </Button>
+    </div>
+  );
+}
+
+// ─── Editable Parity/Gap Items ──────────────────────────────────
+function EditableParityList({
+  items,
+  onChange,
+}: {
+  items: Array<{ sellingPoint: string; frequency: string; importance: string }>;
+  onChange: (items: Array<{ sellingPoint: string; frequency: string; importance: string }>) => void;
+}) {
+  const handleChange = (index: number, field: string, value: string) => {
+    const updated = [...items];
+    updated[index] = { ...updated[index], [field]: value };
+    onChange(updated);
+  };
+
+  const handleAdd = () => {
+    onChange([...items, { sellingPoint: "", frequency: "most", importance: "important" }]);
+  };
+
+  const handleRemove = (index: number) => {
+    onChange(items.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="space-y-1.5">
+      {items.map((item, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <Input
+            value={item.sellingPoint}
+            onChange={(e) => handleChange(i, "sellingPoint", e.target.value)}
+            placeholder="卖点描述"
+            className="h-7 text-xs flex-1"
+          />
+          <select
+            value={item.frequency}
+            onChange={(e) => handleChange(i, "frequency", e.target.value)}
+            className="h-7 text-xs border rounded px-1 bg-background"
+          >
+            <option value="all">all</option>
+            <option value="most">most</option>
+            <option value="some">some</option>
+          </select>
+          <select
+            value={item.importance}
+            onChange={(e) => handleChange(i, "importance", e.target.value)}
+            className="h-7 text-xs border rounded px-1 bg-background"
+          >
+            <option value="must-have">must-have</option>
+            <option value="important">important</option>
+            <option value="nice-to-have">nice-to-have</option>
+          </select>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-red-500" onClick={() => handleRemove(i)}>
+            <Minus className="h-3 w-3" />
+          </Button>
+        </div>
+      ))}
+      <Button variant="outline" size="sm" className="h-7 text-xs w-full" onClick={handleAdd}>
+        <Plus className="h-3 w-3 mr-1" /> 添加共性卖点
+      </Button>
+    </div>
+  );
+}
+
+function EditableGapList({
+  items,
+  onChange,
+}: {
+  items: Array<{ gap: string; type: string; opportunityLevel: string }>;
+  onChange: (items: Array<{ gap: string; type: string; opportunityLevel: string }>) => void;
+}) {
+  const handleChange = (index: number, field: string, value: string) => {
+    const updated = [...items];
+    updated[index] = { ...updated[index], [field]: value };
+    onChange(updated);
+  };
+
+  const handleAdd = () => {
+    onChange([...items, { gap: "", type: "ignored_scenario", opportunityLevel: "medium" }]);
+  };
+
+  const handleRemove = (index: number) => {
+    onChange(items.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="space-y-1.5">
+      {items.map((item, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <Input
+            value={item.gap}
+            onChange={(e) => handleChange(i, "gap", e.target.value)}
+            placeholder="缺口描述"
+            className="h-7 text-xs flex-1"
+          />
+          <select
+            value={item.type}
+            onChange={(e) => handleChange(i, "type", e.target.value)}
+            className="h-7 text-xs border rounded px-1 bg-background"
+          >
+            <option value="ignored_scenario">忽略场景</option>
+            <option value="unaddressed_pain">未解决痛点</option>
+            <option value="underserved_audience">未服务人群</option>
+            <option value="missing_feature">缺失功能</option>
+          </select>
+          <select
+            value={item.opportunityLevel}
+            onChange={(e) => handleChange(i, "opportunityLevel", e.target.value)}
+            className="h-7 text-xs border rounded px-1 bg-background"
+          >
+            <option value="high">high</option>
+            <option value="medium">medium</option>
+            <option value="low">low</option>
+          </select>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-red-500" onClick={() => handleRemove(i)}>
+            <Minus className="h-3 w-3" />
+          </Button>
+        </div>
+      ))}
+      <Button variant="outline" size="sm" className="h-7 text-xs w-full" onClick={handleAdd}>
+        <Plus className="h-3 w-3 mr-1" /> 添加缺口机会
+      </Button>
+    </div>
+  );
+}
+
+// ─── Editable Scene Clusters ────────────────────────────────────
+function EditableSceneList({
+  items,
+  onChange,
+}: {
+  items: Array<{ sceneName: string; sceneNameCn: string; priority: string; buyerIntent: string }>;
+  onChange: (items: Array<{ sceneName: string; sceneNameCn: string; priority: string; buyerIntent: string }>) => void;
+}) {
+  const handleChange = (index: number, field: string, value: string) => {
+    const updated = [...items];
+    updated[index] = { ...updated[index], [field]: value };
+    onChange(updated);
+  };
+
+  const handleAdd = () => {
+    onChange([...items, { sceneName: "", sceneNameCn: "", priority: "medium", buyerIntent: "" }]);
+  };
+
+  const handleRemove = (index: number) => {
+    onChange(items.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="space-y-2">
+      {items.map((item, i) => (
+        <div key={i} className="p-2 border rounded-md space-y-1.5 bg-muted/10">
+          <div className="flex items-center gap-1.5">
+            <Input
+              value={item.sceneName}
+              onChange={(e) => handleChange(i, "sceneName", e.target.value)}
+              placeholder="场景名称 (EN)"
+              className="h-7 text-xs flex-1"
+            />
+            <Input
+              value={item.sceneNameCn}
+              onChange={(e) => handleChange(i, "sceneNameCn", e.target.value)}
+              placeholder="场景名称 (中文)"
+              className="h-7 text-xs flex-1"
+            />
+            <select
+              value={item.priority}
+              onChange={(e) => handleChange(i, "priority", e.target.value)}
+              className="h-7 text-xs border rounded px-1 bg-background"
+            >
+              <option value="high">high</option>
+              <option value="medium">medium</option>
+              <option value="low">low</option>
+            </select>
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-red-500" onClick={() => handleRemove(i)}>
+              <Minus className="h-3 w-3" />
+            </Button>
+          </div>
+          <Input
+            value={item.buyerIntent}
+            onChange={(e) => handleChange(i, "buyerIntent", e.target.value)}
+            placeholder="买家意图"
+            className="h-7 text-xs"
+          />
+        </div>
+      ))}
+      <Button variant="outline" size="sm" className="h-7 text-xs w-full" onClick={handleAdd}>
+        <Plus className="h-3 w-3 mr-1" /> 添加使用场景
+      </Button>
+    </div>
+  );
+}
+
+// ─── Analysis Result Card (View + Edit Mode) ────────────────────
+function AnalysisResultCard({
+  fileType,
+  result,
+  fileId,
+  projectId,
+}: {
+  fileType: FileType;
+  result: any;
+  fileId: number;
+  projectId: number;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editData, setEditData] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+
+  const utils = trpc.useUtils();
+
+  const updateMutation = trpc.projectFile.updateAnalysisResult.useMutation({
+    onSuccess: () => {
+      utils.projectFile.listByType.invalidate({ projectId, fileType });
+      utils.projectFile.listByProject.invalidate({ projectId });
+      utils.projectFile.getAnalysisSummary.invalidate({ projectId });
+      toast.success("分析结果已保存");
+      setEditing(false);
+      setSaving(false);
+    },
+    onError: (err) => {
+      toast.error(`保存失败: ${err.message}`);
+      setSaving(false);
+    },
+  });
+
+  const startEdit = () => {
+    setEditData(JSON.parse(JSON.stringify(result))); // deep clone
+    setEditing(true);
+    setExpanded(true);
+  };
+
+  const cancelEdit = () => {
+    setEditData(null);
+    setEditing(false);
+  };
+
+  const saveEdit = () => {
+    if (!editData) return;
+    setSaving(true);
+    updateMutation.mutate({
+      fileId,
+      analysisResult: JSON.stringify(editData),
+    });
+  };
 
   if (!result) return null;
 
-  const renderContent = () => {
+  const data = editing ? editData : result;
+
+  // ─── View Mode Renderers ──────────────────────────────────────
+  const renderViewContent = () => {
     switch (fileType) {
       case "product_attributes":
         return (
           <div className="space-y-3">
-            {result.uniqueSellingPoints?.length > 0 && (
+            {data.uniqueSellingPoints?.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-blue-700 mb-1">独特卖点 (USP)</p>
                 <div className="flex flex-wrap gap-1.5">
-                  {result.uniqueSellingPoints.map((usp: string, i: number) => (
+                  {data.uniqueSellingPoints.map((usp: string, i: number) => (
                     <Badge key={i} variant="outline" className="text-xs border-blue-300 text-blue-700">{usp}</Badge>
                   ))}
                 </div>
               </div>
             )}
-            {result.coreSpecs?.length > 0 && (
+            {data.coreSpecs?.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-blue-700 mb-1">核心规格</p>
                 <div className="grid grid-cols-2 gap-1 text-xs">
-                  {result.coreSpecs.slice(0, 8).map((s: any, i: number) => (
+                  {data.coreSpecs.slice(0, 8).map((s: any, i: number) => (
                     <span key={i} className="text-muted-foreground">
                       <strong>{s.attribute}:</strong> {s.value}
                     </span>
@@ -129,12 +501,22 @@ function AnalysisResultCard({ fileType, result }: { fileType: FileType; result: 
                 </div>
               </div>
             )}
-            {result.rufusFriendlyAttributes?.length > 0 && (
+            {data.rufusFriendlyAttributes?.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-blue-700 mb-1">Rufus友好属性</p>
                 <div className="flex flex-wrap gap-1">
-                  {result.rufusFriendlyAttributes.slice(0, 6).map((a: string, i: number) => (
+                  {data.rufusFriendlyAttributes.slice(0, 6).map((a: string, i: number) => (
                     <Badge key={i} variant="secondary" className="text-xs">{a}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            {data.suggestedKeywordsFromAttributes?.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-blue-700 mb-1">属性关键词建议</p>
+                <div className="flex flex-wrap gap-1">
+                  {data.suggestedKeywordsFromAttributes.map((k: string, i: number) => (
+                    <Badge key={i} variant="outline" className="text-xs border-blue-200">{k}</Badge>
                   ))}
                 </div>
               </div>
@@ -145,11 +527,11 @@ function AnalysisResultCard({ fileType, result }: { fileType: FileType; result: 
       case "competitor_listings":
         return (
           <div className="space-y-3">
-            {result.parityPoints?.length > 0 && (
+            {data.parityPoints?.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-green-700 mb-1">共性卖点 (Parity) — 必须包含</p>
                 <div className="space-y-1">
-                  {result.parityPoints.slice(0, 6).map((p: any, i: number) => (
+                  {data.parityPoints.slice(0, 6).map((p: any, i: number) => (
                     <div key={i} className="flex items-center gap-2 text-xs">
                       <Badge variant="outline" className="text-xs shrink-0 border-green-300">{p.frequency}</Badge>
                       <span>{p.sellingPoint}</span>
@@ -158,11 +540,11 @@ function AnalysisResultCard({ fileType, result }: { fileType: FileType; result: 
                 </div>
               </div>
             )}
-            {result.gapOpportunities?.length > 0 && (
+            {data.gapOpportunities?.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-green-700 mb-1">缺口机会 (Gap) — 差异化</p>
                 <div className="space-y-1">
-                  {result.gapOpportunities.slice(0, 5).map((g: any, i: number) => (
+                  {data.gapOpportunities.slice(0, 5).map((g: any, i: number) => (
                     <div key={i} className="flex items-center gap-2 text-xs">
                       <Badge variant="outline" className={`text-xs shrink-0 ${
                         g.opportunityLevel === "high" ? "border-red-300 text-red-600" :
@@ -175,17 +557,34 @@ function AnalysisResultCard({ fileType, result }: { fileType: FileType; result: 
                 </div>
               </div>
             )}
+            {data.strategicRecommendations && (
+              <div>
+                <p className="text-xs font-semibold text-green-700 mb-1">策略建议</p>
+                {data.strategicRecommendations.mustInclude?.length > 0 && (
+                  <div className="mb-1">
+                    <span className="text-xs text-muted-foreground">必须包含: </span>
+                    <span className="text-xs">{data.strategicRecommendations.mustInclude.join("; ")}</span>
+                  </div>
+                )}
+                {data.strategicRecommendations.differentiators?.length > 0 && (
+                  <div>
+                    <span className="text-xs text-muted-foreground">差异化: </span>
+                    <span className="text-xs">{data.strategicRecommendations.differentiators.join("; ")}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
 
       case "search_term_report":
         return (
           <div className="space-y-3">
-            {result.scenesClusters?.length > 0 && (
+            {data.scenesClusters?.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-purple-700 mb-1">使用场景聚类</p>
                 <div className="space-y-1.5">
-                  {result.scenesClusters.slice(0, 6).map((sc: any, i: number) => (
+                  {data.scenesClusters.slice(0, 6).map((sc: any, i: number) => (
                     <div key={i} className="flex items-start gap-2 text-xs">
                       <Badge variant="outline" className={`text-xs shrink-0 ${
                         sc.priority === "high" ? "border-purple-400 text-purple-700" :
@@ -201,11 +600,11 @@ function AnalysisResultCard({ fileType, result }: { fileType: FileType; result: 
                 </div>
               </div>
             )}
-            {result.topScenesByVolume?.length > 0 && (
+            {data.topScenesByVolume?.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-purple-700 mb-1">搜索量TOP场景</p>
                 <div className="flex flex-wrap gap-1">
-                  {result.topScenesByVolume.slice(0, 6).map((s: string, i: number) => (
+                  {data.topScenesByVolume.slice(0, 6).map((s: string, i: number) => (
                     <Badge key={i} variant="secondary" className="text-xs">{s}</Badge>
                   ))}
                 </div>
@@ -217,62 +616,309 @@ function AnalysisResultCard({ fileType, result }: { fileType: FileType; result: 
       case "aba_keywords":
         return (
           <div className="space-y-3">
-            {result.titleMustHaveKeywords?.length > 0 && (
+            {data.titleMustHaveKeywords?.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-amber-700 mb-1">标题必含关键词 (Tier 1)</p>
                 <div className="flex flex-wrap gap-1">
-                  {result.titleMustHaveKeywords.map((k: string, i: number) => (
+                  {data.titleMustHaveKeywords.map((k: string, i: number) => (
                     <Badge key={i} className="text-xs bg-amber-600">{k}</Badge>
                   ))}
                 </div>
               </div>
             )}
-            {result.bulletPriorityKeywords?.length > 0 && (
+            {data.bulletPriorityKeywords?.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-amber-700 mb-1">五点优先关键词 (Tier 2)</p>
                 <div className="flex flex-wrap gap-1">
-                  {result.bulletPriorityKeywords.slice(0, 8).map((k: string, i: number) => (
+                  {data.bulletPriorityKeywords.slice(0, 8).map((k: string, i: number) => (
                     <Badge key={i} variant="outline" className="text-xs border-amber-300 text-amber-700">{k}</Badge>
                   ))}
                 </div>
               </div>
             )}
-            {result.goldenKeywords?.length > 0 && (
+            {data.goldenKeywords?.length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-amber-700 mb-1">黄金关键词 (高搜索+低竞争)</p>
                 <div className="flex flex-wrap gap-1">
-                  {result.goldenKeywords.slice(0, 6).map((k: string, i: number) => (
+                  {data.goldenKeywords.slice(0, 6).map((k: string, i: number) => (
                     <Badge key={i} variant="secondary" className="text-xs bg-yellow-100 text-yellow-800">{k}</Badge>
                   ))}
                 </div>
               </div>
             )}
-            {result.keywordStrategy && (
+            {data.backendKeywords?.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-amber-700 mb-1">后台搜索词</p>
+                <div className="flex flex-wrap gap-1">
+                  {data.backendKeywords.slice(0, 8).map((k: string, i: number) => (
+                    <Badge key={i} variant="outline" className="text-xs border-gray-300">{k}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            {data.keywordStrategy && (
               <div>
                 <p className="text-xs font-semibold text-amber-700 mb-1">关键词策略</p>
-                <p className="text-xs text-muted-foreground">{result.keywordStrategy}</p>
+                <p className="text-xs text-muted-foreground">{data.keywordStrategy}</p>
               </div>
             )}
           </div>
         );
 
       default:
-        return <pre className="text-xs overflow-auto max-h-40">{JSON.stringify(result, null, 2)}</pre>;
+        return <pre className="text-xs overflow-auto max-h-40">{JSON.stringify(data, null, 2)}</pre>;
+    }
+  };
+
+  // ─── Edit Mode Renderers ──────────────────────────────────────
+  const renderEditContent = () => {
+    if (!editData) return null;
+
+    switch (fileType) {
+      case "product_attributes":
+        return (
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-semibold text-blue-700 mb-1.5">独特卖点 (USP)</p>
+              <EditableTagList
+                items={editData.uniqueSellingPoints || []}
+                onChange={(items) => setEditData({ ...editData, uniqueSellingPoints: items })}
+                colorClass="border-blue-300 text-blue-700"
+                placeholder="输入卖点后按回车"
+              />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-blue-700 mb-1.5">核心规格</p>
+              <EditableSpecList
+                items={editData.coreSpecs || []}
+                onChange={(items) => setEditData({ ...editData, coreSpecs: items })}
+                attrKey="attribute"
+                valKey="value"
+              />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-blue-700 mb-1.5">Rufus友好属性</p>
+              <EditableTagList
+                items={editData.rufusFriendlyAttributes || []}
+                onChange={(items) => setEditData({ ...editData, rufusFriendlyAttributes: items })}
+                placeholder="输入属性后按回车"
+              />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-blue-700 mb-1.5">属性关键词建议</p>
+              <EditableTagList
+                items={editData.suggestedKeywordsFromAttributes || []}
+                onChange={(items) => setEditData({ ...editData, suggestedKeywordsFromAttributes: items })}
+                colorClass="border-blue-200"
+                placeholder="输入关键词后按回车"
+              />
+            </div>
+          </div>
+        );
+
+      case "competitor_listings":
+        return (
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-semibold text-green-700 mb-1.5">共性卖点 (Parity)</p>
+              <EditableParityList
+                items={editData.parityPoints || []}
+                onChange={(items) => setEditData({ ...editData, parityPoints: items })}
+              />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-green-700 mb-1.5">缺口机会 (Gap)</p>
+              <EditableGapList
+                items={editData.gapOpportunities || []}
+                onChange={(items) => setEditData({ ...editData, gapOpportunities: items })}
+              />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-green-700 mb-1.5">策略建议 — 必须包含</p>
+              <EditableTagList
+                items={editData.strategicRecommendations?.mustInclude || []}
+                onChange={(items) => setEditData({
+                  ...editData,
+                  strategicRecommendations: { ...editData.strategicRecommendations, mustInclude: items },
+                })}
+                colorClass="border-green-300 text-green-700"
+                placeholder="输入必含要素后按回车"
+              />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-green-700 mb-1.5">策略建议 — 差异化</p>
+              <EditableTagList
+                items={editData.strategicRecommendations?.differentiators || []}
+                onChange={(items) => setEditData({
+                  ...editData,
+                  strategicRecommendations: { ...editData.strategicRecommendations, differentiators: items },
+                })}
+                colorClass="border-green-300 text-green-700"
+                placeholder="输入差异化要素后按回车"
+              />
+            </div>
+          </div>
+        );
+
+      case "search_term_report":
+        return (
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-semibold text-purple-700 mb-1.5">使用场景聚类</p>
+              <EditableSceneList
+                items={(editData.scenesClusters || []).map((sc: any) => ({
+                  sceneName: sc.sceneName || "",
+                  sceneNameCn: sc.sceneNameCn || "",
+                  priority: sc.priority || "medium",
+                  buyerIntent: sc.buyerIntent || "",
+                }))}
+                onChange={(items) => {
+                  // Merge back with existing cluster data to preserve other fields
+                  const updated = items.map((item, i) => ({
+                    ...(editData.scenesClusters?.[i] || {}),
+                    ...item,
+                  }));
+                  setEditData({ ...editData, scenesClusters: updated });
+                }}
+              />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-purple-700 mb-1.5">搜索量TOP场景</p>
+              <EditableTagList
+                items={editData.topScenesByVolume || []}
+                onChange={(items) => setEditData({ ...editData, topScenesByVolume: items })}
+                colorClass="border-purple-300 text-purple-700"
+                placeholder="输入场景名后按回车"
+              />
+            </div>
+          </div>
+        );
+
+      case "aba_keywords":
+        return (
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-semibold text-amber-700 mb-1.5">标题必含关键词 (Tier 1)</p>
+              <EditableTagList
+                items={editData.titleMustHaveKeywords || []}
+                onChange={(items) => setEditData({ ...editData, titleMustHaveKeywords: items })}
+                colorClass="border-amber-400 text-amber-800"
+                badgeClass="bg-amber-50"
+                placeholder="输入关键词后按回车"
+              />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-amber-700 mb-1.5">五点优先关键词 (Tier 2)</p>
+              <EditableTagList
+                items={editData.bulletPriorityKeywords || []}
+                onChange={(items) => setEditData({ ...editData, bulletPriorityKeywords: items })}
+                colorClass="border-amber-300 text-amber-700"
+                placeholder="输入关键词后按回车"
+              />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-amber-700 mb-1.5">黄金关键词 (高搜索+低竞争)</p>
+              <EditableTagList
+                items={editData.goldenKeywords || []}
+                onChange={(items) => setEditData({ ...editData, goldenKeywords: items })}
+                colorClass="border-yellow-400 text-yellow-800"
+                badgeClass="bg-yellow-50"
+                placeholder="输入关键词后按回车"
+              />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-amber-700 mb-1.5">后台搜索词</p>
+              <EditableTagList
+                items={editData.backendKeywords || []}
+                onChange={(items) => setEditData({ ...editData, backendKeywords: items })}
+                colorClass="border-gray-300"
+                placeholder="输入搜索词后按回车"
+              />
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-amber-700 mb-1.5">关键词策略</p>
+              <Textarea
+                value={editData.keywordStrategy || ""}
+                onChange={(e) => setEditData({ ...editData, keywordStrategy: e.target.value })}
+                placeholder="描述关键词策略..."
+                className="text-xs min-h-[60px]"
+              />
+            </div>
+          </div>
+        );
+
+      default:
+        return (
+          <Textarea
+            value={JSON.stringify(editData, null, 2)}
+            onChange={(e) => {
+              try { setEditData(JSON.parse(e.target.value)); } catch {}
+            }}
+            className="text-xs font-mono min-h-[200px]"
+          />
+        );
     }
   };
 
   return (
     <div className="mt-3 space-y-2">
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-      >
-        {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-        {expanded ? "收起分析结果" : "展开分析结果"}
-      </button>
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          {expanded ? "收起分析结果" : "展开分析结果"}
+        </button>
+        <div className="flex items-center gap-1">
+          {!editing ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+              onClick={startEdit}
+            >
+              <Pencil className="h-3 w-3 mr-1" />
+              编辑
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                onClick={cancelEdit}
+                disabled={saving}
+              >
+                <X className="h-3 w-3 mr-1" />
+                取消
+              </Button>
+              <Button
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={saveEdit}
+                disabled={saving}
+              >
+                {saving ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Save className="h-3 w-3 mr-1" />}
+                保存
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
       {expanded && (
-        <div className="p-3 rounded-lg border bg-muted/20">
-          {renderContent()}
+        <div className={`p-3 rounded-lg border ${editing ? "border-blue-300 bg-blue-50/30" : "bg-muted/20"}`}>
+          {editing ? (
+            <div>
+              <div className="flex items-center gap-1.5 mb-3 pb-2 border-b border-blue-200">
+                <Pencil className="h-3.5 w-3.5 text-blue-600" />
+                <span className="text-xs font-medium text-blue-700">编辑模式 — 修改后点击保存</span>
+              </div>
+              {renderEditContent()}
+            </div>
+          ) : (
+            renderViewContent()
+          )}
         </div>
       )}
     </div>
@@ -330,7 +976,6 @@ function FileUploadCard({ fileType, projectId }: { fileType: FileType; projectId
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       toast.error("文件大小不能超过5MB");
       return;
@@ -355,7 +1000,6 @@ function FileUploadCard({ fileType, projectId }: { fileType: FileType; projectId
       setUploading(false);
     }
 
-    // Reset input
     if (inputRef.current) inputRef.current.value = "";
   }, [projectId, fileType, uploadAndAnalyze]);
 
@@ -392,7 +1036,6 @@ function FileUploadCard({ fileType, projectId }: { fileType: FileType; projectId
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        {/* Upload button */}
         <div className="flex items-center gap-2">
           <input
             ref={inputRef}
@@ -422,7 +1065,6 @@ function FileUploadCard({ fileType, projectId }: { fileType: FileType; projectId
           </Button>
         </div>
 
-        {/* File info */}
         {latestFile && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs">
@@ -478,14 +1120,17 @@ function FileUploadCard({ fileType, projectId }: { fileType: FileType; projectId
               <p className="text-xs text-red-500">{latestFile.errorMessage}</p>
             )}
 
-            {/* Analysis result preview */}
             {analysisResult && (
-              <AnalysisResultCard fileType={fileType} result={analysisResult} />
+              <AnalysisResultCard
+                fileType={fileType}
+                result={analysisResult}
+                fileId={latestFile.id}
+                projectId={projectId}
+              />
             )}
           </div>
         )}
 
-        {/* Loading state */}
         {isLoading && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="h-3 w-3 animate-spin" />
@@ -538,7 +1183,6 @@ export default function DataFilesPage() {
         </Card>
       ) : (
         <div className="space-y-6">
-          {/* Progress summary */}
           <Card className="bg-gradient-to-r from-indigo-50 to-purple-50 border-indigo-200">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
@@ -572,13 +1216,12 @@ export default function DataFilesPage() {
               </div>
               <p className="text-xs text-indigo-700 mt-2">
                 {summary?.hasAllFiles
-                  ? "所有四大分析模块数据已就绪，生成Listing时将自动整合这些分析结果。"
-                  : "上传并分析文件后，生成Listing时将自动整合已完成的分析模块数据。未上传的模块不影响基本生成。"}
+                  ? "所有四大分析模块数据已就绪，生成Listing时将自动整合这些分析结果。点击「编辑」可手动修正分析内容。"
+                  : "上传并分析文件后，生成Listing时将自动整合已完成的分析模块数据。分析完成后可手动编辑修正。"}
               </p>
             </CardContent>
           </Card>
 
-          {/* File upload cards */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {FILE_TYPES.map((ft) => (
               <FileUploadCard key={ft} fileType={ft} projectId={selectedProjectId} />

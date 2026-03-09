@@ -436,6 +436,34 @@ export const projectFileRouter = router({
       }
     }),
 
+  // Update analysis result (manual editing)
+  updateAnalysisResult: protectedProcedure
+    .input(z.object({
+      fileId: z.number(),
+      analysisResult: z.string(), // JSON string of the updated analysis result
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const file = await db.getProjectFileById(input.fileId);
+      if (!file) throw new Error("File not found");
+
+      const project = await db.getProjectById(file.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      // Validate that the input is valid JSON
+      try {
+        JSON.parse(input.analysisResult);
+      } catch {
+        throw new Error("Invalid JSON format for analysis result");
+      }
+
+      const updated = await db.updateProjectFile(file.id, {
+        analysisResult: input.analysisResult,
+        status: "completed",
+      });
+
+      return updated;
+    }),
+
   // Delete a file
   delete: protectedProcedure
     .input(z.object({ fileId: z.number() }))
