@@ -17,6 +17,7 @@ import {
   KEYWORD_LISTING_LAYOUT_PROMPT,
 } from "../keywordPrompts";
 import { parse } from "csv-parse/sync";
+import * as XLSX from "xlsx";
 
 // Helper: build product context string for AI prompts
 function buildProductContext(project: any): string {
@@ -128,7 +129,7 @@ export const keywordRouter = router({
       return deleteKeywordsByProject(input.projectId);
     }),
 
-  // ─── CSV Import ─────────────────────────────────────────────
+  // ─── CSV / XLSX Import ──────────────────────────────────────
 
   importCsv: protectedProcedure
     .input(z.object({
@@ -136,27 +137,43 @@ export const keywordRouter = router({
       csvContent: z.string(),
       source: z.enum(["csv_import", "asin_reverse", "search_suggest"]).default("csv_import"),
       sourceDetail: z.string().optional(),
+      isXlsx: z.boolean().optional(), // true when csvContent is base64-encoded XLSX
     }))
     .mutation(async ({ ctx, input }) => {
-      const { projectId, csvContent, source, sourceDetail } = input;
+      const { projectId, csvContent, source, sourceDetail, isXlsx } = input;
       const userId = ctx.user!.id;
 
-      // Parse CSV
       let records: any[];
-      try {
-        records = parse(csvContent, {
-          columns: true,
-          skip_empty_lines: true,
-          trim: true,
-          bom: true,
-          relax_column_count: true,
-        });
-      } catch (e: any) {
-        throw new Error(`CSV解析失败: ${e.message}`);
+
+      if (isXlsx) {
+        // Parse XLSX from base64
+        try {
+          const buffer = Buffer.from(csvContent, "base64");
+          const workbook = XLSX.read(buffer, { type: "buffer" });
+          const sheetName = workbook.SheetNames[0];
+          if (!sheetName) throw new Error("XLSX文件中没有工作表");
+          const sheet = workbook.Sheets[sheetName];
+          records = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+        } catch (e: any) {
+          throw new Error(`XLSX解析失败: ${e.message}`);
+        }
+      } else {
+        // Parse CSV
+        try {
+          records = parse(csvContent, {
+            columns: true,
+            skip_empty_lines: true,
+            trim: true,
+            bom: true,
+            relax_column_count: true,
+          });
+        } catch (e: any) {
+          throw new Error(`CSV解析失败: ${e.message}`);
+        }
       }
 
       if (records.length === 0) {
-        throw new Error("CSV文件为空或格式不正确");
+        throw new Error(isXlsx ? "XLSX文件为空或格式不正确" : "CSV文件为空或格式不正确");
       }
 
       // Detect column mapping (support both Chinese and English headers)

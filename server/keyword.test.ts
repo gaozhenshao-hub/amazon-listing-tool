@@ -223,3 +223,109 @@ function chunkArrayTest<T>(arr: T[], size: number): T[][] {
   }
   return result;
 }
+
+// ─── XLSX Import Tests ──────────────────────────────────────────
+
+import * as XLSX from "xlsx";
+
+describe("XLSX Import", () => {
+  function createTestXlsx(data: Record<string, any>[]): Buffer {
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Sheet1");
+    return Buffer.from(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }));
+  }
+
+  it("should parse XLSX buffer with English headers", () => {
+    const data = [
+      { Keyword: "wireless charger", "Search Volume": 50000, SPR: 120, Relevance: "high" },
+      { Keyword: "phone charger", "Search Volume": 30000, SPR: 80, Relevance: "medium" },
+    ];
+    const buffer = createTestXlsx(data);
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const records = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+    expect(records).toHaveLength(2);
+    expect((records[0] as any).Keyword).toBe("wireless charger");
+    expect((records[0] as any)["Search Volume"]).toBe(50000);
+  });
+
+  it("should parse XLSX buffer with Chinese headers", () => {
+    const data = [
+      { "关键词": "蓝牙耳机", "月搜索量": 25000, "SPR": 45, "相关性": "高相关" },
+      { "关键词": "无线耳机", "月搜索量": 18000, "SPR": 60, "相关性": "中相关" },
+    ];
+    const buffer = createTestXlsx(data);
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const records = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+    expect(records).toHaveLength(2);
+    expect((records[0] as any)["关键词"]).toBe("蓝牙耳机");
+    expect((records[0] as any)["月搜索量"]).toBe(25000);
+  });
+
+  it("should detect column mapping from XLSX parsed records", () => {
+    const data = [
+      { "关键词": "test keyword", "搜索量": 5000, "SPR": 30 },
+    ];
+    const buffer = createTestXlsx(data);
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const records = XLSX.utils.sheet_to_json(sheet, { defval: "" }) as any[];
+
+    const cols = Object.keys(records[0]);
+    const mapping = detectColumnMappingTest(cols);
+    expect(mapping.keyword).toBe("关键词");
+    expect(mapping.searchVolume).toBe("搜索量");
+    expect(mapping.spr).toBe("SPR");
+  });
+
+  it("should handle XLSX with empty rows gracefully", () => {
+    const data = [
+      { Keyword: "charger", "Search Volume": 1000 },
+      { Keyword: "", "Search Volume": 0 },
+      { Keyword: "cable", "Search Volume": 2000 },
+    ];
+    const buffer = createTestXlsx(data);
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const records = XLSX.utils.sheet_to_json(sheet, { defval: "" }) as any[];
+
+    // All rows are returned, filtering happens at the import level
+    expect(records).toHaveLength(3);
+    const validRecords = records.filter((r: any) => r.Keyword && r.Keyword.toString().trim());
+    expect(validRecords).toHaveLength(2);
+  });
+
+  it("should convert XLSX buffer to base64 and back", () => {
+    const data = [
+      { Keyword: "test", "Search Volume": 999 },
+    ];
+    const buffer = createTestXlsx(data);
+    const base64 = buffer.toString("base64");
+    const restored = Buffer.from(base64, "base64");
+    const workbook = XLSX.read(restored, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const records = XLSX.utils.sheet_to_json(sheet, { defval: "" }) as any[];
+
+    expect(records).toHaveLength(1);
+    expect((records[0] as any).Keyword).toBe("test");
+  });
+
+  it("should handle XLSX with multiple sheets (uses first sheet)", () => {
+    const workbook = XLSX.utils.book_new();
+    const sheet1 = XLSX.utils.json_to_sheet([{ Keyword: "from sheet1", "Search Volume": 100 }]);
+    const sheet2 = XLSX.utils.json_to_sheet([{ Keyword: "from sheet2", "Search Volume": 200 }]);
+    XLSX.utils.book_append_sheet(workbook, sheet1, "Keywords");
+    XLSX.utils.book_append_sheet(workbook, sheet2, "Other");
+    const buffer = Buffer.from(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }));
+
+    const wb = XLSX.read(buffer, { type: "buffer" });
+    expect(wb.SheetNames[0]).toBe("Keywords");
+    const records = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" }) as any[];
+    expect(records).toHaveLength(1);
+    expect((records[0] as any).Keyword).toBe("from sheet1");
+  });
+});

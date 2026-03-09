@@ -153,3 +153,6 @@
 - [x] Frontend - expressionMethod badge in secondary image headers
 - [x] Update IMAGE_ADVICE_TRANSLATION_PROMPT to include new fields (colorScheme, expressionMethod, dataVisualization, icons, designGuidelines)
 - [x] Unit tests for enhanced image advice fields (8 new tests, 183 total passing)
+- [x] Feature: Keyword import - Add XLSX format support (backend parsing with xlsx library)
+- [x] Feature: Keyword import - Update frontend file selector to accept .xlsx files
+- [x] Feature: Keyword import - Unit tests for XLSX import (6 new tests, 189 total passing)

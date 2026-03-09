@@ -270,7 +270,7 @@ function KeywordListTab({ projectId }: { projectId: number }) {
               </TableHeader>
               <TableBody>
                 {filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">暂无关键词数据，请先导入CSV或手动添加</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">暂无关键词数据，请先导入CSV/XLSX或手动添加</TableCell></TableRow>
                 ) : filtered.slice(0, 200).map((kw: any) => (
                   <TableRow key={kw.id} className={kw.isNegative ? "opacity-50" : ""}>
                     <TableCell><Checkbox checked={selectedIds.has(kw.id)} onCheckedChange={() => toggleSelect(kw.id)} /></TableCell>
@@ -307,6 +307,8 @@ function KeywordListTab({ projectId }: { projectId: number }) {
 
 function ImportTab({ projectId }: { projectId: number }) {
   const [csvContent, setCsvContent] = useState("");
+  const [isXlsx, setIsXlsx] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState("");
   const [source, setSource] = useState<"csv_import" | "asin_reverse" | "search_suggest">("csv_import");
   const [sourceDetail, setSourceDetail] = useState("");
   const utils = trpc.useUtils();
@@ -315,6 +317,8 @@ function ImportTab({ projectId }: { projectId: number }) {
     onSuccess: (data) => {
       toast.success(`成功导入 ${data.imported} 个关键词`);
       setCsvContent("");
+      setIsXlsx(false);
+      setUploadedFileName("");
       setSourceDetail("");
       utils.keyword.list.invalidate();
       utils.keyword.stats.invalidate();
@@ -325,20 +329,44 @@ function ImportTab({ projectId }: { projectId: number }) {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      setCsvContent(ev.target?.result as string || "");
-      toast.success(`已加载文件: ${file.name}`);
-    };
-    reader.readAsText(file);
+    const isXlsxFile = file.name.endsWith(".xlsx") || file.name.endsWith(".xls");
+    setUploadedFileName(file.name);
+
+    if (isXlsxFile) {
+      // Read XLSX as base64
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const arrayBuffer = ev.target?.result as ArrayBuffer;
+        if (!arrayBuffer) return;
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = "";
+        for (let i = 0; i < bytes.byteLength; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        const base64 = btoa(binary);
+        setCsvContent(base64);
+        setIsXlsx(true);
+        toast.success(`已加载XLSX文件: ${file.name}`);
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      // Read CSV/TXT as text
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setCsvContent(ev.target?.result as string || "");
+        setIsXlsx(false);
+        toast.success(`已加载文件: ${file.name}`);
+      };
+      reader.readAsText(file);
+    }
   };
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Upload className="h-5 w-5" />导入关键词CSV</CardTitle>
-          <CardDescription>支持卖家精灵、西柚找词、Helium 10等工具导出的CSV文件，自动识别列名映射</CardDescription>
+          <CardTitle className="flex items-center gap-2"><Upload className="h-5 w-5" />导入关键词</CardTitle>
+          <CardDescription>支持卖家精灵、西柚找词、Helium 10等工具导出的CSV/XLSX文件，自动识别列名映射</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -360,16 +388,25 @@ function ImportTab({ projectId }: { projectId: number }) {
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">上传CSV文件</label>
-            <Input type="file" accept=".csv,.txt" onChange={handleFileUpload} />
+            <label className="text-sm font-medium">上传文件</label>
+            <Input type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleFileUpload} />
+            {uploadedFileName && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <FileText className="h-4 w-4" />
+                <span>{uploadedFileName}</span>
+                {isXlsx && <Badge variant="secondary" className="text-xs">XLSX</Badge>}
+              </div>
+            )}
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">或直接粘贴CSV内容</label>
-            <Textarea placeholder="粘贴CSV内容（含表头行）..." value={csvContent} onChange={(e) => setCsvContent(e.target.value)} rows={8} className="font-mono text-xs" />
-          </div>
+          {!isXlsx && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium">或直接粘贴CSV内容</label>
+              <Textarea placeholder="粘贴CSV内容（含表头行）..." value={csvContent} onChange={(e) => { setCsvContent(e.target.value); setIsXlsx(false); setUploadedFileName(""); }} rows={8} className="font-mono text-xs" />
+            </div>
+          )}
 
-          <Button onClick={() => importMut.mutate({ projectId, csvContent, source, sourceDetail })} disabled={!csvContent.trim() || importMut.isPending}>
+          <Button onClick={() => importMut.mutate({ projectId, csvContent, source, sourceDetail, isXlsx })} disabled={!csvContent.trim() || importMut.isPending}>
             {importMut.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />导入中...</> : <><Upload className="h-4 w-4 mr-2" />开始导入</>}
           </Button>
         </CardContent>
@@ -377,11 +414,16 @@ function ImportTab({ projectId }: { projectId: number }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>支持的CSV格式</CardTitle>
+          <CardTitle>支持的文件格式</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
             <div>
+              <h4 className="font-medium mb-2">支持的文件类型</h4>
+              <div className="mb-3 space-y-1 text-muted-foreground">
+                <p><strong>CSV/TXT：</strong>直接解析文本内容，也可粘贴内容导入</p>
+                <p><strong>XLSX/XLS：</strong>自动读取第一个工作表，支持Excel格式</p>
+              </div>
               <h4 className="font-medium mb-2">自动识别的列名</h4>
               <Table>
                 <TableHeader><TableRow><TableHead>字段</TableHead><TableHead>支持的列名</TableHead></TableRow></TableHeader>
@@ -400,7 +442,7 @@ function ImportTab({ projectId }: { projectId: number }) {
               <div className="space-y-2 text-muted-foreground">
                 <p><strong>流量等级：</strong>月搜索量 ≥10000 → 高 | ≥1000 → 中 | &lt;1000 → 低</p>
                 <p><strong>竞争度：</strong>SPR &lt;30 → 低 | &lt;100 → 中 | ≥100 → 高</p>
-                <p><strong>相关性：</strong>从CSV中"相关性"列自动读取，支持中英文标签</p>
+                <p><strong>相关性：</strong>从文件中"相关性"列自动读取，支持中英文标签</p>
               </div>
             </div>
           </div>
