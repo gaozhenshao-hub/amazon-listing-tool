@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `projectFiles` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`projectId` int NOT NULL,\n\t`userId` int NOT NULL,\n\t`fileType` enum('product_attributes','competitor_listings','search_term_report','aba_keywords') NOT NULL,\n\t`filename` varchar(500) NOT NULL,\n\t`fileUrl` text,\n\t`fileSize` int,\n\t`rawContent` text,\n\t`parsedData` text,\n\t`analysisResult` text,\n\t`status` enum('uploaded','parsing','parsed','analyzing','completed','failed') NOT NULL DEFAULT 'uploaded',\n\t`errorMessage` text,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `projectFiles_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute CREATE TABLE `projectFiles` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`projectId` int NOT NULL,\n\t`userId` int NOT NULL,\n\t`fileType` enum('product_attributes','competitor_listings','search_term_report','aba_keywords') NOT NULL,\n\t`filename` varchar(500) NOT NULL,\n\t`fileUrl` text,\n\t`fileSize` int,\n\t`rawContent` text,\n\t`parsedData` text,\n\t`analysisResult` text,\n\t`status` enum('uploaded','parsing','parsed','analyzing','completed','failed') NOT NULL DEFAULT 'uploaded',\n\t`errorMessage` text,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `projectFiles_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 297
+}

@@ -13,6 +13,7 @@ import PreviewPage from "./pages/PreviewPage";
 import ProjectDetailPage from "./pages/ProjectDetailPage";
 import ComparisonPage from "./pages/ComparisonPage";
 import ReviewHistoryPage from "./pages/ReviewHistoryPage";
+import DataFilesPage from "./pages/DataFilesPage";
 
 function Router() {
   return (
@@ -25,6 +26,7 @@ function Router() {
         <Route path="/preview" component={PreviewPage} />
         <Route path="/comparison" component={ComparisonPage} />
         <Route path="/review-history" component={ReviewHistoryPage} />
+        <Route path="/data-files" component={DataFilesPage} />
         <Route path="/project/:id" component={ProjectDetailPage} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />

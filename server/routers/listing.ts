@@ -207,7 +207,12 @@ async function generateChineseTranslation(
   }
 }
 
-function buildProductContext(project: any, analyses: any[]) {
+function buildProductContext(project: any, analyses: any[], fileAnalyses?: {
+  productAttributes?: any;
+  competitorListings?: any;
+  cosmoScenes?: any;
+  a9Keywords?: any;
+}) {
   const parts: string[] = [];
   parts.push(`Product: ${project.productName || project.name}`);
   if (project.brand) parts.push(`Brand: ${project.brand}`);
@@ -236,9 +241,110 @@ function buildProductContext(project: any, analyses: any[]) {
     }
   }
 
-  // Add competitor insights
+  // ─── Module 1: Rufus Attribute Extraction ─────────────────────
+  if (fileAnalyses?.productAttributes) {
+    const attrs = fileAnalyses.productAttributes;
+    parts.push("\n--- [Module 1] Rufus Product Attributes (本品属性表分析) ---");
+    if (attrs.uniqueSellingPoints?.length) {
+      parts.push(`Unique Selling Points: ${attrs.uniqueSellingPoints.join("; ")}`);
+    }
+    if (attrs.coreSpecs?.length) {
+      parts.push(`Core Specs: ${attrs.coreSpecs.map((s: any) => `${s.attribute}: ${s.value}`).join("; ")}`);
+    }
+    if (attrs.materialBuild?.length) {
+      parts.push(`Material & Build: ${attrs.materialBuild.map((m: any) => `${m.attribute}: ${m.value} (${m.sellingPoint})`).join("; ")}`);
+    }
+    if (attrs.performance?.length) {
+      parts.push(`Performance: ${attrs.performance.map((p: any) => `${p.metric}: ${p.value}`).join("; ")}`);
+    }
+    if (attrs.safetyCompliance?.length) {
+      parts.push(`Safety & Compliance: ${attrs.safetyCompliance.map((s: any) => `${s.certification}: ${s.detail}`).join("; ")}`);
+    }
+    if (attrs.rufusFriendlyAttributes?.length) {
+      parts.push(`Rufus-Friendly Attributes: ${attrs.rufusFriendlyAttributes.join("; ")}`);
+    }
+    if (attrs.suggestedKeywordsFromAttributes?.length) {
+      parts.push(`Keywords from Attributes: ${attrs.suggestedKeywordsFromAttributes.join(", ")}`);
+    }
+  }
+
+  // ─── Module 2: Multi-Competitor Analysis ──────────────────────
+  if (fileAnalyses?.competitorListings) {
+    const comp = fileAnalyses.competitorListings;
+    parts.push("\n--- [Module 2] Multi-Competitor Analysis (竞品格局分析) ---");
+    if (comp.parityPoints?.length) {
+      parts.push("Parity (Must-Have Selling Points):");
+      comp.parityPoints.slice(0, 10).forEach((p: any) => {
+        parts.push(`  - ${p.sellingPoint} [${p.frequency}, ${p.importance}]`);
+      });
+    }
+    if (comp.gapOpportunities?.length) {
+      parts.push("Gap Opportunities (Differentiation):");
+      comp.gapOpportunities.slice(0, 8).forEach((g: any) => {
+        parts.push(`  - ${g.gap} [${g.type}, opportunity: ${g.opportunityLevel}]`);
+      });
+    }
+    if (comp.strategicRecommendations) {
+      const sr = comp.strategicRecommendations;
+      if (sr.mustInclude?.length) parts.push(`Must Include: ${sr.mustInclude.join("; ")}`);
+      if (sr.differentiators?.length) parts.push(`Differentiators: ${sr.differentiators.join("; ")}`);
+      if (sr.avoidCopying?.length) parts.push(`Avoid Copying: ${sr.avoidCopying.join("; ")}`);
+    }
+  }
+
+  // ─── Module 3: COSMO Scene Mapping ───────────────────────────
+  if (fileAnalyses?.cosmoScenes) {
+    const cosmo = fileAnalyses.cosmoScenes;
+    parts.push("\n--- [Module 3] COSMO Scene Mapping (场景映射) ---");
+    if (cosmo.scenesClusters?.length) {
+      parts.push("Top Usage Scenes:");
+      cosmo.scenesClusters.slice(0, 8).forEach((sc: any) => {
+        parts.push(`  - ${sc.sceneName} (${sc.sceneNameCn || ""}) [priority: ${sc.priority}]`);
+        if (sc.buyerIntent) parts.push(`    Intent: ${sc.buyerIntent}`);
+        if (sc.listingMapping) {
+          if (sc.listingMapping.titleKeywords?.length) parts.push(`    Title Keywords: ${sc.listingMapping.titleKeywords.join(", ")}`);
+          if (sc.listingMapping.bulletAngle) parts.push(`    Bullet Angle: ${sc.listingMapping.bulletAngle}`);
+        }
+      });
+    }
+    if (cosmo.topScenesByVolume?.length) {
+      parts.push(`Top Scenes by Volume: ${cosmo.topScenesByVolume.join(", ")}`);
+    }
+    if (cosmo.seasonalPatterns?.length) {
+      parts.push(`Seasonal Patterns: ${cosmo.seasonalPatterns.join(", ")}`);
+    }
+  }
+
+  // ─── Module 4: A9 Keyword Grading ────────────────────────────
+  if (fileAnalyses?.a9Keywords) {
+    const a9 = fileAnalyses.a9Keywords;
+    parts.push("\n--- [Module 4] A9 Keyword Grading (关键词分级) ---");
+    if (a9.titleMustHaveKeywords?.length) {
+      parts.push(`Title MUST-HAVE Keywords: ${a9.titleMustHaveKeywords.join(", ")}`);
+    }
+    if (a9.bulletPriorityKeywords?.length) {
+      parts.push(`Bullet Priority Keywords: ${a9.bulletPriorityKeywords.join(", ")}`);
+    }
+    if (a9.backendKeywords?.length) {
+      parts.push(`Backend Search Keywords: ${a9.backendKeywords.join(", ")}`);
+    }
+    if (a9.goldenKeywords?.length) {
+      parts.push(`Golden Keywords (high volume + low competition): ${a9.goldenKeywords.join(", ")}`);
+    }
+    if (a9.keywordClusters?.length) {
+      parts.push("Keyword Clusters:");
+      a9.keywordClusters.slice(0, 6).forEach((c: any) => {
+        parts.push(`  - ${c.clusterName}: ${(c.keywords || []).join(", ")} [${c.bestPlacement}]`);
+      });
+    }
+    if (a9.keywordStrategy) {
+      parts.push(`Keyword Strategy: ${a9.keywordStrategy}`);
+    }
+  }
+
+  // Add competitor insights from ASIN analyses
   if (analyses.length > 0) {
-    parts.push("\n--- Competitor Insights ---");
+    parts.push("\n--- Competitor ASIN Insights ---");
     for (const analysis of analyses) {
       parts.push(`\nCompetitor ASIN: ${analysis.asin}`);
       if (analysis.title) parts.push(`Competitor Title: ${analysis.title}`);
@@ -259,6 +365,40 @@ function buildProductContext(project: any, analyses: any[]) {
   }
 
   return parts.join("\n");
+}
+
+// Helper: load file analysis data for a project
+async function loadFileAnalyses(projectId: number) {
+  const files = await db.getProjectFilesByProject(projectId);
+  const result: {
+    productAttributes?: any;
+    competitorListings?: any;
+    cosmoScenes?: any;
+    a9Keywords?: any;
+  } = {};
+
+  for (const file of files) {
+    if (file.status !== "completed" || !file.analysisResult) continue;
+    try {
+      const parsed = JSON.parse(file.analysisResult);
+      switch (file.fileType) {
+        case "product_attributes":
+          result.productAttributes = parsed;
+          break;
+        case "competitor_listings":
+          result.competitorListings = parsed;
+          break;
+        case "search_term_report":
+          result.cosmoScenes = parsed;
+          break;
+        case "aba_keywords":
+          result.a9Keywords = parsed;
+          break;
+      }
+    } catch {}
+  }
+
+  return result;
 }
 
 export const listingRouter = router({
@@ -288,7 +428,8 @@ export const listingRouter = router({
       if (!project) throw new Error("Project not found");
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
-      const context = buildProductContext(project, analyses);
+      const fileAnalyses = await loadFileAnalyses(input.projectId);
+      const context = buildProductContext(project, analyses, fileAnalyses);
 
       const response = await invokeLLM({
         messages: [
@@ -329,7 +470,8 @@ export const listingRouter = router({
       if (!project) throw new Error("Project not found");
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
-      const context = buildProductContext(project, analyses);
+      const fileAnalyses = await loadFileAnalyses(input.projectId);
+      const context = buildProductContext(project, analyses, fileAnalyses);
 
       const response = await invokeLLM({
         messages: [
@@ -370,7 +512,8 @@ export const listingRouter = router({
       if (!project) throw new Error("Project not found");
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
-      const context = buildProductContext(project, analyses);
+      const fileAnalyses = await loadFileAnalyses(input.projectId);
+      const context = buildProductContext(project, analyses, fileAnalyses);
 
       const response = await invokeLLM({
         messages: [
@@ -402,7 +545,8 @@ export const listingRouter = router({
       if (!project) throw new Error("Project not found");
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
-      const context = buildProductContext(project, analyses);
+      const fileAnalyses = await loadFileAnalyses(input.projectId);
+      const context = buildProductContext(project, analyses, fileAnalyses);
 
       let extraContext = "";
       if (input.existingTitle) {
@@ -436,7 +580,8 @@ export const listingRouter = router({
       if (!project) throw new Error("Project not found");
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
-      const context = buildProductContext(project, analyses);
+      const fileAnalyses = await loadFileAnalyses(input.projectId);
+      const context = buildProductContext(project, analyses, fileAnalyses);
 
       const response = await invokeLLM({
         messages: [
@@ -467,7 +612,8 @@ export const listingRouter = router({
       await db.updateProject(input.projectId, ctx.user.id, { status: "generating" });
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
-      const context = buildProductContext(project, analyses);
+      const fileAnalyses = await loadFileAnalyses(input.projectId);
+      const context = buildProductContext(project, analyses, fileAnalyses);
 
       // Generate all components in parallel
       const [titleRes, bulletRes, descRes, searchRes, imageRes] = await Promise.all([

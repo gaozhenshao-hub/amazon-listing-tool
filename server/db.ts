@@ -7,6 +7,7 @@ import {
   InsertListing, listings,
   InsertImageAnalysis, imageAnalyses,
   InsertReviewImport, reviewImports,
+  InsertProjectFile, projectFiles,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -251,5 +252,52 @@ export async function deleteReviewImport(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(reviewImports).where(eq(reviewImports.id, id));
+  return { success: true };
+}
+
+// ─── Project File Helpers ─────────────────────────────────────
+
+export async function createProjectFile(data: InsertProjectFile) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(projectFiles).values(data);
+  const insertId = result[0].insertId;
+  const rows = await db.select().from(projectFiles).where(eq(projectFiles.id, insertId)).limit(1);
+  return rows[0];
+}
+
+export async function getProjectFilesByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(projectFiles).where(eq(projectFiles.projectId, projectId)).orderBy(desc(projectFiles.createdAt));
+}
+
+export async function getProjectFilesByType(projectId: number, fileType: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(projectFiles)
+    .where(and(eq(projectFiles.projectId, projectId), eq(projectFiles.fileType, fileType as any)))
+    .orderBy(desc(projectFiles.createdAt));
+}
+
+export async function getProjectFileById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(projectFiles).where(eq(projectFiles.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateProjectFile(id: number, data: Partial<InsertProjectFile>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(projectFiles).set(data).where(eq(projectFiles.id, id));
+  const rows = await db.select().from(projectFiles).where(eq(projectFiles.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function deleteProjectFile(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(projectFiles).where(eq(projectFiles.id, id));
   return { success: true };
 }

@@ -74,3 +74,20 @@
 - [x] Store Chinese translations in database alongside English content
 - [x] Backend - translateToChinese API for existing listings
 - [x] Unit tests for bilingual translation feature (4 tests)
+- [x] Database - Add projectFiles table for uploaded analysis files (属性表/竞品Listing/出单词报告/ABA关键词)
+- [x] Backend - File upload API for TXT and CSV files with S3 storage
+- [x] Backend - TXT parser for 本品属性表.txt (Rufus attribute extraction)
+- [x] Backend - TXT parser for 竞品Listing文本.txt (competitor listing text)
+- [x] Backend - CSV parser for 竞品出单词报告.csv (COSMO scene mapping)
+- [x] Backend - CSV parser for ABA关键词数据.csv (A9 keyword grading)
+- [x] Backend - Rufus属性提取分析模块 (extract product attributes as Listing context)
+- [x] Backend - 多竞品格局分析模块 (find Parity共性 and Gap缺口)
+- [x] Backend - COSMO场景映射模块 (map real usage scenes from search terms)
+- [x] Backend - A9关键词分级模块 (grade keywords by weight from ABA data)
+- [x] Backend - Integrate four analysis modules into Listing generation flow
+- [x] Frontend - DataFilesPage with 4 file upload cards and analysis result display
+- [x] Frontend - Analysis module status badges on GeneratePage
+- [x] Frontend - Sidebar navigation for 数据文件 page
+- [x] Unit tests for file parsing and analysis modules (11 tests)
+- [x] Backend - Image advice bilingual (中英文对比) support
+- [x] Database - Add imageAdviceCn field to listings table

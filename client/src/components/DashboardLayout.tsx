@@ -31,6 +31,7 @@ import {
   Sparkles,
   GitCompareArrows,
   History,
+  Database,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -43,6 +44,7 @@ const menuItems = [
   { icon: GitCompareArrows, label: "竞品对比", path: "/comparison" },
   { icon: History, label: "导入历史", path: "/review-history" },
   { icon: Image, label: "图片识别", path: "/image-analysis" },
+  { icon: Database, label: "数据文件", path: "/data-files" },
   { icon: Sparkles, label: "Listing生成", path: "/generate" },
   { icon: FileText, label: "结果预览", path: "/preview" },
 ];

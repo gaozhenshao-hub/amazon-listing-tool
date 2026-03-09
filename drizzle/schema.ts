@@ -112,3 +112,29 @@ export const reviewImports = mysqlTable("reviewImports", {
 
 export type ReviewImport = typeof reviewImports.$inferSelect;
 export type InsertReviewImport = typeof reviewImports.$inferInsert;
+
+// Project analysis files (属性表, 竞品Listing, 出单词报告, ABA关键词)
+export const projectFiles = mysqlTable("projectFiles", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  fileType: mysqlEnum("fileType", [
+    "product_attributes",    // 本品属性表.txt (Rufus)
+    "competitor_listings",   // 竞品Listing文本.txt
+    "search_term_report",    // 竞品出单词报告.csv (COSMO)
+    "aba_keywords",          // ABA关键词数据.csv (A9)
+  ]).notNull(),
+  filename: varchar("filename", { length: 500 }).notNull(),
+  fileUrl: text("fileUrl"),           // S3 URL
+  fileSize: int("fileSize"),           // bytes
+  rawContent: text("rawContent"),      // parsed raw text/csv content
+  parsedData: text("parsedData"),      // JSON: structured parsed result
+  analysisResult: text("analysisResult"), // JSON: AI analysis result
+  status: mysqlEnum("status", ["uploaded", "parsing", "parsed", "analyzing", "completed", "failed"]).default("uploaded").notNull(),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ProjectFile = typeof projectFiles.$inferSelect;
+export type InsertProjectFile = typeof projectFiles.$inferInsert;

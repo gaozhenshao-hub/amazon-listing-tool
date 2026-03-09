@@ -73,6 +73,11 @@ export default function GeneratePage() {
     { enabled: !!selectedProjectId }
   );
 
+  const { data: fileSummary } = trpc.projectFile.getAnalysisSummary.useQuery(
+    { projectId: selectedProjectId! },
+    { enabled: !!selectedProjectId }
+  );
+
   const generateFull = trpc.listing.generateFull.useMutation({
     onSuccess: (data) => {
       setResult(data);
@@ -218,11 +223,26 @@ export default function GeneratePage() {
                     </p>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   {analyses && analyses.length > 0 && (
                     <Badge variant="secondary">
                       <CheckCircle2 className="h-3 w-3 mr-1" />
                       已有竞品数据
+                    </Badge>
+                  )}
+                  {fileSummary && fileSummary.fileCount > 0 && (
+                    <Badge variant={fileSummary.hasAllFiles ? "default" : "secondary"}
+                      className={fileSummary.hasAllFiles ? "bg-green-600" : ""}>
+                      {fileSummary.hasAllFiles ? (
+                        <><CheckCircle2 className="h-3 w-3 mr-1" />4/4 分析模块就绪</>
+                      ) : (
+                        <>{[
+                          fileSummary.productAttributes ? 1 : 0,
+                          fileSummary.competitorListings ? 1 : 0,
+                          fileSummary.cosmoScenes ? 1 : 0,
+                          fileSummary.a9Keywords ? 1 : 0,
+                        ].reduce((a: number, b: number) => a + b, 0)}/4 分析模块</>
+                      )}
                     </Badge>
                   )}
                 </div>
