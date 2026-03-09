@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -9,12 +9,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import {
   Loader2, Sparkles, Target, Crosshair, Globe, Shield, Zap, Bot,
   DollarSign, TrendingUp, AlertTriangle, ChevronDown, ChevronUp,
-  Trash2, RefreshCw, BarChart3, PieChart, Clock, Info, Copy, Check
+  Trash2, RefreshCw, BarChart3, PieChart, Clock, Info, Copy, Check,
+  Pencil, Save, X, Plus, GripVertical
 } from "lucide-react";
 
 // Ad group type labels and colors
@@ -46,6 +47,10 @@ export default function AdStructurePage() {
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<number>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // Edit mode state
+  const [isEditing, setIsEditing] = useState(false);
+  const [editData, setEditData] = useState<any>(null);
+
   const projectsQuery = trpc.project.list.useQuery();
   const projects = projectsQuery.data || [];
 
@@ -66,6 +71,18 @@ export default function AdStructurePage() {
     },
   });
 
+  const updateMutation = trpc.adStructure.update.useMutation({
+    onSuccess: () => {
+      structuresQuery.refetch();
+      setIsEditing(false);
+      setEditData(null);
+      toast.success("广告架构已保存！");
+    },
+    onError: (err) => {
+      toast.error(`保存失败: ${err.message}`);
+    },
+  });
+
   const deleteMutation = trpc.adStructure.delete.useMutation({
     onSuccess: () => {
       structuresQuery.refetch();
@@ -75,20 +92,154 @@ export default function AdStructurePage() {
 
   const structures = structuresQuery.data || [];
   const latestStructure = structures[0];
-  const structureData = latestStructure?.structureData;
+  const displayData = isEditing ? editData : latestStructure?.structureData;
 
   // Group campaigns by adGroupType for matrix view
   const campaignMatrix = useMemo(() => {
-    if (!structureData?.adStructure?.campaigns) return {};
+    if (!displayData?.adStructure?.campaigns) return {};
     const matrix: Record<string, Record<string, any>> = {};
-    for (const campaign of structureData.adStructure.campaigns) {
+    for (const campaign of displayData.adStructure.campaigns) {
       const groupType = campaign.adGroupType || "other";
       const matchType = campaign.matchType || "broad";
       if (!matrix[groupType]) matrix[groupType] = {};
       matrix[groupType][matchType] = campaign;
     }
     return matrix;
-  }, [structureData]);
+  }, [displayData]);
+
+  // Enter edit mode
+  const startEditing = useCallback(() => {
+    if (!latestStructure?.structureData) return;
+    setEditData(JSON.parse(JSON.stringify(latestStructure.structureData)));
+    setIsEditing(true);
+  }, [latestStructure]);
+
+  // Cancel edit
+  const cancelEditing = useCallback(() => {
+    setIsEditing(false);
+    setEditData(null);
+  }, []);
+
+  // Save edits
+  const saveEdits = useCallback(() => {
+    if (!latestStructure?.id || !editData) return;
+    updateMutation.mutate({ id: latestStructure.id, structureData: editData });
+  }, [latestStructure, editData, updateMutation]);
+
+  // ─── Edit helpers ───
+
+  // Update a campaign field
+  const updateCampaignField = useCallback((campaignIdx: number, field: string, value: any) => {
+    setEditData((prev: any) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      if (next.adStructure?.campaigns?.[campaignIdx]) {
+        next.adStructure.campaigns[campaignIdx][field] = value;
+      }
+      return next;
+    });
+  }, []);
+
+  // Update a keyword in a campaign
+  const updateKeyword = useCallback((campaignIdx: number, kwIdx: number, field: string, value: string) => {
+    setEditData((prev: any) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      if (next.adStructure?.campaigns?.[campaignIdx]?.keywords?.[kwIdx]) {
+        next.adStructure.campaigns[campaignIdx].keywords[kwIdx][field] = value;
+      }
+      return next;
+    });
+  }, []);
+
+  // Add a keyword to a campaign
+  const addKeyword = useCallback((campaignIdx: number) => {
+    setEditData((prev: any) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      if (next.adStructure?.campaigns?.[campaignIdx]) {
+        if (!next.adStructure.campaigns[campaignIdx].keywords) {
+          next.adStructure.campaigns[campaignIdx].keywords = [];
+        }
+        next.adStructure.campaigns[campaignIdx].keywords.push({
+          keyword: "",
+          suggestedBid: "$0.50",
+          searchVolume: "中",
+          competition: "中",
+          note: "",
+        });
+      }
+      return next;
+    });
+  }, []);
+
+  // Remove a keyword from a campaign
+  const removeKeyword = useCallback((campaignIdx: number, kwIdx: number) => {
+    setEditData((prev: any) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      if (next.adStructure?.campaigns?.[campaignIdx]?.keywords) {
+        next.adStructure.campaigns[campaignIdx].keywords.splice(kwIdx, 1);
+      }
+      return next;
+    });
+  }, []);
+
+  // Add a negative keyword to a campaign
+  const addNegativeKeyword = useCallback((campaignIdx: number, keyword: string) => {
+    if (!keyword.trim()) return;
+    setEditData((prev: any) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      if (next.adStructure?.campaigns?.[campaignIdx]) {
+        if (!next.adStructure.campaigns[campaignIdx].negativeKeywords) {
+          next.adStructure.campaigns[campaignIdx].negativeKeywords = [];
+        }
+        if (!next.adStructure.campaigns[campaignIdx].negativeKeywords.includes(keyword.trim())) {
+          next.adStructure.campaigns[campaignIdx].negativeKeywords.push(keyword.trim());
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  // Remove a negative keyword from a campaign
+  const removeNegativeKeyword = useCallback((campaignIdx: number, nkIdx: number) => {
+    setEditData((prev: any) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      if (next.adStructure?.campaigns?.[campaignIdx]?.negativeKeywords) {
+        next.adStructure.campaigns[campaignIdx].negativeKeywords.splice(nkIdx, 1);
+      }
+      return next;
+    });
+  }, []);
+
+  // Update auto campaign field
+  const updateAutoCampaignField = useCallback((field: string, value: any) => {
+    setEditData((prev: any) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      if (next.adStructure?.autoCompaign) {
+        next.adStructure.autoCompaign[field] = value;
+      }
+      return next;
+    });
+  }, []);
+
+  // Update budget allocation
+  const updateBudgetField = useCallback((idx: number, field: string, value: any) => {
+    setEditData((prev: any) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      if (next.budgetAllocation?.breakdown?.[idx]) {
+        next.budgetAllocation.breakdown[idx][field] = value;
+      }
+      return next;
+    });
+  }, []);
+
+  const updateTotalBudget = useCallback((value: string) => {
+    setEditData((prev: any) => {
+      const next = JSON.parse(JSON.stringify(prev));
+      if (next.budgetAllocation) {
+        next.budgetAllocation.totalDailyBudget = value;
+      }
+      return next;
+    });
+  }, []);
 
   const toggleCampaign = (idx: number) => {
     setExpandedCampaigns(prev => {
@@ -111,6 +262,12 @@ export default function AdStructurePage() {
     generateMutation.mutate({ projectId });
   };
 
+  // Reset edit mode when switching projects
+  useEffect(() => {
+    setIsEditing(false);
+    setEditData(null);
+  }, [selectedProjectId]);
+
   if (!user) {
     return (
       <div className="flex items-center justify-center h-[60vh]">
@@ -126,12 +283,46 @@ export default function AdStructurePage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">广告关键词架构</h1>
-        <p className="text-muted-foreground mt-1">
-          基于关键词矩阵分类，AI自动生成SP广告投放架构建议
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">广告关键词架构</h1>
+          <p className="text-muted-foreground mt-1">
+            基于关键词矩阵和竞品分析数据，AI自动生成SP广告投放架构建议
+          </p>
+        </div>
+        {latestStructure && displayData && !isEditing && (
+          <Button variant="outline" onClick={startEditing}>
+            <Pencil className="h-4 w-4 mr-2" />
+            编辑架构
+          </Button>
+        )}
+        {isEditing && (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={cancelEditing} disabled={updateMutation.isPending}>
+              <X className="h-4 w-4 mr-2" />
+              取消
+            </Button>
+            <Button onClick={saveEdits} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 mr-2" />
+              )}
+              保存修改
+            </Button>
+          </div>
+        )}
       </div>
+
+      {/* Edit mode banner */}
+      {isEditing && (
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
+          <Pencil className="h-4 w-4 text-amber-600 shrink-0" />
+          <p className="text-sm text-amber-800">
+            编辑模式已开启 — 可直接修改关键词、竞价、预算等内容，完成后点击"保存修改"
+          </p>
+        </div>
+      )}
 
       {/* Project Selection & Generate */}
       <Card>
@@ -154,7 +345,7 @@ export default function AdStructurePage() {
             </div>
             <Button
               onClick={handleGenerate}
-              disabled={!projectId || generateMutation.isPending}
+              disabled={!projectId || generateMutation.isPending || isEditing}
               className="shrink-0"
             >
               {generateMutation.isPending ? (
@@ -175,11 +366,11 @@ export default function AdStructurePage() {
             <div className="mt-4 p-4 bg-primary/5 rounded-lg border border-primary/20">
               <div className="flex items-center gap-2 mb-2">
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                <span className="text-sm font-medium">正在分析关键词数据并生成广告架构...</span>
+                <span className="text-sm font-medium">正在分析关键词和竞品数据，生成广告架构...</span>
               </div>
               <Progress value={60} className="h-1.5" />
               <p className="text-xs text-muted-foreground mt-2">
-                AI正在根据关键词的流量、相关性、竞争度数据，设计最优广告投放矩阵
+                AI正在根据关键词矩阵、竞品ASIN数据，设计最优广告投放架构（含竞品定投建议）
               </p>
             </div>
           )}
@@ -193,7 +384,8 @@ export default function AdStructurePage() {
             <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
             <h3 className="text-lg font-medium mb-2">暂无广告架构</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              请先在关键词管理中导入并分类关键词，然后点击"生成广告架构"
+              请先在关键词管理中导入并分类关键词，然后点击"生成广告架构"。<br />
+              如果已有竞品分析数据，AI会自动推荐竞品ASIN定投目标。
             </p>
             <Button variant="outline" onClick={handleGenerate} disabled={generateMutation.isPending}>
               <Sparkles className="h-4 w-4 mr-2" />
@@ -204,7 +396,7 @@ export default function AdStructurePage() {
       )}
 
       {/* Results */}
-      {latestStructure && structureData && (
+      {latestStructure && displayData && (
         <>
           {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -214,7 +406,7 @@ export default function AdStructurePage() {
                   <BarChart3 className="h-4 w-4 text-primary" />
                   <span className="text-xs text-muted-foreground">广告活动</span>
                 </div>
-                <p className="text-2xl font-bold">{latestStructure.campaignCount || 0}</p>
+                <p className="text-2xl font-bold">{displayData.adStructure?.campaigns?.length || latestStructure.campaignCount || 0}</p>
               </CardContent>
             </Card>
             <Card>
@@ -223,7 +415,9 @@ export default function AdStructurePage() {
                   <Target className="h-4 w-4 text-green-600" />
                   <span className="text-xs text-muted-foreground">投放关键词</span>
                 </div>
-                <p className="text-2xl font-bold">{latestStructure.keywordCount || 0}</p>
+                <p className="text-2xl font-bold">
+                  {(displayData.adStructure?.campaigns || []).reduce((s: number, c: any) => s + (c.keywords?.length || 0), 0)}
+                </p>
               </CardContent>
             </Card>
             <Card>
@@ -232,7 +426,7 @@ export default function AdStructurePage() {
                   <DollarSign className="h-4 w-4 text-amber-600" />
                   <span className="text-xs text-muted-foreground">建议日预算</span>
                 </div>
-                <p className="text-2xl font-bold">{structureData.budgetAllocation?.totalDailyBudget || "—"}</p>
+                <p className="text-2xl font-bold">{displayData.budgetAllocation?.totalDailyBudget || "—"}</p>
               </CardContent>
             </Card>
             <Card>
@@ -265,6 +459,7 @@ export default function AdStructurePage() {
                   </CardTitle>
                   <CardDescription>
                     行维度为广告组类型，列维度为匹配方式，展示完整的广告架构
+                    {isEditing && " — 点击广告活动Tab可编辑具体关键词"}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -352,7 +547,7 @@ export default function AdStructurePage() {
                   </div>
 
                   {/* Auto Campaign Section */}
-                  {structureData.adStructure?.autoCompaign && (
+                  {displayData.adStructure?.autoCompaign && (
                     <>
                       <Separator className="my-4" />
                       <div className="p-4 rounded-lg border bg-gray-50/50">
@@ -363,30 +558,54 @@ export default function AdStructurePage() {
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                           <div>
                             <p className="text-xs text-muted-foreground mb-1">日预算</p>
-                            <p className="font-medium">{structureData.adStructure.autoCompaign.dailyBudget}</p>
+                            {isEditing ? (
+                              <Input
+                                value={displayData.adStructure.autoCompaign.dailyBudget || ""}
+                                onChange={(e) => updateAutoCampaignField("dailyBudget", e.target.value)}
+                                className="h-8 text-sm"
+                              />
+                            ) : (
+                              <p className="font-medium">{displayData.adStructure.autoCompaign.dailyBudget}</p>
+                            )}
                           </div>
                           <div>
                             <p className="text-xs text-muted-foreground mb-1">默认竞价</p>
-                            <p className="font-medium">{structureData.adStructure.autoCompaign.defaultBid}</p>
+                            {isEditing ? (
+                              <Input
+                                value={displayData.adStructure.autoCompaign.defaultBid || ""}
+                                onChange={(e) => updateAutoCampaignField("defaultBid", e.target.value)}
+                                className="h-8 text-sm"
+                              />
+                            ) : (
+                              <p className="font-medium">{displayData.adStructure.autoCompaign.defaultBid}</p>
+                            )}
                           </div>
                           <div>
                             <p className="text-xs text-muted-foreground mb-1">收词策略</p>
-                            <p className="font-medium">{structureData.adStructure.autoCompaign.harvestStrategy}</p>
+                            {isEditing ? (
+                              <Input
+                                value={displayData.adStructure.autoCompaign.harvestStrategy || ""}
+                                onChange={(e) => updateAutoCampaignField("harvestStrategy", e.target.value)}
+                                className="h-8 text-sm"
+                              />
+                            ) : (
+                              <p className="font-medium">{displayData.adStructure.autoCompaign.harvestStrategy}</p>
+                            )}
                           </div>
                         </div>
-                        {structureData.adStructure.autoCompaign.optimizationTips && (
+                        {displayData.adStructure.autoCompaign.optimizationTips && (
                           <div className="mt-3 p-3 bg-blue-50 rounded-lg">
                             <p className="text-xs text-blue-700">
                               <Info className="h-3 w-3 inline mr-1" />
-                              {structureData.adStructure.autoCompaign.optimizationTips}
+                              {displayData.adStructure.autoCompaign.optimizationTips}
                             </p>
                           </div>
                         )}
-                        {structureData.adStructure.autoCompaign.negativeExact?.length > 0 && (
+                        {displayData.adStructure.autoCompaign.negativeExact?.length > 0 && (
                           <div className="mt-3">
                             <p className="text-xs text-muted-foreground mb-1">精准否定词</p>
                             <div className="flex flex-wrap gap-1">
-                              {structureData.adStructure.autoCompaign.negativeExact.map((kw: string, i: number) => (
+                              {displayData.adStructure.autoCompaign.negativeExact.map((kw: string, i: number) => (
                                 <Badge key={i} variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200">{kw}</Badge>
                               ))}
                             </div>
@@ -399,16 +618,16 @@ export default function AdStructurePage() {
               </Card>
             </TabsContent>
 
-            {/* ═══ Campaigns List ═══ */}
+            {/* ═══ Campaigns List (Editable) ═══ */}
             <TabsContent value="campaigns" className="space-y-3">
-              {(structureData.adStructure?.campaigns || []).map((campaign: any, idx: number) => {
+              {(displayData.adStructure?.campaigns || []).map((campaign: any, idx: number) => {
                 const isExpanded = expandedCampaigns.has(idx);
                 const groupInfo = AD_GROUP_LABELS[campaign.adGroupType] || { label: campaign.adGroupType, icon: Target, color: "bg-gray-100 text-gray-800 border-gray-200", desc: "" };
                 const matchInfo = MATCH_TYPE_LABELS[campaign.matchType] || { label: campaign.matchType, color: "" };
                 const Icon = groupInfo.icon;
 
                 return (
-                  <Card key={idx}>
+                  <Card key={idx} className={isEditing ? "border-amber-200" : ""}>
                     <CardHeader
                       className="cursor-pointer hover:bg-muted/30 transition-colors py-4"
                       onClick={() => toggleCampaign(idx)}
@@ -450,31 +669,80 @@ export default function AdStructurePage() {
                       <CardContent className="pt-0 space-y-4">
                         <Separator />
 
-                        {/* Bid Strategy */}
-                        {campaign.bidStrategy && (
+                        {/* Campaign Settings (Editable) */}
+                        {isEditing && (
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-muted/20 rounded-lg border border-dashed">
+                            <div>
+                              <label className="text-xs font-medium text-muted-foreground">日预算</label>
+                              <Input
+                                value={campaign.dailyBudget || ""}
+                                onChange={(e) => updateCampaignField(idx, "dailyBudget", e.target.value)}
+                                className="h-8 text-sm mt-1"
+                                placeholder="$XX"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-muted-foreground">竞价策略</label>
+                              <Input
+                                value={campaign.bidStrategy || ""}
+                                onChange={(e) => updateCampaignField(idx, "bidStrategy", e.target.value)}
+                                className="h-8 text-sm mt-1"
+                                placeholder="竞价策略"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-muted-foreground">优化建议</label>
+                              <Input
+                                value={campaign.optimizationTips || ""}
+                                onChange={(e) => updateCampaignField(idx, "optimizationTips", e.target.value)}
+                                className="h-8 text-sm mt-1"
+                                placeholder="优化建议"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Bid Strategy (Read-only) */}
+                        {!isEditing && campaign.bidStrategy && (
                           <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
                             <p className="text-xs font-medium text-amber-800 mb-1">竞价策略</p>
                             <p className="text-sm text-amber-700">{campaign.bidStrategy}</p>
                           </div>
                         )}
 
-                        {/* Keywords Table */}
+                        {/* Keywords Table (Editable) */}
                         <div>
                           <div className="flex items-center justify-between mb-2">
                             <p className="text-sm font-medium">关键词列表</p>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 text-xs"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const kwText = (campaign.keywords || []).map((kw: any) => kw.keyword).join("\n");
-                                copyToClipboard(kwText, `campaign-${idx}`);
-                              }}
-                            >
-                              {copiedId === `campaign-${idx}` ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
-                              复制全部
-                            </Button>
+                            <div className="flex items-center gap-2">
+                              {isEditing && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 text-xs"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    addKeyword(idx);
+                                  }}
+                                >
+                                  <Plus className="h-3 w-3 mr-1" />
+                                  添加关键词
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const kwText = (campaign.keywords || []).map((kw: any) => kw.keyword).join("\n");
+                                  copyToClipboard(kwText, `campaign-${idx}`);
+                                }}
+                              >
+                                {copiedId === `campaign-${idx}` ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
+                                复制全部
+                              </Button>
+                            </div>
                           </div>
                           <Table>
                             <TableHeader>
@@ -484,59 +752,141 @@ export default function AdStructurePage() {
                                 <TableHead className="w-[80px]">搜索量</TableHead>
                                 <TableHead className="w-[80px]">竞争度</TableHead>
                                 <TableHead>备注</TableHead>
+                                {isEditing && <TableHead className="w-[50px]"></TableHead>}
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {(campaign.keywords || []).map((kw: any, ki: number) => (
                                 <TableRow key={ki}>
-                                  <TableCell className="font-mono text-sm">{kw.keyword}</TableCell>
                                   <TableCell>
-                                    {kw.suggestedBid && (
-                                      <Badge variant="outline" className="text-xs">{kw.suggestedBid}</Badge>
+                                    {isEditing ? (
+                                      <Input
+                                        value={kw.keyword}
+                                        onChange={(e) => updateKeyword(idx, ki, "keyword", e.target.value)}
+                                        className="h-7 text-sm font-mono"
+                                        placeholder="输入关键词或ASIN"
+                                      />
+                                    ) : (
+                                      <span className="font-mono text-sm">{kw.keyword}</span>
                                     )}
                                   </TableCell>
                                   <TableCell>
-                                    {kw.searchVolume && (
-                                      <Badge className={`text-xs ${
-                                        kw.searchVolume === "高" ? "bg-red-100 text-red-700" :
-                                        kw.searchVolume === "中" ? "bg-amber-100 text-amber-700" :
-                                        "bg-green-100 text-green-700"
-                                      }`}>{kw.searchVolume}</Badge>
+                                    {isEditing ? (
+                                      <Input
+                                        value={kw.suggestedBid || ""}
+                                        onChange={(e) => updateKeyword(idx, ki, "suggestedBid", e.target.value)}
+                                        className="h-7 text-sm w-[90px]"
+                                        placeholder="$X.XX"
+                                      />
+                                    ) : (
+                                      kw.suggestedBid && (
+                                        <Badge variant="outline" className="text-xs">{kw.suggestedBid}</Badge>
+                                      )
                                     )}
                                   </TableCell>
                                   <TableCell>
-                                    {kw.competition && (
-                                      <Badge className={`text-xs ${
-                                        kw.competition === "高" ? "bg-red-100 text-red-700" :
-                                        kw.competition === "中" ? "bg-amber-100 text-amber-700" :
-                                        "bg-green-100 text-green-700"
-                                      }`}>{kw.competition}</Badge>
+                                    {isEditing ? (
+                                      <select
+                                        value={kw.searchVolume || "中"}
+                                        onChange={(e) => updateKeyword(idx, ki, "searchVolume", e.target.value)}
+                                        className="h-7 text-xs border rounded px-1 bg-background"
+                                      >
+                                        <option value="高">高</option>
+                                        <option value="中">中</option>
+                                        <option value="低">低</option>
+                                      </select>
+                                    ) : (
+                                      kw.searchVolume && (
+                                        <Badge className={`text-xs ${
+                                          kw.searchVolume === "高" ? "bg-red-100 text-red-700" :
+                                          kw.searchVolume === "中" ? "bg-amber-100 text-amber-700" :
+                                          "bg-green-100 text-green-700"
+                                        }`}>{kw.searchVolume}</Badge>
+                                      )
                                     )}
                                   </TableCell>
-                                  <TableCell className="text-xs text-muted-foreground">{kw.note || "—"}</TableCell>
+                                  <TableCell>
+                                    {isEditing ? (
+                                      <select
+                                        value={kw.competition || "中"}
+                                        onChange={(e) => updateKeyword(idx, ki, "competition", e.target.value)}
+                                        className="h-7 text-xs border rounded px-1 bg-background"
+                                      >
+                                        <option value="高">高</option>
+                                        <option value="中">中</option>
+                                        <option value="低">低</option>
+                                      </select>
+                                    ) : (
+                                      kw.competition && (
+                                        <Badge className={`text-xs ${
+                                          kw.competition === "高" ? "bg-red-100 text-red-700" :
+                                          kw.competition === "中" ? "bg-amber-100 text-amber-700" :
+                                          "bg-green-100 text-green-700"
+                                        }`}>{kw.competition}</Badge>
+                                      )
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    {isEditing ? (
+                                      <Input
+                                        value={kw.note || ""}
+                                        onChange={(e) => updateKeyword(idx, ki, "note", e.target.value)}
+                                        className="h-7 text-xs"
+                                        placeholder="备注"
+                                      />
+                                    ) : (
+                                      <span className="text-xs text-muted-foreground">{kw.note || "—"}</span>
+                                    )}
+                                  </TableCell>
+                                  {isEditing && (
+                                    <TableCell>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                                        onClick={() => removeKeyword(idx, ki)}
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </TableCell>
+                                  )}
                                 </TableRow>
                               ))}
                             </TableBody>
                           </Table>
                         </div>
 
-                        {/* Negative Keywords */}
-                        {campaign.negativeKeywords?.length > 0 && (
-                          <div>
-                            <p className="text-sm font-medium mb-2 flex items-center gap-1">
-                              <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
-                              否定关键词
-                            </p>
-                            <div className="flex flex-wrap gap-1.5">
-                              {campaign.negativeKeywords.map((nk: string, ni: number) => (
-                                <Badge key={ni} variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200">{nk}</Badge>
-                              ))}
-                            </div>
+                        {/* Negative Keywords (Editable) */}
+                        <div>
+                          <p className="text-sm font-medium mb-2 flex items-center gap-1">
+                            <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
+                            否定关键词
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {(campaign.negativeKeywords || []).map((nk: string, ni: number) => (
+                              <Badge key={ni} variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200 gap-1">
+                                {nk}
+                                {isEditing && (
+                                  <button
+                                    className="ml-0.5 hover:text-red-900"
+                                    onClick={() => removeNegativeKeyword(idx, ni)}
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </Badge>
+                            ))}
+                            {isEditing && (
+                              <NegativeKeywordInput onAdd={(kw) => addNegativeKeyword(idx, kw)} />
+                            )}
                           </div>
-                        )}
+                          {!isEditing && (!campaign.negativeKeywords || campaign.negativeKeywords.length === 0) && (
+                            <p className="text-xs text-muted-foreground">暂无否定词</p>
+                          )}
+                        </div>
 
-                        {/* Optimization Tips */}
-                        {campaign.optimizationTips && (
+                        {/* Optimization Tips (Read-only in non-edit mode) */}
+                        {!isEditing && campaign.optimizationTips && (
                           <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
                             <p className="text-xs font-medium text-blue-800 mb-1">优化建议</p>
                             <p className="text-sm text-blue-700">{campaign.optimizationTips}</p>
@@ -549,7 +899,7 @@ export default function AdStructurePage() {
               })}
             </TabsContent>
 
-            {/* ═══ Budget Allocation ═══ */}
+            {/* ═══ Budget Allocation (Editable) ═══ */}
             <TabsContent value="budget" className="space-y-4">
               <Card>
                 <CardHeader>
@@ -558,24 +908,63 @@ export default function AdStructurePage() {
                     预算分配建议
                   </CardTitle>
                   <CardDescription>
-                    建议总日预算: <span className="font-bold text-foreground">{structureData.budgetAllocation?.totalDailyBudget || "—"}</span>
+                    建议总日预算:{" "}
+                    {isEditing ? (
+                      <Input
+                        value={displayData.budgetAllocation?.totalDailyBudget || ""}
+                        onChange={(e) => updateTotalBudget(e.target.value)}
+                        className="h-7 text-sm w-[100px] inline-block ml-1"
+                        placeholder="$XX"
+                      />
+                    ) : (
+                      <span className="font-bold text-foreground">{displayData.budgetAllocation?.totalDailyBudget || "—"}</span>
+                    )}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {structureData.budgetAllocation?.breakdown ? (
+                  {displayData.budgetAllocation?.breakdown ? (
                     <div className="space-y-3">
-                      {structureData.budgetAllocation.breakdown.map((item: any, i: number) => (
+                      {displayData.budgetAllocation.breakdown.map((item: any, i: number) => (
                         <div key={i} className="flex items-center gap-4 p-3 rounded-lg border">
                           <div className="flex-1">
                             <div className="flex items-center justify-between mb-1">
                               <span className="font-medium text-sm">{item.campaignGroup}</span>
                               <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="text-xs">{item.percentage}%</Badge>
-                                <span className="font-bold text-sm">{item.dailyAmount}</span>
+                                {isEditing ? (
+                                  <>
+                                    <Input
+                                      value={item.percentage ?? ""}
+                                      onChange={(e) => updateBudgetField(i, "percentage", parseInt(e.target.value) || 0)}
+                                      className="h-7 text-sm w-[60px]"
+                                      type="number"
+                                    />
+                                    <span className="text-xs">%</span>
+                                    <Input
+                                      value={item.dailyAmount || ""}
+                                      onChange={(e) => updateBudgetField(i, "dailyAmount", e.target.value)}
+                                      className="h-7 text-sm w-[80px]"
+                                      placeholder="$XX"
+                                    />
+                                  </>
+                                ) : (
+                                  <>
+                                    <Badge variant="outline" className="text-xs">{item.percentage}%</Badge>
+                                    <span className="font-bold text-sm">{item.dailyAmount}</span>
+                                  </>
+                                )}
                               </div>
                             </div>
                             <Progress value={item.percentage} className="h-2 mb-1" />
-                            <p className="text-xs text-muted-foreground">{item.reason}</p>
+                            {isEditing ? (
+                              <Input
+                                value={item.reason || ""}
+                                onChange={(e) => updateBudgetField(i, "reason", e.target.value)}
+                                className="h-7 text-xs mt-1"
+                                placeholder="分配理由"
+                              />
+                            ) : (
+                              <p className="text-xs text-muted-foreground">{item.reason}</p>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -587,7 +976,7 @@ export default function AdStructurePage() {
               </Card>
 
               {/* Negative Keyword Strategy */}
-              {structureData.negativeKeywordStrategy && (
+              {displayData.negativeKeywordStrategy && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base flex items-center gap-2">
@@ -596,20 +985,20 @@ export default function AdStructurePage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    {structureData.negativeKeywordStrategy.campaignLevel?.length > 0 && (
+                    {displayData.negativeKeywordStrategy.campaignLevel?.length > 0 && (
                       <div>
                         <p className="text-sm font-medium mb-2">全局否定词（Campaign级别）</p>
                         <div className="flex flex-wrap gap-1.5">
-                          {structureData.negativeKeywordStrategy.campaignLevel.map((kw: string, i: number) => (
+                          {displayData.negativeKeywordStrategy.campaignLevel.map((kw: string, i: number) => (
                             <Badge key={i} variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200">{kw}</Badge>
                           ))}
                         </div>
                       </div>
                     )}
-                    {structureData.negativeKeywordStrategy.adGroupLevel && (
+                    {displayData.negativeKeywordStrategy.adGroupLevel && (
                       <div>
                         <p className="text-sm font-medium mb-2">广告组级别否定词</p>
-                        {Object.entries(structureData.negativeKeywordStrategy.adGroupLevel).map(([group, kws]: [string, any]) => (
+                        {Object.entries(displayData.negativeKeywordStrategy.adGroupLevel).map(([group, kws]: [string, any]) => (
                           <div key={group} className="mb-2">
                             <p className="text-xs text-muted-foreground mb-1">{AD_GROUP_LABELS[group]?.label || group}</p>
                             <div className="flex flex-wrap gap-1">
@@ -621,9 +1010,9 @@ export default function AdStructurePage() {
                         ))}
                       </div>
                     )}
-                    {structureData.negativeKeywordStrategy.rules && (
+                    {displayData.negativeKeywordStrategy.rules && (
                       <div className="p-3 bg-muted/30 rounded-lg">
-                        <p className="text-sm">{structureData.negativeKeywordStrategy.rules}</p>
+                        <p className="text-sm">{displayData.negativeKeywordStrategy.rules}</p>
                       </div>
                     )}
                   </CardContent>
@@ -633,14 +1022,14 @@ export default function AdStructurePage() {
 
             {/* ═══ Phase Strategy ═══ */}
             <TabsContent value="strategy" className="space-y-4">
-              {structureData.phaseStrategy && (
+              {displayData.phaseStrategy && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {[
                     { key: "newProduct", label: "新品期", icon: "🚀", color: "border-green-200 bg-green-50/50" },
                     { key: "growth", label: "成长期", icon: "📈", color: "border-blue-200 bg-blue-50/50" },
                     { key: "mature", label: "成熟期", icon: "🏆", color: "border-amber-200 bg-amber-50/50" },
                   ].map(phase => {
-                    const data = structureData.phaseStrategy[phase.key];
+                    const data = displayData.phaseStrategy[phase.key];
                     if (!data) return null;
                     return (
                       <Card key={phase.key} className={phase.color}>
@@ -690,13 +1079,13 @@ export default function AdStructurePage() {
               )}
 
               {/* Overall Strategy */}
-              {structureData.overallStrategy && (
+              {displayData.overallStrategy && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-base">整体策略总结</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <p className="text-sm leading-relaxed">{structureData.overallStrategy}</p>
+                    <p className="text-sm leading-relaxed">{displayData.overallStrategy}</p>
                   </CardContent>
                 </Card>
               )}
@@ -735,6 +1124,31 @@ export default function AdStructurePage() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// ─── Inline component for adding negative keywords ───
+function NegativeKeywordInput({ onAdd }: { onAdd: (kw: string) => void }) {
+  const [value, setValue] = useState("");
+  const handleAdd = () => {
+    if (value.trim()) {
+      onAdd(value.trim());
+      setValue("");
+    }
+  };
+  return (
+    <div className="flex items-center gap-1">
+      <Input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAdd(); } }}
+        className="h-6 text-xs w-[120px]"
+        placeholder="添加否定词..."
+      />
+      <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={handleAdd}>
+        <Plus className="h-3 w-3" />
+      </Button>
     </div>
   );
 }

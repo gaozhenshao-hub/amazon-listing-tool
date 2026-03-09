@@ -4,7 +4,7 @@ import { invokeLLM } from "../_core/llm";
 import {
   createAdStructure, getAdStructuresByProject, getAdStructureById,
   updateAdStructure, deleteAdStructure, getProjectById,
-  getKeywordsByProject,
+  getKeywordsByProject, getCompetitorAnalysesByProject,
 } from "../db";
 import { AD_STRUCTURE_PROMPT } from "../adStructurePrompt";
 
@@ -60,12 +60,64 @@ function buildKeywordSummary(keywords: any[]): string {
   return lines.join("\n");
 }
 
-// Helper: build competitor summary
-function buildCompetitorSummary(project: any): string {
-  // This will be enhanced later with actual competitor data
+// Helper: build competitor summary from actual competitor analysis data
+function buildCompetitorSummary(project: any, competitors: any[]): string {
   const parts: string[] = [];
   if (project.brand) parts.push(`自有品牌: ${project.brand}`);
-  parts.push("(竞品数据将从竞品分析模块获取)");
+
+  if (!competitors.length) {
+    parts.push("暂无竞品分析数据");
+    return parts.join("\n");
+  }
+
+  parts.push(`\n共有 ${competitors.length} 个竞品分析数据:\n`);
+
+  for (const comp of competitors) {
+    const compParts: string[] = [];
+    compParts.push(`#### 竞品 ASIN: ${comp.asin}`);
+    if (comp.title) compParts.push(`  标题: ${comp.title}`);
+    if (comp.price) compParts.push(`  价格: ${comp.price}`);
+    if (comp.rating) compParts.push(`  评分: ${comp.rating}`);
+    if (comp.reviewCount) compParts.push(`  评论数: ${comp.reviewCount}`);
+
+    // Extract keywords from competitor
+    if (comp.keywords) {
+      try {
+        const kwData = JSON.parse(comp.keywords);
+        const allKws: string[] = [];
+        if (kwData.core) allKws.push(...kwData.core.slice(0, 5));
+        if (kwData.longTail) allKws.push(...kwData.longTail.slice(0, 5));
+        if (kwData.traffic) allKws.push(...kwData.traffic.slice(0, 5));
+        if (allKws.length) compParts.push(`  关键词: ${allKws.join(", ")}`);
+      } catch { /* ignore */ }
+    }
+
+    // Extract review insights
+    if (comp.reviewAnalysis) {
+      try {
+        const review = JSON.parse(comp.reviewAnalysis);
+        if (review.painPoints?.length) {
+          compParts.push(`  痛点: ${review.painPoints.slice(0, 3).map((p: any) => typeof p === 'string' ? p : p.point || p.description).join("; ")}`);
+        }
+        if (review.delightPoints?.length) {
+          compParts.push(`  好评点: ${review.delightPoints.slice(0, 3).map((p: any) => typeof p === 'string' ? p : p.point || p.description).join("; ")}`);
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Extract bullet points for competitive intelligence
+    if (comp.bulletPoints) {
+      try {
+        const bullets = JSON.parse(comp.bulletPoints);
+        if (bullets.length) compParts.push(`  卖点数: ${bullets.length}条`);
+      } catch { /* ignore */ }
+    }
+
+    parts.push(compParts.join("\n"));
+  }
+
+  parts.push(`\n竞品ASIN列表（可用于定投）: ${competitors.map((c: any) => c.asin).join(", ")}`);
+
   return parts.join("\n");
 }
 
@@ -85,12 +137,15 @@ export const adStructureRouter = router({
       });
 
       try {
-        // Get keywords for this project
-        const keywords = await getKeywordsByProject(input.projectId);
+        // Get keywords and competitor data for this project
+        const [keywords, competitors] = await Promise.all([
+          getKeywordsByProject(input.projectId),
+          getCompetitorAnalysesByProject(input.projectId),
+        ]);
 
         const productContext = buildProductContext(project);
         const keywordData = buildKeywordSummary(keywords);
-        const competitorSummary = buildCompetitorSummary(project);
+        const competitorSummary = buildCompetitorSummary(project, competitors);
 
         const prompt = AD_STRUCTURE_PROMPT
           .replace("{productContext}", productContext)
@@ -144,6 +199,34 @@ export const adStructureRouter = router({
         });
         throw error;
       }
+    }),
+
+  // Update ad structure (save user edits)
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      structureData: z.any(), // Full JSON structure data
+    }))
+    .mutation(async ({ input }) => {
+      const existing = await getAdStructureById(input.id);
+      if (!existing) throw new Error("Ad structure not found");
+
+      // Recalculate counts from the edited data
+      const campaigns = input.structureData?.adStructure?.campaigns || [];
+      const totalKeywords = campaigns.reduce((sum: number, c: any) => sum + (c.keywords?.length || 0), 0);
+
+      await updateAdStructure(input.id, {
+        structureData: JSON.stringify(input.structureData),
+        keywordCount: totalKeywords,
+        campaignCount: campaigns.length,
+      });
+
+      return {
+        id: input.id,
+        structureData: input.structureData,
+        keywordCount: totalKeywords,
+        campaignCount: campaigns.length,
+      };
     }),
 
   // Get all ad structures for a project

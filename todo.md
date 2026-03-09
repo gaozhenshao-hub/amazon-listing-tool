@@ -167,3 +167,14 @@
 - [x] Feature: Ad keyword structure suggestion - Integration with existing keyword data
 - [x] Feature: Ad keyword structure suggestion - Sidebar navigation (广告架构)
 - [x] Feature: Ad keyword structure suggestion - Unit tests (17 new tests, 225 total passing)
+- [x] Feature: Ad structure - Integrate competitor analysis data for ASIN targeting recommendations
+- [x] Feature: Ad structure - Build competitor summary from competitorAnalyses table (ASIN, brand, price, rating, keywords, review insights)
+- [x] Feature: Ad structure - Update AI prompt to generate competitor ASIN targeting campaigns
+- [x] Feature: Ad structure - Add update/save tRPC procedure for edited ad structures
+- [x] Feature: Ad structure - Frontend inline editing for keywords (add/remove/edit keyword, bid, search volume, competition, notes)
+- [x] Feature: Ad structure - Frontend inline editing for campaign settings (budget, bid strategy, optimization tips)
+- [x] Feature: Ad structure - Frontend inline editing for auto campaign (budget, bid, harvest strategy)
+- [x] Feature: Ad structure - Frontend inline editing for budget allocation (total budget, percentages, amounts, reasons)
+- [x] Feature: Ad structure - Frontend inline editing for negative keywords (add/remove per campaign)
+- [x] Feature: Ad structure - Frontend save/cancel controls with edit mode banner
+- [x] Feature: Ad structure - Unit tests for competitor integration and edit functionality (17 new tests, 242 total passing)

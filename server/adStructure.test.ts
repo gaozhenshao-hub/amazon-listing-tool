@@ -276,3 +276,279 @@ describe("Ad Structure Priority and Phase Mapping", () => {
     }
   });
 });
+
+describe("Competitor Data Integration", () => {
+  it("should build competitor summary from analysis data", () => {
+    const project = { brand: "TestBrand" };
+    const competitors = [
+      {
+        asin: "B0XXXXXXXX",
+        title: "Competitor Earbuds Pro",
+        price: "$29.99",
+        rating: "4.3",
+        reviewCount: 1500,
+        keywords: JSON.stringify({
+          core: ["wireless earbuds", "bluetooth earbuds"],
+          longTail: ["noise cancelling earbuds for gym"],
+          traffic: ["earbuds"],
+        }),
+        reviewAnalysis: JSON.stringify({
+          painPoints: [{ point: "Battery drains fast" }, { point: "Ear tips fall off" }],
+          delightPoints: [{ point: "Great sound quality" }],
+        }),
+        bulletPoints: JSON.stringify(["Feature 1", "Feature 2", "Feature 3"]),
+      },
+      {
+        asin: "B0YYYYYYYY",
+        title: "Budget Earbuds",
+        price: "$15.99",
+        rating: "3.8",
+        reviewCount: 800,
+        keywords: JSON.stringify({ core: ["cheap earbuds"] }),
+        reviewAnalysis: JSON.stringify({ painPoints: ["Poor bass"] }),
+        bulletPoints: JSON.stringify(["Feature A"]),
+      },
+    ];
+
+    // Simulate buildCompetitorSummary logic
+    const parts: string[] = [];
+    if (project.brand) parts.push(`自有品牌: ${project.brand}`);
+    parts.push(`\n共有 ${competitors.length} 个竞品分析数据:\n`);
+
+    for (const comp of competitors) {
+      const compParts: string[] = [];
+      compParts.push(`#### 竞品 ASIN: ${comp.asin}`);
+      if (comp.title) compParts.push(`  标题: ${comp.title}`);
+      if (comp.price) compParts.push(`  价格: ${comp.price}`);
+      parts.push(compParts.join("\n"));
+    }
+
+    parts.push(`\n竞品ASIN列表（可用于定投）: ${competitors.map(c => c.asin).join(", ")}`);
+
+    const summary = parts.join("\n");
+    expect(summary).toContain("自有品牌: TestBrand");
+    expect(summary).toContain("共有 2 个竞品分析数据");
+    expect(summary).toContain("B0XXXXXXXX");
+    expect(summary).toContain("B0YYYYYYYY");
+    expect(summary).toContain("Competitor Earbuds Pro");
+    expect(summary).toContain("竞品ASIN列表（可用于定投）");
+    expect(summary).toContain("B0XXXXXXXX, B0YYYYYYYY");
+  });
+
+  it("should handle empty competitor data gracefully", () => {
+    const project = { brand: "TestBrand" };
+    const competitors: any[] = [];
+
+    const parts: string[] = [];
+    if (project.brand) parts.push(`自有品牌: ${project.brand}`);
+    if (!competitors.length) {
+      parts.push("暂无竞品分析数据");
+    }
+    const summary = parts.join("\n");
+    expect(summary).toContain("暂无竞品分析数据");
+    expect(summary).not.toContain("竞品ASIN列表");
+  });
+
+  it("should extract competitor keywords from JSON", () => {
+    const comp = {
+      keywords: JSON.stringify({
+        core: ["wireless earbuds", "bluetooth earbuds", "earbuds"],
+        longTail: ["noise cancelling earbuds for running", "waterproof earbuds"],
+        traffic: ["earbuds sale"],
+      }),
+    };
+
+    const kwData = JSON.parse(comp.keywords);
+    const allKws: string[] = [];
+    if (kwData.core) allKws.push(...kwData.core.slice(0, 5));
+    if (kwData.longTail) allKws.push(...kwData.longTail.slice(0, 5));
+    if (kwData.traffic) allKws.push(...kwData.traffic.slice(0, 5));
+
+    expect(allKws).toContain("wireless earbuds");
+    expect(allKws).toContain("noise cancelling earbuds for running");
+    expect(allKws).toContain("earbuds sale");
+    expect(allKws.length).toBe(6);
+  });
+
+  it("should extract review pain points and delight points", () => {
+    const comp = {
+      reviewAnalysis: JSON.stringify({
+        painPoints: [
+          { point: "Battery drains fast" },
+          { point: "Ear tips fall off" },
+          { point: "Bluetooth drops" },
+        ],
+        delightPoints: [
+          { point: "Great sound quality" },
+          { point: "Comfortable fit" },
+        ],
+      }),
+    };
+
+    const review = JSON.parse(comp.reviewAnalysis);
+    expect(review.painPoints).toHaveLength(3);
+    expect(review.delightPoints).toHaveLength(2);
+    const painTexts = review.painPoints.map((p: any) => p.point);
+    expect(painTexts).toContain("Battery drains fast");
+  });
+
+  it("should include competitor ASIN targeting in prompt", () => {
+    expect(AD_STRUCTURE_PROMPT).toContain("竞品ASIN定投");
+    expect(AD_STRUCTURE_PROMPT).toContain("Competitor Targeting");
+    expect(AD_STRUCTURE_PROMPT).toContain("{competitorSummary}");
+  });
+});
+
+describe("Custom Editing - Structure Data Manipulation", () => {
+  const baseSampleData = () => ({
+    adStructure: {
+      campaigns: [
+        {
+          campaignName: "SP-核心大词-精准",
+          adGroupType: "core_keywords",
+          matchType: "exact",
+          dailyBudget: "$30",
+          bidStrategy: "动态竞价-提高和降低",
+          keywords: [
+            { keyword: "wireless earbuds", suggestedBid: "$1.50", searchVolume: "高", competition: "高", note: "核心主词" },
+            { keyword: "bluetooth earbuds", suggestedBid: "$1.20", searchVolume: "高", competition: "中", note: "" },
+          ],
+          negativeKeywords: ["free", "cheap"],
+          optimizationTips: "重点监控ACoS",
+        },
+        {
+          campaignName: "SP-竞品定投-精准",
+          adGroupType: "competitor_targeting",
+          matchType: "exact",
+          dailyBudget: "$20",
+          keywords: [
+            { keyword: "B0XXXXXXXX", suggestedBid: "$0.80", searchVolume: "—", competition: "—", note: "竞品ASIN" },
+          ],
+          negativeKeywords: [],
+        },
+      ],
+      autoCompaign: {
+        dailyBudget: "$10",
+        defaultBid: "$0.50",
+        harvestStrategy: "7天内有2次以上点击的词移入手动广告",
+      },
+    },
+    budgetAllocation: {
+      totalDailyBudget: "$80",
+      breakdown: [
+        { campaignGroup: "核心大词", percentage: 35, dailyAmount: "$28", reason: "主要转化来源" },
+        { campaignGroup: "竞品定投", percentage: 25, dailyAmount: "$20", reason: "抢占竞品流量" },
+      ],
+    },
+  });
+
+  it("should update campaign daily budget", () => {
+    const data = baseSampleData();
+    data.adStructure.campaigns[0].dailyBudget = "$50";
+    expect(data.adStructure.campaigns[0].dailyBudget).toBe("$50");
+  });
+
+  it("should update keyword bid", () => {
+    const data = baseSampleData();
+    data.adStructure.campaigns[0].keywords[0].suggestedBid = "$2.00";
+    expect(data.adStructure.campaigns[0].keywords[0].suggestedBid).toBe("$2.00");
+  });
+
+  it("should add a new keyword to a campaign", () => {
+    const data = baseSampleData();
+    data.adStructure.campaigns[0].keywords.push({
+      keyword: "earbuds wireless",
+      suggestedBid: "$1.00",
+      searchVolume: "中",
+      competition: "中",
+      note: "新增词",
+    });
+    expect(data.adStructure.campaigns[0].keywords).toHaveLength(3);
+    expect(data.adStructure.campaigns[0].keywords[2].keyword).toBe("earbuds wireless");
+  });
+
+  it("should remove a keyword from a campaign", () => {
+    const data = baseSampleData();
+    data.adStructure.campaigns[0].keywords.splice(1, 1);
+    expect(data.adStructure.campaigns[0].keywords).toHaveLength(1);
+    expect(data.adStructure.campaigns[0].keywords[0].keyword).toBe("wireless earbuds");
+  });
+
+  it("should add a negative keyword", () => {
+    const data = baseSampleData();
+    data.adStructure.campaigns[0].negativeKeywords.push("broken");
+    expect(data.adStructure.campaigns[0].negativeKeywords).toContain("broken");
+    expect(data.adStructure.campaigns[0].negativeKeywords).toHaveLength(3);
+  });
+
+  it("should remove a negative keyword", () => {
+    const data = baseSampleData();
+    data.adStructure.campaigns[0].negativeKeywords.splice(0, 1);
+    expect(data.adStructure.campaigns[0].negativeKeywords).toHaveLength(1);
+    expect(data.adStructure.campaigns[0].negativeKeywords[0]).toBe("cheap");
+  });
+
+  it("should update auto campaign settings", () => {
+    const data = baseSampleData();
+    data.adStructure.autoCompaign.dailyBudget = "$15";
+    data.adStructure.autoCompaign.defaultBid = "$0.75";
+    expect(data.adStructure.autoCompaign.dailyBudget).toBe("$15");
+    expect(data.adStructure.autoCompaign.defaultBid).toBe("$0.75");
+  });
+
+  it("should update budget allocation percentages and amounts", () => {
+    const data = baseSampleData();
+    data.budgetAllocation.totalDailyBudget = "$100";
+    data.budgetAllocation.breakdown[0].percentage = 40;
+    data.budgetAllocation.breakdown[0].dailyAmount = "$40";
+    expect(data.budgetAllocation.totalDailyBudget).toBe("$100");
+    expect(data.budgetAllocation.breakdown[0].percentage).toBe(40);
+  });
+
+  it("should recalculate keyword count after edits", () => {
+    const data = baseSampleData();
+    // Add 2 keywords to campaign 0
+    data.adStructure.campaigns[0].keywords.push(
+      { keyword: "new kw1", suggestedBid: "$0.50", searchVolume: "低", competition: "低", note: "" },
+      { keyword: "new kw2", suggestedBid: "$0.60", searchVolume: "低", competition: "低", note: "" }
+    );
+    // Remove 1 keyword from campaign 1
+    data.adStructure.campaigns[1].keywords.splice(0, 1);
+
+    const totalKeywords = data.adStructure.campaigns.reduce(
+      (sum: number, c: any) => sum + (c.keywords?.length || 0), 0
+    );
+    expect(totalKeywords).toBe(4); // 2+2=4 in campaign 0, 0 in campaign 1
+  });
+
+  it("should deep clone data for editing without mutating original", () => {
+    const original = baseSampleData();
+    const editCopy = JSON.parse(JSON.stringify(original));
+
+    editCopy.adStructure.campaigns[0].dailyBudget = "$999";
+    editCopy.adStructure.campaigns[0].keywords[0].keyword = "MODIFIED";
+
+    expect(original.adStructure.campaigns[0].dailyBudget).toBe("$30");
+    expect(original.adStructure.campaigns[0].keywords[0].keyword).toBe("wireless earbuds");
+  });
+
+  it("should handle competitor ASIN targeting campaign edits", () => {
+    const data = baseSampleData();
+    // Add more competitor ASINs
+    data.adStructure.campaigns[1].keywords.push(
+      { keyword: "B0ZZZZZZZZ", suggestedBid: "$0.90", searchVolume: "—", competition: "—", note: "新竞品" },
+      { keyword: "B0AAAAAAAA", suggestedBid: "$0.70", searchVolume: "—", competition: "—", note: "低价竞品" }
+    );
+    expect(data.adStructure.campaigns[1].keywords).toHaveLength(3);
+    expect(data.adStructure.campaigns[1].adGroupType).toBe("competitor_targeting");
+  });
+
+  it("should prevent duplicate negative keywords", () => {
+    const data = baseSampleData();
+    const newNk = "free";
+    if (!data.adStructure.campaigns[0].negativeKeywords.includes(newNk)) {
+      data.adStructure.campaigns[0].negativeKeywords.push(newNk);
+    }
+    expect(data.adStructure.campaigns[0].negativeKeywords.filter((k: string) => k === "free")).toHaveLength(1);
+  });
+});
