@@ -10,6 +10,7 @@ import { projectFileRouter } from "./routers/projectFile";
 import { reportRouter } from "./routers/report";
 import { scoringRouter } from "./routers/scoring";
 import { keywordRouter } from "./routers/keyword";
+import { adStructureRouter } from "./routers/adStructure";
 
 export const appRouter = router({
   system: systemRouter,
@@ -29,6 +30,7 @@ export const appRouter = router({
   report: reportRouter,
   scoring: scoringRouter,
   keyword: keywordRouter,
+  adStructure: adStructureRouter,
 });
 
 export type AppRouter = typeof appRouter;

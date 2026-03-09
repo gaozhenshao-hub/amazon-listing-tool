@@ -11,6 +11,7 @@ import {
   InsertAnalysisVersion, analysisVersions,
   InsertKeyword, keywords,
   InsertNegativeKeyword, negativeKeywords,
+  InsertAdStructure, adStructures,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -468,5 +469,41 @@ export async function deleteNegativeKeywordsByProject(projectId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(negativeKeywords).where(eq(negativeKeywords.projectId, projectId));
+  return { success: true };
+}
+
+// ─── Ad Structure CRUD ─────────────────────────────────────────
+
+export async function createAdStructure(data: InsertAdStructure) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(adStructures).values(data).$returningId();
+  return result;
+}
+
+export async function getAdStructuresByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(adStructures).where(eq(adStructures.projectId, projectId)).orderBy(desc(adStructures.createdAt));
+}
+
+export async function getAdStructureById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(adStructures).where(eq(adStructures.id, id));
+  return rows[0] || null;
+}
+
+export async function updateAdStructure(id: number, data: Partial<InsertAdStructure>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(adStructures).set(data).where(eq(adStructures.id, id));
+  return { success: true };
+}
+
+export async function deleteAdStructure(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(adStructures).where(eq(adStructures.id, id));
   return { success: true };
 }

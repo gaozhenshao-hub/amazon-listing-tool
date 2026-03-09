@@ -220,6 +220,24 @@ export const keywords = mysqlTable("keywords", {
 export type Keyword = typeof keywords.$inferSelect;
 export type InsertKeyword = typeof keywords.$inferInsert;
 
+// Ad structure recommendations
+export const adStructures = mysqlTable("adStructures", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  structureData: text("structureData"), // JSON: full ad structure recommendation
+  structureDataCn: text("structureDataCn"), // JSON: Chinese version
+  keywordCount: int("keywordCount").default(0),
+  campaignCount: int("campaignCount").default(0),
+  status: mysqlEnum("status", ["generating", "completed", "failed"]).default("generating").notNull(),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AdStructure = typeof adStructures.$inferSelect;
+export type InsertAdStructure = typeof adStructures.$inferInsert;
+
 // Negative keywords library
 export const negativeKeywords = mysqlTable("negativeKeywords", {
   id: int("id").autoincrement().primaryKey(),

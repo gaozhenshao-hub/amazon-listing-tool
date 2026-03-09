@@ -35,6 +35,7 @@ import {
   BarChart3,
   Gauge,
   Key,
+  Target,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -48,6 +49,7 @@ const menuItems = [
   { icon: History, label: "导入历史", path: "/review-history" },
   { icon: Image, label: "图片识别", path: "/image-analysis" },
   { icon: Key, label: "关键词管理", path: "/keywords" },
+  { icon: Target, label: "广告架构", path: "/ad-structure" },
   { icon: Database, label: "数据文件", path: "/data-files" },
   { icon: Sparkles, label: "Listing生成", path: "/generate" },
   { icon: FileText, label: "结果预览", path: "/preview" },

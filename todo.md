@@ -160,3 +160,10 @@
 - [x] Support multi-ASIN review import: allow importing reviews for multiple ASINs simultaneously
 - [x] Update review import UI with batch upload interface
 - [x] Tests for simplified review import (19 new tests, 208 total passing)
+- [x] Feature: Ad keyword structure suggestion - Design data model and AI prompt
+- [x] Feature: Ad keyword structure suggestion - Database table and migration
+- [x] Feature: Ad keyword structure suggestion - tRPC procedures (generate, get, delete)
+- [x] Feature: Ad keyword structure suggestion - Frontend matrix display page with 4 tabs (矩阵视图/广告活动/预算分配/阶段策略)
+- [x] Feature: Ad keyword structure suggestion - Integration with existing keyword data
+- [x] Feature: Ad keyword structure suggestion - Sidebar navigation (广告架构)
+- [x] Feature: Ad keyword structure suggestion - Unit tests (17 new tests, 225 total passing)
