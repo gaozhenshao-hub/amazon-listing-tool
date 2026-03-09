@@ -178,3 +178,15 @@
 - [x] Feature: Ad structure - Frontend inline editing for negative keywords (add/remove per campaign)
 - [x] Feature: Ad structure - Frontend save/cancel controls with edit mode banner
 - [x] Feature: Ad structure - Unit tests for competitor integration and edit functionality (17 new tests, 242 total passing)
+- [x] Feature 1: Competitor ASIN targeting effectiveness estimation module on AdStructurePage
+- [x] Feature 1: Backend - scoring algorithm based on rating, review count, price gap, keyword overlap
+- [x] Feature 1: Frontend - priority ranking table with score breakdown, recommendation level, and strategy suggestions
+- [x] Feature 2: Keyword-Listing linkage - readiness indicator on GeneratePage
+- [x] Feature 2: Show AI analysis step completion status (scene tagging, strategy matrix, word root, semantic map)
+- [x] Feature 2: Guide users to keyword management page when steps are incomplete
+- [x] Feature 3: Keyword export CSV - export filtered keywords from KeywordPage (with BOM for Excel)
+- [x] Feature 3: Keyword export CSV - export ad structure keywords from AdStructurePage
+- [x] Feature 4: AI optimization on ScorePage - "AI优化" button per dimension + "一键优化最低分项" button
+- [x] Feature 4: Backend - LLM-based content optimization for 4 dimensions (title, bullets, description, search terms)
+- [x] Feature 4: Frontend - inline optimize buttons on dimension cards and suggestion cards, auto-refetch scores after optimization
+- [x] Unit tests for all 4 features (31 new tests, 263 total passing)

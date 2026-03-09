@@ -181,6 +181,42 @@ function KeywordListTab({ projectId }: { projectId: number }) {
     });
   };
 
+  const exportCsv = () => {
+    const rows = filtered.length > 0 ? filtered : allKeywords;
+    if (rows.length === 0) { toast.error("没有可导出的关键词"); return; }
+    const headers = ["关键词", "月搜索量", "SPR", "PPC竞价", "相关性", "流量", "竞争", "策略分类", "词根分类", "词根", "Listing位置", "场景标签", "状态", "来源"];
+    const csvRows = [headers.join(",")];
+    for (const kw of rows) {
+      let sceneTags = "";
+      try { sceneTags = kw.sceneTags ? JSON.parse(kw.sceneTags).join(";") : ""; } catch {}
+      csvRows.push([
+        `"${(kw.keyword || "").replace(/"/g, '""')}"`,
+        kw.monthlySearchVolume || "",
+        kw.spr || "",
+        kw.ppcBid || "",
+        kw.relevance || "",
+        kw.trafficLevel || "",
+        kw.competition || "",
+        (kw.strategyCategory ? STRATEGY_LABELS[kw.strategyCategory]?.label : "") || kw.strategyCategory || "",
+        (kw.rootCategory ? ROOT_LABELS[kw.rootCategory]?.label : "") || kw.rootCategory || "",
+        kw.rootWord || "",
+        (kw.listingPlacement ? PLACEMENT_LABELS[kw.listingPlacement] : "") || kw.listingPlacement || "",
+        `"${sceneTags}"`,
+        kw.status || "",
+        kw.source || "",
+      ].join(","));
+    }
+    const bom = "\uFEFF";
+    const blob = new Blob([bom + csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `keywords_${projectId}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`已导出 ${rows.length} 个关键词`);
+  };
+
   const toggleSelectAll = () => {
     if (selectedIds.size === filtered.length) setSelectedIds(new Set());
     else setSelectedIds(new Set(filtered.map((k: any) => k.id)));
@@ -246,6 +282,9 @@ function KeywordListTab({ projectId }: { projectId: number }) {
             <Button size="sm" variant="destructive" onClick={() => bulkDeleteMut.mutate({ ids: Array.from(selectedIds) })}><Trash2 className="h-4 w-4 mr-1" />删除({selectedIds.size})</Button>
           </>
         )}
+        <Button size="sm" variant="outline" onClick={exportCsv} disabled={allKeywords.length === 0}>
+          <Download className="h-4 w-4 mr-1" />导出CSV{filtered.length !== allKeywords.length && filtered.length > 0 ? ` (${filtered.length})` : ""}
+        </Button>
       </div>
 
       {/* Keyword Table */}

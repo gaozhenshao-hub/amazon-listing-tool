@@ -18,6 +18,11 @@ import {
   CheckCircle2,
   AlertCircle,
   Languages,
+  ArrowRight,
+  Tag,
+  GitBranch,
+  LayoutGrid,
+  Search,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -77,6 +82,29 @@ export default function GeneratePage() {
     { projectId: selectedProjectId! },
     { enabled: !!selectedProjectId }
   );
+
+  const { data: keywordStats } = trpc.keyword.stats.useQuery(
+    { projectId: selectedProjectId! },
+    { enabled: !!selectedProjectId }
+  );
+
+  // Calculate keyword analysis readiness
+  const kwReadiness = (() => {
+    if (!keywordStats || keywordStats.total === 0) return null;
+    const hasSceneTags = (keywordStats.byStatus?.tagged || 0) + (keywordStats.byStatus?.finalized || 0) > 0;
+    const hasStrategy = Object.keys(keywordStats.byStrategy || {}).length > 0;
+    const hasRoots = Object.keys(keywordStats.byRoot || {}).length > 0;
+    const taggedCount = (keywordStats.byStatus?.tagged || 0) + (keywordStats.byStatus?.finalized || 0);
+    const taggedPercent = Math.round((taggedCount / keywordStats.total) * 100);
+    const steps = [
+      { key: "import", label: "关键词导入", done: keywordStats.total > 0, icon: Search, count: keywordStats.total },
+      { key: "scene", label: "场景打标", done: hasSceneTags, icon: Tag, count: taggedCount },
+      { key: "root", label: "词根分类", done: hasRoots, icon: GitBranch, count: Object.values(keywordStats.byRoot || {}).reduce((a: number, b: number) => a + b, 0) },
+      { key: "strategy", label: "策略矩阵", done: hasStrategy, icon: LayoutGrid, count: Object.values(keywordStats.byStrategy || {}).reduce((a: number, b: number) => a + b, 0) },
+    ];
+    const completedSteps = steps.filter(s => s.done).length;
+    return { steps, completedSteps, total: steps.length, taggedPercent, allDone: completedSteps === steps.length };
+  })();
 
   const generateFull = trpc.listing.generateFull.useMutation({
     onSuccess: (data) => {
@@ -245,10 +273,62 @@ export default function GeneratePage() {
                       )}
                     </Badge>
                   )}
+                  {kwReadiness && (
+                    <Badge variant={kwReadiness.allDone ? "default" : "secondary"}
+                      className={kwReadiness.allDone ? "bg-green-600" : ""}>
+                      {kwReadiness.allDone ? (
+                        <><CheckCircle2 className="h-3 w-3 mr-1" />关键词分析就绪</>
+                      ) : (
+                        <>{kwReadiness.completedSteps}/{kwReadiness.total} 关键词步骤</>
+                      )}
+                    </Badge>
+                  )}
                 </div>
               </div>
             </CardContent>
           </Card>
+
+          {/* Keyword Readiness Indicator */}
+          {kwReadiness && !kwReadiness.allDone && (
+            <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/30">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-amber-900 dark:text-amber-200 mb-2">
+                      关键词AI分析未完成 — 建议先完成分析以获得更优质的Listing
+                    </p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                      {kwReadiness.steps.map((step) => (
+                        <div key={step.key} className={`flex items-center gap-2 rounded-md px-3 py-2 text-xs ${
+                          step.done
+                            ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
+                            : "bg-white/60 text-muted-foreground dark:bg-gray-800/40"
+                        }`}>
+                          {step.done ? (
+                            <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                          ) : (
+                            <step.icon className="h-3.5 w-3.5 shrink-0" />
+                          )}
+                          <span className="font-medium">{step.label}</span>
+                          {step.done && <span className="ml-auto text-[10px]">({step.count})</span>}
+                        </div>
+                      ))}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-amber-700 border-amber-300 hover:bg-amber-100"
+                      onClick={() => setLocation("/keywords")}
+                    >
+                      前往关键词管理
+                      <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Generation Options */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -15,7 +15,8 @@ import {
   Loader2, Sparkles, Target, Crosshair, Globe, Shield, Zap, Bot,
   DollarSign, TrendingUp, AlertTriangle, ChevronDown, ChevronUp,
   Trash2, RefreshCw, BarChart3, PieChart, Clock, Info, Copy, Check,
-  Pencil, Save, X, Plus, GripVertical
+  Pencil, Save, X, Plus, GripVertical, Radar, Star, Download,
+  ArrowUpRight, ArrowDownRight, Minus
 } from "lucide-react";
 
 // Ad group type labels and colors
@@ -57,6 +58,11 @@ export default function AdStructurePage() {
   const projectId = selectedProjectId ? parseInt(selectedProjectId) : null;
 
   const structuresQuery = trpc.adStructure.getByProject.useQuery(
+    { projectId: projectId! },
+    { enabled: !!projectId }
+  );
+
+  const targetingQuery = trpc.adStructure.estimateTargeting.useQuery(
     { projectId: projectId! },
     { enabled: !!projectId }
   );
@@ -262,6 +268,56 @@ export default function AdStructurePage() {
     generateMutation.mutate({ projectId });
   };
 
+  const exportAdCsv = () => {
+    if (!displayData?.adStructure?.campaigns) { toast.error("没有可导出的广告架构数据"); return; }
+    const headers = ["Campaign名称", "广告组类型", "匹配类型", "关键词", "建议竞价($)", "月搜索量", "竞争度", "每日预算($)", "竞价策略", "否定关键词"];
+    const csvRows = [headers.join(",")];
+    for (const campaign of displayData.adStructure.campaigns) {
+      const groupLabel = AD_GROUP_LABELS[campaign.adGroupType]?.label || campaign.adGroupType;
+      const matchLabel = MATCH_TYPE_LABELS[campaign.matchType]?.label || campaign.matchType;
+      const negKws = (campaign.negativeKeywords || []).join(";");
+      if (campaign.keywords && campaign.keywords.length > 0) {
+        for (const kw of campaign.keywords) {
+          csvRows.push([
+            `"${(campaign.campaignName || "").replace(/"/g, '""')}"`,
+            groupLabel,
+            matchLabel,
+            `"${(kw.keyword || "").replace(/"/g, '""')}"`,
+            kw.suggestedBid || "",
+            kw.searchVolume || "",
+            kw.competition || "",
+            campaign.dailyBudget || "",
+            campaign.bidStrategy || "",
+            `"${negKws}"`,
+          ].join(","));
+        }
+      } else {
+        csvRows.push([
+          `"${(campaign.campaignName || "").replace(/"/g, '""')}"`,
+          groupLabel,
+          matchLabel,
+          "",
+          "",
+          "",
+          "",
+          campaign.dailyBudget || "",
+          campaign.bidStrategy || "",
+          `"${negKws}"`,
+        ].join(","));
+      }
+    }
+    const bom = "\uFEFF";
+    const blob = new Blob([bom + csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ad_structure_${projectId}_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    const kwCount = displayData.adStructure.campaigns.reduce((sum: number, c: any) => sum + (c.keywords?.length || 0), 0);
+    toast.success(`已导出 ${displayData.adStructure.campaigns.length} 个Campaign，${kwCount} 个关键词`);
+  };
+
   // Reset edit mode when switching projects
   useEffect(() => {
     setIsEditing(false);
@@ -291,10 +347,16 @@ export default function AdStructurePage() {
           </p>
         </div>
         {latestStructure && displayData && !isEditing && (
-          <Button variant="outline" onClick={startEditing}>
-            <Pencil className="h-4 w-4 mr-2" />
-            编辑架构
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={exportAdCsv}>
+              <Download className="h-4 w-4 mr-2" />
+              导出CSV
+            </Button>
+            <Button variant="outline" onClick={startEditing}>
+              <Pencil className="h-4 w-4 mr-2" />
+              编辑架构
+            </Button>
+          </div>
         )}
         {isEditing && (
           <div className="flex items-center gap-2">
@@ -442,14 +504,166 @@ export default function AdStructurePage() {
 
           {/* Main Content Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid grid-cols-6 w-full max-w-3xl">
               <TabsTrigger value="matrix">矩阵视图</TabsTrigger>
+              <TabsTrigger value="targeting">定投预估</TabsTrigger>
               <TabsTrigger value="campaigns">广告活动</TabsTrigger>
               <TabsTrigger value="budget">预算分配</TabsTrigger>
+              <TabsTrigger value="negative">否定词策略</TabsTrigger>
               <TabsTrigger value="strategy">阶段策略</TabsTrigger>
             </TabsList>
 
-            {/* ═══ Matrix View ═══ */}
+            {/* Targeting Estimation Tab */}
+            <TabsContent value="targeting" className="space-y-4">
+              {targetingQuery.isLoading ? (
+                <Card><CardContent className="p-8 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" /><p className="text-sm text-muted-foreground">加载竞品定投数据...</p></CardContent></Card>
+              ) : !targetingQuery.data?.estimates?.length ? (
+                <Card><CardContent className="p-8 text-center"><Radar className="h-12 w-12 mx-auto mb-3 text-muted-foreground/40" /><p className="text-lg font-medium mb-1">暂无竞品数据</p><p className="text-sm text-muted-foreground">请先在竞品分析页面导入竞品评论数据</p></CardContent></Card>
+              ) : (
+                <div className="space-y-4">
+                  {/* Summary Cards */}
+                  {targetingQuery.data.summary && (
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                      <Card className="border-border/50">
+                        <CardContent className="p-4 text-center">
+                          <p className="text-2xl font-bold">{targetingQuery.data.summary.totalCompetitors}</p>
+                          <p className="text-xs text-muted-foreground">竞品总数</p>
+                        </CardContent>
+                      </Card>
+                      <Card className="border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/30">
+                        <CardContent className="p-4 text-center">
+                          <p className="text-2xl font-bold text-green-600">{targetingQuery.data.summary.highPriority}</p>
+                          <p className="text-xs text-muted-foreground">强烈推荐</p>
+                        </CardContent>
+                      </Card>
+                      <Card className="border-yellow-200 bg-yellow-50/50 dark:border-yellow-800 dark:bg-yellow-950/30">
+                        <CardContent className="p-4 text-center">
+                          <p className="text-2xl font-bold text-yellow-600">{targetingQuery.data.summary.mediumPriority}</p>
+                          <p className="text-xs text-muted-foreground">建议定投</p>
+                        </CardContent>
+                      </Card>
+                      <Card className="border-orange-200 bg-orange-50/50 dark:border-orange-800 dark:bg-orange-950/30">
+                        <CardContent className="p-4 text-center">
+                          <p className="text-2xl font-bold text-orange-600">{targetingQuery.data.summary.lowPriority}</p>
+                          <p className="text-xs text-muted-foreground">观察为主</p>
+                        </CardContent>
+                      </Card>
+                      <Card className="border-border/50">
+                        <CardContent className="p-4 text-center">
+                          <p className="text-2xl font-bold">{targetingQuery.data.summary.avgScore}<span className="text-sm font-normal text-muted-foreground">/100</span></p>
+                          <p className="text-xs text-muted-foreground">平均得分</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  )}
+
+                  {/* Competitor Targeting Cards */}
+                  {targetingQuery.data.estimates.map((est: any, idx: number) => {
+                    const priorityConfig = est.priority === "high"
+                      ? { color: "border-green-300 bg-green-50/30 dark:border-green-700 dark:bg-green-950/20", badge: "bg-green-100 text-green-800", icon: ArrowUpRight, label: "强烈推荐" }
+                      : est.priority === "medium"
+                      ? { color: "border-yellow-300 bg-yellow-50/30 dark:border-yellow-700 dark:bg-yellow-950/20", badge: "bg-yellow-100 text-yellow-800", icon: Minus, label: "建议定投" }
+                      : { color: "border-orange-300 bg-orange-50/30 dark:border-orange-700 dark:bg-orange-950/20", badge: "bg-orange-100 text-orange-800", icon: ArrowDownRight, label: "观察为主" };
+                    return (
+                      <Card key={idx} className={priorityConfig.color}>
+                        <CardContent className="p-5">
+                          <div className="flex items-start justify-between mb-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-mono font-bold text-sm">{est.asin}</span>
+                                <Badge className={priorityConfig.badge}>
+                                  <priorityConfig.icon className="h-3 w-3 mr-1" />
+                                  {priorityConfig.label}
+                                </Badge>
+                                <Badge variant="outline" className="text-xs">
+                                  #{idx + 1}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground line-clamp-1">{est.title}</p>
+                              {est.brand !== "未知" && <p className="text-xs text-muted-foreground">品牌: {est.brand}</p>}
+                            </div>
+                            <div className="text-right">
+                              <div className="text-3xl font-bold">{est.scores.total}</div>
+                              <div className="text-xs text-muted-foreground">/ 100 分</div>
+                            </div>
+                          </div>
+
+                          {/* Score Breakdown */}
+                          <div className="grid grid-cols-4 gap-3 mb-4">
+                            <div className="bg-background/60 rounded-lg p-2.5 text-center">
+                              <Star className="h-3.5 w-3.5 mx-auto mb-1 text-yellow-500" />
+                              <p className="text-lg font-semibold">{est.scores.rating}<span className="text-xs font-normal">/25</span></p>
+                              <p className="text-[10px] text-muted-foreground">评分维度</p>
+                              <p className="text-xs text-muted-foreground">({est.rating}★)</p>
+                            </div>
+                            <div className="bg-background/60 rounded-lg p-2.5 text-center">
+                              <BarChart3 className="h-3.5 w-3.5 mx-auto mb-1 text-blue-500" />
+                              <p className="text-lg font-semibold">{est.scores.review}<span className="text-xs font-normal">/25</span></p>
+                              <p className="text-[10px] text-muted-foreground">评论维度</p>
+                              <p className="text-xs text-muted-foreground">({est.reviewCount}条)</p>
+                            </div>
+                            <div className="bg-background/60 rounded-lg p-2.5 text-center">
+                              <DollarSign className="h-3.5 w-3.5 mx-auto mb-1 text-green-500" />
+                              <p className="text-lg font-semibold">{est.scores.price}<span className="text-xs font-normal">/25</span></p>
+                              <p className="text-[10px] text-muted-foreground">价格维度</p>
+                              <p className="text-xs text-muted-foreground">({est.price})</p>
+                            </div>
+                            <div className="bg-background/60 rounded-lg p-2.5 text-center">
+                              <Target className="h-3.5 w-3.5 mx-auto mb-1 text-purple-500" />
+                              <p className="text-lg font-semibold">{est.scores.keywordOverlap}<span className="text-xs font-normal">/25</span></p>
+                              <p className="text-[10px] text-muted-foreground">关键词重叠</p>
+                              <p className="text-xs text-muted-foreground">({est.keywordOverlapPercent}%)</p>
+                            </div>
+                          </div>
+
+                          {/* Shared Keywords */}
+                          {est.sharedKeywords?.length > 0 && (
+                            <div className="mb-3">
+                              <p className="text-xs font-medium mb-1.5">重叠关键词:</p>
+                              <div className="flex flex-wrap gap-1">
+                                {est.sharedKeywords.map((kw: string, ki: number) => (
+                                  <Badge key={ki} variant="secondary" className="text-[10px]">{kw}</Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Pain Points & Delight Points */}
+                          <div className="grid grid-cols-2 gap-3">
+                            {est.painPoints?.length > 0 && (
+                              <div>
+                                <p className="text-xs font-medium mb-1 text-red-600">竞品痛点 (可利用):</p>
+                                <ul className="text-xs text-muted-foreground space-y-0.5">
+                                  {est.painPoints.map((p: string, pi: number) => (
+                                    <li key={pi} className="flex items-start gap-1"><AlertTriangle className="h-3 w-3 mt-0.5 text-red-400 shrink-0" /><span className="line-clamp-2">{p}</span></li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {est.delightPoints?.length > 0 && (
+                              <div>
+                                <p className="text-xs font-medium mb-1 text-green-600">竞品优势 (需注意):</p>
+                                <ul className="text-xs text-muted-foreground space-y-0.5">
+                                  {est.delightPoints.map((p: string, pi: number) => (
+                                    <li key={pi} className="flex items-start gap-1"><Check className="h-3 w-3 mt-0.5 text-green-400 shrink-0" /><span className="line-clamp-2">{p}</span></li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Recommendation */}
+                          <div className="mt-3 pt-3 border-t border-border/50">
+                            <p className="text-xs"><Info className="h-3 w-3 inline mr-1" />{est.recommendation}</p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </TabsContent>
+
             <TabsContent value="matrix" className="space-y-4">
               <Card>
                 <CardHeader>

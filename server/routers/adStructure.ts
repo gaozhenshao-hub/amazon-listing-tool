@@ -254,6 +254,121 @@ export const adStructureRouter = router({
       };
     }),
 
+  // Estimate competitor ASIN targeting effectiveness
+  estimateTargeting: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      const project = await getProjectById(input.projectId, ctx.user!.id);
+      if (!project) throw new Error("Project not found");
+
+      const [competitors, keywords] = await Promise.all([
+        getCompetitorAnalysesByProject(input.projectId),
+        getKeywordsByProject(input.projectId),
+      ]);
+
+      if (!competitors.length) return { estimates: [], summary: null };
+
+      // Build our keyword set for overlap calculation
+      const ourKeywords = new Set(keywords.map(k => k.keyword.toLowerCase()));
+
+      const estimates = competitors.map((comp: any) => {
+        // 1. Rating score (lower rating = better opportunity, max 25)
+        const rating = parseFloat(comp.rating) || 4.0;
+        const ratingScore = rating <= 3.5 ? 25 : rating <= 4.0 ? 20 : rating <= 4.3 ? 15 : rating <= 4.5 ? 10 : 5;
+
+        // 2. Review count score (more reviews = harder to compete, max 25)
+        const reviewCount = parseInt(comp.reviewCount) || 0;
+        const reviewScore = reviewCount < 100 ? 25 : reviewCount < 500 ? 20 : reviewCount < 1000 ? 15 : reviewCount < 5000 ? 10 : 5;
+
+        // 3. Price gap score (higher competitor price = better opportunity for us, max 25)
+        // Since project doesn't have a price field, we compare among competitors
+        // Higher-priced competitors are better targets (customers may seek cheaper alternatives)
+        let priceScore = 15; // default
+        const compPrice = comp.price ? parseFloat(String(comp.price).replace(/[^0-9.]/g, "")) : 0;
+        if (compPrice > 0) {
+          // Calculate median competitor price for relative comparison
+          const allPrices = competitors
+            .map((c: any) => c.price ? parseFloat(String(c.price).replace(/[^0-9.]/g, "")) : 0)
+            .filter((p: number) => p > 0);
+          const avgPrice = allPrices.length > 0 ? allPrices.reduce((a: number, b: number) => a + b, 0) / allPrices.length : compPrice;
+          const priceDiff = ((compPrice - avgPrice) / avgPrice) * 100;
+          priceScore = priceDiff > 20 ? 25 : priceDiff > 5 ? 20 : priceDiff > -5 ? 15 : priceDiff > -20 ? 10 : 5;
+        }
+
+        // 4. Keyword overlap score (more overlap = more relevant target, max 25)
+        let kwOverlap = 0;
+        let compKeywords: string[] = [];
+        if (comp.keywords) {
+          try {
+            const kwData = JSON.parse(comp.keywords);
+            const allKws: string[] = [];
+            if (kwData.core) allKws.push(...kwData.core);
+            if (kwData.longTail) allKws.push(...kwData.longTail);
+            if (kwData.traffic) allKws.push(...kwData.traffic);
+            compKeywords = allKws.map(k => typeof k === 'string' ? k : '');
+            if (compKeywords.length > 0 && ourKeywords.size > 0) {
+              const overlap = compKeywords.filter(k => ourKeywords.has(k.toLowerCase())).length;
+              kwOverlap = Math.round((overlap / Math.max(compKeywords.length, 1)) * 100);
+            }
+          } catch { /* ignore */ }
+        }
+        const kwScore = kwOverlap > 50 ? 25 : kwOverlap > 30 ? 20 : kwOverlap > 15 ? 15 : kwOverlap > 5 ? 10 : 5;
+
+        const totalScore = ratingScore + reviewScore + priceScore + kwScore;
+        const priority = totalScore >= 75 ? "high" : totalScore >= 55 ? "medium" : "low";
+
+        // Extract review pain points for targeting rationale
+        let painPoints: string[] = [];
+        let delightPoints: string[] = [];
+        if (comp.reviewAnalysis) {
+          try {
+            const review = JSON.parse(comp.reviewAnalysis);
+            painPoints = (review.painPoints || []).slice(0, 3).map((p: any) => typeof p === 'string' ? p : p.point || p.description || '');
+            delightPoints = (review.delightPoints || []).slice(0, 3).map((p: any) => typeof p === 'string' ? p : p.point || p.description || '');
+          } catch { /* ignore */ }
+        }
+
+        return {
+          asin: comp.asin,
+          title: comp.title || "未知",
+          brand: comp.brand || "未知",
+          price: comp.price || "N/A",
+          rating: rating,
+          reviewCount: reviewCount,
+          scores: {
+            rating: ratingScore,
+            review: reviewScore,
+            price: priceScore,
+            keywordOverlap: kwScore,
+            total: totalScore,
+          },
+          priority,
+          keywordOverlapPercent: kwOverlap,
+          sharedKeywords: compKeywords.filter(k => ourKeywords.has(k.toLowerCase())).slice(0, 10),
+          painPoints,
+          delightPoints,
+          recommendation: totalScore >= 75
+            ? "强烈推荐定投：该竞品存在明显弱点，定投ROI预期较高"
+            : totalScore >= 55
+            ? "建议定投：该竞品有一定机会，可作为次要定投目标"
+            : "观察为主：该竞品竞争力较强，建议谨慎投放或低竞价测试",
+        };
+      });
+
+      // Sort by total score descending
+      estimates.sort((a: any, b: any) => b.scores.total - a.scores.total);
+
+      const summary = {
+        totalCompetitors: estimates.length,
+        highPriority: estimates.filter((e: any) => e.priority === "high").length,
+        mediumPriority: estimates.filter((e: any) => e.priority === "medium").length,
+        lowPriority: estimates.filter((e: any) => e.priority === "low").length,
+        avgScore: Math.round(estimates.reduce((sum: number, e: any) => sum + e.scores.total, 0) / estimates.length),
+      };
+
+      return { estimates, summary };
+    }),
+
   // Delete an ad structure
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
