@@ -15,7 +15,12 @@ function escapeHtml(str: string): string {
 function generateReportHtml(
   project: any,
   listing: any,
-  analysisSummary: any
+  analysisSummary: {
+    productAttributes: any;
+    competitorAnalyses: any[];
+    keywordSceneTags: any;
+    keywordStrategyMatrix: any;
+  }
 ): string {
   const now = new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
 
@@ -36,10 +41,10 @@ function generateReportHtml(
     bulletPointsCn = (bulletPointsCn as any).bulletPoints;
   }
 
-  const pa = analysisSummary?.productAttributes;
-  const cl = analysisSummary?.competitorListings;
-  const cs = analysisSummary?.cosmoScenes;
-  const a9 = analysisSummary?.a9Keywords;
+  const pa = analysisSummary.productAttributes;
+  const analyses = analysisSummary.competitorAnalyses || [];
+  const sceneTags = analysisSummary.keywordSceneTags;
+  const strategyMatrix = analysisSummary.keywordStrategyMatrix;
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -202,73 +207,190 @@ ${pa ? `
 </div>
 ` : '<div class="section"><p style="color:#999;">未上传本品属性表</p></div>'}
 
-${cl ? `
-<h3>2.2 Module 2: 多竞品格局分析</h3>
+${analyses.length > 0 ? `
+<h3>2.2 Module 2: 多竞品格局分析 (基于竞品分析模块)</h3>
 <div class="section">
-  ${cl.parityPoints?.length ? `
-    <p><strong>共性卖点 (Parity):</strong></p>
-    <table>
-      <tr><th>卖点</th><th>频率</th><th>重要性</th></tr>
-      ${cl.parityPoints.map((p: any) => `<tr><td>${escapeHtml(p.sellingPoint || '')}</td><td>${escapeHtml(p.frequency || '')}</td><td><span class="badge ${p.importance === 'must-have' ? 'badge-high' : p.importance === 'important' ? 'badge-medium' : 'badge-low'}">${escapeHtml(p.importance || '')}</span></td></tr>`).join('')}
+  <p><strong>已分析竞品数量: ${analyses.length}</strong></p>
+  <table>
+    <tr><th>ASIN</th><th>标题</th><th>价格</th><th>评分</th><th>评论数</th></tr>
+    ${analyses.map((a: any) => `<tr>
+      <td>${escapeHtml(a.asin || '')}</td>
+      <td>${escapeHtml((a.title || '').substring(0, 60))}${(a.title || '').length > 60 ? '...' : ''}</td>
+      <td>${escapeHtml(a.price ? '$' + a.price : 'N/A')}</td>
+      <td>${escapeHtml(a.rating ? String(a.rating) : 'N/A')}</td>
+      <td>${escapeHtml(a.reviewCount ? String(a.reviewCount) : 'N/A')}</td>
+    </tr>`).join('')}
+  </table>
+
+  ${(() => {
+    // Extract parity (common selling points across competitors)
+    const allSellingPoints: Record<string, number> = {};
+    const allPainPoints: string[] = [];
+    const allDelightPoints: string[] = [];
+    
+    for (const analysis of analyses) {
+      if (analysis.bulletPoints) {
+        try {
+          const bps = JSON.parse(analysis.bulletPoints);
+          if (Array.isArray(bps)) {
+            bps.forEach((bp: string) => {
+              const key = String(bp).substring(0, 80).toLowerCase();
+              allSellingPoints[key] = (allSellingPoints[key] || 0) + 1;
+            });
+          }
+        } catch {}
+      }
+      if (analysis.reviewAnalysis) {
+        try {
+          const ra = JSON.parse(analysis.reviewAnalysis);
+          if (ra.painPoints) allPainPoints.push(...ra.painPoints.map((p: any) => p.issue || p));
+          if (ra.delightPoints) allDelightPoints.push(...ra.delightPoints.map((p: any) => p.feature || p));
+        } catch {}
+      }
+    }
+
+    const parityPoints = Object.entries(allSellingPoints)
+      .filter(([_, count]) => count >= 2)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10);
+
+    const uniquePains = Array.from(new Set(allPainPoints)).slice(0, 8);
+    const uniqueDelights = Array.from(new Set(allDelightPoints)).slice(0, 8);
+
+    let html = '';
+    if (parityPoints.length > 0) {
+      html += `<p style="margin-top:12px;"><strong>共性卖点 (Parity - 多竞品共同强调):</strong></p>
+      <table><tr><th>卖点</th><th>出现次数</th></tr>
+      ${parityPoints.map(([point, count]) => `<tr><td>${escapeHtml(point)}</td><td>${count} 个竞品</td></tr>`).join('')}
+      </table>`;
+    }
+    if (uniquePains.length > 0) {
+      html += `<p style="margin-top:12px;"><strong>用户痛点 (来自竞品评论分析):</strong></p>
+      <div>${uniquePains.map((p: string) => `<span class="tag tag-red">${escapeHtml(p)}</span>`).join(' ')}</div>`;
+    }
+    if (uniqueDelights.length > 0) {
+      html += `<p style="margin-top:12px;"><strong>用户好评点 (来自竞品评论分析):</strong></p>
+      <div>${uniqueDelights.map((d: string) => `<span class="tag tag-green">${escapeHtml(d)}</span>`).join(' ')}</div>`;
+    }
+    return html;
+  })()}
+
+  ${analyses.some((a: any) => a.keywords) ? `
+    <p style="margin-top:12px;"><strong>竞品核心关键词:</strong></p>
+    <table><tr><th>ASIN</th><th>核心关键词</th></tr>
+    ${analyses.filter((a: any) => a.keywords).map((a: any) => {
+      let kwStr = '';
+      try {
+        const kw = JSON.parse(a.keywords);
+        if (kw.core) kwStr = kw.core.map((k: any) => k.keyword || k).join(', ');
+        else if (Array.isArray(kw)) kwStr = kw.map((k: any) => k.keyword || k).join(', ');
+      } catch { kwStr = a.keywords; }
+      return `<tr><td>${escapeHtml(a.asin || '')}</td><td>${escapeHtml(kwStr)}</td></tr>`;
+    }).join('')}
     </table>
-  ` : ''}
-  ${cl.gapOpportunities?.length ? `
-    <p style="margin-top:8px;"><strong>缺口机会 (Gap):</strong></p>
-    <table>
-      <tr><th>缺口</th><th>类型</th><th>机会等级</th></tr>
-      ${cl.gapOpportunities.map((g: any) => `<tr><td>${escapeHtml(g.gap || '')}</td><td>${escapeHtml(g.type || '')}</td><td><span class="badge ${g.opportunityLevel === 'high' ? 'badge-high' : g.opportunityLevel === 'medium' ? 'badge-medium' : 'badge-low'}">${escapeHtml(g.opportunityLevel || '')}</span></td></tr>`).join('')}
-    </table>
-  ` : ''}
-  ${cl.strategicRecommendations ? `
-    <p style="margin-top:8px;"><strong>策略建议:</strong></p>
-    ${cl.strategicRecommendations.mustInclude?.length ? `<p>必须包含: ${cl.strategicRecommendations.mustInclude.map((m: string) => `<span class="tag tag-red">${escapeHtml(m)}</span>`).join(' ')}</p>` : ''}
-    ${cl.strategicRecommendations.differentiators?.length ? `<p>差异化: ${cl.strategicRecommendations.differentiators.map((d: string) => `<span class="tag tag-green">${escapeHtml(d)}</span>`).join(' ')}</p>` : ''}
   ` : ''}
 </div>
-` : '<div class="section"><p style="color:#999;">未上传竞品Listing文本</p></div>'}
+` : '<div class="section"><p style="color:#999;">暂无竞品分析数据，请先在竞品分析页面分析竞品ASIN</p></div>'}
 
-${cs ? `
-<h3>2.3 Module 3: COSMO 场景映射</h3>
+${sceneTags ? `
+<h3>2.3 Module 3: COSMO 场景映射 (基于关键词场景打标)</h3>
 <div class="section">
-  ${cs.sceneClusters?.length ? `
-    <p><strong>使用场景聚类:</strong></p>
+  ${sceneTags.sceneGroups && Object.keys(sceneTags.sceneGroups).length > 0 ? `
+    <p><strong>使用场景聚类 (来自关键词AI场景打标):</strong></p>
     <table>
-      <tr><th>场景</th><th>代表搜索词</th><th>搜索量占比</th></tr>
-      ${cs.sceneClusters.map((s: any) => `<tr><td>${escapeHtml(s.sceneName || '')}</td><td>${escapeHtml((s.representativeTerms || []).join(', '))}</td><td>${escapeHtml(s.volumeShare || '')}</td></tr>`).join('')}
+      <tr><th>场景</th><th>关键词数量</th><th>代表关键词</th></tr>
+      ${Object.entries(sceneTags.sceneGroups)
+        .sort(([, a]: any, [, b]: any) => (b as string[]).length - (a as string[]).length)
+        .slice(0, 15)
+        .map(([scene, kws]: [string, any]) => 
+          `<tr><td>${escapeHtml(scene)}</td><td>${(kws as string[]).length}</td><td>${escapeHtml((kws as string[]).slice(0, 5).join(', '))}${(kws as string[]).length > 5 ? ` (+${(kws as string[]).length - 5} more)` : ''}</td></tr>`
+        ).join('')}
     </table>
   ` : ''}
-  ${cs.topScenes?.length ? `
+  ${sceneTags.intentGroups && Object.keys(sceneTags.intentGroups).length > 0 ? `
+    <p style="margin-top:12px;"><strong>购买意图分组:</strong></p>
+    <table>
+      <tr><th>意图类型</th><th>关键词数量</th><th>代表关键词</th></tr>
+      ${Object.entries(sceneTags.intentGroups)
+        .map(([intent, kws]: [string, any]) => 
+          `<tr><td>${escapeHtml(intent)}</td><td>${(kws as string[]).length}</td><td>${escapeHtml((kws as string[]).slice(0, 5).join(', '))}</td></tr>`
+        ).join('')}
+    </table>
+  ` : ''}
+  ${sceneTags.topScenes?.length ? `
     <p style="margin-top:8px;"><strong>Top场景:</strong></p>
-    <div>${cs.topScenes.map((t: string) => `<span class="tag tag-purple">${escapeHtml(t)}</span>`).join(' ')}</div>
+    <div>${sceneTags.topScenes.map((t: string) => `<span class="tag tag-purple">${escapeHtml(t)}</span>`).join(' ')}</div>
   ` : ''}
 </div>
-` : '<div class="section"><p style="color:#999;">未上传竞品出单词报告</p></div>'}
+` : '<div class="section"><p style="color:#999;">暂无场景打标数据，请先在关键词管理中运行COSMO场景打标</p></div>'}
 
-${a9 ? `
-<h3>2.4 Module 4: A9 关键词分级</h3>
+${strategyMatrix ? `
+<h3>2.4 Module 4: A9 关键词分级 (基于3D策略矩阵 + Listing布局建议)</h3>
 <div class="section">
-  ${a9.titleKeywords?.length ? `
-    <p><strong>标题关键词 (Title Keywords):</strong></p>
-    <div>${a9.titleKeywords.map((k: string) => `<span class="tag tag-red">${escapeHtml(k)}</span>`).join(' ')}</div>
-  ` : ''}
-  ${a9.bulletKeywords?.length ? `
-    <p style="margin-top:8px;"><strong>五点关键词 (Bullet Keywords):</strong></p>
-    <div>${a9.bulletKeywords.map((k: string) => `<span class="tag tag-amber">${escapeHtml(k)}</span>`).join(' ')}</div>
-  ` : ''}
-  ${a9.backendKeywords?.length ? `
-    <p style="margin-top:8px;"><strong>后台关键词 (Backend Keywords):</strong></p>
-    <div>${a9.backendKeywords.map((k: string) => `<span class="tag tag-blue">${escapeHtml(k)}</span>`).join(' ')}</div>
-  ` : ''}
-  ${a9.goldenKeywords?.length ? `
-    <p style="margin-top:8px;"><strong>黄金关键词 (Golden Keywords):</strong></p>
-    <div>${a9.goldenKeywords.map((k: string) => `<span class="tag tag-green">${escapeHtml(k)}</span>`).join(' ')}</div>
-  ` : ''}
-  ${a9.keywordStrategy ? `
-    <p style="margin-top:8px;"><strong>关键词策略:</strong></p>
-    <div class="content-box">${escapeHtml(a9.keywordStrategy)}</div>
-  ` : ''}
+  ${strategyMatrix.strategyGroups && Object.keys(strategyMatrix.strategyGroups).length > 0 ? (() => {
+    const categoryLabels: Record<string, string> = {
+      core_main: "核心主词 (Core Main)",
+      sub_core: "次核心词 (Sub-Core)",
+      precise_longtail: "精准长尾词 (Precise Long-tail)",
+      scene_intent: "场景意图词 (Scene Intent)",
+      longtail_main: "长尾主词 (Long-tail Main)",
+      observe_test: "观察测试词 (Observe/Test)",
+    };
+    return `<p><strong>3D策略矩阵分类:</strong></p>
+    <table>
+      <tr><th>策略分类</th><th>关键词数量</th><th>代表关键词</th></tr>
+      ${Object.entries(categoryLabels).map(([cat, label]) => {
+        const kws = strategyMatrix.strategyGroups[cat];
+        if (!kws?.length) return '';
+        return `<tr><td>${escapeHtml(label)}</td><td>${kws.length}</td><td>${escapeHtml(kws.slice(0, 8).join(', '))}${kws.length > 8 ? ` (+${kws.length - 8} more)` : ''}</td></tr>`;
+      }).filter(Boolean).join('')}
+    </table>`;
+  })() : ''}
+
+  ${strategyMatrix.placementGroups && Object.keys(strategyMatrix.placementGroups).length > 0 ? (() => {
+    const placementLabels: Record<string, string> = {
+      title_front: "标题前段 (Title Front)",
+      title_mid: "标题中段 (Title Mid)",
+      title_end: "标题尾段 (Title End)",
+      bullet_first: "五点首行 (Bullet First)",
+      bullet_body: "五点正文 (Bullet Body)",
+      aplus: "A+内容 (A+ Content)",
+      backend: "后台搜索词 (Backend)",
+      ppc_only: "仅PPC投放 (PPC Only)",
+    };
+    return `<p style="margin-top:12px;"><strong>Listing关键词布局建议:</strong></p>
+    <table>
+      <tr><th>布局位置</th><th>关键词数量</th><th>关键词</th></tr>
+      ${Object.entries(placementLabels).map(([placement, label]) => {
+        const kws = strategyMatrix.placementGroups[placement];
+        if (!kws?.length) return '';
+        return `<tr><td>${escapeHtml(label)}</td><td>${kws.length}</td><td>${escapeHtml(kws.slice(0, 8).join(', '))}${kws.length > 8 ? ` (+${kws.length - 8} more)` : ''}</td></tr>`;
+      }).filter(Boolean).join('')}
+    </table>`;
+  })() : ''}
+
+  ${strategyMatrix.rootGroups && Object.keys(strategyMatrix.rootGroups).length > 0 ? (() => {
+    const rootLabels: Record<string, string> = {
+      core: "核心词根 (Core)",
+      function: "功能词根 (Function)",
+      scene: "场景词根 (Scene)",
+      audience: "人群词根 (Audience)",
+      spec: "规格词根 (Spec)",
+      painpoint: "痛点词根 (Pain Point)",
+      gift_holiday: "节日礼品词根 (Gift/Holiday)",
+    };
+    return `<p style="margin-top:12px;"><strong>关键词词根分类 (语义地图):</strong></p>
+    <table>
+      <tr><th>词根分类</th><th>关键词数量</th><th>关键词</th></tr>
+      ${Object.entries(rootLabels).map(([root, label]) => {
+        const kws = strategyMatrix.rootGroups[root];
+        if (!kws?.length) return '';
+        return `<tr><td>${escapeHtml(label)}</td><td>${kws.length}</td><td>${escapeHtml(kws.slice(0, 8).join(', '))}${kws.length > 8 ? ` (+${kws.length - 8} more)` : ''}</td></tr>`;
+      }).filter(Boolean).join('')}
+    </table>`;
+  })() : ''}
 </div>
-` : '<div class="section"><p style="color:#999;">未上传ABA关键词数据</p></div>'}
+` : '<div class="section"><p style="color:#999;">暂无A9关键词分级数据，请先在关键词管理中运行3D策略矩阵分析</p></div>'}
 
 <div class="footer">
   Amazon Listing 智能生成工具 — 报告生成于 ${now}
@@ -291,27 +413,88 @@ export const reportRouter = router({
       // Get active listing
       const listing = await db.getActiveListingByProject(input.projectId);
 
-      // Get analysis summary
+      // ─── Module 1: Rufus attributes from file analysis (unchanged) ───
+      let productAttributes: any = null;
       const files = await db.getProjectFilesByProject(input.projectId);
-      const analysisSummary: Record<string, any> = {
-        productAttributes: null,
-        competitorListings: null,
-        cosmoScenes: null,
-        a9Keywords: null,
-      };
-
       for (const file of files) {
         if (file.status !== "completed" || !file.analysisResult) continue;
         try {
           const result = JSON.parse(file.analysisResult);
-          switch (file.fileType) {
-            case "product_attributes": analysisSummary.productAttributes = result; break;
-            case "competitor_listings": analysisSummary.competitorListings = result; break;
-            case "search_term_report": analysisSummary.cosmoScenes = result; break;
-            case "aba_keywords": analysisSummary.a9Keywords = result; break;
+          if (file.fileType === "product_attributes") {
+            productAttributes = result;
           }
         } catch {}
       }
+
+      // ─── Module 2: Competitor analyses from competitor analysis module ───
+      const competitorAnalyses = await db.getCompetitorAnalysesByProject(input.projectId);
+
+      // ─── Module 3 & 4: Keywords from keyword module ───
+      const allKeywords = await db.getKeywordsByProject(input.projectId);
+      
+      let keywordSceneTags: any = null;
+      let keywordStrategyMatrix: any = null;
+
+      if (allKeywords.length > 0) {
+        // Build scene tag groups (Module 3: COSMO scene mapping)
+        const sceneGroups: Record<string, string[]> = {};
+        const intentGroups: Record<string, string[]> = {};
+        for (const kw of allKeywords) {
+          if (kw.sceneTags) {
+            try {
+              const tags = JSON.parse(kw.sceneTags);
+              if (Array.isArray(tags)) {
+                tags.forEach((tag: string) => {
+                  if (!sceneGroups[tag]) sceneGroups[tag] = [];
+                  sceneGroups[tag].push(kw.keyword);
+                });
+              }
+            } catch {}
+          }
+          if (kw.intentTag) {
+            if (!intentGroups[kw.intentTag]) intentGroups[kw.intentTag] = [];
+            intentGroups[kw.intentTag].push(kw.keyword);
+          }
+        }
+        const topScenes = Object.entries(sceneGroups)
+          .sort(([, a], [, b]) => b.length - a.length)
+          .slice(0, 8)
+          .map(([scene]) => scene);
+
+        if (Object.keys(sceneGroups).length > 0 || Object.keys(intentGroups).length > 0) {
+          keywordSceneTags = { sceneGroups, intentGroups, topScenes };
+        }
+
+        // Build strategy matrix groups and placement groups (Module 4: A9 keyword grading)
+        const strategyGroups: Record<string, string[]> = {};
+        const placementGroups: Record<string, string[]> = {};
+        const rootGroups: Record<string, string[]> = {};
+        for (const kw of allKeywords) {
+          if (kw.strategyCategory && kw.strategyCategory !== "negative") {
+            if (!strategyGroups[kw.strategyCategory]) strategyGroups[kw.strategyCategory] = [];
+            strategyGroups[kw.strategyCategory].push(kw.keyword);
+          }
+          if (kw.listingPlacement) {
+            if (!placementGroups[kw.listingPlacement]) placementGroups[kw.listingPlacement] = [];
+            placementGroups[kw.listingPlacement].push(kw.keyword);
+          }
+          if (kw.rootCategory) {
+            if (!rootGroups[kw.rootCategory]) rootGroups[kw.rootCategory] = [];
+            rootGroups[kw.rootCategory].push(kw.keyword);
+          }
+        }
+
+        if (Object.keys(strategyGroups).length > 0 || Object.keys(placementGroups).length > 0) {
+          keywordStrategyMatrix = { strategyGroups, placementGroups, rootGroups };
+        }
+      }
+
+      const analysisSummary = {
+        productAttributes,
+        competitorAnalyses,
+        keywordSceneTags,
+        keywordStrategyMatrix,
+      };
 
       const html = generateReportHtml(project, listing, analysisSummary);
 
@@ -319,7 +502,7 @@ export const reportRouter = router({
         html,
         projectName: project.name,
         hasListing: !!listing,
-        hasAnalysis: !!(analysisSummary.productAttributes || analysisSummary.competitorListings || analysisSummary.cosmoScenes || analysisSummary.a9Keywords),
+        hasAnalysis: !!(productAttributes || competitorAnalyses.length > 0 || keywordSceneTags || keywordStrategyMatrix),
       };
     }),
 });

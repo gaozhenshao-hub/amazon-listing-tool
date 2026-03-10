@@ -241,3 +241,8 @@
 - [x] Change: Traffic level classification - Replace fixed thresholds with AI-based smart classification (高/中/低) based on overall monthly search volume distribution
 - [x] Change: Competition level classification - Replace fixed thresholds with AI-based smart classification (低/中/高) based on overall SPR distribution
 - [x] Unit tests for AI-based traffic and competition classification (12 new tests, 370 total passing)
+- [x] Change: Listing generation - Competitor analysis module should reference competitor analysis results instead of re-generating
+- [x] Change: Listing generation - COSMO scene mapping should reference keyword scene tagging results
+- [x] Change: Listing generation - A9 keyword grading should reference 3D strategy matrix and Listing placement suggestions
+- [x] Change: Listing export report - Update four analysis modules to display referenced data
+- [x] Unit tests for referenced analysis data in listing generation (12 new tests, 382 total passing)
