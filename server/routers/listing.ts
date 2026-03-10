@@ -731,14 +731,17 @@ export const listingRouter = router({
 
   // Generate title with AI retry
   generateTitle: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
+    .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
       const project = await db.getProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
-      const context = buildProductContext(project, analyses, enrichedData);
+      let context = buildProductContext(project, analyses, enrichedData);
+      if (input.emphasis?.trim()) {
+        context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
+      }
 
       const response = await invokeLLM({
         messages: [
@@ -773,14 +776,17 @@ export const listingRouter = router({
 
   // Generate bullet points with AI retry
   generateBulletPoints: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
+    .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
       const project = await db.getProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
-      const context = buildProductContext(project, analyses, enrichedData);
+      let context = buildProductContext(project, analyses, enrichedData);
+      if (input.emphasis?.trim()) {
+        context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
+      }
 
       const response = await invokeLLM({
         messages: [
@@ -815,14 +821,17 @@ export const listingRouter = router({
 
   // Generate description
   generateDescription: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
+    .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
       const project = await db.getProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
-      const context = buildProductContext(project, analyses, enrichedData);
+      let context = buildProductContext(project, analyses, enrichedData);
+      if (input.emphasis?.trim()) {
+        context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
+      }
 
       const response = await invokeLLM({
         messages: [
@@ -848,6 +857,7 @@ export const listingRouter = router({
     .input(z.object({
       projectId: z.number(),
       existingTitle: z.string().optional(),
+      emphasis: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const project = await db.getProjectById(input.projectId, ctx.user.id);
@@ -855,7 +865,10 @@ export const listingRouter = router({
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
-      const context = buildProductContext(project, analyses, enrichedData);
+      let context = buildProductContext(project, analyses, enrichedData);
+      if (input.emphasis?.trim()) {
+        context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
+      }
 
       let extraContext = "";
       if (input.existingTitle) {
@@ -883,14 +896,17 @@ export const listingRouter = router({
 
   // Generate image advice
   generateImageAdvice: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
+    .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
       const project = await db.getProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
-      const context = buildProductContext(project, analyses, enrichedData);
+      let context = buildProductContext(project, analyses, enrichedData);
+      if (input.emphasis?.trim()) {
+        context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
+      }
 
       const response = await invokeLLM({
         messages: [
@@ -913,7 +929,10 @@ export const listingRouter = router({
 
   // Generate full listing (all components at once) with AI retry for char limits
   generateFull: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
+    .input(z.object({
+      projectId: z.number(),
+      emphasis: z.string().optional(),
+    }))
     .mutation(async ({ ctx, input }) => {
       const project = await db.getProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
@@ -922,7 +941,12 @@ export const listingRouter = router({
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
-      const context = buildProductContext(project, analyses, enrichedData);
+      let context = buildProductContext(project, analyses, enrichedData);
+
+      // Inject user emphasis into context
+      if (input.emphasis?.trim()) {
+        context += `\n\n--- [User Emphasis / 用户重点强调] ---\n用户希望在Listing中重点突出以下卖点或场景，请在标题、五点、描述中优先体现这些内容：\n${input.emphasis.trim()}`;
+      }
 
       // Generate all components in parallel
       const [titleRes, bulletRes, descRes, searchRes, imageRes] = await Promise.all([

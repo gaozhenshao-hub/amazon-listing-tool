@@ -100,6 +100,144 @@ Requirements:
 Return ONLY the optimized search terms text. No quotes, no explanation.`,
 };
 
+/**
+ * Load keywords from the keywords management module for scoring.
+ * Returns structured keyword data categorized by listing placement and strategy.
+ */
+async function loadKeywordsFromModule(projectId: number): Promise<{
+  coreKeywords: string[];
+  keywordsByPlacement: {
+    titleFront: string[];
+    titleMid: string[];
+    titleEnd: string[];
+    bulletFirst: string[];
+    bulletBody: string[];
+    aplus: string[];
+    searchTerm: string[];
+  };
+  keywordsByStrategy: {
+    coreMain: string[];
+    subCore: string[];
+    preciseLongtail: string[];
+    sceneIntent: string[];
+    longtailMain: string[];
+  };
+  totalKeywords: number;
+}> {
+  const result = {
+    coreKeywords: [] as string[],
+    keywordsByPlacement: {
+      titleFront: [] as string[],
+      titleMid: [] as string[],
+      titleEnd: [] as string[],
+      bulletFirst: [] as string[],
+      bulletBody: [] as string[],
+      aplus: [] as string[],
+      searchTerm: [] as string[],
+    },
+    keywordsByStrategy: {
+      coreMain: [] as string[],
+      subCore: [] as string[],
+      preciseLongtail: [] as string[],
+      sceneIntent: [] as string[],
+      longtailMain: [] as string[],
+    },
+    totalKeywords: 0,
+  };
+
+  try {
+    const kwList = await db.getKeywordsByProject(projectId);
+    result.totalKeywords = kwList.length;
+
+    if (kwList.length === 0) return result;
+
+    // Sort by search volume (descending) for priority
+    const sorted = [...kwList].sort((a, b) => (b.monthlySearchVolume || 0) - (a.monthlySearchVolume || 0));
+
+    // Categorize by listing placement
+    for (const kw of sorted) {
+      const keyword = kw.keyword;
+      switch (kw.listingPlacement) {
+        case "title_front":
+          result.keywordsByPlacement.titleFront.push(keyword);
+          break;
+        case "title_mid":
+          result.keywordsByPlacement.titleMid.push(keyword);
+          break;
+        case "title_end":
+          result.keywordsByPlacement.titleEnd.push(keyword);
+          break;
+        case "bullet_first":
+          result.keywordsByPlacement.bulletFirst.push(keyword);
+          break;
+        case "bullet_body":
+          result.keywordsByPlacement.bulletBody.push(keyword);
+          break;
+        case "aplus":
+          result.keywordsByPlacement.aplus.push(keyword);
+          break;
+        case "search_term":
+          result.keywordsByPlacement.searchTerm.push(keyword);
+          break;
+      }
+    }
+
+    // Categorize by strategy
+    for (const kw of sorted) {
+      const keyword = kw.keyword;
+      switch (kw.strategyCategory) {
+        case "core_main":
+          result.keywordsByStrategy.coreMain.push(keyword);
+          break;
+        case "sub_core":
+          result.keywordsByStrategy.subCore.push(keyword);
+          break;
+        case "precise_longtail":
+          result.keywordsByStrategy.preciseLongtail.push(keyword);
+          break;
+        case "scene_intent":
+          result.keywordsByStrategy.sceneIntent.push(keyword);
+          break;
+        case "longtail_main":
+          result.keywordsByStrategy.longtailMain.push(keyword);
+          break;
+      }
+    }
+
+    // Build core keywords list: prioritize by strategy importance
+    // 1. Core main keywords (highest priority)
+    // 2. Sub-core keywords
+    // 3. Title-placement keywords
+    // 4. High relevance keywords
+    const coreSet = new Set<string>();
+
+    // Add core_main and sub_core first
+    for (const kw of result.keywordsByStrategy.coreMain) coreSet.add(kw.toLowerCase());
+    for (const kw of result.keywordsByStrategy.subCore) coreSet.add(kw.toLowerCase());
+
+    // Add title placement keywords
+    for (const kw of result.keywordsByPlacement.titleFront) coreSet.add(kw.toLowerCase());
+    for (const kw of result.keywordsByPlacement.titleMid) coreSet.add(kw.toLowerCase());
+
+    // Add high relevance keywords
+    for (const kw of sorted) {
+      if (kw.relevance === "high") coreSet.add(kw.keyword.toLowerCase());
+    }
+
+    // Add remaining keywords by search volume
+    for (const kw of sorted) {
+      if (coreSet.size >= 50) break;
+      coreSet.add(kw.keyword.toLowerCase());
+    }
+
+    result.coreKeywords = Array.from(coreSet);
+  } catch (err) {
+    console.warn("[Scoring] Failed to load keywords from module:", err);
+  }
+
+  return result;
+}
+
 export const scoringRouter = router({
   // Score the active listing for a project
   scoreListing: protectedProcedure
@@ -113,66 +251,8 @@ export const scoringRouter = router({
         return null;
       }
 
-      // Load A9 keyword data if available
-      let a9Keywords: any = null;
-      let coreKeywords: string[] = [];
-
-      try {
-        const database = await db.getDb();
-        if (database) {
-          const { projectFiles } = await import("../../drizzle/schema");
-          const { eq, and } = await import("drizzle-orm");
-
-          // Get A9 keywords file
-          const a9Files = await database
-            .select()
-            .from(projectFiles)
-            .where(
-              and(
-                eq(projectFiles.projectId, input.projectId),
-                eq(projectFiles.fileType, "aba_keywords"),
-                eq(projectFiles.status, "completed")
-              )
-            );
-
-          if (a9Files.length > 0 && a9Files[0].analysisResult) {
-            try {
-              a9Keywords = JSON.parse(a9Files[0].analysisResult);
-              
-              // Extract core keywords from A9 data
-              const titleKws = a9Keywords.titleMustHaveKeywords || a9Keywords.titleKeywords || [];
-              const bulletKws = a9Keywords.bulletPointKeywords || a9Keywords.bulletKeywords || [];
-              const goldenKws = a9Keywords.goldenLongTailKeywords || a9Keywords.goldenKeywords || [];
-              
-              coreKeywords = [
-                ...titleKws.map((kw: any) => typeof kw === "string" ? kw : kw.keyword || kw.term || ""),
-                ...bulletKws.map((kw: any) => typeof kw === "string" ? kw : kw.keyword || kw.term || ""),
-                ...goldenKws.map((kw: any) => typeof kw === "string" ? kw : kw.keyword || kw.term || ""),
-              ].filter(Boolean);
-            } catch {}
-          }
-
-          // Also try to extract keywords from competitor analyses
-          if (coreKeywords.length === 0) {
-            const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
-            for (const analysis of analyses) {
-              if (analysis.keywords) {
-                try {
-                  const kwData = JSON.parse(analysis.keywords);
-                  if (kwData.coreKeywords) coreKeywords.push(...kwData.coreKeywords);
-                  if (kwData.longTailKeywords) coreKeywords.push(...kwData.longTailKeywords.slice(0, 5));
-                  if (kwData.trafficKeywords) coreKeywords.push(...kwData.trafficKeywords.slice(0, 5));
-                } catch {}
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.warn("[Scoring] Failed to load keyword data:", err);
-      }
-
-      // Deduplicate keywords
-      coreKeywords = Array.from(new Set(coreKeywords.map(k => k.toLowerCase())));
+      // Load keyword data from keywords management module
+      const kwData = await loadKeywordsFromModule(input.projectId);
 
       return scoreListing(
         {
@@ -186,8 +266,8 @@ export const scoringRouter = router({
           searchTermsCn: listing.searchTermsCn,
           imageAdvice: listing.imageAdvice,
         },
-        a9Keywords,
-        coreKeywords
+        kwData,
+        kwData.coreKeywords
       );
     }),
 
@@ -233,50 +313,9 @@ export const scoringRouter = router({
           throw new Error(`Cannot optimize dimension: ${input.dimension}. Only Title, Bullet Points, Description, and Search Terms can be optimized.`);
       }
 
-      // Load keywords for context
-      let coreKeywords: string[] = [];
-      try {
-        const database = await db.getDb();
-        if (database) {
-          const { projectFiles } = await import("../../drizzle/schema");
-          const { eq, and } = await import("drizzle-orm");
-          const a9Files = await database
-            .select()
-            .from(projectFiles)
-            .where(
-              and(
-                eq(projectFiles.projectId, input.projectId),
-                eq(projectFiles.fileType, "aba_keywords"),
-                eq(projectFiles.status, "completed")
-              )
-            );
-          if (a9Files.length > 0 && a9Files[0].analysisResult) {
-            try {
-              const a9Data = JSON.parse(a9Files[0].analysisResult);
-              const titleKws = a9Data.titleMustHaveKeywords || a9Data.titleKeywords || [];
-              const bulletKws = a9Data.bulletPointKeywords || a9Data.bulletKeywords || [];
-              const goldenKws = a9Data.goldenLongTailKeywords || a9Data.goldenKeywords || [];
-              coreKeywords = [
-                ...titleKws.map((kw: any) => typeof kw === "string" ? kw : kw.keyword || kw.term || ""),
-                ...bulletKws.map((kw: any) => typeof kw === "string" ? kw : kw.keyword || kw.term || ""),
-                ...goldenKws.map((kw: any) => typeof kw === "string" ? kw : kw.keyword || kw.term || ""),
-              ].filter(Boolean);
-            } catch {}
-          }
-          // Also try keyword table
-          if (coreKeywords.length === 0) {
-            const kwStats = await db.getKeywordStats(input.projectId);
-            if (kwStats.total > 0) {
-              const kwList = await db.getKeywordsByProject(input.projectId);
-              coreKeywords = kwList
-                .filter((k: any) => k.relevance === "high" || k.strategyCategory === "core_must_have")
-                .map((k: any) => k.keyword)
-                .slice(0, 30);
-            }
-          }
-        }
-      } catch {}
-      coreKeywords = Array.from(new Set(coreKeywords.map(k => k.toLowerCase())));
+      // Load keywords from keywords management module
+      const kwData = await loadKeywordsFromModule(input.projectId);
+      const coreKeywords = kwData.coreKeywords;
 
       // Build the prompt
       const prompt = promptBuilder(currentContent, input.issues, coreKeywords);

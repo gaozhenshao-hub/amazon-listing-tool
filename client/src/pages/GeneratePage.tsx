@@ -28,6 +28,7 @@ import {
   Cpu,
   Heart,
   BarChart3,
+  Megaphone,
   Shuffle,
   Eye,
   PenLine,
@@ -98,6 +99,7 @@ export default function GeneratePage() {
   const [customStyleEnabled, setCustomStyleEnabled] = useState(false);
   const [customStyleName, setCustomStyleName] = useState("");
   const [customStyleInstruction, setCustomStyleInstruction] = useState("");
+  const [emphasis, setEmphasis] = useState("");
 
   const { data: project } = trpc.project.getById.useQuery(
     { id: selectedProjectId! },
@@ -306,7 +308,7 @@ export default function GeneratePage() {
     if (!selectedProjectId) return;
     setResult(null);
     setPartResults({});
-    generateFull.mutate({ projectId: selectedProjectId });
+    generateFull.mutate({ projectId: selectedProjectId, emphasis: emphasis.trim() || undefined });
   };
 
   const handleGeneratePart = (part: string) => {
@@ -314,19 +316,19 @@ export default function GeneratePage() {
     setGeneratingPart(part);
     switch (part) {
       case "title":
-        generateTitle.mutate({ projectId: selectedProjectId });
+        generateTitle.mutate({ projectId: selectedProjectId, emphasis: emphasis.trim() || undefined });
         break;
       case "bulletPoints":
-        generateBulletPoints.mutate({ projectId: selectedProjectId });
+        generateBulletPoints.mutate({ projectId: selectedProjectId, emphasis: emphasis.trim() || undefined });
         break;
       case "description":
-        generateDescription.mutate({ projectId: selectedProjectId });
+        generateDescription.mutate({ projectId: selectedProjectId, emphasis: emphasis.trim() || undefined });
         break;
       case "searchTerms":
-        generateSearchTerms.mutate({ projectId: selectedProjectId });
+        generateSearchTerms.mutate({ projectId: selectedProjectId, emphasis: emphasis.trim() || undefined });
         break;
       case "imageAdvice":
-        generateImageAdvice.mutate({ projectId: selectedProjectId });
+        generateImageAdvice.mutate({ projectId: selectedProjectId, emphasis: emphasis.trim() || undefined });
         break;
     }
   };
@@ -472,6 +474,34 @@ export default function GeneratePage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Emphasis / Key Selling Points */}
+          <Card className="border-amber-200 bg-gradient-to-r from-amber-50/50 to-transparent">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Megaphone className="h-5 w-5 text-amber-600" />
+                重点强调（可选）
+              </CardTitle>
+              <CardDescription>
+                指定AI生成时需要优先突出的卖点、场景或差异化优势，留空则由AI自主决策
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Textarea
+                placeholder="例如：突出“无毒安全”和“室内外多场景使用”；强调与竞品相比的独特设计优势；重点体现“送礼场景”..."
+                value={emphasis}
+                onChange={(e) => setEmphasis(e.target.value)}
+                rows={2}
+                className="resize-none"
+              />
+              {emphasis.trim() && (
+                <p className="mt-2 text-xs text-amber-600 flex items-center gap-1">
+                  <Check className="h-3 w-3" />
+                  已设置重点强调，AI将在所有生成内容中优先体现这些内容
+                </p>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Generation Options */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -11,6 +11,31 @@
  * Total: 100 points
  */
 
+/**
+ * Data structure from the keyword management module.
+ * Replaces the old ABA-based a9Keywords structure.
+ */
+export interface KeywordModuleData {
+  coreKeywords: string[];
+  keywordsByPlacement: {
+    titleFront: string[];
+    titleMid: string[];
+    titleEnd: string[];
+    bulletFirst: string[];
+    bulletBody: string[];
+    aplus: string[];
+    searchTerm: string[];
+  };
+  keywordsByStrategy: {
+    coreMain: string[];
+    subCore: string[];
+    preciseLongtail: string[];
+    sceneIntent: string[];
+    longtailMain: string[];
+  };
+  totalKeywords: number;
+}
+
 export interface ScoreDimension {
   name: string;
   nameCn: string;
@@ -176,10 +201,10 @@ function scoreTitleOptimization(title: string | null, keywords: string[]): Score
     passed: kwScore >= 3, score: kwScore, maxScore: 5,
     message: keywords.length > 0
       ? `${matchedKeywords.length}/${Math.min(keywords.length, 10)} core keywords found in title (${Math.round(keywordCoverage * 100)}%)`
-      : "No keyword data available - upload ABA keywords for detailed analysis",
+      : "No keyword data available - add keywords in the keyword management module for detailed analysis",
     messageCn: keywords.length > 0
       ? `标题中包含${matchedKeywords.length}/${Math.min(keywords.length, 10)}个核心关键词 (${Math.round(keywordCoverage * 100)}%)`
-      : "无关键词数据 - 上传ABA关键词可获得详细分析",
+      : "无关键词数据 - 请在关键词管理模块添加关键词以获得详细分析",
     severity: kwScore >= 3 ? "info" : "warning",
   });
   totalScore += kwScore;
@@ -306,10 +331,10 @@ function scoreBulletPoints(bulletPointsJson: string | null, keywords: string[]):
     passed: bulletKwScore >= 3, score: bulletKwScore, maxScore: 5,
     message: keywords.length > 0
       ? `${bulletKeywordMatches.length} keywords found across bullet points`
-      : "No keyword data - upload ABA keywords for analysis",
+      : "No keyword data - add keywords in the keyword management module for analysis",
     messageCn: keywords.length > 0
       ? `要点中包含${bulletKeywordMatches.length}个关键词`
-      : "无关键词数据 - 上传ABA关键词可获得分析",
+      : "无关键词数据 - 请在关键词管理模块添加关键词以获得分析",
     severity: bulletKwScore >= 3 ? "info" : "warning",
   });
   totalScore += bulletKwScore;
@@ -532,7 +557,7 @@ function scoreKeywordCoverage(
   bulletPointsJson: string | null,
   description: string | null,
   searchTerms: string | null,
-  a9Keywords: any
+  kwData: KeywordModuleData | null
 ): ScoreDimension {
   const details: ScoreDetail[] = [];
   let totalScore = 0;
@@ -553,71 +578,82 @@ function scoreKeywordCoverage(
   } catch {}
   const fullText = (allText + " " + bulletText).toLowerCase();
 
-  if (!a9Keywords) {
+  if (!kwData || kwData.totalKeywords === 0) {
     // No keyword data available
     details.push({
-      rule: "A9 Keyword Data Available",
-      ruleCn: "A9关键词数据可用",
+      rule: "Keyword Module Data Available",
+      ruleCn: "关键词模块数据可用",
       passed: false, score: 5, maxScore: 10,
-      message: "No ABA keyword data uploaded - upload for detailed keyword coverage analysis",
-      messageCn: "未上传ABA关键词数据 - 上传后可获得详细关键词覆盖分析",
+      message: "No keyword data available - add keywords in the keyword management module for detailed coverage analysis",
+      messageCn: "无关键词数据 - 请在关键词管理模块添加关键词以获得详细覆盖分析",
       severity: "info",
     });
     totalScore += 5;
   } else {
-    // Check title keywords coverage
-    const titleKws = a9Keywords.titleMustHaveKeywords || a9Keywords.titleKeywords || [];
-    const titleKwMatched = titleKws.filter((kw: any) => {
-      const keyword = typeof kw === "string" ? kw : kw.keyword || kw.term || "";
-      return fullText.includes(keyword.toLowerCase());
-    });
-    const titleKwCoverage = titleKws.length > 0 ? titleKwMatched.length / titleKws.length : 1;
+    // Check title placement keywords coverage (title_front + title_mid + title_end)
+    const titleKws = [
+      ...kwData.keywordsByPlacement.titleFront,
+      ...kwData.keywordsByPlacement.titleMid,
+      ...kwData.keywordsByPlacement.titleEnd,
+    ];
+    // Also include core_main strategy keywords as title must-haves
+    const titleMustHave = Array.from(new Set([
+      ...titleKws,
+      ...kwData.keywordsByStrategy.coreMain,
+    ].map(k => k.toLowerCase())));
+
+    const titleKwMatched = titleMustHave.filter(kw => fullText.includes(kw));
+    const titleKwCoverage = titleMustHave.length > 0 ? titleKwMatched.length / titleMustHave.length : 1;
     const titleKwScore = Math.round(titleKwCoverage * 4);
     details.push({
-      rule: "Title Must-Have Keywords Coverage",
-      ruleCn: "标题必含关键词覆盖率",
+      rule: "Title Placement Keywords Coverage",
+      ruleCn: "标题布局关键词覆盖率",
       passed: titleKwCoverage >= 0.7, score: titleKwScore, maxScore: 4,
-      message: `${titleKwMatched.length}/${titleKws.length} title keywords found in listing`,
-      messageCn: `Listing中包含${titleKwMatched.length}/${titleKws.length}个标题关键词`,
+      message: `${titleKwMatched.length}/${titleMustHave.length} title-placement keywords found in listing`,
+      messageCn: `Listing中包含${titleKwMatched.length}/${titleMustHave.length}个标题布局关键词`,
       severity: titleKwCoverage >= 0.7 ? "info" : "warning",
     });
     totalScore += titleKwScore;
 
-    // Check bullet keywords coverage
-    const bulletKws = a9Keywords.bulletPointKeywords || a9Keywords.bulletKeywords || [];
-    const bulletKwMatched = bulletKws.filter((kw: any) => {
-      const keyword = typeof kw === "string" ? kw : kw.keyword || kw.term || "";
-      return fullText.includes(keyword.toLowerCase());
-    });
+    // Check bullet placement keywords coverage (bullet_first + bullet_body)
+    const bulletKws = Array.from(new Set([
+      ...kwData.keywordsByPlacement.bulletFirst,
+      ...kwData.keywordsByPlacement.bulletBody,
+      ...kwData.keywordsByStrategy.subCore,
+    ].map(k => k.toLowerCase())));
+
+    const bulletKwMatched = bulletKws.filter(kw => fullText.includes(kw));
     const bulletKwCoverage = bulletKws.length > 0 ? bulletKwMatched.length / bulletKws.length : 1;
     const bulletKwScore = Math.round(bulletKwCoverage * 3);
     details.push({
-      rule: "Bullet Point Keywords Coverage",
-      ruleCn: "要点关键词覆盖率",
+      rule: "Bullet Placement Keywords Coverage",
+      ruleCn: "要点布局关键词覆盖率",
       passed: bulletKwCoverage >= 0.6, score: bulletKwScore, maxScore: 3,
-      message: `${bulletKwMatched.length}/${bulletKws.length} bullet keywords found in listing`,
-      messageCn: `Listing中包含${bulletKwMatched.length}/${bulletKws.length}个要点关键词`,
+      message: `${bulletKwMatched.length}/${bulletKws.length} bullet-placement keywords found in listing`,
+      messageCn: `Listing中包含${bulletKwMatched.length}/${bulletKws.length}个要点布局关键词`,
       severity: bulletKwCoverage >= 0.6 ? "info" : "warning",
     });
     totalScore += bulletKwScore;
 
-    // Check golden long-tail keywords
-    const goldenKws = a9Keywords.goldenLongTailKeywords || a9Keywords.goldenKeywords || [];
-    const goldenMatched = goldenKws.filter((kw: any) => {
-      const keyword = typeof kw === "string" ? kw : kw.keyword || kw.term || "";
-      return fullText.includes(keyword.toLowerCase());
-    });
-    const goldenCoverage = goldenKws.length > 0 ? goldenMatched.length / goldenKws.length : 1;
-    const goldenScore = Math.round(goldenCoverage * 3);
+    // Check long-tail & scene keywords coverage (precise_longtail + scene_intent + search_term placement)
+    const longtailKws = Array.from(new Set([
+      ...kwData.keywordsByStrategy.preciseLongtail,
+      ...kwData.keywordsByStrategy.sceneIntent,
+      ...kwData.keywordsByPlacement.searchTerm,
+    ].map(k => k.toLowerCase())));
+
+    const longtailMatched = longtailKws.filter(kw => fullText.includes(kw));
+    const longtailCoverage = longtailKws.length > 0 ? longtailMatched.length / longtailKws.length : 1;
+    const longtailScore = Math.round(longtailCoverage * 3);
     details.push({
-      rule: "Golden Long-Tail Keywords Coverage",
-      ruleCn: "黄金长尾词覆盖率",
-      passed: goldenCoverage >= 0.5, score: goldenScore, maxScore: 3,
-      message: `${goldenMatched.length}/${goldenKws.length} golden keywords found in listing`,
-      messageCn: `Listing中包含${goldenMatched.length}/${goldenKws.length}个黄金长尾词`,
-      severity: goldenCoverage >= 0.5 ? "info" : "warning",
+      rule: "Long-tail & Scene Keywords Coverage",
+      ruleCn: "长尾词与场景词覆盖率",
+      passed: longtailCoverage >= 0.5, score: longtailScore, maxScore: 3,
+      message: `${longtailMatched.length}/${longtailKws.length} long-tail/scene keywords found in listing`,
+      messageCn: `Listing中包含${longtailMatched.length}/${longtailKws.length}个长尾/场景关键词`,
+      severity: longtailCoverage >= 0.5 ? "info" : "warning",
     });
-    totalScore += goldenScore;
+    totalScore += longtailScore;
   }
 
   const percentage = Math.round((totalScore / 10) * 100);
@@ -842,8 +878,8 @@ export function scoreListing(
     searchTermsCn: string | null;
     imageAdvice: string | null;
   },
-  a9Keywords: any | null,
-  coreKeywords: string[] // extracted from analyses or A9 data
+  kwData: KeywordModuleData | null,
+  coreKeywords: string[] // extracted from keyword management module
 ): ListingScore {
   const hasChinese = !!(listing.titleCn || listing.bulletPointsCn || listing.descriptionCn);
   const hasImageAdvice = !!listing.imageAdvice;
@@ -853,7 +889,7 @@ export function scoreListing(
     scoreBulletPoints(listing.bulletPoints, coreKeywords),
     scoreDescription(listing.description, coreKeywords),
     scoreSearchTerms(listing.searchTerms, listing.title, listing.bulletPoints),
-    scoreKeywordCoverage(listing.title, listing.bulletPoints, listing.description, listing.searchTerms, a9Keywords),
+    scoreKeywordCoverage(listing.title, listing.bulletPoints, listing.description, listing.searchTerms, kwData),
     scoreOverallSEO(listing.title, listing.bulletPoints, listing.description, listing.searchTerms, hasChinese, hasImageAdvice),
   ];
 

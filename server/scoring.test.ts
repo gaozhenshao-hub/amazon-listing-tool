@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { scoreListing } from "./scoringEngine";
-import type { ListingScore } from "./scoringEngine";
+import type { ListingScore, KeywordModuleData } from "./scoringEngine";
 
 describe("Scoring Engine", () => {
   const goodTitle = "Premium Wireless Bluetooth Headphones - Active Noise Cancelling Over-Ear Headset with Hi-Res Audio, 40H Battery Life, Foldable Design for Travel, Work, Gaming - Compatible with iPhone, Android, PC";
@@ -40,6 +40,28 @@ describe("Scoring Engine", () => {
   const goodSearchTerms = "wireless headphones noise cancelling bluetooth over ear headset hi-res audio foldable travel office gaming comfortable lightweight long battery";
 
   const coreKeywords = ["wireless headphones", "noise cancelling", "bluetooth", "over ear", "headset", "hi-res", "foldable", "travel", "gaming", "battery"];
+
+  // Keyword module data structure (replaces old ABA a9Keywords)
+  const sampleKwData: KeywordModuleData = {
+    coreKeywords: ["wireless headphones", "noise cancelling", "bluetooth", "over ear", "headset"],
+    keywordsByPlacement: {
+      titleFront: ["wireless headphones", "bluetooth headphones"],
+      titleMid: ["noise cancelling", "over ear"],
+      titleEnd: ["gaming headset"],
+      bulletFirst: ["battery life", "comfortable"],
+      bulletBody: ["foldable", "travel"],
+      aplus: ["premium audio"],
+      searchTerm: ["hi-res audio", "lightweight headphones"],
+    },
+    keywordsByStrategy: {
+      coreMain: ["wireless headphones", "bluetooth headphones"],
+      subCore: ["noise cancelling headphones", "over ear headset"],
+      preciseLongtail: ["wireless headphones with microphone", "noise cancelling headphones for travel"],
+      sceneIntent: ["headphones for office", "headphones for gaming"],
+      longtailMain: ["foldable bluetooth headphones"],
+    },
+    totalKeywords: 25,
+  };
 
   it("should return a valid score structure", () => {
     const result = scoreListing(
@@ -178,20 +200,68 @@ describe("Scoring Engine", () => {
     expect(lenDetail!.passed).toBe(false);
   });
 
-  it("should check keyword coverage with A9 data", () => {
-    const a9Keywords = {
-      titleMustHaveKeywords: [
-        { keyword: "wireless headphones" },
-        { keyword: "noise cancelling" },
-        { keyword: "bluetooth" },
-      ],
-      bulletPointKeywords: [
-        { keyword: "battery life" },
-        { keyword: "comfortable" },
-      ],
-      goldenLongTailKeywords: [
-        { keyword: "over ear headset" },
-      ],
+  it("should check keyword coverage with keyword module data", () => {
+    const result = scoreListing(
+      {
+        title: goodTitle,
+        bulletPoints: goodBullets,
+        description: goodDescription,
+        searchTerms: goodSearchTerms,
+        titleCn: null, bulletPointsCn: null, descriptionCn: null, searchTermsCn: null, imageAdvice: null,
+      },
+      sampleKwData,
+      coreKeywords
+    );
+
+    const kwDim = result.dimensions.find(d => d.name === "Keyword Coverage");
+    expect(kwDim).toBeDefined();
+    // With good keyword coverage, should score well
+    expect(kwDim!.percentage).toBeGreaterThanOrEqual(50);
+
+    // Verify the new rule names are used (not old ABA-based names)
+    const ruleNames = kwDim!.details.map(d => d.rule);
+    expect(ruleNames).toContain("Title Placement Keywords Coverage");
+    expect(ruleNames).toContain("Bullet Placement Keywords Coverage");
+    expect(ruleNames).toContain("Long-tail & Scene Keywords Coverage");
+    // Old ABA-based rules should NOT exist
+    expect(ruleNames).not.toContain("Title Must-Have Keywords Coverage");
+    expect(ruleNames).not.toContain("Golden Long-Tail Keywords Coverage");
+    expect(ruleNames).not.toContain("A9 Keyword Data Available");
+  });
+
+  it("should show keyword module data not available when no kwData", () => {
+    const result = scoreListing(
+      {
+        title: goodTitle,
+        bulletPoints: goodBullets,
+        description: goodDescription,
+        searchTerms: goodSearchTerms,
+        titleCn: null, bulletPointsCn: null, descriptionCn: null, searchTermsCn: null, imageAdvice: null,
+      },
+      null,
+      coreKeywords
+    );
+
+    const kwDim = result.dimensions.find(d => d.name === "Keyword Coverage");
+    expect(kwDim).toBeDefined();
+    const moduleRule = kwDim!.details.find(d => d.rule === "Keyword Module Data Available");
+    expect(moduleRule).toBeDefined();
+    expect(moduleRule!.passed).toBe(false);
+    expect(moduleRule!.message).toContain("keyword management module");
+    expect(moduleRule!.messageCn).toContain("关键词管理模块");
+  });
+
+  it("should show keyword module data not available when totalKeywords is 0", () => {
+    const emptyKwData: KeywordModuleData = {
+      coreKeywords: [],
+      keywordsByPlacement: {
+        titleFront: [], titleMid: [], titleEnd: [],
+        bulletFirst: [], bulletBody: [], aplus: [], searchTerm: [],
+      },
+      keywordsByStrategy: {
+        coreMain: [], subCore: [], preciseLongtail: [], sceneIntent: [], longtailMain: [],
+      },
+      totalKeywords: 0,
     };
 
     const result = scoreListing(
@@ -202,14 +272,121 @@ describe("Scoring Engine", () => {
         searchTerms: goodSearchTerms,
         titleCn: null, bulletPointsCn: null, descriptionCn: null, searchTermsCn: null, imageAdvice: null,
       },
-      a9Keywords,
-      coreKeywords
+      emptyKwData,
+      []
     );
 
     const kwDim = result.dimensions.find(d => d.name === "Keyword Coverage");
     expect(kwDim).toBeDefined();
-    // With good keyword coverage, should score well
-    expect(kwDim!.percentage).toBeGreaterThanOrEqual(50);
+    expect(kwDim!.details).toHaveLength(1);
+    expect(kwDim!.details[0].rule).toBe("Keyword Module Data Available");
+  });
+
+  it("should correctly score title placement keyword coverage", () => {
+    // Create kwData where title keywords are present in the listing
+    const kwDataWithTitleKws: KeywordModuleData = {
+      coreKeywords: ["wireless headphones"],
+      keywordsByPlacement: {
+        titleFront: ["wireless headphones", "bluetooth"],
+        titleMid: ["noise cancelling"],
+        titleEnd: ["gaming"],
+        bulletFirst: [], bulletBody: [], aplus: [], searchTerm: [],
+      },
+      keywordsByStrategy: {
+        coreMain: ["wireless headphones"],
+        subCore: [], preciseLongtail: [], sceneIntent: [], longtailMain: [],
+      },
+      totalKeywords: 5,
+    };
+
+    const result = scoreListing(
+      {
+        title: goodTitle,
+        bulletPoints: goodBullets,
+        description: goodDescription,
+        searchTerms: goodSearchTerms,
+        titleCn: null, bulletPointsCn: null, descriptionCn: null, searchTermsCn: null, imageAdvice: null,
+      },
+      kwDataWithTitleKws,
+      coreKeywords
+    );
+
+    const kwDim = result.dimensions.find(d => d.name === "Keyword Coverage");
+    const titleRule = kwDim!.details.find(d => d.rule === "Title Placement Keywords Coverage");
+    expect(titleRule).toBeDefined();
+    // All title keywords should be found in the listing
+    expect(titleRule!.passed).toBe(true);
+    expect(titleRule!.score).toBe(4); // max score for this rule
+  });
+
+  it("should correctly score bullet placement keyword coverage", () => {
+    const kwDataWithBulletKws: KeywordModuleData = {
+      coreKeywords: [],
+      keywordsByPlacement: {
+        titleFront: [], titleMid: [], titleEnd: [],
+        bulletFirst: ["battery life", "noise cancelling"],
+        bulletBody: ["foldable", "travel"],
+        aplus: [], searchTerm: [],
+      },
+      keywordsByStrategy: {
+        coreMain: [],
+        subCore: ["comfortable headphones"],
+        preciseLongtail: [], sceneIntent: [], longtailMain: [],
+      },
+      totalKeywords: 5,
+    };
+
+    const result = scoreListing(
+      {
+        title: goodTitle,
+        bulletPoints: goodBullets,
+        description: goodDescription,
+        searchTerms: goodSearchTerms,
+        titleCn: null, bulletPointsCn: null, descriptionCn: null, searchTermsCn: null, imageAdvice: null,
+      },
+      kwDataWithBulletKws,
+      coreKeywords
+    );
+
+    const kwDim = result.dimensions.find(d => d.name === "Keyword Coverage");
+    const bulletRule = kwDim!.details.find(d => d.rule === "Bullet Placement Keywords Coverage");
+    expect(bulletRule).toBeDefined();
+    expect(bulletRule!.score).toBeGreaterThan(0);
+  });
+
+  it("should correctly score long-tail and scene keyword coverage", () => {
+    const kwDataWithLongtail: KeywordModuleData = {
+      coreKeywords: [],
+      keywordsByPlacement: {
+        titleFront: [], titleMid: [], titleEnd: [],
+        bulletFirst: [], bulletBody: [], aplus: [],
+        searchTerm: ["hi-res audio", "lightweight"],
+      },
+      keywordsByStrategy: {
+        coreMain: [], subCore: [],
+        preciseLongtail: ["wireless headphones"],
+        sceneIntent: ["headphones for travel"],
+        longtailMain: [],
+      },
+      totalKeywords: 4,
+    };
+
+    const result = scoreListing(
+      {
+        title: goodTitle,
+        bulletPoints: goodBullets,
+        description: goodDescription,
+        searchTerms: goodSearchTerms,
+        titleCn: null, bulletPointsCn: null, descriptionCn: null, searchTermsCn: null, imageAdvice: null,
+      },
+      kwDataWithLongtail,
+      coreKeywords
+    );
+
+    const kwDim = result.dimensions.find(d => d.name === "Keyword Coverage");
+    const longtailRule = kwDim!.details.find(d => d.rule === "Long-tail & Scene Keywords Coverage");
+    expect(longtailRule).toBeDefined();
+    expect(longtailRule!.score).toBeGreaterThan(0);
   });
 
   it("should generate optimization suggestions for failing rules", () => {
@@ -311,5 +488,49 @@ describe("Scoring Engine", () => {
     const totalMax = result.dimensions.reduce((sum, d) => sum + d.maxScore, 0);
     expect(totalMax).toBe(100);
     expect(result.maxScore).toBe(100);
+  });
+
+  it("should not reference ABA in any messages when keyword module data is provided", () => {
+    const result = scoreListing(
+      {
+        title: goodTitle,
+        bulletPoints: goodBullets,
+        description: goodDescription,
+        searchTerms: goodSearchTerms,
+        titleCn: null, bulletPointsCn: null, descriptionCn: null, searchTermsCn: null, imageAdvice: null,
+      },
+      sampleKwData,
+      coreKeywords
+    );
+
+    // Check all messages don't contain "ABA" references
+    for (const dim of result.dimensions) {
+      for (const detail of dim.details) {
+        expect(detail.message).not.toContain("ABA");
+        expect(detail.messageCn).not.toContain("ABA");
+      }
+    }
+  });
+
+  it("should not reference ABA in any messages when no keyword data", () => {
+    const result = scoreListing(
+      {
+        title: goodTitle,
+        bulletPoints: goodBullets,
+        description: goodDescription,
+        searchTerms: goodSearchTerms,
+        titleCn: null, bulletPointsCn: null, descriptionCn: null, searchTermsCn: null, imageAdvice: null,
+      },
+      null,
+      []
+    );
+
+    // Check all messages don't contain "ABA" references
+    for (const dim of result.dimensions) {
+      for (const detail of dim.details) {
+        expect(detail.message).not.toContain("ABA");
+        expect(detail.messageCn).not.toContain("ABA");
+      }
+    }
   });
 });

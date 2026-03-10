@@ -251,3 +251,11 @@
 - [x] Change: Listing AI prompt - Inject 3D strategy matrix and listing placement suggestions into generation prompt
 - [x] Change: Listing AI prompt - Replace file-only data sources with combined file + module data
 - [x] Unit tests for listing prompt with real module data injection (12 new tests, 394 total passing)
+- [x] Feature: Listing generation - Add "emphasis" option for users to specify key selling points or scenes to highlight
+- [x] Feature: Listing generation - Backend: accept emphasis text and inject into AI prompt for all 6 generation endpoints
+- [x] Feature: Listing generation - Frontend: add emphasis textarea on GeneratePage before generate button
+- [x] Change: Scoring system - Replace ABA file data source with keyword management module data
+- [x] Change: Scoring system - scoreKeywordCoverage now uses keywordsByPlacement and keywordsByStrategy from keywords table
+- [x] Change: Scoring system - scoring.ts router loads keywords from keywords table via loadKeywordsFromModule helper
+- [x] Change: Scoring system - All ABA references in messages replaced with keyword management module references
+- [x] Unit tests for emphasis option and scoring data source changes (7 new tests, 401 total passing)
