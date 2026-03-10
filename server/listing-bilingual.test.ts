@@ -18,6 +18,9 @@ vi.mock("./db", () => ({
   createListing: vi.fn(),
   updateListing: vi.fn(),
   updateProject: vi.fn(),
+  getListingById: vi.fn(),
+  getLatestListingVersionNumber: vi.fn().mockResolvedValue(0),
+  createListingVersion: vi.fn().mockResolvedValue({ id: 1 }),
 }));
 
 import { invokeLLM } from "./_core/llm";

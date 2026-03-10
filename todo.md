@@ -224,3 +224,12 @@
 - [x] Bug fix: Keywords in keyword management should not be translated to Chinese - keep original English
 - [x] Bug fix: Keywords in ad structure should not be translated to Chinese - keep original English
 - [x] Bug fix: Ensure AI prompts do not translate keyword text, only generate structure around them
+- [x] Feature: Batch edit - Backend bulkEdit API (batch update strategyCategory, matchType, status, relevance, etc.)
+- [x] Feature: Batch edit - Frontend multi-select checkboxes on keyword table
+- [x] Feature: Batch edit - Frontend batch action toolbar (appears when keywords selected)
+- [x] Feature: Batch edit - Batch set strategy category, match type, status, relevance, traffic level
+- [x] Feature: Batch edit - Select all / deselect all / invert selection
+- [x] Feature: Dedup detection - Backend dedup logic during CSV/XLSX import (case-insensitive match)
+- [x] Feature: Dedup detection - Merge strategy: keep existing keyword data, update missing fields from new import
+- [x] Feature: Dedup detection - Frontend dedup summary after import (X new, Y duplicates merged, Z skipped)
+- [x] Unit tests for batch edit and dedup detection features (17 new tests, 348 total passing)

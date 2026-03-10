@@ -241,17 +241,96 @@ export const keywordRouter = router({
         throw new Error("未找到有效的关键词数据");
       }
 
-      // Bulk insert in batches of 100
-      const batches = chunkArray(keywordsToInsert, 100);
+      // ─── Dedup Detection ─────────────────────────────────────
+      // Fetch existing keywords for this project to detect duplicates
+      const existingKeywords = await getKeywordsByProject(projectId);
+      const existingMap = new Map<string, any>();
+      for (const ek of existingKeywords) {
+        existingMap.set(ek.keyword.toLowerCase().trim(), ek);
+      }
+
+      // Also dedup within the import file itself
+      const seenInFile = new Map<string, number>(); // keyword -> index in keywordsToInsert
+      const deduplicatedInsert: any[] = [];
+      let inFileDuplicates = 0;
+      for (const kw of keywordsToInsert) {
+        const key = kw.keyword.toLowerCase().trim();
+        if (seenInFile.has(key)) {
+          // Keep the one with more data (higher search volume)
+          const existingIdx = seenInFile.get(key)!;
+          const existing = deduplicatedInsert[existingIdx];
+          if ((kw.monthlySearchVolume || 0) > (existing.monthlySearchVolume || 0)) {
+            deduplicatedInsert[existingIdx] = kw;
+          }
+          inFileDuplicates++;
+        } else {
+          seenInFile.set(key, deduplicatedInsert.length);
+          deduplicatedInsert.push(kw);
+        }
+      }
+
+      const newKeywords: any[] = [];
+      const duplicateKeywords: { keyword: string; existingId: number }[] = [];
+      const mergedKeywords: { id: number; data: any }[] = [];
+
+      for (const kw of deduplicatedInsert) {
+        const key = kw.keyword.toLowerCase().trim();
+        const existing = existingMap.get(key);
+        if (existing) {
+          // Duplicate found - merge: update missing fields from new import
+          const updateData: any = {};
+          if (!existing.monthlySearchVolume && kw.monthlySearchVolume) updateData.monthlySearchVolume = kw.monthlySearchVolume;
+          if (!existing.spr && kw.spr) updateData.spr = kw.spr;
+          if (!existing.ppcBid && kw.ppcBid) updateData.ppcBid = kw.ppcBid;
+          if (!existing.naturalRank && kw.naturalRank) updateData.naturalRank = kw.naturalRank;
+          if (!existing.trafficScore && kw.trafficScore) updateData.trafficScore = kw.trafficScore;
+          // Update search volume if new data has a value and existing is 0 or null
+          if (kw.monthlySearchVolume && (!existing.monthlySearchVolume || existing.monthlySearchVolume === 0)) {
+            updateData.monthlySearchVolume = kw.monthlySearchVolume;
+            // Also update derived fields
+            if (kw.monthlySearchVolume >= 10000) updateData.trafficLevel = "high";
+            else if (kw.monthlySearchVolume >= 1000) updateData.trafficLevel = "medium";
+            else updateData.trafficLevel = "low";
+          }
+          if (kw.spr && (!existing.spr || existing.spr === 0)) {
+            updateData.spr = kw.spr;
+            if (kw.spr < 30) updateData.competition = "low";
+            else if (kw.spr < 100) updateData.competition = "medium";
+            else updateData.competition = "high";
+          }
+          if (Object.keys(updateData).length > 0) {
+            mergedKeywords.push({ id: existing.id, data: updateData });
+          }
+          duplicateKeywords.push({ keyword: kw.keyword, existingId: existing.id });
+        } else {
+          newKeywords.push(kw);
+        }
+      }
+
+      // Insert new keywords in batches
       let totalInserted = 0;
-      for (const batch of batches) {
-        await bulkCreateKeywords(batch);
-        totalInserted += batch.length;
+      if (newKeywords.length > 0) {
+        const batches = chunkArray(newKeywords, 100);
+        for (const batch of batches) {
+          await bulkCreateKeywords(batch);
+          totalInserted += batch.length;
+        }
+      }
+
+      // Update merged keywords
+      let totalMerged = 0;
+      for (const { id, data } of mergedKeywords) {
+        await updateKeyword(id, data);
+        totalMerged++;
       }
 
       return {
         success: true,
         imported: totalInserted,
+        duplicatesFound: duplicateKeywords.length,
+        duplicatesMerged: totalMerged,
+        inFileDuplicates,
+        totalParsed: keywordsToInsert.length,
         columns: cols,
         detectedMapping: colMap,
       };
@@ -780,6 +859,9 @@ export const keywordRouter = router({
         trafficLevel: z.enum(["high", "medium", "low"]).optional(),
         competition: z.enum(["high", "medium", "low"]).optional(),
         status: z.enum(["raw", "cleaned", "scored", "tagged", "finalized", "negative"]).optional(),
+        strategyCategory: z.enum(["core_main", "sub_core", "precise_longtail", "scene_intent", "longtail_main", "observe_test", "negative"]).nullable().optional(),
+        rootCategory: z.enum(["core", "function", "scene", "audience", "spec", "painpoint", "gift_holiday"]).nullable().optional(),
+        listingPlacement: z.enum(["title_front", "title_mid", "title_end", "bullet_first", "bullet_body", "aplus", "search_term", "not_use"]).nullable().optional(),
       }),
     }))
     .mutation(async ({ input }) => {

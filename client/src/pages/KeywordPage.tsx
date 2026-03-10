@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import {
   Upload, Plus, Trash2, Filter, Tag, GitBranch, LayoutGrid, Ban,
   Play, Search, Download, RefreshCw, Zap, FileText, ChevronDown,
-  ChevronUp, ArrowUpDown, Loader2, X, AlertTriangle
+  ChevronUp, ArrowUpDown, Loader2, X, AlertTriangle, Edit2, CheckCircle2, Copy
 } from "lucide-react";
 
 // Strategy category labels
@@ -146,8 +146,46 @@ function KeywordListTab({ projectId }: { projectId: number }) {
   const bulkDeleteMut = trpc.keyword.bulkDelete.useMutation({ onSuccess: () => { keywordsQuery.refetch(); statsQuery.refetch(); setSelectedIds(new Set()); toast.success("批量删除完成"); } });
   const moveToNegMut = trpc.keyword.moveToNegative.useMutation({ onSuccess: () => { keywordsQuery.refetch(); statsQuery.refetch(); toast.success("已移入否词库"); } });
   const addMut = trpc.keyword.add.useMutation({ onSuccess: () => { keywordsQuery.refetch(); statsQuery.refetch(); toast.success("已添加"); } });
+  const bulkUpdateMut = trpc.keyword.bulkUpdate.useMutation({
+    onSuccess: (data: any) => {
+      keywordsQuery.refetch(); statsQuery.refetch();
+      setSelectedIds(new Set());
+      setShowBatchEdit(false);
+      toast.success(`已批量更新 ${data.count} 个关键词`);
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
 
   const [newKw, setNewKw] = useState("");
+  const [showBatchEdit, setShowBatchEdit] = useState(false);
+  const [batchStrategy, setBatchStrategy] = useState<string>("_none");
+  const [batchRelevance, setBatchRelevance] = useState<string>("_none");
+  const [batchStatus, setBatchStatus] = useState<string>("_none");
+  const [batchPlacement, setBatchPlacement] = useState<string>("_none");
+  const [batchRootCategory, setBatchRootCategory] = useState<string>("_none");
+  const [batchTrafficLevel, setBatchTrafficLevel] = useState<string>("_none");
+  const [batchCompetition, setBatchCompetition] = useState<string>("_none");
+
+  const applyBatchEdit = () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) { toast.error("请先选择关键词"); return; }
+    const data: any = {};
+    if (batchStrategy !== "_none") data.strategyCategory = batchStrategy === "_clear" ? null : batchStrategy;
+    if (batchRelevance !== "_none") data.relevance = batchRelevance;
+    if (batchStatus !== "_none") data.status = batchStatus;
+    if (batchPlacement !== "_none") data.listingPlacement = batchPlacement === "_clear" ? null : batchPlacement;
+    if (batchRootCategory !== "_none") data.rootCategory = batchRootCategory === "_clear" ? null : batchRootCategory;
+    if (batchTrafficLevel !== "_none") data.trafficLevel = batchTrafficLevel;
+    if (batchCompetition !== "_none") data.competition = batchCompetition;
+    if (Object.keys(data).length === 0) { toast.error("请至少选择一个要修改的属性"); return; }
+    bulkUpdateMut.mutate({ ids, data });
+  };
+
+  const resetBatchEdit = () => {
+    setBatchStrategy("_none"); setBatchRelevance("_none"); setBatchStatus("_none");
+    setBatchPlacement("_none"); setBatchRootCategory("_none");
+    setBatchTrafficLevel("_none"); setBatchCompetition("_none");
+  };
 
   const allKeywords = keywordsQuery.data || [];
   const stats = statsQuery.data;
@@ -279,6 +317,9 @@ function KeywordListTab({ projectId }: { projectId: number }) {
         <Button size="sm" onClick={() => { if (newKw.trim()) { addMut.mutate({ projectId, keyword: newKw.trim() }); setNewKw(""); } }} disabled={!newKw.trim()}><Plus className="h-4 w-4 mr-1" />添加</Button>
         {selectedIds.size > 0 && (
           <>
+            <Button size="sm" variant="outline" className="border-blue-500 text-blue-600" onClick={() => { setShowBatchEdit(!showBatchEdit); resetBatchEdit(); }}>
+              <Edit2 className="h-4 w-4 mr-1" />批量编辑({selectedIds.size})
+            </Button>
             <Button size="sm" variant="destructive" onClick={() => bulkDeleteMut.mutate({ ids: Array.from(selectedIds) })}><Trash2 className="h-4 w-4 mr-1" />删除({selectedIds.size})</Button>
           </>
         )}
@@ -286,6 +327,120 @@ function KeywordListTab({ projectId }: { projectId: number }) {
           <Download className="h-4 w-4 mr-1" />导出CSV{filtered.length !== allKeywords.length && filtered.length > 0 ? ` (${filtered.length})` : ""}
         </Button>
       </div>
+
+      {/* Batch Edit Toolbar */}
+      {showBatchEdit && selectedIds.size > 0 && (
+        <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-950/30">
+          <CardContent className="py-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Edit2 className="h-4 w-4 text-blue-600" />
+                <span className="font-medium text-sm">批量编辑 - 已选择 {selectedIds.size} 个关键词</span>
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => setShowBatchEdit(false)}><X className="h-4 w-4" /></Button>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">策略分类</label>
+                <Select value={batchStrategy} onValueChange={setBatchStrategy}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="不修改" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">不修改</SelectItem>
+                    <SelectItem value="_clear">清空</SelectItem>
+                    {Object.entries(STRATEGY_LABELS).map(([k, v]) => (
+                      <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">相关性</label>
+                <Select value={batchRelevance} onValueChange={setBatchRelevance}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="不修改" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">不修改</SelectItem>
+                    <SelectItem value="high">高相关</SelectItem>
+                    <SelectItem value="medium">中相关</SelectItem>
+                    <SelectItem value="low">低相关</SelectItem>
+                    <SelectItem value="none">无关</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">状态</label>
+                <Select value={batchStatus} onValueChange={setBatchStatus}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="不修改" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">不修改</SelectItem>
+                    <SelectItem value="raw">原始</SelectItem>
+                    <SelectItem value="cleaned">已清洗</SelectItem>
+                    <SelectItem value="scored">已评分</SelectItem>
+                    <SelectItem value="tagged">已打标</SelectItem>
+                    <SelectItem value="finalized">已完成</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Listing位置</label>
+                <Select value={batchPlacement} onValueChange={setBatchPlacement}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="不修改" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">不修改</SelectItem>
+                    <SelectItem value="_clear">清空</SelectItem>
+                    {Object.entries(PLACEMENT_LABELS).map(([k, v]) => (
+                      <SelectItem key={k} value={k}>{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">词根分类</label>
+                <Select value={batchRootCategory} onValueChange={setBatchRootCategory}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="不修改" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">不修改</SelectItem>
+                    <SelectItem value="_clear">清空</SelectItem>
+                    {Object.entries(ROOT_LABELS).map(([k, v]) => (
+                      <SelectItem key={k} value={k}>{v.icon} {v.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">流量等级</label>
+                <Select value={batchTrafficLevel} onValueChange={setBatchTrafficLevel}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="不修改" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">不修改</SelectItem>
+                    <SelectItem value="high">高</SelectItem>
+                    <SelectItem value="medium">中</SelectItem>
+                    <SelectItem value="low">低</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">竞争度</label>
+                <Select value={batchCompetition} onValueChange={setBatchCompetition}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="不修改" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">不修改</SelectItem>
+                    <SelectItem value="high">高</SelectItem>
+                    <SelectItem value="medium">中</SelectItem>
+                    <SelectItem value="low">低</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-3">
+              <Button size="sm" onClick={applyBatchEdit} disabled={bulkUpdateMut.isPending}>
+                {bulkUpdateMut.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />更新中...</> : <><CheckCircle2 className="h-4 w-4 mr-1" />应用修改</>}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={resetBatchEdit}>重置</Button>
+              <span className="text-xs text-muted-foreground">选择“不修改”的属性将保持原值不变</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Keyword Table */}
       <Card>
@@ -350,11 +505,17 @@ function ImportTab({ projectId }: { projectId: number }) {
   const [uploadedFileName, setUploadedFileName] = useState("");
   const [source, setSource] = useState<"csv_import" | "asin_reverse" | "search_suggest">("csv_import");
   const [sourceDetail, setSourceDetail] = useState("");
+  const [importResult, setImportResult] = useState<any>(null);
   const utils = trpc.useUtils();
 
   const importMut = trpc.keyword.importCsv.useMutation({
-    onSuccess: (data) => {
-      toast.success(`成功导入 ${data.imported} 个关键词`);
+    onSuccess: (rawData) => {
+      const data = rawData as any;
+      setImportResult(data);
+      const parts = [`新增 ${data.imported} 个关键词`];
+      if (data.duplicatesFound > 0) parts.push(`${data.duplicatesFound} 个重复词已合并`);
+      if (data.inFileDuplicates > 0) parts.push(`文件内去重 ${data.inFileDuplicates} 个`);
+      toast.success(parts.join("，"));
       setCsvContent("");
       setIsXlsx(false);
       setUploadedFileName("");
@@ -445,11 +606,48 @@ function ImportTab({ projectId }: { projectId: number }) {
             </div>
           )}
 
-          <Button onClick={() => importMut.mutate({ projectId, csvContent, source, sourceDetail, isXlsx })} disabled={!csvContent.trim() || importMut.isPending}>
+          <Button onClick={() => { setImportResult(null); importMut.mutate({ projectId, csvContent, source, sourceDetail, isXlsx }); }} disabled={!csvContent.trim() || importMut.isPending}>
             {importMut.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />导入中...</> : <><Upload className="h-4 w-4 mr-2" />开始导入</>}
           </Button>
         </CardContent>
       </Card>
+
+      {/* Import Result with Dedup Summary */}
+      {importResult && (
+        <Card className="border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/30">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-2 mb-3">
+              <CheckCircle2 className="h-5 w-5 text-green-600" />
+              <span className="font-medium">导入完成</span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div className="text-center p-2 rounded bg-white dark:bg-gray-900">
+                <div className="text-lg font-bold text-blue-600">{importResult.totalParsed || importResult.imported}</div>
+                <div className="text-xs text-muted-foreground">解析关键词数</div>
+              </div>
+              <div className="text-center p-2 rounded bg-white dark:bg-gray-900">
+                <div className="text-lg font-bold text-green-600">{importResult.imported}</div>
+                <div className="text-xs text-muted-foreground">新增导入</div>
+              </div>
+              <div className="text-center p-2 rounded bg-white dark:bg-gray-900">
+                <div className="text-lg font-bold text-orange-600">{importResult.duplicatesFound || 0}</div>
+                <div className="text-xs text-muted-foreground">与库内重复（已合并）</div>
+              </div>
+              <div className="text-center p-2 rounded bg-white dark:bg-gray-900">
+                <div className="text-lg font-bold text-yellow-600">{importResult.inFileDuplicates || 0}</div>
+                <div className="text-xs text-muted-foreground">文件内重复（已去重）</div>
+              </div>
+            </div>
+            {(importResult.duplicatesFound > 0 || importResult.inFileDuplicates > 0) && (
+              <div className="mt-3 text-xs text-muted-foreground flex items-center gap-1">
+                <Copy className="h-3 w-3" />
+                重复关键词已自动合并：保留已有数据，补充缺失的搜索量、SPR、竞价等字段
+              </div>
+            )}
+            <Button size="sm" variant="ghost" className="mt-2" onClick={() => setImportResult(null)}>关闭</Button>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
