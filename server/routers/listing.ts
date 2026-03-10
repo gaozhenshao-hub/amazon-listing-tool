@@ -331,6 +331,7 @@ function buildProductContext(project: any, analyses: any[], enrichedData?: {
     // Extract parity (common selling points across competitors)
     const allSellingPoints: Record<string, number> = {};
     const allPainPoints: string[] = [];
+    const allItchPoints: string[] = [];
     const allDelightPoints: string[] = [];
     const allWeaknesses: string[] = [];
     const allAdvantages: string[] = [];
@@ -354,6 +355,7 @@ function buildProductContext(project: any, analyses: any[], enrichedData?: {
         try {
           const ra = JSON.parse(analysis.reviewAnalysis);
           if (ra.painPoints) allPainPoints.push(...ra.painPoints.map((p: any) => p.issue || p));
+          if (ra.itchPoints) allItchPoints.push(...ra.itchPoints.map((p: any) => p.desire || p));
           if (ra.delightPoints) allDelightPoints.push(...ra.delightPoints.map((p: any) => p.feature || p));
         } catch {}
       }
@@ -398,12 +400,30 @@ function buildProductContext(project: any, analyses: any[], enrichedData?: {
       });
     }
 
+    // Itch points: customer desires not yet met
+    if (allItchPoints.length > 0) {
+      const uniqueItches = Array.from(new Set(allItchPoints)).slice(0, 6);
+      parts.push("Customer Itch Points (unmet desires - differentiation opportunities):");
+      uniqueItches.forEach(i => {
+        parts.push(`  - ${i}`);
+      });
+    }
+
     // Delight points to emulate
     if (allDelightPoints.length > 0) {
       const uniqueDelights = Array.from(new Set(allDelightPoints)).slice(0, 6);
       parts.push("Customer Delight Points (features to emphasize):");
       uniqueDelights.forEach(d => {
         parts.push(`  - ${d}`);
+      });
+    }
+
+    // Competitor advantages to match or exceed
+    if (allAdvantages.length > 0) {
+      const uniqueAdvantages = Array.from(new Set(allAdvantages)).slice(0, 6);
+      parts.push("Competitor Advantages (features to match or exceed):");
+      uniqueAdvantages.forEach(a => {
+        parts.push(`  - ${a}`);
       });
     }
 
@@ -414,10 +434,30 @@ function buildProductContext(project: any, analyses: any[], enrichedData?: {
       if (analysis.title) parts.push(`  Title: ${analysis.title}`);
       if (analysis.price) parts.push(`  Price: ${analysis.price}`);
       if (analysis.rating) parts.push(`  Rating: ${analysis.rating}`);
+      if (analysis.reviewCount) parts.push(`  Review Count: ${analysis.reviewCount}`);
+      // Extract brand from rawData
+      if (analysis.rawData) {
+        try {
+          const raw = JSON.parse(analysis.rawData);
+          const brand = raw.scrapedData?.brand || raw.brand;
+          if (brand) parts.push(`  Brand: ${brand}`);
+        } catch {}
+      }
       if (analysis.keywords) {
         try {
           const kw = JSON.parse(analysis.keywords);
           if (kw.core) parts.push(`  Core Keywords: ${kw.core.map((k: any) => k.keyword || k).join(", ")}`);
+          if (kw.longTail) parts.push(`  Long-tail Keywords: ${kw.longTail.map((k: any) => k.keyword || k).slice(0, 10).join(", ")}`);
+          if (kw.traffic) parts.push(`  Traffic Keywords: ${kw.traffic.map((k: any) => k.keyword || k).slice(0, 10).join(", ")}`);
+        } catch {}
+      }
+      if (analysis.bulletPoints) {
+        try {
+          const bps = JSON.parse(analysis.bulletPoints);
+          if (Array.isArray(bps) && bps.length > 0) {
+            parts.push(`  Bullet Points:`);
+            bps.forEach((bp: string, i: number) => parts.push(`    ${i + 1}. ${bp}`));
+          }
         } catch {}
       }
     }
@@ -444,30 +484,37 @@ function buildProductContext(project: any, analyses: any[], enrichedData?: {
   }
 
   // ─── Module 3: COSMO Scene Mapping (关键词模块场景打标) ───────
-  // Data source: keyword module AI scene tags
+  // Data source: keyword module AI scene tags with search volume weights
   if (enrichedData?.keywordSceneTags) {
     const scenes = enrichedData.keywordSceneTags;
     parts.push("\n--- [Module 3] COSMO Scene Mapping (关键词场景打标结果) ---");
 
     if (scenes.sceneGroups && Object.keys(scenes.sceneGroups).length > 0) {
-      parts.push("Scene Groups (from keyword AI scene tagging):");
+      parts.push("Scene Groups (sorted by total search volume):");
+      // Sort by total search volume instead of keyword count
       const sortedScenes = Object.entries(scenes.sceneGroups)
-        .sort(([, a]: any, [, b]: any) => (b as string[]).length - (a as string[]).length)
+        .sort(([a], [b]) => (scenes.sceneVolumes?.[b] || 0) - (scenes.sceneVolumes?.[a] || 0))
         .slice(0, 10);
       sortedScenes.forEach(([scene, kws]: [string, any]) => {
-        parts.push(`  - ${scene} (${(kws as string[]).length} keywords): ${(kws as string[]).slice(0, 5).join(", ")}${(kws as string[]).length > 5 ? ` (+${(kws as string[]).length - 5} more)` : ""}`);
+        const vol = scenes.sceneVolumes?.[scene] || 0;
+        const volStr = vol > 0 ? `, total volume: ${vol.toLocaleString()}` : "";
+        parts.push(`  - ${scene} (${(kws as string[]).length} keywords${volStr}): ${(kws as string[]).slice(0, 5).join(", ")}${(kws as string[]).length > 5 ? ` (+${(kws as string[]).length - 5} more)` : ""}`);
       });
     }
 
     if (scenes.intentGroups && Object.keys(scenes.intentGroups).length > 0) {
-      parts.push("Purchase Intent Groups:");
-      Object.entries(scenes.intentGroups).forEach(([intent, kws]: [string, any]) => {
-        parts.push(`  - ${intent}: ${(kws as string[]).slice(0, 5).join(", ")}`);
+      parts.push("Purchase Intent Groups (sorted by total search volume):");
+      const sortedIntents = Object.entries(scenes.intentGroups)
+        .sort(([a], [b]) => (scenes.intentVolumes?.[b] || 0) - (scenes.intentVolumes?.[a] || 0));
+      sortedIntents.forEach(([intent, kws]: [string, any]) => {
+        const vol = scenes.intentVolumes?.[intent] || 0;
+        const volStr = vol > 0 ? ` [volume: ${vol.toLocaleString()}]` : "";
+        parts.push(`  - ${intent}${volStr}: ${(kws as string[]).slice(0, 5).join(", ")}`);
       });
     }
 
     if (scenes.topScenes?.length) {
-      parts.push(`Top Scenes by Keyword Volume: ${scenes.topScenes.join(", ")}`);
+      parts.push(`Top Scenes by Search Volume: ${scenes.topScenes.join(", ")}`);
     }
   }
 
@@ -477,7 +524,7 @@ function buildProductContext(project: any, analyses: any[], enrichedData?: {
     const matrix = enrichedData.keywordStrategyMatrix;
     parts.push("\n--- [Module 4] A9 Keyword Grading (关键词3D策略矩阵 + Listing布局建议) ---");
 
-    // Strategy categories
+    // Strategy categories with search volume and SPR data
     if (matrix.strategyGroups) {
       const categoryLabels: Record<string, string> = {
         core_main: "核心主词 (Core Main)",
@@ -491,12 +538,22 @@ function buildProductContext(project: any, analyses: any[], enrichedData?: {
       for (const [cat, label] of Object.entries(categoryLabels)) {
         const kws = matrix.strategyGroups[cat];
         if (kws?.length) {
-          parts.push(`${label}: ${kws.slice(0, 10).join(", ")}${kws.length > 10 ? ` (+${kws.length - 10} more)` : ""}`);
+          // Show keywords with volume and SPR data
+          const kwDetails = kws.slice(0, 10).map((kw: any) => {
+            if (typeof kw === "string") return kw;
+            const metrics: string[] = [];
+            if (kw.vol > 0) metrics.push(`vol:${kw.vol.toLocaleString()}`);
+            if (kw.spr) metrics.push(`SPR:${kw.spr}`);
+            return metrics.length > 0 ? `${kw.keyword}(${metrics.join(",")})` : kw.keyword;
+          });
+          const totalVol = kws.reduce((sum: number, kw: any) => sum + (typeof kw === "string" ? 0 : kw.vol || 0), 0);
+          const volSuffix = totalVol > 0 ? ` [total volume: ${totalVol.toLocaleString()}]` : "";
+          parts.push(`${label}${volSuffix}: ${kwDetails.join(", ")}${kws.length > 10 ? ` (+${kws.length - 10} more)` : ""}`);
         }
       }
     }
 
-    // Listing placement suggestions
+    // Listing placement suggestions with search volume data
     if (matrix.placementGroups) {
       const placementLabels: Record<string, string> = {
         title_front: "Title Front Keywords",
@@ -505,15 +562,19 @@ function buildProductContext(project: any, analyses: any[], enrichedData?: {
         bullet_first: "Bullet First-line Keywords",
         bullet_body: "Bullet Body Keywords",
         aplus: "A+ Content Keywords",
-        backend: "Backend Search Terms",
-        ppc_only: "PPC-Only Keywords",
+        search_term: "Backend Search Terms",
+        not_use: "Do Not Use Keywords",
       };
 
-      parts.push("\nListing Keyword Placement Strategy:");
+      parts.push("\nListing Keyword Placement Strategy (sorted by search volume):");
       for (const [placement, label] of Object.entries(placementLabels)) {
         const kws = matrix.placementGroups[placement];
         if (kws?.length) {
-          parts.push(`  ${label}: ${kws.slice(0, 8).join(", ")}${kws.length > 8 ? ` (+${kws.length - 8} more)` : ""}`);
+          const kwDetails = kws.slice(0, 8).map((kw: any) => {
+            if (typeof kw === "string") return kw;
+            return kw.vol > 0 ? `${kw.keyword}(${kw.vol.toLocaleString()})` : kw.keyword;
+          });
+          parts.push(`  ${label}: ${kwDetails.join(", ")}${kws.length > 8 ? ` (+${kws.length - 8} more)` : ""}`);
         }
       }
     }
@@ -571,10 +632,13 @@ async function loadEnrichedData(projectId: number) {
   // Module 3 & 4: Load keyword module data (scene tags + strategy matrix + placement)
   const allKeywords = await db.getKeywordsByProject(projectId);
   if (allKeywords.length > 0) {
-    // Build scene tag groups
+    // Build scene tag groups with volume-weighted sorting
     const sceneGroups: Record<string, string[]> = {};
+    const sceneVolumes: Record<string, number> = {}; // total search volume per scene
     const intentGroups: Record<string, string[]> = {};
+    const intentVolumes: Record<string, number> = {};
     for (const kw of allKeywords) {
+      const vol = kw.monthlySearchVolume || 0;
       if (kw.sceneTags) {
         try {
           const tags = JSON.parse(kw.sceneTags);
@@ -582,6 +646,7 @@ async function loadEnrichedData(projectId: number) {
             tags.forEach((tag: string) => {
               if (!sceneGroups[tag]) sceneGroups[tag] = [];
               sceneGroups[tag].push(kw.keyword);
+              sceneVolumes[tag] = (sceneVolumes[tag] || 0) + vol;
             });
           }
         } catch {}
@@ -589,34 +654,52 @@ async function loadEnrichedData(projectId: number) {
       if (kw.intentTag) {
         if (!intentGroups[kw.intentTag]) intentGroups[kw.intentTag] = [];
         intentGroups[kw.intentTag].push(kw.keyword);
+        intentVolumes[kw.intentTag] = (intentVolumes[kw.intentTag] || 0) + vol;
       }
     }
-    const topScenes = Object.entries(sceneGroups)
-      .sort(([, a], [, b]) => b.length - a.length)
+    // Sort scenes by total search volume (descending)
+    const topScenes = Object.entries(sceneVolumes)
+      .sort(([, a], [, b]) => b - a)
       .slice(0, 8)
       .map(([scene]) => scene);
 
     if (Object.keys(sceneGroups).length > 0 || Object.keys(intentGroups).length > 0) {
-      result.keywordSceneTags = { sceneGroups, intentGroups, topScenes };
+      result.keywordSceneTags = { sceneGroups, sceneVolumes, intentGroups, intentVolumes, topScenes };
     }
 
-    // Build strategy matrix groups and placement groups
-    const strategyGroups: Record<string, string[]> = {};
-    const placementGroups: Record<string, string[]> = {};
+    // Build strategy matrix groups and placement groups with search volume + SPR data
+    type KwWithMetrics = { keyword: string; vol: number; spr: number | null; traffic: string; competition: string };
+    const strategyGroups: Record<string, KwWithMetrics[]> = {};
+    const placementGroups: Record<string, KwWithMetrics[]> = {};
     const rootGroups: Record<string, string[]> = {};
     for (const kw of allKeywords) {
+      const kwData: KwWithMetrics = {
+        keyword: kw.keyword,
+        vol: kw.monthlySearchVolume || 0,
+        spr: kw.spr || null,
+        traffic: kw.trafficLevel || "medium",
+        competition: kw.competition || "medium",
+      };
       if (kw.strategyCategory && kw.strategyCategory !== "negative") {
         if (!strategyGroups[kw.strategyCategory]) strategyGroups[kw.strategyCategory] = [];
-        strategyGroups[kw.strategyCategory].push(kw.keyword);
+        strategyGroups[kw.strategyCategory].push(kwData);
       }
       if (kw.listingPlacement) {
         if (!placementGroups[kw.listingPlacement]) placementGroups[kw.listingPlacement] = [];
-        placementGroups[kw.listingPlacement].push(kw.keyword);
+        placementGroups[kw.listingPlacement].push(kwData);
       }
       if (kw.rootCategory) {
         if (!rootGroups[kw.rootCategory]) rootGroups[kw.rootCategory] = [];
         rootGroups[kw.rootCategory].push(kw.keyword);
       }
+    }
+
+    // Sort keywords within each group by search volume (descending)
+    for (const key of Object.keys(strategyGroups)) {
+      strategyGroups[key].sort((a, b) => b.vol - a.vol);
+    }
+    for (const key of Object.keys(placementGroups)) {
+      placementGroups[key].sort((a, b) => b.vol - a.vol);
     }
 
     if (Object.keys(strategyGroups).length > 0 || Object.keys(placementGroups).length > 0) {

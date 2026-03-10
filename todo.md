@@ -246,3 +246,8 @@
 - [x] Change: Listing generation - A9 keyword grading should reference 3D strategy matrix and Listing placement suggestions
 - [x] Change: Listing export report - Update four analysis modules to display referenced data
 - [x] Unit tests for referenced analysis data in listing generation (12 new tests, 382 total passing)
+- [x] Change: Listing AI prompt - Inject real competitor analysis data (from competitorAnalyses table) into generation prompt
+- [x] Change: Listing AI prompt - Inject keyword scene tags (COSMO) into generation prompt
+- [x] Change: Listing AI prompt - Inject 3D strategy matrix and listing placement suggestions into generation prompt
+- [x] Change: Listing AI prompt - Replace file-only data sources with combined file + module data
+- [x] Unit tests for listing prompt with real module data injection (12 new tests, 394 total passing)
