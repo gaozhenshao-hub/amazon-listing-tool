@@ -172,3 +172,51 @@ Respond in JSON format:
   "doNotUse": ["negative kw1", "negative kw2"],
   "overallStrategy": "Brief overall keyword strategy summary"
 }`;
+
+export const KEYWORD_TRAFFIC_COMPETITION_CLASSIFY_PROMPT = `You are an Amazon keyword data analyst. Given a batch of keywords with their monthly search volume and SPR (Sponsored Products Rank) data, intelligently classify each keyword's traffic level and competition level based on the OVERALL DATA DISTRIBUTION of this specific dataset.
+
+IMPORTANT: Do NOT use fixed thresholds. Instead, analyze the entire dataset's distribution (percentiles, median, mean, spread) and determine appropriate cutoff points for this specific product niche. Different niches have vastly different search volume and SPR ranges.
+
+Product Info:
+{productContext}
+
+Keywords data (format: keyword | monthly_search_volume | SPR):
+{keywordsData}
+
+CLASSIFICATION RULES:
+
+1. Traffic Level (based on monthly search volume distribution):
+   - "high": Top tier keywords in this dataset (roughly top 20-30% by search volume)
+   - "medium": Middle tier keywords (roughly middle 40-50%)
+   - "low": Bottom tier keywords (roughly bottom 20-30%)
+   - If a keyword has no search volume data, classify as "medium" by default
+
+2. Competition Level (based on SPR distribution):
+   - "low": Keywords that are easier to rank for (lower SPR relative to this dataset)
+   - "medium": Keywords with moderate ranking difficulty
+   - "high": Keywords that are hardest to rank for (higher SPR relative to this dataset)
+   - If a keyword has no SPR data, classify as "medium" by default
+
+3. Also provide the thresholds you determined:
+   - trafficThresholds: { highMin, mediumMin } (search volume cutoffs)
+   - competitionThresholds: { lowMax, mediumMax } (SPR cutoffs)
+
+CRITICAL RULE: The "keyword" field in your response MUST contain the exact original English keyword as provided in the input. Do NOT translate, modify, or rewrite any keyword.
+
+Respond in JSON format:
+{
+  "analysis": {
+    "totalKeywords": number,
+    "searchVolumeRange": { "min": number, "max": number, "median": number },
+    "sprRange": { "min": number, "max": number, "median": number },
+    "trafficThresholds": { "highMin": number, "mediumMin": number },
+    "competitionThresholds": { "lowMax": number, "mediumMax": number }
+  },
+  "results": [
+    {
+      "keyword": "the exact original English keyword",
+      "trafficLevel": "high|medium|low",
+      "competition": "high|medium|low"
+    }
+  ]
+}`;

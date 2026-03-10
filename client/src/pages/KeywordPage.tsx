@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import {
   Upload, Plus, Trash2, Filter, Tag, GitBranch, LayoutGrid, Ban,
   Play, Search, Download, RefreshCw, Zap, FileText, ChevronDown,
-  ChevronUp, ArrowUpDown, Loader2, X, AlertTriangle, Edit2, CheckCircle2, Copy
+  ChevronUp, ArrowUpDown, Loader2, X, AlertTriangle, Edit2, CheckCircle2, Copy, BarChart3
 } from "lucide-react";
 
 // Strategy category labels
@@ -695,6 +695,16 @@ function PipelineTab({ projectId }: { projectId: number }) {
   const [pipelineStep, setPipelineStep] = useState<string | null>(null);
   const utils = trpc.useUtils();
 
+  const trafficCompMut = trpc.keyword.aiClassifyTrafficCompetition.useMutation({
+    onSuccess: (data) => {
+      const msg = data.thresholds
+        ? `流量/竞争度智能分类完成：${data.classified}个关键词（流量阈值: ≥${data.thresholds.trafficThresholds?.highMin}高/≥${data.thresholds.trafficThresholds?.mediumMin}中，SPR阈值: ≤${data.thresholds.competitionThresholds?.lowMax}低/≤${data.thresholds.competitionThresholds?.mediumMax}中）`
+        : `流量/竞争度分类完成：${data.classified}个关键词`;
+      toast.success(msg);
+      utils.keyword.list.invalidate(); utils.keyword.stats.invalidate(); setPipelineStep(null);
+    },
+    onError: (err) => { toast.error(err.message); setPipelineStep(null); },
+  });
   const filterMut = trpc.keyword.aiSemanticFilter.useMutation({
     onSuccess: (data) => { toast.success(`语义过滤完成：保留${data.kept}个，移除${data.removed}个`); utils.keyword.list.invalidate(); utils.keyword.stats.invalidate(); setPipelineStep(null); },
     onError: (err) => { toast.error(err.message); setPipelineStep(null); },
@@ -713,15 +723,16 @@ function PipelineTab({ projectId }: { projectId: number }) {
   });
   const fullPipelineMut = trpc.keyword.runFullPipeline.useMutation({
     onSuccess: (data) => {
-      toast.success(`全流程完成！过滤保留${data.filter.kept}/移除${data.filter.removed}，场景打标${data.tag.tagged}，词根分类${data.classify.classified}，策略矩阵${data.matrix.categorized}`);
+      toast.success(`全流程完成！流量/竞争度分类${data.trafficCompetition.classified}，过滤保留${data.filter.kept}/移除${data.filter.removed}，场景打标${data.tag.tagged}，词根分类${data.classify.classified}，策略矩阵${data.matrix.categorized}`);
       utils.keyword.list.invalidate(); utils.keyword.stats.invalidate(); setPipelineStep(null);
     },
     onError: (err) => { toast.error(err.message); setPipelineStep(null); },
   });
 
-  const isRunning = filterMut.isPending || tagMut.isPending || classifyMut.isPending || matrixMut.isPending || fullPipelineMut.isPending;
+  const isRunning = trafficCompMut.isPending || filterMut.isPending || tagMut.isPending || classifyMut.isPending || matrixMut.isPending || fullPipelineMut.isPending;
 
   const steps = [
+    { id: "trafficComp", title: "Step 0: 流量/竞争度智能分类", desc: "AI根据整体数据分布自动划分流量等级（月搜索量）和竞争度（SPR）", icon: BarChart3, action: () => { setPipelineStep("trafficComp"); trafficCompMut.mutate({ projectId }); } },
     { id: "filter", title: "Step 1: AI语义过滤", desc: "移除无购买意图、纯泛词、品牌词等无效关键词", icon: Filter, action: () => { setPipelineStep("filter"); filterMut.mutate({ projectId }); } },
     { id: "tag", title: "Step 2: COSMO场景打标", desc: "为每个关键词分配使用场景和购买意图标签", icon: Tag, action: () => { setPipelineStep("tag"); tagMut.mutate({ projectId }); } },
     { id: "classify", title: "Step 3: 词根分类", desc: "将关键词分为7类词根（核心/功能/场景/人群/规格/痛点/节日）", icon: GitBranch, action: () => { setPipelineStep("classify"); classifyMut.mutate({ projectId }); } },
@@ -734,7 +745,7 @@ function PipelineTab({ projectId }: { projectId: number }) {
       <Card className="border-primary/30">
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Zap className="h-5 w-5 text-primary" />一键全流程分析</CardTitle>
-          <CardDescription>依次执行：语义过滤 → 场景打标 → 词根分类 → 策略矩阵，自动完成所有AI分析步骤</CardDescription>
+          <CardDescription>依次执行：流量/竞争度智能分类 → 语义过滤 → 场景打标 → 词根分类 → 策略矩阵，自动完成所有AI分析步骤</CardDescription>
         </CardHeader>
         <CardContent>
           <Button size="lg" onClick={() => { setPipelineStep("full"); fullPipelineMut.mutate({ projectId }); }} disabled={isRunning}>

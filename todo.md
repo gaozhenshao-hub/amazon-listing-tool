@@ -238,3 +238,6 @@
 - [x] Change: Review import - Auto-match extracted ASINs to existing competitor analyses
 - [x] Change: Review import - Simplify frontend UI (just upload file, no ASIN field)
 - [x] Unit tests for updated review import auto-ASIN matching (9 new tests, 357 total passing)
+- [x] Change: Traffic level classification - Replace fixed thresholds with AI-based smart classification (高/中/低) based on overall monthly search volume distribution
+- [x] Change: Competition level classification - Replace fixed thresholds with AI-based smart classification (低/中/高) based on overall SPR distribution
+- [x] Unit tests for AI-based traffic and competition classification (12 new tests, 370 total passing)

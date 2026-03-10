@@ -15,6 +15,7 @@ import {
   KEYWORD_ROOT_CLASSIFY_PROMPT,
   KEYWORD_STRATEGY_MATRIX_PROMPT,
   KEYWORD_LISTING_LAYOUT_PROMPT,
+  KEYWORD_TRAFFIC_COMPETITION_CLASSIFY_PROMPT,
 } from "../keywordPrompts";
 import { parse } from "csv-parse/sync";
 import * as XLSX from "xlsx";
@@ -190,21 +191,10 @@ export const keywordRouter = router({
         const naturalRank = parseInt(getColumnValue(row, colMap.naturalRank) || "0") || undefined;
         const trafficScore = parseInt(getColumnValue(row, colMap.trafficScore) || "0") || undefined;
 
-        // Auto-determine traffic level from search volume
-        let trafficLevel: "high" | "medium" | "low" = "medium";
-        if (monthlySearchVolume) {
-          if (monthlySearchVolume >= 10000) trafficLevel = "high";
-          else if (monthlySearchVolume >= 1000) trafficLevel = "medium";
-          else trafficLevel = "low";
-        }
-
-        // Auto-determine competition from SPR
-        let competition: "high" | "medium" | "low" = "medium";
-        if (spr) {
-          if (spr < 30) competition = "low";
-          else if (spr < 100) competition = "medium";
-          else competition = "high";
-        }
+        // Traffic level and competition will be set by AI classification after import
+        // Set temporary defaults here - they will be overwritten by aiClassifyTrafficCompetition
+        const trafficLevel: "high" | "medium" | "low" = "medium";
+        const competition: "high" | "medium" | "low" = "medium";
 
         // Detect relevance from CSV if available
         let relevance: "high" | "medium" | "low" | "none" = "medium";
@@ -287,16 +277,11 @@ export const keywordRouter = router({
           // Update search volume if new data has a value and existing is 0 or null
           if (kw.monthlySearchVolume && (!existing.monthlySearchVolume || existing.monthlySearchVolume === 0)) {
             updateData.monthlySearchVolume = kw.monthlySearchVolume;
-            // Also update derived fields
-            if (kw.monthlySearchVolume >= 10000) updateData.trafficLevel = "high";
-            else if (kw.monthlySearchVolume >= 1000) updateData.trafficLevel = "medium";
-            else updateData.trafficLevel = "low";
+            // Traffic level and competition will be reclassified by AI after import
           }
           if (kw.spr && (!existing.spr || existing.spr === 0)) {
             updateData.spr = kw.spr;
-            if (kw.spr < 30) updateData.competition = "low";
-            else if (kw.spr < 100) updateData.competition = "medium";
-            else updateData.competition = "high";
+            // Competition will be reclassified by AI after import
           }
           if (Object.keys(updateData).length > 0) {
             mergedKeywords.push({ id: existing.id, data: updateData });
@@ -673,11 +658,12 @@ export const keywordRouter = router({
     }),
 
   // ─── Run Full Pipeline ──────────────────────────────────────
-  // Runs all AI steps sequentially: filter → tag → classify → matrix
+  // Runs all AI steps sequentially: traffic/competition classify → filter → tag → classify → matrix
   // Returns a summary of each step's results
   runFullPipeline: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }): Promise<{
+      trafficCompetition: { classified: number; thresholds: any };
       filter: { filtered: number; kept: number; removed: number };
       tag: { tagged: number };
       classify: { classified: number };
@@ -689,6 +675,31 @@ export const keywordRouter = router({
 
       const allKeywords = await getKeywordsByProject(projectId);
       const productContext = buildProductContext(project);
+
+      // Step 0: AI Traffic & Competition Classification
+      let tcClassified = 0;
+      let tcThresholds: any = null;
+      const kwsWithData = allKeywords.filter(k => k.isNegative === 0 && ((k.monthlySearchVolume && k.monthlySearchVolume > 0) || (k.spr && k.spr > 0)));
+      if (kwsWithData.length > 0) {
+        const tcChunks = chunkArray(kwsWithData, 50);
+        for (const chunk of tcChunks) {
+          const kwData = chunk.map(k => `${k.keyword} | ${k.monthlySearchVolume || "N/A"} | ${k.spr || "N/A"}`).join("\n");
+          const prompt = KEYWORD_TRAFFIC_COMPETITION_CLASSIFY_PROMPT.replace("{productContext}", productContext).replace("{keywordsData}", kwData);
+          try {
+            const resp = await invokeLLM({ messages: [{ role: "system", content: "You are an Amazon keyword data analyst. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
+            const parsed = JSON.parse(String(resp.choices?.[0]?.message?.content || "{}"));
+            if (parsed.analysis) tcThresholds = parsed.analysis;
+            for (const r of (parsed.results || [])) {
+              const kw = chunk.find(k => k.keyword.toLowerCase() === r.keyword?.toLowerCase());
+              if (!kw) continue;
+              const upd: any = {};
+              if (r.trafficLevel && ["high", "medium", "low"].includes(r.trafficLevel)) upd.trafficLevel = r.trafficLevel;
+              if (r.competition && ["high", "medium", "low"].includes(r.competition)) upd.competition = r.competition;
+              if (Object.keys(upd).length > 0) { await updateKeyword(kw.id, upd); tcClassified++; }
+            }
+          } catch (e) { console.error("Pipeline traffic/competition classify error:", e); }
+        }
+      }
 
       // Step 1: AI Semantic Filter
       let kept = 0, removed = 0;
@@ -779,6 +790,7 @@ export const keywordRouter = router({
       }
 
       return {
+        trafficCompetition: { classified: tcClassified, thresholds: tcThresholds },
         filter: { filtered: rawKws.length, kept, removed },
         tag: { tagged },
         classify: { classified },
@@ -866,6 +878,94 @@ export const keywordRouter = router({
     }))
     .mutation(async ({ input }) => {
       return bulkUpdateKeywords(input.ids, input.data);
+    }),
+
+  // ─── AI Traffic & Competition Classification ──────────────
+  // Uses AI to intelligently classify traffic level and competition
+  // based on the overall data distribution (not fixed thresholds)
+  aiClassifyTrafficCompetition: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      keywordIds: z.array(z.number()).optional(), // if empty, classify all keywords
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { projectId, keywordIds } = input;
+      const project = await getProjectById(projectId, ctx.user!.id);
+      if (!project) throw new Error("项目不存在");
+
+      const allKeywords = await getKeywordsByProject(projectId);
+      const toClassify = keywordIds
+        ? allKeywords.filter(k => keywordIds.includes(k.id))
+        : allKeywords.filter(k => k.isNegative === 0);
+
+      if (toClassify.length === 0) return { classified: 0, thresholds: null };
+
+      // Collect all search volumes and SPRs for distribution analysis
+      const searchVolumes = toClassify
+        .map(k => k.monthlySearchVolume)
+        .filter((v): v is number => v != null && v > 0);
+      const sprs = toClassify
+        .map(k => k.spr)
+        .filter((v): v is number => v != null && v > 0);
+
+      // If no numeric data at all, skip AI and keep defaults
+      if (searchVolumes.length === 0 && sprs.length === 0) {
+        return { classified: 0, thresholds: null, reason: "No search volume or SPR data available" };
+      }
+
+      const productContext = buildProductContext(project);
+      const chunks = chunkArray(toClassify, 50);
+      let classified = 0;
+      let thresholds: any = null;
+
+      for (const chunk of chunks) {
+        const kwData = chunk.map(k =>
+          `${k.keyword} | ${k.monthlySearchVolume || "N/A"} | ${k.spr || "N/A"}`
+        ).join("\n");
+
+        const prompt = KEYWORD_TRAFFIC_COMPETITION_CLASSIFY_PROMPT
+          .replace("{productContext}", productContext)
+          .replace("{keywordsData}", kwData);
+
+        try {
+          const response = await invokeLLM({
+            messages: [
+              { role: "system", content: "You are an Amazon keyword data analyst. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." },
+              { role: "user", content: prompt },
+            ],
+            response_format: { type: "json_object" },
+          });
+
+          const content = String(response.choices?.[0]?.message?.content || "{}");
+          const parsed = JSON.parse(content);
+
+          if (parsed.analysis) {
+            thresholds = parsed.analysis;
+          }
+
+          for (const result of (parsed.results || [])) {
+            const kw = chunk.find(k => k.keyword.toLowerCase() === result.keyword?.toLowerCase());
+            if (!kw) continue;
+
+            const updateData: any = {};
+            if (result.trafficLevel && ["high", "medium", "low"].includes(result.trafficLevel)) {
+              updateData.trafficLevel = result.trafficLevel;
+            }
+            if (result.competition && ["high", "medium", "low"].includes(result.competition)) {
+              updateData.competition = result.competition;
+            }
+
+            if (Object.keys(updateData).length > 0) {
+              await updateKeyword(kw.id, updateData);
+              classified++;
+            }
+          }
+        } catch (e) {
+          console.error("AI traffic/competition classify error:", e);
+        }
+      }
+
+      return { classified, thresholds };
     }),
 });
 
