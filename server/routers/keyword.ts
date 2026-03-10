@@ -289,7 +289,7 @@ export const keywordRouter = router({
         try {
           const response = await invokeLLM({
             messages: [
-              { role: "system", content: "You are an Amazon keyword specialist. Respond only in valid JSON." },
+              { role: "system", content: "You are an Amazon keyword specialist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." },
               { role: "user", content: prompt },
             ],
             response_format: { type: "json_object" },
@@ -368,7 +368,7 @@ export const keywordRouter = router({
         try {
           const response = await invokeLLM({
             messages: [
-              { role: "system", content: "You are an Amazon COSMO algorithm specialist. Respond only in valid JSON." },
+              { role: "system", content: "You are an Amazon COSMO algorithm specialist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." },
               { role: "user", content: prompt },
             ],
             response_format: { type: "json_object" },
@@ -429,7 +429,7 @@ export const keywordRouter = router({
         try {
           const response = await invokeLLM({
             messages: [
-              { role: "system", content: "You are an Amazon SEO expert. Respond only in valid JSON." },
+              { role: "system", content: "You are an Amazon SEO expert. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." },
               { role: "user", content: prompt },
             ],
             response_format: { type: "json_object" },
@@ -493,7 +493,7 @@ export const keywordRouter = router({
         try {
           const response = await invokeLLM({
             messages: [
-              { role: "system", content: "You are an Amazon advertising strategist. Respond only in valid JSON." },
+              { role: "system", content: "You are an Amazon advertising strategist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." },
               { role: "user", content: prompt },
             ],
             response_format: { type: "json_object" },
@@ -583,7 +583,7 @@ export const keywordRouter = router({
 
       const response = await invokeLLM({
         messages: [
-          { role: "system", content: "You are an Amazon Listing optimization expert. Respond only in valid JSON." },
+          { role: "system", content: "You are an Amazon Listing optimization expert. Respond only in valid JSON. CRITICAL: All keyword fields must contain the exact original English keywords from the input. Never translate keywords." },
           { role: "user", content: prompt },
         ],
         response_format: { type: "json_object" },
@@ -619,7 +619,7 @@ export const keywordRouter = router({
         const kwList = chunk.map(k => k.keyword).join("\n");
         const prompt = KEYWORD_SEMANTIC_FILTER_PROMPT.replace("{productContext}", productContext).replace("{keywords}", kwList);
         try {
-          const resp = await invokeLLM({ messages: [{ role: "system", content: "You are an Amazon keyword specialist. Respond only in valid JSON." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
+          const resp = await invokeLLM({ messages: [{ role: "system", content: "You are an Amazon keyword specialist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
           const parsed = JSON.parse(String(resp.choices?.[0]?.message?.content || "{}"));
           for (const r of (parsed.results || [])) {
             const kw = chunk.find(k => k.keyword.toLowerCase() === r.keyword?.toLowerCase());
@@ -644,7 +644,7 @@ export const keywordRouter = router({
         const kwList = chunk.map(k => k.keyword).join("\n");
         const prompt = KEYWORD_SCENE_TAG_PROMPT.replace("{productContext}", productContext).replace("{keywords}", kwList);
         try {
-          const resp = await invokeLLM({ messages: [{ role: "system", content: "You are an Amazon COSMO algorithm specialist. Respond only in valid JSON." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
+          const resp = await invokeLLM({ messages: [{ role: "system", content: "You are an Amazon COSMO algorithm specialist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
           const parsed = JSON.parse(String(resp.choices?.[0]?.message?.content || "{}"));
           for (const r of (parsed.results || [])) {
             const kw = chunk.find(k => k.keyword.toLowerCase() === r.keyword?.toLowerCase());
@@ -663,7 +663,7 @@ export const keywordRouter = router({
         const kwList = chunk.map(k => k.keyword).join("\n");
         const prompt = KEYWORD_ROOT_CLASSIFY_PROMPT.replace("{productContext}", productContext).replace("{keywords}", kwList);
         try {
-          const resp = await invokeLLM({ messages: [{ role: "system", content: "You are an Amazon SEO expert. Respond only in valid JSON." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
+          const resp = await invokeLLM({ messages: [{ role: "system", content: "You are an Amazon SEO expert. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
           const parsed = JSON.parse(String(resp.choices?.[0]?.message?.content || "{}"));
           for (const r of (parsed.results || [])) {
             const kw = chunk.find(k => k.keyword.toLowerCase() === r.keyword?.toLowerCase());
@@ -682,7 +682,7 @@ export const keywordRouter = router({
         const kwList = chunk.map(k => `${k.keyword} | traffic: ${k.trafficLevel} | relevance: ${k.relevance} | competition: ${k.competition} | SPR: ${k.spr || "N/A"} | monthly_search: ${k.monthlySearchVolume || "N/A"}`).join("\n");
         const prompt = KEYWORD_STRATEGY_MATRIX_PROMPT.replace("{productContext}", productContext).replace("{keywords}", kwList);
         try {
-          const resp = await invokeLLM({ messages: [{ role: "system", content: "You are an Amazon advertising strategist. Respond only in valid JSON." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
+          const resp = await invokeLLM({ messages: [{ role: "system", content: "You are an Amazon advertising strategist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." }, { role: "user", content: prompt }], response_format: { type: "json_object" } });
           const parsed = JSON.parse(String(resp.choices?.[0]?.message?.content || "{}"));
           for (const r of (parsed.results || [])) {
             const kw = chunk.find(k => k.keyword.toLowerCase() === r.keyword?.toLowerCase());

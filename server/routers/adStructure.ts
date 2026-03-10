@@ -154,7 +154,7 @@ export const adStructureRouter = router({
 
         const response = await invokeLLM({
           messages: [
-            { role: "system", content: "你是一位资深亚马逊PPC广告专家，擅长设计广告架构和关键词投放策略。请严格按照JSON格式输出。" },
+            { role: "system", content: "你是一位资深亚马逊PPC广告专家，擅长设计广告架构和关键词投放策略。请严格按照JSON格式输出。所有keyword字段和negativeKeywords字段必须保留英文原文，严禁翻译成中文。" },
             { role: "user", content: prompt },
           ],
         });

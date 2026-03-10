@@ -15,11 +15,13 @@ REMOVAL RULES:
 4. Remove keywords for completely different product categories
 5. Remove misspellings that lead to wrong products
 
+CRITICAL RULE: The "keyword" field in your response MUST contain the exact original English keyword as provided in the input. Do NOT translate, modify, or rewrite any keyword.
+
 For each keyword, respond in JSON format:
 {
   "results": [
     {
-      "keyword": "the keyword",
+      "keyword": "the exact original English keyword",
       "action": "keep" | "remove",
       "reason": "brief reason",
       "relevance": "high" | "medium" | "low"
@@ -36,16 +38,18 @@ Keywords to tag:
 {keywords}
 
 TAG RULES:
-1. Scene tags should describe real usage scenarios (e.g., "送礼", "户外旅行", "办公桌面", "儿童适用", "家庭聚会", "健身运动")
+1. Scene tags should describe real usage scenarios in English (e.g., "gift giving", "outdoor travel", "office desk", "kids friendly", "family gathering", "fitness workout")
 2. Intent tags should describe purchase intent (e.g., "replacement", "upgrade", "first_purchase", "gift_giving", "bulk_buy")
 3. Each keyword can have multiple scene tags
 4. Be specific - avoid overly generic tags
+
+CRITICAL RULE: The "keyword" field in your response MUST contain the exact original English keyword as provided in the input. Do NOT translate, modify, or rewrite any keyword.
 
 Respond in JSON format:
 {
   "results": [
     {
-      "keyword": "the keyword",
+      "keyword": "the exact original English keyword",
       "sceneTags": ["tag1", "tag2"],
       "intentTag": "intent description"
     }
@@ -74,12 +78,14 @@ IMPACT LEVELS:
 - "medium": Supports main keywords, good for bullet points
 - "low": Nice to have, suitable for backend search terms
 
+CRITICAL RULE: The "keyword" field in your response MUST contain the exact original English keyword as provided in the input. Do NOT translate, modify, or rewrite any keyword. The "rootWord" should also be in English.
+
 Respond in JSON format:
 {
   "results": [
     {
-      "keyword": "the keyword",
-      "rootWord": "extracted root word",
+      "keyword": "the exact original English keyword",
+      "rootWord": "extracted root word in English",
       "rootCategory": "core|function|scene|audience|spec|painpoint|gift_holiday",
       "rootImpact": "high|medium|low"
     }
@@ -113,11 +119,13 @@ LISTING PLACEMENT:
 - "search_term": 后台 Search Term (for longtail_main)
 - "not_use": 绝对不使用 (for negative)
 
+CRITICAL RULE: The "keyword" field in your response MUST contain the exact original English keyword as provided in the input. Do NOT translate, modify, or rewrite any keyword.
+
 Respond in JSON format:
 {
   "results": [
     {
-      "keyword": "the keyword",
+      "keyword": "the exact original English keyword",
       "strategyCategory": "core_main|sub_core|precise_longtail|scene_intent|longtail_main|observe_test|negative",
       "listingPlacement": "title_front|title_mid|title_end|bullet_first|bullet_body|aplus|search_term|not_use",
       "adStrategy": "brief ad strategy suggestion",

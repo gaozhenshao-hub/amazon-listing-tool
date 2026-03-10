@@ -221,3 +221,6 @@
 - [x] Feature: Version history - Frontend version history panel on PreviewPage
 - [x] Feature: Version history - Version comparison and one-click rollback UI
 - [x] Unit tests for Bulk Sheet export and version history features (12 new tests, 324 total passing)
+- [x] Bug fix: Keywords in keyword management should not be translated to Chinese - keep original English
+- [x] Bug fix: Keywords in ad structure should not be translated to Chinese - keep original English
+- [x] Bug fix: Ensure AI prompts do not translate keyword text, only generate structure around them

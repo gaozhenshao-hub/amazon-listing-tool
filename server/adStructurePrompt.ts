@@ -28,12 +28,19 @@ export const AD_STRUCTURE_PROMPT = `你是一位拥有10年经验的亚马逊PPC
 - **Phrase（词组匹配）**：包含词组，平衡流量和精准度
 - **Broad（广泛匹配）**：最大流量覆盖，用于拓词和测试
 
+### ⚠️ 关键词语言规则（最高优先级）：
+- **所有keyword字段必须使用英文原文**，严禁将英文关键词翻译成中文
+- 从"已有关键词数据"中选取的关键词必须原样保留，不做任何翻译或改写
+- negativeKeywords也必须使用英文原文
+- organicRankingEstimate中的topKeywords也必须使用英文原文
+- 只有策略说明、备注、优化建议等描述性文字可以使用中文
+
 ### 输出JSON格式：
 {
   "adStructure": {
     "campaigns": [
       {
-        "campaignName": "SP-核心大词-精准",
+        "campaignName": "SP-Core-Exact",
         "campaignType": "manual",
         "adGroupType": "core_keywords",
         "matchType": "exact",
@@ -43,22 +50,22 @@ export const AD_STRUCTURE_PROMPT = `你是一位拥有10年经验的亚马逊PPC
         "priority": "high/medium/low",
         "keywords": [
           {
-            "keyword": "关键词",
+            "keyword": "english keyword here",
             "suggestedBid": "$X.XX",
             "searchVolume": "高/中/低",
             "competition": "高/中/低",
             "note": "投放备注"
           }
         ],
-        "negativeKeywords": ["否定词1", "否定词2"],
+        "negativeKeywords": ["english negative keyword"],
         "optimizationTips": "优化建议"
       }
     ],
     "autoCompaign": {
       "dailyBudget": "$XX",
       "defaultBid": "$X.XX",
-      "negativeExact": ["已投放精准词1"],
-      "negativePhrase": ["否定词组1"],
+      "negativeExact": ["english exact negative keyword"],
+      "negativePhrase": ["english phrase negative keyword"],
       "optimizationTips": "自动广告优化建议",
       "harvestStrategy": "收词策略说明"
     }
@@ -95,10 +102,10 @@ export const AD_STRUCTURE_PROMPT = `你是一位拥有10年经验的亚马逊PPC
     }
   },
   "negativeKeywordStrategy": {
-    "campaignLevel": ["全局否定词1", "全局否定词2"],
+    "campaignLevel": ["english global negative keyword"],
     "adGroupLevel": {
-      "core_keywords": ["该组否定词"],
-      "precise_longtail": ["该组否定词"]
+      "core_keywords": ["english negative keyword for this group"],
+      "precise_longtail": ["english negative keyword for this group"]
     },
     "rules": "否定词管理规则说明"
   },
@@ -148,7 +155,7 @@ export const AD_STRUCTURE_PROMPT = `你是一位拥有10年经验的亚马逊PPC
     "organicRankingEstimate": {
       "topKeywords": [
         {
-          "keyword": "核心关键词",
+          "keyword": "english core keyword",
           "currentEstimatedRank": "N/A（新品）",
           "targetRankAfter30Days": "XX-XX位",
           "targetRankAfter90Days": "XX-XX位",
@@ -176,7 +183,8 @@ export const AD_STRUCTURE_PROMPT = `你是一位拥有10年经验的亚马逊PPC
 10. orderVolumeProjection必须基于关键词搜索量数据合理预估，给出保守和乐观两个范围
 11. organicRankingEstimate中的topKeywords选取搜索量最高的3-5个核心词，预估自然排名提升路径
 12. 每个阶段的自然出单占比应随时间递增（新品期10-20%，成长期30-50%，成熟期50-70%）
-13. 首页首位出单量预估要结合SPR数据和关键词搜索量`;
+13. 首页首位出单量预估要结合SPR数据和关键词搜索量
+14. **【最重要】所有keyword字段、negativeKeywords字段必须保留英文原文，严禁翻译成中文。从输入数据中选取的关键词必须原样使用，不得翻译、改写或转换语言。**`;
 
 export const AD_STRUCTURE_TRANSLATION_PROMPT = `你是一位专业的亚马逊广告翻译专家。将以下广告架构建议从中文翻译为英文，保持专业术语的准确性。
 
