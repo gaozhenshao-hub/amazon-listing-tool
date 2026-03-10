@@ -55,18 +55,20 @@ interface BatchItem {
 type InputMode = "auto" | "manual" | "import";
 
 interface FilePreview {
-  filename: string;
+  filename?: string;
   totalRows: number;
   parsedRows: number;
   skippedRows: number;
   detectedFormat: string;
   columns: string[];
+  detectedAsins?: string[];
   previewReviews: Array<{
     title?: string;
     content: string;
     rating?: number;
     date?: string;
     author?: string;
+    asin?: string;
   }>;
 }
 
@@ -274,26 +276,23 @@ export default function AnalysisPage() {
     if (file) handleFileSelectForItem(id, file);
   }, [handleFileSelectForItem]);
 
-  // Handle batch import submit
+  // Handle batch import submit - now auto-detects ASINs from files
   const handleImportSubmit = useCallback(async () => {
     if (!selectedProjectId) {
       toast.error("请先选择一个项目");
       return;
     }
 
-    // Validate all items
-    const validItems = importItems.filter(item => {
-      const asin = item.asin.trim();
-      return asin.length === 10 && /^[A-Z0-9]{10}$/.test(asin) && item.fileBase64;
-    });
+    // Validate: at least one file uploaded
+    const validItems = importItems.filter(item => item.fileBase64);
 
     if (validItems.length === 0) {
-      toast.error("请至少填写一个有效的ASIN并上传对应的评论文件");
+      toast.error("请至少上传一个评论文件");
       return;
     }
 
     setIsProcessing(true);
-    setBatchItems(validItems.map(item => ({ asin: item.asin, status: "pending" as BatchItemStatus })));
+    setBatchItems(validItems.map((item, idx) => ({ asin: `文件${idx + 1}`, status: "pending" as BatchItemStatus })));
 
     let successCount = 0;
     let failCount = 0;
@@ -310,13 +309,22 @@ export default function AnalysisPage() {
       try {
         const result = await importReviews.mutateAsync({
           projectId: selectedProjectId,
-          asin: item.asin.trim(),
           fileBase64: item.fileBase64!,
           filename: item.filename,
         });
 
+        const matchedCount = (result as any).results?.filter((r: any) => r.status === "matched").length || 0;
+        const newCount = (result as any).results?.filter((r: any) => r.status === "new").length || 0;
+        const detectedAsins = (result as any).detectedAsins || [];
+
         setBatchItems(prev => prev.map((b, idx) =>
-          idx === i ? { ...b, status: "done", title: result.title || "导入分析完成" } : b
+          idx === i ? {
+            ...b,
+            status: "done",
+            title: detectedAsins.length > 0
+              ? `已匹配 ${matchedCount} 个竞品，新增 ${newCount} 个 (${detectedAsins.join(", ")})`
+              : "导入分析完成"
+          } : b
         ));
         setImportItems(prev => prev.map(it =>
           it.id === item.id ? { ...it, status: "done" } : it
@@ -336,8 +344,8 @@ export default function AnalysisPage() {
     utils.analysis.listByProject.invalidate({ projectId: selectedProjectId! });
 
     if (successCount > 0) {
-      toast.success(`批量导入完成`, {
-        description: `成功 ${successCount} 个${failCount > 0 ? `，失败 ${failCount} 个` : ""}`,
+      toast.success(`评论导入完成`, {
+        description: `成功处理 ${successCount} 个文件${failCount > 0 ? `，失败 ${failCount} 个` : ""}`,
       });
     }
     if (failCount > 0 && successCount === 0) {
@@ -733,7 +741,7 @@ export default function AnalysisPage() {
                           variant="outline"
                           className="flex-1 border-amber-300 text-amber-800 hover:bg-amber-100"
                           onClick={() => {
-                            setImportItems([{ id: 1, asin: failedAsin || "", fileBase64: null, filename: "", preview: null, isPreviewing: false, status: "ready" }]);
+                            setImportItems([{ id: 1, asin: "", fileBase64: null, filename: "", preview: null, isPreviewing: false, status: "ready" }]);
                             setImportNextId(2);
                             switchToImportMode();
                           }}
@@ -827,8 +835,8 @@ export default function AnalysisPage() {
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2">
                     <Info className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
                     <div className="text-xs text-blue-700 space-y-1">
-                      <p className="font-medium">只需两步：填写ASIN + 上传评论文件</p>
-                      <p>支持 Excel (.xlsx/.xls) 和 CSV (.csv)，自动识别卖家精灵、Helium 10 等工具导出格式。</p>
+                      <p className="font-medium">只需上传评论文件，系统自动识别ASIN并匹配竞品</p>
+                      <p>支持 Excel (.xlsx/.xls) 和 CSV (.csv)，自动识别卖家精灵、Helium 10 等工具导出格式。文件中的ASIN列将自动提取并匹配已有竞品分析。</p>
                     </div>
                   </div>
 
@@ -885,18 +893,6 @@ export default function AnalysisPage() {
                           )}
                         </div>
 
-                        {/* ASIN Input */}
-                        <div className="space-y-1.5 mb-3">
-                          <Label className="text-xs font-medium">竞品ASIN *</Label>
-                          <Input
-                            placeholder="例如: B0XXXXXXXXX"
-                            value={item.asin}
-                            onChange={(e) => updateImportAsin(item.id, e.target.value)}
-                            disabled={isProcessing || item.status !== "ready"}
-                            className="font-mono text-sm tracking-wider h-9"
-                          />
-                        </div>
-
                         {/* File Upload Area */}
                         <div className="space-y-1.5">
                           <Label className="text-xs font-medium">评论文件 *</Label>
@@ -943,6 +939,15 @@ export default function AnalysisPage() {
                                     <span>·</span>
                                     <span>{item.preview.detectedFormat}</span>
                                   </div>
+                                  {item.preview.detectedAsins && item.preview.detectedAsins.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {item.preview.detectedAsins.map(asin => (
+                                        <Badge key={asin} variant="outline" className="text-[10px] font-mono px-1.5 py-0 bg-blue-50 text-blue-700 border-blue-200">
+                                          {asin}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             ) : (
@@ -971,7 +976,7 @@ export default function AnalysisPage() {
                     disabled={isProcessing}
                   >
                     <Plus className="h-4 w-4 mr-1.5" />
-                    添加更多竞品
+                    添加更多文件
                   </Button>
 
                   {/* Batch Progress */}
@@ -988,11 +993,9 @@ export default function AnalysisPage() {
 
                   {/* Submit Button */}
                   {(() => {
-                    const validCount = importItems.filter(item => {
-                      const asin = item.asin.trim();
-                      return asin.length === 10 && /^[A-Z0-9]{10}$/.test(asin) && item.fileBase64;
-                    }).length;
+                    const validCount = importItems.filter(item => item.fileBase64).length;
                     const totalReviews = importItems.reduce((sum, item) => sum + (item.preview?.parsedRows || 0), 0);
+                    const totalAsins = importItems.reduce((sum, item) => sum + (item.preview?.detectedAsins?.length || 0), 0);
                     return (
                       <Button
                         className="w-full"
@@ -1003,18 +1006,18 @@ export default function AnalysisPage() {
                         {isProcessing ? (
                           <>
                             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            批量导入分析中...
+                            导入分析中...
                           </>
                         ) : (
                           <>
                             <FileSpreadsheet className="h-4 w-4 mr-2" />
                             {validCount > 1
-                              ? `批量导入 & AI分析 (${validCount}个竞品)`
+                              ? `批量导入 & AI分析 (${validCount}个文件)`
                               : "导入评论 & AI分析"
                             }
                             {totalReviews > 0 && (
                               <Badge variant="secondary" className="ml-2 text-xs">
-                                共 {totalReviews} 条
+                                共 {totalReviews} 条{totalAsins > 0 ? ` · ${totalAsins} 个ASIN` : ""}
                               </Badge>
                             )}
                           </>

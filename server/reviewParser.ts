@@ -9,6 +9,7 @@ export interface ParsedReview {
   verifiedPurchase?: boolean;
   model?: string;
   helpfulVotes?: number;
+  asin?: string;
 }
 
 export interface ParseResult {
@@ -18,6 +19,7 @@ export interface ParseResult {
   skippedRows: number;
   detectedFormat: string;
   columns: string[];
+  detectedAsins: string[]; // Unique ASINs found in the file
 }
 
 // Column name mappings for different seller sprite versions (CN/EN) and other tools
@@ -64,6 +66,12 @@ const COLUMN_MAPPINGS: Record<string, string[]> = {
   helpfulVotes: [
     "helpful", "helpful votes", "helpful count", "votes",
     "有用投票", "有用", "投票数", "Helpful", "Helpful Votes",
+  ],
+  // ASIN
+  asin: [
+    "asin", "ASIN", "Asin", "parent asin", "Parent ASIN",
+    "child asin", "Child ASIN", "product asin", "Product ASIN",
+    "父ASIN", "子ASIN", "商品ASIN", "ASIN码",
   ],
 };
 
@@ -141,6 +149,7 @@ export function parseReviewFile(buffer: Buffer, filename: string): ParseResult {
   const vpIdx = findColumn(headers, COLUMN_MAPPINGS.verifiedPurchase);
   const modelIdx = findColumn(headers, COLUMN_MAPPINGS.model);
   const helpfulIdx = findColumn(headers, COLUMN_MAPPINGS.helpfulVotes);
+  const asinIdx = findColumn(headers, COLUMN_MAPPINGS.asin);
 
   // If no content column found, try to use the longest text column
   let effectiveContentIdx = contentIdx;
@@ -221,8 +230,20 @@ export function parseReviewFile(buffer: Buffer, filename: string): ParseResult {
       const hv = parseInt(String(row[helpfulIdx]).replace(/[^0-9]/g, ""), 10);
       if (!isNaN(hv)) review.helpfulVotes = hv;
     }
+    if (asinIdx !== -1 && row[asinIdx]) {
+      const asinVal = String(row[asinIdx]).trim().toUpperCase();
+      if (/^[A-Z0-9]{10}$/.test(asinVal)) {
+        review.asin = asinVal;
+      }
+    }
 
     reviews.push(review);
+  }
+
+  // Extract unique ASINs from parsed reviews
+  const asinSet = new Set<string>();
+  for (const r of reviews) {
+    if (r.asin) asinSet.add(r.asin);
   }
 
   return {
@@ -232,6 +253,7 @@ export function parseReviewFile(buffer: Buffer, filename: string): ParseResult {
     skippedRows,
     detectedFormat,
     columns: headers,
+    detectedAsins: Array.from(asinSet),
   };
 }
 

@@ -162,6 +162,14 @@ export async function getCompetitorAnalysesByProject(projectId: number) {
   return db.select().from(competitorAnalyses).where(eq(competitorAnalyses.projectId, projectId)).orderBy(desc(competitorAnalyses.createdAt));
 }
 
+export async function updateCompetitorAnalysisReviews(id: number, data: { reviewCount?: string; reviewAnalysis?: string; rawData?: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(competitorAnalyses).set(data).where(eq(competitorAnalyses.id, id));
+  const rows = await db.select().from(competitorAnalyses).where(eq(competitorAnalyses.id, id)).limit(1);
+  return rows[0];
+}
+
 export async function deleteCompetitorAnalysis(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -548,3 +556,4 @@ export async function getLatestListingVersionNumber(listingId: number): Promise<
     .limit(1);
   return rows[0]?.versionNumber || 0;
 }
+

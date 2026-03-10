@@ -233,3 +233,8 @@
 - [x] Feature: Dedup detection - Merge strategy: keep existing keyword data, update missing fields from new import
 - [x] Feature: Dedup detection - Frontend dedup summary after import (X new, Y duplicates merged, Z skipped)
 - [x] Unit tests for batch edit and dedup detection features (17 new tests, 348 total passing)
+- [x] Change: Review import - Remove manual ASIN input requirement
+- [x] Change: Review import - Auto-extract ASIN from uploaded review spreadsheet
+- [x] Change: Review import - Auto-match extracted ASINs to existing competitor analyses
+- [x] Change: Review import - Simplify frontend UI (just upload file, no ASIN field)
+- [x] Unit tests for updated review import auto-ASIN matching (9 new tests, 357 total passing)
