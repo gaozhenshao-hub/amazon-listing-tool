@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `keywords` MODIFY COLUMN `rootCategory` enum('core','function','scene','audience','spec','painpoint','gift_holiday','brand_competitor');\nALTER TABLE `keywords` MODIFY COLUMN `strategyCategory` enum('core_main','sub_core','precise_longtail','scene_intent','longtail_main','observe_test','negative','brand_offensive');\nALTER TABLE `keywords` ADD `translationCn` varchar(500);\nALTER TABLE `keywords` ADD `isAcRecommended` int DEFAULT 0 NOT NULL;\nALTER TABLE `keywords` ADD `skipSemanticFilter` int DEFAULT 0 NOT NULL;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute ALTER TABLE `keywords` MODIFY COLUMN `rootCategory` enum('core','function','scene','audience','spec','painpoint','gift_holiday','brand_competitor');\nALTER TABLE `keywords` MODIFY COLUMN `strategyCategory` enum('core_main','sub_core','precise_longtail','scene_intent','longtail_main','observe_test','negative','brand_offensive');\nALTER TABLE `keywords` ADD `translationCn` varchar(500);\nALTER TABLE `keywords` ADD `isAcRecommended` int DEFAULT 0 NOT NULL;\nALTER TABLE `keywords` ADD `skipSemanticFilter` int DEFAULT 0 NOT NULL;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 918
+}

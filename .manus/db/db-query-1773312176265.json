@@ -1,0 +1,234 @@
+{
+  "query": "SHOW COLUMNS FROM keywords;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SHOW COLUMNS FROM keywords;",
+  "rows": [
+    {
+      "Field": "id",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "PRI",
+      "Default": "NULL",
+      "Extra": "auto_increment"
+    },
+    {
+      "Field": "projectId",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "userId",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "keyword",
+      "Type": "varchar(500)",
+      "Null": "NO",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "source",
+      "Type": "enum('manual','csv_import','asin_reverse','search_suggest','review_extract','ai_expand')",
+      "Null": "NO",
+      "Key": "",
+      "Default": "manual",
+      "Extra": ""
+    },
+    {
+      "Field": "sourceDetail",
+      "Type": "text",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "relevance",
+      "Type": "enum('high','medium','low','none')",
+      "Null": "NO",
+      "Key": "",
+      "Default": "medium",
+      "Extra": ""
+    },
+    {
+      "Field": "trafficLevel",
+      "Type": "enum('high','medium','low')",
+      "Null": "NO",
+      "Key": "",
+      "Default": "medium",
+      "Extra": ""
+    },
+    {
+      "Field": "competition",
+      "Type": "enum('high','medium','low')",
+      "Null": "NO",
+      "Key": "",
+      "Default": "medium",
+      "Extra": ""
+    },
+    {
+      "Field": "monthlySearchVolume",
+      "Type": "int",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "spr",
+      "Type": "int",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "ppcBid",
+      "Type": "varchar(20)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "naturalRank",
+      "Type": "int",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "trafficScore",
+      "Type": "int",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "sceneTags",
+      "Type": "text",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "intentTag",
+      "Type": "varchar(100)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "rootCategory",
+      "Type": "enum('core','function','scene','audience','spec','painpoint','gift_holiday','brand_competitor')",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "rootWord",
+      "Type": "varchar(200)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "rootImpact",
+      "Type": "enum('high','medium','low')",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "strategyCategory",
+      "Type": "enum('core_main','sub_core','precise_longtail','scene_intent','longtail_main','observe_test','negative','brand_offensive')",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "listingPlacement",
+      "Type": "enum('title_front','title_mid','title_end','bullet_first','bullet_body','aplus','search_term','not_use')",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "status",
+      "Type": "enum('raw','cleaned','scored','tagged','finalized','negative')",
+      "Null": "NO",
+      "Key": "",
+      "Default": "raw",
+      "Extra": ""
+    },
+    {
+      "Field": "isNegative",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "createdAt",
+      "Type": "timestamp",
+      "Null": "NO",
+      "Key": "",
+      "Default": "CURRENT_TIMESTAMP",
+      "Extra": ""
+    },
+    {
+      "Field": "updatedAt",
+      "Type": "timestamp",
+      "Null": "NO",
+      "Key": "",
+      "Default": "CURRENT_TIMESTAMP",
+      "Extra": "DEFAULT_GENERATED on update CURRENT_TIMESTAMP"
+    },
+    {
+      "Field": "translationCn",
+      "Type": "varchar(500)",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "isAcRecommended",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    },
+    {
+      "Field": "skipSemanticFilter",
+      "Type": "int",
+      "Null": "NO",
+      "Key": "",
+      "Default": "0",
+      "Extra": ""
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\nid\tint\tNO\tPRI\tNULL\tauto_increment\nprojectId\tint\tNO\t\tNULL\t\nuserId\tint\tNO\t\tNULL\t\nkeyword\tvarchar(500)\tNO\t\tNULL\t\nsource\tenum('manual','csv_import','asin_reverse','search_suggest','review_extract','ai_expand')\tNO\t\tmanual\t\nsourceDetail\ttext\tYES\t\tNULL\t\nrelevance\tenum('high','medium','low','none')\tNO\t\tmedium\t\ntrafficLevel\tenum('high','medium','low')\tNO\t\tmedium\t\ncompetition\tenum('high','medium','low')\tNO\t\tmedium\t\nmonthlySearchVolume\tint\tYES\t\tNULL\t\nspr\tint\tYES\t\tNULL\t\nppcBid\tvarchar(20)\tYES\t\tNULL\t\nnaturalRank\tint\tYES\t\tNULL\t\ntrafficScore\tint\tYES\t\tNULL\t\nsceneTags\ttext\tYES\t\tNULL\t\nintentTag\tvarchar(100)\tYES\t\tNULL\t\nrootCategory\tenum('core','function','scene','audience','spec','painpoint','gift_holiday','brand_competitor')\tYES\t\tNULL\t\nrootWord\tvarchar(200)\tYES\t\tNULL\t\nrootImpact\tenum('high','medium','low')\tYES\t\tNULL\t\nstrategyCategory\tenum('core_main','sub_core','precise_longtail','scene_intent','longtail_main','observe_test','negative','brand_offensive')\tYES\t\tNULL\t\nlistingPlacement\tenum('title_front','title_mid','title_end','bullet_first','bullet_body','aplus','search_term','not_use')\tYES\t\tNULL\t\nstatus\tenum('raw','cleaned','scored','tagged','finalized','negative')\tNO\t\traw\t\nisNegative\tint\tNO\t\t0\t\ncreatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\t\nupdatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\tDEFAULT_GENERATED on update CURRENT_TIMESTAMP\ntranslationCn\tvarchar(500)\tYES\t\tNULL\t\nisAcRecommended\tint\tNO\t\t0\t\nskipSemanticFilter\tint\tNO\t\t0\t\n",
+  "stderr": "",
+  "execution_time_ms": 113
+}

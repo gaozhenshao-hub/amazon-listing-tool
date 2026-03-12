@@ -71,6 +71,20 @@
       "when": 1773310361647,
       "tag": "0009_fuzzy_deathbird",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1773312087219,
+      "tag": "0010_sparkling_slayback",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1773312479331,
+      "tag": "0011_bored_black_tom",
+      "breakpoints": true
     }
   ]
 }

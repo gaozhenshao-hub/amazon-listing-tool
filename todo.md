@@ -284,3 +284,16 @@
 - [x] Feature: ScorePage - Add keyword coverage detail panel (expandable, show covered/missing keywords with green/red badges)
 - [x] Feature: ScorePage - Backend: coveredKeywords and missingKeywords added to ScoreDetail interface
 - [x] Unit tests for keyword coverage detail panel (3 new tests, 423 total passing)
+- [x] Feature: Keyword import - Fix header mapping: 流量词/搜索词 mapped to keyword field
+- [x] Feature: Keyword import - Extract 关键词翻译 column as translationCn field
+- [x] Feature: Keyword import - Extract AC推荐 column as isAcRecommended field
+- [x] Feature: Keywords table - translationCn (translation_cn) and isAcRecommended (is_ac_recommended) columns added
+- [x] Feature: Keyword UI - Chinese translation column displayed in keyword table
+- [x] Feature: Keyword UI - AC star icon for AC recommended keywords
+- [x] Feature: Negative keywords - reasonCn (reason_cn) column added, Chinese reasons auto-mapped
+- [x] Feature: Negative keywords - Filter by rejection reason dropdown
+- [x] Feature: Negative keywords - Batch restore from negative library with skipSemanticFilter flag
+- [x] Feature: Strategy matrix - brand_offensive strategy category added
+- [x] Feature: Root classification - brand_competitor root category added
+- [x] Feature: Ad strategy - Offensive campaign added to ad structure prompt
+- [x] Unit tests for keyword module improvements (14 new tests, 437 total passing)

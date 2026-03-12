@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `keywords` DROP COLUMN `translationCn`;\nALTER TABLE `keywords` DROP COLUMN `isAcRecommended`;\nALTER TABLE `keywords` DROP COLUMN `skipSemanticFilter`;\nALTER TABLE `keywords` ADD `translation_cn` varchar(500);\nALTER TABLE `keywords` ADD `is_ac_recommended` int DEFAULT 0 NOT NULL;\nALTER TABLE `keywords` ADD `skip_semantic_filter` int DEFAULT 0 NOT NULL;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute ALTER TABLE `keywords` DROP COLUMN `translationCn`;\nALTER TABLE `keywords` DROP COLUMN `isAcRecommended`;\nALTER TABLE `keywords` DROP COLUMN `skipSemanticFilter`;\nALTER TABLE `keywords` ADD `translation_cn` varchar(500);\nALTER TABLE `keywords` ADD `is_ac_recommended` int DEFAULT 0 NOT NULL;\nALTER TABLE `keywords` ADD `skip_semantic_filter` int DEFAULT 0 NOT NULL;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1421
+}

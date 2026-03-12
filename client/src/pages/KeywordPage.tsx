@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import {
   Upload, Plus, Trash2, Filter, Tag, GitBranch, LayoutGrid, Ban,
   Play, Search, Download, RefreshCw, Zap, FileText, ChevronDown,
-  ChevronUp, ArrowUpDown, Loader2, X, AlertTriangle, Edit2, CheckCircle2, Copy, BarChart3
+  ChevronUp, ArrowUpDown, Loader2, X, AlertTriangle, Edit2, CheckCircle2, Copy, BarChart3, Undo2, Star
 } from "lucide-react";
 
 // Strategy category labels
@@ -29,6 +29,7 @@ const STRATEGY_LABELS: Record<string, { label: string; color: string; desc: stri
   longtail_main: { label: "长尾主词", color: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200", desc: "中流量+中相关+低竞争" },
   observe_test: { label: "观察测试词", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200", desc: "高流量+低相关" },
   negative: { label: "否定词", color: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200", desc: "属性不匹配" },
+  brand_offensive: { label: "品牌进攻词", color: "bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200", desc: "竞对品牌词根下的进攻词" },
 };
 
 const ROOT_LABELS: Record<string, { label: string; icon: string }> = {
@@ -39,6 +40,7 @@ const ROOT_LABELS: Record<string, { label: string; icon: string }> = {
   spec: { label: "规格词根", icon: "📏" },
   painpoint: { label: "痛点词根", icon: "💡" },
   gift_holiday: { label: "节日/礼品词根", icon: "🎁" },
+  brand_competitor: { label: "品牌词根", icon: "🏷️" },
 };
 
 const PLACEMENT_LABELS: Record<string, string> = {
@@ -455,6 +457,8 @@ function KeywordListTab({ projectId }: { projectId: number }) {
                 <TableRow>
                   <TableHead className="w-10"><Checkbox checked={selectedIds.size === filtered.length && filtered.length > 0} onCheckedChange={toggleSelectAll} /></TableHead>
                   <TableHead className="cursor-pointer" onClick={() => toggleSort("keyword")}>关键词 <ArrowUpDown className="inline h-3 w-3" /></TableHead>
+                  <TableHead>中文翻译</TableHead>
+                  <TableHead className="w-10">AC</TableHead>
                   <TableHead className="cursor-pointer" onClick={() => toggleSort("monthlySearchVolume")}>月搜索量 <ArrowUpDown className="inline h-3 w-3" /></TableHead>
                   <TableHead>相关性</TableHead>
                   <TableHead>流量</TableHead>
@@ -468,11 +472,13 @@ function KeywordListTab({ projectId }: { projectId: number }) {
               </TableHeader>
               <TableBody>
                 {filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={11} className="text-center py-8 text-muted-foreground">暂无关键词数据，请先导入CSV/XLSX或手动添加</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={13} className="text-center py-8 text-muted-foreground">暂无关键词数据，请先导入CSV/XLSX或手动添加</TableCell></TableRow>
                 ) : filtered.slice(0, 200).map((kw: any) => (
                   <TableRow key={kw.id} className={kw.isNegative ? "opacity-50" : ""}>
                     <TableCell><Checkbox checked={selectedIds.has(kw.id)} onCheckedChange={() => toggleSelect(kw.id)} /></TableCell>
                     <TableCell className="font-medium max-w-[200px] truncate">{kw.keyword}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-[150px] truncate">{kw.translationCn || "-"}</TableCell>
+                    <TableCell>{kw.isAcRecommended ? <Star className="h-4 w-4 text-amber-500 fill-amber-500" /> : <span className="text-muted-foreground">-</span>}</TableCell>
                     <TableCell>{kw.monthlySearchVolume?.toLocaleString() || "-"}</TableCell>
                     <TableCell>
                       <Select value={kw.relevance || "none"} onValueChange={(v) => updateMut.mutate({ id: kw.id, relevance: v as any })}>
@@ -1071,6 +1077,9 @@ function NegativeTab({ projectId }: { projectId: number }) {
   const [newNeg, setNewNeg] = useState("");
   const [newReason, setNewReason] = useState("");
   const [matchType, setMatchType] = useState<"exact" | "phrase" | "broad">("exact");
+  const [selectedNegIds, setSelectedNegIds] = useState<Set<number>>(new Set());
+  const [reasonFilter, setReasonFilter] = useState<string>("all");
+  const [searchNeg, setSearchNeg] = useState("");
 
   const negQuery = trpc.keyword.negativeList.useQuery({ projectId });
   const addNegMut = trpc.keyword.addNegative.useMutation({
@@ -1082,15 +1091,54 @@ function NegativeTab({ projectId }: { projectId: number }) {
   const clearMut = trpc.keyword.clearNegatives.useMutation({
     onSuccess: () => { negQuery.refetch(); toast.success("否词库已清空"); },
   });
+  const batchRestoreMut = trpc.keyword.batchRestoreFromNegative.useMutation({
+    onSuccess: (data: any) => {
+      negQuery.refetch();
+      setSelectedNegIds(new Set());
+      toast.success(`已移出 ${data.restored} 个关键词并加入分析流程（跳过语义过滤）`);
+    },
+  });
 
   const negatives = negQuery.data || [];
+
+  // Extract unique reasons for filter dropdown
+  const uniqueReasons = useMemo(() => {
+    const reasons = new Set<string>();
+    negatives.forEach((neg: any) => {
+      if (neg.reasonCn) reasons.add(neg.reasonCn);
+      else if (neg.reason) reasons.add(neg.reason);
+    });
+    return Array.from(reasons).sort();
+  }, [negatives]);
+
+  // Filter negatives
+  const filteredNeg = useMemo(() => {
+    let result = negatives;
+    if (reasonFilter !== "all") {
+      result = result.filter((neg: any) => (neg.reasonCn || neg.reason) === reasonFilter);
+    }
+    if (searchNeg) {
+      result = result.filter((neg: any) => neg.keyword.toLowerCase().includes(searchNeg.toLowerCase()));
+    }
+    return result;
+  }, [negatives, reasonFilter, searchNeg]);
+
+  const toggleNegSelect = (id: number) => {
+    const next = new Set(selectedNegIds);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSelectedNegIds(next);
+  };
+  const toggleNegSelectAll = () => {
+    if (selectedNegIds.size === filteredNeg.length) setSelectedNegIds(new Set());
+    else setSelectedNegIds(new Set(filteredNeg.map((n: any) => n.id)));
+  };
 
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Ban className="h-5 w-5" />否词库管理</CardTitle>
-          <CardDescription>管理不应出现在Listing中的关键词，支持精确匹配、词组匹配和广泛匹配三种模式</CardDescription>
+          <CardDescription>管理不应出现在Listing中的关键词。可按否词原因筛选，批量移出否词库后关键词将自动进入分析流程并跳过语义过滤。</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Add negative keyword */}
@@ -1121,38 +1169,73 @@ function NegativeTab({ projectId }: { projectId: number }) {
 
           <Separator />
 
-          {/* Negative keywords list */}
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">共 {negatives.length} 个否定关键词</span>
-            {negatives.length > 0 && (
-              <Button size="sm" variant="outline" className="text-destructive" onClick={() => clearMut.mutate({ projectId })}>
-                <Trash2 className="h-3.5 w-3.5 mr-1" />清空否词库
-              </Button>
-            )}
+          {/* Filter and batch actions */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Search className="h-4 w-4 text-muted-foreground" />
+              <Input placeholder="搜索关键词..." value={searchNeg} onChange={(e) => setSearchNeg(e.target.value)} className="w-[200px] h-8" />
+            </div>
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <Select value={reasonFilter} onValueChange={setReasonFilter}>
+                <SelectTrigger className="w-[200px] h-8"><SelectValue placeholder="按否词原因筛选" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部原因</SelectItem>
+                  {uniqueReasons.map((r) => (
+                    <SelectItem key={r} value={r}>{r}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <span className="text-sm text-muted-foreground">共 {filteredNeg.length} / {negatives.length} 个</span>
+            <div className="ml-auto flex items-center gap-2">
+              {selectedNegIds.size > 0 && (
+                <Button size="sm" variant="outline" onClick={() => batchRestoreMut.mutate({ negativeKeywordIds: Array.from(selectedNegIds), projectId })} disabled={batchRestoreMut.isPending}>
+                  {batchRestoreMut.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Undo2 className="h-3.5 w-3.5 mr-1" />}
+                  批量移出否词库 ({selectedNegIds.size})
+                </Button>
+              )}
+              {negatives.length > 0 && (
+                <Button size="sm" variant="outline" className="text-destructive" onClick={() => clearMut.mutate({ projectId })}>
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />清空否词库
+                </Button>
+              )}
+            </div>
           </div>
 
-          {negatives.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">否词库为空。AI分析过程中会自动添加否定词，您也可以手动添加。</div>
+          {filteredNeg.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              {negatives.length === 0 ? "否词库为空。AI分析过程中会自动添加否定词，您也可以手动添加。" : "当前筛选条件下无否定词"}
+            </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10"><Checkbox checked={selectedNegIds.size === filteredNeg.length && filteredNeg.length > 0} onCheckedChange={toggleNegSelectAll} /></TableHead>
                   <TableHead>关键词</TableHead>
                   <TableHead>匹配类型</TableHead>
                   <TableHead>来源</TableHead>
-                  <TableHead>原因</TableHead>
-                  <TableHead className="w-16">操作</TableHead>
+                  <TableHead>否词原因</TableHead>
+                  <TableHead className="w-20">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {negatives.map((neg: any) => (
+                {filteredNeg.map((neg: any) => (
                   <TableRow key={neg.id}>
+                    <TableCell><Checkbox checked={selectedNegIds.has(neg.id)} onCheckedChange={() => toggleNegSelect(neg.id)} /></TableCell>
                     <TableCell className="font-medium">{neg.keyword}</TableCell>
                     <TableCell><Badge variant="outline">{neg.matchType === "exact" ? "精确" : neg.matchType === "phrase" ? "词组" : "广泛"}</Badge></TableCell>
                     <TableCell><Badge variant="secondary" className="text-xs">{neg.source === "manual" ? "手动" : neg.source === "ai_suggest" ? "AI建议" : neg.source === "auto_filter" ? "自动过滤" : "词频分析"}</Badge></TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{neg.reason || "-"}</TableCell>
+                    <TableCell className="text-sm max-w-[250px]">
+                      <span className="text-foreground">{neg.reasonCn || "-"}</span>
+                      {neg.reason && neg.reasonCn && <span className="text-muted-foreground text-xs ml-1">({neg.reason})</span>}
+                      {neg.reason && !neg.reasonCn && <span className="text-muted-foreground">{neg.reason}</span>}
+                    </TableCell>
                     <TableCell>
-                      <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => deleteNegMut.mutate({ id: neg.id })}><Trash2 className="h-3.5 w-3.5" /></Button>
+                      <div className="flex items-center gap-1">
+                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => batchRestoreMut.mutate({ negativeKeywordIds: [neg.id], projectId })} title="移出否词库"><Undo2 className="h-3.5 w-3.5" /></Button>
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => deleteNegMut.mutate({ id: neg.id })} title="删除"><Trash2 className="h-3.5 w-3.5" /></Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

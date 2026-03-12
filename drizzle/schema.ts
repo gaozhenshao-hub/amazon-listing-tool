@@ -179,25 +179,27 @@ export const keywords = mysqlTable("keywords", {
   intentTag: varchar("intentTag", { length: 100 }), // purchase intent tag
   // Word root classification (7 types)
   rootCategory: mysqlEnum("rootCategory", [
-    "core",       // 核心词根
-    "function",   // 功能词根
-    "scene",      // 场景词根 (COSMO)
-    "audience",   // 人群词根
-    "spec",       // 规格词根
-    "painpoint",  // 痛点词根
-    "gift_holiday" // 节日/礼品词根
+    "core",            // 核心词根
+    "function",        // 功能词根
+    "scene",           // 场景词根 (COSMO)
+    "audience",        // 人群词根
+    "spec",            // 规格词根
+    "painpoint",       // 痛点词根
+    "gift_holiday",    // 节日/礼品词根
+    "brand_competitor" // 品牌词根（竞对品牌）
   ]),
   rootWord: varchar("rootWord", { length: 200 }), // extracted root word
   rootImpact: mysqlEnum("rootImpact", ["high", "medium", "low"]),
   // 3D Strategy Matrix category
   strategyCategory: mysqlEnum("strategyCategory", [
-    "core_main",        // 核心主词
-    "sub_core",         // 次核心词
-    "precise_longtail", // 精准长尾词
-    "scene_intent",     // 场景意图词
-    "longtail_main",    // 长尾主词
-    "observe_test",     // 观察测试词
-    "negative"          // 可删除/否定词
+    "core_main",          // 核心主词
+    "sub_core",           // 次核心词
+    "precise_longtail",   // 精准长尾词
+    "scene_intent",       // 场景意图词
+    "longtail_main",      // 长尾主词
+    "observe_test",       // 观察测试词
+    "negative",           // 可删除/否定词
+    "brand_offensive"     // 品牌进攻词（竞对品牌词）
   ]),
   // Listing placement suggestion
   listingPlacement: mysqlEnum("listingPlacement", [
@@ -210,6 +212,12 @@ export const keywords = mysqlTable("keywords", {
     "search_term",      // 后台 Search Term
     "not_use"           // 绝对不使用
   ]),
+  // Chinese translation
+  translationCn: varchar("translation_cn", { length: 500 }),
+  // AC recommended keyword flag
+  isAcRecommended: int("is_ac_recommended").default(0).notNull(), // 0=no, 1=yes (AC推荐词)
+  // Skip semantic filter flag (for keywords restored from negative library)
+  skipSemanticFilter: int("skip_semantic_filter").default(0).notNull(), // 0=normal, 1=skip semantic filter
   // Status
   status: mysqlEnum("status", ["raw", "cleaned", "scored", "tagged", "finalized", "negative"]).default("raw").notNull(),
   isNegative: int("isNegative").default(0).notNull(), // 0=normal, 1=negative keyword
@@ -245,7 +253,8 @@ export const negativeKeywords = mysqlTable("negativeKeywords", {
   userId: int("userId").notNull(),
   keyword: varchar("keyword", { length: 500 }).notNull(),
   isRoot: int("isRoot").default(0).notNull(), // 1=word root, 0=exact keyword
-  reason: text("reason"), // why it's negative
+  reason: text("reason"), // why it's negative (English)
+  reasonCn: text("reason_cn"), // Chinese translation of reason
   source: mysqlEnum("source", ["auto_filter", "manual", "ai_suggest", "word_freq"]).default("manual").notNull(),
   matchType: mysqlEnum("matchType", ["exact", "phrase", "broad"]).default("exact").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

@@ -191,6 +191,13 @@ export const keywordRouter = router({
         const naturalRank = parseInt(getColumnValue(row, colMap.naturalRank) || "0") || undefined;
         const trafficScore = parseInt(getColumnValue(row, colMap.trafficScore) || "0") || undefined;
 
+        // Extract Chinese translation (关键词翻译 column from SellerSprite)
+        const translationCn = getColumnValue(row, colMap.translationCn) || undefined;
+
+        // Extract AC recommended keyword flag (AC推荐词 column from SellerSprite)
+        const acVal = getColumnValue(row, colMap.acRecommended);
+        const isAcRecommended = acVal && acVal.trim() !== "" ? 1 : 0;
+
         // Traffic level and competition will be set by AI classification after import
         // Set temporary defaults here - they will be overwritten by aiClassifyTrafficCompetition
         const trafficLevel: "high" | "medium" | "low" = "medium";
@@ -212,6 +219,8 @@ export const keywordRouter = router({
           projectId,
           userId,
           keyword: keyword.trim(),
+          translationCn,
+          isAcRecommended,
           source,
           sourceDetail: sourceDetail || undefined,
           relevance,
@@ -224,6 +233,7 @@ export const keywordRouter = router({
           trafficScore,
           status: "raw" as const,
           isNegative: 0,
+          skipSemanticFilter: 0,
         };
       }).filter(Boolean) as any[];
 
@@ -335,8 +345,16 @@ export const keywordRouter = router({
 
       const allKeywords = await getKeywordsByProject(projectId);
       const toFilter = keywordIds
-        ? allKeywords.filter(k => keywordIds.includes(k.id))
-        : allKeywords.filter(k => k.status === "raw" || k.status === "cleaned");
+        ? allKeywords.filter(k => keywordIds.includes(k.id) && k.skipSemanticFilter !== 1)
+        : allKeywords.filter(k => (k.status === "raw" || k.status === "cleaned") && k.skipSemanticFilter !== 1);
+
+      // Auto-advance keywords that should skip semantic filter (restored from negative library)
+      const skippedKws = keywordIds
+        ? allKeywords.filter(k => keywordIds.includes(k.id) && k.skipSemanticFilter === 1)
+        : allKeywords.filter(k => (k.status === "raw" || k.status === "cleaned") && k.skipSemanticFilter === 1);
+      for (const kw of skippedKws) {
+        await updateKeyword(kw.id, { status: "cleaned" });
+      }
 
       if (toFilter.length === 0) return { filtered: 0, kept: 0, removed: 0 };
 
@@ -379,6 +397,7 @@ export const keywordRouter = router({
                 userId: ctx.user!.id,
                 keyword: kw.keyword,
                 reason: result.reason || "AI语义过滤移除",
+                reasonCn: result.reason ? `AI语义过滤: ${result.reason}` : "AI语义过滤移除",
                 source: "ai_suggest",
                 matchType: "exact",
               });
@@ -716,7 +735,7 @@ export const keywordRouter = router({
             if (!kw) continue;
             if (r.action === "remove") {
               await updateKeyword(kw.id, { status: "negative", isNegative: 1, relevance: "none" });
-              await createNegativeKeyword({ projectId, userId: ctx.user!.id, keyword: kw.keyword, reason: r.reason || "AI语义过滤移除", source: "ai_suggest", matchType: "exact" });
+              await createNegativeKeyword({ projectId, userId: ctx.user!.id, keyword: kw.keyword, reason: r.reason || "AI语义过滤移除", reasonCn: r.reason ? `AI语义过滤: ${r.reason}` : "AI语义过滤移除", source: "ai_suggest", matchType: "exact" });
               removed++;
             } else {
               await updateKeyword(kw.id, { status: "cleaned", relevance: r.relevance || kw.relevance });
@@ -781,7 +800,7 @@ export const keywordRouter = router({
             if (r.strategyCategory === "negative") {
               updateData.isNegative = 1;
               updateData.status = "negative";
-              await createNegativeKeyword({ projectId, userId: ctx.user!.id, keyword: kw.keyword, reason: "3D矩阵分析标记为否定词", source: "ai_suggest", matchType: "exact" });
+              await createNegativeKeyword({ projectId, userId: ctx.user!.id, keyword: kw.keyword, reason: "3D matrix analysis marked as negative", reasonCn: "3D矩阵分析标记为否定词", source: "ai_suggest", matchType: "exact" });
             }
             await updateKeyword(kw.id, updateData);
             categorized++;
@@ -834,6 +853,42 @@ export const keywordRouter = router({
       return deleteNegativeKeywordsByProject(input.projectId);
     }),
 
+  // Batch restore keywords from negative library back to active keywords
+  batchRestoreFromNegative: protectedProcedure
+    .input(z.object({
+      negativeKeywordIds: z.array(z.number()),
+      projectId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { negativeKeywordIds, projectId } = input;
+      let restored = 0;
+
+      for (const negId of negativeKeywordIds) {
+        // Find the negative keyword entry
+        const negKws = await getNegativeKeywordsByProject(projectId);
+        const negKw = negKws.find(n => n.id === negId);
+        if (!negKw) continue;
+
+        // Find the corresponding keyword in keywords table and restore it
+        const allKws = await getKeywordsByProject(projectId);
+        const matchedKw = allKws.find(k => k.keyword.toLowerCase() === negKw.keyword.toLowerCase() && k.isNegative === 1);
+        if (matchedKw) {
+          // Restore keyword: set status to raw, isNegative to 0, skipSemanticFilter to 1
+          await updateKeyword(matchedKw.id, {
+            status: "raw",
+            isNegative: 0,
+            skipSemanticFilter: 1, // Skip semantic filter on re-analysis
+          });
+        }
+
+        // Remove from negative keywords library
+        await deleteNegativeKeyword(negId);
+        restored++;
+      }
+
+      return { restored };
+    }),
+
   // Move keyword to negative list
   moveToNegative: protectedProcedure
     .input(z.object({
@@ -857,6 +912,7 @@ export const keywordRouter = router({
         userId: ctx.user!.id,
         keyword: kw.keyword,
         reason: input.reason || "手动移入否定词库",
+        reasonCn: input.reason ? `手动移入: ${input.reason}` : "手动移入否定词库",
         source: "manual",
         matchType: input.matchType,
       });
@@ -871,8 +927,8 @@ export const keywordRouter = router({
         trafficLevel: z.enum(["high", "medium", "low"]).optional(),
         competition: z.enum(["high", "medium", "low"]).optional(),
         status: z.enum(["raw", "cleaned", "scored", "tagged", "finalized", "negative"]).optional(),
-        strategyCategory: z.enum(["core_main", "sub_core", "precise_longtail", "scene_intent", "longtail_main", "observe_test", "negative"]).nullable().optional(),
-        rootCategory: z.enum(["core", "function", "scene", "audience", "spec", "painpoint", "gift_holiday"]).nullable().optional(),
+        strategyCategory: z.enum(["core_main", "sub_core", "precise_longtail", "scene_intent", "longtail_main", "observe_test", "negative", "brand_offensive"]).nullable().optional(),
+        rootCategory: z.enum(["core", "function", "scene", "audience", "spec", "painpoint", "gift_holiday", "brand_competitor"]).nullable().optional(),
         listingPlacement: z.enum(["title_front", "title_mid", "title_end", "bullet_first", "bullet_body", "aplus", "search_term", "not_use"]).nullable().optional(),
       }),
     }))
@@ -973,6 +1029,8 @@ export const keywordRouter = router({
 
 interface ColumnMapping {
   keyword: string[];
+  translationCn: string[];
+  acRecommended: string[];
   searchVolume: string[];
   spr: string[];
   ppcBid: string[];
@@ -984,6 +1042,8 @@ interface ColumnMapping {
 function detectColumnMapping(cols: string[]): ColumnMapping {
   const mapping: ColumnMapping = {
     keyword: [],
+    translationCn: [],
+    acRecommended: [],
     searchVolume: [],
     spr: [],
     ppcBid: [],
@@ -994,8 +1054,20 @@ function detectColumnMapping(cols: string[]): ColumnMapping {
 
   for (const col of cols) {
     const lower = col.toLowerCase().trim();
-    // Keyword column
-    if (lower.includes("keyword") || lower.includes("关键词") || lower.includes("搜索词") || lower.includes("search term") || lower === "词") {
+    // Keyword column - "流量词" is the primary keyword column in SellerSprite reverse ASIN reports
+    if (lower === "流量词" || lower.includes("keyword") || lower.includes("搜索词") || lower.includes("search term") || lower === "词") {
+      mapping.keyword.push(col);
+    }
+    // Chinese translation column - "关键词翻译" in SellerSprite
+    if (lower === "关键词翻译" || lower.includes("translation") || lower.includes("翻译") || lower.includes("中文")) {
+      mapping.translationCn.push(col);
+    }
+    // AC recommended keyword - "AC推荐词" in SellerSprite
+    if (lower === "ac推荐词" || lower.includes("ac") && (lower.includes("推荐") || lower.includes("recommend"))) {
+      mapping.acRecommended.push(col);
+    }
+    // Also match "关键词" but only if "流量词" is not present (fallback for other tools)
+    if (lower.includes("关键词") && !lower.includes("翻译") && !lower.includes("类型")) {
       mapping.keyword.push(col);
     }
     // Search volume
@@ -1012,13 +1084,15 @@ function detectColumnMapping(cols: string[]): ColumnMapping {
     }
     // Natural rank
     if (lower.includes("rank") || lower.includes("排名") || lower.includes("自然排名") || lower.includes("organic")) {
-      if (!lower.includes("spr") && !lower.includes("product rank")) {
+      if (!lower.includes("spr") && !lower.includes("product rank") && !lower.includes("aba")) {
         mapping.naturalRank.push(col);
       }
     }
-    // Traffic score
-    if (lower.includes("traffic") || lower.includes("流量") || lower.includes("得分") || lower.includes("score")) {
-      mapping.trafficScore.push(col);
+    // Traffic score / traffic share
+    if (lower.includes("traffic") || lower.includes("流量占比") || lower.includes("得分") || lower.includes("score")) {
+      if (!lower.includes("流量词")) {
+        mapping.trafficScore.push(col);
+      }
     }
     // Relevance
     if (lower.includes("relevance") || lower.includes("相关") || lower.includes("相关性") || lower.includes("关联")) {
