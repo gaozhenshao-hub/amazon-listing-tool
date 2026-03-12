@@ -12,6 +12,21 @@ import { scoringRouter } from "./routers/scoring";
 import { keywordRouter, keywordAiRouter } from "./routers/keyword";
 import { adStructureRouter } from "./routers/adStructure";
 import { reviewAggregationRouter } from "./routers/reviewAggregation";
+// Module 1: Product Development
+import { devProjectRouter } from "./routers/devProject";
+import { devTaggingRouter } from "./routers/devTagging";
+import { devAnalysisRouter } from "./routers/devAnalysis";
+import { devScoringRouter } from "./routers/devScoring";
+import { devProfileRouter } from "./routers/devProfile";
+import { devBomRouter } from "./routers/devBom";
+import { devManualRouter } from "./routers/devManual";
+// Module 5: Knowledge Base
+import { kbProductsRouter } from "./routers/kbProducts";
+import { kbListingsRouter } from "./routers/kbListings";
+import { kbImagesRouter } from "./routers/kbImages";
+import { kbSkillsRouter } from "./routers/kbSkills";
+import { kbVideosRouter } from "./routers/kbVideos";
+import { kbSearchRouter } from "./routers/kbSearch";
 
 export const appRouter = router({
   system: systemRouter,
@@ -34,6 +49,21 @@ export const appRouter = router({
   keywordAi: keywordAiRouter,
   adStructure: adStructureRouter,
   reviewAggregation: reviewAggregationRouter,
+  // Module 1: Product Development
+  devProject: devProjectRouter,
+  devTagging: devTaggingRouter,
+  devAnalysis: devAnalysisRouter,
+  devScoring: devScoringRouter,
+  devProfile: devProfileRouter,
+  devBom: devBomRouter,
+  devManual: devManualRouter,
+  // Module 5: Knowledge Base
+  kbProducts: kbProductsRouter,
+  kbListings: kbListingsRouter,
+  kbImages: kbImagesRouter,
+  kbSkills: kbSkillsRouter,
+  kbVideos: kbVideosRouter,
+  kbSearch: kbSearchRouter,
 });
 
 export type AppRouter = typeof appRouter;

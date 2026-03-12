@@ -298,3 +298,67 @@
 - [x] Feature: Ad strategy - Offensive campaign added to ad structure prompt
 - [x] Unit tests for keyword module improvements (14 new tests, 437 total passing)
 - [x] Bugfix: KeywordPage - Fix 4 TS errors: split keyword.ts (1026 lines) into keywordCrud.ts + keywordAi.ts + keywordHelpers.ts, register as separate sub-routers (trpc.keyword + trpc.keywordAi), update frontend references, all 437 tests passing
+
+## 知识库模块 (Knowledge Base Module)
+
+### 基础设施
+- [x] Database schema: 6个知识库表 (kb_product_innovations, kb_listing_copywriting, kb_image_sets, kb_images, kb_operation_skills, kb_videos) + 19个模块一表 (dev_*)
+- [x] Install file parsing dependencies (mammoth, pdf-parse, officeparser)
+- [x] Backend: File parser utilities (PDF, Word, Excel, PPT, Markdown, images) in kbSkills router
+- [x] Backend: Scraper integration for knowledge base (reuse existing scraper.ts)
+
+### 智能产品创意库
+- [x] Backend: kbProducts router (CRUD, ASIN/link import, batch ASIN import, AI analysis, confirm)
+- [x] Backend: AI prompt for product innovation analysis
+- [x] Frontend: KBProductsPage (ASIN/URL input, batch import, AI analysis display, edit, confirm, browse)
+
+### 智能Listing文案库
+- [x] Backend: kbListings router (CRUD, ASIN/link import, batch ASIN import, AI analysis, confirm)
+- [x] Backend: AI prompt for listing copywriting analysis
+- [x] Frontend: KBListingsPage (ASIN/URL input, batch import, AI analysis display, edit, confirm, browse)
+
+### 智能图片知识库
+- [x] Backend: kbImages router (CRUD, ASIN import, batch ASIN import, AI visual analysis, auto-tagging, confirm)
+- [x] Backend: AI prompt for visual analysis + 4-dimension auto-tagging (category/colorScheme/imageType/designStyle)
+- [x] Frontend: KBImagesPage (ASIN input, batch import, waterfall layout, 4-dimension filter, tag editing, confirm)
+
+### 智能运营SOP知识库
+- [x] Backend: kbSkills router (CRUD, URL import, file upload/parse, batch file import, AI summary, confirm)
+- [x] Backend: Multi-format file parser (PDF via pdf-parse, Word via mammoth, Excel/PPT/mindmap via officeparser, Markdown, images via LLM)
+- [x] Backend: AI prompt for document summary and key information extraction
+- [x] Frontend: KBSkillsPage (URL/file input, batch file import with drag-drop, AI summary display, edit, confirm, browse, search)
+
+### 智能视频知识库
+- [x] Backend: kbVideos router (CRUD, video URL/ASIN/batch import, audio transcription via Whisper, AI analysis, confirm)
+- [x] Backend: AI prompt for video analysis (golden 3 seconds, script structure, conversion anchors)
+- [x] Frontend: KBVideosPage (video URL/ASIN/batch input, transcription display, AI analysis display, edit, confirm, browse)
+
+### 跨模块检索
+- [x] Backend: kbSearch router with cross-module search API (searchKnowledgeBase in kbDb.ts) + stats aggregation
+
+### 导航与布局
+- [x] Sidebar: Two-level navigation (module rail + feature menu) with 5 modules
+- [x] Routes: All module routes registered in App.tsx (dev/*, listing/*, knowledge/*, ops/*, service/*)
+- [x] PlatformHome: Landing page with 5 module cards
+- [x] ComingSoonPage: Placeholder for module 3 (智能运营提效) and module 4 (智能售后管理)
+
+## Bugfix & Enhancement (2026-03-13)
+- [x] Bugfix: 模块一（产品开发）在前台页面已正确展示 - 导航和路由配置正确
+- [x] Enhancement: 所有模块名称已统一加上"智能"前缀（智能产品开发、智能Listing生成、智能运营提效、智能售后管理、智能知识库）
+
+## 模块一 - 智能产品开发分析 (Module 1)
+- [x] Database: 19张dev_*表 (devProjects, devUploadedFiles, devProducts, devReviews, devTagDimensions, devExternalData, devAnalysisReports, devProjectScores, devProductProfiles, devBomItems, devProfitCalculations, devGlobalSuppliers, devProductManuals, devTestReports, devSuppliers, devMoldCosts, devTimePlans, devBomSummary)
+- [x] Backend: devDb.ts database helpers (25+ functions)
+- [x] Backend: devProject router (CRUD, stats, file upload)
+- [x] Backend: devTagging router (AI smart tagging, dimension management)
+- [x] Backend: devAnalysis router (AI report generation, external data, review analysis)
+- [x] Backend: devScoring router (6-dimension AI scoring)
+- [x] Backend: devProfile router (8 sub-module product profile with AI suggestions)
+- [x] Backend: devBom router (BOM management, profit calculator, suppliers)
+- [x] Backend: devManual router (product manual + test report AI generation)
+- [x] Frontend: DevDashboard (stats cards, recent projects, quick actions)
+- [x] Frontend: DevProjects / DevProjectList (search, filter, status management)
+- [x] Frontend: DevNewProject (creation form)
+- [x] Frontend: DevProjectDetail (7 tabs: overview, profile, BOM, manual, test report, analysis, scoring)
+- [x] Frontend: DevCompare, DevProfitCalculator, DevSupplierLibrary, DevTagSettings (standalone pages)
+- [x] Unit tests: 496 total tests passing (30 test files)

@@ -147,7 +147,7 @@ export default function ReviewHistoryPage() {
   };
 
   const handleGoToAnalysis = (analysisId: number) => {
-    navigate("/analysis");
+    navigate("/listing/analysis");
   };
 
   if (!selectedProjectId) {
@@ -184,7 +184,7 @@ export default function ReviewHistoryPage() {
         <div className="flex items-center gap-3">
           <Button
             variant="outline"
-            onClick={() => navigate("/analysis")}
+            onClick={() => navigate("/listing/analysis")}
           >
             <FileSpreadsheet className="h-4 w-4 mr-2" />
             导入新评论
@@ -282,7 +282,7 @@ export default function ReviewHistoryPage() {
               <Button
                 variant="outline"
                 className="mt-4"
-                onClick={() => navigate("/analysis")}
+                onClick={() => navigate("/listing/analysis")}
               >
                 <FileSpreadsheet className="h-4 w-4 mr-2" />
                 去导入评论

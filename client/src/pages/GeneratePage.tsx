@@ -593,7 +593,7 @@ export default function GeneratePage() {
                       variant="outline"
                       size="sm"
                       className="text-amber-700 border-amber-300 hover:bg-amber-100"
-                      onClick={() => setLocation("/keywords")}
+                      onClick={() => setLocation("/listing/keywords")}
                     >
                       前往关键词管理
                       <ArrowRight className="h-3.5 w-3.5 ml-1" />
@@ -945,7 +945,7 @@ export default function GeneratePage() {
                             <><Upload className="h-4 w-4 mr-2" />同步到预览页</>
                           )}
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => setLocation("/preview")}>
+                        <Button variant="outline" size="sm" onClick={() => setLocation("/listing/preview")}>
                           <FileText className="h-4 w-4 mr-2" />查看完整预览
                         </Button>
                       </div>
@@ -1060,7 +1060,7 @@ export default function GeneratePage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-semibold">生成结果预览</h2>
-                <Button variant="outline" onClick={() => setLocation("/preview")}>
+                <Button variant="outline" onClick={() => setLocation("/listing/preview")}>
                   <FileText className="h-4 w-4 mr-2" />
                   查看完整预览
                 </Button>

@@ -211,7 +211,7 @@ export default function ProjectDetailPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Card
               className="cursor-pointer hover:shadow-md transition-all group"
-              onClick={() => setLocation("/analysis")}
+              onClick={() => setLocation("/listing/analysis")}
             >
               <CardContent className="p-6 flex items-start gap-4">
                 <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition-colors">
@@ -227,7 +227,7 @@ export default function ProjectDetailPage() {
             </Card>
             <Card
               className="cursor-pointer hover:shadow-md transition-all group"
-              onClick={() => setLocation("/image-analysis")}
+              onClick={() => setLocation("/listing/image-analysis")}
             >
               <CardContent className="p-6 flex items-start gap-4">
                 <div className="h-12 w-12 rounded-xl bg-purple-50 flex items-center justify-center shrink-0 group-hover:bg-purple-100 transition-colors">
@@ -243,7 +243,7 @@ export default function ProjectDetailPage() {
             </Card>
             <Card
               className="cursor-pointer hover:shadow-md transition-all group"
-              onClick={() => setLocation("/generate")}
+              onClick={() => setLocation("/listing/generate")}
             >
               <CardContent className="p-6 flex items-start gap-4">
                 <div className="h-12 w-12 rounded-xl bg-amber-50 flex items-center justify-center shrink-0 group-hover:bg-amber-100 transition-colors">
@@ -259,7 +259,7 @@ export default function ProjectDetailPage() {
             </Card>
             <Card
               className="cursor-pointer hover:shadow-md transition-all group"
-              onClick={() => setLocation("/preview")}
+              onClick={() => setLocation("/listing/preview")}
             >
               <CardContent className="p-6 flex items-start gap-4">
                 <div className="h-12 w-12 rounded-xl bg-green-50 flex items-center justify-center shrink-0 group-hover:bg-green-100 transition-colors">

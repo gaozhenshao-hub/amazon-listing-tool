@@ -58,7 +58,7 @@ export default function Home() {
       setDialogOpen(false);
       setFormData({ name: "", brand: "", productName: "", category: "", targetMarket: "US", productFeatures: "", productSpecs: "" });
       toast.success("项目创建成功");
-      setLocation(`/project/${newProject.id}`);
+      setLocation(`/listing/project/${newProject.id}`);
     },
     onError: (err) => {
       toast.error("创建失败: " + err.message);
@@ -273,7 +273,7 @@ export default function Home() {
               <Card
                 key={project.id}
                 className="group hover:shadow-md transition-all cursor-pointer"
-                onClick={() => setLocation(`/project/${project.id}`)}
+                onClick={() => setLocation(`/listing/project/${project.id}`)}
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">

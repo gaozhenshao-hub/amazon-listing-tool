@@ -1,0 +1,198 @@
+import { z } from "zod";
+import { protectedProcedure, router } from "../_core/trpc";
+import * as devDb from "../devDb";
+import { storagePut } from "../storage";
+
+export const devProjectRouter = router({
+  list: protectedProcedure.query(async ({ ctx }) => {
+    return devDb.getDevProjectsByUser(ctx.user.id);
+  }),
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const project = await devDb.getDevProjectById(input.id, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      // Load related data
+      const [files, products, reviews, reports, score] = await Promise.all([
+        devDb.getDevFilesByProject(input.id),
+        devDb.getDevProductsByProject(input.id),
+        devDb.getDevReviewStats(input.id),
+        devDb.getDevReports(input.id),
+        devDb.getDevProjectScore(input.id),
+      ]);
+      return { ...project, files, products, reviewStats: reviews, reports, score };
+    }),
+
+  create: protectedProcedure
+    .input(z.object({
+      name: z.string().min(1).max(255),
+      description: z.string().optional(),
+      targetMarket: z.string().max(100).optional(),
+      platform: z.string().max(50).optional(),
+      keywords: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return devDb.createDevProject({
+        userId: ctx.user.id,
+        name: input.name,
+        description: input.description ?? null,
+        targetMarket: input.targetMarket ?? "US",
+        platform: input.platform ?? "amazon",
+        keywords: input.keywords ?? null,
+      });
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().min(1).max(255).optional(),
+      description: z.string().optional(),
+      targetMarket: z.string().max(100).optional(),
+      platform: z.string().max(50).optional(),
+      keywords: z.string().optional(),
+      status: z.enum(["draft", "data_collection", "analyzing", "scoring", "completed", "archived"]).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      return devDb.updateDevProject(id, ctx.user.id, data as any);
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      return devDb.deleteDevProject(input.id, ctx.user.id);
+    }),
+
+  stats: protectedProcedure.query(async ({ ctx }) => {
+    return devDb.getDevProjectStats(ctx.user.id);
+  }),
+
+  // File upload - accepts base64 encoded file data
+  uploadFile: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      fileName: z.string(),
+      fileType: z.enum(["sales", "bullet_points", "reviews", "history_sales"]),
+      fileData: z.string(), // base64
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Verify project ownership
+      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      // Upload to S3
+      const buffer = Buffer.from(input.fileData, "base64");
+      const suffix = Math.random().toString(36).substring(2, 8);
+      const fileKey = `dev-files/${ctx.user.id}/${input.projectId}/${input.fileName}-${suffix}`;
+      const { url } = await storagePut(fileKey, buffer, "application/octet-stream");
+
+      // Create file record
+      const result = await devDb.createDevUploadedFile({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        filename: input.fileName,
+        fileUrl: url,
+        fileType: input.fileType,
+      });
+
+      return { id: result.id, url };
+    }),
+
+  getFiles: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      return devDb.getDevFilesByProject(input.projectId);
+    }),
+
+  // Parse uploaded file data and save to products/reviews
+  parseFile: protectedProcedure
+    .input(z.object({
+      fileId: z.number(),
+      projectId: z.number(),
+      parsedData: z.string(), // JSON string of parsed data
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await devDb.updateDevFile(input.fileId, {
+        parsedData: input.parsedData,
+        status: "parsed",
+      });
+      return { success: true };
+    }),
+
+  // Save products from parsed file
+  saveProducts: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      products: z.array(z.object({
+        asin: z.string(),
+        title: z.string().optional(),
+        brand: z.string().optional(),
+        price: z.string().optional(),
+        rating: z.string().optional(),
+        reviewCount: z.number().optional(),
+        monthlySales: z.number().optional(),
+        bsr: z.number().optional(),
+        bulletPoints: z.string().optional(),
+        description: z.string().optional(),
+      })),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await devDb.upsertDevProducts(input.projectId, input.products.map(p => ({
+        projectId: input.projectId,
+        asin: p.asin,
+        title: p.title ?? null,
+        brand: p.brand ?? null,
+        price: p.price ?? null,
+        rating: p.rating ?? null,
+        reviewCount: p.reviewCount?.toString() ?? null,
+        monthlySales: p.monthlySales ?? null,
+        bsr: p.bsr ?? null,
+        bulletPoints: p.bulletPoints ?? null,
+        description: p.description ?? null,
+      })));
+      return { success: true, count: input.products.length };
+    }),
+
+  getProducts: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      return devDb.getDevProductsByProject(input.projectId);
+    }),
+
+  // Save reviews from parsed file
+  saveReviews: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      reviews: z.array(z.object({
+        asin: z.string().optional(),
+        title: z.string().optional(),
+        content: z.string().optional(),
+        rating: z.number().optional(),
+        reviewDate: z.string().optional(),
+        isVP: z.boolean().optional(),
+        variant: z.string().optional(),
+        helpfulCount: z.number().optional(),
+      })),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await devDb.insertDevReviews(input.reviews.map(r => ({
+        projectId: input.projectId,
+        asin: r.asin ?? null,
+        title: r.title ?? null,
+        content: r.content ?? null,
+        rating: r.rating ?? null,
+        reviewDate: r.reviewDate ?? null,
+        isVP: r.isVP ? 1 : 0,
+        variant: r.variant ?? null,
+        helpfulCount: r.helpfulCount ?? null,
+      })));
+      return { success: true, count: input.reviews.length };
+    }),
+
+  getReviewStats: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      return devDb.getDevReviewStats(input.projectId);
+    }),
+});

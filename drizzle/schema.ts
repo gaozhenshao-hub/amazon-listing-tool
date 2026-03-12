@@ -334,3 +334,514 @@ export const sellingPointDrafts = mysqlTable("sellingPointDrafts", {
 
 export type SellingPointDraft = typeof sellingPointDrafts.$inferSelect;
 export type InsertSellingPointDraft = typeof sellingPointDrafts.$inferInsert;
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── Knowledge Base Module Tables ─────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+// 智能产品创意库
+export const kbProductInnovations = mysqlTable("kb_product_innovations", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  asin: varchar("asin", { length: 20 }).notNull(),
+  productUrl: varchar("productUrl", { length: 1024 }),
+  productTitle: varchar("productTitle", { length: 512 }),
+  brand: varchar("brand", { length: 128 }),
+  price: varchar("price", { length: 50 }),
+  bsr: int("bsr"),
+  rating: varchar("rating", { length: 10 }),
+  reviewCount: varchar("reviewCount", { length: 20 }),
+  category: varchar("category", { length: 128 }),
+  bulletPoints: text("bulletPoints"), // JSON array
+  imageUrls: text("imageUrls"), // JSON array of S3 URLs
+  crawledData: text("crawledData"), // Full crawled data JSON
+  aiAnalysis: text("aiAnalysis"), // AI analysis result JSON
+  userEditedAnalysis: text("userEditedAnalysis"), // User-edited analysis JSON
+  tags: text("tags"), // Tags JSON array
+  overallScore: int("overallScore"), // 1-10
+  status: mysqlEnum("status", ["crawling", "analyzing", "pending_review", "confirmed", "archived"]).default("crawling").notNull(),
+  confirmedAt: timestamp("confirmedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type KbProductInnovation = typeof kbProductInnovations.$inferSelect;
+export type InsertKbProductInnovation = typeof kbProductInnovations.$inferInsert;
+
+// 智能Listing文案库
+export const kbListingCopywriting = mysqlTable("kb_listing_copywriting", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  asin: varchar("asin", { length: 20 }).notNull(),
+  productTitle: varchar("productTitle", { length: 512 }),
+  category: varchar("category", { length: 128 }),
+  brand: varchar("brand", { length: 128 }),
+  titleText: text("titleText"),
+  bulletPoints: text("bulletPoints"), // JSON array of 5 bullet points
+  longDescription: text("longDescription"),
+  aPlusContent: text("aPlusContent"),
+  qaContent: text("qaContent"), // JSON array of QA
+  crawledData: text("crawledData"), // Full crawled data JSON
+  aiAnalysis: text("aiAnalysis"), // AI analysis result JSON
+  userEditedAnalysis: text("userEditedAnalysis"), // User-edited analysis JSON
+  tags: text("tags"), // Tags JSON array
+  overallScore: int("overallScore"), // 1-100
+  status: mysqlEnum("status", ["crawling", "analyzing", "pending_review", "confirmed", "archived"]).default("crawling").notNull(),
+  confirmedAt: timestamp("confirmedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type KbListingCopywriting = typeof kbListingCopywriting.$inferSelect;
+export type InsertKbListingCopywriting = typeof kbListingCopywriting.$inferInsert;
+
+// 智能图片知识库 - 图片集（以ASIN为单位）
+export const kbImageSets = mysqlTable("kb_image_sets", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  asin: varchar("asin", { length: 20 }).notNull(),
+  productTitle: varchar("productTitle", { length: 512 }),
+  category: varchar("category", { length: 128 }),
+  brand: varchar("brand", { length: 128 }),
+  overallAnalysis: text("overallAnalysis"), // Overall visual analysis JSON
+  userEditedOverallAnalysis: text("userEditedOverallAnalysis"),
+  overallScore: int("overallScore"), // 1-100
+  status: mysqlEnum("status", ["crawling", "analyzing", "pending_review", "confirmed", "archived"]).default("crawling").notNull(),
+  confirmedAt: timestamp("confirmedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type KbImageSet = typeof kbImageSets.$inferSelect;
+export type InsertKbImageSet = typeof kbImageSets.$inferInsert;
+
+// 智能图片知识库 - 单张图片分析
+export const kbImages = mysqlTable("kb_images", {
+  id: int("id").autoincrement().primaryKey(),
+  imageSetId: int("imageSetId").notNull(),
+  imageUrl: varchar("imageUrl", { length: 1024 }).notNull(), // S3 URL
+  imagePosition: mysqlEnum("imagePosition", ["main", "secondary", "aplus"]).notNull(),
+  positionIndex: int("positionIndex"), // e.g. secondary image #2
+  // Four-dimension tags
+  tagCategory: varchar("tagCategory", { length: 64 }),
+  tagColorScheme: varchar("tagColorScheme", { length: 64 }),
+  tagImageType: varchar("tagImageType", { length: 64 }),
+  tagDesignStyle: varchar("tagDesignStyle", { length: 64 }),
+  // AI analysis
+  aiDimensionAnalysis: text("aiDimensionAnalysis"), // 12-dimension analysis JSON
+  userEditedDimensionAnalysis: text("userEditedDimensionAnalysis"),
+  singleImageScore: int("singleImageScore"), // 1-10
+  highlights: text("highlights"),
+  tagsConfirmed: int("tagsConfirmed").default(0).notNull(), // 0=no, 1=yes
+  analysisConfirmed: int("analysisConfirmed").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type KbImage = typeof kbImages.$inferSelect;
+export type InsertKbImage = typeof kbImages.$inferInsert;
+
+// 智能运营SOP知识库
+export const kbOperationSkills = mysqlTable("kb_operation_skills", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  title: varchar("title", { length: 256 }).notNull(),
+  sourceType: mysqlEnum("sourceType", [
+    "upload_pdf", "upload_word", "upload_excel", "upload_ppt",
+    "upload_md", "upload_image", "upload_mindmap", "url", "manual"
+  ]).notNull(),
+  sourceUrl: varchar("sourceUrl", { length: 1024 }),
+  fileUrl: varchar("fileUrl", { length: 1024 }), // S3 URL for original file
+  originalFileName: varchar("originalFileName", { length: 256 }),
+  extractedContent: text("extractedContent"), // Extracted text content
+  aiSummary: text("aiSummary"), // AI summary JSON
+  userEditedSummary: text("userEditedSummary"), // User-edited summary JSON
+  categories: text("categories"), // Category tags JSON array
+  tags: text("tags"), // Custom tags JSON array
+  practicalityScore: int("practicalityScore"), // 1-10
+  status: mysqlEnum("status", ["parsing", "analyzing", "pending_review", "confirmed", "archived"]).default("parsing").notNull(),
+  confirmedAt: timestamp("confirmedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type KbOperationSkill = typeof kbOperationSkills.$inferSelect;
+export type InsertKbOperationSkill = typeof kbOperationSkills.$inferInsert;
+
+// 智能视频知识库
+export const kbVideos = mysqlTable("kb_videos", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  asin: varchar("asin", { length: 20 }),
+  videoUrl: varchar("videoUrl", { length: 1024 }).notNull(),
+  videoTitle: varchar("videoTitle", { length: 512 }),
+  category: varchar("category", { length: 128 }),
+  duration: int("duration"), // seconds
+  thumbnailUrl: varchar("thumbnailUrl", { length: 1024 }),
+  transcriptText: text("transcriptText"), // Audio transcription
+  keyframeUrls: text("keyframeUrls"), // JSON array of keyframe S3 URLs
+  aiAnalysis: text("aiAnalysis"), // AI analysis result JSON
+  userEditedAnalysis: text("userEditedAnalysis"), // User-edited analysis JSON
+  tags: text("tags"), // Tags JSON array
+  overallScore: int("overallScore"), // 1-100
+  status: mysqlEnum("status", ["downloading", "transcribing", "analyzing", "pending_review", "confirmed", "archived"]).default("downloading").notNull(),
+  confirmedAt: timestamp("confirmedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type KbVideo = typeof kbVideos.$inferSelect;
+export type InsertKbVideo = typeof kbVideos.$inferInsert;
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── Module 1: 智能产品开发分析 (Product Development AI Analysis) ──
+// ═══════════════════════════════════════════════════════════════════
+
+// 产品开发项目
+export const devProjects = mysqlTable("dev_projects", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  targetMarket: varchar("targetMarket", { length: 100 }).default("US"),
+  platform: varchar("platform", { length: 50 }).default("amazon"),
+  keywords: text("keywords"), // JSON array of search keywords
+  status: mysqlEnum("status", ["draft", "data_collection", "analyzing", "scoring", "completed", "archived"]).default("draft").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevProject = typeof devProjects.$inferSelect;
+export type InsertDevProject = typeof devProjects.$inferInsert;
+
+// 上传文件记录
+export const devUploadedFiles = mysqlTable("dev_uploaded_files", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  fileType: mysqlEnum("fileType", ["sales", "bullet_points", "reviews", "history_sales"]).notNull(),
+  filename: varchar("filename", { length: 500 }).notNull(),
+  fileUrl: text("fileUrl"), // S3 URL
+  fileSize: int("fileSize"),
+  parsedData: text("parsedData"), // JSON: structured parsed result
+  totalRows: int("totalRows"),
+  status: mysqlEnum("status", ["uploaded", "parsing", "parsed", "failed"]).default("uploaded").notNull(),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevUploadedFile = typeof devUploadedFiles.$inferSelect;
+export type InsertDevUploadedFile = typeof devUploadedFiles.$inferInsert;
+
+// 产品数据
+export const devProducts = mysqlTable("dev_products", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  asin: varchar("asin", { length: 20 }),
+  title: text("title"),
+  brand: varchar("brand", { length: 255 }),
+  price: varchar("price", { length: 50 }),
+  rating: varchar("rating", { length: 10 }),
+  reviewCount: varchar("reviewCount", { length: 20 }),
+  monthlySales: int("monthlySales"),
+  bsr: int("bsr"),
+  bulletPoints: text("bulletPoints"), // JSON array
+  monthlySalesHistory: text("monthlySalesHistory"), // JSON: monthly sales data
+  tags: text("tags"), // JSON: AI-generated tags (14 dimensions)
+  tagStatus: mysqlEnum("tagStatus", ["pending", "tagged", "confirmed"]).default("pending").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevProduct = typeof devProducts.$inferSelect;
+export type InsertDevProduct = typeof devProducts.$inferInsert;
+
+// 评论数据
+export const devReviews = mysqlTable("dev_reviews", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  asin: varchar("asin", { length: 20 }),
+  title: text("title"),
+  content: text("content"),
+  rating: int("rating"),
+  reviewDate: varchar("reviewDate", { length: 50 }),
+  isVP: int("isVP").default(0), // verified purchase
+  variant: varchar("variant", { length: 255 }),
+  helpfulCount: int("helpfulCount").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DevReview = typeof devReviews.$inferSelect;
+export type InsertDevReview = typeof devReviews.$inferInsert;
+
+// 自定义标签维度
+export const devTagDimensions = mysqlTable("dev_tag_dimensions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 100 }).notNull(),
+  category: varchar("category", { length: 100 }),
+  description: text("description"),
+  isDefault: int("isDefault").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DevTagDimension = typeof devTagDimensions.$inferSelect;
+export type InsertDevTagDimension = typeof devTagDimensions.$inferInsert;
+
+// 站外数据记录
+export const devExternalData = mysqlTable("dev_external_data", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  dataType: mysqlEnum("dataType", [
+    "google_trends", "youtube_kol", "tiktok_kol",
+    "facebook_ads", "competitor_site", "crowdfunding"
+  ]).notNull(),
+  query: varchar("query", { length: 500 }),
+  rawData: text("rawData"), // JSON: raw API response
+  aiSummary: text("aiSummary"), // AI-generated summary
+  status: mysqlEnum("status", ["fetching", "analyzing", "completed", "failed"]).default("fetching").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevExternalData = typeof devExternalData.$inferSelect;
+export type InsertDevExternalData = typeof devExternalData.$inferInsert;
+
+// 分析报告
+export const devAnalysisReports = mysqlTable("dev_analysis_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  reportType: mysqlEnum("reportType", [
+    "market_overview", "product_analysis", "price_analysis",
+    "brand_analysis", "competitor_analysis", "review_analysis",
+    "review_analysis_recent_2y", "external_analysis", "ai_summary"
+  ]).notNull(),
+  title: varchar("title", { length: 255 }),
+  content: text("content"), // JSON: { summary, chartData, confirmed }
+  status: mysqlEnum("status", ["generating", "completed", "failed"]).default("generating").notNull(),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevAnalysisReport = typeof devAnalysisReports.$inferSelect;
+export type InsertDevAnalysisReport = typeof devAnalysisReports.$inferInsert;
+
+// 立项评分
+export const devProjectScores = mysqlTable("dev_project_scores", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  marketCapacity: int("marketCapacity").default(0), // 0-20
+  differentiation: int("differentiation").default(0),
+  competitiveness: int("competitiveness").default(0),
+  entryOpportunity: int("entryOpportunity").default(0),
+  profit: int("profit").default(0),
+  risk: int("risk").default(0),
+  totalScore: int("totalScore").default(0), // sum of above
+  aiReasoning: text("aiReasoning"), // JSON: reasoning for each dimension
+  recommendation: mysqlEnum("recommendation", ["approve", "review", "reject"]).default("review").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevProjectScore = typeof devProjectScores.$inferSelect;
+export type InsertDevProjectScore = typeof devProjectScores.$inferInsert;
+
+// 产品画像
+export const devProductProfiles = mysqlTable("dev_product_profiles", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  appearanceColors: text("appearanceColors"), // JSON: { colors, diff, matching, other }
+  mainFunctions: text("mainFunctions"), // JSON: { mainFunctions, upgrades, diffDesign }
+  costBreakdown: text("costBreakdown"), // JSON: { breakdown, targetPrice, targetMargin }
+  packageDimensions: text("packageDimensions"), // JSON: { dimensions, boxType, filling, weight }
+  packageDesign: text("packageDesign"), // JSON: { style, colorScheme, printInfo }
+  userPersona: text("userPersona"), // JSON: { age, gender, income, interests, painPoints, description }
+  usageScenarios: text("usageScenarios"), // JSON: { scenarios }
+  productMap: text("productMap"), // JSON: { positioning, competitors, advantages, gaps }
+  status: mysqlEnum("status", ["draft", "confirmed"]).default("draft").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevProductProfile = typeof devProductProfiles.$inferSelect;
+export type InsertDevProductProfile = typeof devProductProfiles.$inferInsert;
+
+// 产品说明书
+export const devProductManuals = mysqlTable("dev_product_manuals", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  brandName: varchar("brandName", { length: 255 }),
+  logoUrl: text("logoUrl"),
+  contentSections: text("contentSections"), // JSON: array of { sectionKey, titleEn, titleEs, contentEn, contentEs, status }
+  contentStatus: mysqlEnum("contentStatus", ["draft", "editing", "confirmed"]).default("draft").notNull(),
+  finalManualUrl: text("finalManualUrl"), // S3 URL for final PDF
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevProductManual = typeof devProductManuals.$inferSelect;
+export type InsertDevProductManual = typeof devProductManuals.$inferInsert;
+
+// 测试报告
+export const devTestReports = mysqlTable("dev_test_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  testItems: text("testItems"), // JSON: array of test items with status
+  reportContent: text("reportContent"), // JSON: additional report content
+  status: mysqlEnum("status", ["draft", "editing", "confirmed"]).default("draft").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevTestReport = typeof devTestReports.$inferSelect;
+export type InsertDevTestReport = typeof devTestReports.$inferInsert;
+
+// BOM物料清单
+export const devBomItems = mysqlTable("dev_bom_items", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  partName: varchar("partName", { length: 255 }).notNull(),
+  material: varchar("material", { length: 255 }),
+  process: varchar("process", { length: 255 }),
+  specification: text("specification"),
+  quantity: int("quantity").default(1),
+  unitPrice: varchar("unitPrice", { length: 50 }),
+  subtotal: varchar("subtotal", { length: 50 }),
+  remark: text("remark"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevBomItem = typeof devBomItems.$inferSelect;
+export type InsertDevBomItem = typeof devBomItems.$inferInsert;
+
+// 模具费用
+export const devMoldCosts = mysqlTable("dev_mold_costs", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  partName: varchar("partName", { length: 255 }).notNull(),
+  moldType: varchar("moldType", { length: 100 }),
+  moldMaterial: varchar("moldMaterial", { length: 100 }),
+  cavities: int("cavities"),
+  estimatedCost: varchar("estimatedCost", { length: 50 }),
+  leadTimeDays: int("leadTimeDays"),
+  remark: text("remark"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevMoldCost = typeof devMoldCosts.$inferSelect;
+export type InsertDevMoldCost = typeof devMoldCosts.$inferInsert;
+
+// 时间规划
+export const devTimePlans = mysqlTable("dev_time_plans", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  phaseName: varchar("phaseName", { length: 255 }).notNull(),
+  estimatedDays: int("estimatedDays"),
+  startOffset: int("startOffset"), // days from project start
+  description: text("description"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevTimePlan = typeof devTimePlans.$inferSelect;
+export type InsertDevTimePlan = typeof devTimePlans.$inferInsert;
+
+// 项目供应商
+export const devSuppliers = mysqlTable("dev_suppliers", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  factoryScale: varchar("factoryScale", { length: 100 }),
+  employeeCount: varchar("employeeCount", { length: 50 }),
+  rdStaffCount: varchar("rdStaffCount", { length: 50 }),
+  qualityCerts: text("qualityCerts"),
+  productQuality: int("productQuality"), // 1-10
+  yieldRate: varchar("yieldRate", { length: 20 }),
+  deliveryScore: int("deliveryScore"), // 1-10
+  priceScore: int("priceScore"), // 1-10
+  overallScore: int("overallScore"), // 1-10
+  specialties: text("specialties"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevSupplier = typeof devSuppliers.$inferSelect;
+export type InsertDevSupplier = typeof devSuppliers.$inferInsert;
+
+// BOM成本汇总
+export const devBomSummary = mysqlTable("dev_bom_summary", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  materialCost: varchar("materialCost", { length: 50 }),
+  moldAmortizationQty: int("moldAmortizationQty"),
+  moldAmortizationCost: varchar("moldAmortizationCost", { length: 50 }),
+  packagingCost: varchar("packagingCost", { length: 50 }),
+  laborCost: varchar("laborCost", { length: 50 }),
+  shippingCost: varchar("shippingCost", { length: 50 }),
+  otherCost: varchar("otherCost", { length: 50 }),
+  totalUnitCost: varchar("totalUnitCost", { length: 50 }),
+  targetPrice: varchar("targetPrice", { length: 50 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevBomSummary = typeof devBomSummary.$inferSelect;
+export type InsertDevBomSummary = typeof devBomSummary.$inferInsert;
+
+// 利润计算记录
+export const devProfitCalculations = mysqlTable("dev_profit_calculations", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  projectId: int("projectId"), // optional, can be standalone
+  name: varchar("name", { length: 255 }),
+  sellingPrice: varchar("sellingPrice", { length: 50 }),
+  productCost: varchar("productCost", { length: 50 }),
+  fbaFee: varchar("fbaFee", { length: 50 }),
+  referralFeeRate: varchar("referralFeeRate", { length: 20 }),
+  adSpend: varchar("adSpend", { length: 50 }),
+  otherCost: varchar("otherCost", { length: 50 }),
+  profit: varchar("profit", { length: 50 }),
+  profitMargin: varchar("profitMargin", { length: 20 }),
+  roi: varchar("roi", { length: 20 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevProfitCalculation = typeof devProfitCalculations.$inferSelect;
+export type InsertDevProfitCalculation = typeof devProfitCalculations.$inferInsert;
+
+// 全局供应商库
+export const devGlobalSuppliers = mysqlTable("dev_global_suppliers", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  contactPerson: varchar("contactPerson", { length: 100 }),
+  phone: varchar("phone", { length: 50 }),
+  email: varchar("email", { length: 320 }),
+  address: text("address"),
+  categories: text("categories"), // JSON array
+  website: varchar("website", { length: 500 }),
+  qualityCerts: text("qualityCerts"),
+  overallScore: int("overallScore"), // 1-10
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevGlobalSupplier = typeof devGlobalSuppliers.$inferSelect;
+export type InsertDevGlobalSupplier = typeof devGlobalSuppliers.$inferInsert;
