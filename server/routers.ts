@@ -20,6 +20,8 @@ import { devScoringRouter } from "./routers/devScoring";
 import { devProfileRouter } from "./routers/devProfile";
 import { devBomRouter } from "./routers/devBom";
 import { devManualRouter } from "./routers/devManual";
+// Image Workflow
+import { imageWorkflowRouter } from "./routers/imageWorkflow";
 // Module 5: Knowledge Base
 import { kbProductsRouter } from "./routers/kbProducts";
 import { kbListingsRouter } from "./routers/kbListings";
@@ -57,6 +59,8 @@ export const appRouter = router({
   devProfile: devProfileRouter,
   devBom: devBomRouter,
   devManual: devManualRouter,
+  // Image Workflow
+  imageWorkflow: imageWorkflowRouter,
   // Module 5: Knowledge Base
   kbProducts: kbProductsRouter,
   kbListings: kbListingsRouter,

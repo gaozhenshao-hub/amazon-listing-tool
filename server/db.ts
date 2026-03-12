@@ -593,3 +593,37 @@ export async function deleteReviewAggregation(id: number) {
   await db.delete(reviewAggregations).where(eq(reviewAggregations.id, id));
 }
 
+// ─── Image Workflow Sessions ──────────────────────────────────────
+import { imageWorkflowSessions, InsertImageWorkflowSession } from "../drizzle/schema";
+
+export async function getImageWorkflowSession(projectId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(imageWorkflowSessions)
+    .where(and(eq(imageWorkflowSessions.projectId, projectId), eq(imageWorkflowSessions.userId, userId)))
+    .orderBy(desc(imageWorkflowSessions.updatedAt))
+    .limit(1);
+  return rows[0] || null;
+}
+
+export async function createImageWorkflowSession(data: InsertImageWorkflowSession) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const [result] = await db.insert(imageWorkflowSessions).values(data);
+  const rows = await db.select().from(imageWorkflowSessions).where(eq(imageWorkflowSessions.id, result.insertId)).limit(1);
+  return rows[0];
+}
+
+export async function updateImageWorkflowSession(id: number, data: Partial<InsertImageWorkflowSession>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(imageWorkflowSessions).set(data).where(eq(imageWorkflowSessions.id, id));
+  const rows = await db.select().from(imageWorkflowSessions).where(eq(imageWorkflowSessions.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function deleteImageWorkflowSession(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(imageWorkflowSessions).where(eq(imageWorkflowSessions.id, id));
+}

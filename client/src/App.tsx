@@ -19,6 +19,7 @@ import ReviewHistoryPage from "./pages/ReviewHistoryPage";
 import DataFilesPage from "./pages/DataFilesPage";
 import ScorePage from "./pages/ScorePage";
 import ImageSuggestionsPage from "./pages/ImageSuggestionsPage";
+import ImageWorkflowPage from "./pages/ImageWorkflowPage";
 import KeywordPage from "./pages/KeywordPage";
 import AdStructurePage from "./pages/AdStructurePage";
 import ReviewAggregationPage from "./pages/ReviewAggregationPage";
@@ -65,6 +66,7 @@ function Router() {
         <Route path="/listing/data-files" component={DataFilesPage} />
         <Route path="/listing/score" component={ScorePage} />
         <Route path="/listing/image-suggestions" component={ImageSuggestionsPage} />
+        <Route path="/listing/image-workflow" component={ImageWorkflowPage} />
         <Route path="/listing/keywords" component={KeywordPage} />
         <Route path="/listing/ad-structure" component={AdStructurePage} />
         <Route path="/listing/review-aggregation" component={ReviewAggregationPage} />

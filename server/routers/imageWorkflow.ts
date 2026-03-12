@@ -1,0 +1,574 @@
+import { z } from "zod";
+import { protectedProcedure, router } from "../_core/trpc";
+import { invokeLLM } from "../_core/llm";
+import * as db from "../db";
+import * as devDb from "../devDb";
+import * as kbDb from "../kbDb";
+import {
+  STEP1_SELLING_POINTS_PROMPT,
+  STEP2_IMAGE_OUTLINE_PROMPT,
+  STEP3_STYLE_PROMPT,
+  STEP4_REFERENCE_PROMPT,
+  STEP5_FINAL_SUGGESTION_PROMPT,
+  STEP5_TRANSLATION_PROMPT,
+} from "../imageWorkflowPrompts";
+import { IMAGE_ADVICE_TRANSLATION_PROMPT } from "../prompts";
+
+// ─── Helper: Build context from project data ─────────────────────
+async function buildImageWorkflowContext(projectId: number) {
+  const parts: string[] = [];
+
+  // Load project info
+  const projects = await db.getProjectsByUser(0); // We'll get it differently
+  // Actually we need to load by projectId - let's use the analyses route
+  const analyses = await db.getCompetitorAnalysesByProject(projectId);
+
+  // Load product attributes from file analysis
+  const files = await db.getProjectFilesByProject(projectId);
+  for (const file of files) {
+    if (file.status !== "completed" || !file.analysisResult) continue;
+    try {
+      const parsed = JSON.parse(file.analysisResult);
+      if (file.fileType === "product_attributes") {
+        parts.push("--- 产品属性 ---");
+        if (parsed.uniqueSellingPoints?.length) {
+          parts.push(`独特卖点: ${parsed.uniqueSellingPoints.join("; ")}`);
+        }
+        if (parsed.coreSpecs?.length) {
+          parts.push(`核心参数: ${parsed.coreSpecs.map((s: any) => `${s.attribute}: ${s.value}`).join("; ")}`);
+        }
+        if (parsed.materialBuild?.length) {
+          parts.push(`材质工艺: ${parsed.materialBuild.map((m: any) => `${m.attribute}: ${m.value}`).join("; ")}`);
+        }
+      }
+    } catch {}
+  }
+
+  // Load competitor analyses
+  if (analyses.length > 0) {
+    parts.push("\n--- 竞品分析 ---");
+    for (const a of analyses) {
+      parts.push(`竞品 ASIN: ${a.asin}`);
+      if (a.title) parts.push(`标题: ${a.title}`);
+      if (a.rawData) {
+        try {
+          const parsed = JSON.parse(a.rawData);
+          if (parsed.advantages?.length) parts.push(`优势: ${parsed.advantages.join("; ")}`);
+          if (parsed.weaknesses?.length) parts.push(`弱点: ${parsed.weaknesses.join("; ")}`);
+        } catch {}
+      }
+      // Include review data
+      if (a.reviewAnalysis) {
+        try {
+          const reviews = JSON.parse(a.reviewAnalysis);
+          if (reviews.painPoints?.length) parts.push(`差评痛点: ${reviews.painPoints.map((p: any) => typeof p === 'string' ? p : p.point || JSON.stringify(p)).join("; ")}`);
+          if (reviews.delightPoints?.length) parts.push(`好评亮点: ${reviews.delightPoints.map((p: any) => typeof p === 'string' ? p : p.point || JSON.stringify(p)).join("; ")}`);
+          if (reviews.itchPoints?.length) parts.push(`用户期望: ${reviews.itchPoints.map((p: any) => typeof p === 'string' ? p : p.point || JSON.stringify(p)).join("; ")}`);
+        } catch {}
+      }
+    }
+  }
+
+  // Load review aggregation (Kano model)
+  const reviewAgg = await db.getReviewAggregationByProject(projectId);
+  if (reviewAgg && reviewAgg.status === "completed") {
+    parts.push("\n--- 评论聚合分析 ---");
+    if (reviewAgg.painPoints) {
+      try {
+        const painPts = JSON.parse(reviewAgg.painPoints);
+        if (painPts?.length) parts.push(`痛点: ${painPts.map((p: any) => typeof p === 'string' ? p : p.point || JSON.stringify(p)).join("; ")}`);
+      } catch {}
+    }
+    if (reviewAgg.itchPoints) {
+      try {
+        const itchPts = JSON.parse(reviewAgg.itchPoints);
+        if (itchPts?.length) parts.push(`期望点: ${itchPts.map((p: any) => typeof p === 'string' ? p : p.point || JSON.stringify(p)).join("; ")}`);
+      } catch {}
+    }
+    if (reviewAgg.delightPoints) {
+      try {
+        const delightPts = JSON.parse(reviewAgg.delightPoints);
+        if (delightPts?.length) parts.push(`亮点: ${delightPts.map((p: any) => typeof p === 'string' ? p : p.point || JSON.stringify(p)).join("; ")}`);
+      } catch {}
+    }
+  }
+
+  // Load keyword scene data
+  const allKeywords = await db.getKeywordsByProject(projectId);
+  if (allKeywords.length > 0) {
+    const sceneVolumes: Record<string, number> = {};
+    for (const kw of allKeywords) {
+      const vol = kw.monthlySearchVolume || 0;
+      if (kw.sceneTags) {
+        try {
+          const tags = JSON.parse(kw.sceneTags);
+          if (Array.isArray(tags)) {
+            tags.forEach((tag: string) => {
+              sceneVolumes[tag] = (sceneVolumes[tag] || 0) + vol;
+            });
+          }
+        } catch {}
+      }
+    }
+    const topScenes = Object.entries(sceneVolumes)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 8);
+    if (topScenes.length > 0) {
+      parts.push(`\n--- 关键词场景 ---`);
+      parts.push(topScenes.map(([scene, vol]) => `${scene} (搜索量: ${vol})`).join("; "));
+    }
+  }
+
+  // Load product profile from Module 1 (if exists)
+  const profile = await devDb.getDevProductProfile(projectId);
+  if (profile) {
+    parts.push("\n--- 产品画像 ---");
+    if (profile.appearanceColors) {
+      try {
+        const colors = JSON.parse(profile.appearanceColors);
+        parts.push(`外观颜色: ${JSON.stringify(colors)}`);
+      } catch {}
+    }
+    if (profile.mainFunctions) {
+      try {
+        const funcs = JSON.parse(profile.mainFunctions);
+        parts.push(`主要功能: ${JSON.stringify(funcs)}`);
+      } catch {}
+    }
+    if (profile.userPersona) {
+      try {
+        const persona = JSON.parse(profile.userPersona);
+        parts.push(`用户画像: ${JSON.stringify(persona)}`);
+      } catch {}
+    }
+    if (profile.usageScenarios) {
+      try {
+        const scenarios = JSON.parse(profile.usageScenarios);
+        parts.push(`使用场景: ${JSON.stringify(scenarios)}`);
+      } catch {}
+    }
+  }
+
+  // Load active listing (if exists)
+  const activeListing = await db.getActiveListingByProject(projectId);
+  if (activeListing) {
+    parts.push("\n--- 当前Listing ---");
+    if (activeListing.title) parts.push(`标题: ${activeListing.title}`);
+    if (activeListing.bulletPoints) {
+      try {
+        const bullets = JSON.parse(activeListing.bulletPoints);
+        if (Array.isArray(bullets)) {
+          parts.push(`五点描述:\n${bullets.map((b: any, i: number) => `${i + 1}. ${typeof b === 'string' ? b : b.text || b.content || JSON.stringify(b)}`).join("\n")}`);
+        }
+      } catch {}
+    }
+  }
+
+  return parts.join("\n");
+}
+
+// ─── Helper: Parse LLM JSON response ─────────────────────────────
+function parseLLMJson(response: any): any {
+  const content = typeof response.choices[0].message.content === "string"
+    ? response.choices[0].message.content
+    : JSON.stringify(response.choices[0].message.content);
+  try {
+    return JSON.parse(content);
+  } catch {
+    return { raw: content };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+export const imageWorkflowRouter = router({
+
+  // ─── Get or create workflow session ────────────────────────────
+  getSession: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      return session;
+    }),
+
+  // ─── Create new workflow session ───────────────────────────────
+  createSession: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      // Delete existing session if any
+      const existing = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (existing) {
+        await db.deleteImageWorkflowSession(existing.id);
+      }
+      return db.createImageWorkflowSession({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        currentStep: 1,
+      });
+    }),
+
+  // ─── Step 1: Generate selling points ───────────────────────────
+  generateStep1: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      let session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) {
+        session = await db.createImageWorkflowSession({
+          projectId: input.projectId,
+          userId: ctx.user.id,
+          currentStep: 1,
+        });
+      }
+
+      const context = await buildImageWorkflowContext(input.projectId);
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: STEP1_SELLING_POINTS_PROMPT },
+          { role: "user", content: `请为以下产品梳理卖点体系：\n\n产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n${context}` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const result = parseLLMJson(response);
+      await db.updateImageWorkflowSession(session.id, {
+        step1AiResult: JSON.stringify(result),
+        currentStep: 1,
+      });
+
+      return result;
+    }),
+
+  // ─── Step 1: Save user edits and confirm ───────────────────────
+  confirmStep1: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      userEdit: z.string(), // JSON string of edited selling points
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+
+      await db.updateImageWorkflowSession(session.id, {
+        step1UserEdit: input.userEdit,
+        step1Confirmed: 1,
+        currentStep: 2,
+      });
+
+      return { success: true };
+    }),
+
+  // ─── Step 2: Generate image outline ────────────────────────────
+  generateStep2: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+      if (!session.step1Confirmed) throw new Error("Step 1 not confirmed yet");
+
+      const sellingPoints = session.step1UserEdit || session.step1AiResult;
+      const context = await buildImageWorkflowContext(input.projectId);
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: STEP2_IMAGE_OUTLINE_PROMPT },
+          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${sellingPoints}\n\n--- 产品背景信息 ---\n${context}\n\n请根据以上卖点体系，规划每张图片的内容大纲。` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const result = parseLLMJson(response);
+      await db.updateImageWorkflowSession(session.id, {
+        step2AiResult: JSON.stringify(result),
+        currentStep: 2,
+      });
+
+      return result;
+    }),
+
+  // ─── Step 2: Save user edits and confirm ───────────────────────
+  confirmStep2: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      userEdit: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+
+      await db.updateImageWorkflowSession(session.id, {
+        step2UserEdit: input.userEdit,
+        step2Confirmed: 1,
+        currentStep: 3,
+      });
+
+      return { success: true };
+    }),
+
+  // ─── Step 3: Generate style recommendations ───────────────────
+  generateStep3: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+      if (!session.step2Confirmed) throw new Error("Step 2 not confirmed yet");
+
+      // Load product profile for color info
+      const profile = await devDb.getDevProductProfile(input.projectId);
+      let colorInfo = "";
+      if (profile?.appearanceColors) {
+        try {
+          colorInfo = `产品外观颜色: ${profile.appearanceColors}`;
+        } catch {}
+      }
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: STEP3_STYLE_PROMPT },
+          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n${colorInfo}\n\n--- 已确认的卖点 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}\n\n请推荐3-4个适合的视觉风格方案。` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const result = parseLLMJson(response);
+      await db.updateImageWorkflowSession(session.id, {
+        step3AiResult: JSON.stringify(result),
+        currentStep: 3,
+      });
+
+      return result;
+    }),
+
+  // ─── Step 3: Save user selection and confirm ──────────────────
+  confirmStep3: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      userEdit: z.string(), // JSON: selected style IDs and any modifications
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+
+      await db.updateImageWorkflowSession(session.id, {
+        step3UserEdit: input.userEdit,
+        step3Confirmed: 1,
+        currentStep: 4,
+      });
+
+      return { success: true };
+    }),
+
+  // ─── Step 4: Generate reference image recommendations ─────────
+  generateStep4: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+      if (!session.step3Confirmed) throw new Error("Step 3 not confirmed yet");
+
+      // Try to load knowledge base images for reference
+      let kbImageInfo = "";
+      try {
+        const kbImages = await kbDb.listAllImages(ctx.user.id, {});
+        if (kbImages.length > 0) {
+          kbImageInfo = "\n--- 知识库图片参考 ---\n";
+          kbImageInfo += kbImages.slice(0, 20).map((img: any) =>
+            `[${img.tagImageType || '未分类'}] ${img.tagCategory || ''} - ${img.tagDesignStyle || ''} (${img.imagePosition || ''})`
+          ).join("\n");
+        }
+      } catch {}
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: STEP4_REFERENCE_PROMPT },
+          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}\n\n--- 已确认的风格方案 ---\n${session.step3UserEdit || session.step3AiResult}\n${kbImageInfo}\n\n请为每张图推荐构图参考和效果图参考。` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const result = parseLLMJson(response);
+      await db.updateImageWorkflowSession(session.id, {
+        step4AiResult: JSON.stringify(result),
+        currentStep: 4,
+      });
+
+      return result;
+    }),
+
+  // ─── Step 4: Save user edits and confirm ──────────────────────
+  confirmStep4: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      userEdit: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+
+      await db.updateImageWorkflowSession(session.id, {
+        step4UserEdit: input.userEdit,
+        step4Confirmed: 1,
+        currentStep: 5,
+      });
+
+      return { success: true };
+    }),
+
+  // ─── Step 5: Generate final image suggestions ─────────────────
+  generateStep5: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+      if (!session.step4Confirmed) throw new Error("Step 4 not confirmed yet");
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: STEP5_FINAL_SUGGESTION_PROMPT },
+          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}\n\n--- 已确认的风格方案 ---\n${session.step3UserEdit || session.step3AiResult}\n\n--- 已确认的参考图 ---\n${session.step4UserEdit || session.step4AiResult}\n\n请综合以上所有确认结果，输出每张图的完整图片建议。` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const result = parseLLMJson(response);
+      const resultStr = JSON.stringify(result);
+
+      // Also generate Chinese translation
+      let cnStr: string | null = null;
+      try {
+        const cnResponse = await invokeLLM({
+          messages: [
+            { role: "system", content: STEP5_TRANSLATION_PROMPT },
+            { role: "user", content: `请将以下图片建议翻译为简体中文：\n\n${resultStr}` },
+          ],
+          response_format: { type: "json_object" },
+        });
+        const cnContent = typeof cnResponse.choices[0].message.content === "string"
+          ? cnResponse.choices[0].message.content
+          : JSON.stringify(cnResponse.choices[0].message.content);
+        JSON.parse(cnContent); // validate
+        cnStr = cnContent;
+      } catch (err) {
+        console.error("Step 5 CN translation failed:", err);
+      }
+
+      await db.updateImageWorkflowSession(session.id, {
+        step5AiResult: resultStr,
+        step5AiResultCn: cnStr,
+        currentStep: 5,
+      });
+
+      // Also save to the active listing for backward compatibility
+      try {
+        const existingListings = await db.getListingsByProject(input.projectId);
+        const activeListing = existingListings.find((l) => l.isActive === 1);
+        if (activeListing) {
+          await db.updateListing(activeListing.id, {
+            imageAdvice: resultStr,
+            imageAdviceCn: cnStr || null,
+          });
+        }
+      } catch {}
+
+      return { en: result, cn: cnStr ? JSON.parse(cnStr) : null };
+    }),
+
+  // ─── Step 5: Save user edits and confirm ──────────────────────
+  confirmStep5: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      userEdit: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+
+      await db.updateImageWorkflowSession(session.id, {
+        step5UserEdit: input.userEdit,
+        step5Confirmed: 1,
+        status: "completed",
+      });
+
+      return { success: true };
+    }),
+
+  // ─── Reset to a specific step ─────────────────────────────────
+  resetToStep: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      step: z.number().min(1).max(5),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+
+      // Clear data for steps >= target step
+      const clearData: any = { currentStep: input.step };
+      if (input.step <= 1) {
+        clearData.step1AiResult = null;
+        clearData.step1UserEdit = null;
+        clearData.step1Confirmed = 0;
+      }
+      if (input.step <= 2) {
+        clearData.step2AiResult = null;
+        clearData.step2UserEdit = null;
+        clearData.step2Confirmed = 0;
+      }
+      if (input.step <= 3) {
+        clearData.step3AiResult = null;
+        clearData.step3UserEdit = null;
+        clearData.step3Confirmed = 0;
+      }
+      if (input.step <= 4) {
+        clearData.step4AiResult = null;
+        clearData.step4UserEdit = null;
+        clearData.step4Confirmed = 0;
+      }
+      if (input.step <= 5) {
+        clearData.step5AiResult = null;
+        clearData.step5AiResultCn = null;
+        clearData.step5UserEdit = null;
+        clearData.step5Confirmed = 0;
+      }
+      clearData.status = "in_progress";
+
+      await db.updateImageWorkflowSession(session.id, clearData);
+      return { success: true };
+    }),
+
+  // ─── Generate PDF export ──────────────────────────────────────
+  exportPdf: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+      if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
+
+      // Return the data for client-side PDF generation
+      return {
+        en: session.step5UserEdit || session.step5AiResult,
+        cn: session.step5AiResultCn,
+        sellingPoints: session.step1UserEdit || session.step1AiResult,
+        outline: session.step2UserEdit || session.step2AiResult,
+        style: session.step3UserEdit || session.step3AiResult,
+        references: session.step4UserEdit || session.step4AiResult,
+      };
+    }),
+});

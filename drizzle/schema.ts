@@ -845,3 +845,50 @@ export const devGlobalSuppliers = mysqlTable("dev_global_suppliers", {
 
 export type DevGlobalSupplier = typeof devGlobalSuppliers.$inferSelect;
 export type InsertDevGlobalSupplier = typeof devGlobalSuppliers.$inferInsert;
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── Image Workflow (5-Step Image Suggestion Pipeline) ────────────
+// ═══════════════════════════════════════════════════════════════════
+
+export const imageWorkflowSessions = mysqlTable("image_workflow_sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  currentStep: int("currentStep").default(1).notNull(), // 1-5
+
+  // Step 1: 卖点梳理
+  step1AiResult: text("step1AiResult"),       // AI generated selling points JSON
+  step1UserEdit: text("step1UserEdit"),        // User edited/confirmed selling points JSON
+  step1Confirmed: int("step1Confirmed").default(0).notNull(), // 0=no, 1=yes
+
+  // Step 2: 图片大纲
+  step2AiResult: text("step2AiResult"),        // AI generated image outline JSON
+  step2UserEdit: text("step2UserEdit"),        // User edited/confirmed outline JSON
+  step2Confirmed: int("step2Confirmed").default(0).notNull(),
+
+  // Step 3: 风格确认
+  step3AiResult: text("step3AiResult"),        // AI recommended styles JSON
+  step3UserEdit: text("step3UserEdit"),        // User selected styles JSON (1-2 styles)
+  step3Confirmed: int("step3Confirmed").default(0).notNull(),
+
+  // Step 4: 参考图确认
+  step4AiResult: text("step4AiResult"),        // AI recommended reference images JSON
+  step4UserEdit: text("step4UserEdit"),        // User confirmed reference images JSON
+  step4Confirmed: int("step4Confirmed").default(0).notNull(),
+
+  // Step 5: 图片结构及内容建议
+  step5AiResult: text("step5AiResult"),        // AI final image suggestions JSON (English)
+  step5AiResultCn: text("step5AiResultCn"),    // AI final image suggestions JSON (Chinese)
+  step5UserEdit: text("step5UserEdit"),        // User edited final suggestions JSON
+  step5Confirmed: int("step5Confirmed").default(0).notNull(),
+
+  // PDF export
+  pdfUrl: text("pdfUrl"),                      // S3 URL for exported PDF
+
+  status: mysqlEnum("status", ["in_progress", "completed"]).default("in_progress").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ImageWorkflowSession = typeof imageWorkflowSessions.$inferSelect;
+export type InsertImageWorkflowSession = typeof imageWorkflowSessions.$inferInsert;

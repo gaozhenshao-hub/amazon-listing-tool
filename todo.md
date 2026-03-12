@@ -374,3 +374,44 @@
 - [x] AI Prompt: Update IMAGE_ADVICE_PROMPT with enhanced JSON structure (shootingNotes for mainImage, FABE for secondary images, enhanced A+ content fields)
 - [x] AI Prompt: Update IMAGE_ADVICE_TRANSLATION_PROMPT to match new structure
 - [x] Unit tests for image suggestion split feature (15 new tests, 511 total passing)
+
+## 图片建议增强功能 (Image Suggestion Enhancements - 2026-03-13)
+- [x] Test: 测试实际生成效果，验证FABE分析、配色方案等新字段是否符合预期
+- [x] Feature: 图片建议页面增加“导出为PDF”功能，方便将建议发给设计师
+- [x] Feature: A+内容模块增加拖拽排序功能，方便调整模块顺序
+
+## 图片建议5步工作流重构 (5-Step Image Workflow - 2026-03-13)
+### DB & Schema
+- [x] DB: 创建 image_workflow_sessions 表（工作流会话+步骤状态+每步数据JSON）
+
+### Step 1: 卖点梳理（AI生成+人工编辑确认）
+- [x] Backend: AI卖点梳理prompt+生成接口（输入竞品ASIN/Listing+产品画像）
+- [x] Backend: 卖点编辑保存+确认接口
+- [x] Frontend: Step1页面（AI生成→可编辑卡片：主卖点≤2个、次要卖点、好评点、差评点、必要性描述、场景及占比→确认按钮）
+
+### Step 2: 图片大纲（AI生成+人工编辑确认）
+- [x] Backend: AI图片大纲prompt+生成接口（基于确认的卖点）
+- [x] Backend: 大纲编辑保存+确认接口
+- [x] Frontend: Step2页面（每张图做什么内容、呼应哪个卖点、含品牌故事和A+→可编辑→确认）
+
+### Step 3: 风格确认（AI推荐+人工选择确认）
+- [x] Backend: AI风格推荐prompt+生成接口（根据类目和颜色推荐套图描述）
+- [x] Backend: 风格选择确认接口
+- [x] Frontend: Step3页面（展示AI推荐的几个风格方案→选择1-2个→确认）
+
+### Step 4: 参考图确认（AI推荐+人工确认）
+- [x] Backend: AI参考图推荐prompt+生成接口（构图参考优先知识库，效果图优先套图）
+- [x] Backend: 参考图确认接口
+- [x] Frontend: Step4页面（每张图的构图参考+效果图参考→可编辑→确认）
+
+### Step 5: 图片结构及内容建议
+- [x] Backend: 综合生成图片建议接口（基于大纲+参考图+风格）
+- [x] Backend: 最终建议编辑保存+确认接口
+- [x] Frontend: Step5结果页面（中英文左右展示，可编辑，含PDF导出和A+拖拽排序）
+- [x] Feature: PDF导出功能
+- [x] Feature: A+内容拖拽排序
+
+### 整体
+- [x] 导航更新：智能图片建议改为步骤式工作流
+- [x] 步骤进度条/导航组件
+- [x] 每步均含人工编辑确认交互 (562测试全部通过)

@@ -99,6 +99,13 @@
       "when": 1773343432337,
       "tag": "0013_gifted_agent_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "5",
+      "when": 1773351022419,
+      "tag": "0014_ordinary_wolf_cub",
+      "breakpoints": true
     }
   ]
 }
