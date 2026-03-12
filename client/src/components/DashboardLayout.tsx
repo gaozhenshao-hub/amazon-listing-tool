@@ -36,6 +36,7 @@ import {
   Gauge,
   Key,
   Target,
+  MessageSquareText,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -47,6 +48,7 @@ const menuItems = [
   { icon: Search, label: "竞品分析", path: "/analysis" },
   { icon: GitCompareArrows, label: "竞品对比", path: "/comparison" },
   { icon: History, label: "导入历史", path: "/review-history" },
+  { icon: MessageSquareText, label: "评论聚合分析", path: "/review-aggregation" },
   { icon: Image, label: "图片识别", path: "/image-analysis" },
   { icon: Key, label: "关键词管理", path: "/keywords" },
   { icon: Target, label: "广告架构", path: "/ad-structure" },

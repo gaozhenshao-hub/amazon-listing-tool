@@ -146,6 +146,10 @@ function KeywordListTab({ projectId }: { projectId: number }) {
   const bulkDeleteMut = trpc.keyword.bulkDelete.useMutation({ onSuccess: () => { keywordsQuery.refetch(); statsQuery.refetch(); setSelectedIds(new Set()); toast.success("批量删除完成"); } });
   const moveToNegMut = trpc.keyword.moveToNegative.useMutation({ onSuccess: () => { keywordsQuery.refetch(); statsQuery.refetch(); toast.success("已移入否词库"); } });
   const addMut = trpc.keyword.add.useMutation({ onSuccess: () => { keywordsQuery.refetch(); statsQuery.refetch(); toast.success("已添加"); } });
+  const updateMut = trpc.keyword.update.useMutation({
+    onSuccess: () => { keywordsQuery.refetch(); statsQuery.refetch(); },
+    onError: (err: any) => toast.error(err.message),
+  });
   const bulkUpdateMut = trpc.keyword.bulkUpdate.useMutation({
     onSuccess: (data: any) => {
       keywordsQuery.refetch(); statsQuery.refetch();
@@ -470,12 +474,70 @@ function KeywordListTab({ projectId }: { projectId: number }) {
                     <TableCell><Checkbox checked={selectedIds.has(kw.id)} onCheckedChange={() => toggleSelect(kw.id)} /></TableCell>
                     <TableCell className="font-medium max-w-[200px] truncate">{kw.keyword}</TableCell>
                     <TableCell>{kw.monthlySearchVolume?.toLocaleString() || "-"}</TableCell>
-                    <TableCell><Badge variant="secondary" className={RELEVANCE_COLORS[kw.relevance] || ""}>{kw.relevance === "high" ? "高" : kw.relevance === "medium" ? "中" : kw.relevance === "low" ? "低" : "无"}</Badge></TableCell>
-                    <TableCell><Badge variant="secondary" className={TRAFFIC_COLORS[kw.trafficLevel] || ""}>{kw.trafficLevel === "high" ? "高" : kw.trafficLevel === "medium" ? "中" : "低"}</Badge></TableCell>
-                    <TableCell><Badge variant="secondary">{kw.competition === "high" ? "高" : kw.competition === "medium" ? "中" : "低"}</Badge></TableCell>
-                    <TableCell>{kw.strategyCategory ? <Badge className={STRATEGY_LABELS[kw.strategyCategory]?.color || ""}>{STRATEGY_LABELS[kw.strategyCategory]?.label || kw.strategyCategory}</Badge> : <span className="text-muted-foreground text-xs">-</span>}</TableCell>
-                    <TableCell>{kw.rootCategory ? <span className="text-xs">{ROOT_LABELS[kw.rootCategory]?.icon} {ROOT_LABELS[kw.rootCategory]?.label}</span> : <span className="text-muted-foreground text-xs">-</span>}</TableCell>
-                    <TableCell>{kw.listingPlacement ? <Badge variant="outline" className="text-xs">{PLACEMENT_LABELS[kw.listingPlacement] || kw.listingPlacement}</Badge> : <span className="text-muted-foreground text-xs">-</span>}</TableCell>
+                    <TableCell>
+                      <Select value={kw.relevance || "none"} onValueChange={(v) => updateMut.mutate({ id: kw.id, relevance: v as any })}>
+                        <SelectTrigger className="h-7 w-[68px] text-xs border-transparent hover:border-border px-1.5"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="high"><span className="text-green-700">高</span></SelectItem>
+                          <SelectItem value="medium"><span className="text-yellow-700">中</span></SelectItem>
+                          <SelectItem value="low"><span className="text-orange-700">低</span></SelectItem>
+                          <SelectItem value="none"><span className="text-red-700">无</span></SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      <Select value={kw.trafficLevel || "low"} onValueChange={(v) => updateMut.mutate({ id: kw.id, trafficLevel: v as any })}>
+                        <SelectTrigger className="h-7 w-[68px] text-xs border-transparent hover:border-border px-1.5"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="high"><span className="text-blue-700">高</span></SelectItem>
+                          <SelectItem value="medium"><span className="text-sky-700">中</span></SelectItem>
+                          <SelectItem value="low"><span className="text-gray-600">低</span></SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      <Select value={kw.competition || "low"} onValueChange={(v) => updateMut.mutate({ id: kw.id, competition: v as any })}>
+                        <SelectTrigger className="h-7 w-[68px] text-xs border-transparent hover:border-border px-1.5"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="high">高</SelectItem>
+                          <SelectItem value="medium">中</SelectItem>
+                          <SelectItem value="low">低</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      <Select value={kw.strategyCategory || "_empty"} onValueChange={(v) => updateMut.mutate({ id: kw.id, strategyCategory: v === "_empty" ? null : v as any })}>
+                        <SelectTrigger className="h-7 w-[100px] text-xs border-transparent hover:border-border px-1.5"><SelectValue placeholder="-" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_empty">-</SelectItem>
+                          {Object.entries(STRATEGY_LABELS).map(([k, v]) => (
+                            <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      <Select value={kw.rootCategory || "_empty"} onValueChange={(v) => updateMut.mutate({ id: kw.id, rootCategory: v === "_empty" ? null : v as any })}>
+                        <SelectTrigger className="h-7 w-[100px] text-xs border-transparent hover:border-border px-1.5"><SelectValue placeholder="-" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_empty">-</SelectItem>
+                          {Object.entries(ROOT_LABELS).map(([k, v]) => (
+                            <SelectItem key={k} value={k}>{v.icon} {v.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
+                    <TableCell>
+                      <Select value={kw.listingPlacement || "_empty"} onValueChange={(v) => updateMut.mutate({ id: kw.id, listingPlacement: v === "_empty" ? null : v as any })}>
+                        <SelectTrigger className="h-7 w-[100px] text-xs border-transparent hover:border-border px-1.5"><SelectValue placeholder="-" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="_empty">-</SelectItem>
+                          {Object.entries(PLACEMENT_LABELS).map(([k, v]) => (
+                            <SelectItem key={k} value={k}>{v}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
                     <TableCell><Badge variant="outline" className="text-xs">{kw.status}</Badge></TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">

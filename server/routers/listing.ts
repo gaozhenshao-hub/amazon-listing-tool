@@ -10,6 +10,8 @@ import {
   IMAGE_ADVICE_PROMPT,
   CHINESE_TRANSLATION_PROMPT,
   IMAGE_ADVICE_TRANSLATION_PROMPT,
+  SELLING_POINTS_CORE_PROMPT,
+  SINGLE_BULLET_PROMPT,
 } from "../prompts";
 
 const MAX_RETRIES = 2;
@@ -267,6 +269,7 @@ function buildProductContext(project: any, analyses: any[], enrichedData?: {
   competitorComparison?: any;
   keywordSceneTags?: any;
   keywordStrategyMatrix?: any;
+  reviewAggregation?: any;
 }) {
   const parts: string[] = [];
   parts.push(`Product: ${project.productName || project.name}`);
@@ -350,8 +353,8 @@ function buildProductContext(project: any, analyses: any[], enrichedData?: {
         } catch {}
       }
 
-      // Extract review insights
-      if (analysis.reviewAnalysis) {
+      // Extract review insights (fallback if no aggregation)
+      if (!enrichedData?.reviewAggregation && analysis.reviewAnalysis) {
         try {
           const ra = JSON.parse(analysis.reviewAnalysis);
           if (ra.painPoints) allPainPoints.push(...ra.painPoints.map((p: any) => p.issue || p));
@@ -382,7 +385,55 @@ function buildProductContext(project: any, analyses: any[], enrichedData?: {
       });
     }
 
-    // Gap: pain points from reviews = opportunities for differentiation
+    // ─── Kano Model Aggregated Review Analysis (if available) ─────
+    if (enrichedData?.reviewAggregation) {
+      const agg = enrichedData.reviewAggregation;
+      parts.push("\nKano Model Aggregated Review Analysis (卡诺模型聚合评论分析):");
+      if (agg.painPoints) {
+        try {
+          const pains = typeof agg.painPoints === 'string' ? JSON.parse(agg.painPoints) : agg.painPoints;
+          if (Array.isArray(pains) && pains.length > 0) {
+            parts.push("  Pain Points (痛点 - Must-Be Quality):");
+            pains.forEach((p: any) => {
+              const sources = p.sourceAsins?.length ? ` [from: ${p.sourceAsins.join(", ")}]` : "";
+              parts.push(`    - ${p.point} (frequency: ${p.frequency}, severity: ${p.severity})${sources}`);
+              if (p.listingAdvice) parts.push(`      → Listing advice: ${p.listingAdvice}`);
+            });
+          }
+        } catch {}
+      }
+      if (agg.itchPoints) {
+        try {
+          const itches = typeof agg.itchPoints === 'string' ? JSON.parse(agg.itchPoints) : agg.itchPoints;
+          if (Array.isArray(itches) && itches.length > 0) {
+            parts.push("  Itch Points (痒点 - One-Dimensional Quality):");
+            itches.forEach((p: any) => {
+              const sources = p.sourceAsins?.length ? ` [from: ${p.sourceAsins.join(", ")}]` : "";
+              parts.push(`    - ${p.point} (frequency: ${p.frequency}, importance: ${p.importance})${sources}`);
+              if (p.listingAdvice) parts.push(`      → Listing advice: ${p.listingAdvice}`);
+            });
+          }
+        } catch {}
+      }
+      if (agg.delightPoints) {
+        try {
+          const delights = typeof agg.delightPoints === 'string' ? JSON.parse(agg.delightPoints) : agg.delightPoints;
+          if (Array.isArray(delights) && delights.length > 0) {
+            parts.push("  Delight Points (爽点 - Attractive Quality):");
+            delights.forEach((p: any) => {
+              const sources = p.sourceAsins?.length ? ` [from: ${p.sourceAsins.join(", ")}]` : "";
+              parts.push(`    - ${p.point} (frequency: ${p.frequency}, impact: ${p.impact})${sources}`);
+              if (p.listingAdvice) parts.push(`      → Listing advice: ${p.listingAdvice}`);
+            });
+          }
+        } catch {}
+      }
+      if (agg.overallSentiment) {
+        parts.push(`  Overall Market Sentiment: ${agg.overallSentiment}`);
+      }
+    }
+
+    // Gap: pain points from reviews = opportunities for differentiation (fallback)
     if (allPainPoints.length > 0) {
       const uniquePains = Array.from(new Set(allPainPoints)).slice(0, 8);
       parts.push("Gap Opportunities (from competitor review pain points):");
@@ -611,6 +662,7 @@ async function loadEnrichedData(projectId: number) {
     competitorComparison?: any;
     keywordSceneTags?: any;
     keywordStrategyMatrix?: any;
+    reviewAggregation?: any;
   } = {};
 
   // Module 1: Load product attributes from file analysis (unchanged)
@@ -705,6 +757,12 @@ async function loadEnrichedData(projectId: number) {
     if (Object.keys(strategyGroups).length > 0 || Object.keys(placementGroups).length > 0) {
       result.keywordStrategyMatrix = { strategyGroups, placementGroups, rootGroups };
     }
+  }
+
+  // Load Kano model aggregated review analysis (if available)
+  const reviewAgg = await db.getReviewAggregationByProject(projectId);
+  if (reviewAgg && reviewAgg.status === "completed") {
+    result.reviewAggregation = reviewAgg;
   }
 
   return result;
@@ -1363,6 +1421,159 @@ export const listingRouter = router({
       }
 
       return { listing: updated, applied: Object.keys(updateData) };
+    }),
+
+  // ─── Step-by-Step Bullet Generation (卖点核心→逐条生成) ───
+
+  // Step 1: Generate 5 selling point core themes for user to confirm
+  generateSellingPointsCores: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      emphasis: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
+      const enrichedData = await loadEnrichedData(input.projectId);
+      let context = buildProductContext(project, analyses, enrichedData);
+      if (input.emphasis?.trim()) {
+        context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
+      }
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: SELLING_POINTS_CORE_PROMPT },
+          { role: "user", content: `Based on the following product data, generate 5 core selling point themes for Amazon bullet points.\n\n${context}` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const content = typeof response.choices[0].message.content === "string"
+        ? response.choices[0].message.content
+        : JSON.stringify(response.choices[0].message.content);
+
+      try {
+        return JSON.parse(content);
+      } catch {
+        return { raw: content };
+      }
+    }),
+
+  // Step 2: Generate a single bullet point based on confirmed selling point core
+  generateSingleBullet: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      sellingPoint: z.object({
+        index: z.number(),
+        theme: z.string(),
+        themeZh: z.string().optional(),
+        description: z.string(),
+        descriptionZh: z.string().optional(),
+        fabeDirection: z.object({
+          feature: z.string(),
+          advantage: z.string(),
+          benefit: z.string(),
+          evidence: z.string(),
+        }).optional(),
+        targetKeywords: z.array(z.string()).optional(),
+        addressesGap: z.string().optional(),
+      }),
+      // Previously confirmed bullets for context continuity
+      previousBullets: z.array(z.object({
+        subtitle: z.string(),
+        fullText: z.string(),
+      })).optional(),
+      emphasis: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
+      const enrichedData = await loadEnrichedData(input.projectId);
+      let context = buildProductContext(project, analyses, enrichedData);
+      if (input.emphasis?.trim()) {
+        context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
+      }
+
+      // Build the selling point instruction
+      const sp = input.sellingPoint;
+      let spInstruction = `\n\n--- [Selling Point Core #${sp.index}] ---`;
+      spInstruction += `\nTheme: ${sp.theme}`;
+      if (sp.themeZh) spInstruction += ` (${sp.themeZh})`;
+      spInstruction += `\nDescription: ${sp.description}`;
+      if (sp.fabeDirection) {
+        spInstruction += `\nFABE Direction:`;
+        spInstruction += `\n  Feature: ${sp.fabeDirection.feature}`;
+        spInstruction += `\n  Advantage: ${sp.fabeDirection.advantage}`;
+        spInstruction += `\n  Benefit: ${sp.fabeDirection.benefit}`;
+        spInstruction += `\n  Evidence: ${sp.fabeDirection.evidence}`;
+      }
+      if (sp.targetKeywords?.length) {
+        spInstruction += `\nTarget Keywords to incorporate: ${sp.targetKeywords.join(", ")}`;
+      }
+      if (sp.addressesGap) {
+        spInstruction += `\nAddresses: ${sp.addressesGap}`;
+      }
+
+      // Add previous bullets context to avoid repetition
+      if (input.previousBullets?.length) {
+        spInstruction += `\n\n--- [Previously Confirmed Bullets - DO NOT repeat these themes] ---`;
+        input.previousBullets.forEach((b, i) => {
+          spInstruction += `\nBullet ${i + 1}: ${b.subtitle} ${b.fullText}`;
+        });
+      }
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: SINGLE_BULLET_PROMPT },
+          { role: "user", content: `Generate ONE optimized Amazon bullet point for selling point #${sp.index}.\n\nCRITICAL: The bullet (subtitle + space + fullText) MUST be 200-280 characters. Count every character precisely before outputting.\n\n${context}${spInstruction}` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const content = typeof response.choices[0].message.content === "string"
+        ? response.choices[0].message.content
+        : JSON.stringify(response.choices[0].message.content);
+
+      let parsed;
+      try {
+        parsed = JSON.parse(content);
+      } catch {
+        return { raw: content };
+      }
+
+      // Validate character count
+      if (parsed.subtitle && parsed.fullText) {
+        const combined = `${parsed.subtitle} ${parsed.fullText}`;
+        parsed.actualCharacterCount = combined.length;
+        parsed.characterCount = combined.length;
+        parsed.inRange = combined.length >= 200 && combined.length <= 280;
+
+        // Retry if out of range
+        if (!parsed.inRange) {
+          const issues = combined.length > 280
+            ? [`Bullet is ${combined.length} chars (max 280)`]
+            : [`Bullet is only ${combined.length} chars (min 200)`];
+
+          const retryData = await refineBullets(
+            { bulletPoints: [parsed] },
+            issues
+          );
+          if (retryData?.bulletPoints?.[0]) {
+            const refined = retryData.bulletPoints[0];
+            const refinedCombined = `${refined.subtitle} ${refined.fullText}`;
+            refined.actualCharacterCount = refinedCombined.length;
+            refined.characterCount = refinedCombined.length;
+            refined.inRange = refinedCombined.length >= 200 && refinedCombined.length <= 280;
+            return refined;
+          }
+        }
+      }
+
+      return parsed;
     }),
 
   // ─── Version History Procedures ───

@@ -11,6 +11,7 @@ import { reportRouter } from "./routers/report";
 import { scoringRouter } from "./routers/scoring";
 import { keywordRouter } from "./routers/keyword";
 import { adStructureRouter } from "./routers/adStructure";
+import { reviewAggregationRouter } from "./routers/reviewAggregation";
 
 export const appRouter = router({
   system: systemRouter,
@@ -31,6 +32,7 @@ export const appRouter = router({
   scoring: scoringRouter,
   keyword: keywordRouter,
   adStructure: adStructureRouter,
+  reviewAggregation: reviewAggregationRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -425,3 +425,98 @@ Output format (return ONLY this JSON, same structure with Chinese translations):
   "aPlusContent": { "sections": [{ "type": "中文类型", "purpose": "中文目的", "content": "中文内容", "dataVisualization": "中文数据可视化建议", "tips": ["中文提示"] }], "overallStrategy": "中文整体策略" },
   "designGuidelines": { "fontRecommendation": "中文字体推荐", "overallColorPalette": "中文配色方案", "brandTone": "中文品牌调性", "mobileOptimization": "中文手机端优化建议" }
 }`;
+
+
+// ─── Selling Points Core Generation Prompt ─────────────────────
+export const SELLING_POINTS_CORE_PROMPT = `${EXPERT_ROLE}
+
+Your task: Based on the product information, competitor analysis, keyword data, and review insights provided, generate exactly 5 core selling point themes for Amazon bullet points.
+
+**This is a PLANNING step, NOT the final copy.** You are identifying WHAT to write about, not writing the actual bullet points yet.
+
+**Rules:**
+1. Each selling point must focus on ONE distinct theme/angle
+2. Order by importance (most impactful first)
+3. Consider the FABE method direction for each point
+4. Leverage competitor gaps and review pain points as differentiation opportunities
+5. Ensure the 5 points cover different dimensions (e.g., material, function, safety, convenience, value)
+6. If user has specified emphasis points, prioritize those themes
+
+**For each selling point, provide:**
+- A concise theme name (2-4 words, in English)
+- A brief description of what this bullet should communicate (1-2 sentences)
+- The FABE direction: which Feature, Advantage, Benefit, and Evidence to highlight
+- Which keywords from the keyword strategy should be incorporated
+- Which competitor weakness or review insight this addresses
+
+Respond in JSON format:
+{
+  "sellingPoints": [
+    {
+      "index": 1,
+      "theme": "Premium Material Quality",
+      "themeZh": "优质材料品质",
+      "description": "Highlight the specific material used and its advantages over competitors",
+      "descriptionZh": "突出产品使用的具体材料及其相比竞品的优势",
+      "fabeDirection": {
+        "feature": "What specific feature to highlight",
+        "advantage": "What advantage this gives over alternatives",
+        "benefit": "What benefit the customer gets",
+        "evidence": "What evidence/data to cite"
+      },
+      "targetKeywords": ["keyword1", "keyword2"],
+      "addressesGap": "Brief note on which competitor weakness or review pain point this addresses"
+    }
+  ],
+  "overallStrategy": "Brief explanation of the overall 5-point strategy and how they work together"
+}`;
+
+// ─── Single Bullet Point Generation Prompt ─────────────────────
+export const SINGLE_BULLET_PROMPT = `${EXPERT_ROLE}
+
+Your task: Generate ONE optimized Amazon bullet point based on the confirmed selling point core theme.
+
+**Amazon Bullet Point Rules:**
+- Format: SHORT SUBTITLE in brackets + descriptive text
+- FABE Method: Feature → Advantage → Benefit → Evidence
+- Include usage scenarios and data comparisons
+- AI-friendly format: use "used for", "capable of", "designed for"
+
+## ⚠️ ABSOLUTE CHARACTER LIMIT — THIS IS THE #1 PRIORITY ⚠️
+
+The bullet point = subtitle + " " + fullText combined.
+- MINIMUM: 200 characters
+- MAXIMUM: 280 characters
+- HARD CEILING: 280 characters. Any bullet exceeding 280 characters is REJECTED.
+
+## HOW TO COUNT:
+subtitle = "【Premium Material】" (10 chars for the text + 2 bracket chars = ~12 chars)
+fullText = "the rest of the sentence..."
+Total = subtitle.length + 1 (space) + fullText.length
+
+## STRATEGY TO HIT 200-280:
+1. Write subtitle (keep short: 2-4 words inside brackets)
+2. Write fullText with FABE content
+3. Count total characters
+4. If < 200: add more specific details, materials, dimensions, or use cases
+5. If > 280: SHORTEN sentences, remove adjectives, simplify. MUST get under 280.
+6. Re-count and verify BEFORE outputting
+
+Keep subtitles SHORT (under 30 chars including brackets). This leaves 170-250 chars for fullText.
+
+**You MUST incorporate the target keywords naturally into the bullet text.**
+
+Respond in JSON format:
+{
+  "subtitle": "",
+  "fullText": "",
+  "sellingPoint": "",
+  "fabeBreakdown": {
+    "feature": "",
+    "advantage": "",
+    "benefit": "",
+    "evidence": ""
+  },
+  "characterCount": 0,
+  "incorporatedKeywords": []
+}`;

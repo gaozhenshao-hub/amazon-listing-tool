@@ -17,6 +17,7 @@ import DataFilesPage from "./pages/DataFilesPage";
 import ScorePage from "./pages/ScorePage";
 import KeywordPage from "./pages/KeywordPage";
 import AdStructurePage from "./pages/AdStructurePage";
+import ReviewAggregationPage from "./pages/ReviewAggregationPage";
 
 function Router() {
   return (
@@ -33,6 +34,7 @@ function Router() {
         <Route path="/score" component={ScorePage} />
         <Route path="/keywords" component={KeywordPage} />
         <Route path="/ad-structure" component={AdStructurePage} />
+        <Route path="/review-aggregation" component={ReviewAggregationPage} />
         <Route path="/project/:id" component={ProjectDetailPage} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />

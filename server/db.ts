@@ -13,6 +13,7 @@ import {
   InsertNegativeKeyword, negativeKeywords,
   InsertAdStructure, adStructures,
   InsertListingVersion, listingVersions,
+  InsertReviewAggregation, reviewAggregations,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -557,3 +558,37 @@ export async function getLatestListingVersionNumber(listingId: number): Promise<
   return rows[0]?.versionNumber || 0;
 }
 
+
+// ─── Review Aggregation Helpers ────────────────────────────────
+export async function createReviewAggregation(data: InsertReviewAggregation) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(reviewAggregations).values(data);
+  const insertId = result[0].insertId;
+  const rows = await db.select().from(reviewAggregations).where(eq(reviewAggregations.id, insertId)).limit(1);
+  return rows[0];
+}
+
+export async function getReviewAggregationByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(reviewAggregations)
+    .where(eq(reviewAggregations.projectId, projectId))
+    .orderBy(desc(reviewAggregations.updatedAt))
+    .limit(1);
+  return rows[0] || null;
+}
+
+export async function updateReviewAggregation(id: number, data: Partial<InsertReviewAggregation>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(reviewAggregations).set(data).where(eq(reviewAggregations.id, id));
+  const rows = await db.select().from(reviewAggregations).where(eq(reviewAggregations.id, id)).limit(1);
+  return rows[0];
+}
+
+export async function deleteReviewAggregation(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(reviewAggregations).where(eq(reviewAggregations.id, id));
+}

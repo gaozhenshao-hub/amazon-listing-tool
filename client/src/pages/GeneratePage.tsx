@@ -44,9 +44,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
+import { Pencil, ChevronDown, ChevronUp, Target, RotateCcw } from "lucide-react";
+import { Label } from "@/components/ui/label";
 
 type GenerationResult = {
   listing?: any;
@@ -100,6 +102,15 @@ export default function GeneratePage() {
   const [customStyleName, setCustomStyleName] = useState("");
   const [customStyleInstruction, setCustomStyleInstruction] = useState("");
   const [emphasis, setEmphasis] = useState("");
+
+  // Step-by-step bullet generation state
+  const [sellingPointCores, setSellingPointCores] = useState<any[] | null>(null);
+  const [overallStrategy, setOverallStrategy] = useState<string>("");
+  const [confirmedCores, setConfirmedCores] = useState<boolean[]>([]);
+  const [generatedBullets, setGeneratedBullets] = useState<Record<number, any>>({});
+  const [confirmedBullets, setConfirmedBullets] = useState<Record<number, boolean>>({});
+  const [editingCore, setEditingCore] = useState<number | null>(null);
+  const [stepBulletPhase, setStepBulletPhase] = useState<"idle" | "cores" | "bullets">("idle");
 
   const { data: project } = trpc.project.getById.useQuery(
     { id: selectedProjectId! },
@@ -191,6 +202,104 @@ export default function GeneratePage() {
     },
     onError: (err) => { setGeneratingPart(null); toast.error("生成失败: " + err.message); },
   });
+
+  // Step-by-step bullet mutations
+  const generateCores = trpc.listing.generateSellingPointsCores.useMutation({
+    onSuccess: (data) => {
+      if (data.sellingPoints) {
+        setSellingPointCores(data.sellingPoints);
+        setOverallStrategy(data.overallStrategy || "");
+        setConfirmedCores(new Array(data.sellingPoints.length).fill(false));
+        setGeneratedBullets({});
+        setConfirmedBullets({});
+        setStepBulletPhase("cores");
+        toast.success("卖点核心已生成，请确认或编辑后逐条生成");
+      } else {
+        toast.error("生成结果格式异常");
+      }
+    },
+    onError: (err) => toast.error("卖点核心生成失败: " + err.message),
+  });
+
+  const generateSingleBullet = trpc.listing.generateSingleBullet.useMutation({
+    onError: (err) => toast.error("卖点生成失败: " + err.message),
+  });
+
+  const handleGenerateCores = () => {
+    if (!selectedProjectId) return;
+    setStepBulletPhase("idle");
+    generateCores.mutate({ projectId: selectedProjectId, emphasis: emphasis.trim() || undefined });
+  };
+
+  const handleConfirmCore = (idx: number) => {
+    setConfirmedCores(prev => { const next = [...prev]; next[idx] = true; return next; });
+    setEditingCore(null);
+  };
+
+  const handleEditCore = (idx: number, field: string, value: string) => {
+    if (!sellingPointCores) return;
+    setSellingPointCores(prev => {
+      if (!prev) return prev;
+      const next = [...prev];
+      next[idx] = { ...next[idx], [field]: value };
+      return next;
+    });
+  };
+
+  const handleEditCoreFabe = (idx: number, fabeField: string, value: string) => {
+    if (!sellingPointCores) return;
+    setSellingPointCores(prev => {
+      if (!prev) return prev;
+      const next = [...prev];
+      next[idx] = {
+        ...next[idx],
+        fabeDirection: { ...next[idx].fabeDirection, [fabeField]: value },
+      };
+      return next;
+    });
+  };
+
+  const handleGenerateSingleBullet = async (idx: number) => {
+    if (!selectedProjectId || !sellingPointCores) return;
+    const sp = sellingPointCores[idx];
+    // Collect previously confirmed bullets
+    const previousBullets = Object.entries(confirmedBullets)
+      .filter(([, confirmed]) => confirmed)
+      .map(([i]) => generatedBullets[Number(i)])
+      .filter(Boolean)
+      .map(b => ({ subtitle: b.subtitle || "", fullText: b.fullText || "" }));
+
+    try {
+      const result = await generateSingleBullet.mutateAsync({
+        projectId: selectedProjectId,
+        sellingPoint: sp,
+        previousBullets,
+        emphasis: emphasis.trim() || undefined,
+      });
+      setGeneratedBullets(prev => ({ ...prev, [idx]: result }));
+      toast.success(`卖点 ${idx + 1} 生成完成`);
+    } catch {
+      // error handled by onError
+    }
+  };
+
+  const handleConfirmBullet = (idx: number) => {
+    setConfirmedBullets(prev => ({ ...prev, [idx]: true }));
+  };
+
+  const handleResetStepBullet = () => {
+    setSellingPointCores(null);
+    setOverallStrategy("");
+    setConfirmedCores([]);
+    setGeneratedBullets({});
+    setConfirmedBullets({});
+    setStepBulletPhase("idle");
+    setEditingCore(null);
+  };
+
+  const allBulletsConfirmed = sellingPointCores
+    ? sellingPointCores.every((_, i) => confirmedBullets[i])
+    : false;
 
   const generateABTest = trpc.listing.generateABTest.useMutation({
     onSuccess: (data) => {
@@ -586,6 +695,238 @@ export default function GeneratePage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* Step-by-Step Bullet Crafting Section */}
+          <Card className="border-teal-200 bg-gradient-to-br from-teal-50/50 to-transparent dark:from-teal-950/20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Target className="h-5 w-5 text-teal-600" />
+                分步卖点精雕
+              </CardTitle>
+              <CardDescription>
+                先生成5条卖点核心方向 → 人工确认/编辑 → 逐条生成完整Bullet Point，确保每条卖点精准到位
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Phase: Generate Cores */}
+              {stepBulletPhase === "idle" && (
+                <Button
+                  className="w-full"
+                  variant="outline"
+                  onClick={handleGenerateCores}
+                  disabled={generateCores.isPending || isGenerating}
+                >
+                  {generateCores.isPending ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />正在分析卖点方向...</>
+                  ) : (
+                    <><Target className="h-4 w-4 mr-2" />Step 1: 生成卖点核心方向</>
+                  )}
+                </Button>
+              )}
+
+              {generateCores.isPending && (
+                <div className="mt-2">
+                  <Progress value={undefined} className="h-1" />
+                  <p className="text-xs text-muted-foreground text-center mt-2">AI正在分析产品数据、竞品信息和关键词策略，规划5条卖点方向...</p>
+                </div>
+              )}
+
+              {/* Phase: Confirm/Edit Cores */}
+              {sellingPointCores && sellingPointCores.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold">卖点核心方向 ({confirmedCores.filter(Boolean).length}/{sellingPointCores.length} 已确认)</h3>
+                      {overallStrategy && <p className="text-xs text-muted-foreground mt-1">{overallStrategy}</p>}
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={handleResetStepBullet}>
+                      <RotateCcw className="h-3.5 w-3.5 mr-1" />重新生成
+                    </Button>
+                  </div>
+
+                  {sellingPointCores.map((sp, idx) => (
+                    <div key={idx} className={`rounded-lg border p-4 transition-all ${
+                      confirmedCores[idx]
+                        ? "border-green-300 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20"
+                        : "border-muted"
+                    }`}>
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-xs">{idx + 1}</Badge>
+                          {editingCore === idx ? (
+                            <Input
+                              value={sp.theme}
+                              onChange={(e) => handleEditCore(idx, "theme", e.target.value)}
+                              className="h-7 text-sm font-medium w-48"
+                            />
+                          ) : (
+                            <span className="text-sm font-semibold">{sp.theme}</span>
+                          )}
+                          {sp.themeZh && <span className="text-xs text-muted-foreground">({sp.themeZh})</span>}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {!confirmedCores[idx] && (
+                            <>
+                              <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setEditingCore(editingCore === idx ? null : idx)}>
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                              <Button variant="default" size="sm" className="h-7 px-3 bg-green-600 hover:bg-green-700" onClick={() => handleConfirmCore(idx)}>
+                                <Check className="h-3 w-3 mr-1" />确认
+                              </Button>
+                            </>
+                          )}
+                          {confirmedCores[idx] && (
+                            <Badge className="bg-green-600 text-white text-[10px]"><CheckCircle2 className="h-3 w-3 mr-1" />已确认</Badge>
+                          )}
+                        </div>
+                      </div>
+
+                      {editingCore === idx ? (
+                        <div className="space-y-2 mt-3">
+                          <div>
+                            <Label className="text-xs">描述</Label>
+                            <Textarea
+                              value={sp.description}
+                              onChange={(e) => handleEditCore(idx, "description", e.target.value)}
+                              rows={2}
+                              className="text-xs resize-none"
+                            />
+                          </div>
+                          {sp.fabeDirection && (
+                            <div className="grid grid-cols-2 gap-2">
+                              {["feature", "advantage", "benefit", "evidence"].map((f) => (
+                                <div key={f}>
+                                  <Label className="text-xs capitalize">{f}</Label>
+                                  <Input
+                                    value={sp.fabeDirection[f] || ""}
+                                    onChange={(e) => handleEditCoreFabe(idx, f, e.target.value)}
+                                    className="h-7 text-xs"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {sp.targetKeywords?.length > 0 && (
+                            <div>
+                              <Label className="text-xs">目标关键词</Label>
+                              <Input
+                                value={sp.targetKeywords.join(", ")}
+                                onChange={(e) => handleEditCore(idx, "targetKeywords", e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean) as any)}
+                                className="h-7 text-xs"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          <p className="text-xs text-muted-foreground">{sp.description}</p>
+                          {sp.descriptionZh && <p className="text-xs text-muted-foreground italic">{sp.descriptionZh}</p>}
+                          {sp.fabeDirection && (
+                            <div className="grid grid-cols-2 gap-1 mt-2">
+                              {Object.entries(sp.fabeDirection).map(([key, val]) => (
+                                val ? <div key={key} className="text-[10px] text-muted-foreground"><span className="font-medium uppercase">{key}:</span> {val as string}</div> : null
+                              ))}
+                            </div>
+                          )}
+                          {sp.targetKeywords?.length > 0 && (
+                            <div className="flex gap-1 flex-wrap mt-1">
+                              {sp.targetKeywords.map((kw: string, j: number) => (
+                                <Badge key={j} variant="outline" className="text-[10px]">{kw}</Badge>
+                              ))}
+                            </div>
+                          )}
+                          {sp.addressesGap && (
+                            <p className="text-[10px] text-teal-600 mt-1">针对: {sp.addressesGap}</p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Single bullet generation for this core */}
+                      {confirmedCores[idx] && (
+                        <div className="mt-3 pt-3 border-t">
+                          {!generatedBullets[idx] ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full"
+                              onClick={() => handleGenerateSingleBullet(idx)}
+                              disabled={generateSingleBullet.isPending}
+                            >
+                              {generateSingleBullet.isPending ? (
+                                <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />生成中...</>
+                              ) : (
+                                <><Sparkles className="h-3.5 w-3.5 mr-2" />生成第 {idx + 1} 条 Bullet Point</>
+                              )}
+                            </Button>
+                          ) : (
+                            <div className="space-y-2">
+                              <div className="p-3 rounded-lg bg-muted/30 border">
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className="text-sm flex-1">
+                                    <span className="font-bold">{generatedBullets[idx].subtitle}</span>
+                                    {" \u2014 "}
+                                    <span className="text-muted-foreground">{generatedBullets[idx].fullText}</span>
+                                  </p>
+                                  <CharCountBadge
+                                    count={(generatedBullets[idx].subtitle + " " + generatedBullets[idx].fullText).length}
+                                    min={200}
+                                    max={280}
+                                  />
+                                </div>
+                                {generatedBullets[idx].fabeBreakdown && (
+                                  <div className="grid grid-cols-2 gap-1 mt-2">
+                                    {Object.entries(generatedBullets[idx].fabeBreakdown).map(([key, val]) => (
+                                      val ? <div key={key} className="text-[10px] text-muted-foreground"><span className="font-medium uppercase">{key}:</span> {val as string}</div> : null
+                                    ))}
+                                  </div>
+                                )}
+                                {generatedBullets[idx].incorporatedKeywords?.length > 0 && (
+                                  <div className="flex gap-1 flex-wrap mt-1.5">
+                                    <span className="text-[10px] text-muted-foreground">已埋入:</span>
+                                    {generatedBullets[idx].incorporatedKeywords.map((kw: string, j: number) => (
+                                      <Badge key={j} variant="outline" className="text-[10px] bg-teal-50">{kw}</Badge>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex gap-2">
+                                {!confirmedBullets[idx] ? (
+                                  <>
+                                    <Button size="sm" className="bg-green-600 hover:bg-green-700" onClick={() => handleConfirmBullet(idx)}>
+                                      <Check className="h-3.5 w-3.5 mr-1" />确认此条
+                                    </Button>
+                                    <Button size="sm" variant="outline" onClick={() => handleGenerateSingleBullet(idx)} disabled={generateSingleBullet.isPending}>
+                                      <RotateCcw className="h-3.5 w-3.5 mr-1" />重新生成
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <Badge className="bg-green-600 text-white"><CheckCircle2 className="h-3 w-3 mr-1" />已确认</Badge>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Summary when all bullets confirmed */}
+                  {allBulletsConfirmed && (
+                    <div className="p-4 rounded-lg border-2 border-green-300 bg-green-50/50">
+                      <div className="flex items-center gap-2 mb-2">
+                        <CheckCircle2 className="h-5 w-5 text-green-600" />
+                        <span className="text-sm font-semibold text-green-800">全部5条卖点已确认</span>
+                      </div>
+                      <p className="text-xs text-green-700 mb-3">所有卖点已精雕完成，可前往Listing预览页查看完整效果</p>
+                      <Button variant="outline" size="sm" onClick={() => setLocation("/preview")}>
+                        <FileText className="h-4 w-4 mr-2" />查看完整预览
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* A/B Test Section */}
           <Card className="border-purple-200 bg-gradient-to-br from-purple-50/50 to-transparent dark:from-purple-950/20">
