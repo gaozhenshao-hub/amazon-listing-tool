@@ -282,3 +282,26 @@ export const listingVersions = mysqlTable("listingVersions", {
 });
 export type ListingVersion = typeof listingVersions.$inferSelect;
 export type InsertListingVersion = typeof listingVersions.$inferInsert;
+
+// Review aggregation analysis - Kano model (pain/itch/delight points) across all competitors
+export const reviewAggregations = mysqlTable("reviewAggregations", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  // Kano model analysis results (JSON arrays, each item: { point, frequency, severity/importance/impact, quotes, source })
+  painPoints: text("painPoints"),     // JSON: [{ point, frequency, severity, quotes, sourceAsins }]
+  itchPoints: text("itchPoints"),     // JSON: [{ point, frequency, importance, quotes, sourceAsins }]
+  delightPoints: text("delightPoints"), // JSON: [{ point, frequency, impact, quotes, sourceAsins }]
+  // Summary
+  overallSentiment: text("overallSentiment"),
+  keyThemes: text("keyThemes"),       // JSON array of key themes
+  analysisCount: int("analysisCount").default(0), // number of competitor analyses included
+  // Status
+  status: mysqlEnum("status", ["pending", "analyzing", "completed", "failed"]).default("pending").notNull(),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ReviewAggregation = typeof reviewAggregations.$inferSelect;
+export type InsertReviewAggregation = typeof reviewAggregations.$inferInsert;

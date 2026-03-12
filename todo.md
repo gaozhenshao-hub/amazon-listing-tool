@@ -259,3 +259,16 @@
 - [x] Change: Scoring system - scoring.ts router loads keywords from keywords table via loadKeywordsFromModule helper
 - [x] Change: Scoring system - All ABA references in messages replaced with keyword management module references
 - [x] Unit tests for emphasis option and scoring data source changes (7 new tests, 401 total passing)
+- [ ] Feature: Review aggregation analysis - Aggregate all competitor reviews using Kano model (pain points/itch points/delight points)
+- [ ] Feature: Review aggregation analysis - Backend AI analysis with Kano model classification
+- [ ] Feature: Review aggregation analysis - Results are editable and adjustable
+- [ ] Feature: Review aggregation analysis - Edited results feed into Listing generation multi-competitor analysis
+- [ ] Feature: Keyword module - Make relevance/traffic/competition fields manually adjustable (dropdown select high/medium/low)
+- [ ] Feature: Keyword module - Make strategyCategory field manually selectable (multi-select from predefined options)
+- [ ] Feature: Keyword module - Make rootType field manually selectable
+- [ ] Feature: Keyword module - Make listingPlacement field manually multi-selectable
+- [ ] Feature: Listing generation flow - Step 1: Generate selling point core content first
+- [ ] Feature: Listing generation flow - Step 2: User confirms/edits selling point cores
+- [ ] Feature: Listing generation flow - Step 3: Generate bullet points one by one after confirmation
+- [ ] Feature: Listing generation flow - Keep existing prompts, 4-module references, and generation requirements unchanged
+- [ ] Unit tests for review aggregation, keyword field editing, and listing generation flow changes
