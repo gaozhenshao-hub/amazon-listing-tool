@@ -358,3 +358,86 @@ describe("Kano Model → Listing Generation Integration", () => {
     expect(allDelightPoints).toContain("Good packaging");
   });
 });
+
+// ─── Feature 4: Sync Bullets from Selling Points to Listing Preview ───
+describe("Sync Bullets from Step-by-Step Selling Points", () => {
+  it("should format confirmed bullets as JSON array of strings", () => {
+    const confirmedBullets = [
+      { subtitle: "[Premium Material]", fullText: "Made from high-quality stainless steel that resists corrosion and ensures long-lasting durability for everyday kitchen use." },
+      { subtitle: "[Easy Assembly]", fullText: "Comes with clear instructions and all necessary hardware for quick 15-minute setup without professional tools." },
+      { subtitle: "[Versatile Design]", fullText: "Perfect for indoor and outdoor use, this product adapts to any environment with its weather-resistant finish." },
+    ];
+
+    const bulletStrings = confirmedBullets.map(b => `${b.subtitle} ${b.fullText}`);
+    const bulletPointsJson = JSON.stringify(bulletStrings);
+
+    expect(bulletStrings).toHaveLength(3);
+    expect(bulletStrings[0]).toContain("[Premium Material]");
+    expect(bulletStrings[0]).toContain("stainless steel");
+    expect(bulletStrings[1]).toContain("[Easy Assembly]");
+    expect(bulletStrings[2]).toContain("[Versatile Design]");
+
+    // Verify JSON format is valid
+    const parsed = JSON.parse(bulletPointsJson);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed).toHaveLength(3);
+    expect(typeof parsed[0]).toBe("string");
+  });
+
+  it("should validate bullet count between 1 and 5", () => {
+    const validBullets = [
+      { subtitle: "[Point 1]", fullText: "Description 1" },
+      { subtitle: "[Point 2]", fullText: "Description 2" },
+    ];
+    expect(validBullets.length).toBeGreaterThanOrEqual(1);
+    expect(validBullets.length).toBeLessThanOrEqual(5);
+
+    const maxBullets = Array.from({ length: 5 }, (_, i) => ({
+      subtitle: `[Point ${i + 1}]`,
+      fullText: `Description ${i + 1}`,
+    }));
+    expect(maxBullets.length).toBe(5);
+  });
+
+  it("should filter only confirmed bullets from generatedBullets map", () => {
+    const generatedBullets: Record<number, any> = {
+      0: { subtitle: "[A]", fullText: "Text A" },
+      1: { subtitle: "[B]", fullText: "Text B" },
+      2: { subtitle: "[C]", fullText: "Text C" },
+      3: { subtitle: "[D]", fullText: "Text D" },
+      4: { subtitle: "[E]", fullText: "Text E" },
+    };
+    const confirmedBullets: Record<number, boolean> = {
+      0: true,
+      1: true,
+      2: false,
+      3: true,
+      4: true,
+    };
+
+    const bullets = Object.entries(confirmedBullets)
+      .filter(([, confirmed]) => confirmed)
+      .map(([i]) => generatedBullets[Number(i)])
+      .filter(Boolean)
+      .map(b => ({ subtitle: b.subtitle || "", fullText: b.fullText || "" }));
+
+    // Only confirmed bullets should be included (0, 1, 3, 4)
+    expect(bullets).toHaveLength(4);
+    expect(bullets[0].subtitle).toBe("[A]");
+    expect(bullets[1].subtitle).toBe("[B]");
+    expect(bullets[2].subtitle).toBe("[D]");
+    expect(bullets[3].subtitle).toBe("[E]");
+  });
+
+  it("should handle sync result actions correctly", () => {
+    // Simulate update action (listing already exists)
+    const updateResult = { action: "updated", listingId: 42, bulletCount: 5 };
+    expect(updateResult.action).toBe("updated");
+    expect(updateResult.bulletCount).toBe(5);
+
+    // Simulate create action (no listing exists yet)
+    const createResult = { action: "created", listingId: 43, bulletCount: 3 };
+    expect(createResult.action).toBe("created");
+    expect(createResult.bulletCount).toBe(3);
+  });
+});

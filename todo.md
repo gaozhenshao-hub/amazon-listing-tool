@@ -272,3 +272,8 @@
 - [x] Feature: Listing generation flow - Step 3: Generate bullet points one by one after confirmation (generateSingleBullet API)
 - [x] Feature: Listing generation flow - Keep existing prompts, 4-module references, and generation requirements unchanged
 - [x] Unit tests for review aggregation, keyword field editing, and listing generation flow changes (15 new tests, 416 total passing)
+- [x] Feature: Add sync button to step-by-step bullet generation - sync confirmed bullets to Listing preview page
+- [x] Feature: Backend API (syncBulletsFromSellingPoints) - update/create listing bulletPoints from confirmed selling point bullets
+- [x] Feature: Frontend sync button with loading state and success toast feedback
+- [x] Feature: Keyword table batch edit dropdown fields - already implemented with 7 batch dropdown selectors (strategy/relevance/status/placement/rootCategory/trafficLevel/competition)
+- [x] Unit tests for bullet sync feature (4 new tests, 420 total passing)

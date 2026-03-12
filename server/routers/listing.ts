@@ -1624,4 +1624,48 @@ export const listingRouter = router({
 
       return { listing: updated, rolledBackTo: version.versionNumber };
     }),
+
+  // ─── Sync Confirmed Bullets from Step-by-Step Selling Points ──────
+  syncBulletsFromSellingPoints: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      bullets: z.array(z.object({
+        subtitle: z.string(),
+        fullText: z.string(),
+      })).min(1).max(5),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { projectId, bullets } = input;
+      const project = await db.getProjectById(projectId, ctx.user!.id);
+      if (!project) throw new Error("项目不存在");
+
+      // Format bullets as JSON array of strings (subtitle + fullText)
+      const bulletStrings = bullets.map(b => `${b.subtitle} ${b.fullText}`);
+      const bulletPointsJson = JSON.stringify(bulletStrings);
+
+      // Check if active listing exists
+      let listing = await db.getActiveListingByProject(projectId);
+      if (listing) {
+        // Update existing listing's bulletPoints
+        const updated = await db.updateListing(listing.id, {
+          bulletPoints: bulletPointsJson,
+        });
+        if (updated) {
+          await saveListingVersion(updated, ctx.user.id, "manual_edit", `同步分步卖点精雕结果 (${bullets.length}条)`);
+        }
+        return { action: "updated", listingId: listing.id, bulletCount: bullets.length };
+      } else {
+        // Create new listing with only bulletPoints
+        const newListing = await db.createListing({
+          projectId,
+          bulletPoints: bulletPointsJson,
+          version: 1,
+          isActive: 1,
+        });
+        if (newListing) {
+          await saveListingVersion(newListing, ctx.user.id, "generate", `从分步卖点精雕创建 (${bullets.length}条)`);
+        }
+        return { action: "created", listingId: newListing?.id, bulletCount: bullets.length };
+      }
+    }),
 });

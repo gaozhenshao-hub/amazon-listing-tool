@@ -47,7 +47,7 @@ import {
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
-import { Pencil, ChevronDown, ChevronUp, Target, RotateCcw } from "lucide-react";
+import { Pencil, ChevronDown, ChevronUp, Target, RotateCcw, Upload } from "lucide-react";
 import { Label } from "@/components/ui/label";
 
 type GenerationResult = {
@@ -295,6 +295,25 @@ export default function GeneratePage() {
     setConfirmedBullets({});
     setStepBulletPhase("idle");
     setEditingCore(null);
+  };
+
+  // Sync confirmed bullets to listing preview
+  const syncBulletsMut = trpc.listing.syncBulletsFromSellingPoints.useMutation({
+    onSuccess: (data) => {
+      toast.success(`已成功同步 ${data.bulletCount} 条卖点到Listing预览页`);
+    },
+    onError: (err) => toast.error("同步失败: " + err.message),
+  });
+
+  const handleSyncBullets = () => {
+    if (!selectedProjectId || !sellingPointCores) return;
+    const bullets = Object.entries(confirmedBullets)
+      .filter(([, confirmed]) => confirmed)
+      .map(([i]) => generatedBullets[Number(i)])
+      .filter(Boolean)
+      .map(b => ({ subtitle: b.subtitle || "", fullText: b.fullText || "" }));
+    if (bullets.length === 0) { toast.error("没有已确认的卖点可同步"); return; }
+    syncBulletsMut.mutate({ projectId: selectedProjectId, bullets });
   };
 
   const allBulletsConfirmed = sellingPointCores
@@ -917,10 +936,19 @@ export default function GeneratePage() {
                         <CheckCircle2 className="h-5 w-5 text-green-600" />
                         <span className="text-sm font-semibold text-green-800">全部5条卖点已确认</span>
                       </div>
-                      <p className="text-xs text-green-700 mb-3">所有卖点已精雕完成，可前往Listing预览页查看完整效果</p>
-                      <Button variant="outline" size="sm" onClick={() => setLocation("/preview")}>
-                        <FileText className="h-4 w-4 mr-2" />查看完整预览
-                      </Button>
+                      <p className="text-xs text-green-700 mb-3">所有卖点已精雕完成，点击“同步到预览页”将卖点内容更新到Listing预览页面</p>
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" onClick={handleSyncBullets} disabled={syncBulletsMut.isPending}>
+                          {syncBulletsMut.isPending ? (
+                            <><Loader2 className="h-4 w-4 mr-2 animate-spin" />同步中...</>
+                          ) : (
+                            <><Upload className="h-4 w-4 mr-2" />同步到预览页</>
+                          )}
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => setLocation("/preview")}>
+                          <FileText className="h-4 w-4 mr-2" />查看完整预览
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
