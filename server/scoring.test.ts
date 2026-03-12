@@ -512,6 +512,105 @@ describe("Scoring Engine", () => {
     }
   });
 
+  it("should include coveredKeywords and missingKeywords in keyword coverage details", () => {
+    const result = scoreListing(
+      {
+        title: goodTitle,
+        bulletPoints: goodBullets,
+        description: goodDescription,
+        searchTerms: goodSearchTerms,
+        titleCn: null, bulletPointsCn: null, descriptionCn: null, searchTermsCn: null, imageAdvice: null,
+      },
+      sampleKwData,
+      coreKeywords
+    );
+
+    const kwDim = result.dimensions.find(d => d.name === "Keyword Coverage");
+    expect(kwDim).toBeDefined();
+
+    // All three keyword coverage rules should have coveredKeywords and missingKeywords
+    const titleRule = kwDim!.details.find(d => d.rule === "Title Placement Keywords Coverage");
+    expect(titleRule).toBeDefined();
+    expect(titleRule!.coveredKeywords).toBeDefined();
+    expect(titleRule!.missingKeywords).toBeDefined();
+    expect(Array.isArray(titleRule!.coveredKeywords)).toBe(true);
+    expect(Array.isArray(titleRule!.missingKeywords)).toBe(true);
+    // covered + missing should equal total keywords for this rule
+    expect(titleRule!.coveredKeywords!.length + titleRule!.missingKeywords!.length).toBeGreaterThan(0);
+
+    const bulletRule = kwDim!.details.find(d => d.rule === "Bullet Placement Keywords Coverage");
+    expect(bulletRule).toBeDefined();
+    expect(bulletRule!.coveredKeywords).toBeDefined();
+    expect(bulletRule!.missingKeywords).toBeDefined();
+
+    const longtailRule = kwDim!.details.find(d => d.rule === "Long-tail & Scene Keywords Coverage");
+    expect(longtailRule).toBeDefined();
+    expect(longtailRule!.coveredKeywords).toBeDefined();
+    expect(longtailRule!.missingKeywords).toBeDefined();
+  });
+
+  it("should correctly identify covered vs missing keywords", () => {
+    // Use kwData where some keywords are definitely in the listing and some are not
+    const testKwData: KeywordModuleData = {
+      coreKeywords: ["wireless headphones"],
+      keywordsByPlacement: {
+        titleFront: ["wireless headphones"],  // present in goodTitle
+        titleMid: ["noise cancelling"],       // present in goodTitle
+        titleEnd: ["unicorn rainbow"],         // NOT present anywhere
+        bulletFirst: [], bulletBody: [], aplus: [], searchTerm: [],
+      },
+      keywordsByStrategy: {
+        coreMain: ["wireless headphones"],
+        subCore: [], preciseLongtail: [], sceneIntent: [], longtailMain: [],
+      },
+      totalKeywords: 3,
+    };
+
+    const result = scoreListing(
+      {
+        title: goodTitle,
+        bulletPoints: goodBullets,
+        description: goodDescription,
+        searchTerms: goodSearchTerms,
+        titleCn: null, bulletPointsCn: null, descriptionCn: null, searchTermsCn: null, imageAdvice: null,
+      },
+      testKwData,
+      coreKeywords
+    );
+
+    const kwDim = result.dimensions.find(d => d.name === "Keyword Coverage");
+    const titleRule = kwDim!.details.find(d => d.rule === "Title Placement Keywords Coverage");
+    expect(titleRule).toBeDefined();
+
+    // "wireless headphones" and "noise cancelling" should be covered
+    expect(titleRule!.coveredKeywords).toContain("wireless headphones");
+    expect(titleRule!.coveredKeywords).toContain("noise cancelling");
+    // "unicorn rainbow" should be missing
+    expect(titleRule!.missingKeywords).toContain("unicorn rainbow");
+  });
+
+  it("should NOT include coveredKeywords/missingKeywords when no keyword data", () => {
+    const result = scoreListing(
+      {
+        title: goodTitle,
+        bulletPoints: goodBullets,
+        description: goodDescription,
+        searchTerms: goodSearchTerms,
+        titleCn: null, bulletPointsCn: null, descriptionCn: null, searchTermsCn: null, imageAdvice: null,
+      },
+      null,
+      []
+    );
+
+    const kwDim = result.dimensions.find(d => d.name === "Keyword Coverage");
+    expect(kwDim).toBeDefined();
+    // When no keyword data, the fallback detail should NOT have coveredKeywords/missingKeywords
+    for (const detail of kwDim!.details) {
+      expect(detail.coveredKeywords).toBeUndefined();
+      expect(detail.missingKeywords).toBeUndefined();
+    }
+  });
+
   it("should not reference ABA in any messages when no keyword data", () => {
     const result = scoreListing(
       {

@@ -592,3 +592,4 @@ export async function deleteReviewAggregation(id: number) {
   if (!db) throw new Error("DB not available");
   await db.delete(reviewAggregations).where(eq(reviewAggregations.id, id));
 }
+

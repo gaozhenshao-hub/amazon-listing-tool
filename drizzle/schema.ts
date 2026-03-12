@@ -305,3 +305,23 @@ export const reviewAggregations = mysqlTable("reviewAggregations", {
 
 export type ReviewAggregation = typeof reviewAggregations.$inferSelect;
 export type InsertReviewAggregation = typeof reviewAggregations.$inferInsert;
+
+// ─── Selling Point Drafts (Step-by-step bullet generation) ──────
+export const sellingPointDrafts = mysqlTable("sellingPointDrafts", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  // Selling point cores (JSON array of { theme, fabeDirection, keywords, confirmed })
+  sellingPointCores: text("sellingPointCores"),
+  // Generated bullets (JSON map of { index: { subtitle, fullText } })
+  generatedBullets: text("generatedBullets"),
+  // Confirmed bullets (JSON map of { index: boolean })
+  confirmedBullets: text("confirmedBullets"),
+  // Emphasis text used during generation
+  emphasis: text("emphasis"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SellingPointDraft = typeof sellingPointDrafts.$inferSelect;
+export type InsertSellingPointDraft = typeof sellingPointDrafts.$inferInsert;

@@ -117,6 +117,7 @@ export default function GeneratePage() {
     { enabled: !!selectedProjectId }
   );
 
+
   const { data: analyses } = trpc.analysis.listByProject.useQuery(
     { projectId: selectedProjectId! },
     { enabled: !!selectedProjectId }
@@ -762,7 +763,6 @@ export default function GeneratePage() {
                       <RotateCcw className="h-3.5 w-3.5 mr-1" />重新生成
                     </Button>
                   </div>
-
                   {sellingPointCores.map((sp, idx) => (
                     <div key={idx} className={`rounded-lg border p-4 transition-all ${
                       confirmedCores[idx]

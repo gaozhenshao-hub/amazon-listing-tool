@@ -277,3 +277,10 @@
 - [x] Feature: Frontend sync button with loading state and success toast feedback
 - [x] Feature: Keyword table batch edit dropdown fields - already implemented with 7 batch dropdown selectors (strategy/relevance/status/placement/rootCategory/trafficLevel/competition)
 - [x] Unit tests for bullet sync feature (4 new tests, 420 total passing)
+- [x] Feature: ReviewAggregationPage - Add ASIN filter dropdown to filter Kano points by source ASIN
+- [x] Feature: ReviewAggregationPage - Add severity/importance sorting for pain/itch/delight points
+- [~] Feature: Step-by-step bullet generation - Save draft (CANCELLED by user)
+- [~] Feature: Step-by-step bullet generation - Restore draft (CANCELLED by user)
+- [x] Feature: ScorePage - Add keyword coverage detail panel (expandable, show covered/missing keywords with green/red badges)
+- [x] Feature: ScorePage - Backend: coveredKeywords and missingKeywords added to ScoreDetail interface
+- [x] Unit tests for keyword coverage detail panel (3 new tests, 423 total passing)

@@ -26,6 +26,10 @@ import {
   Gauge,
   Sparkles,
   Wand2,
+  ChevronDown,
+  ChevronUp,
+  Check,
+  X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -87,6 +91,7 @@ const OPTIMIZABLE_DIMENSIONS = new Set([
 export default function ScorePage() {
   const { selectedProjectId } = useProject();
   const [optimizingDim, setOptimizingDim] = useState<string | null>(null);
+  const [expandedDetail, setExpandedDetail] = useState<string | null>(null);
 
   const scoreQuery = trpc.scoring.scoreListing.useQuery(
     { projectId: selectedProjectId! },
@@ -446,20 +451,68 @@ export default function ScorePage() {
                     <CardContent className="pt-0">
                       <div className="space-y-2">
                         {dim.details.map((detail, dIdx) => (
-                          <div
-                            key={dIdx}
-                            className={`flex items-start gap-3 p-3 rounded-lg ${
-                              detail.passed ? "bg-emerald-50/50" : detail.severity === "critical" ? "bg-red-50/50" : "bg-amber-50/50"
-                            }`}
-                          >
-                            {severityIcon(detail.passed ? "info" : detail.severity)}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-sm font-medium">{detail.ruleCn}</span>
-                                <span className="text-xs text-muted-foreground shrink-0">{detail.score}/{detail.maxScore}分</span>
+                          <div key={dIdx}>
+                            <div
+                              className={`flex items-start gap-3 p-3 rounded-lg ${
+                                detail.passed ? "bg-emerald-50/50" : detail.severity === "critical" ? "bg-red-50/50" : "bg-amber-50/50"
+                              } ${(detail.coveredKeywords || detail.missingKeywords) ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
+                              onClick={() => {
+                                if (detail.coveredKeywords || detail.missingKeywords) {
+                                  setExpandedDetail(expandedDetail === `${idx}-${dIdx}` ? null : `${idx}-${dIdx}`);
+                                }
+                              }}
+                            >
+                              {severityIcon(detail.passed ? "info" : detail.severity)}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-sm font-medium">{detail.ruleCn}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-muted-foreground shrink-0">{detail.score}/{detail.maxScore}分</span>
+                                    {(detail.coveredKeywords || detail.missingKeywords) && (
+                                      expandedDetail === `${idx}-${dIdx}`
+                                        ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+                                        : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                                    )}
+                                  </div>
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-0.5">{detail.messageCn}</p>
                               </div>
-                              <p className="text-xs text-muted-foreground mt-0.5">{detail.messageCn}</p>
                             </div>
+                            {/* Expandable keyword coverage detail panel */}
+                            {expandedDetail === `${idx}-${dIdx}` && (detail.coveredKeywords || detail.missingKeywords) && (
+                              <div className="mt-1 ml-10 p-3 rounded-lg bg-muted/30 border border-muted space-y-3">
+                                {detail.coveredKeywords && detail.coveredKeywords.length > 0 && (
+                                  <div>
+                                    <div className="flex items-center gap-1.5 mb-2">
+                                      <Check className="h-3.5 w-3.5 text-emerald-600" />
+                                      <span className="text-xs font-medium text-emerald-700">已覆盖 ({detail.coveredKeywords.length})</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {detail.coveredKeywords.map((kw, ki) => (
+                                        <Badge key={ki} variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
+                                          {kw}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                {detail.missingKeywords && detail.missingKeywords.length > 0 && (
+                                  <div>
+                                    <div className="flex items-center gap-1.5 mb-2">
+                                      <X className="h-3.5 w-3.5 text-red-500" />
+                                      <span className="text-xs font-medium text-red-600">未覆盖 ({detail.missingKeywords.length})</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {detail.missingKeywords.map((kw, ki) => (
+                                        <Badge key={ki} variant="outline" className="text-xs bg-red-50 text-red-600 border-red-200">
+                                          {kw}
+                                        </Badge>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

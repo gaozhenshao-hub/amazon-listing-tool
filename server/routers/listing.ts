@@ -1668,4 +1668,5 @@ export const listingRouter = router({
         return { action: "created", listingId: newListing?.id, bulletCount: bullets.length };
       }
     }),
+
 });

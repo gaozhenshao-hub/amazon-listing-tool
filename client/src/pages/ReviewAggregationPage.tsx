@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import {
   Loader2, RefreshCw, AlertTriangle, Frown, Lightbulb, Sparkles,
   Pencil, Check, X, Trash2, Plus, MessageSquareText, Save,
-  ChevronDown, ChevronUp, Info,
+  ChevronDown, ChevronUp, Info, Filter, ArrowUpDown,
 } from "lucide-react";
 
 type KanoPoint = {
@@ -31,6 +31,12 @@ const IMPORTANCE_OPTIONS = ["high", "medium", "low"];
 const freqLabel: Record<string, string> = { high: "高频", medium: "中频", low: "低频" };
 const severityLabel: Record<string, string> = { critical: "严重", major: "较重", minor: "轻微" };
 const importanceLabel: Record<string, string> = { high: "高", medium: "中", low: "低" };
+
+// Sorting weight maps
+const FREQ_WEIGHT: Record<string, number> = { high: 3, medium: 2, low: 1 };
+const SEVERITY_WEIGHT: Record<string, number> = { critical: 3, major: 2, minor: 1, high: 3, medium: 2, low: 1 };
+
+type SortMode = "default" | "severity_desc" | "severity_asc" | "frequency_desc" | "frequency_asc";
 
 function FreqBadge({ freq }: { freq: string }) {
   const color = freq === "high" ? "bg-red-100 text-red-700" : freq === "medium" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700";
@@ -165,9 +171,60 @@ function KanoPointEditor({
   );
 }
 
+// ─── Helper: filter and sort Kano points ───────────────────────
+function filterAndSortPoints(
+  points: KanoPoint[],
+  asinFilter: string[],
+  sortMode: SortMode,
+  levelField: string,
+): KanoPoint[] {
+  let filtered = points;
+
+  // ASIN filter
+  if (asinFilter.length > 0) {
+    filtered = filtered.filter(p =>
+      p.sourceAsins?.some(a => asinFilter.includes(a))
+    );
+  }
+
+  // Sort
+  if (sortMode !== "default") {
+    const sorted = [...filtered];
+    sorted.sort((a, b) => {
+      if (sortMode === "severity_desc" || sortMode === "severity_asc") {
+        const wa = SEVERITY_WEIGHT[(a as any)[levelField] || "medium"] || 2;
+        const wb = SEVERITY_WEIGHT[(b as any)[levelField] || "medium"] || 2;
+        return sortMode === "severity_desc" ? wb - wa : wa - wb;
+      }
+      if (sortMode === "frequency_desc" || sortMode === "frequency_asc") {
+        const wa = FREQ_WEIGHT[a.frequency] || 2;
+        const wb = FREQ_WEIGHT[b.frequency] || 2;
+        return sortMode === "frequency_desc" ? wb - wa : wa - wb;
+      }
+      return 0;
+    });
+    return sorted;
+  }
+
+  return filtered;
+}
+
+// ─── Helper: extract all unique ASINs from Kano points ─────────
+function extractAllAsins(pain: KanoPoint[], itch: KanoPoint[], delight: KanoPoint[]): string[] {
+  const set = new Set<string>();
+  [...pain, ...itch, ...delight].forEach(p => {
+    p.sourceAsins?.forEach(a => { if (a) set.add(a); });
+  });
+  return Array.from(set).sort();
+}
+
 export default function ReviewAggregationPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
+
+  // Filter & sort state
+  const [asinFilter, setAsinFilter] = useState<string[]>([]);
+  const [sortMode, setSortMode] = useState<SortMode>("default");
 
   // Local editable state
   const [localPainPoints, setLocalPainPoints] = useState<KanoPoint[]>([]);
@@ -217,6 +274,26 @@ export default function ReviewAggregationPage() {
     }
   }, [aggregation?.id, aggregation?.updatedAt?.toString()]);
 
+  // Extract all available ASINs for filter
+  const allAsins = useMemo(
+    () => extractAllAsins(localPainPoints, localItchPoints, localDelightPoints),
+    [localPainPoints, localItchPoints, localDelightPoints]
+  );
+
+  // Filtered & sorted points for display
+  const displayPainPoints = useMemo(
+    () => filterAndSortPoints(localPainPoints, asinFilter, sortMode, "severity"),
+    [localPainPoints, asinFilter, sortMode]
+  );
+  const displayItchPoints = useMemo(
+    () => filterAndSortPoints(localItchPoints, asinFilter, sortMode, "importance"),
+    [localItchPoints, asinFilter, sortMode]
+  );
+  const displayDelightPoints = useMemo(
+    () => filterAndSortPoints(localDelightPoints, asinFilter, sortMode, "impact"),
+    [localDelightPoints, asinFilter, sortMode]
+  );
+
   const handleSaveAll = () => {
     if (!effectiveProjectId) return;
     updatePointsMutation.mutate({
@@ -228,23 +305,36 @@ export default function ReviewAggregationPage() {
   };
 
   const updatePoint = (category: "pain" | "itch" | "delight", index: number, updated: KanoPoint) => {
+    // Find the original index in the unfiltered array
+    const originalPoints = category === "pain" ? localPainPoints : category === "itch" ? localItchPoints : localDelightPoints;
+    const displayPoints = category === "pain" ? displayPainPoints : category === "itch" ? displayItchPoints : displayDelightPoints;
+    const displayItem = displayPoints[index];
+    const originalIndex = originalPoints.indexOf(displayItem);
+    if (originalIndex === -1) return;
+
     if (category === "pain") {
-      const arr = [...localPainPoints]; arr[index] = updated; setLocalPainPoints(arr);
+      const arr = [...localPainPoints]; arr[originalIndex] = updated; setLocalPainPoints(arr);
     } else if (category === "itch") {
-      const arr = [...localItchPoints]; arr[index] = updated; setLocalItchPoints(arr);
+      const arr = [...localItchPoints]; arr[originalIndex] = updated; setLocalItchPoints(arr);
     } else {
-      const arr = [...localDelightPoints]; arr[index] = updated; setLocalDelightPoints(arr);
+      const arr = [...localDelightPoints]; arr[originalIndex] = updated; setLocalDelightPoints(arr);
     }
     setHasChanges(true);
   };
 
   const deletePoint = (category: "pain" | "itch" | "delight", index: number) => {
+    const originalPoints = category === "pain" ? localPainPoints : category === "itch" ? localItchPoints : localDelightPoints;
+    const displayPoints = category === "pain" ? displayPainPoints : category === "itch" ? displayItchPoints : displayDelightPoints;
+    const displayItem = displayPoints[index];
+    const originalIndex = originalPoints.indexOf(displayItem);
+    if (originalIndex === -1) return;
+
     if (category === "pain") {
-      setLocalPainPoints(localPainPoints.filter((_, i) => i !== index));
+      setLocalPainPoints(localPainPoints.filter((_, i) => i !== originalIndex));
     } else if (category === "itch") {
-      setLocalItchPoints(localItchPoints.filter((_, i) => i !== index));
+      setLocalItchPoints(localItchPoints.filter((_, i) => i !== originalIndex));
     } else {
-      setLocalDelightPoints(localDelightPoints.filter((_, i) => i !== index));
+      setLocalDelightPoints(localDelightPoints.filter((_, i) => i !== originalIndex));
     }
     setHasChanges(true);
   };
@@ -264,10 +354,17 @@ export default function ReviewAggregationPage() {
     setHasChanges(true);
   };
 
+  const toggleAsinFilter = (asin: string) => {
+    setAsinFilter(prev =>
+      prev.includes(asin) ? prev.filter(a => a !== asin) : [...prev, asin]
+    );
+  };
+
   const renderCategory = (
     title: string,
     icon: React.ReactNode,
-    points: KanoPoint[],
+    displayPoints: KanoPoint[],
+    totalCount: number,
     category: "pain" | "itch" | "delight",
     colorClass: string,
     description: string,
@@ -277,7 +374,7 @@ export default function ReviewAggregationPage() {
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-base">
             {icon}
-            {title} ({points.length})
+            {title} ({displayPoints.length}{displayPoints.length !== totalCount ? `/${totalCount}` : ""})
           </CardTitle>
           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => addPoint(category)}>
             <Plus className="h-3 w-3 mr-1" /> 添加
@@ -286,12 +383,14 @@ export default function ReviewAggregationPage() {
         <CardDescription className="text-xs">{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
-        {points.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-4">暂无数据，点击"添加"手动录入或运行聚合分析</p>
+        {displayPoints.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            {totalCount > 0 ? "当前筛选条件下无匹配数据" : "暂无数据，点击\"添加\"手动录入或运行聚合分析"}
+          </p>
         ) : (
-          points.map((p, i) => (
+          displayPoints.map((p, i) => (
             <KanoPointEditor
-              key={`${category}-${i}`}
+              key={`${category}-${i}-${p.point.slice(0, 20)}`}
               point={p}
               type={category}
               onSave={(updated) => updatePoint(category, i, updated)}
@@ -318,7 +417,7 @@ export default function ReviewAggregationPage() {
         </div>
       </div>
 
-      {/* Project selector */}
+      {/* Project selector + actions */}
       <div className="flex items-center gap-4 flex-wrap">
         <Select
           value={effectiveProjectId?.toString() || ""}
@@ -355,6 +454,55 @@ export default function ReviewAggregationPage() {
           </Button>
         )}
       </div>
+
+      {/* Filter & Sort toolbar */}
+      {aggregation?.status === "completed" && allAsins.length > 0 && (
+        <Card className="bg-muted/20">
+          <CardContent className="py-3 space-y-3">
+            {/* ASIN filter */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground shrink-0">
+                <Filter className="h-4 w-4" />
+                按ASIN筛选:
+              </div>
+              {allAsins.map(asin => (
+                <Badge
+                  key={asin}
+                  variant={asinFilter.includes(asin) ? "default" : "outline"}
+                  className="cursor-pointer select-none transition-colors hover:bg-primary/10"
+                  onClick={() => toggleAsinFilter(asin)}
+                >
+                  {asin}
+                </Badge>
+              ))}
+              {asinFilter.length > 0 && (
+                <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => setAsinFilter([])}>
+                  清除筛选
+                </Button>
+              )}
+            </div>
+            {/* Sort selector */}
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground shrink-0">
+                <ArrowUpDown className="h-4 w-4" />
+                排序方式:
+              </div>
+              <Select value={sortMode} onValueChange={(v) => setSortMode(v as SortMode)}>
+                <SelectTrigger className="w-[200px] h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">默认顺序</SelectItem>
+                  <SelectItem value="severity_desc">严重程度 高→低</SelectItem>
+                  <SelectItem value="severity_asc">严重程度 低→高</SelectItem>
+                  <SelectItem value="frequency_desc">出现频率 高→低</SelectItem>
+                  <SelectItem value="frequency_asc">出现频率 低→高</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Status info */}
       {aggregation && (
@@ -394,7 +542,8 @@ export default function ReviewAggregationPage() {
           {renderCategory(
             "痛点 (Pain Points)",
             <Frown className="h-5 w-5 text-red-500" />,
-            localPainPoints,
+            displayPainPoints,
+            localPainPoints.length,
             "pain",
             "border-l-red-500",
             "Must-Be Quality — 客户的基本需求，未满足则极度不满。在Listing中需要明确解决这些问题。"
@@ -402,7 +551,8 @@ export default function ReviewAggregationPage() {
           {renderCategory(
             "痒点 (Itch Points)",
             <Lightbulb className="h-5 w-5 text-amber-500" />,
-            localItchPoints,
+            displayItchPoints,
+            localItchPoints.length,
             "itch",
             "border-l-amber-500",
             "One-Dimensional Quality — 客户的期望需求，满足程度与满意度成正比。在Listing中可作为差异化卖点。"
@@ -410,7 +560,8 @@ export default function ReviewAggregationPage() {
           {renderCategory(
             "爽点 (Delight Points)",
             <Sparkles className="h-5 w-5 text-green-500" />,
-            localDelightPoints,
+            displayDelightPoints,
+            localDelightPoints.length,
             "delight",
             "border-l-green-500",
             "Attractive Quality — 超出客户预期的惊喜功能。在Listing中重点突出可大幅提升转化率。"

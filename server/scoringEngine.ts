@@ -55,6 +55,8 @@ export interface ScoreDetail {
   message: string;
   messageCn: string;
   severity: "critical" | "warning" | "info";
+  coveredKeywords?: string[];
+  missingKeywords?: string[];
 }
 
 export interface OptimizationSuggestion {
@@ -603,6 +605,7 @@ function scoreKeywordCoverage(
     ].map(k => k.toLowerCase())));
 
     const titleKwMatched = titleMustHave.filter(kw => fullText.includes(kw));
+    const titleKwMissing = titleMustHave.filter(kw => !fullText.includes(kw));
     const titleKwCoverage = titleMustHave.length > 0 ? titleKwMatched.length / titleMustHave.length : 1;
     const titleKwScore = Math.round(titleKwCoverage * 4);
     details.push({
@@ -612,6 +615,8 @@ function scoreKeywordCoverage(
       message: `${titleKwMatched.length}/${titleMustHave.length} title-placement keywords found in listing`,
       messageCn: `Listing中包含${titleKwMatched.length}/${titleMustHave.length}个标题布局关键词`,
       severity: titleKwCoverage >= 0.7 ? "info" : "warning",
+      coveredKeywords: titleKwMatched,
+      missingKeywords: titleKwMissing,
     });
     totalScore += titleKwScore;
 
@@ -623,6 +628,7 @@ function scoreKeywordCoverage(
     ].map(k => k.toLowerCase())));
 
     const bulletKwMatched = bulletKws.filter(kw => fullText.includes(kw));
+    const bulletKwMissing = bulletKws.filter(kw => !fullText.includes(kw));
     const bulletKwCoverage = bulletKws.length > 0 ? bulletKwMatched.length / bulletKws.length : 1;
     const bulletKwScore = Math.round(bulletKwCoverage * 3);
     details.push({
@@ -632,6 +638,8 @@ function scoreKeywordCoverage(
       message: `${bulletKwMatched.length}/${bulletKws.length} bullet-placement keywords found in listing`,
       messageCn: `Listing中包含${bulletKwMatched.length}/${bulletKws.length}个要点布局关键词`,
       severity: bulletKwCoverage >= 0.6 ? "info" : "warning",
+      coveredKeywords: bulletKwMatched,
+      missingKeywords: bulletKwMissing,
     });
     totalScore += bulletKwScore;
 
@@ -643,6 +651,7 @@ function scoreKeywordCoverage(
     ].map(k => k.toLowerCase())));
 
     const longtailMatched = longtailKws.filter(kw => fullText.includes(kw));
+    const longtailMissing = longtailKws.filter(kw => !fullText.includes(kw));
     const longtailCoverage = longtailKws.length > 0 ? longtailMatched.length / longtailKws.length : 1;
     const longtailScore = Math.round(longtailCoverage * 3);
     details.push({
@@ -652,6 +661,8 @@ function scoreKeywordCoverage(
       message: `${longtailMatched.length}/${longtailKws.length} long-tail/scene keywords found in listing`,
       messageCn: `Listing中包含${longtailMatched.length}/${longtailKws.length}个长尾/场景关键词`,
       severity: longtailCoverage >= 0.5 ? "info" : "warning",
+      coveredKeywords: longtailMatched,
+      missingKeywords: longtailMissing,
     });
     totalScore += longtailScore;
   }
