@@ -9,7 +9,7 @@ import { imageAnalysisRouter } from "./routers/imageAnalysis";
 import { projectFileRouter } from "./routers/projectFile";
 import { reportRouter } from "./routers/report";
 import { scoringRouter } from "./routers/scoring";
-import { keywordRouter } from "./routers/keyword";
+import { keywordRouter, keywordAiRouter } from "./routers/keyword";
 import { adStructureRouter } from "./routers/adStructure";
 import { reviewAggregationRouter } from "./routers/reviewAggregation";
 
@@ -31,6 +31,7 @@ export const appRouter = router({
   report: reportRouter,
   scoring: scoringRouter,
   keyword: keywordRouter,
+  keywordAi: keywordAiRouter,
   adStructure: adStructureRouter,
   reviewAggregation: reviewAggregationRouter,
 });

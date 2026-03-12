@@ -94,11 +94,13 @@ describe("AI Traffic & Competition Classification", () => {
 
   describe("Import flow - no fixed thresholds", () => {
     it("should not use hardcoded threshold values in keyword router import", async () => {
-      // Read the keyword router file and check that fixed thresholds are removed
+      // Read the keyword router files and check that fixed thresholds are removed
       const fs = await import("fs");
-      const routerContent = fs.readFileSync("./server/routers/keyword.ts", "utf-8");
+      const crudContent = fs.readFileSync("./server/routers/keywordCrud.ts", "utf-8");
+      const aiContent = fs.readFileSync("./server/routers/keywordAi.ts", "utf-8");
+      const routerContent = crudContent + aiContent;
 
-      // The old fixed thresholds should be removed
+      // The old fixed thresholds should be removed from both files
       expect(routerContent).not.toContain("monthlySearchVolume >= 10000) trafficLevel = \"high\"");
       expect(routerContent).not.toContain("monthlySearchVolume >= 1000) trafficLevel = \"medium\"");
       expect(routerContent).not.toContain("spr < 30) competition = \"low\"");
@@ -107,7 +109,7 @@ describe("AI Traffic & Competition Classification", () => {
 
     it("should have AI classification procedure in the router", async () => {
       const fs = await import("fs");
-      const routerContent = fs.readFileSync("./server/routers/keyword.ts", "utf-8");
+      const routerContent = fs.readFileSync("./server/routers/keywordAi.ts", "utf-8");
 
       expect(routerContent).toContain("aiClassifyTrafficCompetition: protectedProcedure");
       expect(routerContent).toContain("KEYWORD_TRAFFIC_COMPETITION_CLASSIFY_PROMPT");
@@ -115,7 +117,7 @@ describe("AI Traffic & Competition Classification", () => {
 
     it("should include AI classification in the full pipeline", async () => {
       const fs = await import("fs");
-      const routerContent = fs.readFileSync("./server/routers/keyword.ts", "utf-8");
+      const routerContent = fs.readFileSync("./server/routers/keywordAi.ts", "utf-8");
 
       // Pipeline should include traffic/competition classification as step 0
       expect(routerContent).toContain("Step 0: AI Traffic & Competition Classification");

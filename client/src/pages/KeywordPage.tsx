@@ -1,3 +1,4 @@
+// Router split: keyword CRUD on trpc.keyword, AI procedures on trpc.keywordAi
 import { useState, useMemo, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -763,7 +764,7 @@ function PipelineTab({ projectId }: { projectId: number }) {
   const [pipelineStep, setPipelineStep] = useState<string | null>(null);
   const utils = trpc.useUtils();
 
-  const trafficCompMut = trpc.keyword.aiClassifyTrafficCompetition.useMutation({
+  const trafficCompMut = trpc.keywordAi.aiClassifyTrafficCompetition.useMutation({
     onSuccess: (data) => {
       const msg = data.thresholds
         ? `流量/竞争度智能分类完成：${data.classified}个关键词（流量阈值: ≥${data.thresholds.trafficThresholds?.highMin}高/≥${data.thresholds.trafficThresholds?.mediumMin}中，SPR阈值: ≤${data.thresholds.competitionThresholds?.lowMax}低/≤${data.thresholds.competitionThresholds?.mediumMax}中）`
@@ -773,23 +774,23 @@ function PipelineTab({ projectId }: { projectId: number }) {
     },
     onError: (err) => { toast.error(err.message); setPipelineStep(null); },
   });
-  const filterMut = trpc.keyword.aiSemanticFilter.useMutation({
+  const filterMut = trpc.keywordAi.aiSemanticFilter.useMutation({
     onSuccess: (data) => { toast.success(`语义过滤完成：保留${data.kept}个，移除${data.removed}个`); utils.keyword.list.invalidate(); utils.keyword.stats.invalidate(); setPipelineStep(null); },
     onError: (err) => { toast.error(err.message); setPipelineStep(null); },
   });
-  const tagMut = trpc.keyword.aiSceneTag.useMutation({
+  const tagMut = trpc.keywordAi.aiSceneTag.useMutation({
     onSuccess: (data) => { toast.success(`场景打标完成：${data.tagged}个关键词`); utils.keyword.list.invalidate(); setPipelineStep(null); },
     onError: (err) => { toast.error(err.message); setPipelineStep(null); },
   });
-  const classifyMut = trpc.keyword.aiRootClassify.useMutation({
+  const classifyMut = trpc.keywordAi.aiRootClassify.useMutation({
     onSuccess: (data) => { toast.success(`词根分类完成：${data.classified}个关键词`); utils.keyword.list.invalidate(); setPipelineStep(null); },
     onError: (err) => { toast.error(err.message); setPipelineStep(null); },
   });
-  const matrixMut = trpc.keyword.aiStrategyMatrix.useMutation({
+  const matrixMut = trpc.keywordAi.aiStrategyMatrix.useMutation({
     onSuccess: (data) => { toast.success(`策略矩阵完成：${data.categorized}个关键词`); utils.keyword.list.invalidate(); utils.keyword.stats.invalidate(); setPipelineStep(null); },
     onError: (err) => { toast.error(err.message); setPipelineStep(null); },
   });
-  const fullPipelineMut = trpc.keyword.runFullPipeline.useMutation({
+  const fullPipelineMut = trpc.keywordAi.runFullPipeline.useMutation({
     onSuccess: (data) => {
       toast.success(`全流程完成！流量/竞争度分类${data.trafficCompetition.classified}，过滤保留${data.filter.kept}/移除${data.filter.removed}，场景打标${data.tag.tagged}，词根分类${data.classify.classified}，策略矩阵${data.matrix.categorized}`);
       utils.keyword.list.invalidate(); utils.keyword.stats.invalidate(); setPipelineStep(null);
@@ -849,7 +850,7 @@ function PipelineTab({ projectId }: { projectId: number }) {
 
 function ListingLayoutCard({ projectId }: { projectId: number }) {
   const [layout, setLayout] = useState<any>(null);
-  const layoutMut = trpc.keyword.aiListingLayout.useMutation({
+  const layoutMut = trpc.keywordAi.aiListingLayout.useMutation({
     onSuccess: (data) => { setLayout(data); toast.success("Listing布局建议已生成"); },
     onError: (err) => toast.error(err.message),
   });

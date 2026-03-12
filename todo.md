@@ -297,3 +297,4 @@
 - [x] Feature: Root classification - brand_competitor root category added
 - [x] Feature: Ad strategy - Offensive campaign added to ad structure prompt
 - [x] Unit tests for keyword module improvements (14 new tests, 437 total passing)
+- [x] Bugfix: KeywordPage - Fix 4 TS errors: split keyword.ts (1026 lines) into keywordCrud.ts + keywordAi.ts + keywordHelpers.ts, register as separate sub-routers (trpc.keyword + trpc.keywordAi), update frontend references, all 437 tests passing
