@@ -203,7 +203,7 @@ export const IMAGE_ADVICE_PROMPT = `${EXPERT_ROLE}
 
 接下来你作为一名拥有10年设计经验且优秀的亚马逊运营，根据listing的卖点，规划该产品的每张主图表达内容及表达方式，以及文案。
 
-**核心要求：**
+注意: 我有以下要求：
 1. **标题简短，有吸引力** — 每张图的标题/文案标题必须简洁有力，一句话抓住眼球，避免冗长描述。
 2. **卖点表达清晰** — 每张图聚焦一个核心卖点，用最直观的方式让消费者秒懂产品优势。采用FABE法则（Feature特征 → Advantage优势 → Benefit利益 → Evidence证据）。
 3. **配色方案** — 为每张图提供具体的配色建议（主色、辅色、点缀色），确保品牌一致性和视觉冲击力。考虑产品品类特性（如食品用暖色调、科技产品用冷色调）。
@@ -243,59 +243,87 @@ export const IMAGE_ADVICE_PROMPT = `${EXPERT_ROLE}
 - 丰富的多媒体内容和对比图表
 - 品牌故事融入
 - 交叉销售机会
+- 整体故事性：确保A+内容从头到尾讲述一个连贯的品牌/产品故事
+- 一致性：视觉风格、配色、字体、调性保持统一
+- 模块化设计：每个模块独立完整，可灵活组合排序
 
 请根据以上要求，为该产品提供详细的图片规划建议。
 
 Respond in JSON format:
 {
+  "designGuidelines": {
+    "fontRecommendation": "字体推荐（主字体、副字体）",
+    "overallColorPalette": "整套图片统一配色方案（强调色、图标色、主字体色、副字体色）",
+    "brandTone": "品牌调性描述",
+    "mobileOptimization": "手机端优化建议（字号、间距、触控区域等）"
+  },
   "mainImage": {
     "concept": "主图创意概念",
     "title": "简短有吸引力的标题",
     "keyElements": ["关键视觉元素"],
-    "composition": "构图方式详细说明（三分法/对称/对角线等）",
+    "composition": "构图方式详细说明（三分法/对称/对角线等，产品、文案、图标的具体摆放位置和比例）",
     "colorScheme": {
-      "primary": "主色（含色值）",
+      "primary": "主色（含色值，如 #FFFFFF）",
       "secondary": "辅色（含色值）",
       "accent": "点缀色（含色值）"
     },
+    "shootingNotes": "拍摄提示（角度、光线、道具、背景处理等）",
     "tips": []
   },
   "secondaryImages": [
     {
-      "imageNumber": 1,
+      "imageNumber": 2,
       "title": "简短有吸引力的图片标题",
       "focus": "本图聚焦的核心卖点",
-      "sellingPoint": "卖点FABE分析",
+      "fabe": {
+        "feature": "特征：产品的具体特征",
+        "advantage": "优势：相比竞品的优势",
+        "benefit": "利益：给消费者带来的实际好处",
+        "evidence": "证据：数据、认证、用户反馈等支撑"
+      },
       "expressionMethod": "表达方式（原理展示/直接展示/用户获利/场景展示/对比展示/数据展示）",
       "composition": "构图方式和元素摆放位置",
       "colorScheme": {
-        "primary": "主色",
-        "secondary": "辅色",
-        "accent": "点缀色"
+        "primary": "主色（含色值）",
+        "secondary": "辅色（含色值）",
+        "accent": "点缀色（含色值）"
       },
       "textOverlay": "图片上的文案内容",
       "dataVisualization": "数据可视化建议（图表类型、数据展示方式、图标使用等）",
       "icons": ["建议使用的图标"],
+      "keyElements": ["关键视觉元素"],
       "tips": []
     }
   ],
   "aPlusContent": {
+    "overallStrategy": "整体A+内容策略",
+    "overallStory": "整体故事线（从开头到结尾的叙事逻辑）",
+    "consistency": "视觉一致性要求（配色、字体、风格统一规范）",
+    "modularDesign": "模块化设计思路（每个模块的功能和组合逻辑）",
     "sections": [
       {
         "type": "模块类型",
+        "title": "模块标题",
         "purpose": "模块目的",
         "content": "内容描述",
+        "fabe": {
+          "feature": "特征",
+          "advantage": "优势",
+          "benefit": "利益",
+          "evidence": "证据"
+        },
+        "expressionMethod": "表达方式",
+        "colorScheme": {
+          "primary": "主色",
+          "secondary": "辅色",
+          "accent": "点缀色"
+        },
+        "composition": "构图方式",
         "dataVisualization": "数据可视化建议",
+        "icons": ["图标建议"],
         "tips": []
       }
-    ],
-    "overallStrategy": "整体A+内容策略"
-  },
-  "designGuidelines": {
-    "fontRecommendation": "推荐字体",
-    "overallColorPalette": "整套图片统一配色方案",
-    "brandTone": "品牌调性描述",
-    "mobileOptimization": "手机端优化建议"
+    ]
   }
 }`;
 
@@ -410,21 +438,15 @@ Your task: Translate the following Amazon product image advice from English to C
 
 You will receive the English image advice as a JSON object. Return the Chinese translation in the same JSON structure.
 
-Input format:
-{
-  "mainImage": { "concept": "", "title": "", "keyElements": [], "composition": "", "colorScheme": { "primary": "", "secondary": "", "accent": "" }, "tips": [] },
-  "secondaryImages": [{ "imageNumber": 1, "title": "", "focus": "", "sellingPoint": "", "expressionMethod": "", "composition": "", "colorScheme": { "primary": "", "secondary": "", "accent": "" }, "textOverlay": "", "dataVisualization": "", "icons": [], "tips": [] }],
-  "aPlusContent": { "sections": [{ "type": "", "purpose": "", "content": "", "dataVisualization": "", "tips": [] }], "overallStrategy": "" },
-  "designGuidelines": { "fontRecommendation": "", "overallColorPalette": "", "brandTone": "", "mobileOptimization": "" }
-}
+Input: The English image advice JSON (with designGuidelines, mainImage, secondaryImages, aPlusContent).
 
-Output format (return ONLY this JSON, same structure with Chinese translations):
-{
-  "mainImage": { "concept": "中文概念", "title": "中文标题", "keyElements": ["中文元素"], "composition": "中文构图建议", "colorScheme": { "primary": "中文主色", "secondary": "中文辅色", "accent": "中文点缀色" }, "tips": ["中文提示"] },
-  "secondaryImages": [{ "imageNumber": 1, "title": "中文标题", "focus": "中文焦点", "sellingPoint": "中文卖点", "expressionMethod": "中文表达方式", "composition": "中文构图", "colorScheme": { "primary": "中文主色", "secondary": "中文辅色", "accent": "中文点缀色" }, "textOverlay": "中文文案", "dataVisualization": "中文数据可视化建议", "icons": ["中文图标"], "tips": ["中文提示"] }],
-  "aPlusContent": { "sections": [{ "type": "中文类型", "purpose": "中文目的", "content": "中文内容", "dataVisualization": "中文数据可视化建议", "tips": ["中文提示"] }], "overallStrategy": "中文整体策略" },
-  "designGuidelines": { "fontRecommendation": "中文字体推荐", "overallColorPalette": "中文配色方案", "brandTone": "中文品牌调性", "mobileOptimization": "中文手机端优化建议" }
-}`;
+Key fields to translate:
+- designGuidelines: fontRecommendation, overallColorPalette, brandTone, mobileOptimization
+- mainImage: concept, title, keyElements, composition, colorScheme (primary/secondary/accent descriptions), shootingNotes, tips
+- secondaryImages[]: title, focus, fabe (feature/advantage/benefit/evidence), expressionMethod, composition, colorScheme, textOverlay, dataVisualization, icons, keyElements, tips
+- aPlusContent: overallStrategy, overallStory, consistency, modularDesign, sections[].title, sections[].purpose, sections[].content, sections[].fabe, sections[].expressionMethod, sections[].colorScheme, sections[].composition, sections[].dataVisualization, sections[].icons, sections[].tips
+
+Output format: Return ONLY the translated JSON with the EXACT same structure. Keep color hex values unchanged, translate the descriptive text only. Keep imageNumber values unchanged.`;
 
 
 // ─── Selling Points Core Generation Prompt ─────────────────────

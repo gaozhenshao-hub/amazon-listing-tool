@@ -978,11 +978,43 @@ export const listingRouter = router({
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
 
+      let imageData: any;
       try {
-        return JSON.parse(content);
+        imageData = JSON.parse(content);
       } catch {
-        return { raw: content };
+        imageData = { raw: content };
       }
+
+      // Save image advice to the active listing (or create one if none exists)
+      const existingListings = await db.getListingsByProject(input.projectId);
+      const activeListing = existingListings.find((l) => l.isActive === 1);
+      const imageAdviceJsonStr = JSON.stringify(imageData);
+
+      // Also generate Chinese translation
+      let imageAdviceCnStr: string | null = null;
+      try {
+        imageAdviceCnStr = await translateImageAdviceToChinese(imageAdviceJsonStr);
+      } catch (err) {
+        console.error("Image advice CN translation failed:", err);
+      }
+
+      if (activeListing) {
+        await db.updateListing(activeListing.id, {
+          imageAdvice: imageAdviceJsonStr,
+          imageAdviceCn: imageAdviceCnStr || null,
+        });
+      } else {
+        // Create a minimal listing to store image advice
+        await db.createListing({
+          projectId: input.projectId,
+          imageAdvice: imageAdviceJsonStr,
+          imageAdviceCn: imageAdviceCnStr || null,
+          version: 1,
+          isActive: 1,
+        });
+      }
+
+      return imageData;
     }),
 
   // Generate full listing (all components at once) with AI retry for char limits

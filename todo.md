@@ -362,3 +362,15 @@
 - [x] Frontend: DevProjectDetail (7 tabs: overview, profile, BOM, manual, test report, analysis, scoring)
 - [x] Frontend: DevCompare, DevProfitCalculator, DevSupplierLibrary, DevTagSettings (standalone pages)
 - [x] Unit tests: 496 total tests passing (30 test files)
+
+## 图片建议功能拆分 (Image Suggestion Split - 2026-03-13)
+- [x] Navigation: Add "智能图片建议" menu item below "Listing评分" in DashboardLayout
+- [x] Route: Add /listing/image-suggestions route in App.tsx
+- [x] Frontend: Create standalone ImageSuggestionsPage with bilingual (EN/CN) side-by-side layout
+- [x] Frontend: Add enhanced fields display (FABE analysis, shooting notes, data visualization, icons, design guidelines)
+- [x] Frontend: Add "生成图片建议" button that calls generateImageAdvice independently
+- [x] Frontend: Add "生成中文翻译" button for image advice translation
+- [x] Backend: Ensure generateImageAdvice works independently (not tied to full listing generation)
+- [x] AI Prompt: Update IMAGE_ADVICE_PROMPT with enhanced JSON structure (shootingNotes for mainImage, FABE for secondary images, enhanced A+ content fields)
+- [x] AI Prompt: Update IMAGE_ADVICE_TRANSLATION_PROMPT to match new structure
+- [x] Unit tests for image suggestion split feature (15 new tests, 511 total passing)
