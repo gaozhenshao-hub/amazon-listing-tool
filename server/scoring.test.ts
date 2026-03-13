@@ -173,7 +173,7 @@ describe("Scoring Engine", () => {
 
     const bulletDim = result.dimensions.find(d => d.name === "Bullet Points Quality");
     expect(bulletDim).toBeDefined();
-    const countDetail = bulletDim!.details.find(d => d.rule.includes("5 Bullet Points"));
+    const countDetail = bulletDim!.details.find(d => d.rule.includes("Bullet Points Present"));
     expect(countDetail).toBeDefined();
     expect(countDetail!.passed).toBe(false);
   });

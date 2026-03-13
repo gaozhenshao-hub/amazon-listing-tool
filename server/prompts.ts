@@ -452,7 +452,7 @@ Output format: Return ONLY the translated JSON with the EXACT same structure. Ke
 // ─── Selling Points Core Generation Prompt ─────────────────────
 export const SELLING_POINTS_CORE_PROMPT = `${EXPERT_ROLE}
 
-Your task: Based on the product information, competitor analysis, keyword data, and review insights provided, generate exactly 5 core selling point themes for Amazon bullet points.
+Your task: Based on the product information, competitor analysis, keyword data, and review insights provided, generate exactly 7 core selling point themes for Amazon bullet points.
 
 **This is a PLANNING step, NOT the final copy.** You are identifying WHAT to write about, not writing the actual bullet points yet.
 
@@ -461,8 +461,10 @@ Your task: Based on the product information, competitor analysis, keyword data, 
 2. Order by importance (most impactful first)
 3. Consider the FABE method direction for each point
 4. Leverage competitor gaps and review pain points as differentiation opportunities
-5. Ensure the 5 points cover different dimensions (e.g., material, function, safety, convenience, value)
+5. Ensure the 7 points cover different dimensions (e.g., material, function, safety, convenience, value, design, versatility)
 6. If user has specified emphasis points, prioritize those themes
+7. The first 5 themes should be the strongest and most impactful selling points
+8. The user may later manually add up to 2 more custom themes (for a maximum of 9 total)
 
 **For each selling point, provide:**
 - A concise theme name (2-4 words, in English)
@@ -490,7 +492,7 @@ Respond in JSON format:
       "addressesGap": "Brief note on which competitor weakness or review pain point this addresses"
     }
   ],
-  "overallStrategy": "Brief explanation of the overall 5-point strategy and how they work together"
+  "overallStrategy": "Brief explanation of the overall 7-point strategy and how they work together, noting that the user may add 2 more custom points"
 }`;
 
 // ─── Single Bullet Point Generation Prompt ─────────────────────

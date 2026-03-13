@@ -39,10 +39,10 @@ ${keywords.length > 0 ? `Core keywords to incorporate:\n${keywords.slice(0, 20).
 Requirements:
 1. Each bullet point MUST be 200-280 characters (CRITICAL)
 2. Each bullet must have a clear subtitle (ALL CAPS) followed by descriptive text
-3. Exactly 5 bullet points
+3. 5-9 bullet points (keep the same count as current)
 4. Start each with a benefit-driven subtitle
 5. Include specific data, numbers, or measurements where possible
-6. Distribute keywords naturally across all 5 bullets
+6. Distribute keywords naturally across all bullets
 7. Fix all the issues listed above
 
 Return ONLY valid JSON in this exact format:

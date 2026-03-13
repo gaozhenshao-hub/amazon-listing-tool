@@ -2,8 +2,10 @@ import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
 import ProjectSelector from "@/components/ProjectSelector";
 import { useProject } from "@/contexts/ProjectContext";
 import {
@@ -36,22 +38,46 @@ import {
   Wand2,
   ChevronDown,
   ChevronUp,
+  ArrowRight,
+  Check,
+  X,
+  Plus,
+  Trash2,
 } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
+
+function CharCountBadge({ count, min, max }: { count: number; min: number; max: number }) {
+  const inRange = count >= min && count <= max;
+  const tooShort = count < min;
+  return (
+    <Badge
+      variant={inRange ? "default" : "destructive"}
+      className={`text-xs ${inRange ? "bg-green-600" : tooShort ? "bg-amber-500" : "bg-red-500"}`}
+    >
+      {count} / {min}-{max} 字符 {inRange ? "\u2713" : tooShort ? "\u2191\u504f\u77ed" : "\u2193\u504f\u957f"}
+    </Badge>
+  );
+}
 
 export default function PreviewPage() {
   const { selectedProjectId } = useProject();
+  const [, setLocation] = useLocation();
+
+  // Editing state - per-bullet editing
   const [isEditing, setIsEditing] = useState(false);
+  const [editingBulletIdx, setEditingBulletIdx] = useState<number | null>(null);
+  const [editBulletData, setEditBulletData] = useState<{ subtitle: string; fullText: string }>({ subtitle: "", fullText: "" });
   const [editData, setEditData] = useState({
     title: "",
     bulletPoints: "",
     description: "",
     searchTerms: "",
   });
+  // Track if user has confirmed edits (to enable translation)
+  const [editsConfirmed, setEditsConfirmed] = useState(false);
 
   const { data: listing, isLoading } = trpc.listing.getActive.useQuery(
     { projectId: selectedProjectId! },
@@ -63,17 +89,18 @@ export default function PreviewPage() {
     onSuccess: () => {
       utils.listing.getActive.invalidate({ projectId: selectedProjectId! });
       setIsEditing(false);
-      toast.success("Listing已更新");
+      setEditingBulletIdx(null);
+      toast.success("Listing\u5df2\u66f4\u65b0");
     },
-    onError: (err) => toast.error("更新失败: " + err.message),
+    onError: (err: any) => toast.error("\u66f4\u65b0\u5931\u8d25: " + err.message),
   });
 
   const translateToChinese = trpc.listing.translateToChinese.useMutation({
     onSuccess: () => {
       utils.listing.getActive.invalidate({ projectId: selectedProjectId! });
-      toast.success("中文翻译生成完成！");
+      toast.success("\u4e2d\u6587\u7ffb\u8bd1\u751f\u6210\u5b8c\u6210\uff01");
     },
-    onError: (err) => toast.error("翻译失败: " + err.message),
+    onError: (err: any) => toast.error("\u7ffb\u8bd1\u5931\u8d25: " + err.message),
   });
 
   useEffect(() => {
@@ -111,20 +138,12 @@ export default function PreviewPage() {
 
   const imageAdvice = useMemo(() => {
     if (!listing?.imageAdvice) return null;
-    try {
-      return JSON.parse(listing.imageAdvice);
-    } catch {
-      return null;
-    }
+    try { return JSON.parse(listing.imageAdvice); } catch { return null; }
   }, [listing?.imageAdvice]);
 
   const imageAdviceCn = useMemo(() => {
     if (!listing?.imageAdviceCn) return null;
-    try {
-      return JSON.parse(listing.imageAdviceCn);
-    } catch {
-      return null;
-    }
+    try { return JSON.parse(listing.imageAdviceCn); } catch { return null; }
   }, [listing?.imageAdviceCn]);
 
   const hasChinese = !!(listing?.titleCn || listing?.bulletPointsCn || listing?.descriptionCn || listing?.searchTermsCn);
@@ -143,28 +162,22 @@ export default function PreviewPage() {
       utils.listing.getActive.invalidate({ projectId: selectedProjectId! });
       versionsQuery.refetch();
       setRollbackConfirmId(null);
-      toast.success(`已回滚到版本 #${data.rolledBackTo}`);
+      toast.success(`\u5df2\u56de\u6eda\u5230\u7248\u672c #${data.rolledBackTo}`);
     },
-    onError: (err: any) => toast.error("回滚失败: " + err.message),
+    onError: (err: any) => toast.error("\u56de\u6eda\u5931\u8d25: " + err.message),
   });
 
   const generateReport = trpc.report.generateReport.useMutation({
-    onSuccess: (data) => {
-      // Open HTML in new window for printing/saving as PDF
+    onSuccess: (data: any) => {
       const blob = new Blob([data.html], { type: "text/html;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const win = window.open(url, "_blank");
       if (win) {
-        win.onload = () => {
-          // Auto-trigger print dialog for PDF saving
-          setTimeout(() => {
-            win.print();
-          }, 500);
-        };
+        win.onload = () => { setTimeout(() => { win.print(); }, 500); };
       }
-      toast.success("报告已生成，请在弹出窗口中保存为PDF");
+      toast.success("\u62a5\u544a\u5df2\u751f\u6210\uff0c\u8bf7\u5728\u5f39\u51fa\u7a97\u53e3\u4e2d\u4fdd\u5b58\u4e3aPDF");
     },
-    onError: (err) => toast.error("报告生成失败: " + err.message),
+    onError: (err: any) => toast.error("\u62a5\u544a\u751f\u6210\u5931\u8d25: " + err.message),
   });
 
   const handleExportReport = () => {
@@ -172,15 +185,69 @@ export default function PreviewPage() {
     generateReport.mutate({ projectId: selectedProjectId });
   };
 
-  const handleSave = () => {
+  // Save full listing (title, description, searchTerms)
+  const handleSaveGeneral = () => {
     if (!listing) return;
     updateListing.mutate({
       id: listing.id,
       title: editData.title,
-      bulletPoints: editData.bulletPoints,
       description: editData.description,
       searchTerms: editData.searchTerms,
     });
+  };
+
+  // Save a single bullet point edit
+  const handleSaveSingleBullet = (idx: number) => {
+    if (!listing) return;
+    try {
+      const bullets = JSON.parse(listing.bulletPoints || "[]");
+      if (Array.isArray(bullets) && idx < bullets.length) {
+        if (typeof bullets[idx] === "string") {
+          bullets[idx] = `${editBulletData.subtitle} ${editBulletData.fullText}`;
+        } else {
+          bullets[idx] = {
+            ...bullets[idx],
+            subtitle: editBulletData.subtitle,
+            fullText: editBulletData.fullText,
+            characterCount: (editBulletData.subtitle + " " + editBulletData.fullText).length,
+          };
+        }
+        updateListing.mutate({
+          id: listing.id,
+          bulletPoints: JSON.stringify(bullets),
+        });
+      }
+    } catch {
+      toast.error("\u5356\u70b9\u6570\u636e\u683c\u5f0f\u5f02\u5e38");
+    }
+  };
+
+  // Save raw JSON bullet points edit
+  const handleSaveBulletPointsRaw = () => {
+    if (!listing) return;
+    updateListing.mutate({
+      id: listing.id,
+      bulletPoints: editData.bulletPoints,
+    });
+  };
+
+  const handleStartEditBullet = (idx: number) => {
+    const bp = bulletPointsArray[idx];
+    if (!bp) return;
+    if (typeof bp === "string") {
+      setEditBulletData({ subtitle: "", fullText: bp });
+    } else {
+      setEditBulletData({
+        subtitle: bp.subtitle || "",
+        fullText: bp.fullText || bp.sellingPoint || "",
+      });
+    }
+    setEditingBulletIdx(idx);
+  };
+
+  const handleConfirmEdits = () => {
+    setEditsConfirmed(true);
+    toast.success("\u7f16\u8f91\u5df2\u786e\u8ba4\uff0c\u73b0\u5728\u53ef\u4ee5\u6267\u884c\u4e2d\u82f1\u6587\u7ffb\u8bd1");
   };
 
   const handleTranslate = () => {
@@ -190,37 +257,22 @@ export default function PreviewPage() {
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
-    toast.success(`${label}已复制到剪贴板`);
+    toast.success(`${label}\u5df2\u590d\u5236\u5230\u526a\u8d34\u677f`);
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">结果预览</h1>
+          <h1 className="text-2xl font-bold tracking-tight">\u7ed3\u679c\u9884\u89c8</h1>
           <p className="text-muted-foreground mt-1">
-            查看、编辑和导出生成的Listing内容（中英文对比）
+            \u67e5\u770b\u3001\u7f16\u8f91Listing\u5185\u5bb9 \u2192 \u786e\u8ba4\u540e\u7ffb\u8bd1 \u2192 \u524d\u5f80Listing\u8bc4\u5206
           </p>
         </div>
         <div className="flex items-center gap-3">
           <ProjectSelector />
           {listing && (
             <div className="flex gap-2">
-              {!hasChinese && !isEditing && (
-                <Button
-                  variant="outline"
-                  onClick={handleTranslate}
-                  disabled={translateToChinese.isPending}
-                  className="border-orange-300 text-orange-700 hover:bg-orange-50"
-                >
-                  {translateToChinese.isPending ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Languages className="h-4 w-4 mr-2" />
-                  )}
-                  生成中文翻译
-                </Button>
-              )}
               {!isEditing && (
                 <Button
                   variant="outline"
@@ -233,42 +285,7 @@ export default function PreviewPage() {
                   ) : (
                     <Download className="h-4 w-4 mr-2" />
                   )}
-                  导出完整报告
-                </Button>
-              )}
-              <Button
-                variant={isEditing ? "default" : "outline"}
-                onClick={() => {
-                  if (isEditing) {
-                    handleSave();
-                  } else {
-                    setIsEditing(true);
-                  }
-                }}
-                disabled={updateListing.isPending}
-              >
-                {updateListing.isPending ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : isEditing ? (
-                  <Save className="h-4 w-4 mr-2" />
-                ) : (
-                  <Edit3 className="h-4 w-4 mr-2" />
-                )}
-                {isEditing ? "保存修改" : "编辑"}
-              </Button>
-              {isEditing && (
-                <Button variant="ghost" onClick={() => {
-                  setIsEditing(false);
-                  if (listing) {
-                    setEditData({
-                      title: listing.title || "",
-                      bulletPoints: listing.bulletPoints || "",
-                      description: listing.description || "",
-                      searchTerms: listing.searchTerms || "",
-                    });
-                  }
-                }}>
-                  取消
+                  \u5bfc\u51fa\u5b8c\u6574\u62a5\u544a
                 </Button>
               )}
             </div>
@@ -280,7 +297,7 @@ export default function PreviewPage() {
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <AlertTriangle className="h-8 w-8 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">请先选择一个项目</p>
+            <p className="text-muted-foreground">\u8bf7\u5148\u9009\u62e9\u4e00\u4e2a\u9879\u76ee</p>
           </CardContent>
         </Card>
       ) : isLoading ? (
@@ -293,8 +310,8 @@ export default function PreviewPage() {
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <FileText className="h-8 w-8 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground mb-2">暂无生成结果</p>
-            <p className="text-sm text-muted-foreground">请先在"Listing生成"页面生成内容</p>
+            <p className="text-muted-foreground mb-2">\u6682\u65e0\u751f\u6210\u7ed3\u679c</p>
+            <p className="text-sm text-muted-foreground">\u8bf7\u5148\u5728\u201cListing\u751f\u6210\u201d\u9875\u9762\u751f\u6210\u5185\u5bb9</p>
           </CardContent>
         </Card>
       ) : (
@@ -302,138 +319,243 @@ export default function PreviewPage() {
           <TabsList>
             <TabsTrigger value="preview">
               <Eye className="h-3.5 w-3.5 mr-1.5" />
-              预览模式
+              \u9884\u89c8\u7f16\u8f91
             </TabsTrigger>
             <TabsTrigger value="bilingual">
               <Languages className="h-3.5 w-3.5 mr-1.5" />
-              中英对比
+              \u4e2d\u82f1\u5bf9\u6bd4
             </TabsTrigger>
             <TabsTrigger value="images">
               <Image className="h-3.5 w-3.5 mr-1.5" />
-              图片建议
+              \u56fe\u7247\u5efa\u8bae
             </TabsTrigger>
             <TabsTrigger value="history">
               <History className="h-3.5 w-3.5 mr-1.5" />
-              版本历史
+              \u7248\u672c\u5386\u53f2
             </TabsTrigger>
           </TabsList>
 
-          {/* Preview Mode - English only with editing */}
+          {/* ═══════════════════════════════════════════════════════════════
+              Preview & Edit Tab
+              ═══════════════════════════════════════════════════════════════ */}
           <TabsContent value="preview" className="space-y-4">
+            {/* Workflow Status Banner */}
+            <Card className={`${hasChinese ? "border-green-300 bg-green-50/50" : editsConfirmed ? "border-blue-300 bg-blue-50/50" : "border-amber-300 bg-amber-50/50"}`}>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-3">
+                    {hasChinese ? (
+                      <>
+                        <CheckCircle2 className="h-5 w-5 text-green-600" />
+                        <div>
+                          <p className="text-sm font-medium text-green-800">\u7ffb\u8bd1\u5df2\u5b8c\u6210</p>
+                          <p className="text-xs text-green-600">\u53ef\u4ee5\u524d\u5f80Listing\u8bc4\u5206\u9875\u9762\u8fdb\u884c\u8bc4\u5206\u5206\u6790</p>
+                        </div>
+                      </>
+                    ) : editsConfirmed ? (
+                      <>
+                        <Languages className="h-5 w-5 text-blue-600" />
+                        <div>
+                          <p className="text-sm font-medium text-blue-800">\u7f16\u8f91\u5df2\u786e\u8ba4\uff0c\u53ef\u4ee5\u6267\u884c\u7ffb\u8bd1</p>
+                          <p className="text-xs text-blue-600">\u70b9\u51fb\u201c\u6267\u884c\u4e2d\u82f1\u6587\u7ffb\u8bd1\u201d\u751f\u6210\u4e2d\u6587\u7248\u672c</p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <Edit3 className="h-5 w-5 text-amber-600" />
+                        <div>
+                          <p className="text-sm font-medium text-amber-800">\u8bf7\u68c0\u67e5\u5e76\u7f16\u8f91\u5185\u5bb9</p>
+                          <p className="text-xs text-amber-600">\u7f16\u8f91\u5b8c\u6210\u540e\u70b9\u51fb\u201c\u786e\u8ba4\u5185\u5bb9\u201d\uff0c\u7136\u540e\u6267\u884c\u4e2d\u82f1\u6587\u7ffb\u8bd1</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    {!hasChinese && !editsConfirmed && (
+                      <Button size="sm" className="bg-amber-600 hover:bg-amber-700" onClick={handleConfirmEdits}>
+                        <Check className="h-4 w-4 mr-1" />\u786e\u8ba4\u5185\u5bb9
+                      </Button>
+                    )}
+                    {!hasChinese && editsConfirmed && (
+                      <Button
+                        size="sm"
+                        onClick={handleTranslate}
+                        disabled={translateToChinese.isPending}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        {translateToChinese.isPending ? (
+                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                        ) : (
+                          <Languages className="h-4 w-4 mr-1" />
+                        )}
+                        {translateToChinese.isPending ? "\u7ffb\u8bd1\u4e2d..." : "\u6267\u884c\u4e2d\u82f1\u6587\u7ffb\u8bd1"}
+                      </Button>
+                    )}
+                    {hasChinese && (
+                      <Button size="sm" onClick={() => setLocation("/listing/scoring")}>
+                        <ArrowRight className="h-4 w-4 mr-1" />\u524d\u5f80Listing\u8bc4\u5206
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Title */}
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Type className="h-4 w-4 text-blue-600" />
-                    产品标题
+                    \u4ea7\u54c1\u6807\u9898
                   </CardTitle>
                   <div className="flex items-center gap-2">
-                    {(() => {
-                      const count = (isEditing ? editData.title : listing.title)?.length || 0;
-                      const inRange = count >= 180 && count <= 200;
-                      const tooShort = count < 180;
-                      return (
-                        <Badge variant={inRange ? "default" : "destructive"} className={`text-xs ${inRange ? "bg-green-600" : tooShort ? "bg-amber-500" : "bg-red-500"}`}>
-                          {count} / 180-200 字符 {inRange ? "✓" : tooShort ? "↑偏短" : "↓偏长"}
-                        </Badge>
-                      );
-                    })()}
+                    <CharCountBadge count={(isEditing ? editData.title : listing.title)?.length || 0} min={180} max={200} />
                     {!isEditing && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => copyToClipboard(listing.title || "", "标题")}
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                      </Button>
+                      <>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyToClipboard(listing.title || "", "\u6807\u9898")}>
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsEditing(true)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
                 {isEditing ? (
-                  <Textarea
-                    value={editData.title}
-                    onChange={(e) => setEditData({ ...editData, title: e.target.value })}
-                    rows={3}
-                    className="font-medium"
-                  />
+                  <div className="space-y-2">
+                    <Textarea
+                      value={editData.title}
+                      onChange={(e) => setEditData({ ...editData, title: e.target.value })}
+                      rows={3}
+                      className="font-medium"
+                    />
+                    <div className="flex gap-2 justify-end">
+                      <Button size="sm" onClick={handleSaveGeneral} disabled={updateListing.isPending}>
+                        {updateListing.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                        \u4fdd\u5b58
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => { setIsEditing(false); setEditData(prev => ({ ...prev, title: listing.title || "" })); }}>
+                        \u53d6\u6d88
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
                   <p className="text-sm font-medium leading-relaxed">{listing.title}</p>
                 )}
               </CardContent>
             </Card>
 
-            {/* Bullet Points */}
+            {/* Bullet Points - Enhanced with per-bullet editing */}
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
                     <List className="h-4 w-4 text-green-600" />
-                    五点描述 (Bullet Points)
+                    \u5356\u70b9\u63cf\u8ff0 (Bullet Points)
+                    <Badge variant="secondary" className="text-xs">{bulletPointsArray.length} \u6761</Badge>
                   </CardTitle>
-                  {!isEditing && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => {
-                        const text = bulletPointsArray.map((bp: any) =>
-                          typeof bp === "string" ? bp : `${bp.subtitle || ""} ${bp.fullText || bp.sellingPoint || ""}`
-                        ).join("\n\n");
-                        copyToClipboard(text, "五点描述");
-                      }}
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => {
+                      const text = bulletPointsArray.map((bp: any) =>
+                        typeof bp === "string" ? bp : `${bp.subtitle || ""} ${bp.fullText || bp.sellingPoint || ""}`
+                      ).join("\n\n");
+                      copyToClipboard(text, "\u5356\u70b9\u63cf\u8ff0");
+                    }}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent>
-                {isEditing ? (
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground">编辑JSON格式的五点描述</p>
-                    <Textarea
-                      value={editData.bulletPoints}
-                      onChange={(e) => setEditData({ ...editData, bulletPoints: e.target.value })}
-                      rows={12}
-                      className="font-mono text-xs"
-                    />
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {bulletPointsArray.map((bp: any, i: number) => (
-                      <div key={i} className="p-3 bg-muted/30 rounded-lg border-l-2 border-l-green-500">
-                        {typeof bp === "string" ? (
-                          <p className="text-sm">{bp}</p>
+                <div className="space-y-3">
+                  {bulletPointsArray.map((bp: any, i: number) => {
+                    const isEditingThis = editingBulletIdx === i;
+                    const fullBullet = typeof bp === "string"
+                      ? bp
+                      : bp.subtitle && bp.fullText
+                        ? `${bp.subtitle} ${bp.fullText}`
+                        : bp.fullText || bp.subtitle || "";
+
+                    return (
+                      <div key={i} className={`p-3 rounded-lg border-l-2 ${isEditingThis ? "border-l-blue-500 bg-blue-50/30 border border-blue-200" : "border-l-green-500 bg-muted/30"}`}>
+                        {isEditingThis ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge variant="outline" className="text-xs">\u7f16\u8f91\u5356\u70b9 {i + 1}</Badge>
+                              <CharCountBadge count={(editBulletData.subtitle + " " + editBulletData.fullText).length} min={200} max={280} />
+                            </div>
+                            <div>
+                              <Label className="text-xs">\u5c0f\u6807\u9898 (Subtitle)</Label>
+                              <Input
+                                value={editBulletData.subtitle}
+                                onChange={(e) => setEditBulletData(prev => ({ ...prev, subtitle: e.target.value }))}
+                                className="h-8 text-sm font-bold"
+                                placeholder="\u4f8b\u5982: [PREMIUM QUALITY]"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">\u6b63\u6587 (Full Text)</Label>
+                              <Textarea
+                                value={editBulletData.fullText}
+                                onChange={(e) => setEditBulletData(prev => ({ ...prev, fullText: e.target.value }))}
+                                rows={3}
+                                className="text-sm resize-none"
+                              />
+                            </div>
+                            <div className="flex gap-2 justify-end">
+                              <Button size="sm" onClick={() => handleSaveSingleBullet(i)} disabled={updateListing.isPending}>
+                                {updateListing.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                                \u4fdd\u5b58
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => setEditingBulletIdx(null)}>
+                                \u53d6\u6d88
+                              </Button>
+                            </div>
+                          </div>
                         ) : (
-                          <>
-                            <p className="text-sm">
-                              <span className="font-bold uppercase">{bp.subtitle || `Bullet ${i + 1}`}</span>
-                              {bp.fullText && <span className="text-muted-foreground"> — {bp.fullText}</span>}
-                              {!bp.fullText && bp.sellingPoint && <span className="text-muted-foreground"> — {bp.sellingPoint}</span>}
-                            </p>
-                            {(() => {
-                              const fullBullet = bp.subtitle && bp.fullText
-                                ? `${bp.subtitle} ${bp.fullText}`
-                                : bp.fullText || bp.subtitle || "";
-                              const count = fullBullet.length;
-                              const inRange = count >= 200 && count <= 280;
-                              const tooShort = count < 200;
-                              return (
-                                <Badge variant={inRange ? "default" : "destructive"} className={`text-xs mt-2 ${inRange ? "bg-green-600" : tooShort ? "bg-amber-500" : "bg-red-500"}`}>
-                                  {count} / 200-280 字符 {inRange ? "✓" : tooShort ? "↑偏短" : "↓偏长"}
-                                </Badge>
-                              );
-                            })()}
-                          </>
+                          <div>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Badge variant="outline" className="text-[10px]">{i + 1}</Badge>
+                                </div>
+                                {typeof bp === "string" ? (
+                                  <p className="text-sm">{bp}</p>
+                                ) : (
+                                  <p className="text-sm">
+                                    <span className="font-bold uppercase">{bp.subtitle || `Bullet ${i + 1}`}</span>
+                                    {bp.fullText && <span className="text-muted-foreground"> \u2014 {bp.fullText}</span>}
+                                    {!bp.fullText && bp.sellingPoint && <span className="text-muted-foreground"> \u2014 {bp.sellingPoint}</span>}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <CharCountBadge count={fullBullet.length} min={200} max={280} />
+                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleStartEditBullet(i)}>
+                                  <Pencil className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </div>
+                            {typeof bp !== "string" && bp.fabeBreakdown && (
+                              <div className="grid grid-cols-2 gap-1 mt-2">
+                                {Object.entries(bp.fabeBreakdown).map(([key, val]) => (
+                                  val ? <div key={key} className="text-[10px] text-muted-foreground"><span className="font-medium uppercase">{key}:</span> {val as string}</div> : null
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    );
+                  })}
+                </div>
               </CardContent>
             </Card>
 
@@ -443,31 +565,22 @@ export default function PreviewPage() {
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
                     <FileText className="h-4 w-4 text-purple-600" />
-                    产品描述
+                    \u4ea7\u54c1\u63cf\u8ff0
                   </CardTitle>
                   {!isEditing && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => copyToClipboard(listing.description || "", "产品描述")}
-                    >
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyToClipboard(listing.description || "", "\u4ea7\u54c1\u63cf\u8ff0")}>
                       <Copy className="h-3.5 w-3.5" />
                     </Button>
                   )}
                 </div>
               </CardHeader>
               <CardContent>
-                {isEditing ? (
-                  <Textarea
-                    value={editData.description}
-                    onChange={(e) => setEditData({ ...editData, description: e.target.value })}
-                    rows={10}
-                  />
-                ) : (
+                {listing.description ? (
                   <div className="prose prose-sm max-w-none text-sm leading-relaxed text-muted-foreground"
                     dangerouslySetInnerHTML={{ __html: listing.description || "" }}
                   />
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">\u6682\u65e0\u4ea7\u54c1\u63cf\u8ff0</p>
                 )}
               </CardContent>
             </Card>
@@ -478,19 +591,14 @@ export default function PreviewPage() {
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Key className="h-4 w-4 text-amber-600" />
-                    后台搜索词 (Search Terms)
+                    \u540e\u53f0\u641c\u7d22\u8bcd (Search Terms)
                   </CardTitle>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="text-xs">
-                      {new Blob([(isEditing ? editData.searchTerms : listing.searchTerms) || ""]).size} / 250 bytes
+                      {new Blob([(listing.searchTerms) || ""].map(String)).size} / 250 bytes
                     </Badge>
                     {!isEditing && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => copyToClipboard(listing.searchTerms || "", "搜索词")}
-                      >
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyToClipboard(listing.searchTerms || "", "\u641c\u7d22\u8bcd")}>
                         <Copy className="h-3.5 w-3.5" />
                       </Button>
                     )}
@@ -498,93 +606,94 @@ export default function PreviewPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                {isEditing ? (
-                  <Textarea
-                    value={editData.searchTerms}
-                    onChange={(e) => setEditData({ ...editData, searchTerms: e.target.value })}
-                    rows={4}
-                    className="font-mono text-sm"
-                  />
+                {listing.searchTerms ? (
+                  <p className="text-sm font-mono bg-muted/30 p-3 rounded-lg break-all">{listing.searchTerms}</p>
                 ) : (
-                  <p className="text-sm font-mono bg-muted/30 p-3 rounded-lg break-all">
-                    {listing.searchTerms}
-                  </p>
+                  <p className="text-sm text-muted-foreground italic">\u6682\u65e0\u641c\u7d22\u8bcd</p>
                 )}
               </CardContent>
             </Card>
 
             {/* Version Info */}
             <div className="flex items-center justify-between text-sm text-muted-foreground px-1">
-              <span>版本 {listing.version} · 生成于 {new Date(listing.createdAt).toLocaleString("zh-CN")}</span>
+              <span>\u7248\u672c {listing.version} \u00b7 \u751f\u6210\u4e8e {new Date(listing.createdAt).toLocaleString("zh-CN")}</span>
               <Badge variant="secondary">
                 <CheckCircle2 className="h-3 w-3 mr-1" />
-                当前版本
+                \u5f53\u524d\u7248\u672c
               </Badge>
             </div>
           </TabsContent>
 
-          {/* Bilingual Comparison Mode */}
+          {/* ═══════════════════════════════════════════════════════════════
+              Bilingual Comparison Tab
+              ═══════════════════════════════════════════════════════════════ */}
           <TabsContent value="bilingual" className="space-y-4">
             {!hasChinese ? (
               <Card className="border-dashed border-orange-300">
                 <CardContent className="flex flex-col items-center justify-center py-12">
                   <Languages className="h-8 w-8 text-orange-400 mb-4" />
-                  <p className="text-muted-foreground mb-3">暂无中文翻译</p>
-                  <Button
-                    onClick={handleTranslate}
-                    disabled={translateToChinese.isPending}
-                    className="bg-orange-600 hover:bg-orange-700"
-                  >
-                    {translateToChinese.isPending ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Languages className="h-4 w-4 mr-2" />
-                    )}
-                    {translateToChinese.isPending ? "翻译中..." : "一键生成中文翻译"}
-                  </Button>
+                  <p className="text-muted-foreground mb-3">\u6682\u65e0\u4e2d\u6587\u7ffb\u8bd1</p>
+                  <p className="text-xs text-muted-foreground mb-4">\u8bf7\u5148\u5728\u201c\u9884\u89c8\u7f16\u8f91\u201d\u9875\u786e\u8ba4\u5185\u5bb9\u540e\u6267\u884c\u7ffb\u8bd1</p>
+                  {editsConfirmed && (
+                    <Button
+                      onClick={handleTranslate}
+                      disabled={translateToChinese.isPending}
+                      className="bg-orange-600 hover:bg-orange-700"
+                    >
+                      {translateToChinese.isPending ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Languages className="h-4 w-4 mr-2" />
+                      )}
+                      {translateToChinese.isPending ? "\u7ffb\u8bd1\u4e2d..." : "\u6267\u884c\u4e2d\u82f1\u6587\u7ffb\u8bd1"}
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             ) : (
               <>
+                {/* Navigation to scoring */}
+                <Card className="border-green-300 bg-green-50/50">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-5 w-5 text-green-600" />
+                        <span className="text-sm font-medium text-green-800">\u4e2d\u82f1\u6587\u7ffb\u8bd1\u5df2\u5b8c\u6210\uff0c\u53ef\u4ee5\u524d\u5f80Listing\u8bc4\u5206</span>
+                      </div>
+                      <Button size="sm" onClick={() => setLocation("/listing/scoring")}>
+                        <BarChart3 className="h-4 w-4 mr-1" />\u524d\u5f80Listing\u8bc4\u5206
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
                 {/* Title Comparison */}
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base flex items-center gap-2">
                       <Type className="h-4 w-4 text-blue-600" />
-                      产品标题
+                      \u4ea7\u54c1\u6807\u9898
                       <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
-                        <Languages className="h-3 w-3 mr-1" />
-                        中英对照
+                        <Languages className="h-3 w-3 mr-1" />\u4e2d\u82f1\u5bf9\u7167
                       </Badge>
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      {/* English */}
                       <div className="p-4 rounded-lg border bg-blue-50/30 border-blue-200">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">English</span>
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.title || "", "英文标题")}>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.title || "", "\u82f1\u6587\u6807\u9898")}>
                             <Copy className="h-3 w-3" />
                           </Button>
                         </div>
                         <p className="text-sm font-medium leading-relaxed">{listing.title}</p>
-                        {(() => {
-                          const count = listing.title?.length || 0;
-                          const inRange = count >= 180 && count <= 200;
-                          const tooShort = count < 180;
-                          return (
-                            <Badge variant={inRange ? "default" : "destructive"} className={`text-xs mt-2 ${inRange ? "bg-green-600" : tooShort ? "bg-amber-500" : "bg-red-500"}`}>
-                              {count} / 180-200 字符 {inRange ? "✓" : tooShort ? "↑偏短" : "↓偏长"}
-                            </Badge>
-                          );
-                        })()}
+                        <CharCountBadge count={listing.title?.length || 0} min={180} max={200} />
                       </div>
-                      {/* Chinese */}
                       <div className="p-4 rounded-lg border bg-orange-50/30 border-orange-200">
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">中文</span>
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.titleCn || "", "中文标题")}>
+                          <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">\u4e2d\u6587</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.titleCn || "", "\u4e2d\u6587\u6807\u9898")}>
                             <Copy className="h-3 w-3" />
                           </Button>
                         </div>
@@ -594,16 +703,16 @@ export default function PreviewPage() {
                   </CardContent>
                 </Card>
 
-                {/* Bullet Points Comparison */}
+                {/* Bullet Points Comparison - supports up to 9 */}
                 <Card>
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-base flex items-center gap-2">
                         <List className="h-4 w-4 text-green-600" />
-                        五点描述
+                        \u5356\u70b9\u63cf\u8ff0
+                        <Badge variant="secondary" className="text-xs">{bulletPointsArray.length} \u6761</Badge>
                         <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
-                          <Languages className="h-3 w-3 mr-1" />
-                          中英对照
+                          <Languages className="h-3 w-3 mr-1" />\u4e2d\u82f1\u5bf9\u7167
                         </Badge>
                       </CardTitle>
                       <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => {
@@ -613,10 +722,9 @@ export default function PreviewPage() {
                         const cnText = bulletPointsCnArray.map((bp: any) =>
                           typeof bp === "string" ? bp : `${bp.subtitle || ""} ${bp.fullText || ""}`
                         ).join("\n\n");
-                        copyToClipboard(`=== English ===\n${enText}\n\n=== 中文 ===\n${cnText}`, "中英文五点描述");
+                        copyToClipboard(`=== English ===\n${enText}\n\n=== \u4e2d\u6587 ===\n${cnText}`, "\u4e2d\u82f1\u6587\u5356\u70b9\u63cf\u8ff0");
                       }}>
-                        <Copy className="h-3 w-3 mr-1" />
-                        复制全部
+                        <Copy className="h-3 w-3 mr-1" />\u590d\u5236\u5168\u90e8
                       </Button>
                     </div>
                   </CardHeader>
@@ -624,46 +732,39 @@ export default function PreviewPage() {
                     {bulletPointsArray.map((bp: any, i: number) => {
                       const cnBp = bulletPointsCnArray[i];
                       const fullBullet = typeof bp === "string" ? bp : (bp.subtitle && bp.fullText ? `${bp.subtitle} ${bp.fullText}` : bp.fullText || bp.subtitle || "");
-                      const count = fullBullet.length;
-                      const inRange = count >= 200 && count <= 280;
-                      const tooShort = count < 200;
                       return (
                         <div key={i} className="rounded-lg border overflow-hidden">
                           <div className="grid grid-cols-1 lg:grid-cols-2">
-                            {/* English */}
                             <div className="p-3 bg-blue-50/30 border-b lg:border-b-0 lg:border-r border-blue-200">
                               <div className="flex items-center gap-2 mb-1.5">
                                 <Badge variant="secondary" className="text-xs">EN {i + 1}</Badge>
-                                <Badge variant={inRange ? "default" : "destructive"} className={`text-xs ${inRange ? "bg-green-600" : tooShort ? "bg-amber-500" : "bg-red-500"}`}>
-                                  {count}字符 {inRange ? "✓" : tooShort ? "↑" : "↓"}
-                                </Badge>
+                                <CharCountBadge count={fullBullet.length} min={200} max={280} />
                               </div>
                               {typeof bp === "string" ? (
                                 <p className="text-sm">{bp}</p>
                               ) : (
                                 <p className="text-sm">
                                   <span className="font-bold">{bp.subtitle || `Bullet ${i + 1}`}</span>
-                                  {bp.fullText && <span className="text-muted-foreground"> — {bp.fullText}</span>}
-                                  {!bp.fullText && bp.sellingPoint && <span className="text-muted-foreground"> — {bp.sellingPoint}</span>}
+                                  {bp.fullText && <span className="text-muted-foreground"> \u2014 {bp.fullText}</span>}
+                                  {!bp.fullText && bp.sellingPoint && <span className="text-muted-foreground"> \u2014 {bp.sellingPoint}</span>}
                                 </p>
                               )}
                             </div>
-                            {/* Chinese */}
                             <div className="p-3 bg-orange-50/30">
                               <div className="flex items-center gap-2 mb-1.5">
-                                <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-700">中 {i + 1}</Badge>
+                                <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-700">\u4e2d {i + 1}</Badge>
                               </div>
                               {cnBp ? (
                                 typeof cnBp === "string" ? (
                                   <p className="text-sm">{cnBp}</p>
                                 ) : (
                                   <p className="text-sm">
-                                    <span className="font-bold">{cnBp.subtitle || `卖点 ${i + 1}`}</span>
-                                    {cnBp.fullText && <span className="text-orange-700"> — {cnBp.fullText}</span>}
+                                    <span className="font-bold">{cnBp.subtitle || `\u5356\u70b9 ${i + 1}`}</span>
+                                    {cnBp.fullText && <span className="text-orange-700"> \u2014 {cnBp.fullText}</span>}
                                   </p>
                                 )
                               ) : (
-                                <p className="text-sm text-muted-foreground italic">暂无翻译</p>
+                                <p className="text-sm text-muted-foreground italic">\u6682\u65e0\u7ffb\u8bd1</p>
                               )}
                             </div>
                           </div>
@@ -678,20 +779,18 @@ export default function PreviewPage() {
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base flex items-center gap-2">
                       <FileText className="h-4 w-4 text-purple-600" />
-                      产品描述
+                      \u4ea7\u54c1\u63cf\u8ff0
                       <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
-                        <Languages className="h-3 w-3 mr-1" />
-                        中英对照
+                        <Languages className="h-3 w-3 mr-1" />\u4e2d\u82f1\u5bf9\u7167
                       </Badge>
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      {/* English */}
                       <div className="p-4 rounded-lg border bg-blue-50/30 border-blue-200">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">English</span>
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.description || "", "英文描述")}>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.description || "", "\u82f1\u6587\u63cf\u8ff0")}>
                             <Copy className="h-3 w-3" />
                           </Button>
                         </div>
@@ -699,11 +798,10 @@ export default function PreviewPage() {
                           dangerouslySetInnerHTML={{ __html: listing.description || "" }}
                         />
                       </div>
-                      {/* Chinese */}
                       <div className="p-4 rounded-lg border bg-orange-50/30 border-orange-200">
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">中文</span>
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.descriptionCn || "", "中文描述")}>
+                          <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">\u4e2d\u6587</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.descriptionCn || "", "\u4e2d\u6587\u63cf\u8ff0")}>
                             <Copy className="h-3 w-3" />
                           </Button>
                         </div>
@@ -720,20 +818,18 @@ export default function PreviewPage() {
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base flex items-center gap-2">
                       <Key className="h-4 w-4 text-amber-600" />
-                      后台搜索词
+                      \u540e\u53f0\u641c\u7d22\u8bcd
                       <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
-                        <Languages className="h-3 w-3 mr-1" />
-                        中英对照
+                        <Languages className="h-3 w-3 mr-1" />\u4e2d\u82f1\u5bf9\u7167
                       </Badge>
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      {/* English */}
                       <div className="p-4 rounded-lg border bg-blue-50/30 border-blue-200">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">English</span>
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.searchTerms || "", "英文搜索词")}>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.searchTerms || "", "\u82f1\u6587\u641c\u7d22\u8bcd")}>
                             <Copy className="h-3 w-3" />
                           </Button>
                         </div>
@@ -742,15 +838,14 @@ export default function PreviewPage() {
                           {new Blob([listing.searchTerms || ""].map(String)).size} / 250 bytes
                         </Badge>
                       </div>
-                      {/* Chinese */}
                       <div className="p-4 rounded-lg border bg-orange-50/30 border-orange-200">
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">中文</span>
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.searchTermsCn || "", "中文搜索词")}>
+                          <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">\u4e2d\u6587</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.searchTermsCn || "", "\u4e2d\u6587\u641c\u7d22\u8bcd")}>
                             <Copy className="h-3 w-3" />
                           </Button>
                         </div>
-                        <p className="text-sm font-mono break-all text-orange-900">{listing.searchTermsCn || "暂无翻译"}</p>
+                        <p className="text-sm font-mono break-all text-orange-900">{listing.searchTermsCn || "\u6682\u65e0\u7ffb\u8bd1"}</p>
                       </div>
                     </div>
                   </CardContent>
@@ -769,34 +864,34 @@ export default function PreviewPage() {
                     ) : (
                       <Languages className="h-4 w-4 mr-2" />
                     )}
-                    {translateToChinese.isPending ? "重新翻译中..." : "重新生成中文翻译"}
+                    {translateToChinese.isPending ? "\u91cd\u65b0\u7ffb\u8bd1\u4e2d..." : "\u91cd\u65b0\u751f\u6210\u4e2d\u6587\u7ffb\u8bd1"}
                   </Button>
                 </div>
               </>
             )}
           </TabsContent>
 
-          {/* Image Advice Tab - Bilingual */}
+          {/* ═══════════════════════════════════════════════════════════════
+              Image Advice Tab
+              ═══════════════════════════════════════════════════════════════ */}
           <TabsContent value="images" className="space-y-4">
             {imageAdvice ? (
               <>
-                {/* Main Image - Bilingual */}
+                {/* 图片建议 - Main Image */}
                 {imageAdvice.mainImage && (
                   <Card>
                     <CardHeader>
                       <CardTitle className="text-base flex items-center gap-2">
-                        首图建议
+                        图片建议 - 首图
                         {imageAdviceCn?.mainImage && (
                           <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
-                            <Languages className="h-3 w-3 mr-1" />
-                            中英对照
+                            <Languages className="h-3 w-3 mr-1" />中英对照
                           </Badge>
                         )}
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {/* English */}
                         <div className="p-4 rounded-lg border bg-blue-50/30 border-blue-200 space-y-3">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">English</span>
@@ -863,15 +958,12 @@ export default function PreviewPage() {
                               <p className="text-xs font-medium text-blue-700 mb-1">拍摄提示</p>
                               <ul className="text-sm space-y-1 text-muted-foreground">
                                 {imageAdvice.mainImage.tips.map((t: string, i: number) => (
-                                  <li key={i} className="flex items-start gap-2">
-                                    <span className="text-primary mt-0.5">•</span>{t}
-                                  </li>
+                                  <li key={i} className="flex items-start gap-2"><span className="text-primary mt-0.5">•</span>{t}</li>
                                 ))}
                               </ul>
                             </div>
                           )}
                         </div>
-                        {/* Chinese */}
                         <div className="p-4 rounded-lg border bg-orange-50/30 border-orange-200 space-y-3">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">中文</span>
@@ -902,47 +994,9 @@ export default function PreviewPage() {
                                   <p className="text-sm text-orange-900">{imageAdviceCn.mainImage.composition}</p>
                                 </div>
                               )}
-                              {imageAdviceCn.mainImage.colorScheme && (
-                                <div>
-                                  <p className="text-xs font-medium text-orange-700 mb-1">配色方案</p>
-                                  <div className="flex flex-wrap gap-2">
-                                    {imageAdviceCn.mainImage.colorScheme.primary && (
-                                      <span className="text-xs text-orange-800">主色: {imageAdviceCn.mainImage.colorScheme.primary}</span>
-                                    )}
-                                    {imageAdviceCn.mainImage.colorScheme.secondary && (
-                                      <span className="text-xs text-orange-800">辅色: {imageAdviceCn.mainImage.colorScheme.secondary}</span>
-                                    )}
-                                    {imageAdviceCn.mainImage.colorScheme.accent && (
-                                      <span className="text-xs text-orange-800">点缀色: {imageAdviceCn.mainImage.colorScheme.accent}</span>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                              {imageAdviceCn.mainImage.keyElements && (
-                                <div>
-                                  <p className="text-xs font-medium text-orange-700 mb-1">关键元素</p>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {imageAdviceCn.mainImage.keyElements.map((e: string, i: number) => (
-                                      <Badge key={i} variant="secondary" className="text-xs bg-orange-100 text-orange-800">{e}</Badge>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                              {imageAdviceCn.mainImage.tips && (
-                                <div>
-                                  <p className="text-xs font-medium text-orange-700 mb-1">拍摄提示</p>
-                                  <ul className="text-sm space-y-1 text-orange-800">
-                                    {imageAdviceCn.mainImage.tips.map((t: string, i: number) => (
-                                      <li key={i} className="flex items-start gap-2">
-                                        <span className="text-orange-500 mt-0.5">•</span>{t}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
                             </>
                           ) : (
-                            <p className="text-sm text-muted-foreground italic">暂无中文翻译，请点击"生成中文翻译"</p>
+                            <p className="text-sm text-muted-foreground italic">暂无中文翻译</p>
                           )}
                         </div>
                       </div>
@@ -950,96 +1004,61 @@ export default function PreviewPage() {
                   </Card>
                 )}
 
-                {/* Secondary Images - Bilingual */}
+                {/* Secondary Images */}
                 {imageAdvice.secondaryImages && imageAdvice.secondaryImages.length > 0 && (
                   <Card>
                     <CardHeader>
-                      <CardTitle className="text-base flex items-center gap-2">
-                        辅图建议
-                        {imageAdviceCn?.secondaryImages && (
-                          <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
-                            <Languages className="h-3 w-3 mr-1" />
-                            中英对照
-                          </Badge>
-                        )}
-                      </CardTitle>
-                      <CardDescription>按卖点重要性排序的辅图方案（含配色、构图、表达方式、数据可视化建议）</CardDescription>
+                      <CardTitle className="text-base">辅图建议 ({imageAdvice.secondaryImages.length} 张)</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-6">
+                      <div className="space-y-4">
                         {imageAdvice.secondaryImages.map((img: any, i: number) => {
                           const imgCn = imageAdviceCn?.secondaryImages?.[i];
                           return (
                             <div key={i} className="rounded-lg border overflow-hidden">
-                              <div className="px-4 py-2 bg-muted/50 border-b flex items-center gap-3">
-                                <Badge variant="default" className="text-xs">图 {img.imageNumber || i + 2}</Badge>
-                                <span className="text-sm font-semibold">{img.title || img.focus || img.sellingPoint}</span>
-                                {img.expressionMethod && (
-                                  <Badge variant="outline" className="text-xs border-purple-300 text-purple-600">
-                                    {img.expressionMethod}
-                                  </Badge>
-                                )}
+                              <div className="px-4 py-2 bg-muted/50 border-b flex items-center gap-2">
+                                <Badge variant="outline" className="text-xs">辅图 {i + 1}</Badge>
+                                <span className="text-sm font-medium">{img.purpose || img.concept}</span>
+                                {img.title && <span className="text-xs text-muted-foreground">- {img.title}</span>}
                               </div>
-                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-x">
-                                {/* English */}
-                                <div className="p-4 bg-blue-50/20 space-y-2.5">
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">English</span>
-                                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(
-                                      `Image ${img.imageNumber || i + 2}: ${img.title || img.focus || img.sellingPoint}\nExpression: ${img.expressionMethod || ''}\nComposition: ${img.composition || ''}\nText Overlay: ${img.textOverlay || ''}\nData Visualization: ${img.dataVisualization || ''}\nTips: ${(img.tips || []).join('; ')}`,
-                                      `英文图${img.imageNumber || i + 2}建议`
-                                    )}>
-                                      <Copy className="h-3 w-3" />
-                                    </Button>
-                                  </div>
-                                  {img.focus && (
-                                    <p className="text-sm"><span className="text-xs text-blue-600 font-medium">核心卖点:</span> {img.focus}</p>
-                                  )}
-                                  {img.sellingPoint && img.sellingPoint !== img.focus && (
-                                    <p className="text-sm"><span className="text-xs text-blue-600 font-medium">FABE分析:</span> {img.sellingPoint}</p>
-                                  )}
-                                  {img.composition && (
-                                    <p className="text-sm"><span className="text-xs text-blue-600 font-medium">构图方式:</span> {img.composition}</p>
-                                  )}
-                                  {img.textOverlay && (
-                                    <p className="text-sm"><span className="text-xs text-blue-600 font-medium">文案:</span> {img.textOverlay}</p>
-                                  )}
-                                  {img.colorScheme && (
+                              <div className="grid grid-cols-1 lg:grid-cols-2">
+                                <div className="p-3 bg-blue-50/20 border-b lg:border-b-0 lg:border-r space-y-2">
+                                  <span className="text-xs font-semibold text-blue-700 uppercase">English</span>
+                                  <p className="text-sm">{img.concept || img.content}</p>
+                                  {img.expressionMethod && (
                                     <div>
-                                      <span className="text-xs text-blue-600 font-medium">配色方案:</span>
-                                      <div className="flex flex-wrap gap-2 mt-1">
-                                        {img.colorScheme.primary && (
-                                          <div className="flex items-center gap-1">
-                                            <div className="w-3 h-3 rounded-full border border-gray-300" style={{ backgroundColor: img.colorScheme.primary.match(/#[0-9A-Fa-f]{3,8}/)?.[0] || '#ccc' }} />
-                                            <span className="text-xs">{img.colorScheme.primary}</span>
-                                          </div>
-                                        )}
-                                        {img.colorScheme.secondary && (
-                                          <div className="flex items-center gap-1">
-                                            <div className="w-3 h-3 rounded-full border border-gray-300" style={{ backgroundColor: img.colorScheme.secondary.match(/#[0-9A-Fa-f]{3,8}/)?.[0] || '#ccc' }} />
-                                            <span className="text-xs">{img.colorScheme.secondary}</span>
-                                          </div>
-                                        )}
-                                        {img.colorScheme.accent && (
-                                          <div className="flex items-center gap-1">
-                                            <div className="w-3 h-3 rounded-full border border-gray-300" style={{ backgroundColor: img.colorScheme.accent.match(/#[0-9A-Fa-f]{3,8}/)?.[0] || '#ccc' }} />
-                                            <span className="text-xs">{img.colorScheme.accent}</span>
-                                          </div>
-                                        )}
-                                      </div>
+                                      <p className="text-xs font-medium text-blue-700">表达方式</p>
+                                      <p className="text-sm text-muted-foreground">{img.expressionMethod}</p>
                                     </div>
                                   )}
                                   {img.dataVisualization && (
-                                    <p className="text-sm"><span className="text-xs text-blue-600 font-medium">数据可视化:</span> {img.dataVisualization}</p>
+                                    <div>
+                                      <p className="text-xs font-medium text-blue-700">数据可视化</p>
+                                      <p className="text-sm text-muted-foreground">{img.dataVisualization}</p>
+                                    </div>
+                                  )}
+                                  {img.keyElements && (
+                                    <div className="flex flex-wrap gap-1">
+                                      {img.keyElements.map((e: string, j: number) => (
+                                        <Badge key={j} variant="secondary" className="text-[10px]">{e}</Badge>
+                                      ))}
+                                    </div>
                                   )}
                                   {img.icons && img.icons.length > 0 && (
                                     <div>
-                                      <span className="text-xs text-blue-600 font-medium">图标建议:</span>
-                                      <div className="flex flex-wrap gap-1.5 mt-1">
+                                      <p className="text-xs font-medium text-blue-700">图标建议</p>
+                                      <div className="flex flex-wrap gap-1">
                                         {img.icons.map((icon: string, j: number) => (
-                                          <Badge key={j} variant="secondary" className="text-xs">{icon}</Badge>
+                                          <Badge key={j} variant="outline" className="text-[10px]">{icon}</Badge>
                                         ))}
                                       </div>
+                                    </div>
+                                  )}
+                                  {img.colorScheme && (
+                                    <div className="flex flex-wrap gap-2">
+                                      {img.colorScheme.primary && <span className="text-xs">主色: {img.colorScheme.primary}</span>}
+                                      {img.colorScheme.secondary && <span className="text-xs">辅色: {img.colorScheme.secondary}</span>}
+                                      {img.colorScheme.accent && <span className="text-xs">点缀色: {img.colorScheme.accent}</span>}
                                     </div>
                                   )}
                                   {img.tips && img.tips.length > 0 && (
@@ -1048,59 +1067,13 @@ export default function PreviewPage() {
                                     </ul>
                                   )}
                                 </div>
-                                {/* Chinese */}
-                                <div className="p-4 bg-orange-50/20 space-y-2.5">
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">中文</span>
-                                    {imgCn && (
-                                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(
-                                        `图${img.imageNumber || i + 2}: ${imgCn.title || imgCn.focus || imgCn.sellingPoint || ''}\n表达方式: ${imgCn.expressionMethod || ''}\n构图: ${imgCn.composition || ''}\n文案: ${imgCn.textOverlay || ''}\n数据可视化: ${imgCn.dataVisualization || ''}\n提示: ${(imgCn.tips || []).join('; ')}`,
-                                        `中文图${img.imageNumber || i + 2}建议`
-                                      )}>
-                                        <Copy className="h-3 w-3" />
-                                      </Button>
-                                    )}
-                                  </div>
+                                <div className="p-3 bg-orange-50/20 space-y-2">
+                                  <span className="text-xs font-semibold text-orange-700 uppercase">中文</span>
                                   {imgCn ? (
                                     <>
-                                      {(imgCn.title || imgCn.focus) && (
-                                        <p className="text-sm font-semibold text-orange-900">{imgCn.title || imgCn.focus || imgCn.sellingPoint}</p>
-                                      )}
-                                      {imgCn.sellingPoint && imgCn.sellingPoint !== imgCn.focus && (
-                                        <p className="text-sm text-orange-800"><span className="text-xs text-orange-600 font-medium">FABE分析:</span> {imgCn.sellingPoint}</p>
-                                      )}
-                                      {imgCn.expressionMethod && (
-                                        <p className="text-sm text-orange-800"><span className="text-xs text-orange-600 font-medium">表达方式:</span> {imgCn.expressionMethod}</p>
-                                      )}
-                                      {imgCn.composition && (
-                                        <p className="text-sm text-orange-800"><span className="text-xs text-orange-600 font-medium">构图:</span> {imgCn.composition}</p>
-                                      )}
-                                      {imgCn.textOverlay && (
-                                        <p className="text-sm text-orange-800"><span className="text-xs text-orange-600 font-medium">文案:</span> {imgCn.textOverlay}</p>
-                                      )}
-                                      {imgCn.colorScheme && (
-                                        <div>
-                                          <span className="text-xs text-orange-600 font-medium">配色方案:</span>
-                                          <div className="flex flex-wrap gap-2 mt-1">
-                                            {imgCn.colorScheme.primary && <span className="text-xs text-orange-800">主色: {imgCn.colorScheme.primary}</span>}
-                                            {imgCn.colorScheme.secondary && <span className="text-xs text-orange-800">辅色: {imgCn.colorScheme.secondary}</span>}
-                                            {imgCn.colorScheme.accent && <span className="text-xs text-orange-800">点缀色: {imgCn.colorScheme.accent}</span>}
-                                          </div>
-                                        </div>
-                                      )}
-                                      {imgCn.dataVisualization && (
-                                        <p className="text-sm text-orange-800"><span className="text-xs text-orange-600 font-medium">数据可视化:</span> {imgCn.dataVisualization}</p>
-                                      )}
-                                      {imgCn.icons && imgCn.icons.length > 0 && (
-                                        <div>
-                                          <span className="text-xs text-orange-600 font-medium">图标建议:</span>
-                                          <div className="flex flex-wrap gap-1.5 mt-1">
-                                            {imgCn.icons.map((icon: string, j: number) => (
-                                              <Badge key={j} variant="secondary" className="text-xs bg-orange-100 text-orange-800">{icon}</Badge>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
+                                      <p className="text-sm text-orange-900">{imgCn.concept || imgCn.content}</p>
+                                      {imgCn.expressionMethod && <p className="text-xs text-orange-700">表达方式: {imgCn.expressionMethod}</p>}
+                                      {imgCn.dataVisualization && <p className="text-xs text-orange-700">数据可视化: {imgCn.dataVisualization}</p>}
                                       {imgCn.tips && imgCn.tips.length > 0 && (
                                         <ul className="text-xs text-orange-700 space-y-0.5">
                                           {imgCn.tips.map((t: string, j: number) => <li key={j}>• {t}</li>)}
@@ -1120,7 +1093,7 @@ export default function PreviewPage() {
                   </Card>
                 )}
 
-                {/* A+ Content - Bilingual */}
+                {/* A+ Content */}
                 {imageAdvice.aPlusContent && (
                   <Card>
                     <CardHeader>
@@ -1128,8 +1101,7 @@ export default function PreviewPage() {
                         A+ 内容建议
                         {imageAdviceCn?.aPlusContent && (
                           <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
-                            <Languages className="h-3 w-3 mr-1" />
-                            中英对照
+                            <Languages className="h-3 w-3 mr-1" />中英对照
                           </Badge>
                         )}
                       </CardTitle>
@@ -1180,7 +1152,7 @@ export default function PreviewPage() {
                   </Card>
                 )}
 
-                {/* Design Guidelines - Bilingual */}
+                {/* Design Guidelines */}
                 {imageAdvice.designGuidelines && (
                   <Card>
                     <CardHeader>
@@ -1189,8 +1161,7 @@ export default function PreviewPage() {
                         整体设计指南
                         {imageAdviceCn?.designGuidelines && (
                           <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
-                            <Languages className="h-3 w-3 mr-1" />
-                            中英对照
+                            <Languages className="h-3 w-3 mr-1" />中英对照
                           </Badge>
                         )}
                       </CardTitle>
@@ -1198,7 +1169,6 @@ export default function PreviewPage() {
                     </CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {/* English */}
                         <div className="p-4 rounded-lg border bg-blue-50/30 border-blue-200 space-y-3">
                           <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">English</span>
                           {imageAdvice.designGuidelines.fontRecommendation && (
@@ -1238,7 +1208,6 @@ export default function PreviewPage() {
                             </div>
                           )}
                         </div>
-                        {/* Chinese */}
                         <div className="p-4 rounded-lg border bg-orange-50/30 border-orange-200 space-y-3">
                           <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">中文</span>
                           {imageAdviceCn?.designGuidelines ? (
@@ -1312,22 +1281,24 @@ export default function PreviewPage() {
               <Card className="border-dashed">
                 <CardContent className="flex flex-col items-center justify-center py-12">
                   <Image className="h-8 w-8 text-muted-foreground mb-3" />
-                  <p className="text-muted-foreground text-sm">暂无图片建议数据</p>
+                  <p className="text-muted-foreground text-sm">\u6682\u65e0\u56fe\u7247\u5efa\u8bae\u6570\u636e</p>
                 </CardContent>
               </Card>
             )}
           </TabsContent>
 
-          {/* Version History Tab */}
+          {/* ═══════════════════════════════════════════════════════════════
+              Version History Tab
+              ═══════════════════════════════════════════════════════════════ */}
           <TabsContent value="history" className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <History className="h-4 w-4 text-purple-600" />
-                  版本历史
+                  \u7248\u672c\u5386\u53f2
                 </CardTitle>
                 <CardDescription>
-                  记录每次生成、A/B测试应用、AI优化、手动编辑的内容变更，支持一键回滚
+                  \u8bb0\u5f55\u6bcf\u6b21\u751f\u6210\u3001AI\u4f18\u5316\u3001\u624b\u52a8\u7f16\u8f91\u7684\u5185\u5bb9\u53d8\u66f4\uff0c\u652f\u6301\u4e00\u952e\u56de\u6eda
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -1340,8 +1311,8 @@ export default function PreviewPage() {
                 ) : !versionsQuery.data || versionsQuery.data.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12">
                     <History className="h-8 w-8 text-muted-foreground mb-3" />
-                    <p className="text-muted-foreground text-sm">暂无版本历史</p>
-                    <p className="text-xs text-muted-foreground mt-1">生成、编辑或优化Listing后会自动记录版本</p>
+                    <p className="text-muted-foreground text-sm">\u6682\u65e0\u7248\u672c\u5386\u53f2</p>
+                    <p className="text-xs text-muted-foreground mt-1">\u751f\u6210\u3001\u7f16\u8f91\u6216\u4f18\u5316Listing\u540e\u4f1a\u81ea\u52a8\u8bb0\u5f55\u7248\u672c</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -1357,11 +1328,11 @@ export default function PreviewPage() {
                       };
                       const changeIcon = changeIconMap[version.changeType] || <History className="h-4 w-4 text-gray-500" />;
                       const changeLabelMap: Record<string, string> = {
-                        generate: "生成",
-                        ab_apply: "A/B应用",
-                        optimize: "AI优化",
-                        manual_edit: "手动编辑",
-                        translate: "翻译",
+                        generate: "\u751f\u6210",
+                        ab_apply: "A/B\u5e94\u7528",
+                        optimize: "AI\u4f18\u5316",
+                        manual_edit: "\u624b\u52a8\u7f16\u8f91",
+                        translate: "\u7ffb\u8bd1",
                       };
                       const changeLabel = changeLabelMap[version.changeType] || version.changeType;
                       const changeColor = ({
@@ -1384,26 +1355,16 @@ export default function PreviewPage() {
                                 <div className="flex items-center gap-2">
                                   <span className="font-medium text-sm">#{version.versionNumber}</span>
                                   <Badge variant="secondary" className={`text-xs ${changeColor}`}>{changeLabel}</Badge>
-                                  {isLatest && <Badge variant="outline" className="text-xs border-primary text-primary">当前</Badge>}
+                                  {isLatest && <Badge variant="outline" className="text-xs border-primary text-primary">\u5f53\u524d</Badge>}
                                 </div>
-                                <p className="text-xs text-muted-foreground mt-0.5">
-                                  {version.changeDescription || "无描述"}
-                                </p>
+                                <p className="text-xs text-muted-foreground mt-0.5">{version.changeDescription || "\u65e0\u63cf\u8ff0"}</p>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className="text-xs text-muted-foreground">
-                                {new Date(version.createdAt).toLocaleString()}
-                              </span>
+                              <span className="text-xs text-muted-foreground">{new Date(version.createdAt).toLocaleString()}</span>
                               {!isLatest && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 text-xs"
-                                  onClick={(e) => { e.stopPropagation(); setRollbackConfirmId(version.id); }}
-                                >
-                                  <RotateCcw className="h-3 w-3 mr-1" />
-                                  回滚
+                                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={(e) => { e.stopPropagation(); setRollbackConfirmId(version.id); }}>
+                                  <RotateCcw className="h-3 w-3 mr-1" />\u56de\u6eda
                                 </Button>
                               )}
                               {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
@@ -1415,7 +1376,7 @@ export default function PreviewPage() {
                                 {version.title && (
                                   <div>
                                     <p className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                                      <Type className="h-3 w-3" /> 标题
+                                      <Type className="h-3 w-3" /> \u6807\u9898
                                     </p>
                                     <p className="text-sm bg-muted/50 p-2 rounded">{version.title}</p>
                                   </div>
@@ -1427,7 +1388,7 @@ export default function PreviewPage() {
                                       return (
                                         <div>
                                           <p className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                                            <List className="h-3 w-3" /> 卖点 ({bps.length}条)
+                                            <List className="h-3 w-3" /> \u5356\u70b9 ({bps.length}\u6761)
                                           </p>
                                           <div className="space-y-1">
                                             {bps.map((bp: any, i: number) => (
@@ -1445,17 +1406,9 @@ export default function PreviewPage() {
                                 {version.description && (
                                   <div>
                                     <p className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                                      <FileText className="h-3 w-3" /> 描述
+                                      <FileText className="h-3 w-3" /> \u63cf\u8ff0
                                     </p>
                                     <p className="text-sm bg-muted/50 p-2 rounded line-clamp-4">{version.description}</p>
-                                  </div>
-                                )}
-                                {version.searchTerms && (
-                                  <div>
-                                    <p className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
-                                      <Key className="h-3 w-3" /> 搜索词
-                                    </p>
-                                    <p className="text-sm bg-muted/50 p-2 rounded line-clamp-2">{version.searchTerms}</p>
                                   </div>
                                 )}
                               </div>
@@ -1473,13 +1426,13 @@ export default function PreviewPage() {
             <Dialog open={!!rollbackConfirmId} onOpenChange={(open) => !open && setRollbackConfirmId(null)}>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>确认回滚</DialogTitle>
+                  <DialogTitle>\u786e\u8ba4\u56de\u6eda</DialogTitle>
                   <DialogDescription>
-                    回滚将把当前Listing内容替换为所选版本的内容。当前状态会自动保存为一个新版本以便后续恢复。
+                    \u56de\u6eda\u5c06\u628a\u5f53\u524dListing\u5185\u5bb9\u66ff\u6362\u4e3a\u6240\u9009\u7248\u672c\u7684\u5185\u5bb9\u3002\u5f53\u524d\u72b6\u6001\u4f1a\u81ea\u52a8\u4fdd\u5b58\u4e3a\u4e00\u4e2a\u65b0\u7248\u672c\u4ee5\u4fbf\u540e\u7eed\u6062\u590d\u3002
                   </DialogDescription>
                 </DialogHeader>
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setRollbackConfirmId(null)}>取消</Button>
+                  <Button variant="outline" onClick={() => setRollbackConfirmId(null)}>\u53d6\u6d88</Button>
                   <Button
                     variant="destructive"
                     onClick={() => {
@@ -1494,7 +1447,7 @@ export default function PreviewPage() {
                     ) : (
                       <RotateCcw className="h-4 w-4 mr-2" />
                     )}
-                    确认回滚
+                    \u786e\u8ba4\u56de\u6eda
                   </Button>
                 </DialogFooter>
               </DialogContent>

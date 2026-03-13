@@ -147,6 +147,32 @@ describe("validateBullets", () => {
     expect(result.valid).toBe(true);
     expect(result.issues).toHaveLength(0);
   });
+
+  it("validates 7 bullets (AI generated) correctly when all in range", () => {
+    const makeText = (len: number) => "X".repeat(len);
+    const data = {
+      bulletPoints: Array.from({ length: 7 }, (_, i) => ({
+        subtitle: `【P${i + 1}】`,
+        fullText: makeText(230),
+      })),
+    };
+    const result = validateBullets(data);
+    expect(result.valid).toBe(true);
+    expect(result.issues).toHaveLength(0);
+  });
+
+  it("validates 9 bullets (7 AI + 2 manual) correctly when all in range", () => {
+    const makeText = (len: number) => "X".repeat(len);
+    const data = {
+      bulletPoints: Array.from({ length: 9 }, (_, i) => ({
+        subtitle: `【P${i + 1}】`,
+        fullText: makeText(230),
+      })),
+    };
+    const result = validateBullets(data);
+    expect(result.valid).toBe(true);
+    expect(result.issues).toHaveLength(0);
+  });
 });
 
 describe("validateTitles", () => {

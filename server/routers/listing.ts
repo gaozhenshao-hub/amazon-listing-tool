@@ -1477,7 +1477,7 @@ export const listingRouter = router({
       const response = await invokeLLM({
         messages: [
           { role: "system", content: SELLING_POINTS_CORE_PROMPT },
-          { role: "user", content: `Based on the following product data, generate 5 core selling point themes for Amazon bullet points.\n\n${context}` },
+          { role: "user", content: `Based on the following product data, generate 7 core selling point themes for Amazon bullet points.\n\n${context}` },
         ],
         response_format: { type: "json_object" },
       });
@@ -1664,7 +1664,7 @@ export const listingRouter = router({
       bullets: z.array(z.object({
         subtitle: z.string(),
         fullText: z.string(),
-      })).min(1).max(5),
+      })).min(1).max(9),
     }))
     .mutation(async ({ ctx, input }) => {
       const { projectId, bullets } = input;

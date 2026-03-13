@@ -257,18 +257,19 @@ function scoreBulletPoints(bulletPointsJson: string | null, keywords: string[]):
     }
   } catch {}
 
-  // Rule 1: Has exactly 5 bullet points (5 points)
+  // Rule 1: Has 5-9 bullet points (5 points)
   const bulletCount = bullets.length;
-  const has5 = bulletCount === 5;
+  const hasEnough = bulletCount >= 5 && bulletCount <= 9;
+  const bulletScore1 = hasEnough ? 5 : Math.min(bulletCount, 4);
   details.push({
-    rule: "5 Bullet Points Present",
-    ruleCn: "包含5条要点",
-    passed: has5, score: has5 ? 5 : Math.max(0, bulletCount), maxScore: 5,
-    message: has5 ? "All 5 bullet points present" : `Only ${bulletCount} bullet points found (need 5)`,
-    messageCn: has5 ? "5条要点齐全" : `仅有${bulletCount}条要点 (需要5条)`,
-    severity: has5 ? "info" : "critical",
+    rule: "5-9 Bullet Points Present",
+    ruleCn: "包含5-9条要点",
+    passed: hasEnough, score: bulletScore1, maxScore: 5,
+    message: hasEnough ? `${bulletCount} bullet points present (5-9 range)` : `Only ${bulletCount} bullet points found (need 5-9)`,
+    messageCn: hasEnough ? `${bulletCount}条要点齐全 (5-9条范围)` : `仅有${bulletCount}条要点 (需要5-9条)`,
+    severity: hasEnough ? "info" : "critical",
   });
-  totalScore += has5 ? 5 : Math.min(bulletCount, 4);
+  totalScore += bulletScore1;
 
   // Rule 2: Character count compliance 200-280 per bullet (8 points)
   let compliantCount = 0;
@@ -803,9 +804,9 @@ function generateSuggestions(dimensions: ScoreDimension[]): OptimizationSuggesti
           suggestionCn = "调整标题至180-200字符以获得最佳A9索引效果。包含核心关键词、品牌和关键特性。";
           impact = "Title is the #1 ranking factor. Proper length ensures full display on search results.";
           impactCn = "标题是排名第一因素。合适的长度确保在搜索结果中完整展示。";
-        } else if (detail.rule.includes("5 Bullet Points")) {
-          suggestion = "Ensure all 5 bullet points are present. Each should highlight a unique selling point.";
-          suggestionCn = "确保5条要点齐全。每条应突出一个独特卖点。";
+        } else if (detail.rule.includes("Bullet Points Present")) {
+          suggestion = "Ensure 5-9 bullet points are present. Each should highlight a unique selling point with FABE structure.";
+          suggestionCn = "确保包含5-9条要点。每条应以FABE结构突出一个独特卖点。";
           impact = "Missing bullets means lost keyword indexing opportunities and reduced conversion.";
           impactCn = "缺少要点意味着失去关键词索引机会和降低转化率。";
         } else if (detail.rule.includes("Character Count Compliance")) {
