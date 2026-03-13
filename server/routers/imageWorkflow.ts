@@ -553,6 +553,41 @@ export const imageWorkflowRouter = router({
       return { success: true };
     }),
 
+  // ─── Knowledge Base Image Browser for Step 4 ─────────────────
+  listKbImages: protectedProcedure
+    .input(z.object({
+      tagCategory: z.string().optional(),
+      tagColorScheme: z.string().optional(),
+      tagImageType: z.string().optional(),
+      tagDesignStyle: z.string().optional(),
+      imagePosition: z.string().optional(),
+    }).optional())
+    .query(async ({ ctx, input }) => {
+      return kbDb.listAllImages(ctx.user.id, input);
+    }),
+
+  // Get distinct tag values for filter dropdowns
+  getKbImageFilterOptions: protectedProcedure
+    .query(async ({ ctx }) => {
+      const allImages = await kbDb.listAllImages(ctx.user.id);
+      const categories = new Set<string>();
+      const colorSchemes = new Set<string>();
+      const imageTypes = new Set<string>();
+      const designStyles = new Set<string>();
+      for (const img of allImages) {
+        if (img.tagCategory) categories.add(img.tagCategory);
+        if (img.tagColorScheme) colorSchemes.add(img.tagColorScheme);
+        if (img.tagImageType) imageTypes.add(img.tagImageType);
+        if (img.tagDesignStyle) designStyles.add(img.tagDesignStyle);
+      }
+      return {
+        categories: Array.from(categories).sort(),
+        colorSchemes: Array.from(colorSchemes).sort(),
+        imageTypes: Array.from(imageTypes).sort(),
+        designStyles: Array.from(designStyles).sort(),
+      };
+    }),
+
   // ─── Generate PDF export ──────────────────────────────────────
   exportPdf: protectedProcedure
     .input(z.object({ projectId: z.number() }))

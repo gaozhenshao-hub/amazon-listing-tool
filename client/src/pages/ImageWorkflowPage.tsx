@@ -3,6 +3,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
 import ProjectSelector from "@/components/ProjectSelector";
 import { useProject } from "@/contexts/ProjectContext";
 import { trpc } from "@/lib/trpc";
@@ -32,6 +36,11 @@ import {
   Smartphone,
   TypeIcon,
   Copy,
+  Search,
+  ImageIcon,
+  BookOpen,
+  X,
+  Filter,
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { useState, useEffect, useMemo, useCallback } from "react";
@@ -1052,7 +1061,249 @@ function Step3StyleConfirm({
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// ─── Step 4: Reference Images ────────────────────────────────────
+// ─── Knowledge Base Image Picker Dialog ─────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+function KbImagePickerDialog({
+  open,
+  onOpenChange,
+  onSelect,
+  targetImageType,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSelect: (images: Array<{ id: number; imageUrl: string; imagePosition: string; tagCategory: string; tagImageType: string; tagDesignStyle: string; tagColorScheme: string }>) => void;
+  targetImageType?: string; // e.g. "主图", "辅图", "A+"
+}) {
+  const [filters, setFilters] = useState<{
+    tagCategory?: string;
+    tagColorScheme?: string;
+    tagImageType?: string;
+    tagDesignStyle?: string;
+    imagePosition?: string;
+  }>({});
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  // Auto-set position filter based on target image type
+  useEffect(() => {
+    if (open) {
+      setSelectedIds(new Set());
+      if (targetImageType) {
+        if (targetImageType === "主图") {
+          setFilters(prev => ({ ...prev, imagePosition: "main" }));
+        } else if (targetImageType?.includes("A+")) {
+          setFilters(prev => ({ ...prev, imagePosition: "aplus" }));
+        } else {
+          setFilters(prev => ({ ...prev, imagePosition: "secondary" }));
+        }
+      }
+    }
+  }, [open, targetImageType]);
+
+  const filterOptions = trpc.imageWorkflow.getKbImageFilterOptions.useQuery(undefined, { enabled: open });
+  const kbImages = trpc.imageWorkflow.listKbImages.useQuery(
+    Object.keys(filters).length > 0 ? filters : undefined,
+    { enabled: open }
+  );
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleConfirmSelection = () => {
+    const selected = (kbImages.data || []).filter(img => selectedIds.has(img.id)).map(img => ({
+      id: img.id,
+      imageUrl: img.imageUrl,
+      imagePosition: img.imagePosition,
+      tagCategory: img.tagCategory || "",
+      tagImageType: img.tagImageType || "",
+      tagDesignStyle: img.tagDesignStyle || "",
+      tagColorScheme: img.tagColorScheme || "",
+    }));
+    onSelect(selected);
+    onOpenChange(false);
+  };
+
+  const clearFilter = (key: string) => {
+    setFilters(prev => {
+      const next = { ...prev };
+      delete (next as any)[key];
+      return next;
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-primary" />
+            从知识库选择参考图
+          </DialogTitle>
+          <DialogDescription>
+            从图片知识库中筛选并选择参考图片，支持按类目、色系、图片类型、设计风格筛选
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Filter Bar */}
+        <div className="flex flex-wrap gap-2 py-2 border-b">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Filter className="w-3.5 h-3.5" /> 筛选:
+          </div>
+
+          <Select value={filters.imagePosition || "__all__"} onValueChange={v => v === "__all__" ? clearFilter("imagePosition") : setFilters(prev => ({ ...prev, imagePosition: v }))}>
+            <SelectTrigger className="h-7 text-xs w-[100px]">
+              <SelectValue placeholder="位置" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">全部位置</SelectItem>
+              <SelectItem value="main">主图</SelectItem>
+              <SelectItem value="secondary">辅图</SelectItem>
+              <SelectItem value="aplus">A+</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={filters.tagCategory || "__all__"} onValueChange={v => v === "__all__" ? clearFilter("tagCategory") : setFilters(prev => ({ ...prev, tagCategory: v }))}>
+            <SelectTrigger className="h-7 text-xs w-[110px]">
+              <SelectValue placeholder="类目" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">全部类目</SelectItem>
+              {(filterOptions.data?.categories || []).map(c => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={filters.tagColorScheme || "__all__"} onValueChange={v => v === "__all__" ? clearFilter("tagColorScheme") : setFilters(prev => ({ ...prev, tagColorScheme: v }))}>
+            <SelectTrigger className="h-7 text-xs w-[100px]">
+              <SelectValue placeholder="色系" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">全部色系</SelectItem>
+              {(filterOptions.data?.colorSchemes || []).map(c => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={filters.tagImageType || "__all__"} onValueChange={v => v === "__all__" ? clearFilter("tagImageType") : setFilters(prev => ({ ...prev, tagImageType: v }))}>
+            <SelectTrigger className="h-7 text-xs w-[110px]">
+              <SelectValue placeholder="图片类型" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">全部类型</SelectItem>
+              {(filterOptions.data?.imageTypes || []).map(c => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={filters.tagDesignStyle || "__all__"} onValueChange={v => v === "__all__" ? clearFilter("tagDesignStyle") : setFilters(prev => ({ ...prev, tagDesignStyle: v }))}>
+            <SelectTrigger className="h-7 text-xs w-[110px]">
+              <SelectValue placeholder="设计风格" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">全部风格</SelectItem>
+              {(filterOptions.data?.designStyles || []).map(c => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {Object.values(filters).some(Boolean) && (
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setFilters({})}>
+              <X className="w-3 h-3 mr-1" /> 清除筛选
+            </Button>
+          )}
+        </div>
+
+        {/* Image Grid */}
+        <ScrollArea className="flex-1 min-h-0" style={{ maxHeight: "50vh" }}>
+          {kbImages.isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-primary mr-2" />
+              <span className="text-sm text-muted-foreground">加载知识库图片...</span>
+            </div>
+          ) : (kbImages.data?.length || 0) === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <ImageIcon className="w-12 h-12 text-muted-foreground/30 mb-3" />
+              <p className="text-sm text-muted-foreground">知识库中暂无图片，请先在图片知识库中导入图片</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 p-1">
+              {(kbImages.data || []).map(img => {
+                const isSelected = selectedIds.has(img.id);
+                return (
+                  <div
+                    key={img.id}
+                    className={`relative group cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
+                      isSelected ? "border-primary ring-2 ring-primary/20" : "border-transparent hover:border-gray-300"
+                    }`}
+                    onClick={() => toggleSelect(img.id)}
+                  >
+                    <div className="aspect-square bg-gray-100">
+                      <img
+                        src={img.imageUrl}
+                        alt={`KB image ${img.id}`}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                    </div>
+                    {/* Selection indicator */}
+                    <div className={`absolute top-1.5 right-1.5 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                      isSelected ? "bg-primary border-primary" : "bg-white/80 border-gray-300 opacity-0 group-hover:opacity-100"
+                    }`}>
+                      {isSelected && <Check className="w-3 h-3 text-white" />}
+                    </div>
+                    {/* Tags */}
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-1.5 pt-4">
+                      <div className="flex flex-wrap gap-0.5">
+                        {img.imagePosition && (
+                          <span className="text-[9px] bg-white/20 text-white rounded px-1">
+                            {img.imagePosition === "main" ? "主图" : img.imagePosition === "secondary" ? "辅图" : "A+"}
+                          </span>
+                        )}
+                        {img.tagImageType && (
+                          <span className="text-[9px] bg-blue-500/40 text-white rounded px-1">{img.tagImageType}</span>
+                        )}
+                        {img.tagDesignStyle && (
+                          <span className="text-[9px] bg-purple-500/40 text-white rounded px-1">{img.tagDesignStyle}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </ScrollArea>
+
+        {/* Footer with selection count and confirm */}
+        <div className="flex items-center justify-between pt-3 border-t">
+          <div className="text-sm text-muted-foreground">
+            {kbImages.data?.length || 0} 张图片
+            {selectedIds.size > 0 && (
+              <span className="ml-2 text-primary font-medium">· 已选 {selectedIds.size} 张</span>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>取消</Button>
+            <Button size="sm" disabled={selectedIds.size === 0} onClick={handleConfirmSelection}>
+              <Check className="w-3.5 h-3.5 mr-1" /> 确认选择 ({selectedIds.size})
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── Step 4: Reference Images (含知识库图片选择) ─────────────────
 // ═══════════════════════════════════════════════════════════════════
 function Step4References({
   projectId,
@@ -1066,6 +1317,9 @@ function Step4References({
   const generateMutation = trpc.imageWorkflow.generateStep4.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep4.useMutation();
   const [editData, setEditData] = useState<any>(null);
+  const [kbPickerOpen, setKbPickerOpen] = useState(false);
+  const [kbPickerTargetIdx, setKbPickerTargetIdx] = useState<number | null>(null);
+  const [kbPickerTargetType, setKbPickerTargetType] = useState<string>("");
 
   useEffect(() => {
     if (session?.step4UserEdit) {
@@ -1108,6 +1362,48 @@ function Step4References({
     setEditData(newData);
   };
 
+  // Open KB picker for a specific image reference
+  const openKbPicker = (idx: number, imageType: string) => {
+    setKbPickerTargetIdx(idx);
+    setKbPickerTargetType(imageType);
+    setKbPickerOpen(true);
+  };
+
+  // Handle KB image selection - attach selected images to the reference
+  const handleKbImageSelect = (images: Array<{ id: number; imageUrl: string; imagePosition: string; tagCategory: string; tagImageType: string; tagDesignStyle: string; tagColorScheme: string }>) => {
+    if (kbPickerTargetIdx === null || !editData) return;
+    const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
+    const ref = { ...newData.imageReferences[kbPickerTargetIdx] };
+
+    // Attach selected KB images to this reference
+    const existingKbImages = ref.kbReferenceImages || [];
+    const newKbImages = [...existingKbImages, ...images.map(img => ({
+      id: img.id,
+      imageUrl: img.imageUrl,
+      position: img.imagePosition,
+      category: img.tagCategory,
+      imageType: img.tagImageType,
+      designStyle: img.tagDesignStyle,
+      colorScheme: img.tagColorScheme,
+    }))];
+    ref.kbReferenceImages = newKbImages;
+    newData.imageReferences[kbPickerTargetIdx] = ref;
+    setEditData(newData);
+    toast.success(`已添加 ${images.length} 张知识库参考图`);
+  };
+
+  // Remove a KB reference image
+  const removeKbImage = (refIdx: number, imgIdx: number) => {
+    if (!editData) return;
+    const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
+    const ref = { ...newData.imageReferences[refIdx] };
+    const imgs = [...(ref.kbReferenceImages || [])];
+    imgs.splice(imgIdx, 1);
+    ref.kbReferenceImages = imgs;
+    newData.imageReferences[refIdx] = ref;
+    setEditData(newData);
+  };
+
   return (
     <div className="space-y-4">
       <Card>
@@ -1118,7 +1414,7 @@ function Step4References({
                 <Eye className="w-5 h-5 text-primary" />
                 Step 4: 参考图确认
               </CardTitle>
-              <CardDescription>每张图的构图参考和效果图参考</CardDescription>
+              <CardDescription>每张图的构图参考和效果图参考，可从知识库直接选择参考图片</CardDescription>
             </div>
             <div className="flex gap-2">
               {!editData && (
@@ -1159,13 +1455,52 @@ function Step4References({
       {editData?.imageReferences && !generateMutation.isPending && editData.imageReferences.map((ref: any, idx: number) => (
         <Card key={idx}>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              {ref.imageType === "主图" ? <Camera className="w-4 h-4 text-primary" /> : ref.imageType?.includes("A+") ? <Layers className="w-4 h-4 text-purple-500" /> : <Image className="w-4 h-4 text-blue-500" />}
-              {ref.imageType} {ref.imageNumber > 0 ? `#${ref.imageNumber}` : ""}
-              <span className="text-xs text-muted-foreground font-normal">— {ref.purpose}</span>
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                {ref.imageType === "主图" ? <Camera className="w-4 h-4 text-primary" /> : ref.imageType?.includes("A+") ? <Layers className="w-4 h-4 text-purple-500" /> : <Image className="w-4 h-4 text-blue-500" />}
+                {ref.imageType} {ref.imageNumber > 0 ? `#${ref.imageNumber}` : ""}
+                <span className="text-xs text-muted-foreground font-normal">— {ref.purpose}</span>
+              </CardTitle>
+              {!isConfirmed && (
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openKbPicker(idx, ref.imageType)}>
+                  <BookOpen className="w-3.5 h-3.5 mr-1" /> 从知识库选图
+                </Button>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
+            {/* KB Reference Images Section */}
+            {(ref.kbReferenceImages?.length > 0) && (
+              <div className="mb-4 border rounded-lg p-3 bg-emerald-50/30">
+                <h4 className="text-sm font-medium text-emerald-700 mb-2 flex items-center gap-1">
+                  <BookOpen className="w-3.5 h-3.5" /> 知识库参考图 ({ref.kbReferenceImages.length})
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {ref.kbReferenceImages.map((kbImg: any, imgIdx: number) => (
+                    <div key={imgIdx} className="relative group">
+                      <div className="w-20 h-20 rounded-lg overflow-hidden border border-emerald-200">
+                        <img src={kbImg.imageUrl} alt={`KB ref ${imgIdx}`} className="w-full h-full object-cover" />
+                      </div>
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-1 py-0.5">
+                        <span className="text-[8px] text-white">
+                          {kbImg.position === "main" ? "主图" : kbImg.position === "secondary" ? "辅图" : "A+"}
+                          {kbImg.imageType ? ` · ${kbImg.imageType}` : ""}
+                        </span>
+                      </div>
+                      {!isConfirmed && (
+                        <button
+                          className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => removeKbImage(idx, imgIdx)}
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Composition Reference */}
               <div className="border rounded-lg p-3 bg-blue-50/30">
@@ -1233,6 +1568,14 @@ function Step4References({
           </CardContent>
         </Card>
       )}
+
+      {/* KB Image Picker Dialog */}
+      <KbImagePickerDialog
+        open={kbPickerOpen}
+        onOpenChange={setKbPickerOpen}
+        onSelect={handleKbImageSelect}
+        targetImageType={kbPickerTargetType}
+      />
     </div>
   );
 }

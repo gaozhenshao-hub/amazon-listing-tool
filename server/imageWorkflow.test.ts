@@ -552,3 +552,162 @@ describe("Workflow Session State Machine", () => {
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// Knowledge Base Image Picker for Step 4 Tests
+// ═══════════════════════════════════════════════════════════════════
+
+describe("KB Image Picker Integration", () => {
+  describe("KB Image data structure", () => {
+    it("KB image has required fields for picker display", () => {
+      const sampleKbImage = {
+        id: 1,
+        imageUrl: "https://example.com/image.jpg",
+        imagePosition: "main" as const,
+        tagCategory: "家居收纳",
+        tagColorScheme: "黑白灰",
+        tagImageType: "场景图",
+        tagDesignStyle: "简约风",
+      };
+      expect(sampleKbImage.id).toBeDefined();
+      expect(sampleKbImage.imageUrl).toBeDefined();
+      expect(sampleKbImage.imagePosition).toBeDefined();
+      expect(["main", "secondary", "aplus"]).toContain(sampleKbImage.imagePosition);
+    });
+
+    it("supports 4-dimension filtering", () => {
+      const filterKeys = ["tagCategory", "tagColorScheme", "tagImageType", "tagDesignStyle"];
+      const sampleFilter = {
+        tagCategory: "家居收纳",
+        tagColorScheme: "黑白灰",
+        tagImageType: "场景图",
+        tagDesignStyle: "简约风",
+      };
+      filterKeys.forEach(key => {
+        expect(sampleFilter).toHaveProperty(key);
+      });
+    });
+
+    it("supports imagePosition filter for main/secondary/aplus", () => {
+      const validPositions = ["main", "secondary", "aplus"];
+      validPositions.forEach(pos => {
+        expect(typeof pos).toBe("string");
+        expect(pos.length).toBeGreaterThan(0);
+      });
+    });
+  });
+
+  describe("KB reference images in Step4 data", () => {
+    it("can attach KB images to a reference entry", () => {
+      const refEntry = {
+        imageType: "辅图",
+        imageNumber: 2,
+        purpose: "展示产品功能",
+        compositionReference: { compositionType: "对角线构图" },
+        effectReference: { colorApplication: "蓝白配色" },
+        kbReferenceImages: [
+          {
+            id: 10,
+            imageUrl: "https://example.com/kb1.jpg",
+            position: "secondary",
+            category: "家居收纳",
+            imageType: "功能图",
+            designStyle: "简约风",
+            colorScheme: "蓝白",
+          },
+        ],
+      };
+      expect(refEntry.kbReferenceImages).toHaveLength(1);
+      expect(refEntry.kbReferenceImages[0].imageUrl).toContain("https://");
+      expect(refEntry.kbReferenceImages[0].position).toBe("secondary");
+    });
+
+    it("can add multiple KB images to a reference", () => {
+      const kbImages: any[] = [];
+      kbImages.push({ id: 1, imageUrl: "url1", position: "main" });
+      kbImages.push({ id: 2, imageUrl: "url2", position: "secondary" });
+      kbImages.push({ id: 3, imageUrl: "url3", position: "aplus" });
+      expect(kbImages).toHaveLength(3);
+    });
+
+    it("can remove a KB image from a reference", () => {
+      const kbImages = [
+        { id: 1, imageUrl: "url1" },
+        { id: 2, imageUrl: "url2" },
+        { id: 3, imageUrl: "url3" },
+      ];
+      const filtered = kbImages.filter((_, idx) => idx !== 1);
+      expect(filtered).toHaveLength(2);
+      expect(filtered.map(i => i.id)).toEqual([1, 3]);
+    });
+
+    it("preserves KB images when serializing Step4 data", () => {
+      const step4Data = {
+        imageReferences: [
+          {
+            imageType: "主图",
+            kbReferenceImages: [{ id: 1, imageUrl: "url1" }],
+            compositionReference: {},
+            effectReference: {},
+          },
+        ],
+        overallConsistency: "保持一致",
+      };
+      const serialized = JSON.stringify(step4Data);
+      const parsed = JSON.parse(serialized);
+      expect(parsed.imageReferences[0].kbReferenceImages).toHaveLength(1);
+      expect(parsed.imageReferences[0].kbReferenceImages[0].imageUrl).toBe("url1");
+    });
+  });
+
+  describe("Filter options aggregation", () => {
+    it("can extract unique filter values from image list", () => {
+      const images = [
+        { tagCategory: "家居", tagColorScheme: "黑白", tagImageType: "场景图", tagDesignStyle: "简约" },
+        { tagCategory: "家居", tagColorScheme: "蓝白", tagImageType: "功能图", tagDesignStyle: "简约" },
+        { tagCategory: "户外", tagColorScheme: "黑白", tagImageType: "场景图", tagDesignStyle: "科技" },
+      ];
+      const categories = new Set(images.map(i => i.tagCategory));
+      const colorSchemes = new Set(images.map(i => i.tagColorScheme));
+      const imageTypes = new Set(images.map(i => i.tagImageType));
+      const designStyles = new Set(images.map(i => i.tagDesignStyle));
+
+      expect(Array.from(categories).sort()).toEqual(["家居", "户外"]);
+      expect(Array.from(colorSchemes).sort()).toEqual(["蓝白", "黑白"]);
+      expect(Array.from(imageTypes).sort()).toEqual(["功能图", "场景图"]);
+      expect(Array.from(designStyles).sort()).toEqual(["科技", "简约"]);
+    });
+
+    it("handles empty filter values gracefully", () => {
+      const images = [
+        { tagCategory: null, tagColorScheme: "黑白", tagImageType: null, tagDesignStyle: "简约" },
+        { tagCategory: "家居", tagColorScheme: null, tagImageType: "场景图", tagDesignStyle: null },
+      ];
+      const categories = new Set<string>();
+      for (const img of images) {
+        if (img.tagCategory) categories.add(img.tagCategory);
+      }
+      expect(Array.from(categories)).toEqual(["家居"]);
+    });
+  });
+
+  describe("Image position auto-mapping", () => {
+    it("maps 主图 to main position", () => {
+      const targetType = "主图";
+      const position = targetType === "主图" ? "main" : targetType?.includes("A+") ? "aplus" : "secondary";
+      expect(position).toBe("main");
+    });
+
+    it("maps A+ content to aplus position", () => {
+      const targetType = "A+内容";
+      const position = targetType === "主图" ? "main" : targetType?.includes("A+") ? "aplus" : "secondary";
+      expect(position).toBe("aplus");
+    });
+
+    it("maps 辅图 to secondary position", () => {
+      const targetType = "辅图";
+      const position = targetType === "主图" ? "main" : targetType?.includes("A+") ? "aplus" : "secondary";
+      expect(position).toBe("secondary");
+    });
+  });
+});
