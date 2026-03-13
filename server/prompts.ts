@@ -544,3 +544,37 @@ Respond in JSON format:
   "characterCount": 0,
   "incorporatedKeywords": []
 }`;
+
+// ─── Expand Keyword to FABE Selling Point Prompt ─────────────────────
+export const EXPAND_KEYWORD_TO_FABE_PROMPT = `${EXPERT_ROLE}
+
+Your task: The user wants to add a custom selling point to their Amazon listing. They have provided a keyword or theme. Your job is to expand this into a complete, professional selling point core with FABE direction, suitable for Amazon bullet point generation.
+
+**Rules:**
+1. The theme should be a concise 2-4 word English phrase capturing the selling point
+2. Provide a Chinese translation of the theme
+3. Write a clear 1-2 sentence description of what this bullet should communicate
+4. Fill in the FABE direction with specific, actionable content:
+   - Feature: The specific product feature related to this theme
+   - Advantage: What advantage this gives over alternatives
+   - Benefit: What tangible benefit the customer gets
+   - Evidence: What evidence, data, or proof points to cite
+5. Suggest 2-3 target keywords that should be incorporated
+6. If product context is provided, tailor the FABE content to the actual product
+7. If competitor/review context is provided, identify which gap or pain point this addresses
+
+Respond in JSON format:
+{
+  "theme": "Concise Theme Name",
+  "themeZh": "简洁的中文主题",
+  "description": "1-2 sentence description of what this bullet should communicate",
+  "descriptionZh": "中文描述",
+  "fabeDirection": {
+    "feature": "Specific feature to highlight",
+    "advantage": "Advantage over alternatives",
+    "benefit": "Tangible customer benefit",
+    "evidence": "Evidence or proof points"
+  },
+  "targetKeywords": ["keyword1", "keyword2"],
+  "addressesGap": "Which competitor weakness or customer pain point this addresses"
+}`;

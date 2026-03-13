@@ -12,6 +12,7 @@ import {
   IMAGE_ADVICE_TRANSLATION_PROMPT,
   SELLING_POINTS_CORE_PROMPT,
   SINGLE_BULLET_PROMPT,
+  EXPAND_KEYWORD_TO_FABE_PROMPT,
 } from "../prompts";
 
 const MAX_RETRIES = 2;
@@ -1655,6 +1656,75 @@ export const listingRouter = router({
       }
 
       return { listing: updated, rolledBackTo: version.versionNumber };
+    }),
+
+  // ─── Expand Keyword to FABE Selling Point ──────
+  expandKeywordToFABE: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      keyword: z.string().min(1).max(200),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
+      const enrichedData = await loadEnrichedData(input.projectId);
+
+      // Build a concise product context for the AI
+      let contextSnippet = "";
+      if (project.productName) contextSnippet += `Product: ${project.productName}\n`;
+      if (project.category) contextSnippet += `Category: ${project.category}\n`;
+      if (enrichedData.productAttributes) {
+        const attrs = enrichedData.productAttributes;
+        if (attrs.usp) contextSnippet += `USP: ${JSON.stringify(attrs.usp).slice(0, 300)}\n`;
+        if (attrs.specs) contextSnippet += `Specs: ${JSON.stringify(attrs.specs).slice(0, 300)}\n`;
+      }
+      if (analyses.length > 0) {
+        const topCompetitors = analyses.slice(0, 3).map((a: any) => {
+          const parsed = a.analysisResult ? JSON.parse(a.analysisResult) : {};
+          return `ASIN ${a.asin}: ${parsed.advantages?.slice(0, 2)?.join(", ") || "N/A"}`;
+        });
+        contextSnippet += `Competitors: ${topCompetitors.join("; ")}\n`;
+      }
+      if (enrichedData.reviewAggregation) {
+        const ra = enrichedData.reviewAggregation;
+        if (ra.painPoints?.length) contextSnippet += `Pain points: ${ra.painPoints.slice(0, 3).map((p: any) => p.point || p).join(", ")}\n`;
+      }
+
+      const userMessage = `User keyword/theme: "${input.keyword}"
+
+Product context:
+${contextSnippet || "No additional product context available."}
+
+Please expand this keyword/theme into a complete selling point core with FABE direction.`;
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: EXPAND_KEYWORD_TO_FABE_PROMPT },
+          { role: "user", content: userMessage },
+        ],
+      });
+
+      const content = String(response.choices?.[0]?.message?.content || "");
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error("AI response format error");
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        theme: parsed.theme || input.keyword,
+        themeZh: parsed.themeZh || "",
+        description: parsed.description || "",
+        descriptionZh: parsed.descriptionZh || "",
+        fabeDirection: {
+          feature: parsed.fabeDirection?.feature || "",
+          advantage: parsed.fabeDirection?.advantage || "",
+          benefit: parsed.fabeDirection?.benefit || "",
+          evidence: parsed.fabeDirection?.evidence || "",
+        },
+        targetKeywords: parsed.targetKeywords || [],
+        addressesGap: parsed.addressesGap || "",
+      };
     }),
 
   // ─── Sync Confirmed Bullets from Step-by-Step Selling Points ──────

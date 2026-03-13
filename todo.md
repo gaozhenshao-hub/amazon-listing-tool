@@ -465,3 +465,11 @@
 - [x] 前端: 编辑确认后执行中英文翻译
 - [x] 前端: 翻译完成后传到Listing评分页面
 - [x] Tests: 编写相关测试 (628测试全部通过)
+
+## 手动卖点AI辅助生成 (Manual Selling Point AI Assist - 2026-03-13)
+- [x] 后端: 新增expandKeywordToFABE tRPC接口（输入关键词/主题，输出FABE格式卖点）
+- [x] 后端: AI提示词设计（基于产品上下文+关键词生成subtitle+fullText）
+- [x] 前端: GeneratePage手动添加卖点区域增加AI辅助生成交互
+- [x] 前端: 关键词输入框+AI生成按钮+加载状态
+- [x] 前端: AI生成结果可编辑后确认添加
+- [x] Tests: 编写相关测试 (641测试全部通过)
