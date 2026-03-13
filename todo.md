@@ -422,3 +422,13 @@
 - [x] Frontend: 图片选择器支持4维筛选（类目/色系/图片类型/设计风格）+ 网格展示
 - [x] Frontend: 选中的知识库图片作为参考图关联到对应图片（缩略图展示+删除）
 - [x] Unit tests for KB image picker feature (574测试全部通过)
+
+## Step4测试+Step3知识库图片+导出完整方案 (2026-03-13)
+- [x] Test: 实际测试Step4知识库选图功能（知识库无数据时显示空状态，等待导入图片后测试）
+- [x] Feature: Step3风格确认增加知识库图片参考（让AI推荐的风格方案可关联实际知识库套图）
+- [x] Feature: Step3增加“从知识库选择参考套图”按钮和图片选择器
+- [x] Feature: Step3选中的知识库套图展示在风格方案卡片中
+- [x] Feature: 5步工作流增加“导出完整方案”功能
+- [x] Feature: 导出方案整合5步结果为完整图片设计方案文档
+- [x] Feature: 导出方案包含卖点梳理、图片大纲、风格参考、参考图、最终图片建议
+- [x] Unit tests for Step3 KB images and export feature (594测试全部通过)

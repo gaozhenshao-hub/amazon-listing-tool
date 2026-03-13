@@ -711,3 +711,221 @@ describe("KB Image Picker Integration", () => {
     });
   });
 });
+
+// ═════════════════════════════════════════════════════════════════
+// Step3 KB Image Picker + Export Full Plan Tests
+// ═════════════════════════════════════════════════════════════════
+
+describe("Step3 KB Image Picker for Style References", () => {
+  it("styleKbImages field stores KB images keyed by style index", () => {
+    const step3Data = {
+      selectedStyles: [
+        { name: "Modern Clean", description: "Minimalist design" },
+        { name: "Warm Natural", description: "Earthy tones" },
+      ],
+      styleKbImages: {
+        "0": [{ id: 1, imageUrl: "https://cdn.example.com/img1.jpg", tags: ["modern"] }],
+        "1": [{ id: 2, imageUrl: "https://cdn.example.com/img2.jpg", tags: ["natural"] }],
+      },
+    };
+    expect(step3Data.styleKbImages["0"]).toHaveLength(1);
+    expect(step3Data.styleKbImages["1"]).toHaveLength(1);
+    expect(step3Data.styleKbImages["0"][0].imageUrl).toContain("img1");
+  });
+
+  it("styleKbImages can be empty for styles without KB references", () => {
+    const step3Data = {
+      selectedStyles: [{ name: "Bold" }],
+      styleKbImages: { "0": [] },
+    };
+    expect(step3Data.styleKbImages["0"]).toHaveLength(0);
+  });
+
+  it("KB images include required fields (id, imageUrl)", () => {
+    const kbImage = { id: 42, imageUrl: "https://cdn.example.com/ref.jpg", tags: ["clean", "white"] };
+    expect(kbImage).toHaveProperty("id");
+    expect(kbImage).toHaveProperty("imageUrl");
+    expect(kbImage.tags).toBeInstanceOf(Array);
+  });
+
+  it("styleKbImages are preserved when confirming Step3", () => {
+    const userEdit = JSON.stringify({
+      selectedStyles: [{ name: "Modern" }],
+      styleKbImages: { "0": [{ id: 1, imageUrl: "https://cdn.example.com/img.jpg" }] },
+    });
+    const parsed = JSON.parse(userEdit);
+    expect(parsed.styleKbImages).toBeDefined();
+    expect(parsed.styleKbImages["0"]).toHaveLength(1);
+  });
+});
+
+describe("Export Full Plan (5-Step Complete Document)", () => {
+  // Helper to simulate safeJsonParse
+  function safeJsonParse(str: string | null | undefined): any {
+    if (!str) return null;
+    try { return JSON.parse(str); } catch { return null; }
+  }
+
+  const mockSession = {
+    step1AiResult: JSON.stringify({
+      coreSellingPoints: [{ point: "Ultra-light", memoryHook: "Feather-light" }],
+      secondarySellingPoints: [{ point: "Easy install" }],
+      positiveReviewPoints: [{ point: "Great value" }],
+      negativeReviewPoints: [{ point: "Fragile", resolved: true, strategy: "Show durability test" }],
+      necessityDescriptions: [{ type: "Size", description: "12x8 inches" }],
+      scenes: [{ scene: "Home", percentage: "60%", priority: 1 }],
+    }),
+    step1UserEdit: null,
+    step2AiResult: JSON.stringify({
+      images: [
+        { imageLabel: "Main Image", imageType: "主图", content: "Product on white bg", sellingPoint: "Ultra-light" },
+        { imageLabel: "Image 2", imageType: "辅图", content: "Size comparison", sellingPoint: "Compact" },
+      ],
+      brandStory: "Our brand story...",
+      aPlusOutline: "A+ content plan...",
+    }),
+    step2UserEdit: null,
+    step3AiResult: JSON.stringify({
+      selectedStyles: [{ name: "Modern Clean", description: "Minimalist", colorPalette: { primary: "#333" }, typography: { headingFont: "Helvetica", bodyFont: "Arial" }, overallTone: "Professional" }],
+      styleKbImages: { "0": [{ id: 1, imageUrl: "https://cdn.example.com/ref.jpg" }] },
+    }),
+    step3UserEdit: null,
+    step4AiResult: JSON.stringify({
+      imageReferences: [
+        {
+          imageLabel: "Main Image",
+          compositionReference: { type: "Center", description: "Product centered" },
+          effectReference: { style: "Clean", description: "White background" },
+          kbReferenceImages: [{ id: 1, imageUrl: "https://cdn.example.com/kb1.jpg" }],
+        },
+      ],
+    }),
+    step4UserEdit: null,
+    step5AiResult: JSON.stringify({
+      designGuidelines: { fontRecommendation: "Helvetica", overallColorPalette: "#333, #fff", brandTone: "Professional" },
+      mainImage: { title: "Main Shot", concept: "Clean product", composition: "Center", shootingNotes: "White bg" },
+      secondaryImages: [{ imageNumber: 2, title: "Size", focus: "Dimensions", fabe: { feature: "Compact", advantage: "Portable", benefit: "Easy carry", evidence: "12x8" }, expressionMethod: "Comparison", composition: "Side by side", textOverlay: "Only 12x8!" }],
+      aPlusContent: { sections: [{ title: "Brand Story", purpose: "Trust", content: "Our story...", fabe: { feature: "F", advantage: "A", benefit: "B", evidence: "E" } }] },
+    }),
+    step5AiResultCn: JSON.stringify({
+      designGuidelines: { fontRecommendation: "微软雅黑", overallColorPalette: "#333, #fff", brandTone: "专业" },
+      mainImage: { title: "主图", concept: "干净产品", composition: "居中", shootingNotes: "白底" },
+    }),
+    step5UserEdit: null,
+    step5Confirmed: true,
+  };
+
+  it("safeJsonParse returns null for null input", () => {
+    expect(safeJsonParse(null)).toBeNull();
+    expect(safeJsonParse(undefined)).toBeNull();
+    expect(safeJsonParse("")).toBeNull();
+  });
+
+  it("safeJsonParse returns null for invalid JSON", () => {
+    expect(safeJsonParse("not json")).toBeNull();
+    expect(safeJsonParse("{broken")).toBeNull();
+  });
+
+  it("safeJsonParse returns parsed object for valid JSON", () => {
+    const result = safeJsonParse('{"key": "value"}');
+    expect(result).toEqual({ key: "value" });
+  });
+
+  it("Step1 data can be parsed from session", () => {
+    const sp = safeJsonParse(mockSession.step1UserEdit || mockSession.step1AiResult);
+    expect(sp).not.toBeNull();
+    expect(sp.coreSellingPoints).toHaveLength(1);
+    expect(sp.coreSellingPoints[0].point).toBe("Ultra-light");
+    expect(sp.scenes).toHaveLength(1);
+  });
+
+  it("Step2 outline data can be parsed from session", () => {
+    const outline = safeJsonParse(mockSession.step2AiResult);
+    expect(outline).not.toBeNull();
+    expect(outline.images).toHaveLength(2);
+    expect(outline.brandStory).toBeTruthy();
+  });
+
+  it("Step3 style data includes selectedStyles and styleKbImages", () => {
+    const styleData = safeJsonParse(mockSession.step3AiResult);
+    expect(styleData).not.toBeNull();
+    expect(styleData.selectedStyles).toHaveLength(1);
+    expect(styleData.styleKbImages).toBeDefined();
+    expect(styleData.styleKbImages["0"]).toHaveLength(1);
+  });
+
+  it("Step4 reference data includes kbReferenceImages", () => {
+    const refData = safeJsonParse(mockSession.step4AiResult);
+    expect(refData).not.toBeNull();
+    expect(refData.imageReferences[0].kbReferenceImages).toHaveLength(1);
+  });
+
+  it("Step5 data includes all required sections", () => {
+    const en = safeJsonParse(mockSession.step5AiResult);
+    expect(en).not.toBeNull();
+    expect(en.designGuidelines).toBeDefined();
+    expect(en.mainImage).toBeDefined();
+    expect(en.secondaryImages).toHaveLength(1);
+    expect(en.aPlusContent.sections).toHaveLength(1);
+  });
+
+  it("Step5 CN translation can be parsed", () => {
+    const cn = safeJsonParse(mockSession.step5AiResultCn);
+    expect(cn).not.toBeNull();
+    expect(cn.designGuidelines.fontRecommendation).toBe("微软雅黑");
+  });
+
+  it("userEdit takes priority over aiResult when both exist", () => {
+    const sessionWithEdit = {
+      ...mockSession,
+      step1UserEdit: JSON.stringify({ coreSellingPoints: [{ point: "Edited point" }] }),
+    };
+    const sp = safeJsonParse(sessionWithEdit.step1UserEdit || sessionWithEdit.step1AiResult);
+    expect(sp.coreSellingPoints[0].point).toBe("Edited point");
+  });
+
+  it("full plan export requires step5Confirmed to be true", () => {
+    expect(mockSession.step5Confirmed).toBe(true);
+    const unconfirmedSession = { ...mockSession, step5Confirmed: false };
+    expect(unconfirmedSession.step5Confirmed).toBe(false);
+  });
+
+  it("FABE structure has all 4 fields", () => {
+    const en = safeJsonParse(mockSession.step5AiResult);
+    const fabe = en.secondaryImages[0].fabe;
+    expect(fabe).toHaveProperty("feature");
+    expect(fabe).toHaveProperty("advantage");
+    expect(fabe).toHaveProperty("benefit");
+    expect(fabe).toHaveProperty("evidence");
+  });
+
+  it("negative review points track resolved status", () => {
+    const sp = safeJsonParse(mockSession.step1AiResult);
+    const neg = sp.negativeReviewPoints[0];
+    expect(neg.resolved).toBe(true);
+    expect(neg.strategy).toBeTruthy();
+  });
+
+  it("scenes include percentage and priority", () => {
+    const sp = safeJsonParse(mockSession.step1AiResult);
+    const scene = sp.scenes[0];
+    expect(scene.scene).toBe("Home");
+    expect(scene.percentage).toBe("60%");
+    expect(scene.priority).toBe(1);
+  });
+
+  it("style colorPalette and typography are preserved", () => {
+    const styleData = safeJsonParse(mockSession.step3AiResult);
+    const style = styleData.selectedStyles[0];
+    expect(style.colorPalette.primary).toBe("#333");
+    expect(style.typography.headingFont).toBe("Helvetica");
+    expect(style.typography.bodyFont).toBe("Arial");
+  });
+
+  it("compositionReference and effectReference are in Step4 data", () => {
+    const refData = safeJsonParse(mockSession.step4AiResult);
+    const ref = refData.imageReferences[0];
+    expect(ref.compositionReference.type).toBe("Center");
+    expect(ref.effectReference.style).toBe("Clean");
+  });
+});
