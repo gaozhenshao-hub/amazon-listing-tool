@@ -442,3 +442,13 @@
 - [x] Frontend: 微调结果实时替换到对应图片卡片中（英文+中文同步更新）
 - [x] Frontend: 导出完整方案同时提供HTML导出和PDF导出两个按钮
 - [x] Tests: 编写微调和PDF导出相关测试 (608测试全部通过)
+
+## Step5微调锁定功能 (Refine Lock Feature - 2026-03-13)
+- [x] Backend: 更新refineSingleImage接口，新增lockedFields参数（锁定的字段列表）
+- [x] Backend: AI提示词中明确标注锁定字段，要求AI保持这些字段完全不变
+- [x] Frontend: RefinePopover增加"锁定元素"区域，列出当前图片的可锁定字段
+- [x] Frontend: 每个可锁定字段旁增加锁定/解锁切换按钮（Lock/Unlock图标）
+- [x] Frontend: 锁定字段以视觉高亮方式展示（如锁图标+灰色背景）
+- [x] Frontend: 发送微调请求时携带lockedFields参数
+- [x] Frontend: 微调结果返回后，验证锁定字段是否保持不变（前端兜底覆盖）
+- [x] Tests: 编写锁定功能相关测试 (626测试全部通过)

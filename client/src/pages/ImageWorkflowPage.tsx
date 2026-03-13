@@ -44,6 +44,8 @@ import {
   Wand2,
   Pencil,
   Send,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -1699,8 +1701,44 @@ function FABEDisplay({ fabe, variant = "en" }: { fabe: any; variant?: "en" | "cn
   );
 }
 
+// ─── Lockable field definitions per image type ─────────────────────────
+const LOCKABLE_FIELDS: Record<string, { key: string; label: string; icon: string }[]> = {
+  mainImage: [
+    { key: "title", label: "标题", icon: "T" },
+    { key: "concept", label: "概念", icon: "C" },
+    { key: "colorScheme", label: "配色方案", icon: "🎨" },
+    { key: "composition", label: "构图方式", icon: "📐" },
+    { key: "shootingNotes", label: "拍摄提示", icon: "📷" },
+    { key: "keyElements", label: "关键元素", icon: "⭐" },
+    { key: "sellingPoints", label: "卖点", icon: "💡" },
+  ],
+  secondaryImage: [
+    { key: "title", label: "标题", icon: "T" },
+    { key: "fabe", label: "FABE分析", icon: "F" },
+    { key: "expressionMethod", label: "表达方式", icon: "📝" },
+    { key: "colorScheme", label: "配色方案", icon: "🎨" },
+    { key: "composition", label: "构图", icon: "📐" },
+    { key: "dataVisualization", label: "数据可视化", icon: "📊" },
+    { key: "icons", label: "图标建议", icon: "🔣" },
+    { key: "keyElements", label: "关键元素", icon: "⭐" },
+    { key: "sellingPoints", label: "卖点", icon: "💡" },
+    { key: "copywriting", label: "文案", icon: "✏️" },
+  ],
+  aPlusSection: [
+    { key: "title", label: "标题", icon: "T" },
+    { key: "fabe", label: "FABE分析", icon: "F" },
+    { key: "expressionMethod", label: "表达方式", icon: "📝" },
+    { key: "colorScheme", label: "配色方案", icon: "🎨" },
+    { key: "composition", label: "构图", icon: "📐" },
+    { key: "dataVisualization", label: "数据可视化", icon: "📊" },
+    { key: "icons", label: "图标建议", icon: "🔣" },
+    { key: "content", label: "内容描述", icon: "📄" },
+    { key: "copywriting", label: "文案", icon: "✏️" },
+  ],
+};
+
 // ─── Refine Popover Component ──────────────────────────────────────────
-// Inline popover for refining a single image suggestion
+// Inline popover for refining a single image suggestion with lock feature
 function RefinePopover({
   projectId,
   imageType,
@@ -1720,7 +1758,40 @@ function RefinePopover({
 }) {
   const [open, setOpen] = useState(false);
   const [instruction, setInstruction] = useState("");
+  const [lockedFields, setLockedFields] = useState<Set<string>>(new Set());
+  const [showLockPanel, setShowLockPanel] = useState(false);
   const refineMutation = trpc.imageWorkflow.refineSingleImage.useMutation();
+
+  // Get lockable fields for this image type
+  const lockableFields = useMemo(() => {
+    const fields = LOCKABLE_FIELDS[imageType] || [];
+    // Filter to only show fields that exist in current content
+    if (!currentEnContent) return fields;
+    return fields.filter((f) => {
+      const val = currentEnContent[f.key];
+      return val !== undefined && val !== null && val !== "";
+    });
+  }, [imageType, currentEnContent]);
+
+  const toggleLock = (fieldKey: string) => {
+    setLockedFields((prev) => {
+      const next = new Set(prev);
+      if (next.has(fieldKey)) {
+        next.delete(fieldKey);
+      } else {
+        next.add(fieldKey);
+      }
+      return next;
+    });
+  };
+
+  const lockAll = () => {
+    setLockedFields(new Set(lockableFields.map((f) => f.key)));
+  };
+
+  const unlockAll = () => {
+    setLockedFields(new Set());
+  };
 
   const quickActions = [
     { label: "标题更简短", instruction: "请把标题改得更简短有力，更有吸引力" },
@@ -1740,11 +1811,12 @@ function RefinePopover({
         imageIndex,
         currentContent: JSON.stringify({ en: currentEnContent, cn: currentCnContent }),
         instruction: instr,
+        lockedFields: lockedFields.size > 0 ? Array.from(lockedFields) : undefined,
       });
       onRefineComplete(result.en, result.cn);
       setInstruction("");
       setOpen(false);
-      toast.success("微调完成");
+      toast.success("微调完成" + (lockedFields.size > 0 ? `（已锁定${lockedFields.size}个元素）` : ""));
     } catch (err: any) {
       toast.error(err.message || "微调失败");
     }
@@ -1760,61 +1832,125 @@ function RefinePopover({
           disabled={disabled}
         >
           <Wand2 className="w-3 h-3 mr-1" /> 微调
+          {lockedFields.size > 0 && (
+            <span className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold">
+              {lockedFields.size}
+            </span>
+          )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-3" align="end">
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Wand2 className="w-4 h-4 text-primary" />
-            <span className="text-sm font-medium">AI 微调这张图</span>
-          </div>
-          {/* Quick action buttons */}
-          <div className="flex flex-wrap gap-1.5">
-            {quickActions.map((action) => (
-              <Button
-                key={action.label}
-                variant="outline"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                disabled={refineMutation.isPending}
-                onClick={() => handleRefine(action.instruction)}
-              >
-                {action.label}
-              </Button>
-            ))}
-          </div>
-          <Separator />
-          {/* Custom instruction */}
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">或输入自定义修改指令：</p>
-            <div className="flex gap-1.5">
-              <Input
-                value={instruction}
-                onChange={(e) => setInstruction(e.target.value)}
-                placeholder="例如：把标题改为XXX..."
-                className="h-8 text-xs"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleRefine(instruction);
-                  }
-                }}
-              />
-              <Button
-                size="sm"
-                className="h-8 px-2"
-                disabled={!instruction.trim() || refineMutation.isPending}
-                onClick={() => handleRefine(instruction)}
-              >
-                {refineMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-              </Button>
+      <PopoverContent className="w-96 p-0" align="end">
+        <div className="space-y-0">
+          {/* Header with lock toggle */}
+          <div className="flex items-center justify-between p-3 pb-2">
+            <div className="flex items-center gap-2">
+              <Wand2 className="w-4 h-4 text-primary" />
+              <span className="text-sm font-medium">AI 微调这张图</span>
             </div>
+            <Button
+              variant={showLockPanel ? "secondary" : "ghost"}
+              size="sm"
+              className={`h-7 px-2 text-xs ${lockedFields.size > 0 ? "text-amber-600" : "text-muted-foreground"}`}
+              onClick={() => setShowLockPanel(!showLockPanel)}
+            >
+              {lockedFields.size > 0 ? <Lock className="w-3 h-3 mr-1" /> : <Unlock className="w-3 h-3 mr-1" />}
+              {lockedFields.size > 0 ? `已锁定 ${lockedFields.size}` : "锁定元素"}
+            </Button>
           </div>
-          {refineMutation.isPending && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Loader2 className="w-3 h-3 animate-spin" /> AI正在微调中...
+
+          {/* Lock panel - collapsible */}
+          {showLockPanel && (
+            <div className="mx-3 mb-2 p-2.5 rounded-lg border border-amber-200 bg-amber-50/50">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-medium text-amber-800 flex items-center gap-1">
+                  <Lock className="w-3 h-3" /> 锁定元素（微调时保持不变）
+                </p>
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-amber-700" onClick={lockAll}>
+                    全锁
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px] text-amber-700" onClick={unlockAll}>
+                    全解
+                  </Button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {lockableFields.map((field) => {
+                  const isLocked = lockedFields.has(field.key);
+                  return (
+                    <button
+                      key={field.key}
+                      onClick={() => toggleLock(field.key)}
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-all border ${
+                        isLocked
+                          ? "bg-amber-100 border-amber-300 text-amber-800 shadow-sm"
+                          : "bg-white border-gray-200 text-gray-500 hover:border-amber-200 hover:bg-amber-50"
+                      }`}
+                    >
+                      <span className="text-[10px]">{field.icon}</span>
+                      <span>{field.label}</span>
+                      {isLocked ? <Lock className="w-2.5 h-2.5" /> : <Unlock className="w-2.5 h-2.5 opacity-40" />}
+                    </button>
+                  );
+                })}
+              </div>
+              {lockableFields.length === 0 && (
+                <p className="text-xs text-amber-600/70 text-center py-1">当前图片无可锁定字段</p>
+              )}
             </div>
           )}
+
+          <div className="px-3 pb-3 space-y-3">
+            {/* Quick action buttons */}
+            <div className="flex flex-wrap gap-1.5">
+              {quickActions.map((action) => (
+                <Button
+                  key={action.label}
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  disabled={refineMutation.isPending}
+                  onClick={() => handleRefine(action.instruction)}
+                >
+                  {action.label}
+                </Button>
+              ))}
+            </div>
+            <Separator />
+            {/* Custom instruction */}
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">或输入自定义修改指令：</p>
+              <div className="flex gap-1.5">
+                <Input
+                  value={instruction}
+                  onChange={(e) => setInstruction(e.target.value)}
+                  placeholder="例如：把标题改为XXX..."
+                  className="h-8 text-xs"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleRefine(instruction);
+                    }
+                  }}
+                />
+                <Button
+                  size="sm"
+                  className="h-8 px-2"
+                  disabled={!instruction.trim() || refineMutation.isPending}
+                  onClick={() => handleRefine(instruction)}
+                >
+                  {refineMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                </Button>
+              </div>
+            </div>
+            {refineMutation.isPending && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                AI正在微调中...
+                {lockedFields.size > 0 && <span className="text-amber-600">（{lockedFields.size}个元素已锁定）</span>}
+              </div>
+            )}
+          </div>
         </div>
       </PopoverContent>
     </Popover>

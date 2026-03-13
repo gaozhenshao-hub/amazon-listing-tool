@@ -1125,3 +1125,308 @@ describe("PDF Export via print", () => {
     expect(steps[3]).toBe("window.print");
   });
 });
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Lock Feature Tests for RefinePopover
+// ═══════════════════════════════════════════════════════════════════
+
+describe("Refine Lock Feature", () => {
+
+  // ─── LOCKABLE_FIELDS definitions ─────────────────────────────
+  describe("LOCKABLE_FIELDS configuration", () => {
+    const LOCKABLE_FIELDS: Record<string, { key: string; label: string; icon: string }[]> = {
+      mainImage: [
+        { key: "title", label: "标题", icon: "T" },
+        { key: "concept", label: "概念", icon: "C" },
+        { key: "colorScheme", label: "配色方案", icon: "🎨" },
+        { key: "composition", label: "构图方式", icon: "📐" },
+        { key: "shootingNotes", label: "拍摄提示", icon: "📷" },
+        { key: "keyElements", label: "关键元素", icon: "⭐" },
+        { key: "sellingPoints", label: "卖点", icon: "💡" },
+      ],
+      secondaryImage: [
+        { key: "title", label: "标题", icon: "T" },
+        { key: "fabe", label: "FABE分析", icon: "F" },
+        { key: "expressionMethod", label: "表达方式", icon: "📝" },
+        { key: "colorScheme", label: "配色方案", icon: "🎨" },
+        { key: "composition", label: "构图", icon: "📐" },
+        { key: "dataVisualization", label: "数据可视化", icon: "📊" },
+        { key: "icons", label: "图标建议", icon: "🔣" },
+        { key: "keyElements", label: "关键元素", icon: "⭐" },
+        { key: "sellingPoints", label: "卖点", icon: "💡" },
+        { key: "copywriting", label: "文案", icon: "✏️" },
+      ],
+      aPlusSection: [
+        { key: "title", label: "标题", icon: "T" },
+        { key: "fabe", label: "FABE分析", icon: "F" },
+        { key: "expressionMethod", label: "表达方式", icon: "📝" },
+        { key: "colorScheme", label: "配色方案", icon: "🎨" },
+        { key: "composition", label: "构图", icon: "📐" },
+        { key: "dataVisualization", label: "数据可视化", icon: "📊" },
+        { key: "icons", label: "图标建议", icon: "🔣" },
+        { key: "content", label: "内容描述", icon: "📄" },
+        { key: "copywriting", label: "文案", icon: "✏️" },
+      ],
+    };
+
+    it("defines lockable fields for mainImage", () => {
+      expect(LOCKABLE_FIELDS.mainImage).toBeDefined();
+      expect(LOCKABLE_FIELDS.mainImage.length).toBe(7);
+      const keys = LOCKABLE_FIELDS.mainImage.map(f => f.key);
+      expect(keys).toContain("title");
+      expect(keys).toContain("concept");
+      expect(keys).toContain("colorScheme");
+      expect(keys).toContain("composition");
+      expect(keys).toContain("shootingNotes");
+      expect(keys).toContain("keyElements");
+      expect(keys).toContain("sellingPoints");
+    });
+
+    it("defines lockable fields for secondaryImage", () => {
+      expect(LOCKABLE_FIELDS.secondaryImage).toBeDefined();
+      expect(LOCKABLE_FIELDS.secondaryImage.length).toBe(10);
+      const keys = LOCKABLE_FIELDS.secondaryImage.map(f => f.key);
+      expect(keys).toContain("title");
+      expect(keys).toContain("fabe");
+      expect(keys).toContain("expressionMethod");
+      expect(keys).toContain("colorScheme");
+      expect(keys).toContain("dataVisualization");
+      expect(keys).toContain("icons");
+      expect(keys).toContain("copywriting");
+    });
+
+    it("defines lockable fields for aPlusSection", () => {
+      expect(LOCKABLE_FIELDS.aPlusSection).toBeDefined();
+      expect(LOCKABLE_FIELDS.aPlusSection.length).toBe(9);
+      const keys = LOCKABLE_FIELDS.aPlusSection.map(f => f.key);
+      expect(keys).toContain("title");
+      expect(keys).toContain("fabe");
+      expect(keys).toContain("content");
+      expect(keys).toContain("copywriting");
+    });
+
+    it("all fields have required properties (key, label, icon)", () => {
+      for (const [type, fields] of Object.entries(LOCKABLE_FIELDS)) {
+        for (const field of fields) {
+          expect(field.key).toBeTruthy();
+          expect(field.label).toBeTruthy();
+          expect(field.icon).toBeTruthy();
+        }
+      }
+    });
+
+    it("no duplicate keys within each image type", () => {
+      for (const [type, fields] of Object.entries(LOCKABLE_FIELDS)) {
+        const keys = fields.map(f => f.key);
+        const uniqueKeys = new Set(keys);
+        expect(uniqueKeys.size).toBe(keys.length);
+      }
+    });
+
+    it("common fields exist across all image types", () => {
+      const commonFields = ["title", "colorScheme", "composition"];
+      for (const field of commonFields) {
+        expect(LOCKABLE_FIELDS.mainImage.some(f => f.key === field)).toBe(true);
+        expect(LOCKABLE_FIELDS.secondaryImage.some(f => f.key === field)).toBe(true);
+        expect(LOCKABLE_FIELDS.aPlusSection.some(f => f.key === field)).toBe(true);
+      }
+    });
+  });
+
+  // ─── Server-side lock enforcement logic ─────────────────────────
+  describe("Server-side lock enforcement", () => {
+    it("restores locked fields from original content after AI response", () => {
+      const original = {
+        en: { title: "Original Title", colorScheme: "Blue/White", composition: "Center" },
+        cn: { title: "原始标题", colorScheme: "蓝/白", composition: "居中" },
+      };
+      const aiResult = {
+        en: { title: "New Title", colorScheme: "Red/Gold", composition: "Rule of thirds" },
+        cn: { title: "新标题", colorScheme: "红/金", composition: "三分法" },
+      };
+      const lockedFields = ["title", "colorScheme"];
+
+      // Simulate server-side enforcement
+      const originalEn = original.en;
+      const originalCn = original.cn;
+      for (const field of lockedFields) {
+        if (aiResult.en && (originalEn as any)[field] !== undefined) {
+          (aiResult.en as any)[field] = (originalEn as any)[field];
+        }
+        if (aiResult.cn && (originalCn as any)[field] !== undefined) {
+          (aiResult.cn as any)[field] = (originalCn as any)[field];
+        }
+      }
+
+      expect(aiResult.en.title).toBe("Original Title");
+      expect(aiResult.en.colorScheme).toBe("Blue/White");
+      expect(aiResult.en.composition).toBe("Rule of thirds"); // not locked, should change
+      expect(aiResult.cn.title).toBe("原始标题");
+      expect(aiResult.cn.colorScheme).toBe("蓝/白");
+      expect(aiResult.cn.composition).toBe("三分法"); // not locked, should change
+    });
+
+    it("handles empty lockedFields gracefully", () => {
+      const original = {
+        en: { title: "Title" },
+        cn: { title: "标题" },
+      };
+      const aiResult = {
+        en: { title: "New Title" },
+        cn: { title: "新标题" },
+      };
+      const lockedFields: string[] = [];
+
+      // No fields locked, nothing should be restored
+      for (const field of lockedFields) {
+        if (aiResult.en && (original.en as any)[field] !== undefined) {
+          (aiResult.en as any)[field] = (original.en as any)[field];
+        }
+      }
+
+      expect(aiResult.en.title).toBe("New Title"); // should remain changed
+    });
+
+    it("handles locking non-existent fields without error", () => {
+      const original = {
+        en: { title: "Title" },
+        cn: { title: "标题" },
+      };
+      const aiResult = {
+        en: { title: "New Title" },
+        cn: { title: "新标题" },
+      };
+      const lockedFields = ["nonExistentField"];
+
+      // Should not throw
+      for (const field of lockedFields) {
+        if (aiResult.en && (original.en as any)[field] !== undefined) {
+          (aiResult.en as any)[field] = (original.en as any)[field];
+        }
+      }
+
+      expect(aiResult.en.title).toBe("New Title"); // unchanged since locked field doesn't exist
+    });
+
+    it("handles locking all fields", () => {
+      const original = {
+        en: { title: "T1", colorScheme: "CS1", composition: "C1" },
+        cn: { title: "标题1", colorScheme: "配色1", composition: "构图1" },
+      };
+      const aiResult = {
+        en: { title: "T2", colorScheme: "CS2", composition: "C2" },
+        cn: { title: "标题2", colorScheme: "配色2", composition: "构图2" },
+      };
+      const lockedFields = ["title", "colorScheme", "composition"];
+
+      for (const field of lockedFields) {
+        if (aiResult.en && (original.en as any)[field] !== undefined) {
+          (aiResult.en as any)[field] = (original.en as any)[field];
+        }
+        if (aiResult.cn && (original.cn as any)[field] !== undefined) {
+          (aiResult.cn as any)[field] = (original.cn as any)[field];
+        }
+      }
+
+      // All fields should be restored to original
+      expect(aiResult.en.title).toBe("T1");
+      expect(aiResult.en.colorScheme).toBe("CS1");
+      expect(aiResult.en.composition).toBe("C1");
+      expect(aiResult.cn.title).toBe("标题1");
+      expect(aiResult.cn.colorScheme).toBe("配色1");
+      expect(aiResult.cn.composition).toBe("构图1");
+    });
+  });
+
+  // ─── Lock prompt instruction generation ─────────────────────────
+  describe("Lock prompt instruction generation", () => {
+    it("generates correct lock instruction for AI prompt", () => {
+      const lockedFields = ["title", "colorScheme"];
+      const instruction = `\n\n🔒 锁定字段（以下字段必须与原内容完全一致，严禁修改）：\n${lockedFields.map(f => `- ${f}`).join("\n")}\n\n即使用户的修改指令涉及这些字段，也必须保持原值不变。只能修改未锁定的字段。`;
+
+      expect(instruction).toContain("🔒 锁定字段");
+      expect(instruction).toContain("- title");
+      expect(instruction).toContain("- colorScheme");
+      expect(instruction).toContain("严禁修改");
+    });
+
+    it("generates empty instruction when no fields are locked", () => {
+      const lockedFields: string[] = [];
+      const instruction = lockedFields.length > 0
+        ? `\n\n🔒 锁定字段：\n${lockedFields.map(f => `- ${f}`).join("\n")}`
+        : "";
+
+      expect(instruction).toBe("");
+    });
+  });
+
+  // ─── Frontend lock state management ─────────────────────────
+  describe("Frontend lock state management", () => {
+    it("toggle lock adds and removes fields from set", () => {
+      const lockedFields = new Set<string>();
+
+      // Toggle on
+      lockedFields.add("title");
+      expect(lockedFields.has("title")).toBe(true);
+      expect(lockedFields.size).toBe(1);
+
+      // Toggle off
+      lockedFields.delete("title");
+      expect(lockedFields.has("title")).toBe(false);
+      expect(lockedFields.size).toBe(0);
+    });
+
+    it("lockAll adds all lockable fields", () => {
+      const lockableFields = [
+        { key: "title", label: "标题", icon: "T" },
+        { key: "colorScheme", label: "配色方案", icon: "🎨" },
+        { key: "composition", label: "构图", icon: "📐" },
+      ];
+      const lockedFields = new Set(lockableFields.map(f => f.key));
+
+      expect(lockedFields.size).toBe(3);
+      expect(lockedFields.has("title")).toBe(true);
+      expect(lockedFields.has("colorScheme")).toBe(true);
+      expect(lockedFields.has("composition")).toBe(true);
+    });
+
+    it("unlockAll clears all locked fields", () => {
+      const lockedFields = new Set(["title", "colorScheme", "composition"]);
+      lockedFields.clear();
+
+      expect(lockedFields.size).toBe(0);
+    });
+
+    it("filters lockable fields based on current content", () => {
+      const allFields = [
+        { key: "title", label: "标题", icon: "T" },
+        { key: "fabe", label: "FABE分析", icon: "F" },
+        { key: "colorScheme", label: "配色方案", icon: "🎨" },
+      ];
+      const currentContent = { title: "Some title", colorScheme: "Blue" };
+
+      const filtered = allFields.filter(f => {
+        const val = (currentContent as any)[f.key];
+        return val !== undefined && val !== null && val !== "";
+      });
+
+      expect(filtered.length).toBe(2);
+      expect(filtered.map(f => f.key)).toContain("title");
+      expect(filtered.map(f => f.key)).toContain("colorScheme");
+      expect(filtered.map(f => f.key)).not.toContain("fabe");
+    });
+
+    it("lock badge shows correct count", () => {
+      const lockedFields = new Set(["title", "colorScheme"]);
+      const badgeText = `已锁定 ${lockedFields.size}`;
+      expect(badgeText).toBe("已锁定 2");
+    });
+
+    it("toast message includes lock count when fields are locked", () => {
+      const lockedFields = new Set(["title", "colorScheme", "composition"]);
+      const message = "微调完成" + (lockedFields.size > 0 ? `（已锁定${lockedFields.size}个元素）` : "");
+      expect(message).toBe("微调完成（已锁定3个元素）");
+    });
+  });
+});

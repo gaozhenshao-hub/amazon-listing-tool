@@ -615,6 +615,7 @@ export const imageWorkflowRouter = router({
       imageIndex: z.number().optional(), // index for secondary/aplus
       currentContent: z.string(), // JSON string of current image data
       instruction: z.string(), // user's refinement instruction
+      lockedFields: z.array(z.string()).optional(), // fields to keep unchanged
     }))
     .mutation(async ({ ctx, input }) => {
       const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
@@ -627,6 +628,11 @@ export const imageWorkflowRouter = router({
       // Get the confirmed style for context
       const styleContext = session.step3UserEdit || session.step3AiResult || "";
 
+      // Build locked fields instruction
+      const lockedFieldsInstruction = input.lockedFields && input.lockedFields.length > 0
+        ? `\n\n🔒 锁定字段（以下字段必须与原内容完全一致，严禁修改）：\n${input.lockedFields.map(f => `- ${f}`).join("\n")}\n\n即使用户的修改指令涉及这些字段，也必须保持原值不变。只能修改未锁定的字段。`
+        : "";
+
       const response = await invokeLLM({
         messages: [
           {
@@ -638,7 +644,7 @@ export const imageWorkflowRouter = router({
 2. 保持与整体风格方案的一致性
 3. 输出格式必须与输入格式完全一致（相同的JSON字段结构）
 4. 同时输出英文版和中文版
-5. 返回JSON格式: { "en": {...修改后的英文版}, "cn": {...修改后的中文版} }
+5. 返回JSON格式: { "en": {...修改后的英文版}, "cn": {...修改后的中文版} }${lockedFieldsInstruction}
 
 当前风格方案参考:
 ${styleContext}`,
@@ -650,7 +656,7 @@ ${styleContext}`,
 当前内容:
 ${input.currentContent}
 
-用户修改指令: ${input.instruction}
+用户修改指令: ${input.instruction}${input.lockedFields && input.lockedFields.length > 0 ? `\n\n🔒 请注意：以下字段已被用户锁定，必须保持原值不变：${input.lockedFields.join("、")}` : ""}
 
 请根据用户的修改指令，微调上述图片建议内容。仅修改用户要求的部分，保持其他内容和整体风格不变。返回完整的修改后JSON（包含en和cn两个版本）。`,
           },
@@ -659,6 +665,24 @@ ${input.currentContent}
       });
 
       const result = parseLLMJson(response);
+
+      // Server-side enforcement: if locked fields were specified, restore original values
+      if (input.lockedFields && input.lockedFields.length > 0) {
+        try {
+          const original = JSON.parse(input.currentContent);
+          const originalEn = original.en || original;
+          const originalCn = original.cn || {};
+          for (const field of input.lockedFields) {
+            if (result.en && originalEn[field] !== undefined) {
+              result.en[field] = originalEn[field];
+            }
+            if (result.cn && originalCn[field] !== undefined) {
+              result.cn[field] = originalCn[field];
+            }
+          }
+        } catch { /* ignore parse errors for safety */ }
+      }
+
       return result;
     }),
 });
