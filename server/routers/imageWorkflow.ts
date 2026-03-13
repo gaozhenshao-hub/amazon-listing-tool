@@ -606,4 +606,59 @@ export const imageWorkflowRouter = router({
         references: session.step4UserEdit || session.step4AiResult,
       };
     }),
+
+  // ─── Refine single image suggestion ─────────────────────────────
+  refineSingleImage: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      imageType: z.enum(["mainImage", "secondaryImage", "aPlusSection"]),
+      imageIndex: z.number().optional(), // index for secondary/aplus
+      currentContent: z.string(), // JSON string of current image data
+      instruction: z.string(), // user's refinement instruction
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+
+      const imageTypeLabel = input.imageType === "mainImage" ? "主图 (Main Image)"
+        : input.imageType === "secondaryImage" ? `辅图 ${(input.imageIndex || 0) + 2} (Secondary Image)`
+        : `A+ 模块 ${(input.imageIndex || 0) + 1} (A+ Content Section)`;
+
+      // Get the confirmed style for context
+      const styleContext = session.step3UserEdit || session.step3AiResult || "";
+
+      const response = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `你是一位拥有10年设计经验的亚马逊运营专家。用户需要微调一张图片的建议内容。
+
+重要规则：
+1. 仅修改用户指定的部分，保持其他内容不变
+2. 保持与整体风格方案的一致性
+3. 输出格式必须与输入格式完全一致（相同的JSON字段结构）
+4. 同时输出英文版和中文版
+5. 返回JSON格式: { "en": {...修改后的英文版}, "cn": {...修改后的中文版} }
+
+当前风格方案参考:
+${styleContext}`,
+          },
+          {
+            role: "user",
+            content: `图片类型: ${imageTypeLabel}
+
+当前内容:
+${input.currentContent}
+
+用户修改指令: ${input.instruction}
+
+请根据用户的修改指令，微调上述图片建议内容。仅修改用户要求的部分，保持其他内容和整体风格不变。返回完整的修改后JSON（包含en和cn两个版本）。`,
+          },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const result = parseLLMJson(response);
+      return result;
+    }),
 });

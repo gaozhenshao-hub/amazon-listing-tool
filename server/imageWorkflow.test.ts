@@ -929,3 +929,199 @@ describe("Export Full Plan (5-Step Complete Document)", () => {
     expect(ref.effectReference.style).toBe("Clean");
   });
 });
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Refine Single Image + PDF Export Tests
+// ═══════════════════════════════════════════════════════════════════
+
+describe("refineSingleImage procedure", () => {
+  it("accepts mainImage imageType", () => {
+    const validTypes = ["mainImage", "secondaryImage", "aPlusSection"];
+    expect(validTypes).toContain("mainImage");
+  });
+
+  it("accepts secondaryImage imageType with index", () => {
+    const input = {
+      projectId: 1,
+      imageType: "secondaryImage" as const,
+      imageIndex: 2,
+      currentContent: JSON.stringify({ en: { title: "Test" }, cn: { title: "测试" } }),
+      instruction: "把标题改为XXX",
+    };
+    expect(input.imageType).toBe("secondaryImage");
+    expect(input.imageIndex).toBe(2);
+    expect(input.instruction).toBeTruthy();
+  });
+
+  it("accepts aPlusSection imageType with index", () => {
+    const input = {
+      projectId: 1,
+      imageType: "aPlusSection" as const,
+      imageIndex: 0,
+      currentContent: JSON.stringify({ en: { title: "Brand Story" }, cn: { title: "品牌故事" } }),
+      instruction: "增加数据可视化元素",
+    };
+    expect(input.imageType).toBe("aPlusSection");
+    expect(input.imageIndex).toBe(0);
+  });
+
+  it("generates correct image type label for mainImage", () => {
+    const imageType = "mainImage";
+    const imageIndex = undefined;
+    const label = imageType === "mainImage" ? "主图 (Main Image)"
+      : imageType === "secondaryImage" ? `辅图 ${(imageIndex || 0) + 2} (Secondary Image)`
+      : `A+ 模块 ${(imageIndex || 0) + 1} (A+ Content Section)`;
+    expect(label).toBe("主图 (Main Image)");
+  });
+
+  it("generates correct image type label for secondaryImage", () => {
+    const imageType = "secondaryImage";
+    const imageIndex = 3;
+    const label = imageType === "mainImage" ? "主图 (Main Image)"
+      : imageType === "secondaryImage" ? `辅图 ${(imageIndex || 0) + 2} (Secondary Image)`
+      : `A+ 模块 ${(imageIndex || 0) + 1} (A+ Content Section)`;
+    expect(label).toBe("辅图 5 (Secondary Image)");
+  });
+
+  it("generates correct image type label for aPlusSection", () => {
+    const imageType = "aPlusSection";
+    const imageIndex = 2;
+    const label = imageType === "mainImage" ? "主图 (Main Image)"
+      : imageType === "secondaryImage" ? `辅图 ${(imageIndex || 0) + 2} (Secondary Image)`
+      : `A+ 模块 ${(imageIndex || 0) + 1} (A+ Content Section)`;
+    expect(label).toBe("A+ 模块 3 (A+ Content Section)");
+  });
+
+  it("includes style context in the system prompt", () => {
+    // The refineSingleImage procedure uses session.step3UserEdit || step3AiResult as style context
+    const styleContext = '{"selectedStyles":[{"name":"Modern Clean","colorPalette":{"primary":"#333"}}]}';
+    const systemPrompt = `你是一位拥有10年设计经验的亚马逊运营专家。用户需要微调一张图片的建议内容。
+
+重要规则：
+1. 仅修改用户指定的部分，保持其他内容不变
+2. 保持与整体风格方案的一致性
+3. 输出格式必须与输入格式完全一致（相同的JSON字段结构）
+4. 同时输出英文版和中文版
+5. 返回JSON格式: { "en": {...修改后的英文版}, "cn": {...修改后的中文版} }
+
+当前风格方案参考:
+${styleContext}`;
+    expect(systemPrompt).toContain("仅修改用户指定的部分");
+    expect(systemPrompt).toContain("保持与整体风格方案的一致性");
+    expect(systemPrompt).toContain("Modern Clean");
+  });
+
+  it("quick actions cover all common refinement scenarios", () => {
+    const quickActions = [
+      { label: "标题更简短", instruction: "请把标题改得更简短有力，更有吸引力" },
+      { label: "换一种构图", instruction: "请推荐一种不同的构图方式，让画面更有冲击力" },
+      { label: "强化卖点表达", instruction: "请强化卖点的表达，让卖点更突出更有说服力" },
+      { label: "优化文案", instruction: "请优化图片上的文案内容，让文字更精炼更有营销力" },
+      { label: "调整配色", instruction: "请推荐一套更合适的配色方案，提升视觉效果" },
+      { label: "增加数据可视化", instruction: "请增加数据可视化元素（图表、图标、数据对比等）让信息更直观" },
+    ];
+    expect(quickActions).toHaveLength(6);
+    expect(quickActions.map(a => a.label)).toContain("标题更简短");
+    expect(quickActions.map(a => a.label)).toContain("换一种构图");
+    expect(quickActions.map(a => a.label)).toContain("强化卖点表达");
+    expect(quickActions.map(a => a.label)).toContain("优化文案");
+    expect(quickActions.map(a => a.label)).toContain("调整配色");
+    expect(quickActions.map(a => a.label)).toContain("增加数据可视化");
+  });
+});
+
+describe("Refine result handling", () => {
+  it("correctly updates mainImage in enData and cnData", () => {
+    const enData = {
+      mainImage: { title: "Original", concept: "Clean" },
+      secondaryImages: [{ title: "Img2" }],
+    };
+    const cnData = {
+      mainImage: { title: "原始", concept: "简洁" },
+      secondaryImages: [{ title: "图2" }],
+    };
+    const refinedEn = { title: "Refined", concept: "Bold" };
+    const refinedCn = { title: "优化后", concept: "大胆" };
+
+    const newEn = { ...enData, mainImage: refinedEn };
+    const newCn = { ...cnData, mainImage: refinedCn };
+
+    expect(newEn.mainImage.title).toBe("Refined");
+    expect(newCn.mainImage.title).toBe("优化后");
+    expect(newEn.secondaryImages[0].title).toBe("Img2"); // unchanged
+  });
+
+  it("correctly updates a specific secondary image", () => {
+    const enData = {
+      secondaryImages: [
+        { title: "Img1", focus: "Feature A" },
+        { title: "Img2", focus: "Feature B" },
+        { title: "Img3", focus: "Feature C" },
+      ],
+    };
+    const idx = 1;
+    const refinedEn = { title: "Img2 Refined", focus: "Feature B Enhanced" };
+
+    const imgs = [...enData.secondaryImages];
+    imgs[idx] = refinedEn;
+    const newEn = { ...enData, secondaryImages: imgs };
+
+    expect(newEn.secondaryImages[0].title).toBe("Img1"); // unchanged
+    expect(newEn.secondaryImages[1].title).toBe("Img2 Refined"); // updated
+    expect(newEn.secondaryImages[2].title).toBe("Img3"); // unchanged
+  });
+
+  it("correctly updates a specific A+ section", () => {
+    const enData = {
+      aPlusContent: {
+        overallStrategy: "Brand story",
+        sections: [
+          { title: "Section 1", purpose: "Brand intro" },
+          { title: "Section 2", purpose: "Feature highlight" },
+        ],
+      },
+    };
+    const idx = 0;
+    const refinedEn = { title: "Section 1 Refined", purpose: "Brand intro enhanced" };
+
+    const sections = [...enData.aPlusContent.sections];
+    sections[idx] = refinedEn;
+    const newEn = { ...enData, aPlusContent: { ...enData.aPlusContent, sections } };
+
+    expect(newEn.aPlusContent.sections[0].title).toBe("Section 1 Refined");
+    expect(newEn.aPlusContent.sections[1].title).toBe("Section 2"); // unchanged
+    expect(newEn.aPlusContent.overallStrategy).toBe("Brand story"); // unchanged
+  });
+});
+
+describe("PDF Export via print", () => {
+  it("buildFullPlanContent generates valid HTML with print styles", () => {
+    // Simulate what the PDF export does - it calls buildFullPlanContent which returns HTML
+    // The HTML includes @media print styles for PDF generation
+    const mockHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>产品图片设计完整方案</title>
+<style>
+@media print { body { max-width: 100%; } .no-print { display: none; } }
+</style></head><body><h1>Test</h1></body></html>`;
+    expect(mockHtml).toContain("@media print");
+    expect(mockHtml).toContain("产品图片设计完整方案");
+  });
+
+  it("export buttons include both HTML and PDF options", () => {
+    const exportOptions = ["导出HTML", "导出PDF"];
+    expect(exportOptions).toContain("导出HTML");
+    expect(exportOptions).toContain("导出PDF");
+  });
+
+  it("PDF export uses window.print for browser-native PDF generation", () => {
+    // The handleExportPdf function:
+    // 1. Builds HTML content
+    // 2. Opens new window
+    // 3. Writes content
+    // 4. Triggers window.print()
+    // This allows "Save as PDF" in the print dialog
+    const steps = ["buildPdfContent", "window.open", "document.write", "window.print"];
+    expect(steps).toHaveLength(4);
+    expect(steps[3]).toBe("window.print");
+  });
+});

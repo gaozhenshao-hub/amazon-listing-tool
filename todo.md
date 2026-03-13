@@ -432,3 +432,13 @@
 - [x] Feature: 导出方案整合5步结果为完整图片设计方案文档
 - [x] Feature: 导出方案包含卖点梳理、图片大纲、风格参考、参考图、最终图片建议
 - [x] Unit tests for Step3 KB images and export feature (594测试全部通过)
+
+## Step5图片微调+PDF导出 (Image Fine-tune + PDF Export - 2026-03-13)
+- [x] Backend: 新增单张图片微调AI接口（refineSingleImage），接收图片类型、当前内容、用户修改指令，返回微调后的结果
+- [x] Backend: 微调AI提示词（保持整体风格一致，仅修改用户指定的文字/布局部分）
+- [x] Backend: PDF导出通过前端浏览器打印功能实现（无需后端接口）
+- [x] Frontend: Step5每张图片卡片增加“微调”按钮（主图/辅图/A+模块均有）
+- [x] Frontend: RefinePopover弹窗（含6个快捷操作+自定义指令输入）
+- [x] Frontend: 微调结果实时替换到对应图片卡片中（英文+中文同步更新）
+- [x] Frontend: 导出完整方案同时提供HTML导出和PDF导出两个按钮
+- [x] Tests: 编写微调和PDF导出相关测试 (608测试全部通过)

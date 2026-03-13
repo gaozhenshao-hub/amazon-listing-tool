@@ -41,8 +41,12 @@ import {
   BookOpen,
   X,
   Filter,
+  Wand2,
+  Pencil,
+  Send,
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { toast } from "sonner";
 
@@ -1695,6 +1699,128 @@ function FABEDisplay({ fabe, variant = "en" }: { fabe: any; variant?: "en" | "cn
   );
 }
 
+// ─── Refine Popover Component ──────────────────────────────────────────
+// Inline popover for refining a single image suggestion
+function RefinePopover({
+  projectId,
+  imageType,
+  imageIndex,
+  currentEnContent,
+  currentCnContent,
+  onRefineComplete,
+  disabled,
+}: {
+  projectId: number;
+  imageType: "mainImage" | "secondaryImage" | "aPlusSection";
+  imageIndex?: number;
+  currentEnContent: any;
+  currentCnContent: any;
+  onRefineComplete: (en: any, cn: any) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [instruction, setInstruction] = useState("");
+  const refineMutation = trpc.imageWorkflow.refineSingleImage.useMutation();
+
+  const quickActions = [
+    { label: "标题更简短", instruction: "请把标题改得更简短有力，更有吸引力" },
+    { label: "换一种构图", instruction: "请推荐一种不同的构图方式，让画面更有冲击力" },
+    { label: "强化卖点表达", instruction: "请强化卖点的表达，让卖点更突出更有说服力" },
+    { label: "优化文案", instruction: "请优化图片上的文案内容，让文字更精炼更有营销力" },
+    { label: "调整配色", instruction: "请推荐一套更合适的配色方案，提升视觉效果" },
+    { label: "增加数据可视化", instruction: "请增加数据可视化元素（图表、图标、数据对比等）让信息更直观" },
+  ];
+
+  const handleRefine = async (instr: string) => {
+    if (!instr.trim()) return;
+    try {
+      const result = await refineMutation.mutateAsync({
+        projectId,
+        imageType,
+        imageIndex,
+        currentContent: JSON.stringify({ en: currentEnContent, cn: currentCnContent }),
+        instruction: instr,
+      });
+      onRefineComplete(result.en, result.cn);
+      setInstruction("");
+      setOpen(false);
+      toast.success("微调完成");
+    } catch (err: any) {
+      toast.error(err.message || "微调失败");
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs text-muted-foreground hover:text-primary"
+          disabled={disabled}
+        >
+          <Wand2 className="w-3 h-3 mr-1" /> 微调
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-3" align="end">
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Wand2 className="w-4 h-4 text-primary" />
+            <span className="text-sm font-medium">AI 微调这张图</span>
+          </div>
+          {/* Quick action buttons */}
+          <div className="flex flex-wrap gap-1.5">
+            {quickActions.map((action) => (
+              <Button
+                key={action.label}
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                disabled={refineMutation.isPending}
+                onClick={() => handleRefine(action.instruction)}
+              >
+                {action.label}
+              </Button>
+            ))}
+          </div>
+          <Separator />
+          {/* Custom instruction */}
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">或输入自定义修改指令：</p>
+            <div className="flex gap-1.5">
+              <Input
+                value={instruction}
+                onChange={(e) => setInstruction(e.target.value)}
+                placeholder="例如：把标题改为XXX..."
+                className="h-8 text-xs"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleRefine(instruction);
+                  }
+                }}
+              />
+              <Button
+                size="sm"
+                className="h-8 px-2"
+                disabled={!instruction.trim() || refineMutation.isPending}
+                onClick={() => handleRefine(instruction)}
+              >
+                {refineMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+              </Button>
+            </div>
+          </div>
+          {refineMutation.isPending && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="w-3 h-3 animate-spin" /> AI正在微调中...
+            </div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function Step5FinalSuggestions({
   projectId,
   session,
@@ -1741,6 +1867,40 @@ function Step5FinalSuggestions({
     }
   };
 
+  // Refine handlers - update specific image data
+  const handleRefineMainImage = (en: any, cn: any) => {
+    setEnData((prev: any) => ({ ...prev, mainImage: en }));
+    setCnData((prev: any) => prev ? ({ ...prev, mainImage: cn }) : prev);
+  };
+
+  const handleRefineSecondaryImage = (idx: number) => (en: any, cn: any) => {
+    setEnData((prev: any) => {
+      const imgs = [...(prev.secondaryImages || [])];
+      imgs[idx] = en;
+      return { ...prev, secondaryImages: imgs };
+    });
+    setCnData((prev: any) => {
+      if (!prev) return prev;
+      const imgs = [...(prev.secondaryImages || [])];
+      imgs[idx] = cn;
+      return { ...prev, secondaryImages: imgs };
+    });
+  };
+
+  const handleRefineAplusSection = (idx: number) => (en: any, cn: any) => {
+    setEnData((prev: any) => {
+      const sections = [...(prev.aPlusContent?.sections || [])];
+      sections[idx] = en;
+      return { ...prev, aPlusContent: { ...prev.aPlusContent, sections } };
+    });
+    setCnData((prev: any) => {
+      if (!prev) return prev;
+      const sections = [...(prev.aPlusContent?.sections || [])];
+      sections[idx] = cn;
+      return { ...prev, aPlusContent: { ...prev.aPlusContent, sections } };
+    });
+  };
+
   // A+ drag and drop
   const handleDragStart = (idx: number) => setDraggedIdx(idx);
   const handleDragOver = (e: React.DragEvent, idx: number) => {
@@ -1750,7 +1910,6 @@ function Step5FinalSuggestions({
     const [moved] = sections.splice(draggedIdx, 1);
     sections.splice(idx, 0, moved);
     setEnData({ ...enData, aPlusContent: { ...enData.aPlusContent, sections } });
-    // Also reorder CN if available
     if (cnData?.aPlusContent?.sections) {
       const cnSections = [...cnData.aPlusContent.sections];
       const [cnMoved] = cnSections.splice(draggedIdx, 1);
@@ -1761,11 +1920,10 @@ function Step5FinalSuggestions({
   };
   const handleDragEnd = () => setDraggedIdx(null);
 
-  // PDF export
-  const handleExportPdf = async () => {
-    toast.info("正在准备PDF导出...");
+  // HTML export
+  const handleExportHtml = () => {
+    toast.info("正在准备导出...");
     try {
-      // Build content for PDF
       const content = buildPdfContent(enData, cnData);
       const blob = new Blob([content], { type: "text/html;charset=utf-8" });
       const url = URL.createObjectURL(blob);
@@ -1774,7 +1932,29 @@ function Step5FinalSuggestions({
       a.download = "image-suggestions.html";
       a.click();
       URL.revokeObjectURL(url);
-      toast.success("已导出HTML文件，可在浏览器中打印为PDF");
+      toast.success("已导出HTML文件");
+    } catch {
+      toast.error("导出失败");
+    }
+  };
+
+  // PDF export via print
+  const handleExportPdf = () => {
+    toast.info("正在生成PDF...");
+    try {
+      const content = buildPdfContent(enData, cnData);
+      const printWindow = window.open("", "_blank");
+      if (!printWindow) {
+        toast.error("无法打开打印窗口，请允许弹出窗口");
+        return;
+      }
+      printWindow.document.write(content);
+      printWindow.document.close();
+      // Add print-specific styles and auto-trigger print
+      setTimeout(() => {
+        printWindow.print();
+      }, 500);
+      toast.success("已打开打印对话框，选择“保存为PDF”即可导出");
     } catch {
       toast.error("导出失败");
     }
@@ -1806,8 +1986,11 @@ function Step5FinalSuggestions({
                   <Button variant="outline" onClick={handleGenerate} disabled={generateMutation.isPending}>
                     <RotateCcw className="w-4 h-4 mr-2" /> 重新生成
                   </Button>
+                  <Button variant="outline" onClick={handleExportHtml}>
+                    <Download className="w-4 h-4 mr-2" /> 导出HTML
+                  </Button>
                   <Button variant="outline" onClick={handleExportPdf}>
-                    <Download className="w-4 h-4 mr-2" /> 导出PDF
+                    <FileText className="w-4 h-4 mr-2" /> 导出PDF
                   </Button>
                   <Button onClick={handleConfirm} disabled={confirmMutation.isPending}>
                     {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
@@ -1817,8 +2000,11 @@ function Step5FinalSuggestions({
               )}
               {isConfirmed && (
                 <>
+                  <Button variant="outline" onClick={handleExportHtml}>
+                    <Download className="w-4 h-4 mr-2" /> 导出HTML
+                  </Button>
                   <Button variant="outline" onClick={handleExportPdf}>
-                    <Download className="w-4 h-4 mr-2" /> 导出PDF
+                    <FileText className="w-4 h-4 mr-2" /> 导出PDF
                   </Button>
                   <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                     <Check className="w-3 h-3 mr-1" /> 已确认
@@ -1879,9 +2065,20 @@ function Step5FinalSuggestions({
           {enData.mainImage && (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Camera className="w-4 h-4 text-primary" /> 主图 (Main Image)
-                </CardTitle>
+                <div className="flex items-center justify-between w-full">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Camera className="w-4 h-4 text-primary" /> 主图 (Main Image)
+                  </CardTitle>
+                  {!isConfirmed && enData.mainImage && (
+                    <RefinePopover
+                      projectId={projectId}
+                      imageType="mainImage"
+                      currentEnContent={enData.mainImage}
+                      currentCnContent={cnData?.mainImage}
+                      onRefineComplete={handleRefineMainImage}
+                    />
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1923,9 +2120,21 @@ function Step5FinalSuggestions({
             return (
               <Card key={idx}>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Image className="w-4 h-4 text-blue-500" /> 辅图 {img.imageNumber || idx + 2}
-                  </CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Image className="w-4 h-4 text-blue-500" /> 辅图 {img.imageNumber || idx + 2}
+                    </CardTitle>
+                    {!isConfirmed && (
+                      <RefinePopover
+                        projectId={projectId}
+                        imageType="secondaryImage"
+                        imageIndex={idx}
+                        currentEnContent={img}
+                        currentCnContent={cnImg}
+                        onRefineComplete={handleRefineSecondaryImage(idx)}
+                      />
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2026,12 +2235,24 @@ function Step5FinalSuggestions({
                     className={`transition-all ${draggedIdx === idx ? "opacity-50 scale-95" : ""} ${!isConfirmed ? "cursor-grab active:cursor-grabbing" : ""}`}
                   >
                     <CardHeader className="pb-3">
-                      <div className="flex items-center gap-2">
-                        {!isConfirmed && <GripVertical className="w-4 h-4 text-gray-400" />}
-                        <CardTitle className="text-sm flex items-center gap-2">
-                          A+ 模块 {idx + 1}
-                          {section.type && <Badge variant="outline" className="text-xs">{section.type}</Badge>}
-                        </CardTitle>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {!isConfirmed && <GripVertical className="w-4 h-4 text-gray-400" />}
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            A+ 模块 {idx + 1}
+                            {section.type && <Badge variant="outline" className="text-xs">{section.type}</Badge>}
+                          </CardTitle>
+                        </div>
+                        {!isConfirmed && (
+                          <RefinePopover
+                            projectId={projectId}
+                            imageType="aPlusSection"
+                            imageIndex={idx}
+                            currentEnContent={section}
+                            currentCnContent={cnSection}
+                            onRefineComplete={handleRefineAplusSection(idx)}
+                          />
+                        )}
                       </div>
                     </CardHeader>
                     <CardContent>
