@@ -145,6 +145,74 @@ describe("Keyword Import for Selling Points", () => {
     });
   });
 
+  describe("Keyword sorting by monthly search volume", () => {
+    const nonNegative = mockKeywords.filter(kw => kw.isNegative !== 1);
+
+    it("should sort by monthly search volume descending", () => {
+      const sorted = [...nonNegative].sort((a, b) => (b.monthlySearchVolume ?? 0) - (a.monthlySearchVolume ?? 0));
+      expect(sorted[0].keyword).toBe("shockproof protection"); // 18000
+      expect(sorted[1].keyword).toBe("waterproof phone case"); // 12000
+      expect(sorted[2].keyword).toBe("outdoor adventure case"); // 7000
+      expect(sorted[3].keyword).toBe("eco-friendly case"); // 5000
+      expect(sorted[4].keyword).toBe("slim design phone case"); // 2000
+      expect(sorted[5].keyword).toBe("competitor brand case"); // 800
+    });
+
+    it("should sort by monthly search volume ascending", () => {
+      const sorted = [...nonNegative].sort((a, b) => (a.monthlySearchVolume ?? 0) - (b.monthlySearchVolume ?? 0));
+      expect(sorted[0].keyword).toBe("competitor brand case"); // 800
+      expect(sorted[1].keyword).toBe("slim design phone case"); // 2000
+      expect(sorted[2].keyword).toBe("eco-friendly case"); // 5000
+      expect(sorted[sorted.length - 1].keyword).toBe("shockproof protection"); // 18000
+    });
+
+    it("should return original order when sort is none", () => {
+      const sortOrder = "none";
+      const result = [...nonNegative];
+      if (sortOrder === "asc") {
+        result.sort((a, b) => (a.monthlySearchVolume ?? 0) - (b.monthlySearchVolume ?? 0));
+      } else if (sortOrder === "desc") {
+        result.sort((a, b) => (b.monthlySearchVolume ?? 0) - (a.monthlySearchVolume ?? 0));
+      }
+      // Original order preserved
+      expect(result[0].keyword).toBe("waterproof phone case");
+      expect(result[1].keyword).toBe("eco-friendly case");
+    });
+
+    it("should handle null/undefined monthlySearchVolume as 0", () => {
+      const withNull = [
+        { ...mockKeywords[0], monthlySearchVolume: null as any },
+        { ...mockKeywords[2], monthlySearchVolume: 18000 },
+        { ...mockKeywords[4], monthlySearchVolume: undefined as any },
+      ];
+      const sorted = [...withNull].sort((a, b) => (b.monthlySearchVolume ?? 0) - (a.monthlySearchVolume ?? 0));
+      expect(sorted[0].monthlySearchVolume).toBe(18000);
+      // null and undefined both treated as 0
+      expect(sorted[1].monthlySearchVolume ?? 0).toBe(0);
+      expect(sorted[2].monthlySearchVolume ?? 0).toBe(0);
+    });
+
+    it("should cycle sort order: none -> desc -> asc -> none", () => {
+      const cycle = (current: string) => {
+        if (current === "none") return "desc";
+        if (current === "desc") return "asc";
+        return "none";
+      };
+      expect(cycle("none")).toBe("desc");
+      expect(cycle("desc")).toBe("asc");
+      expect(cycle("asc")).toBe("none");
+    });
+
+    it("should sort filtered results correctly", () => {
+      // Filter by strategy then sort
+      const filtered = nonNegative.filter(kw => kw.strategyCategory === "core_main");
+      const sorted = [...filtered].sort((a, b) => (a.monthlySearchVolume ?? 0) - (b.monthlySearchVolume ?? 0));
+      expect(sorted).toHaveLength(2);
+      expect(sorted[0].keyword).toBe("waterproof phone case"); // 12000
+      expect(sorted[1].keyword).toBe("shockproof protection"); // 18000
+    });
+  });
+
   describe("Strategy category label mapping", () => {
     it("should map all strategy categories to Chinese labels", () => {
       const strategyLabels: Record<string, string> = {

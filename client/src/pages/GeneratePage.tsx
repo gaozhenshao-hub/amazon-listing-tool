@@ -31,6 +31,7 @@ import {
   Download,
   Filter,
   X,
+  ArrowUpDown,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -92,6 +93,7 @@ export default function GeneratePage() {
   const [kwSearchTerm, setKwSearchTerm] = useState("");
   const [kwFilterStrategy, setKwFilterStrategy] = useState<string>("all");
   const [kwFilterPlacement, setKwFilterPlacement] = useState<string>("all");
+  const [kwSortOrder, setKwSortOrder] = useState<"none" | "asc" | "desc">("none");
   const [selectedKeywordIds, setSelectedKeywordIds] = useState<Set<number>>(new Set());
 
   const { data: project } = trpc.project.getById.useQuery(
@@ -273,10 +275,10 @@ export default function GeneratePage() {
     toast.success("已添加自定义卖点，请编辑并确认");
   };
 
-  // Filtered keyword list for import dialog
+  // Filtered and sorted keyword list for import dialog
   const filteredKeywords = useMemo(() => {
     if (!allKeywords) return [];
-    return allKeywords.filter((kw: any) => {
+    const filtered = allKeywords.filter((kw: any) => {
       if (kw.isNegative === 1) return false;
       if (kwSearchTerm) {
         const search = kwSearchTerm.toLowerCase();
@@ -288,7 +290,13 @@ export default function GeneratePage() {
       if (kwFilterPlacement !== "all" && kw.listingPlacement !== kwFilterPlacement) return false;
       return true;
     });
-  }, [allKeywords, kwSearchTerm, kwFilterStrategy, kwFilterPlacement]);
+    if (kwSortOrder === "asc") {
+      filtered.sort((a: any, b: any) => (a.monthlySearchVolume ?? 0) - (b.monthlySearchVolume ?? 0));
+    } else if (kwSortOrder === "desc") {
+      filtered.sort((a: any, b: any) => (b.monthlySearchVolume ?? 0) - (a.monthlySearchVolume ?? 0));
+    }
+    return filtered;
+  }, [allKeywords, kwSearchTerm, kwFilterStrategy, kwFilterPlacement, kwSortOrder]);
 
   const toggleKeywordSelection = (id: number) => {
     setSelectedKeywordIds(prev => {
@@ -1213,12 +1221,24 @@ export default function GeneratePage() {
                   <option value="search_term">后台Search Term</option>
                 </select>
               </div>
-              {(kwSearchTerm || kwFilterStrategy !== "all" || kwFilterPlacement !== "all") && (
+              <div className="flex items-center gap-1.5">
+                <Label className="text-xs text-muted-foreground whitespace-nowrap">月搜索量:</Label>
+                <Button
+                  variant={kwSortOrder !== "none" ? "secondary" : "outline"}
+                  size="sm"
+                  className="h-7 text-xs px-2 gap-1"
+                  onClick={() => setKwSortOrder(prev => prev === "none" ? "desc" : prev === "desc" ? "asc" : "none")}
+                >
+                  <ArrowUpDown className="h-3 w-3" />
+                  {kwSortOrder === "desc" ? "降序" : kwSortOrder === "asc" ? "升序" : "排序"}
+                </Button>
+              </div>
+              {(kwSearchTerm || kwFilterStrategy !== "all" || kwFilterPlacement !== "all" || kwSortOrder !== "none") && (
                 <Button
                   variant="ghost"
                   size="sm"
                   className="h-7 text-xs px-2"
-                  onClick={() => { setKwSearchTerm(""); setKwFilterStrategy("all"); setKwFilterPlacement("all"); }}
+                  onClick={() => { setKwSearchTerm(""); setKwFilterStrategy("all"); setKwFilterPlacement("all"); setKwSortOrder("none"); }}
                 >
                   <X className="h-3 w-3 mr-1" />清除筛选
                 </Button>
