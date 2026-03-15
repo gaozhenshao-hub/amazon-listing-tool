@@ -9,6 +9,7 @@ import {
   ArrowLeft, BarChart3, FileText, Loader2, Package, Star, Target, Users,
   Wrench, ClipboardCheck, Brain, RefreshCw, Globe, Upload, CheckCircle2,
   AlertCircle, DollarSign, Download, Lock, Unlock, ChevronRight,
+  Edit2, Save, X, ArrowDownUp, Copy,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -503,9 +504,11 @@ function LockedPhaseCard() {
   );
 }
 
-/* ─── Profile Section (8 Sub-modules) ───────────────────── */
+/* ─── Profile Section (8 Sub-modules) with Rich Text Editor ── */
 function ProfileSection({ projectId, profile }: { projectId: number; profile: any }) {
   const [activeSection, setActiveSection] = useState("appearance");
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState("");
   const utils = trpc.useUtils();
 
   const generateMutation = trpc.devProfile.generateSuggestions.useMutation({
@@ -516,9 +519,19 @@ function ProfileSection({ projectId, profile }: { projectId: number; profile: an
     onError: (err: any) => toast.error(`生成失败: ${err.message}`),
   });
 
+  const saveMutation = trpc.devProfile.saveSection.useMutation({
+    onSuccess: () => {
+      toast.success("已保存编辑内容");
+      setIsEditing(false);
+      utils.devProfile.get.invalidate({ projectId });
+    },
+    onError: (err: any) => toast.error(`保存失败: ${err.message}`),
+  });
+
   const confirmMutation = trpc.devProfile.confirmSection.useMutation({
     onSuccess: () => {
       toast.success("已确认并锁定");
+      setIsEditing(false);
       utils.devProfile.get.invalidate({ projectId });
     },
     onError: (err: any) => toast.error(`确认失败: ${err.message}`),
@@ -540,10 +553,60 @@ function ProfileSection({ projectId, profile }: { projectId: number; profile: an
   const aiSuggestion = profile?.[currentSection.aiField];
   const userData = profile?.[currentSection.dataField];
 
+  // Helper to format content for display
+  const formatContent = (raw: any): string => {
+    if (!raw) return "";
+    if (typeof raw === "string") {
+      try {
+        return JSON.stringify(JSON.parse(raw), null, 2);
+      } catch {
+        return raw;
+      }
+    }
+    return JSON.stringify(raw, null, 2);
+  };
+
+  // Start editing with current best content
+  const handleStartEdit = () => {
+    const content = userData || aiSuggestion || "";
+    setEditContent(formatContent(content));
+    setIsEditing(true);
+  };
+
+  // Copy AI suggestion to editor
+  const handleCopyAiToEditor = () => {
+    setEditContent(formatContent(aiSuggestion));
+    toast.success("AI建议已复制到编辑器");
+  };
+
+  // Save edited content
+  const handleSave = () => {
+    saveMutation.mutate({ projectId, section: activeSection as any, data: editContent });
+  };
+
+  // Confirm and lock with current editor content
+  const handleConfirmLock = () => {
+    const data = isEditing ? editContent : (userData || aiSuggestion || "{}");
+    const finalData = typeof data === "string" ? data : JSON.stringify(data);
+    confirmMutation.mutate({ projectId, section: activeSection as any, data: finalData });
+  };
+
+  // Reset editing state when switching sections
+  const handleSectionSwitch = (key: string) => {
+    setActiveSection(key);
+    setIsEditing(false);
+    setEditContent("");
+  };
+
+  const confirmedCount = sections.filter(s => profile?.[s.confirmedField] === 1).length;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold flex items-center gap-2"><Brain className="h-4 w-4" />产品画像 · 8子模块</h3>
+        <h3 className="font-semibold flex items-center gap-2">
+          <Brain className="h-4 w-4" />产品画像 · 8子模块
+          <Badge variant="outline" className="text-xs ml-2">{confirmedCount}/8 已确认</Badge>
+        </h3>
       </div>
 
       {/* Sub-module Navigation */}
@@ -556,7 +619,7 @@ function ProfileSection({ projectId, profile }: { projectId: number; profile: an
               variant={activeSection === s.key ? "default" : "outline"}
               size="sm"
               className="gap-1 text-xs"
-              onClick={() => setActiveSection(s.key)}
+              onClick={() => handleSectionSwitch(s.key)}
             >
               <span>{s.icon}</span>
               {s.label}
@@ -573,7 +636,8 @@ function ProfileSection({ projectId, profile }: { projectId: number; profile: an
             <CardTitle className="text-sm flex items-center gap-2">
               <span className="text-lg">{currentSection.icon}</span>
               {currentSection.label}
-              {isConfirmed && <Badge className="bg-emerald-100 text-emerald-700 text-xs">已确认</Badge>}
+              {isConfirmed && <Badge className="bg-emerald-100 text-emerald-700 text-xs">已确认锁定</Badge>}
+              {isEditing && !isConfirmed && <Badge className="bg-amber-100 text-amber-700 text-xs">编辑中</Badge>}
             </CardTitle>
             <div className="flex gap-2">
               {!isConfirmed && (
@@ -588,14 +652,27 @@ function ProfileSection({ projectId, profile }: { projectId: number; profile: an
                     {generateMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Brain className="h-3 w-3" />}
                     AI生成建议
                   </Button>
+                  {(aiSuggestion || userData) && !isEditing && (
+                    <Button size="sm" variant="outline" onClick={handleStartEdit} className="gap-1 text-xs">
+                      <Edit2 className="h-3 w-3" />编辑修改
+                    </Button>
+                  )}
+                  {isEditing && (
+                    <>
+                      <Button size="sm" variant="outline" onClick={handleSave} disabled={saveMutation.isPending} className="gap-1 text-xs">
+                        {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                        保存
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setIsEditing(false)} className="gap-1 text-xs">
+                        <X className="h-3 w-3" />取消
+                      </Button>
+                    </>
+                  )}
                   {(aiSuggestion || userData) && (
                     <Button
                       size="sm"
                       className="gap-1 text-xs bg-emerald-600 hover:bg-emerald-700"
-                      onClick={() => {
-                        const data = userData || aiSuggestion || "{}";
-                        confirmMutation.mutate({ projectId, section: activeSection as any, data: typeof data === "string" ? data : JSON.stringify(data) });
-                      }}
+                      onClick={handleConfirmLock}
                       disabled={confirmMutation.isPending}
                     >
                       {confirmMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
@@ -608,30 +685,66 @@ function ProfileSection({ projectId, profile }: { projectId: number; profile: an
           </div>
         </CardHeader>
         <CardContent>
-          {aiSuggestion || userData ? (
+          {isEditing && !isConfirmed ? (
+            /* ─── Rich Text Editor Mode ─── */
+            <div className="space-y-3">
+              {aiSuggestion && (
+                <div className="p-2 rounded-lg bg-blue-50/50 border border-blue-100">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs font-medium text-blue-700">AI建议参考</p>
+                    <Button size="sm" variant="ghost" onClick={handleCopyAiToEditor} className="h-6 gap-1 text-xs text-blue-600 hover:text-blue-800">
+                      <Copy className="h-3 w-3" />复制到编辑器
+                    </Button>
+                  </div>
+                  <pre className="text-xs whitespace-pre-wrap text-blue-900 max-h-32 overflow-y-auto">
+                    {formatContent(aiSuggestion)}
+                  </pre>
+                </div>
+              )}
+              <div className="relative">
+                <textarea
+                  className="w-full min-h-[300px] p-3 text-sm font-mono border rounded-lg bg-background resize-y focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  placeholder="在此编辑内容...\n\n支持JSON格式或纯文本。\n您可以在AI建议的基础上进行修改、补充或重写。"
+                />
+                <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
+                  {editContent.length} 字符
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">提示：您可以直接修改AI建议的内容，也可以完全重写。保存后点击"确认锁定"将永久保留此版本。</p>
+            </div>
+          ) : aiSuggestion || userData ? (
+            /* ─── Display Mode ─── */
             <div className="space-y-3">
               {aiSuggestion && (
                 <div className="p-3 rounded-lg bg-blue-50/50 border border-blue-100">
                   <p className="text-xs font-medium text-blue-700 mb-2">AI建议</p>
                   <pre className="text-xs whitespace-pre-wrap text-blue-900 max-h-64 overflow-y-auto">
-                    {typeof aiSuggestion === "string" ? aiSuggestion : JSON.stringify(JSON.parse(aiSuggestion), null, 2)}
+                    {formatContent(aiSuggestion)}
                   </pre>
                 </div>
               )}
-              {userData && (
-                <div className="p-3 rounded-lg bg-gray-50 border">
-                  <p className="text-xs font-medium text-gray-700 mb-2">当前数据</p>
-                  <pre className="text-xs whitespace-pre-wrap max-h-64 overflow-y-auto">
-                    {typeof userData === "string" ? userData : JSON.stringify(userData, null, 2)}
+              {userData && userData !== aiSuggestion && (
+                <div className="p-3 rounded-lg bg-amber-50/50 border border-amber-100">
+                  <p className="text-xs font-medium text-amber-700 mb-2">用户编辑版本</p>
+                  <pre className="text-xs whitespace-pre-wrap text-amber-900 max-h-64 overflow-y-auto">
+                    {formatContent(userData)}
                   </pre>
+                </div>
+              )}
+              {isConfirmed && (
+                <div className="p-2 rounded-lg bg-emerald-50/50 border border-emerald-100 text-center">
+                  <p className="text-xs text-emerald-700">此模块已确认锁定，数据可被其他模块引用</p>
                 </div>
               )}
             </div>
           ) : (
+            /* ─── Empty State ─── */
             <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
               <Brain className="h-8 w-8 mb-2 opacity-30" />
               <p className="text-sm">点击"AI生成建议"获取{currentSection.label}方案</p>
-              <p className="text-xs mt-1">AI将基于竞品数据和市场分析给出专业建议</p>
+              <p className="text-xs mt-1">AI将基于竞品数据和市场分析给出专业建议，您可在此基础上编辑修改</p>
             </div>
           )}
         </CardContent>
@@ -837,34 +950,54 @@ function TestReportViewer({ testReport, projectId }: { testReport: any; projectI
 function ProfitCalculator({ projectId, bom }: { projectId: number; bom: any[] }) {
   const [params, setParams] = useState({
     sellingPrice: 29.99,
-    productCost: 0,
+    productCostCny: 0,
     shippingCost: 3.5,
     fbaFee: 5.0,
     referralFeeRate: 15,
     advertisingCost: 3.0,
     otherCosts: 1.0,
-    totalMoldCost: 0,
+    totalMoldCostCny: 0,
+    exchangeRate: 0.137,
   });
 
   const { data: bomCostSummary } = trpc.devBom.getBomCostSummary.useQuery({ projectId });
+  const { data: rateData } = trpc.devBom.getExchangeRate.useQuery();
 
   // Auto-fill from BOM
   useMemo(() => {
     if (bomCostSummary) {
       setParams(prev => ({
         ...prev,
-        productCost: bomCostSummary.totalMaterialCost || prev.productCost,
-        totalMoldCost: bomCostSummary.totalMoldCost || prev.totalMoldCost,
+        productCostCny: bomCostSummary.totalMaterialCost || prev.productCostCny,
+        totalMoldCostCny: bomCostSummary.totalMoldCost || prev.totalMoldCostCny,
       }));
     }
   }, [bomCostSummary]);
 
+  // Auto-fill exchange rate
+  useMemo(() => {
+    if (rateData?.rate) {
+      setParams(prev => ({ ...prev, exchangeRate: rateData.rate }));
+    }
+  }, [rateData]);
+
   const batchMutation = trpc.devBom.batchSimulate.useMutation();
+
+  const productCostUsd = params.productCostCny * params.exchangeRate;
+  const moldCostUsd = params.totalMoldCostCny * params.exchangeRate;
 
   const handleSimulate = () => {
     batchMutation.mutate({
       projectId,
-      ...params,
+      sellingPrice: params.sellingPrice,
+      productCostCny: params.productCostCny,
+      exchangeRate: params.exchangeRate,
+      shippingCost: params.shippingCost,
+      fbaFee: params.fbaFee,
+      referralFeeRate: params.referralFeeRate,
+      advertisingCost: params.advertisingCost,
+      otherCosts: params.otherCosts,
+      totalMoldCostCny: params.totalMoldCostCny,
       quantities: [100, 500, 1000, 5000],
     });
   };
@@ -873,37 +1006,96 @@ function ProfitCalculator({ projectId, bom }: { projectId: number; bom: any[] })
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold flex items-center gap-2"><DollarSign className="h-4 w-4" />利润计算器</h3>
-        {bomCostSummary && (
-          <Badge variant="outline" className="text-xs">
-            BOM成本自动填入: ¥{bomCostSummary.totalMaterialCost} ({bomCostSummary.bomItemCount}项)
+        <div className="flex items-center gap-2">
+          {bomCostSummary && (
+            <Badge variant="outline" className="text-xs">
+              BOM自动填入: ¥{bomCostSummary.totalMaterialCost} ({bomCostSummary.bomItemCount}项)
+            </Badge>
+          )}
+          <Badge variant="secondary" className="text-xs gap-1">
+            <ArrowDownUp className="h-3 w-3" />
+            1 CNY = {params.exchangeRate.toFixed(4)} USD
+            {rateData?.source === "fallback" && <span className="text-amber-600">(离线)</span>}
           </Badge>
-        )}
+        </div>
       </div>
+
+      {/* Exchange Rate Card */}
+      <Card className="bg-gradient-to-r from-blue-50/50 to-indigo-50/50 border-blue-100">
+        <CardContent className="p-3">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-4 flex-wrap">
+              <div>
+                <p className="text-xs text-muted-foreground">汇率 (CNY → USD)</p>
+                <input
+                  type="number"
+                  step="0.0001"
+                  className="w-28 mt-0.5 px-2 py-1 text-sm border rounded-md bg-background font-mono"
+                  value={params.exchangeRate}
+                  onChange={(e) => setParams(prev => ({ ...prev, exchangeRate: parseFloat(e.target.value) || 0 }))}
+                />
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground">产品成本换算</p>
+                <p className="text-sm font-medium">¥{params.productCostCny.toFixed(2)} → ${productCostUsd.toFixed(2)}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground">模具费换算</p>
+                <p className="text-sm font-medium">¥{params.totalMoldCostCny.toFixed(2)} → ${moldCostUsd.toFixed(2)}</p>
+              </div>
+            </div>
+            {rateData && (
+              <p className="text-xs text-muted-foreground">
+                数据源: {rateData.source} · {new Date(rateData.updatedAt).toLocaleString()}
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="p-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[
-              { label: "售价($)", key: "sellingPrice" },
-              { label: "产品成本(¥)", key: "productCost" },
-              { label: "头程运费($)", key: "shippingCost" },
-              { label: "FBA费用($)", key: "fbaFee" },
-              { label: "佣金比例(%)", key: "referralFeeRate" },
-              { label: "广告费($)", key: "advertisingCost" },
-              { label: "其他费用($)", key: "otherCosts" },
-              { label: "模具总费(¥)", key: "totalMoldCost" },
-            ].map(field => (
-              <div key={field.key}>
-                <label className="text-xs text-muted-foreground">{field.label}</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="w-full mt-1 px-2 py-1.5 text-sm border rounded-md bg-background"
-                  value={(params as any)[field.key]}
-                  onChange={(e) => setParams(prev => ({ ...prev, [field.key]: parseFloat(e.target.value) || 0 }))}
-                />
-              </div>
-            ))}
+            <div>
+              <label className="text-xs text-muted-foreground">售价 ($)</label>
+              <input type="number" step="0.01" className="w-full mt-1 px-2 py-1.5 text-sm border rounded-md bg-background"
+                value={params.sellingPrice} onChange={(e) => setParams(prev => ({ ...prev, sellingPrice: parseFloat(e.target.value) || 0 }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">产品成本 (¥) <span className="text-blue-500">= ${productCostUsd.toFixed(2)}</span></label>
+              <input type="number" step="0.01" className="w-full mt-1 px-2 py-1.5 text-sm border rounded-md bg-background"
+                value={params.productCostCny} onChange={(e) => setParams(prev => ({ ...prev, productCostCny: parseFloat(e.target.value) || 0 }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">头程运费 ($)</label>
+              <input type="number" step="0.01" className="w-full mt-1 px-2 py-1.5 text-sm border rounded-md bg-background"
+                value={params.shippingCost} onChange={(e) => setParams(prev => ({ ...prev, shippingCost: parseFloat(e.target.value) || 0 }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">FBA费用 ($)</label>
+              <input type="number" step="0.01" className="w-full mt-1 px-2 py-1.5 text-sm border rounded-md bg-background"
+                value={params.fbaFee} onChange={(e) => setParams(prev => ({ ...prev, fbaFee: parseFloat(e.target.value) || 0 }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">佣金比例 (%)</label>
+              <input type="number" step="0.1" className="w-full mt-1 px-2 py-1.5 text-sm border rounded-md bg-background"
+                value={params.referralFeeRate} onChange={(e) => setParams(prev => ({ ...prev, referralFeeRate: parseFloat(e.target.value) || 0 }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">广告费 ($)</label>
+              <input type="number" step="0.01" className="w-full mt-1 px-2 py-1.5 text-sm border rounded-md bg-background"
+                value={params.advertisingCost} onChange={(e) => setParams(prev => ({ ...prev, advertisingCost: parseFloat(e.target.value) || 0 }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">其他费用 ($)</label>
+              <input type="number" step="0.01" className="w-full mt-1 px-2 py-1.5 text-sm border rounded-md bg-background"
+                value={params.otherCosts} onChange={(e) => setParams(prev => ({ ...prev, otherCosts: parseFloat(e.target.value) || 0 }))} />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">模具总费 (¥) <span className="text-blue-500">= ${moldCostUsd.toFixed(2)}</span></label>
+              <input type="number" step="0.01" className="w-full mt-1 px-2 py-1.5 text-sm border rounded-md bg-background"
+                value={params.totalMoldCostCny} onChange={(e) => setParams(prev => ({ ...prev, totalMoldCostCny: parseFloat(e.target.value) || 0 }))} />
+            </div>
           </div>
           <Button className="mt-4 w-full gap-2" onClick={handleSimulate} disabled={batchMutation.isPending}>
             {batchMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
@@ -914,24 +1106,33 @@ function ProfitCalculator({ projectId, bom }: { projectId: number; bom: any[] })
 
       {batchMutation.data && (
         <Card>
-          <CardHeader><CardTitle className="text-sm">批量模拟结果</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle className="text-sm flex items-center justify-between">
+              批量模拟结果
+              <Badge variant="outline" className="text-xs font-normal">汇率: 1 CNY = {batchMutation.data.exchangeRate.toFixed(4)} USD</Badge>
+            </CardTitle>
+          </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="border-b bg-muted/50">
                   <th className="text-right p-3 font-medium">订单量</th>
-                  <th className="text-right p-3 font-medium">模具分摊/件</th>
-                  <th className="text-right p-3 font-medium">单件成本</th>
-                  <th className="text-right p-3 font-medium">单件利润</th>
+                  <th className="text-right p-3 font-medium">模具分摊(¥)</th>
+                  <th className="text-right p-3 font-medium">模具分摊($)</th>
+                  <th className="text-right p-3 font-medium">产品成本($)</th>
+                  <th className="text-right p-3 font-medium">单件总成本($)</th>
+                  <th className="text-right p-3 font-medium">单件利润($)</th>
                   <th className="text-right p-3 font-medium">利润率</th>
                   <th className="text-right p-3 font-medium">ROI</th>
-                  <th className="text-right p-3 font-medium">总利润</th>
+                  <th className="text-right p-3 font-medium">总利润($)</th>
                 </tr></thead>
                 <tbody>
                   {batchMutation.data.simulations.map((sim: any) => (
                     <tr key={sim.quantity} className="border-b last:border-0">
                       <td className="p-3 text-right font-medium">{sim.quantity.toLocaleString()}</td>
-                      <td className="p-3 text-right">¥{sim.moldPerUnit}</td>
+                      <td className="p-3 text-right text-muted-foreground">¥{sim.moldPerUnitCny}</td>
+                      <td className="p-3 text-right">${sim.moldPerUnit}</td>
+                      <td className="p-3 text-right">${sim.productCostUsd}</td>
                       <td className="p-3 text-right">${sim.totalUnitCost}</td>
                       <td className={`p-3 text-right font-medium ${sim.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}>${sim.profit}</td>
                       <td className={`p-3 text-right ${sim.profitMargin >= 0 ? "text-emerald-600" : "text-red-600"}`}>{sim.profitMargin}%</td>

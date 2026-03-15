@@ -27,6 +27,9 @@ import {
   ArrowRight,
   Calendar,
   Globe,
+  BarChart3,
+  Rocket,
+  CheckCircle2,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -41,6 +44,12 @@ const statusOptions = [
   { value: "archived", label: "已归档" },
 ];
 
+const phaseOptions = [
+  { value: "all", label: "全部阶段" },
+  { value: "market_analysis", label: "市场分析" },
+  { value: "project_execution", label: "项目落地" },
+];
+
 const statusLabel: Record<string, { text: string; color: string }> = {
   draft: { text: "草稿", color: "bg-gray-500/10 text-gray-600" },
   data_collection: { text: "数据采集", color: "bg-blue-500/10 text-blue-600" },
@@ -50,11 +59,17 @@ const statusLabel: Record<string, { text: string; color: string }> = {
   archived: { text: "已归档", color: "bg-gray-500/10 text-gray-500" },
 };
 
+const phaseLabel: Record<string, { text: string; icon: any; color: string }> = {
+  market_analysis: { text: "市场分析", icon: BarChart3, color: "bg-blue-500/10 text-blue-700 border-blue-200" },
+  project_execution: { text: "项目落地", icon: Rocket, color: "bg-emerald-500/10 text-emerald-700 border-emerald-200" },
+};
+
 export default function DevProjects() {
   const [, setLocation] = useLocation();
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [phaseFilter, setPhaseFilter] = useState("all");
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const { data: projects, isLoading } = trpc.devProject.list.useQuery();
@@ -75,9 +90,23 @@ export default function DevProjects() {
       const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase()) ||
         (p.keywords ?? "").toLowerCase().includes(search.toLowerCase());
       const matchStatus = statusFilter === "all" || p.status === statusFilter;
-      return matchSearch && matchStatus;
+      const projectPhase = (p as any).phase || "market_analysis";
+      const matchPhase = phaseFilter === "all" || projectPhase === phaseFilter;
+      return matchSearch && matchStatus && matchPhase;
     });
-  }, [projects, search, statusFilter]);
+  }, [projects, search, statusFilter, phaseFilter]);
+
+  // Phase stats
+  const phaseStats = useMemo(() => {
+    if (!projects) return { total: 0, market_analysis: 0, project_execution: 0 };
+    let ma = 0, pe = 0;
+    projects.forEach(p => {
+      const phase = (p as any).phase || "market_analysis";
+      if (phase === "project_execution") pe++;
+      else ma++;
+    });
+    return { total: projects.length, market_analysis: ma, project_execution: pe };
+  }, [projects]);
 
   return (
     <div className="max-w-6xl mx-auto space-y-5">
@@ -88,6 +117,48 @@ export default function DevProjects() {
           新建项目
         </Button>
       </div>
+
+      {/* Phase Stats Cards */}
+      {!isLoading && projects && projects.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <Card className={`cursor-pointer transition-all ${phaseFilter === "all" ? "ring-2 ring-primary" : "hover:shadow-md"}`}
+            onClick={() => setPhaseFilter("all")}>
+            <CardContent className="p-3 flex items-center gap-3">
+              <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                <FolderOpen className="h-4 w-4 text-primary" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">全部项目</p>
+                <p className="text-lg font-bold">{phaseStats.total}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className={`cursor-pointer transition-all ${phaseFilter === "market_analysis" ? "ring-2 ring-blue-500" : "hover:shadow-md"}`}
+            onClick={() => setPhaseFilter(phaseFilter === "market_analysis" ? "all" : "market_analysis")}>
+            <CardContent className="p-3 flex items-center gap-3">
+              <div className="h-9 w-9 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                <BarChart3 className="h-4 w-4 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">市场分析阶段</p>
+                <p className="text-lg font-bold text-blue-600">{phaseStats.market_analysis}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className={`cursor-pointer transition-all ${phaseFilter === "project_execution" ? "ring-2 ring-emerald-500" : "hover:shadow-md"}`}
+            onClick={() => setPhaseFilter(phaseFilter === "project_execution" ? "all" : "project_execution")}>
+            <CardContent className="p-3 flex items-center gap-3">
+              <div className="h-9 w-9 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                <Rocket className="h-4 w-4 text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">项目落地阶段</p>
+                <p className="text-lg font-bold text-emerald-600">{phaseStats.project_execution}</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex items-center gap-3">
@@ -110,6 +181,16 @@ export default function DevProjects() {
             ))}
           </SelectContent>
         </Select>
+        <Select value={phaseFilter} onValueChange={setPhaseFilter}>
+          <SelectTrigger className="w-[140px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {phaseOptions.map(o => (
+              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Project list */}
@@ -123,13 +204,17 @@ export default function DevProjects() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <FolderOpen className="h-12 w-12 mb-3 opacity-30" />
-            <p className="text-sm">{search || statusFilter !== "all" ? "没有匹配的项目" : "暂无项目，点击\"新建项目\"开始"}</p>
+            <p className="text-sm">{search || statusFilter !== "all" || phaseFilter !== "all" ? "没有匹配的项目" : "暂无项目，点击\"新建项目\"开始"}</p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-2">
           {filtered.map(p => {
             const st = statusLabel[p.status] ?? { text: p.status, color: "" };
+            const projectPhase = (p as any).phase || "market_analysis";
+            const ph = phaseLabel[projectPhase] ?? phaseLabel.market_analysis;
+            const PhaseIcon = ph.icon;
+            const isApproved = !!(p as any).approvedAt;
             return (
               <Card
                 key={p.id}
@@ -142,7 +227,12 @@ export default function DevProjects() {
                       <FolderOpen className="h-5 w-5 text-primary" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="font-semibold truncate">{p.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold truncate">{p.name}</p>
+                        {isApproved && (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                        )}
+                      </div>
                       <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                         {p.targetMarket && (
                           <span className="flex items-center gap-1">
@@ -160,7 +250,13 @@ export default function DevProjects() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
+                    {/* Phase Badge */}
+                    <Badge variant="outline" className={`text-xs gap-1 ${ph.color}`}>
+                      <PhaseIcon className="h-3 w-3" />
+                      {ph.text}
+                    </Badge>
+                    {/* Status Badge */}
                     <Badge variant="secondary" className={`text-xs ${st.color}`}>
                       {st.text}
                     </Badge>

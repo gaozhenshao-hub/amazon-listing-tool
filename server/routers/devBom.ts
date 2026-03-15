@@ -229,37 +229,59 @@ ${existingBom.length > 0 ? `已有BOM: ${existingBom.map(b => b.partName).join("
     }),
 
   // Batch profit simulation with different order quantities
+  // Get exchange rate CNY→USD
+  getExchangeRate: protectedProcedure
+    .query(async () => {
+      try {
+        const res = await fetch("https://open.er-api.com/v6/latest/CNY");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.rates?.USD) {
+            return { rate: data.rates.USD, source: "er-api.com", updatedAt: Date.now() };
+          }
+        }
+      } catch {}
+      // Fallback rate
+      return { rate: 0.137, source: "fallback", updatedAt: Date.now() };
+    }),
+
   batchSimulate: protectedProcedure
     .input(z.object({
       projectId: z.number(),
       sellingPrice: z.number(),
-      productCost: z.number(), // from BOM
+      productCostCny: z.number(), // BOM cost in CNY
+      exchangeRate: z.number(), // CNY to USD rate
       shippingCost: z.number(),
       fbaFee: z.number().optional(),
       referralFeeRate: z.number().optional(), // percentage
       advertisingCost: z.number().optional(),
       otherCosts: z.number().optional(),
-      totalMoldCost: z.number().optional(),
+      totalMoldCostCny: z.number().optional(), // mold cost in CNY
       quantities: z.array(z.number()).default([100, 500, 1000, 5000]),
     }))
     .mutation(async ({ ctx, input }) => {
+      const rate = input.exchangeRate;
+      const productCostUsd = input.productCostCny * rate;
+      const totalMoldCostUsd = (input.totalMoldCostCny ?? 0) * rate;
       const referralRate = (input.referralFeeRate ?? 15) / 100;
       const referralFee = input.sellingPrice * referralRate;
       const fbaFee = input.fbaFee ?? 0;
       const advertisingCost = input.advertisingCost ?? 0;
       const otherCosts = input.otherCosts ?? 0;
-      const totalMoldCost = input.totalMoldCost ?? 0;
 
       const simulations = input.quantities.map(qty => {
-        const moldPerUnit = qty > 0 ? totalMoldCost / qty : 0;
-        const totalUnitCost = input.productCost + moldPerUnit + input.shippingCost + referralFee + fbaFee + advertisingCost + otherCosts;
+        const moldPerUnitUsd = qty > 0 ? totalMoldCostUsd / qty : 0;
+        const moldPerUnitCny = qty > 0 ? (input.totalMoldCostCny ?? 0) / qty : 0;
+        const totalUnitCost = productCostUsd + moldPerUnitUsd + input.shippingCost + referralFee + fbaFee + advertisingCost + otherCosts;
         const profit = input.sellingPrice - totalUnitCost;
         const profitMargin = input.sellingPrice > 0 ? (profit / input.sellingPrice) * 100 : 0;
         const roi = totalUnitCost > 0 ? (profit / totalUnitCost) * 100 : 0;
 
         return {
           quantity: qty,
-          moldPerUnit: Math.round(moldPerUnit * 100) / 100,
+          moldPerUnitCny: Math.round(moldPerUnitCny * 100) / 100,
+          moldPerUnit: Math.round(moldPerUnitUsd * 100) / 100,
+          productCostUsd: Math.round(productCostUsd * 100) / 100,
           totalUnitCost: Math.round(totalUnitCost * 100) / 100,
           profit: Math.round(profit * 100) / 100,
           profitMargin: Math.round(profitMargin * 100) / 100,
@@ -272,15 +294,18 @@ ${existingBom.length > 0 ? `已有BOM: ${existingBom.map(b => b.partName).join("
 
       return {
         simulations,
+        exchangeRate: rate,
         baseParams: {
           sellingPrice: input.sellingPrice,
-          productCost: input.productCost,
+          productCostCny: input.productCostCny,
+          productCostUsd: Math.round(productCostUsd * 100) / 100,
           shippingCost: input.shippingCost,
           referralFee: Math.round(referralFee * 100) / 100,
           fbaFee,
           advertisingCost,
           otherCosts,
-          totalMoldCost,
+          totalMoldCostCny: input.totalMoldCostCny ?? 0,
+          totalMoldCostUsd: Math.round(totalMoldCostUsd * 100) / 100,
         },
       };
     }),
