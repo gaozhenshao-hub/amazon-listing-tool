@@ -20,6 +20,7 @@ import {
   devGlobalSuppliers, InsertDevGlobalSupplier,
   devAnalysisStages, InsertDevAnalysisStage,
   devProductTags, InsertDevProductTag,
+  devOffsiteAnalyses, InsertDevOffsiteAnalysis,
 } from "../drizzle/schema";
 import { getDb } from "./db";
 
@@ -590,4 +591,60 @@ export async function getDevAllReviews(projectId: number) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(devReviews).where(eq(devReviews.projectId, projectId));
+}
+
+
+// ─── Off-site Analysis Helpers ────────────────────────────────
+export async function createOffsiteAnalysis(data: InsertDevOffsiteAnalysis) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(devOffsiteAnalyses).values(data);
+  return result[0].insertId;
+}
+
+export async function getOffsiteAnalysesByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(devOffsiteAnalyses)
+    .where(eq(devOffsiteAnalyses.projectId, projectId))
+    .orderBy(devOffsiteAnalyses.createdAt);
+}
+
+export async function getOffsiteAnalysesBySource(projectId: number, sourceType: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(devOffsiteAnalyses)
+    .where(and(
+      eq(devOffsiteAnalyses.projectId, projectId),
+      eq(devOffsiteAnalyses.sourceType, sourceType as any)
+    ))
+    .orderBy(devOffsiteAnalyses.createdAt);
+}
+
+export async function getOffsiteAnalysisById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(devOffsiteAnalyses)
+    .where(eq(devOffsiteAnalyses.id, id));
+  return rows[0] ?? null;
+}
+
+export async function updateOffsiteAnalysis(id: number, data: Partial<{
+  status: string;
+  rawData: any;
+  aiAnalysis: string;
+  aiAnalysisConfirmed: number;
+  editedAnalysis: string;
+  errorMessage: string;
+  updatedAt: number;
+}>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(devOffsiteAnalyses).set(data as any).where(eq(devOffsiteAnalyses.id, id));
+}
+
+export async function deleteOffsiteAnalysis(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(devOffsiteAnalyses).where(eq(devOffsiteAnalyses.id, id));
 }

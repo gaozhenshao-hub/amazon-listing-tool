@@ -545,3 +545,35 @@
 - [x] 前端: 统一的阶段分析组件(数据区+AI解读区+操作栏)
 - [x] 前端: 确认锁定机制(状态管理+返回修改提示)
 - [x] Tests: 编写相关测试 (685测试全部通过)
+
+## 模块一站外分析功能 (Off-Site Analysis - 2026-03-15)
+
+### 数据库 + 后端基础
+- [x] DB: 新建dev_offsite_analyses表（站外分析任务管理，含sourceType/keyword/status/rawData/aiAnalysis/editedAnalysis/confirmed）
+- [x] DB: 迁移已执行（dev_offsite_analyses表已创建）
+- [x] 后端: 站外数据抓取服务层（YouTube/TikTok/Reddit/SimilarWeb Data API对接）
+- [x] 后端: Google Trends抓取与分析接口
+- [x] 后端: YouTube/TikTok KOL内容抓取与分析接口
+- [x] 后端: Facebook竞品推广抓取与分析接口
+- [x] 后端: 独立站竞品调研抓取与分析接口（SimilarWeb集成）
+- [x] 后端: Reddit帖子及评论抓取与分析接口
+- [x] 后端: 众筹网站新品趋势抓取与分析接口
+- [x] 后端: AI站外分析提示词（7个数据源+综合总结共8个专业分析提示词）
+
+### 前端
+- [x] 前端: DevOffsiteAnalysis主页面（7个数据源左侧导航+搜索+结果列表）
+- [x] 前端: Google Trends分析（关键词输入+AI解读+编辑确认）
+- [x] 前端: YouTube/TikTok分析（关键词输入+AI解读+编辑确认）
+- [x] 前端: Facebook分析（关键词输入+AI解读+编辑确认）
+- [x] 前端: 独立站分析（URL/关键词输入+SimilarWeb数据+AI解读+编辑确认）
+- [x] 前端: Reddit分析（关键词输入+AI解读+编辑确认）
+- [x] 前端: 众筹网站分析（关键词输入+AI解读+编辑确认）
+
+### 导航调整
+- [x] 前端: 调整项目详情页导航顺序（概览→数据管理→站外分析→分析报告→产品画像→评分→BOM→说明书→测试报告）
+- [x] 前端: 站外分析路由注册（/dev/project/:id/offsite）
+
+### 测试
+- [x] Tests: 编写站外分析相关测试（16个测试：提示词、Schema、路由、DB helpers、集成）
+- [x] 后端: 使用用户提供的Reddit分析提示词（市场研究分析师角色+痛点/需求/客户语言分析）
+- [x] 全部701个测试通过

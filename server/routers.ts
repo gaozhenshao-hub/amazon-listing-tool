@@ -20,6 +20,7 @@ import { devScoringRouter } from "./routers/devScoring";
 import { devProfileRouter } from "./routers/devProfile";
 import { devBomRouter } from "./routers/devBom";
 import { devManualRouter } from "./routers/devManual";
+import { offsiteAnalysisRouter } from "./routers/offsiteAnalysis";
 // Image Workflow
 import { imageWorkflowRouter } from "./routers/imageWorkflow";
 // Module 5: Knowledge Base
@@ -59,6 +60,7 @@ export const appRouter = router({
   devProfile: devProfileRouter,
   devBom: devBomRouter,
   devManual: devManualRouter,
+  offsiteAnalysis: offsiteAnalysisRouter,
   // Image Workflow
   imageWorkflow: imageWorkflowRouter,
   // Module 5: Knowledge Base

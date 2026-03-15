@@ -1,4 +1,4 @@
-import { decimal, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { bigint, decimal, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -949,3 +949,26 @@ export const imageWorkflowSessions = mysqlTable("image_workflow_sessions", {
 
 export type ImageWorkflowSession = typeof imageWorkflowSessions.$inferSelect;
 export type InsertImageWorkflowSession = typeof imageWorkflowSessions.$inferInsert;
+
+
+// Off-site analysis table - stores analysis tasks for external platforms
+export const devOffsiteAnalyses = mysqlTable("dev_offsite_analyses", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("project_id").notNull(),
+  userId: varchar("user_id", { length: 255 }).notNull(),
+  sourceType: mysqlEnum("source_type", [
+    "google_trends", "youtube", "tiktok", "facebook",
+    "independent_site", "reddit", "crowdfunding"
+  ]).notNull(),
+  keyword: varchar("keyword", { length: 500 }).notNull(),
+  status: mysqlEnum("status", ["pending", "running", "completed", "failed"]).notNull().default("pending"),
+  rawData: json("raw_data"),
+  aiAnalysis: text("ai_analysis"),
+  aiAnalysisConfirmed: int("ai_analysis_confirmed").default(0).notNull(),
+  editedAnalysis: text("edited_analysis"),
+  errorMessage: text("error_message"),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+});
+export type DevOffsiteAnalysis = typeof devOffsiteAnalyses.$inferSelect;
+export type InsertDevOffsiteAnalysis = typeof devOffsiteAnalyses.$inferInsert;

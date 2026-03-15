@@ -18,6 +18,7 @@ import {
   ClipboardCheck,
   Brain,
   RefreshCw,
+  Globe,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -110,15 +111,16 @@ export default function DevProjectDetail() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-8 w-full">
+        <TabsList className="grid grid-cols-9 w-full">
           <TabsTrigger value="overview" className="text-xs gap-1"><Target className="h-3.5 w-3.5" />概览</TabsTrigger>
           <TabsTrigger value="data" className="text-xs gap-1"><Upload className="h-3.5 w-3.5" />数据管理</TabsTrigger>
+          <TabsTrigger value="offsite" className="text-xs gap-1"><Globe className="h-3.5 w-3.5" />站外分析</TabsTrigger>
+          <TabsTrigger value="analysis" className="text-xs gap-1"><BarChart3 className="h-3.5 w-3.5" />分析报告</TabsTrigger>
           <TabsTrigger value="profile" className="text-xs gap-1"><Users className="h-3.5 w-3.5" />产品画像</TabsTrigger>
           <TabsTrigger value="scoring" className="text-xs gap-1"><Star className="h-3.5 w-3.5" />评分</TabsTrigger>
           <TabsTrigger value="bom" className="text-xs gap-1"><Package className="h-3.5 w-3.5" />BOM</TabsTrigger>
           <TabsTrigger value="manual" className="text-xs gap-1"><FileText className="h-3.5 w-3.5" />说明书</TabsTrigger>
           <TabsTrigger value="test" className="text-xs gap-1"><ClipboardCheck className="h-3.5 w-3.5" />测试报告</TabsTrigger>
-          <TabsTrigger value="analysis" className="text-xs gap-1"><BarChart3 className="h-3.5 w-3.5" />分析报告</TabsTrigger>
         </TabsList>
 
         {/* Overview */}
@@ -143,6 +145,19 @@ export default function DevProjectDetail() {
         {/* Data Management */}
         <TabsContent value="data" className="space-y-4">
           <DevDataUpload projectId={projectId} onDataUploaded={() => utils.devProject.getById.invalidate({ id: projectId })} />
+        </TabsContent>
+
+        {/* Offsite Analysis */}
+        <TabsContent value="offsite" className="space-y-4">
+          <Card><CardContent className="flex flex-col items-center justify-center py-12">
+            <Globe className="h-10 w-10 mb-3 text-primary opacity-60" />
+            <p className="text-sm font-medium">站外数据分析</p>
+            <p className="text-xs text-muted-foreground mt-1">Google趋势 · YouTube · TikTok · Facebook · 独立站 · Reddit · 众筹网站</p>
+            <Button className="mt-4 gap-2" onClick={() => setLocation(`/dev/project/${projectId}/offsite`)}>
+              <Globe className="h-4 w-4" />
+              进入站外分析
+            </Button>
+          </CardContent></Card>
         </TabsContent>
 
         {/* Profile */}

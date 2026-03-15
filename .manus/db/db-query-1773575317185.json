@@ -1,0 +1,9 @@
+{
+  "query": "\nCREATE TABLE IF NOT EXISTS dev_offsite_analyses (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  project_id INT NOT NULL,\n  user_id VARCHAR(255) NOT NULL,\n  source_type ENUM('google_trends','youtube','tiktok','facebook','independent_site','reddit','crowdfunding') NOT NULL,\n  keyword VARCHAR(500) NOT NULL,\n  status ENUM('pending','running','completed','failed') NOT NULL DEFAULT 'pending',\n  raw_data JSON,\n  ai_analysis TEXT,\n  ai_analysis_confirmed BOOLEAN NOT NULL DEFAULT FALSE,\n  edited_analysis TEXT,\n  error_message TEXT,\n  created_at BIGINT NOT NULL,\n  updated_at BIGINT NOT NULL,\n  INDEX idx_project_source (project_id, source_type),\n  INDEX idx_user (user_id)\n);\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute \nCREATE TABLE IF NOT EXISTS dev_offsite_analyses (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  project_id INT NOT NULL,\n  user_id VARCHAR(255) NOT NULL,\n  source_type ENUM('google_trends','youtube','tiktok','facebook','independent_site','reddit','crowdfunding') NOT NULL,\n  keyword VARCHAR(500) NOT NULL,\n  status ENUM('pending','running','completed','failed') NOT NULL DEFAULT 'pending',\n  raw_data JSON,\n  ai_analysis TEXT,\n  ai_analysis_confirmed BOOLEAN NOT NULL DEFAULT FALSE,\n  edited_analysis TEXT,\n  error_message TEXT,\n  created_at BIGINT NOT NULL,\n  updated_at BIGINT NOT NULL,\n  INDEX idx_project_source (project_id, source_type),\n  INDEX idx_user (user_id)\n);\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 239
+}
