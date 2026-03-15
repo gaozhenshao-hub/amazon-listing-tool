@@ -22,6 +22,8 @@ import {
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
+import DevDataUpload from "./DevDataUpload";
+import { Upload } from "lucide-react";
 
 const statusLabel: Record<string, { text: string; color: string }> = {
   draft: { text: "草稿", color: "bg-gray-500/10 text-gray-600" },
@@ -108,8 +110,9 @@ export default function DevProjectDetail() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-7 w-full">
+        <TabsList className="grid grid-cols-8 w-full">
           <TabsTrigger value="overview" className="text-xs gap-1"><Target className="h-3.5 w-3.5" />概览</TabsTrigger>
+          <TabsTrigger value="data" className="text-xs gap-1"><Upload className="h-3.5 w-3.5" />数据管理</TabsTrigger>
           <TabsTrigger value="profile" className="text-xs gap-1"><Users className="h-3.5 w-3.5" />产品画像</TabsTrigger>
           <TabsTrigger value="scoring" className="text-xs gap-1"><Star className="h-3.5 w-3.5" />评分</TabsTrigger>
           <TabsTrigger value="bom" className="text-xs gap-1"><Package className="h-3.5 w-3.5" />BOM</TabsTrigger>
@@ -135,6 +138,11 @@ export default function DevProjectDetail() {
               </div>
             </CardContent></Card>
           )}
+        </TabsContent>
+
+        {/* Data Management */}
+        <TabsContent value="data" className="space-y-4">
+          <DevDataUpload projectId={projectId} onDataUploaded={() => utils.devProject.getById.invalidate({ id: projectId })} />
         </TabsContent>
 
         {/* Profile */}
@@ -289,10 +297,14 @@ export default function DevProjectDetail() {
 
         {/* Analysis Report */}
         <TabsContent value="analysis" className="space-y-4">
-          <Card><CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-            <BarChart3 className="h-10 w-10 mb-3 opacity-30" />
-            <p className="text-sm">分析报告功能即将上线</p>
-            <p className="text-xs mt-1">包含市场分析、竞品分析、评论分析等AI报告</p>
+          <Card><CardContent className="flex flex-col items-center justify-center py-12">
+            <BarChart3 className="h-10 w-10 mb-3 text-primary opacity-60" />
+            <p className="text-sm font-medium">市场分析工作台</p>
+            <p className="text-xs text-muted-foreground mt-1">7阶段数据驱动分析：属性标注 → 市场大盘 → 属性交叉 → 价格段 → 品牌竞争 → 评论深度 → 综合决策</p>
+            <Button className="mt-4 gap-2" onClick={() => setLocation(`/dev/project/${projectId}/analysis`)}>
+              <BarChart3 className="h-4 w-4" />
+              进入分析工作台
+            </Button>
           </CardContent></Card>
         </TabsContent>
       </Tabs>

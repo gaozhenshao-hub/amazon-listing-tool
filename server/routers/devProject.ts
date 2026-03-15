@@ -120,7 +120,7 @@ export const devProjectRouter = router({
       return { success: true };
     }),
 
-  // Save products from parsed file
+  // Save products from parsed file (enhanced with full field mapping)
   saveProducts: protectedProcedure
     .input(z.object({
       projectId: z.number(),
@@ -135,6 +135,20 @@ export const devProjectRouter = router({
         bsr: z.number().optional(),
         bulletPoints: z.string().optional(),
         description: z.string().optional(),
+        // Extended fields
+        monthlyRevenue: z.number().optional(),
+        listingDate: z.string().optional(),
+        fulfillment: z.string().optional(),
+        sellerName: z.string().optional(),
+        sellerLocation: z.string().optional(),
+        variantCount: z.number().optional(),
+        category: z.string().optional(),
+        subcategory: z.string().optional(),
+        monthlySalesHistory: z.string().optional(),
+        monthlyRevenueHistory: z.string().optional(),
+        specifications: z.string().optional(),
+        imageUrl: z.string().optional(),
+        searchRank: z.number().optional(),
       })),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -150,6 +164,19 @@ export const devProjectRouter = router({
         bsr: p.bsr ?? null,
         bulletPoints: p.bulletPoints ?? null,
         description: p.description ?? null,
+        monthlyRevenue: p.monthlyRevenue?.toString() ?? null,
+        listingDate: p.listingDate ?? null,
+        fulfillment: p.fulfillment ?? null,
+        sellerName: p.sellerName ?? null,
+        sellerLocation: p.sellerLocation ?? null,
+        variantCount: p.variantCount ?? null,
+        category: p.category ?? null,
+        subcategory: p.subcategory ?? null,
+        monthlySalesHistory: p.monthlySalesHistory ?? null,
+        monthlyRevenueHistory: p.monthlyRevenueHistory ?? null,
+        specifications: p.specifications ?? null,
+        imageUrl: p.imageUrl ?? null,
+        searchRank: p.searchRank ?? null,
       })));
       return { success: true, count: input.products.length };
     }),

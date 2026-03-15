@@ -33,6 +33,7 @@ import DevCompare from "./pages/dev/DevCompare";
 import DevTagSettings from "./pages/dev/DevTagSettings";
 import DevProfitCalculator from "./pages/dev/DevProfitCalculator";
 import DevSupplierLibrary from "./pages/dev/DevSupplierLibrary";
+import DevAnalysisFlow from "./pages/dev/DevAnalysisFlow";
 
 // ─── Module 5: Knowledge Base ───────────────────────────────────
 import KBOverview from "./pages/knowledge/KBOverview";
@@ -95,6 +96,7 @@ function Router() {
         <Route path="/dev/tag-settings" component={DevTagSettings} />
         <Route path="/dev/profit-calculator" component={DevProfitCalculator} />
         <Route path="/dev/supplier-library" component={DevSupplierLibrary} />
+        <Route path="/dev/project/:id/analysis" component={DevAnalysisFlow} />
 
         {/* ─── Module 5: Knowledge Base ─── */}
         <Route path="/knowledge" component={KBOverview} />

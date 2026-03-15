@@ -18,6 +18,8 @@ import {
   devBomSummary, InsertDevBomSummary,
   devProfitCalculations, InsertDevProfitCalculation,
   devGlobalSuppliers, InsertDevGlobalSupplier,
+  devAnalysisStages, InsertDevAnalysisStage,
+  devProductTags, InsertDevProductTag,
 } from "../drizzle/schema";
 import { getDb } from "./db";
 
@@ -482,4 +484,110 @@ export async function deleteDevGlobalSupplier(id: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(devGlobalSuppliers).where(and(eq(devGlobalSuppliers.id, id), eq(devGlobalSuppliers.userId, userId)));
+}
+
+// ─── Dev Analysis Stages ──────────────────────────────────────
+
+export async function getDevAnalysisStages(projectId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(devAnalysisStages).where(eq(devAnalysisStages.projectId, projectId));
+}
+
+export async function getDevAnalysisStage(projectId: number, stageType: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(devAnalysisStages).where(
+    and(eq(devAnalysisStages.projectId, projectId), eq(devAnalysisStages.stageType, stageType as any))
+  );
+  return rows[0] || null;
+}
+
+export async function upsertDevAnalysisStage(data: InsertDevAnalysisStage) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await db.select().from(devAnalysisStages).where(
+    and(eq(devAnalysisStages.projectId, data.projectId), eq(devAnalysisStages.stageType, data.stageType))
+  );
+  if (existing.length > 0) {
+    await db.update(devAnalysisStages).set(data).where(eq(devAnalysisStages.id, existing[0].id));
+    return { id: existing[0].id };
+  }
+  const [result] = await db.insert(devAnalysisStages).values(data);
+  return { id: result.insertId };
+}
+
+export async function confirmDevAnalysisStage(projectId: number, stageType: string, editedResult: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(devAnalysisStages).set({
+    status: "confirmed",
+    editedResult,
+    confirmedAt: new Date(),
+  }).where(
+    and(eq(devAnalysisStages.projectId, projectId), eq(devAnalysisStages.stageType, stageType as any))
+  );
+}
+
+// ─── Dev Product Tags ─────────────────────────────────────────
+
+export async function getDevProductTags(projectId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(devProductTags).where(eq(devProductTags.projectId, projectId));
+}
+
+export async function getDevProductTagsByAsin(projectId: number, asin: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(devProductTags).where(
+    and(eq(devProductTags.projectId, projectId), eq(devProductTags.asin, asin))
+  );
+}
+
+export async function bulkInsertDevProductTags(tags: InsertDevProductTag[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (tags.length === 0) return;
+  // Delete existing tags for the project first
+  const projectId = tags[0].projectId;
+  await db.delete(devProductTags).where(eq(devProductTags.projectId, projectId));
+  // Insert in batches of 100
+  for (let i = 0; i < tags.length; i += 100) {
+    await db.insert(devProductTags).values(tags.slice(i, i + 100));
+  }
+}
+
+export async function updateDevProductTag(id: number, data: Partial<InsertDevProductTag>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(devProductTags).set(data).where(eq(devProductTags.id, id));
+}
+
+export async function confirmAllDevProductTags(projectId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(devProductTags).set({ confirmed: 1 }).where(eq(devProductTags.projectId, projectId));
+}
+
+export async function deleteDevProductTagsByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(devProductTags).where(eq(devProductTags.projectId, projectId));
+}
+
+// ─── Enhanced Review Helpers ──────────────────────────────────
+
+export async function getDevReviewsByAsin(projectId: number, asin: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(devReviews).where(
+    and(eq(devReviews.projectId, projectId), eq(devReviews.asin, asin))
+  );
+}
+
+export async function getDevAllReviews(projectId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(devReviews).where(eq(devReviews.projectId, projectId));
 }

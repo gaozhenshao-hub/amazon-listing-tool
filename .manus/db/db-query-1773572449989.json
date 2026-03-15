@@ -1,0 +1,9 @@
+{
+  "query": "\nCREATE TABLE IF NOT EXISTS dev_analysis_stages (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  projectId INT NOT NULL,\n  userId INT NOT NULL,\n  stageType ENUM('data_parsing', 'tag_annotation', 'market_overview', \n                 'product_attributes', 'price_analysis', 'brand_competition',\n                 'review_analysis', 'decision_dashboard') NOT NULL,\n  status ENUM('pending', 'generating', 'generated', 'editing', 'confirmed') DEFAULT 'pending',\n  rawResult TEXT COMMENT 'AI生成的原始结果(JSON)',\n  editedResult TEXT COMMENT '用户编辑后的结果(JSON)',\n  chartConfig TEXT COMMENT '图表配置(JSON)',\n  confirmedAt TIMESTAMP NULL COMMENT '确认时间',\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n  updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  UNIQUE KEY uk_project_stage (projectId, stageType)\n);\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute \nCREATE TABLE IF NOT EXISTS dev_analysis_stages (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  projectId INT NOT NULL,\n  userId INT NOT NULL,\n  stageType ENUM('data_parsing', 'tag_annotation', 'market_overview', \n                 'product_attributes', 'price_analysis', 'brand_competition',\n                 'review_analysis', 'decision_dashboard') NOT NULL,\n  status ENUM('pending', 'generating', 'generated', 'editing', 'confirmed') DEFAULT 'pending',\n  rawResult TEXT COMMENT 'AI生成的原始结果(JSON)',\n  editedResult TEXT COMMENT '用户编辑后的结果(JSON)',\n  chartConfig TEXT COMMENT '图表配置(JSON)',\n  confirmedAt TIMESTAMP NULL COMMENT '确认时间',\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n  updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  UNIQUE KEY uk_project_stage (projectId, stageType)\n);\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 293
+}

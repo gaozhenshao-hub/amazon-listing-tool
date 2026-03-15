@@ -1,4 +1,4 @@
-import { int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { decimal, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -550,6 +550,20 @@ export const devProducts = mysqlTable("dev_products", {
   monthlySalesHistory: text("monthlySalesHistory"), // JSON: monthly sales data
   tags: text("tags"), // JSON: AI-generated tags (14 dimensions)
   tagStatus: mysqlEnum("tagStatus", ["pending", "tagged", "confirmed"]).default("pending").notNull(),
+  // --- 扩展字段 (Phase 1 优化) ---
+  monthlyRevenue: decimal("monthlyRevenue", { precision: 12, scale: 2 }), // 月销售额
+  listingDate: varchar("listingDate", { length: 50 }), // 上架时间
+  fulfillment: varchar("fulfillment", { length: 20 }), // FBA/FBM
+  sellerName: varchar("sellerName", { length: 255 }), // 卖家名称
+  sellerLocation: varchar("sellerLocation", { length: 100 }), // 卖家所在地
+  variantCount: int("variantCount"), // 变体数量
+  category: varchar("category", { length: 255 }), // 类目
+  subcategory: varchar("subcategory", { length: 255 }), // 子类目
+  monthlyRevenueHistory: text("monthlyRevenueHistory"), // JSON: 月度销售额历史
+  specifications: text("specifications"), // JSON: 详细参数键值对
+  description: text("description"), // 产品描述
+  imageUrl: text("imageUrl"), // 产品图片URL
+  searchRank: int("searchRank"), // 搜索排名
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -569,6 +583,11 @@ export const devReviews = mysqlTable("dev_reviews", {
   isVP: int("isVP").default(0), // verified purchase
   variant: varchar("variant", { length: 255 }),
   helpfulCount: int("helpfulCount").default(0),
+  // --- 扩展字段 (Phase 1 优化) ---
+  isVine: int("isVine").default(0), // Vine评论
+  hasImage: int("hasImage").default(0), // 含图片
+  hasVideo: int("hasVideo").default(0), // 含视频
+  reviewerName: varchar("reviewerName", { length: 255 }), // 评论人
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -588,6 +607,44 @@ export const devTagDimensions = mysqlTable("dev_tag_dimensions", {
 
 export type DevTagDimension = typeof devTagDimensions.$inferSelect;
 export type InsertDevTagDimension = typeof devTagDimensions.$inferInsert;
+
+// 分析阶段状态表 (Phase 1 优化)
+export const devAnalysisStages = mysqlTable("dev_analysis_stages", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  stageType: mysqlEnum("stageType", [
+    "data_parsing", "tag_annotation", "market_overview",
+    "product_attributes", "price_analysis", "brand_competition",
+    "review_analysis", "decision_dashboard",
+    "attribute_tagging", "attribute_cross", "review_kano"
+  ]).notNull(),
+  status: mysqlEnum("status", ["pending", "generating", "generated", "editing", "confirmed", "running", "completed"]).default("pending"),
+  rawResult: text("rawResult"), // AI生成的原始结果(JSON)
+  editedResult: text("editedResult"), // 用户编辑后的结果(JSON)
+  chartConfig: text("chartConfig"), // 图表配置(JSON)
+  confirmedAt: timestamp("confirmedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevAnalysisStage = typeof devAnalysisStages.$inferSelect;
+export type InsertDevAnalysisStage = typeof devAnalysisStages.$inferInsert;
+
+// 产品属性标签表 (Phase 1 优化)
+export const devProductTags = mysqlTable("dev_product_tags", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  asin: varchar("asin", { length: 20 }).notNull(),
+  dimensionName: varchar("dimensionName", { length: 100 }).notNull(), // 属性维度名称
+  dimensionValue: varchar("dimensionValue", { length: 255 }).notNull(), // 属性值
+  source: mysqlEnum("source", ["ai", "manual", "specification"]).default("ai"), // 标签来源
+  confirmed: int("confirmed").default(0), // 是否已确认
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DevProductTag = typeof devProductTags.$inferSelect;
+export type InsertDevProductTag = typeof devProductTags.$inferInsert;
 
 // 站外数据记录
 export const devExternalData = mysqlTable("dev_external_data", {

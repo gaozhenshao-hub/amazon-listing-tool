@@ -3,6 +3,26 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import { callDataApi } from "../_core/dataApi";
 import * as devDb from "../devDb";
+import {
+  calcMarketOverview,
+  calcPriceSegments,
+  calcBrandCompetition,
+  calcSingleDimensionStats,
+  calcCrossAnalysis,
+  calcReviewStats,
+  type ProductData,
+  type TagData,
+  type ReviewData,
+} from "../devStatsEngine";
+import {
+  ATTRIBUTE_TAGGING_PROMPT,
+  MARKET_OVERVIEW_PROMPT,
+  ATTRIBUTE_ANALYSIS_PROMPT,
+  PRICE_ANALYSIS_PROMPT,
+  BRAND_COMPETITION_PROMPT,
+  REVIEW_KANO_PROMPT,
+  DECISION_DASHBOARD_PROMPT,
+} from "../devAnalysisPrompts";
 
 const REPORT_TYPES = [
   "market_overview", "product_analysis", "price_analysis", "brand_analysis",
@@ -10,8 +30,1005 @@ const REPORT_TYPES = [
   "review_analysis_recent_2y",
 ] as const;
 
+const STAGE_TYPES = [
+  "attribute_tagging", "market_overview", "attribute_cross",
+  "price_analysis", "brand_competition", "review_kano", "decision_dashboard",
+] as const;
+
 export const devAnalysisRouter = router({
-  // ─── Analysis Reports ──────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════
+  // NEW: Stage-based Analysis Flow
+  // ═══════════════════════════════════════════════════════════════
+
+  // ─── Get all stages for a project ─────────────────────────────
+  getStages: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const stages = await devDb.getDevAnalysisStages(input.projectId);
+      return stages;
+    }),
+
+  getStage: protectedProcedure
+    .input(z.object({ projectId: z.number(), stageType: z.enum(STAGE_TYPES) }))
+    .query(async ({ ctx, input }) => {
+      return devDb.getDevAnalysisStage(input.projectId, input.stageType);
+    }),
+
+  // ─── Stage 0: AI Attribute Tagging ────────────────────────────
+  runAttributeTagging: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      // Mark stage as running
+      await devDb.upsertDevAnalysisStage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        stageType: "attribute_tagging",
+        status: "running",
+        rawResult: null,
+        editedResult: null,
+        confirmedAt: null,
+      });
+
+      const products = await devDb.getDevProductsByProject(input.projectId);
+      if (products.length === 0) throw new Error("No products found. Please upload data first.");
+
+      // Build product list for AI
+      const productList = products.slice(0, 60).map(p => ({
+        asin: p.asin,
+        title: p.title,
+        bulletPoints: p.bulletPoints,
+        price: p.price,
+        category: p.category,
+      }));
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: ATTRIBUTE_TAGGING_PROMPT },
+          {
+            role: "user",
+            content: `品类: ${project.name}\n关键词: ${project.keywords}\n\n产品列表(${products.length}个):\n${JSON.stringify(productList, null, 2)}`,
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "attribute_tagging",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                dimensions: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      name: { type: "string" },
+                      values: { type: "array", items: { type: "string" } },
+                    },
+                    required: ["name", "values"],
+                    additionalProperties: false,
+                  },
+                },
+                products: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      asin: { type: "string" },
+                      tags: {
+                        type: "object",
+                        additionalProperties: { type: "string" },
+                      },
+                    },
+                    required: ["asin", "tags"],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ["dimensions", "products"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const content = response.choices?.[0]?.message?.content;
+      const parsed = content ? JSON.parse(content as string) : { dimensions: [], products: [] };
+
+      // Save tags to database
+      const tagRows: Array<{
+        projectId: number;
+        asin: string;
+        dimensionName: string;
+        dimensionValue: string;
+        confirmed: number;
+      }> = [];
+      for (const prod of parsed.products) {
+        for (const [dimName, dimValue] of Object.entries(prod.tags)) {
+          tagRows.push({
+            projectId: input.projectId,
+            asin: prod.asin,
+            dimensionName: dimName,
+            dimensionValue: dimValue as string,
+            confirmed: 0,
+          });
+        }
+      }
+      await devDb.bulkInsertDevProductTags(tagRows);
+
+      // Save stage result
+      await devDb.upsertDevAnalysisStage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        stageType: "attribute_tagging",
+        status: "completed",
+        rawResult: JSON.stringify(parsed),
+        editedResult: null,
+        confirmedAt: null,
+      });
+
+      return parsed;
+    }),
+
+  // ─── Get / Update Product Tags ────────────────────────────────
+  getProductTags: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      return devDb.getDevProductTags(input.projectId);
+    }),
+
+  updateProductTag: protectedProcedure
+    .input(z.object({
+      tagId: z.number(),
+      dimensionValue: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await devDb.updateDevProductTag(input.tagId, { dimensionValue: input.dimensionValue });
+      return { success: true };
+    }),
+
+  confirmAllTags: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await devDb.confirmAllDevProductTags(input.projectId);
+      await devDb.confirmDevAnalysisStage(input.projectId, "attribute_tagging", "");
+      return { success: true };
+    }),
+
+  // ─── Stage 1: Market Overview ─────────────────────────────────
+  runMarketOverview: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      await devDb.upsertDevAnalysisStage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        stageType: "market_overview",
+        status: "running",
+        rawResult: null,
+        editedResult: null,
+        confirmedAt: null,
+      });
+
+      const products = await devDb.getDevProductsByProject(input.projectId);
+      const productData: ProductData[] = products.map(mapToProductData);
+
+      // Step 1: Pure statistics
+      const stats = calcMarketOverview(productData);
+
+      // Step 2: AI interpretation
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: MARKET_OVERVIEW_PROMPT },
+          {
+            role: "user",
+            content: `品类: ${project.name}\n关键词: ${project.keywords}\n\n统计数据:\n${JSON.stringify(stats, null, 2)}`,
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "market_overview_ai",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                maturityLevel: { type: "string" },
+                maturityReason: { type: "string" },
+                growthTrend: { type: "string" },
+                growthRate: { type: "string" },
+                seasonality: {
+                  type: "object",
+                  properties: {
+                    hasSeasonality: { type: "boolean" },
+                    peakMonths: { type: "array", items: { type: "string" } },
+                    lowMonths: { type: "array", items: { type: "string" } },
+                    description: { type: "string" },
+                  },
+                  required: ["hasSeasonality", "peakMonths", "lowMonths", "description"],
+                  additionalProperties: false,
+                },
+                marketCapacity: {
+                  type: "object",
+                  properties: {
+                    level: { type: "string" },
+                    monthlyRevenue: { type: "string" },
+                    potential: { type: "string" },
+                  },
+                  required: ["level", "monthlyRevenue", "potential"],
+                  additionalProperties: false,
+                },
+                entryTiming: {
+                  type: "object",
+                  properties: {
+                    recommendation: { type: "string" },
+                    bestEntryTime: { type: "string" },
+                    reason: { type: "string" },
+                  },
+                  required: ["recommendation", "bestEntryTime", "reason"],
+                  additionalProperties: false,
+                },
+                summary: { type: "string" },
+                risks: { type: "array", items: { type: "string" } },
+                opportunities: { type: "array", items: { type: "string" } },
+              },
+              required: ["maturityLevel", "maturityReason", "growthTrend", "growthRate", "seasonality", "marketCapacity", "entryTiming", "summary", "risks", "opportunities"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const aiContent = response.choices?.[0]?.message?.content;
+      const aiResult = aiContent ? JSON.parse(aiContent as string) : {};
+
+      const result = { stats, ai: aiResult };
+
+      await devDb.upsertDevAnalysisStage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        stageType: "market_overview",
+        status: "completed",
+        rawResult: JSON.stringify(result),
+        editedResult: null,
+        confirmedAt: null,
+      });
+
+      return result;
+    }),
+
+  // ─── Stage 2: Attribute Cross Analysis ────────────────────────
+  runAttributeCross: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      dim1Name: z.string().optional(),
+      dim2Name: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      await devDb.upsertDevAnalysisStage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        stageType: "attribute_cross",
+        status: "running",
+        rawResult: null,
+        editedResult: null,
+        confirmedAt: null,
+      });
+
+      const products = await devDb.getDevProductsByProject(input.projectId);
+      const tags = await devDb.getDevProductTags(input.projectId);
+      const productData: ProductData[] = products.map(mapToProductData);
+      const tagData: TagData[] = tags.map(t => ({
+        asin: t.asin ?? "",
+        dimensionName: t.dimensionName ?? "",
+        dimensionValue: t.dimensionValue ?? "",
+      }));
+
+      // Get all dimension names
+      const dimensionNames = Array.from(new Set(tagData.map(t => t.dimensionName)));
+
+      // Single dimension stats for all dimensions
+      const singleDimStats = dimensionNames.map(dim =>
+        calcSingleDimensionStats(productData, tagData, dim)
+      );
+
+      // Cross analysis for selected dimensions (or top 2 by default)
+      const dim1 = input.dim1Name || dimensionNames[0] || "";
+      const dim2 = input.dim2Name || dimensionNames[1] || dimensionNames[0] || "";
+      const crossResult = dim1 && dim2 ? calcCrossAnalysis(productData, tagData, dim1, dim2) : null;
+
+      // AI interpretation
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: ATTRIBUTE_ANALYSIS_PROMPT },
+          {
+            role: "user",
+            content: `品类: ${project.name}\n\n各维度统计:\n${JSON.stringify(singleDimStats, null, 2)}\n\n交叉分析(${dim1} × ${dim2}):\n${JSON.stringify(crossResult, null, 2)}`,
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "attribute_analysis_ai",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                mainstreamProducts: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      combo: { type: "string" },
+                      salesShare: { type: "string" },
+                      reason: { type: "string" },
+                    },
+                    required: ["combo", "salesShare", "reason"],
+                    additionalProperties: false,
+                  },
+                },
+                differentiationOpportunities: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      combo: { type: "string" },
+                      competitionLevel: { type: "string" },
+                      potential: { type: "string" },
+                      reason: { type: "string" },
+                    },
+                    required: ["combo", "competitionLevel", "potential", "reason"],
+                    additionalProperties: false,
+                  },
+                },
+                recommendedDirections: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      direction: { type: "string" },
+                      attributes: {
+                        type: "object",
+                        additionalProperties: { type: "string" },
+                      },
+                      estimatedPriceRange: { type: "string" },
+                      targetAudience: { type: "string" },
+                      reason: { type: "string" },
+                      priority: { type: "number" },
+                    },
+                    required: ["direction", "attributes", "estimatedPriceRange", "targetAudience", "reason", "priority"],
+                    additionalProperties: false,
+                  },
+                },
+                redOceanWarnings: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      combo: { type: "string" },
+                      reason: { type: "string" },
+                    },
+                    required: ["combo", "reason"],
+                    additionalProperties: false,
+                  },
+                },
+                summary: { type: "string" },
+              },
+              required: ["mainstreamProducts", "differentiationOpportunities", "recommendedDirections", "redOceanWarnings", "summary"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const aiContent = response.choices?.[0]?.message?.content;
+      const aiResult = aiContent ? JSON.parse(aiContent as string) : {};
+
+      const result = { singleDimStats, crossResult, dimensionNames, ai: aiResult };
+
+      await devDb.upsertDevAnalysisStage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        stageType: "attribute_cross",
+        status: "completed",
+        rawResult: JSON.stringify(result),
+        editedResult: null,
+        confirmedAt: null,
+      });
+
+      return result;
+    }),
+
+  // ─── Stage 3: Price Analysis ──────────────────────────────────
+  runPriceAnalysis: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      await devDb.upsertDevAnalysisStage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        stageType: "price_analysis",
+        status: "running",
+        rawResult: null,
+        editedResult: null,
+        confirmedAt: null,
+      });
+
+      const products = await devDb.getDevProductsByProject(input.projectId);
+      const productData: ProductData[] = products.map(mapToProductData);
+      const priceSegments = calcPriceSegments(productData);
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: PRICE_ANALYSIS_PROMPT },
+          {
+            role: "user",
+            content: `品类: ${project.name}\n\n价格段统计:\n${JSON.stringify(priceSegments, null, 2)}`,
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "price_analysis_ai",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                bestPriceRange: {
+                  type: "object",
+                  properties: {
+                    min: { type: "number" },
+                    max: { type: "number" },
+                    reason: { type: "string" },
+                  },
+                  required: ["min", "max", "reason"],
+                  additionalProperties: false,
+                },
+                priceRatingCorrelation: { type: "string" },
+                pricingStrategy: {
+                  type: "object",
+                  properties: {
+                    type: { type: "string" },
+                    suggestedPrice: {
+                      type: "object",
+                      properties: {
+                        min: { type: "number" },
+                        max: { type: "number" },
+                      },
+                      required: ["min", "max"],
+                      additionalProperties: false,
+                    },
+                    reason: { type: "string" },
+                  },
+                  required: ["type", "suggestedPrice", "reason"],
+                  additionalProperties: false,
+                },
+                priceInsights: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      insight: { type: "string" },
+                      implication: { type: "string" },
+                    },
+                    required: ["insight", "implication"],
+                    additionalProperties: false,
+                  },
+                },
+                summary: { type: "string" },
+              },
+              required: ["bestPriceRange", "priceRatingCorrelation", "pricingStrategy", "priceInsights", "summary"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const aiContent = response.choices?.[0]?.message?.content;
+      const aiResult = aiContent ? JSON.parse(aiContent as string) : {};
+
+      const result = { priceSegments, ai: aiResult };
+
+      await devDb.upsertDevAnalysisStage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        stageType: "price_analysis",
+        status: "completed",
+        rawResult: JSON.stringify(result),
+        editedResult: null,
+        confirmedAt: null,
+      });
+
+      return result;
+    }),
+
+  // ─── Stage 4: Brand Competition ───────────────────────────────
+  runBrandCompetition: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      await devDb.upsertDevAnalysisStage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        stageType: "brand_competition",
+        status: "running",
+        rawResult: null,
+        editedResult: null,
+        confirmedAt: null,
+      });
+
+      const products = await devDb.getDevProductsByProject(input.projectId);
+      const productData: ProductData[] = products.map(mapToProductData);
+      const brandStats = calcBrandCompetition(productData);
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: BRAND_COMPETITION_PROMPT },
+          {
+            role: "user",
+            content: `品类: ${project.name}\n\n品牌竞争统计:\n${JSON.stringify(brandStats, null, 2)}`,
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "brand_competition_ai",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                competitionPattern: { type: "string" },
+                competitionPatternReason: { type: "string" },
+                topBrandStrategies: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      brand: { type: "string" },
+                      strategy: { type: "string" },
+                      strengths: { type: "array", items: { type: "string" } },
+                      weaknesses: { type: "array", items: { type: "string" } },
+                    },
+                    required: ["brand", "strategy", "strengths", "weaknesses"],
+                    additionalProperties: false,
+                  },
+                },
+                entryStrategy: {
+                  type: "object",
+                  properties: {
+                    approach: { type: "string" },
+                    targetSegment: { type: "string" },
+                    differentiationPoint: { type: "string" },
+                    estimatedInvestment: { type: "string" },
+                    reason: { type: "string" },
+                  },
+                  required: ["approach", "targetSegment", "differentiationPoint", "estimatedInvestment", "reason"],
+                  additionalProperties: false,
+                },
+                chinaSellerAnalysis: {
+                  type: "object",
+                  properties: {
+                    share: { type: "string" },
+                    trend: { type: "string" },
+                    implication: { type: "string" },
+                  },
+                  required: ["share", "trend", "implication"],
+                  additionalProperties: false,
+                },
+                summary: { type: "string" },
+              },
+              required: ["competitionPattern", "competitionPatternReason", "topBrandStrategies", "entryStrategy", "chinaSellerAnalysis", "summary"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const aiContent = response.choices?.[0]?.message?.content;
+      const aiResult = aiContent ? JSON.parse(aiContent as string) : {};
+
+      const result = { brandStats, ai: aiResult };
+
+      await devDb.upsertDevAnalysisStage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        stageType: "brand_competition",
+        status: "completed",
+        rawResult: JSON.stringify(result),
+        editedResult: null,
+        confirmedAt: null,
+      });
+
+      return result;
+    }),
+
+  // ─── Stage 5: Review KANO Analysis ────────────────────────────
+  runReviewKano: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      await devDb.upsertDevAnalysisStage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        stageType: "review_kano",
+        status: "running",
+        rawResult: null,
+        editedResult: null,
+        confirmedAt: null,
+      });
+
+      const reviews = await devDb.getDevReviewsByProject(input.projectId);
+      const reviewData: ReviewData[] = reviews.map(r => ({
+        asin: r.asin ?? "",
+        rating: r.rating,
+        content: r.content,
+        title: r.title,
+        reviewDate: r.reviewDate,
+        isVP: r.isVP,
+        isVine: r.isVine,
+        variant: r.variant,
+        helpfulCount: r.helpfulCount,
+        hasImage: r.hasImage,
+        hasVideo: r.hasVideo,
+      }));
+
+      // Step 1: Pure statistics
+      const stats = calcReviewStats(reviewData);
+
+      // Step 2: AI KANO analysis (sample reviews)
+      const positiveReviews = reviews.filter(r => (r.rating ?? 0) >= 4).slice(0, 80);
+      const negativeReviews = reviews.filter(r => (r.rating ?? 0) <= 2).slice(0, 80);
+      const neutralReviews = reviews.filter(r => (r.rating ?? 0) === 3).slice(0, 30);
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: REVIEW_KANO_PROMPT },
+          {
+            role: "user",
+            content: `品类: ${project.name}\n\n评论统计:\n${JSON.stringify(stats, null, 2)}\n\n好评样本(${positiveReviews.length}条):\n${positiveReviews.map(r => `[${r.rating}★] ${(r.content || "").substring(0, 300)}`).join("\n")}\n\n差评样本(${negativeReviews.length}条):\n${negativeReviews.map(r => `[${r.rating}★] ${(r.content || "").substring(0, 300)}`).join("\n")}\n\n中评样本(${neutralReviews.length}条):\n${neutralReviews.map(r => `[${r.rating}★] ${(r.content || "").substring(0, 300)}`).join("\n")}`,
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "review_kano_ai",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                kanoAnalysis: {
+                  type: "object",
+                  properties: {
+                    painPoints: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          theme: { type: "string" },
+                          frequency: { type: "string" },
+                          severity: { type: "number" },
+                          priority: { type: "number" },
+                          description: { type: "string" },
+                          representativeReviews: { type: "array", items: { type: "string" } },
+                          improvementSuggestion: { type: "string" },
+                        },
+                        required: ["theme", "frequency", "severity", "priority", "description", "representativeReviews", "improvementSuggestion"],
+                        additionalProperties: false,
+                      },
+                    },
+                    itchPoints: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          theme: { type: "string" },
+                          frequency: { type: "string" },
+                          desireLevel: { type: "number" },
+                          priority: { type: "number" },
+                          description: { type: "string" },
+                          representativeReviews: { type: "array", items: { type: "string" } },
+                          improvementSuggestion: { type: "string" },
+                        },
+                        required: ["theme", "frequency", "desireLevel", "priority", "description", "representativeReviews", "improvementSuggestion"],
+                        additionalProperties: false,
+                      },
+                    },
+                    wowPoints: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          theme: { type: "string" },
+                          frequency: { type: "string" },
+                          impactLevel: { type: "number" },
+                          description: { type: "string" },
+                          representativeReviews: { type: "array", items: { type: "string" } },
+                          implementationSuggestion: { type: "string" },
+                        },
+                        required: ["theme", "frequency", "impactLevel", "description", "representativeReviews", "implementationSuggestion"],
+                        additionalProperties: false,
+                      },
+                    },
+                  },
+                  required: ["painPoints", "itchPoints", "wowPoints"],
+                  additionalProperties: false,
+                },
+                overallSentiment: {
+                  type: "object",
+                  properties: {
+                    positive: { type: "string" },
+                    negative: { type: "string" },
+                    neutral: { type: "string" },
+                  },
+                  required: ["positive", "negative", "neutral"],
+                  additionalProperties: false,
+                },
+                productImprovementPriority: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      area: { type: "string" },
+                      priority: { type: "number" },
+                      expectedImpact: { type: "string" },
+                      difficulty: { type: "string" },
+                    },
+                    required: ["area", "priority", "expectedImpact", "difficulty"],
+                    additionalProperties: false,
+                  },
+                },
+                summary: { type: "string" },
+              },
+              required: ["kanoAnalysis", "overallSentiment", "productImprovementPriority", "summary"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const aiContent = response.choices?.[0]?.message?.content;
+      const aiResult = aiContent ? JSON.parse(aiContent as string) : {};
+
+      const result = { stats, ai: aiResult };
+
+      await devDb.upsertDevAnalysisStage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        stageType: "review_kano",
+        status: "completed",
+        rawResult: JSON.stringify(result),
+        editedResult: null,
+        confirmedAt: null,
+      });
+
+      return result;
+    }),
+
+  // ─── Stage 6: Decision Dashboard ──────────────────────────────
+  runDecisionDashboard: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      await devDb.upsertDevAnalysisStage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        stageType: "decision_dashboard",
+        status: "running",
+        rawResult: null,
+        editedResult: null,
+        confirmedAt: null,
+      });
+
+      // Collect confirmed results from all previous stages
+      const stages = await devDb.getDevAnalysisStages(input.projectId);
+      const confirmedData: Record<string, unknown> = {};
+      for (const stage of stages) {
+        if (stage.stageType === "decision_dashboard") continue;
+        const data = stage.editedResult || stage.rawResult;
+        if (data) {
+          try {
+            confirmedData[stage.stageType ?? "unknown"] = JSON.parse(data);
+          } catch { /* skip */ }
+        }
+      }
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: DECISION_DASHBOARD_PROMPT },
+          {
+            role: "user",
+            content: `品类: ${project.name}\n关键词: ${project.keywords}\n目标市场: ${project.targetMarket}\n\n各阶段已确认的分析数据:\n${JSON.stringify(confirmedData, null, 2)}`,
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "decision_dashboard_ai",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                feasibilityScore: {
+                  type: "object",
+                  properties: {
+                    overall: { type: "number" },
+                    dimensions: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          name: { type: "string" },
+                          score: { type: "number" },
+                          reason: { type: "string" },
+                        },
+                        required: ["name", "score", "reason"],
+                        additionalProperties: false,
+                      },
+                    },
+                    recommendation: { type: "string" },
+                  },
+                  required: ["overall", "dimensions", "recommendation"],
+                  additionalProperties: false,
+                },
+                productPositioning: {
+                  type: "object",
+                  properties: {
+                    targetAttributes: {
+                      type: "object",
+                      additionalProperties: { type: "string" },
+                    },
+                    priceRange: {
+                      type: "object",
+                      properties: {
+                        min: { type: "number" },
+                        max: { type: "number" },
+                      },
+                      required: ["min", "max"],
+                      additionalProperties: false,
+                    },
+                    differentiationDirection: { type: "string" },
+                    targetAudience: { type: "string" },
+                    uniqueSellingPoints: { type: "array", items: { type: "string" } },
+                  },
+                  required: ["targetAttributes", "priceRange", "differentiationDirection", "targetAudience", "uniqueSellingPoints"],
+                  additionalProperties: false,
+                },
+                swotAnalysis: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      competitor: { type: "string" },
+                      strengths: { type: "array", items: { type: "string" } },
+                      weaknesses: { type: "array", items: { type: "string" } },
+                      opportunities: { type: "array", items: { type: "string" } },
+                      threats: { type: "array", items: { type: "string" } },
+                    },
+                    required: ["competitor", "strengths", "weaknesses", "opportunities", "threats"],
+                    additionalProperties: false,
+                  },
+                },
+                launchPlan: {
+                  type: "object",
+                  properties: {
+                    specifications: { type: "string" },
+                    targetPrice: { type: "number" },
+                    bestLaunchMonth: { type: "string" },
+                    initialOrderQuantity: { type: "number" },
+                    targetMonthlySales: { type: "number" },
+                    estimatedBreakEvenMonths: { type: "number" },
+                    keyMilestones: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          month: { type: "number" },
+                          milestone: { type: "string" },
+                        },
+                        required: ["month", "milestone"],
+                        additionalProperties: false,
+                      },
+                    },
+                  },
+                  required: ["specifications", "targetPrice", "bestLaunchMonth", "initialOrderQuantity", "targetMonthlySales", "estimatedBreakEvenMonths", "keyMilestones"],
+                  additionalProperties: false,
+                },
+                risks: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      risk: { type: "string" },
+                      probability: { type: "string" },
+                      impact: { type: "string" },
+                      mitigation: { type: "string" },
+                    },
+                    required: ["risk", "probability", "impact", "mitigation"],
+                    additionalProperties: false,
+                  },
+                },
+                summary: { type: "string" },
+              },
+              required: ["feasibilityScore", "productPositioning", "swotAnalysis", "launchPlan", "risks", "summary"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const aiContent = response.choices?.[0]?.message?.content;
+      const aiResult = aiContent ? JSON.parse(aiContent as string) : {};
+
+      const result = { ai: aiResult };
+
+      await devDb.upsertDevAnalysisStage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        stageType: "decision_dashboard",
+        status: "completed",
+        rawResult: JSON.stringify(result),
+        editedResult: null,
+        confirmedAt: null,
+      });
+
+      return result;
+    }),
+
+  // ─── Confirm / Edit Stage ─────────────────────────────────────
+  confirmStage: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      stageType: z.enum(STAGE_TYPES),
+      editedResult: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await devDb.confirmDevAnalysisStage(
+        input.projectId,
+        input.stageType,
+        input.editedResult || ""
+      );
+      return { success: true };
+    }),
+
+  editStage: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      stageType: z.enum(STAGE_TYPES),
+      editedResult: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await devDb.upsertDevAnalysisStage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        stageType: input.stageType as any,
+        status: "editing",
+        rawResult: null, // keep existing rawResult via upsert
+        editedResult: input.editedResult,
+        confirmedAt: null,
+      });
+      return { success: true };
+    }),
+
+  // ═══════════════════════════════════════════════════════════════
+  // LEGACY: Existing Analysis Reports (kept for backward compat)
+  // ═══════════════════════════════════════════════════════════════
+
   generateReport: protectedProcedure
     .input(z.object({
       projectId: z.number(),
@@ -24,7 +1041,6 @@ export const devAnalysisRouter = router({
       const products = await devDb.getDevProductsByProject(input.projectId);
       const reviewStats = await devDb.getDevReviewStats(input.projectId);
 
-      // Build context data for the report
       const contextData = buildReportContext(input.reportType, products, reviewStats, project);
 
       const response = await invokeLLM({
@@ -121,7 +1137,7 @@ export const devAnalysisRouter = router({
       return { success: true };
     }),
 
-  // ─── Review Analysis ───────────────────────────────────────
+  // ─── Review Analysis (Legacy) ─────────────────────────────────
   reviewStats: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
@@ -201,7 +1217,6 @@ export const devAnalysisRouter = router({
       const content = response.choices?.[0]?.message?.content;
       const parsed = content ? JSON.parse(content as string) : { positiveTopics: [], negativeTopics: [] };
 
-      // Calculate percentages
       const totalPositive = positiveReviews.length || 1;
       const totalNegative = negativeReviews.length || 1;
       const totalAll = reviews.length || 1;
@@ -290,7 +1305,7 @@ export const devAnalysisRouter = router({
       return content ? JSON.parse(content as string) : { positiveWords: [], negativeWords: [] };
     }),
 
-  // ─── External Data ─────────────────────────────────────────
+  // ─── External Data (Legacy) ───────────────────────────────────
   fetchYouTube: protectedProcedure
     .input(z.object({ projectId: z.number(), keyword: z.string() }))
     .mutation(async ({ ctx, input }) => {
@@ -401,6 +1416,30 @@ export const devAnalysisRouter = router({
 });
 
 // ─── Helper Functions ────────────────────────────────────────
+
+function mapToProductData(p: any): ProductData {
+  return {
+    asin: p.asin ?? "",
+    title: p.title,
+    brand: p.brand,
+    price: p.price,
+    rating: p.rating,
+    reviewCount: p.reviewCount,
+    monthlySales: p.monthlySales,
+    bsr: p.bsr,
+    monthlyRevenue: p.monthlyRevenue,
+    listingDate: p.listingDate,
+    fulfillment: p.fulfillment,
+    sellerName: p.sellerName,
+    sellerLocation: p.sellerLocation,
+    variantCount: p.variantCount,
+    category: p.category,
+    monthlySalesHistory: p.monthlySalesHistory,
+    monthlyRevenueHistory: p.monthlyRevenueHistory,
+    imageUrl: p.imageUrl,
+    searchRank: p.searchRank,
+  };
+}
 
 async function generateExternalSummary(rawData: unknown, prompt: string): Promise<string> {
   const response = await invokeLLM({
