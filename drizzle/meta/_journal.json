@@ -120,6 +120,13 @@
       "when": 1773577110143,
       "tag": "0016_nosy_doorman",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1773578745137,
+      "tag": "0017_striped_wild_child",
+      "breakpoints": true
     }
   ]
 }

@@ -21,6 +21,7 @@ import { devProfileRouter } from "./routers/devProfile";
 import { devBomRouter } from "./routers/devBom";
 import { devManualRouter } from "./routers/devManual";
 import { offsiteAnalysisRouter } from "./routers/offsiteAnalysis";
+import { devProjectTagsRouter } from "./routers/devProjectTags";
 // Image Workflow
 import { imageWorkflowRouter } from "./routers/imageWorkflow";
 // Module 5: Knowledge Base
@@ -61,6 +62,7 @@ export const appRouter = router({
   devBom: devBomRouter,
   devManual: devManualRouter,
   offsiteAnalysis: offsiteAnalysisRouter,
+  devProjectTags: devProjectTagsRouter,
   // Image Workflow
   imageWorkflow: imageWorkflowRouter,
   // Module 5: Knowledge Base

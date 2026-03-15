@@ -1002,3 +1002,41 @@ export const devOffsiteAnalyses = mysqlTable("dev_offsite_analyses", {
 });
 export type DevOffsiteAnalysis = typeof devOffsiteAnalyses.$inferSelect;
 export type InsertDevOffsiteAnalysis = typeof devOffsiteAnalyses.$inferInsert;
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── Project-Level Tag Management (7 Categories) ─────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+// 项目级标签分类表（每个项目独立的7类标签分类）
+export const devProjectTagCategories = mysqlTable("dev_project_tag_categories", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  categoryKey: varchar("categoryKey", { length: 50 }).notNull(), // e.g. "basic", "material", "function", "parameter", "installation", "certification", "special"
+  categoryName: varchar("categoryName", { length: 100 }).notNull(), // 用户可编辑的分类名称
+  description: text("description"), // 分类说明
+  sortOrder: int("sortOrder").default(0).notNull(),
+  confirmed: int("confirmed").default(0).notNull(), // 0=未确认, 1=已确认
+  confirmedAt: timestamp("confirmedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevProjectTagCategory = typeof devProjectTagCategories.$inferSelect;
+export type InsertDevProjectTagCategory = typeof devProjectTagCategories.$inferInsert;
+
+// 项目级标签项表（每个分类下的具体标签）
+export const devProjectTagItems = mysqlTable("dev_project_tag_items", {
+  id: int("id").autoincrement().primaryKey(),
+  categoryId: int("categoryId").notNull(), // 关联 devProjectTagCategories.id
+  projectId: int("projectId").notNull(),
+  tagName: varchar("tagName", { length: 255 }).notNull(), // 标签名称
+  tagValue: text("tagValue"), // 标签值/描述（可选，用于参数属性等需要值的场景）
+  source: mysqlEnum("source", ["ai", "manual"]).default("ai").notNull(), // 来源
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevProjectTagItem = typeof devProjectTagItems.$inferSelect;
+export type InsertDevProjectTagItem = typeof devProjectTagItems.$inferInsert;

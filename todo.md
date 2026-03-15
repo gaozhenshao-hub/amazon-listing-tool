@@ -685,3 +685,33 @@
 - [x] 前端: 项目列表增加阶段统计卡片（全部/市场分析/项目落地，可点击快速筛选）
 - [x] 前端: 增加阶段筛选下拉框+项目卡片阶段标签（蓝色市场分析/绿色项目落地）+已立项对号图标
 - [x] Tests: 18个增强功能测试通过，全部738个测试通过
+
+## 标签管理迁移到项目内 (2026-03-15)
+
+### 数据库
+- [x] DB: 新建dev_project_tag_categories表（项目级标签分类，含projectId/categoryKey/categoryName/confirmed/sortOrder）
+- [x] DB: 新建dev_project_tag_items表（标签项，含categoryId/projectId/tagName/tagValue/source）
+- [x] DB: 标签与项目关联（projectId字段），每个标签仅在本项目中使用
+
+### 后端
+- [x] 后端: AI生成标签API（全部生成+单分类生成，14个接口）
+- [x] 后端: 标签分类CRUD（initCategories/getCategories/updateCategoryName/addCategory/deleteCategory）
+- [x] 后端: 标签项CRUD（addTagItem/updateTagItem/deleteTagItem）
+- [x] 后端: 标签确认API（confirmCategory/unconfirmCategory/confirmAll）
+- [x] 后端: 获取项目标签状态API（getTagStatus: total/confirmed/allConfirmed/initialized）
+
+### 前端
+- [x] 前端: ProjectTagManager组件（7类标签可展开卡片+状态统计栏）
+- [x] 前端: 标签分类名称可编辑（inline编辑+保存/取消）
+- [x] 前端: 标签项增删改操作（手动添加+编辑+删除+AI/手动来源标记）
+- [x] 前端: AI生成按钮（全部生成+单分类生成+加载状态）
+- [x] 前端: 确认锁定流程（单分类确认/解锁+全部确认）
+- [x] 前端: 状态统计显示是否可进入分析（总数/已确认/待确认）
+
+### 导航
+- [x] 前端: 项目详情页第一阶段增加"标签管理"Tab（数据管理和分析报告之间，6列布局）
+- [x] 前端: 标签状态统计显示是否可进入分析
+
+### 测试
+- [x] Tests: 14个标签管理测试通过（Schema/默认分类/路由/确认流程/集成）
+- [x] 全部752个测试通过

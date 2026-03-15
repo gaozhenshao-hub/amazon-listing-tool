@@ -9,7 +9,7 @@ import {
   ArrowLeft, BarChart3, FileText, Loader2, Package, Star, Target, Users,
   Wrench, ClipboardCheck, Brain, RefreshCw, Globe, Upload, CheckCircle2,
   AlertCircle, DollarSign, Download, Lock, Unlock, ChevronRight,
-  Edit2, Save, X, ArrowDownUp, Copy,
+  Edit2, Save, X, ArrowDownUp, Copy, Tags,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -85,6 +85,7 @@ export default function DevProjectDetail() {
   const phase1Tabs = useMemo(() => [
     { value: "overview", label: "概览", icon: Target },
     { value: "data", label: "数据管理", icon: Upload },
+    { value: "tags", label: "标签管理", icon: Tags },
     { value: "analysis", label: "分析报告", icon: BarChart3 },
     { value: "offsite", label: "站外分析", icon: Globe },
     { value: "scoring", label: "评分立项", icon: Star },
@@ -173,7 +174,7 @@ export default function DevProjectDetail() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         {/* Dynamic Tab List */}
-        <TabsList className={`grid w-full ${isPhase2 && ["profile","bom","manual","test","profit","download"].includes(activeTab) ? "grid-cols-6" : "grid-cols-5"}`}>
+        <TabsList className={`grid w-full ${isPhase2 && ["profile","bom","manual","test","profit","download"].includes(activeTab) ? "grid-cols-6" : "grid-cols-6"}`}>
           {(isPhase2 && ["profile","bom","manual","test","profit","download"].includes(activeTab) ? phase2Tabs : phase1Tabs).map(tab => (
             <TabsTrigger key={tab.value} value={tab.value} className="text-xs gap-1">
               <tab.icon className="h-3.5 w-3.5" />{tab.label}
@@ -227,6 +228,11 @@ export default function DevProjectDetail() {
         {/* Data Management */}
         <TabsContent value="data" className="space-y-4">
           <DevDataUpload projectId={projectId} onDataUploaded={() => utils.devProject.getById.invalidate({ id: projectId })} />
+        </TabsContent>
+
+        {/* Tag Management */}
+        <TabsContent value="tags" className="space-y-4">
+          <ProjectTagManager projectId={projectId} />
         </TabsContent>
 
         {/* Analysis Report */}
@@ -492,6 +498,291 @@ export default function DevProjectDetail() {
 }
 
 /* ─── Locked Phase Card ─────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════ */
+/* ─── Project Tag Manager Component ──────────────────── */
+/* ═══════════════════════════════════════════════════════ */
+function ProjectTagManager({ projectId }: { projectId: number }) {
+  const utils = trpc.useUtils();
+  const [editingCatId, setEditingCatId] = useState<number | null>(null);
+  const [editCatName, setEditCatName] = useState("");
+  const [addingTagCatId, setAddingTagCatId] = useState<number | null>(null);
+  const [newTagName, setNewTagName] = useState("");
+  const [newTagValue, setNewTagValue] = useState("");
+  const [editingItemId, setEditingItemId] = useState<number | null>(null);
+  const [editItemName, setEditItemName] = useState("");
+  const [editItemValue, setEditItemValue] = useState("");
+  const [newCatName, setNewCatName] = useState("");
+  const [showAddCat, setShowAddCat] = useState(false);
+  const [expandedCats, setExpandedCats] = useState<Set<number>>(new Set());
+
+  const { data: categories, isLoading } = trpc.devProjectTags.getCategories.useQuery({ projectId });
+  const { data: tagStatus } = trpc.devProjectTags.getTagStatus.useQuery({ projectId });
+
+  const initMutation = trpc.devProjectTags.initCategories.useMutation({
+    onSuccess: () => { toast.success("标签分类初始化完成"); utils.devProjectTags.getCategories.invalidate({ projectId }); utils.devProjectTags.getTagStatus.invalidate({ projectId }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const aiGenMutation = trpc.devProjectTags.aiGenerateTags.useMutation({
+    onSuccess: (d: any) => { toast.success(`AI生成完成：${d.totalTags}个标签`); utils.devProjectTags.getCategories.invalidate({ projectId }); utils.devProjectTags.getTagStatus.invalidate({ projectId }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const aiGenCatMutation = trpc.devProjectTags.aiGenerateCategoryTags.useMutation({
+    onSuccess: (d: any) => { toast.success(`生成${d.count}个标签`); utils.devProjectTags.getCategories.invalidate({ projectId }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const updateCatMutation = trpc.devProjectTags.updateCategoryName.useMutation({
+    onSuccess: () => { toast.success("分类名称已更新"); setEditingCatId(null); utils.devProjectTags.getCategories.invalidate({ projectId }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const addCatMutation = trpc.devProjectTags.addCategory.useMutation({
+    onSuccess: () => { toast.success("分类已添加"); setNewCatName(""); setShowAddCat(false); utils.devProjectTags.getCategories.invalidate({ projectId }); utils.devProjectTags.getTagStatus.invalidate({ projectId }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const deleteCatMutation = trpc.devProjectTags.deleteCategory.useMutation({
+    onSuccess: () => { toast.success("分类已删除"); utils.devProjectTags.getCategories.invalidate({ projectId }); utils.devProjectTags.getTagStatus.invalidate({ projectId }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const addItemMutation = trpc.devProjectTags.addTagItem.useMutation({
+    onSuccess: () => { toast.success("标签已添加"); setAddingTagCatId(null); setNewTagName(""); setNewTagValue(""); utils.devProjectTags.getCategories.invalidate({ projectId }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const updateItemMutation = trpc.devProjectTags.updateTagItem.useMutation({
+    onSuccess: () => { toast.success("标签已更新"); setEditingItemId(null); utils.devProjectTags.getCategories.invalidate({ projectId }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const deleteItemMutation = trpc.devProjectTags.deleteTagItem.useMutation({
+    onSuccess: () => { toast.success("标签已删除"); utils.devProjectTags.getCategories.invalidate({ projectId }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const confirmCatMutation = trpc.devProjectTags.confirmCategory.useMutation({
+    onSuccess: () => { toast.success("分类已确认锁定"); utils.devProjectTags.getCategories.invalidate({ projectId }); utils.devProjectTags.getTagStatus.invalidate({ projectId }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const unconfirmCatMutation = trpc.devProjectTags.unconfirmCategory.useMutation({
+    onSuccess: () => { toast.success("分类已解锁"); utils.devProjectTags.getCategories.invalidate({ projectId }); utils.devProjectTags.getTagStatus.invalidate({ projectId }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const confirmAllMutation = trpc.devProjectTags.confirmAll.useMutation({
+    onSuccess: () => { toast.success("全部分类已确认"); utils.devProjectTags.getCategories.invalidate({ projectId }); utils.devProjectTags.getTagStatus.invalidate({ projectId }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const toggleExpand = (catId: number) => {
+    setExpandedCats(prev => {
+      const next = new Set(prev);
+      if (next.has(catId)) next.delete(catId); else next.add(catId);
+      return next;
+    });
+  };
+
+  if (isLoading) return <Skeleton className="h-[300px]" />;
+
+  // Not initialized
+  if (!categories || categories.length === 0) {
+    return (
+      <Card>
+        <CardContent className="flex flex-col items-center justify-center py-12">
+          <Tags className="h-10 w-10 mb-3 text-primary opacity-60" />
+          <p className="text-sm font-medium">标签管理</p>
+          <p className="text-xs text-muted-foreground mt-1">初始化7类标签分类（基础分类/材质/功能/参数/安装方式/认证/特殊），用于后续交叉分析</p>
+          <Button className="mt-4 gap-2" onClick={() => initMutation.mutate({ projectId })} disabled={initMutation.isPending}>
+            {initMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Tags className="h-4 w-4" />}
+            初始化标签分类
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold flex items-center gap-2"><Tags className="h-4 w-4" />标签管理</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {tagStatus ? `${tagStatus.confirmed}/${tagStatus.total} 已确认` : ""}
+            {tagStatus?.allConfirmed && <span className="text-emerald-600 ml-2">✓ 全部确认，可进入分析阶段</span>}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => aiGenMutation.mutate({ projectId })} disabled={aiGenMutation.isPending} className="gap-1.5">
+            {aiGenMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Brain className="h-3.5 w-3.5" />}
+            AI全部生成
+          </Button>
+          {tagStatus && !tagStatus.allConfirmed && tagStatus.total > 0 && (
+            <Button size="sm" onClick={() => confirmAllMutation.mutate({ projectId })} disabled={confirmAllMutation.isPending} className="gap-1.5 bg-emerald-600 hover:bg-emerald-700">
+              {confirmAllMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+              全部确认
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Status Bar */}
+      {tagStatus && (
+        <div className="flex gap-3">
+          <div className="flex-1 bg-muted/50 rounded-lg p-3 text-center">
+            <p className="text-2xl font-bold">{tagStatus.total}</p>
+            <p className="text-xs text-muted-foreground">标签分类</p>
+          </div>
+          <div className="flex-1 bg-emerald-50 rounded-lg p-3 text-center">
+            <p className="text-2xl font-bold text-emerald-600">{tagStatus.confirmed}</p>
+            <p className="text-xs text-muted-foreground">已确认</p>
+          </div>
+          <div className="flex-1 bg-amber-50 rounded-lg p-3 text-center">
+            <p className="text-2xl font-bold text-amber-600">{tagStatus.total - tagStatus.confirmed}</p>
+            <p className="text-xs text-muted-foreground">待确认</p>
+          </div>
+          <div className={`flex-1 rounded-lg p-3 text-center ${tagStatus.allConfirmed ? "bg-emerald-100" : "bg-gray-50"}`}>
+            <p className="text-2xl font-bold">{tagStatus.allConfirmed ? "✓" : "—"}</p>
+            <p className="text-xs text-muted-foreground">{tagStatus.allConfirmed ? "可进入分析" : "需全部确认"}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Category List */}
+      {categories.map((cat: any) => {
+        const isExpanded = expandedCats.has(cat.id);
+        const isConfirmed = cat.confirmed === 1;
+        const isEditingCat = editingCatId === cat.id;
+
+        return (
+          <Card key={cat.id} className={`${isConfirmed ? "border-emerald-200 bg-emerald-50/30" : ""}`}>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 flex-1">
+                  {isEditingCat ? (
+                    <div className="flex items-center gap-2 flex-1">
+                      <input
+                        className="border rounded px-2 py-1 text-sm flex-1 max-w-xs"
+                        value={editCatName}
+                        onChange={e => setEditCatName(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") updateCatMutation.mutate({ categoryId: cat.id, categoryName: editCatName }); }}
+                      />
+                      <Button size="sm" variant="ghost" onClick={() => updateCatMutation.mutate({ categoryId: cat.id, categoryName: editCatName })}><Save className="h-3.5 w-3.5" /></Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEditingCatId(null)}><X className="h-3.5 w-3.5" /></Button>
+                    </div>
+                  ) : (
+                    <>
+                      <button onClick={() => toggleExpand(cat.id)} className="flex items-center gap-2">
+                        <ChevronRight className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                        <CardTitle className="text-sm">{cat.categoryName}</CardTitle>
+                      </button>
+                      <Badge variant="secondary" className="text-xs">{cat.items?.length || 0}个标签</Badge>
+                      {isConfirmed && <Badge className="bg-emerald-100 text-emerald-700 text-xs"><CheckCircle2 className="h-3 w-3 mr-1" />已确认</Badge>}
+                      {cat.description && <span className="text-xs text-muted-foreground hidden md:inline">({cat.description})</span>}
+                    </>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  {!isConfirmed && (
+                    <>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setEditingCatId(cat.id); setEditCatName(cat.categoryName); }} title="编辑分类名">
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => aiGenCatMutation.mutate({ projectId, categoryId: cat.id })} disabled={aiGenCatMutation.isPending} title="AI生成此分类标签">
+                        {aiGenCatMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Brain className="h-3.5 w-3.5" />}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-emerald-600" onClick={() => confirmCatMutation.mutate({ categoryId: cat.id })} title="确认锁定">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      </Button>
+                      {cat.categoryKey?.startsWith("custom_") && (
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-500" onClick={() => { if (confirm("确定删除此分类？")) deleteCatMutation.mutate({ categoryId: cat.id }); }} title="删除分类">
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  {isConfirmed && (
+                    <Button size="sm" variant="ghost" className="h-7 text-xs text-amber-600" onClick={() => unconfirmCatMutation.mutate({ categoryId: cat.id })}>
+                      <Unlock className="h-3.5 w-3.5 mr-1" />解锁编辑
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+
+            {isExpanded && (
+              <CardContent className="pt-0">
+                {cat.items && cat.items.length > 0 ? (
+                  <div className="space-y-1">
+                    {cat.items.map((item: any) => (
+                      <div key={item.id} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-muted/50 group">
+                        {editingItemId === item.id ? (
+                          <div className="flex items-center gap-2 flex-1">
+                            <input className="border rounded px-2 py-1 text-sm flex-1" value={editItemName} onChange={e => setEditItemName(e.target.value)} placeholder="标签名" />
+                            <input className="border rounded px-2 py-1 text-sm flex-1" value={editItemValue} onChange={e => setEditItemValue(e.target.value)} placeholder="标签值(可选)" />
+                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => updateItemMutation.mutate({ itemId: item.id, tagName: editItemName, tagValue: editItemValue })}><Save className="h-3.5 w-3.5" /></Button>
+                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditingItemId(null)}><X className="h-3.5 w-3.5" /></Button>
+                          </div>
+                        ) : (
+                          <>
+                            <Badge variant={item.source === "ai" ? "secondary" : "outline"} className="text-xs shrink-0">
+                              {item.source === "ai" ? "AI" : "手动"}
+                            </Badge>
+                            <span className="text-sm font-medium">{item.tagName}</span>
+                            {item.tagValue && <span className="text-xs text-muted-foreground">— {item.tagValue}</span>}
+                            {!isConfirmed && (
+                              <div className="ml-auto flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => { setEditingItemId(item.id); setEditItemName(item.tagName); setEditItemValue(item.tagValue || ""); }}>
+                                  <Edit2 className="h-3 w-3" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500" onClick={() => deleteItemMutation.mutate({ itemId: item.id })}>
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground py-3 text-center">暂无标签，点击AI生成或手动添加</p>
+                )}
+
+                {/* Add tag item */}
+                {!isConfirmed && (
+                  addingTagCatId === cat.id ? (
+                    <div className="flex items-center gap-2 mt-2 pt-2 border-t">
+                      <input className="border rounded px-2 py-1 text-sm flex-1" value={newTagName} onChange={e => setNewTagName(e.target.value)} placeholder="标签名称" />
+                      <input className="border rounded px-2 py-1 text-sm flex-1" value={newTagValue} onChange={e => setNewTagValue(e.target.value)} placeholder="标签值(可选)" />
+                      <Button size="sm" onClick={() => { if (newTagName.trim()) addItemMutation.mutate({ categoryId: cat.id, projectId, tagName: newTagName.trim(), tagValue: newTagValue.trim() || undefined }); }} disabled={!newTagName.trim() || addItemMutation.isPending}>
+                        {addItemMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "添加"}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => { setAddingTagCatId(null); setNewTagName(""); setNewTagValue(""); }}><X className="h-3.5 w-3.5" /></Button>
+                    </div>
+                  ) : (
+                    <Button size="sm" variant="ghost" className="mt-2 text-xs w-full" onClick={() => setAddingTagCatId(cat.id)}>+ 手动添加标签</Button>
+                  )
+                )}
+              </CardContent>
+            )}
+          </Card>
+        );
+      })}
+
+      {/* Add Custom Category */}
+      {showAddCat ? (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <input className="border rounded px-2 py-1 text-sm flex-1" value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="新分类名称" />
+              <Button size="sm" onClick={() => { if (newCatName.trim()) addCatMutation.mutate({ projectId, categoryName: newCatName.trim() }); }} disabled={!newCatName.trim() || addCatMutation.isPending}>
+                {addCatMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "添加"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setShowAddCat(false); setNewCatName(""); }}><X className="h-3.5 w-3.5" /></Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Button variant="outline" className="w-full" onClick={() => setShowAddCat(true)}>+ 添加自定义分类</Button>
+      )}
+    </div>
+  );
+}
+
 function LockedPhaseCard() {
   return (
     <Card className="border-dashed border-2">
