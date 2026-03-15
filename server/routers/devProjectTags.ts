@@ -22,6 +22,56 @@ const DEFAULT_CATEGORIES = [
   { key: "special", name: "特殊属性", description: "专利特征、独特卖点、差异化特性等", order: 7 },
 ];
 
+// Parse CSV content into rows
+function parseCSV(content: string): string[][] {
+  const lines = content.split(/\r?\n/).filter(l => l.trim());
+  return lines.map(line => {
+    const result: string[] = [];
+    let current = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+        else inQuotes = !inQuotes;
+      } else if (ch === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  });
+}
+
+// Auto-detect column mapping from header row
+function detectColumns(headers: string[]): { categoryCol: number; nameCol: number; valueCol: number } {
+  const lower = headers.map(h => h.toLowerCase().trim());
+  let categoryCol = -1, nameCol = -1, valueCol = -1;
+
+  for (let i = 0; i < lower.length; i++) {
+    const h = lower[i];
+    if (categoryCol === -1 && (h.includes("分类") || h.includes("category") || h.includes("类别") || h.includes("属性类型") || h.includes("type"))) categoryCol = i;
+    else if (nameCol === -1 && (h.includes("标签名") || h.includes("属性名") || h.includes("tag") || h.includes("name") || h.includes("名称"))) nameCol = i;
+    else if (valueCol === -1 && (h.includes("标签值") || h.includes("属性值") || h.includes("value") || h.includes("值") || h.includes("说明"))) valueCol = i;
+  }
+
+  // Fallback: if only 2 columns, assume category + name
+  if (categoryCol === -1 && nameCol === -1 && headers.length >= 2) {
+    categoryCol = 0;
+    nameCol = 1;
+    valueCol = headers.length >= 3 ? 2 : -1;
+  }
+  // If only 1 column, treat as tag names (no category)
+  if (categoryCol === -1 && nameCol === -1 && headers.length === 1) {
+    nameCol = 0;
+  }
+
+  return { categoryCol, nameCol, valueCol };
+}
+
 export const devProjectTagsRouter = router({
   // Initialize default categories for a project
   initCategories: protectedProcedure
@@ -213,6 +263,182 @@ export const devProjectTagsRouter = router({
         allConfirmed: total > 0 && confirmed === total,
         initialized: total > 0,
       };
+    }),
+
+  // Parse uploaded file and return preview data
+  parseImportFile: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      fileContent: z.string(),
+      fileName: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const ext = input.fileName.toLowerCase().split(".").pop();
+      let rows: string[][] = [];
+
+      if (ext === "csv" || ext === "txt") {
+        rows = parseCSV(input.fileContent);
+      } else {
+        throw new Error("仅支持 CSV 和 TXT 格式。如需导入 Excel，请先将其另存为 CSV 格式。");
+      }
+
+      if (rows.length < 2) throw new Error("文件至少需要包含表头行和一行数据");
+
+      const headers = rows[0];
+      const dataRows = rows.slice(1).filter(r => r.some(c => c.trim()));
+      const detected = detectColumns(headers);
+
+      // Build preview
+      const preview = dataRows.slice(0, 50).map(row => ({
+        category: detected.categoryCol >= 0 ? (row[detected.categoryCol] || "") : "",
+        tagName: detected.nameCol >= 0 ? (row[detected.nameCol] || "") : "",
+        tagValue: detected.valueCol >= 0 ? (row[detected.valueCol] || "") : "",
+      })).filter(r => r.tagName.trim());
+
+      // Unique categories found
+      const uniqueCategories = Array.from(new Set(preview.map(r => r.category).filter(Boolean)));
+
+      return {
+        headers,
+        totalRows: dataRows.length,
+        previewRows: preview,
+        detectedMapping: {
+          categoryCol: detected.categoryCol,
+          nameCol: detected.nameCol,
+          valueCol: detected.valueCol,
+        },
+        uniqueCategories,
+      };
+    }),
+
+  // Batch import tags from parsed file data
+  batchImport: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      items: z.array(z.object({
+        category: z.string(),
+        tagName: z.string(),
+        tagValue: z.string().optional(),
+      })),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await ensureDb();
+      if (input.items.length === 0) throw new Error("没有可导入的数据");
+
+      // Get existing categories
+      let categories = await db.select().from(devProjectTagCategories)
+        .where(eq(devProjectTagCategories.projectId, input.projectId));
+
+      // If no categories exist, initialize defaults first
+      if (categories.length === 0) {
+        for (const cat of DEFAULT_CATEGORIES) {
+          await db.insert(devProjectTagCategories).values({
+            projectId: input.projectId,
+            userId: ctx.user.id,
+            categoryKey: cat.key,
+            categoryName: cat.name,
+            description: cat.description,
+            sortOrder: cat.order,
+          });
+        }
+        categories = await db.select().from(devProjectTagCategories)
+          .where(eq(devProjectTagCategories.projectId, input.projectId));
+      }
+
+      let added = 0, skipped = 0, newCategories = 0;
+      const catMap = new Map(categories.map((c: any) => [c.categoryName, c]));
+
+      // Group items by category
+      const grouped = new Map<string, { tagName: string; tagValue?: string }[]>();
+      for (const item of input.items) {
+        const catName = item.category.trim() || "未分类";
+        if (!grouped.has(catName)) grouped.set(catName, []);
+        grouped.get(catName)!.push({ tagName: item.tagName.trim(), tagValue: item.tagValue?.trim() });
+      }
+
+      for (const [catName, tags] of Array.from(grouped)) {
+        // Find or create category
+        let category = catMap.get(catName);
+        if (!category) {
+          // Try fuzzy match
+          for (const [existingName, existingCat] of Array.from(catMap)) {
+            if (existingName.includes(catName) || catName.includes(existingName)) {
+              category = existingCat;
+              break;
+            }
+          }
+        }
+        if (!category) {
+          // Create new category
+          const maxOrder = Math.max(0, ...categories.map((c: any) => c.sortOrder));
+          const [result] = await db.insert(devProjectTagCategories).values({
+            projectId: input.projectId,
+            userId: ctx.user.id,
+            categoryKey: `import_${Date.now()}_${newCategories}`,
+            categoryName: catName,
+            description: "批量导入创建",
+            sortOrder: maxOrder + 1 + newCategories,
+          });
+          category = { id: Number(result.insertId), categoryName: catName } as any;
+          catMap.set(catName, category);
+          newCategories++;
+        }
+
+        // Get existing tag names for dedup
+        const existingItems = await db.select().from(devProjectTagItems)
+          .where(eq(devProjectTagItems.categoryId, (category as any).id));
+        const existingNames = new Set(existingItems.map((i: any) => i.tagName.toLowerCase()));
+        const maxOrder = Math.max(0, ...existingItems.map((i: any) => i.sortOrder));
+
+        let orderOffset = 0;
+        for (const tag of tags) {
+          if (!tag.tagName || existingNames.has(tag.tagName.toLowerCase())) {
+            skipped++;
+            continue;
+          }
+          await db.insert(devProjectTagItems).values({
+            categoryId: (category as any).id,
+            projectId: input.projectId,
+            tagName: tag.tagName,
+            tagValue: tag.tagValue || null,
+            source: "manual",
+            sortOrder: maxOrder + 1 + orderOffset,
+          });
+          existingNames.add(tag.tagName.toLowerCase());
+          added++;
+          orderOffset++;
+        }
+
+        // Reset confirmed status since tags changed
+        await db.update(devProjectTagCategories).set({
+          confirmed: 0,
+          confirmedAt: null,
+        }).where(eq(devProjectTagCategories.id, (category as any).id));
+      }
+
+      return { success: true, added, skipped, newCategories, total: input.items.length };
+    }),
+
+  // Get import template content
+  getImportTemplate: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const db = await ensureDb();
+      const categories = await db.select().from(devProjectTagCategories)
+        .where(eq(devProjectTagCategories.projectId, input.projectId))
+        .orderBy(asc(devProjectTagCategories.sortOrder));
+
+      const catNames = categories.length > 0
+        ? categories.map((c: any) => c.categoryName)
+        : DEFAULT_CATEGORIES.map(c => c.name);
+
+      // Generate CSV template content
+      let csv = "\uFEFF分类名称,标签名称,标签值(可选)\n";
+      for (const name of catNames) {
+        csv += `${name},示例标签1,示例值1\n`;
+        csv += `${name},示例标签2,\n`;
+      }
+      return { csv, categories: catNames };
     }),
 
   // AI generate tags for all categories based on product data

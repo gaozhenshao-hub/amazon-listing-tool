@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import {
   ArrowLeft, BarChart3, FileText, Loader2, Package, Star, Target, Users,
   Wrench, ClipboardCheck, Brain, RefreshCw, Globe, Upload, CheckCircle2,
   AlertCircle, DollarSign, Download, Lock, Unlock, ChevronRight,
-  Edit2, Save, X, ArrowDownUp, Copy, Tags,
+  Edit2, Save, X, ArrowDownUp, Copy, Tags, FileUp, FileDown, Eye,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -514,9 +514,16 @@ function ProjectTagManager({ projectId }: { projectId: number }) {
   const [newCatName, setNewCatName] = useState("");
   const [showAddCat, setShowAddCat] = useState(false);
   const [expandedCats, setExpandedCats] = useState<Set<number>>(new Set());
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<any>(null);
+  const [importStep, setImportStep] = useState<"upload" | "preview" | "result">("upload");
+  const [importResult, setImportResult] = useState<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: categories, isLoading } = trpc.devProjectTags.getCategories.useQuery({ projectId });
   const { data: tagStatus } = trpc.devProjectTags.getTagStatus.useQuery({ projectId });
+  const { data: templateData } = trpc.devProjectTags.getImportTemplate.useQuery({ projectId });
 
   const initMutation = trpc.devProjectTags.initCategories.useMutation({
     onSuccess: () => { toast.success("标签分类初始化完成"); utils.devProjectTags.getCategories.invalidate({ projectId }); utils.devProjectTags.getTagStatus.invalidate({ projectId }); },
@@ -566,6 +573,45 @@ function ProjectTagManager({ projectId }: { projectId: number }) {
     onSuccess: () => { toast.success("全部分类已确认"); utils.devProjectTags.getCategories.invalidate({ projectId }); utils.devProjectTags.getTagStatus.invalidate({ projectId }); },
     onError: (e: any) => toast.error(e.message),
   });
+  const parseMutation = trpc.devProjectTags.parseImportFile.useMutation({
+    onSuccess: (data: any) => { setImportPreview(data); setImportStep("preview"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const batchImportMutation = trpc.devProjectTags.batchImport.useMutation({
+    onSuccess: (data: any) => { setImportResult(data); setImportStep("result"); utils.devProjectTags.getCategories.invalidate({ projectId }); utils.devProjectTags.getTagStatus.invalidate({ projectId }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const handleFileSelect = async (file: File) => {
+    setImportFile(file);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      parseMutation.mutate({ projectId, fileContent: content, fileName: file.name });
+    };
+    reader.readAsText(file, "utf-8");
+  };
+
+  const handleImport = () => {
+    if (!importPreview) return;
+    batchImportMutation.mutate({ projectId, items: importPreview.previewRows.concat(
+      importPreview.totalRows > 50 ? [] : [] // All rows are in previewRows for now
+    ) });
+  };
+
+  const handleDownloadTemplate = () => {
+    if (!templateData) return;
+    const blob = new Blob([templateData.csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "标签导入模板.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const resetImportDialog = () => {
+    setShowImportDialog(false); setImportFile(null); setImportPreview(null);
+    setImportStep("upload"); setImportResult(null);
+  };
 
   const toggleExpand = (catId: number) => {
     setExpandedCats(prev => {
@@ -606,6 +652,9 @@ function ProjectTagManager({ projectId }: { projectId: number }) {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => setShowImportDialog(true)} className="gap-1.5">
+            <FileUp className="h-3.5 w-3.5" />批量导入
+          </Button>
           <Button size="sm" variant="outline" onClick={() => aiGenMutation.mutate({ projectId })} disabled={aiGenMutation.isPending} className="gap-1.5">
             {aiGenMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Brain className="h-3.5 w-3.5" />}
             AI全部生成
@@ -762,6 +811,130 @@ function ProjectTagManager({ projectId }: { projectId: number }) {
           </Card>
         );
       })}
+
+      {/* Batch Import Dialog */}
+      {showImportDialog && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm flex items-center gap-2"><FileUp className="h-4 w-4" />批量导入标签</CardTitle>
+              <Button size="sm" variant="ghost" onClick={resetImportDialog}><X className="h-4 w-4" /></Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {importStep === "upload" && (
+              <div className="space-y-3">
+                <div
+                  className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                  onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const f = e.dataTransfer.files[0]; if (f) handleFileSelect(f); }}
+                >
+                  <FileUp className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                  <p className="text-sm font-medium">点击或拖拽上传文件</p>
+                  <p className="text-xs text-muted-foreground mt-1">支持 CSV、TXT 格式（Excel请先另存为CSV）</p>
+                  {importFile && <p className="text-xs text-primary mt-2">已选择: {importFile.name}</p>}
+                  <input ref={fileInputRef} type="file" accept=".csv,.txt" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={handleDownloadTemplate} className="gap-1.5">
+                    <FileDown className="h-3.5 w-3.5" />下载导入模板
+                  </Button>
+                  <span className="text-xs text-muted-foreground">模板包含当前项目的标签分类名称</span>
+                </div>
+                {parseMutation.isPending && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />正在解析文件...
+                  </div>
+                )}
+              </div>
+            )}
+
+            {importStep === "preview" && importPreview && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm">
+                    <span className="font-medium">解析结果:</span>
+                    <span className="ml-2">共 {importPreview.totalRows} 行数据</span>
+                    {importPreview.uniqueCategories.length > 0 && (
+                      <span className="ml-2 text-muted-foreground">· {importPreview.uniqueCategories.length} 个分类</span>
+                    )}
+                  </div>
+                  <Badge variant="outline" className="text-xs">
+                    <Eye className="h-3 w-3 mr-1" />预览前{Math.min(50, importPreview.previewRows.length)}行
+                  </Badge>
+                </div>
+
+                {/* Column Mapping Info */}
+                <div className="bg-muted/50 rounded p-2 text-xs space-y-1">
+                  <p className="font-medium">列映射检测:</p>
+                  <p>分类列: {importPreview.detectedMapping.categoryCol >= 0 ? `第${importPreview.detectedMapping.categoryCol + 1}列 (${importPreview.headers[importPreview.detectedMapping.categoryCol]})` : "未检测到"}</p>
+                  <p>标签名列: {importPreview.detectedMapping.nameCol >= 0 ? `第${importPreview.detectedMapping.nameCol + 1}列 (${importPreview.headers[importPreview.detectedMapping.nameCol]})` : "未检测到"}</p>
+                  <p>标签值列: {importPreview.detectedMapping.valueCol >= 0 ? `第${importPreview.detectedMapping.valueCol + 1}列 (${importPreview.headers[importPreview.detectedMapping.valueCol]})` : "未检测到(可选)"}</p>
+                </div>
+
+                {/* Preview Table */}
+                <div className="border rounded-lg overflow-hidden max-h-[300px] overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted sticky top-0">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium">分类</th>
+                        <th className="text-left px-3 py-2 font-medium">标签名称</th>
+                        <th className="text-left px-3 py-2 font-medium">标签值</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importPreview.previewRows.map((row: any, i: number) => (
+                        <tr key={i} className="border-t">
+                          <td className="px-3 py-1.5">{row.category || <span className="text-muted-foreground">未分类</span>}</td>
+                          <td className="px-3 py-1.5 font-medium">{row.tagName}</td>
+                          <td className="px-3 py-1.5 text-muted-foreground">{row.tagValue || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex gap-2 justify-end">
+                  <Button size="sm" variant="outline" onClick={() => { setImportStep("upload"); setImportPreview(null); setImportFile(null); }}>重新选择</Button>
+                  <Button size="sm" onClick={handleImport} disabled={batchImportMutation.isPending} className="gap-1.5">
+                    {batchImportMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileUp className="h-3.5 w-3.5" />}
+                    确认导入 ({importPreview.previewRows.length} 条)
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {importStep === "result" && importResult && (
+              <div className="space-y-3">
+                <div className="bg-emerald-50 rounded-lg p-4 text-center">
+                  <CheckCircle2 className="h-8 w-8 mx-auto mb-2 text-emerald-600" />
+                  <p className="text-sm font-medium">导入完成</p>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  <div className="bg-muted/50 rounded p-2">
+                    <p className="text-lg font-bold">{importResult.total}</p>
+                    <p className="text-xs text-muted-foreground">总计</p>
+                  </div>
+                  <div className="bg-emerald-50 rounded p-2">
+                    <p className="text-lg font-bold text-emerald-600">{importResult.added}</p>
+                    <p className="text-xs text-muted-foreground">新增</p>
+                  </div>
+                  <div className="bg-amber-50 rounded p-2">
+                    <p className="text-lg font-bold text-amber-600">{importResult.skipped}</p>
+                    <p className="text-xs text-muted-foreground">跳过(重复)</p>
+                  </div>
+                  <div className="bg-blue-50 rounded p-2">
+                    <p className="text-lg font-bold text-blue-600">{importResult.newCategories}</p>
+                    <p className="text-xs text-muted-foreground">新建分类</p>
+                  </div>
+                </div>
+                <Button size="sm" className="w-full" onClick={resetImportDialog}>完成</Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Add Custom Category */}
       {showAddCat ? (
