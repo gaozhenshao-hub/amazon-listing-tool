@@ -116,4 +116,34 @@ ${products.slice(0, 10).map(p => `${p.asin} | ${p.title} | $${p.price} | ${p.rat
     .query(async ({ ctx, input }) => {
       return devDb.getDevProjectScore(input.projectId);
     }),
+
+  // Approve project: move from market_analysis to project_execution phase
+  approveProject: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const score = await devDb.getDevProjectScore(input.projectId);
+      if (!score) throw new Error("请先完成AI评分");
+
+      await devDb.updateDevProject(input.projectId, ctx.user.id, {
+        phase: "project_execution" as any,
+        approvedAt: new Date() as any,
+        approvedScore: score.totalScore as any,
+        status: "completed" as any,
+      });
+
+      return { success: true, totalScore: score.totalScore };
+    }),
+
+  // Revoke approval: move back to market_analysis phase
+  revokeApproval: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await devDb.updateDevProject(input.projectId, ctx.user.id, {
+        phase: "market_analysis" as any,
+        approvedAt: null as any,
+        approvedScore: null as any,
+        status: "scoring" as any,
+      });
+      return { success: true };
+    }),
 });

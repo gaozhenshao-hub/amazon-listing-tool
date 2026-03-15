@@ -507,6 +507,9 @@ export const devProjects = mysqlTable("dev_projects", {
   platform: varchar("platform", { length: 50 }).default("amazon"),
   keywords: text("keywords"), // JSON array of search keywords
   status: mysqlEnum("status", ["draft", "data_collection", "analyzing", "scoring", "completed", "archived"]).default("draft").notNull(),
+  phase: mysqlEnum("phase", ["market_analysis", "project_execution"]).default("market_analysis").notNull(),
+  approvedAt: timestamp("approvedAt"),
+  approvedScore: int("approvedScore"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -713,14 +716,31 @@ export const devProductProfiles = mysqlTable("dev_product_profiles", {
   id: int("id").autoincrement().primaryKey(),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
-  appearanceColors: text("appearanceColors"), // JSON: { colors, diff, matching, other }
-  mainFunctions: text("mainFunctions"), // JSON: { mainFunctions, upgrades, diffDesign }
-  costBreakdown: text("costBreakdown"), // JSON: { breakdown, targetPrice, targetMargin }
-  packageDimensions: text("packageDimensions"), // JSON: { dimensions, boxType, filling, weight }
-  packageDesign: text("packageDesign"), // JSON: { style, colorScheme, printInfo }
-  userPersona: text("userPersona"), // JSON: { age, gender, income, interests, painPoints, description }
-  usageScenarios: text("usageScenarios"), // JSON: { scenarios }
-  productMap: text("productMap"), // JSON: { positioning, competitors, advantages, gaps }
+  // 8 sub-modules: each has aiSuggestion + userEdit + confirmed flag
+  appearanceColors: text("appearanceColors"), // JSON: user-edited data for 外观设计
+  appearanceAiSuggestion: text("appearanceAiSuggestion"), // JSON: AI suggestion
+  appearanceConfirmed: int("appearanceConfirmed").default(0).notNull(),
+  mainFunctions: text("mainFunctions"), // JSON: user-edited data for 功能提升
+  functionsAiSuggestion: text("functionsAiSuggestion"),
+  functionsConfirmed: int("functionsConfirmed").default(0).notNull(),
+  costBreakdown: text("costBreakdown"), // JSON: user-edited data for 产品成本
+  costAiSuggestion: text("costAiSuggestion"),
+  costConfirmed: int("costConfirmed").default(0).notNull(),
+  packageDimensions: text("packageDimensions"), // JSON: user-edited data for 包装设计
+  packageAiSuggestion: text("packageAiSuggestion"),
+  packageConfirmed: int("packageConfirmed").default(0).notNull(),
+  packageDesign: text("packageDesign"), // JSON: user-edited data for 包装外观
+  packageDesignAiSuggestion: text("packageDesignAiSuggestion"),
+  packageDesignConfirmed: int("packageDesignConfirmed").default(0).notNull(),
+  userPersona: text("userPersona"), // JSON: user-edited data for 用户画像
+  userPersonaAiSuggestion: text("userPersonaAiSuggestion"),
+  userPersonaConfirmed: int("userPersonaConfirmed").default(0).notNull(),
+  usageScenarios: text("usageScenarios"), // JSON: user-edited data for 使用场景
+  usageScenariosAiSuggestion: text("usageScenariosAiSuggestion"),
+  usageScenariosConfirmed: int("usageScenariosConfirmed").default(0).notNull(),
+  productMap: text("productMap"), // JSON: user-edited data for 产品地图
+  productMapAiSuggestion: text("productMapAiSuggestion"),
+  productMapConfirmed: int("productMapConfirmed").default(0).notNull(),
   status: mysqlEnum("status", ["draft", "confirmed"]).default("draft").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -729,16 +749,24 @@ export const devProductProfiles = mysqlTable("dev_product_profiles", {
 export type DevProductProfile = typeof devProductProfiles.$inferSelect;
 export type InsertDevProductProfile = typeof devProductProfiles.$inferInsert;
 
-// 产品说明书
+// 产品说明书 - 三步流程: AI生成9章节 → 编辑确认+上传素材 → 双语HTML+PDF
 export const devProductManuals = mysqlTable("dev_product_manuals", {
   id: int("id").autoincrement().primaryKey(),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   brandName: varchar("brandName", { length: 255 }),
   logoUrl: text("logoUrl"),
-  contentSections: text("contentSections"), // JSON: array of { sectionKey, titleEn, titleEs, contentEn, contentEs, status }
+  coverImageUrl: text("coverImageUrl"),
+  qrCodeUrl: text("qrCodeUrl"),
+  contentSections: text("contentSections"), // JSON: array of 9 chapters { key, titleEn, titleEs, contentEn, contentEs, confirmed }
+  spanishContent: text("spanishContent"), // JSON: Spanish version content
+  brandAssets: text("brandAssets"), // JSON: { logo, cover, qrCode, otherAssets[] }
+  htmlEnUrl: text("htmlEnUrl"), // S3 URL for English HTML manual
+  htmlEsUrl: text("htmlEsUrl"), // S3 URL for Spanish HTML manual
+  pdfEnUrl: text("pdfEnUrl"), // S3 URL for English PDF
+  pdfEsUrl: text("pdfEsUrl"), // S3 URL for Spanish PDF
   contentStatus: mysqlEnum("contentStatus", ["draft", "editing", "confirmed"]).default("draft").notNull(),
-  finalManualUrl: text("finalManualUrl"), // S3 URL for final PDF
+  finalManualUrl: text("finalManualUrl"), // S3 URL for final combined PDF
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -746,13 +774,15 @@ export const devProductManuals = mysqlTable("dev_product_manuals", {
 export type DevProductManual = typeof devProductManuals.$inferSelect;
 export type InsertDevProductManual = typeof devProductManuals.$inferInsert;
 
-// 测试报告
+// 测试报告 - 8类测试(安装/使用/跌落/运输/功能/耐久性/安全/包装) + 状态追踪 + Excel导出
 export const devTestReports = mysqlTable("dev_test_reports", {
   id: int("id").autoincrement().primaryKey(),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
-  testItems: text("testItems"), // JSON: array of test items with status
-  reportContent: text("reportContent"), // JSON: additional report content
+  // JSON: array of { category, nameEn, nameCn, descEn, descCn, requirement, passStandard, testMethod, testStatus: 'pass'|'fail'|'pending', actualResult, notes }
+  testItems: text("testItems"),
+  reportContent: text("reportContent"), // JSON: summary and additional notes
+  excelUrl: text("excelUrl"), // S3 URL for exported Excel
   status: mysqlEnum("status", ["draft", "editing", "confirmed"]).default("draft").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

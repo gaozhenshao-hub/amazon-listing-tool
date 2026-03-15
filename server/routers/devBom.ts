@@ -197,6 +197,125 @@ ${existingBom.length > 0 ? `已有BOM: ${existingBom.map(b => b.partName).join("
       return devDb.getDevProfitCalculations(ctx.user.id);
     }),
 
+  // BOM cost summary - auto-calculate from BOM items
+  getBomCostSummary: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const bomItems = await devDb.getDevBomItems(input.projectId);
+      const moldCosts = await devDb.getDevMoldCosts(input.projectId);
+      const summary = await devDb.getDevBomSummary(input.projectId);
+
+      // Calculate total material cost from BOM items
+      let totalMaterialCost = 0;
+      for (const item of bomItems) {
+        const price = parseFloat(item.unitPrice || "0");
+        const qty = item.quantity || 1;
+        totalMaterialCost += price * qty;
+      }
+
+      // Calculate total mold cost
+      let totalMoldCost = 0;
+      for (const mold of moldCosts) {
+        totalMoldCost += parseFloat(mold.estimatedCost || "0");
+      }
+
+      return {
+        totalMaterialCost: Math.round(totalMaterialCost * 100) / 100,
+        totalMoldCost: Math.round(totalMoldCost * 100) / 100,
+        bomItemCount: bomItems.length,
+        moldCount: moldCosts.length,
+        summary,
+      };
+    }),
+
+  // Batch profit simulation with different order quantities
+  batchSimulate: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      sellingPrice: z.number(),
+      productCost: z.number(), // from BOM
+      shippingCost: z.number(),
+      fbaFee: z.number().optional(),
+      referralFeeRate: z.number().optional(), // percentage
+      advertisingCost: z.number().optional(),
+      otherCosts: z.number().optional(),
+      totalMoldCost: z.number().optional(),
+      quantities: z.array(z.number()).default([100, 500, 1000, 5000]),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const referralRate = (input.referralFeeRate ?? 15) / 100;
+      const referralFee = input.sellingPrice * referralRate;
+      const fbaFee = input.fbaFee ?? 0;
+      const advertisingCost = input.advertisingCost ?? 0;
+      const otherCosts = input.otherCosts ?? 0;
+      const totalMoldCost = input.totalMoldCost ?? 0;
+
+      const simulations = input.quantities.map(qty => {
+        const moldPerUnit = qty > 0 ? totalMoldCost / qty : 0;
+        const totalUnitCost = input.productCost + moldPerUnit + input.shippingCost + referralFee + fbaFee + advertisingCost + otherCosts;
+        const profit = input.sellingPrice - totalUnitCost;
+        const profitMargin = input.sellingPrice > 0 ? (profit / input.sellingPrice) * 100 : 0;
+        const roi = totalUnitCost > 0 ? (profit / totalUnitCost) * 100 : 0;
+
+        return {
+          quantity: qty,
+          moldPerUnit: Math.round(moldPerUnit * 100) / 100,
+          totalUnitCost: Math.round(totalUnitCost * 100) / 100,
+          profit: Math.round(profit * 100) / 100,
+          profitMargin: Math.round(profitMargin * 100) / 100,
+          roi: Math.round(roi * 100) / 100,
+          totalProfit: Math.round(profit * qty * 100) / 100,
+          totalRevenue: Math.round(input.sellingPrice * qty * 100) / 100,
+          totalCost: Math.round(totalUnitCost * qty * 100) / 100,
+        };
+      });
+
+      return {
+        simulations,
+        baseParams: {
+          sellingPrice: input.sellingPrice,
+          productCost: input.productCost,
+          shippingCost: input.shippingCost,
+          referralFee: Math.round(referralFee * 100) / 100,
+          fbaFee,
+          advertisingCost,
+          otherCosts,
+          totalMoldCost,
+        },
+      };
+    }),
+
+  // Generate full project report data for PDF export
+  getProjectReportData: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      const products = await devDb.getDevProductsByProject(input.projectId);
+      const score = await devDb.getDevProjectScore(input.projectId);
+      const profile = await devDb.getDevProductProfile(input.projectId);
+      const bomItems = await devDb.getDevBomItems(input.projectId);
+      const moldCosts = await devDb.getDevMoldCosts(input.projectId);
+      const bomSummary = await devDb.getDevBomSummary(input.projectId);
+      const manual = await devDb.getDevManual(input.projectId);
+      const testReport = await devDb.getDevTestReport(input.projectId);
+      const reports = await devDb.getDevReports(input.projectId);
+
+      return {
+        project,
+        products: products.slice(0, 20),
+        score,
+        profile,
+        bomItems,
+        moldCosts,
+        bomSummary,
+        manual: manual ? { brandName: manual.brandName, contentStatus: manual.contentStatus } : null,
+        testReport: testReport ? { status: testReport.status, testItems: testReport.testItems } : null,
+        reports,
+      };
+    }),
+
   // ─── Supplier Management ───────────────────────────────────
   listSuppliers: protectedProcedure
     .input(z.object({ projectId: z.number() }))
