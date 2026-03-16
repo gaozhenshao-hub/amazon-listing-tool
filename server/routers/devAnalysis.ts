@@ -838,11 +838,13 @@ export const devAnalysisRouter = router({
         confirmedAt: null,
       });
 
-      // Collect confirmed results from all previous stages
+      // Collect confirmed results from all previous stages with status info
       const stages = await devDb.getDevAnalysisStages(input.projectId);
       const confirmedData: Record<string, unknown> = {};
+      const stageStatus: Record<string, string> = {};
       for (const stage of stages) {
         if (stage.stageType === "decision_dashboard") continue;
+        stageStatus[stage.stageType ?? "unknown"] = stage.status ?? "pending";
         const data = stage.editedResult || stage.rawResult;
         if (data) {
           try {
@@ -850,13 +852,15 @@ export const devAnalysisRouter = router({
           } catch { /* skip */ }
         }
       }
+      const confirmedStages = Object.entries(stageStatus).filter(([, s]) => s === "confirmed").map(([k]) => k);
+      const unconfirmedStages = Object.entries(stageStatus).filter(([, s]) => s !== "confirmed" && s !== "pending").map(([k]) => k);
 
       const response = await invokeLLM({
         messages: [
           { role: "system", content: DECISION_DASHBOARD_PROMPT },
           {
             role: "user",
-            content: `品类: ${project.name}\n关键词: ${project.keywords}\n目标市场: ${project.targetMarket}\n\n各阶段已确认的分析数据:\n${JSON.stringify(confirmedData, null, 2)}`,
+            content: `品类: ${project.name}\n关键词: ${project.keywords}\n目标市场: ${project.targetMarket}\n\n已确认阶段: ${confirmedStages.join(", ") || "无"}\n未确认阶段: ${unconfirmedStages.join(", ") || "无"}\n\n各阶段分析数据:\n${JSON.stringify(confirmedData, null, 2)}`,
           },
         ],
         response_format: {

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useLocation, useParams } from "wouter";
@@ -35,7 +36,7 @@ import { Streamdown } from "streamdown";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-  ScatterChart, Scatter, ZAxis,
+  ScatterChart, Scatter, ZAxis, LineChart, Line,
 } from "recharts";
 
 /* ─── Chart Colors ─── */
@@ -72,6 +73,7 @@ export default function DevAnalysisFlow() {
   const [activeStage, setActiveStage] = useState<StageKey>("attribute_tagging");
   const [editingStage, setEditingStage] = useState<StageKey | null>(null);
   const [editText, setEditText] = useState("");
+  const [editFormData, setEditFormData] = useState<any>(null);
   const utils = trpc.useUtils();
 
   // ─── Queries ───
@@ -163,8 +165,11 @@ export default function DevAnalysisFlow() {
     if (!stage) return;
     const result = stage.editedResult || stage.rawResult;
     try {
-      setEditText(JSON.stringify(JSON.parse(result), null, 2));
+      const parsed = JSON.parse(result);
+      setEditFormData(parsed);
+      setEditText(JSON.stringify(parsed, null, 2));
     } catch {
+      setEditFormData(null);
       setEditText(result || "");
     }
     setEditingStage(key);
@@ -291,6 +296,40 @@ export default function DevAnalysisFlow() {
                       <div className="flex items-center justify-between">
                         <span className="text-xs text-muted-foreground">确认时间</span>
                         <span className="text-xs">{new Date(stageData.confirmedAt).toLocaleString()}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+              <Separator />
+              {/* Data Quality & Stage Progress */}
+              {(() => {
+                const confirmedCount = STAGES.filter(s => stageMap[s.key]?.status === "confirmed").length;
+                const completedCount = STAGES.filter(s => ["completed", "generated", "editing", "confirmed"].includes(stageMap[s.key]?.status)).length;
+                const productData = products || [];
+                const missingFields: string[] = [];
+                if (productData.length > 0) {
+                  const sample = productData[0] as any;
+                  if (!sample.brand) missingFields.push("品牌");
+                  if (!sample.monthlySales && !sample.monthSales) missingFields.push("月销量");
+                  if (!sample.price) missingFields.push("价格");
+                  if (!sample.rating) missingFields.push("评分");
+                }
+                return (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium">分析进度</p>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${(confirmedCount / STAGES.length) * 100}%` }} />
+                      </div>
+                      <span className="text-xs text-muted-foreground">{confirmedCount}/{STAGES.length}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      已完成 {completedCount} 阶段 · 已确认 {confirmedCount} 阶段
+                    </div>
+                    {missingFields.length > 0 && (
+                      <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 p-2 rounded-md">
+                        ⚠ 数据质量提示: 部分产品缺少{missingFields.join("、")}字段，可能影响分析准确性
                       </div>
                     )}
                   </div>
@@ -453,7 +492,10 @@ export default function DevAnalysisFlow() {
                     <Button
                       size="sm"
                       className="gap-1"
-                      onClick={() => editMutation.mutate({ projectId, stageType: activeStage, editedResult: editText })}
+                      onClick={() => {
+                        const saveText = editFormData ? JSON.stringify(editFormData) : editText;
+                        editMutation.mutate({ projectId, stageType: activeStage, editedResult: saveText });
+                      }}
                       disabled={editMutation.isPending}
                     >
                       {editMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
@@ -463,12 +505,20 @@ export default function DevAnalysisFlow() {
                 </div>
               </CardHeader>
               <CardContent>
-                <Textarea
-                  value={editText}
-                  onChange={(e) => setEditText(e.target.value)}
-                  className="min-h-[500px] font-mono text-xs"
-                  placeholder="编辑JSON格式的分析结果..."
-                />
+                {editFormData ? (
+                  <StageFormEditor
+                    stageKey={activeStage}
+                    data={editFormData}
+                    onChange={setEditFormData}
+                  />
+                ) : (
+                  <Textarea
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    className="min-h-[500px] font-mono text-xs"
+                    placeholder="编辑JSON格式的分析结果..."
+                  />
+                )}
               </CardContent>
             </Card>
           ) : (
@@ -596,42 +646,82 @@ function MarketOverviewResult({ result, productCount }: { result: any; productCo
   const ai = result.ai || {};
 
   // Prepare chart data
-  const priceChartData = stats.priceDistribution
-    ? Object.entries(stats.priceDistribution as Record<string, number>).map(([range, count]) => ({ range, count }))
+  const priceChartData = Array.isArray(stats.priceDistribution)
+    ? stats.priceDistribution.map((d: any) => ({ range: d.range, count: d.count }))
     : [];
-  const ratingChartData = stats.ratingDistribution
-    ? Object.entries(stats.ratingDistribution as Record<string, number>).map(([rating, count]) => ({ name: `${rating}★`, value: count }))
-    : [];
+  const monthlyTrendData = Array.isArray(stats.monthlyTrend) ? stats.monthlyTrend : [];
+  const scatterData = Array.isArray(stats.priceSalesScatter) ? stats.priceSalesScatter : [];
+  const newOld = stats.newVsOldComparison || null;
+
+  // AI field mapping - match the actual AI output fields
+  const maturityLevel = ai.maturityLevel;
+  const maturityReason = ai.maturityReason;
+  const growthTrend = ai.growthTrend;
+  const growthRate = ai.growthRate;
+  const seasonality = ai.seasonality;
+  const marketCapacity = ai.marketCapacity;
+  const entryTiming = ai.entryTiming;
+  const summary = ai.summary;
+  const risks = ai.risks;
+  const opportunities = ai.opportunities;
+
+  const maturityColors: Record<string, string> = {
+    "新兴": "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+    "成长": "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+    "成熟": "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+    "衰退": "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+  };
+  const entryColors: Record<string, string> = {
+    "建议进入": "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+    "谨慎进入": "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+    "不建议进入": "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+  };
 
   return (
     <div className="space-y-4">
-      {/* Key Metrics */}
+      {/* Key Metrics - 2 rows x 4 cols */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: "竞品数量", value: productCount, suffix: "个" },
           { label: "平均价格", value: stats.avgPrice ? `$${stats.avgPrice.toFixed(2)}` : "--" },
-          { label: "价格范围", value: stats.minPrice && stats.maxPrice ? `$${stats.minPrice.toFixed(0)}-$${stats.maxPrice.toFixed(0)}` : "--" },
-          { label: "平均评分", value: stats.avgRating ? stats.avgRating.toFixed(1) : "--", suffix: "★" },
-          { label: "平均评论数", value: stats.avgReviewCount ? Math.round(stats.avgReviewCount) : "--" },
-          { label: "月均销量(中位数)", value: stats.medianMonthlySales ?? "--" },
+          { label: "价格范围", value: stats.minPrice != null && stats.maxPrice ? `$${stats.minPrice.toFixed(0)}-$${stats.maxPrice.toFixed(0)}` : "--" },
+          { label: "平均评分", value: stats.avgRating ? stats.avgRating.toFixed(1) : "--", suffix: " ★" },
+          { label: "平均评论数", value: stats.avgReviewCount != null ? Math.round(stats.avgReviewCount).toLocaleString() : "--" },
+          { label: "月均销量(中位数)", value: stats.medianMonthlySales != null ? stats.medianMonthlySales.toLocaleString() : "--" },
           { label: "月均销售额(中位数)", value: stats.medianMonthlyRevenue ? `$${Number(stats.medianMonthlyRevenue).toLocaleString()}` : "--" },
-          { label: "品牌数量", value: stats.brandCount ?? "--" },
+          { label: "品牌数量", value: stats.brandCount != null ? stats.brandCount : "--" },
         ].map((m, i) => (
           <Card key={i}>
             <CardContent className="p-3 text-center">
               <p className="text-xs text-muted-foreground">{m.label}</p>
-              <p className="text-lg font-bold mt-1">{m.value}{m.suffix && <span className="text-xs font-normal text-muted-foreground ml-0.5">{m.suffix}</span>}</p>
+              <p className="text-lg font-bold mt-1">{m.value}{m.suffix && <span className="text-xs font-normal text-muted-foreground">{m.suffix}</span>}</p>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {/* Charts Row */}
+      {/* Additional Metrics Row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: "总月销量", value: stats.totalSales != null ? stats.totalSales.toLocaleString() : "--" },
+          { label: "总月销售额", value: stats.totalRevenue ? `$${Number(stats.totalRevenue).toLocaleString()}` : "--" },
+          { label: "新品占比(12个月内)", value: stats.newProductRatio != null ? `${(stats.newProductRatio * 100).toFixed(1)}%` : "--" },
+          { label: "TOP10销量集中度", value: stats.top10SalesShare != null ? `${(stats.top10SalesShare * 100).toFixed(1)}%` : "--" },
+        ].map((m, i) => (
+          <Card key={i}>
+            <CardContent className="p-3 text-center">
+              <p className="text-xs text-muted-foreground">{m.label}</p>
+              <p className="text-base font-semibold mt-1">{m.value}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Charts Row 1: Price Distribution + Monthly Trend */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Price Distribution Bar Chart */}
         {priceChartData.length > 0 && (
           <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm">价格分布柱状图</CardTitle></CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">价格分布</CardTitle></CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={priceChartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
@@ -646,49 +736,193 @@ function MarketOverviewResult({ result, productCount }: { result: any; productCo
           </Card>
         )}
 
-        {/* Rating Distribution Pie Chart */}
-        {ratingChartData.length > 0 && (
+        {monthlyTrendData.length > 0 && (
           <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm">评分分布饼图</CardTitle></CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">月度趋势 (销量 & 销售额)</CardTitle></CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={280}>
-                <PieChart>
-                  <Pie data={ratingChartData} cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={3} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-                    {ratingChartData.map((_, idx) => <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />)}
-                  </Pie>
+                <BarChart data={monthlyTrendData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} angle={-30} textAnchor="end" height={50} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
                   <Tooltip />
+                  <Bar yAxisId="left" dataKey="sales" fill="#06b6d4" name="销量" radius={[4, 4, 0, 0]} />
+                  <Bar yAxisId="right" dataKey="revenue" fill="#f59e0b" name="销售额($)" radius={[4, 4, 0, 0]} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                </PieChart>
+                </BarChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
         )}
       </div>
 
-      {/* AI Interpretation */}
-      {ai.marketSummary && (
+      {/* Charts Row 2: Price-Sales Scatter + New vs Old */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {scatterData.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">价格-销量散点图</CardTitle></CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={280}>
+                <ScatterChart margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                  <XAxis type="number" dataKey="price" name="价格($)" tick={{ fontSize: 11 }} />
+                  <YAxis type="number" dataKey="sales" name="月销量" tick={{ fontSize: 11 }} />
+                  <ZAxis type="number" dataKey="reviews" range={[20, 400]} name="评论数" />
+                  <Tooltip cursor={{ strokeDasharray: '3 3' }} formatter={(v: number, name: string) => [name === "价格($)" ? `$${v}` : v.toLocaleString(), name]} />
+                  <Scatter data={scatterData} fill="#8b5cf6" fillOpacity={0.6} />
+                </ScatterChart>
+              </ResponsiveContainer>
+              <p className="text-xs text-muted-foreground text-center mt-1">气泡大小 = 评论数量</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {newOld && (newOld.newCount > 0 || newOld.oldCount > 0) && (
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">新品 vs 老品对比</CardTitle></CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {[
+                  { label: "产品数量", newVal: newOld.newCount, oldVal: newOld.oldCount, fmt: (v: number) => `${v}` },
+                  { label: "平均月销量", newVal: newOld.newAvgSales, oldVal: newOld.oldAvgSales, fmt: (v: number) => v.toLocaleString() },
+                  { label: "平均价格", newVal: newOld.newAvgPrice, oldVal: newOld.oldAvgPrice, fmt: (v: number) => `$${v.toFixed(2)}` },
+                  { label: "平均评分", newVal: newOld.newAvgRating, oldVal: newOld.oldAvgRating, fmt: (v: number) => v.toFixed(1) },
+                ].map((row, i) => (
+                  <div key={i} className="grid grid-cols-3 gap-2 items-center">
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-blue-600 dark:text-blue-400">{row.fmt(row.newVal)}</p>
+                      {i === 0 && <p className="text-xs text-muted-foreground">新品(12月内)</p>}
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-muted-foreground">{row.label}</p>
+                    </div>
+                    <div className="text-left">
+                      <p className="text-sm font-semibold text-gray-600 dark:text-gray-400">{row.fmt(row.oldVal)}</p>
+                      {i === 0 && <p className="text-xs text-muted-foreground">老品</p>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* AI Analysis Structured Cards */}
+      {summary && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Brain className="h-4 w-4" />AI市场解读</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <Streamdown>{ai.marketSummary}</Streamdown>
-          </CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Brain className="h-4 w-4" />AI市场总结</CardTitle></CardHeader>
+          <CardContent><Streamdown>{summary}</Streamdown></CardContent>
         </Card>
       )}
-      {ai.competitionLevel && (
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">竞争格局评估</CardTitle></CardHeader>
-          <CardContent>
-            <Badge className="text-sm" variant="secondary">{ai.competitionLevel}</Badge>
-            {ai.competitionReasoning && <p className="text-sm text-muted-foreground mt-2">{ai.competitionReasoning}</p>}
-          </CardContent>
-        </Card>
-      )}
-      {ai.opportunities && (
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">市场机会</CardTitle></CardHeader>
-          <CardContent><Streamdown>{typeof ai.opportunities === "string" ? ai.opportunities : JSON.stringify(ai.opportunities, null, 2)}</Streamdown></CardContent>
-        </Card>
-      )}
+
+      {/* AI Structured Insights Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Maturity Level */}
+        {maturityLevel && (
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">市场成熟度</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <Badge className={`text-sm ${maturityColors[maturityLevel] || "bg-gray-100 text-gray-700"}`}>{maturityLevel}</Badge>
+              {maturityReason && <p className="text-xs text-muted-foreground">{maturityReason}</p>}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Growth Trend */}
+        {growthTrend && (
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">增长趋势</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-sm font-semibold">{growthTrend}</p>
+              {growthRate && <p className="text-xs text-muted-foreground">预估年增长率: {growthRate}</p>}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Seasonality */}
+        {seasonality && (
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">季节性特征</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <Badge variant="secondary" className="text-xs">{seasonality.hasSeasonality ? "有季节性" : "无明显季节性"}</Badge>
+              {seasonality.peakMonths?.length > 0 && <p className="text-xs"><span className="text-muted-foreground">旺季: </span><span className="font-medium text-emerald-600 dark:text-emerald-400">{seasonality.peakMonths.join(", ")}</span></p>}
+              {seasonality.lowMonths?.length > 0 && <p className="text-xs"><span className="text-muted-foreground">淡季: </span><span className="font-medium text-red-600 dark:text-red-400">{seasonality.lowMonths.join(", ")}</span></p>}
+              {seasonality.description && <p className="text-xs text-muted-foreground">{seasonality.description}</p>}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Market Capacity */}
+        {marketCapacity && (
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">市场容量</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <Badge variant="secondary" className="text-xs">规模: {marketCapacity.level}</Badge>
+              {marketCapacity.monthlyRevenue && <p className="text-xs"><span className="text-muted-foreground">月均销售额: </span>{marketCapacity.monthlyRevenue}</p>}
+              {marketCapacity.potential && <p className="text-xs"><span className="text-muted-foreground">增长潜力: </span>{marketCapacity.potential}</p>}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Entry Timing */}
+        {entryTiming && (
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">进入时机</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <Badge className={`text-sm ${entryColors[entryTiming.recommendation] || "bg-gray-100 text-gray-700"}`}>{entryTiming.recommendation}</Badge>
+              {entryTiming.bestEntryTime && <p className="text-xs"><span className="text-muted-foreground">最佳时机: </span>{entryTiming.bestEntryTime}</p>}
+              {entryTiming.reason && <p className="text-xs text-muted-foreground">{entryTiming.reason}</p>}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* FBA Ratio */}
+        {stats.fbaRatio != null && (
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">FBA占比</CardTitle></CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold">{(stats.fbaRatio * 100).toFixed(1)}%</p>
+              <p className="text-xs text-muted-foreground mt-1">使用亚马逊FBA配送</p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Risks & Opportunities */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {Array.isArray(risks) && risks.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm text-red-600 dark:text-red-400">风险提示</CardTitle></CardHeader>
+            <CardContent>
+              <ul className="space-y-1.5">
+                {risks.map((r: string, i: number) => (
+                  <li key={i} className="flex items-start gap-2 text-xs">
+                    <span className="text-red-500 mt-0.5">●</span>
+                    <span>{r}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+        {Array.isArray(opportunities) && opportunities.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm text-emerald-600 dark:text-emerald-400">市场机会</CardTitle></CardHeader>
+            <CardContent>
+              <ul className="space-y-1.5">
+                {opportunities.map((o: string, i: number) => (
+                  <li key={i} className="flex items-start gap-2 text-xs">
+                    <span className="text-emerald-500 mt-0.5">●</span>
+                    <span>{o}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }
@@ -700,59 +934,89 @@ function AttributeCrossResult({ result }: { result: any }) {
   const dimensionNames = result.dimensionNames || [];
   const ai = result.ai || {};
 
+  // Build heatmap data from cross matrix
+  const heatmapEntries: Array<{ combo: string; count: number; avgSales: number; avgPrice: number }> = [];
+  Object.entries(crossResult).forEach(([, matrix]: any) => {
+    Object.entries(matrix).forEach(([combo, data]: any) => {
+      heatmapEntries.push({ combo, count: data.count || 0, avgSales: data.avgMonthlySales || 0, avgPrice: data.avgPrice || 0 });
+    });
+  });
+  const topCombos = heatmapEntries.sort((a, b) => b.avgSales - a.avgSales).slice(0, 15);
+
   return (
     <div className="space-y-4">
-      {/* Single Dimension Stats */}
-      {dimensionNames.length > 0 && (
+      {/* Single Dimension Stats with Bar Charts */}
+      {dimensionNames.length > 0 && dimensionNames.map((dim: string) => {
+        const dimData = singleDimStats[dim] || {};
+        const entries = Object.entries(dimData).sort((a: any, b: any) => (b[1]?.count || 0) - (a[1]?.count || 0));
+        if (entries.length === 0) return null;
+        const chartData = entries.map(([val, data]: any) => ({ name: val, count: data.count, avgPrice: data.avgPrice, avgSales: data.avgMonthlySales || 0 }));
+        return (
+          <Card key={dim}>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">{dim} 分布</CardTitle></CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={50} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip />
+                    <Bar dataKey="count" fill="#6366f1" name="产品数" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="text-left p-1.5 font-medium">属性值</th>
+                        <th className="text-right p-1.5 font-medium">产品数</th>
+                        <th className="text-right p-1.5 font-medium">占比</th>
+                        <th className="text-right p-1.5 font-medium">均价</th>
+                        <th className="text-right p-1.5 font-medium">均评分</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {entries.map(([val, data]: any) => (
+                        <tr key={val} className="border-b last:border-0">
+                          <td className="p-1.5 font-medium">{val}</td>
+                          <td className="p-1.5 text-right">{data.count}</td>
+                          <td className="p-1.5 text-right">{data.pct}%</td>
+                          <td className="p-1.5 text-right">${data.avgPrice?.toFixed(2) ?? "--"}</td>
+                          <td className="p-1.5 text-right">{data.avgRating?.toFixed(1) ?? "--"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
+
+      {/* Cross Matrix Heatmap-style */}
+      {topCombos.length > 0 && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">单维度属性分布</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Grid3X3 className="h-4 w-4" />属性交叉热力图 (TOP15 按月销排序)</CardTitle></CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {dimensionNames.map((dim: string) => {
-                const dimData = singleDimStats[dim] || {};
-                const entries = Object.entries(dimData).sort((a: any, b: any) => (b[1]?.count || 0) - (a[1]?.count || 0));
-                if (entries.length === 0) return null;
-                return (
-                  <div key={dim}>
-                    <p className="text-xs font-semibold mb-2">{dim}</p>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="border-b bg-muted/50">
-                            <th className="text-left p-2 font-medium">属性值</th>
-                            <th className="text-right p-2 font-medium">产品数</th>
-                            <th className="text-right p-2 font-medium">占比</th>
-                            <th className="text-right p-2 font-medium">均价</th>
-                            <th className="text-right p-2 font-medium">均评分</th>
-                            <th className="text-right p-2 font-medium">均评论数</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {entries.map(([val, data]: any) => (
-                            <tr key={val} className="border-b last:border-0">
-                              <td className="p-2 font-medium">{val}</td>
-                              <td className="p-2 text-right">{data.count}</td>
-                              <td className="p-2 text-right">{data.pct}%</td>
-                              <td className="p-2 text-right">${data.avgPrice?.toFixed(2) ?? "--"}</td>
-                              <td className="p-2 text-right">{data.avgRating?.toFixed(1) ?? "--"}</td>
-                              <td className="p-2 text-right">{data.avgReviews ?? "--"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <ResponsiveContainer width="100%" height={320}>
+              <BarChart data={topCombos} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="combo" tick={{ fontSize: 9 }} width={120} />
+                <Tooltip />
+                <Bar dataKey="avgSales" fill="#10b981" name="均月销" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </CardContent>
         </Card>
       )}
 
-      {/* Cross Matrix */}
+      {/* Full Cross Matrix Table */}
       {Object.keys(crossResult).length > 0 && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Grid3X3 className="h-4 w-4" />属性交叉矩阵</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">属性交叉矩阵详表</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-4">
               {Object.entries(crossResult).map(([crossKey, matrix]: any) => {
@@ -795,17 +1059,105 @@ function AttributeCrossResult({ result }: { result: any }) {
         </Card>
       )}
 
-      {/* AI Insights */}
-      {ai.blueOcean && (
+      {/* AI Insights - Matched to actual AI output fields */}
+      {ai.summary && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Sparkles className="h-4 w-4" />蓝海机会识别</CardTitle></CardHeader>
-          <CardContent><Streamdown>{typeof ai.blueOcean === "string" ? ai.blueOcean : JSON.stringify(ai.blueOcean, null, 2)}</Streamdown></CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Brain className="h-4 w-4" />AI属性分析总结</CardTitle></CardHeader>
+          <CardContent><Streamdown>{ai.summary}</Streamdown></CardContent>
         </Card>
       )}
-      {ai.crossInsights && (
+
+      {/* Mainstream Products */}
+      {Array.isArray(ai.mainstreamProducts) && ai.mainstreamProducts.length > 0 && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">交叉分析洞察</CardTitle></CardHeader>
-          <CardContent><Streamdown>{typeof ai.crossInsights === "string" ? ai.crossInsights : JSON.stringify(ai.crossInsights, null, 2)}</Streamdown></CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">主流产品形态</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {ai.mainstreamProducts.map((p: any, i: number) => (
+                <div key={i} className="flex items-start gap-3 p-2.5 bg-muted/30 rounded-lg">
+                  <Badge variant="secondary" className="text-xs shrink-0 mt-0.5">#{i + 1}</Badge>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{p.combo}</p>
+                    {p.salesShare && <p className="text-xs text-muted-foreground mt-0.5">销额占比: {p.salesShare}</p>}
+                    {p.reason && <p className="text-xs text-muted-foreground">{p.reason}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Recommended Directions */}
+      {Array.isArray(ai.recommendedDirections) && ai.recommendedDirections.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Sparkles className="h-4 w-4" />推荐产品方向</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {ai.recommendedDirections.map((d: any, i: number) => (
+                <div key={i} className="p-3 border rounded-lg space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold">{d.direction}</p>
+                    {d.priority && <Badge className="text-xs bg-primary/10 text-primary">优先级 {d.priority}</Badge>}
+                  </div>
+                  {d.attributes && (
+                    <div className="flex flex-wrap gap-1">
+                      {Object.entries(d.attributes).map(([k, v]: any) => (
+                        <Badge key={k} variant="outline" className="text-xs">{k}: {v}</Badge>
+                      ))}
+                    </div>
+                  )}
+                  {d.estimatedPriceRange && <p className="text-xs"><span className="text-muted-foreground">估计价格: </span>{d.estimatedPriceRange}</p>}
+                  {d.targetAudience && <p className="text-xs"><span className="text-muted-foreground">目标用户: </span>{d.targetAudience}</p>}
+                  {d.reason && <p className="text-xs text-muted-foreground">{d.reason}</p>}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Differentiation Opportunities */}
+      {Array.isArray(ai.differentiationOpportunities) && ai.differentiationOpportunities.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-emerald-600 dark:text-emerald-400">差异化机会</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {ai.differentiationOpportunities.map((o: any, i: number) => (
+                <div key={i} className="flex items-start gap-3 p-2 bg-emerald-50 dark:bg-emerald-900/10 rounded-lg">
+                  <span className="text-emerald-500 mt-0.5">●</span>
+                  <div>
+                    <p className="text-sm font-medium">{o.combo}</p>
+                    <div className="flex gap-2 mt-1">
+                      {o.competitionLevel && <Badge variant="outline" className="text-xs">竞争: {o.competitionLevel}</Badge>}
+                      {o.potential && <Badge variant="outline" className="text-xs">潜力: {o.potential}</Badge>}
+                    </div>
+                    {o.reason && <p className="text-xs text-muted-foreground mt-1">{o.reason}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Red Ocean Warnings */}
+      {Array.isArray(ai.redOceanWarnings) && ai.redOceanWarnings.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm text-red-600 dark:text-red-400">红海警告</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {ai.redOceanWarnings.map((w: any, i: number) => (
+                <div key={i} className="flex items-start gap-3 p-2 bg-red-50 dark:bg-red-900/10 rounded-lg">
+                  <span className="text-red-500 mt-0.5">●</span>
+                  <div>
+                    <p className="text-sm font-medium">{w.combo}</p>
+                    {w.reason && <p className="text-xs text-muted-foreground mt-1">{w.reason}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
         </Card>
       )}
     </div>
@@ -817,17 +1169,17 @@ function PriceAnalysisResult({ result }: { result: any }) {
   const segments = result.priceSegments || [];
   const ai = result.ai || {};
 
-  // Chart data
   const segChartData = segments.map((s: any) => ({
     range: s.range,
     count: s.count || 0,
     avgPrice: s.avgPrice || 0,
     avgMonthlySales: s.avgMonthlySales || 0,
+    avgMonthlyRevenue: s.avgMonthlyRevenue || 0,
   }));
 
   return (
     <div className="space-y-4">
-      {/* Price Segment Charts */}
+      {/* Charts */}
       {segChartData.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card>
@@ -902,16 +1254,64 @@ function PriceAnalysisResult({ result }: { result: any }) {
         </CardContent>
       </Card>
 
-      {ai.priceStrategy && (
+      {/* AI Summary */}
+      {ai.summary && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Brain className="h-4 w-4" />AI定价策略建议</CardTitle></CardHeader>
-          <CardContent><Streamdown>{typeof ai.priceStrategy === "string" ? ai.priceStrategy : JSON.stringify(ai.priceStrategy, null, 2)}</Streamdown></CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Brain className="h-4 w-4" />AI价格分析总结</CardTitle></CardHeader>
+          <CardContent><Streamdown>{ai.summary}</Streamdown></CardContent>
         </Card>
       )}
-      {ai.profitAnalysis && (
+
+      {/* Best Price Range + Pricing Strategy */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {ai.bestPriceRange && (
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">最佳价格区间</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-xl font-bold text-primary">${ai.bestPriceRange.min} - ${ai.bestPriceRange.max}</p>
+              {ai.bestPriceRange.reason && <p className="text-xs text-muted-foreground">{ai.bestPriceRange.reason}</p>}
+            </CardContent>
+          </Card>
+        )}
+        {ai.pricingStrategy && (
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-xs text-muted-foreground">定价策略建议</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <Badge className="text-sm">{ai.pricingStrategy.type}</Badge>
+              {ai.pricingStrategy.suggestedPrice && (
+                <p className="text-sm font-semibold">建议售价: ${ai.pricingStrategy.suggestedPrice.min} - ${ai.pricingStrategy.suggestedPrice.max}</p>
+              )}
+              {ai.pricingStrategy.reason && <p className="text-xs text-muted-foreground">{ai.pricingStrategy.reason}</p>}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* Price-Rating Correlation */}
+      {ai.priceRatingCorrelation && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">利润空间分析</CardTitle></CardHeader>
-          <CardContent><Streamdown>{typeof ai.profitAnalysis === "string" ? ai.profitAnalysis : JSON.stringify(ai.profitAnalysis, null, 2)}</Streamdown></CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">价格与评分关系</CardTitle></CardHeader>
+          <CardContent><p className="text-sm">{ai.priceRatingCorrelation}</p></CardContent>
+        </Card>
+      )}
+
+      {/* Price Insights */}
+      {Array.isArray(ai.priceInsights) && ai.priceInsights.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">价格洞察</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {ai.priceInsights.map((ins: any, i: number) => (
+                <div key={i} className="flex items-start gap-3 p-2.5 bg-muted/30 rounded-lg">
+                  <span className="text-xs font-mono text-muted-foreground mt-0.5">{i + 1}</span>
+                  <div>
+                    <p className="text-sm font-medium">{ins.insight}</p>
+                    {ins.implication && <p className="text-xs text-muted-foreground mt-1">{ins.implication}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
         </Card>
       )}
     </div>
@@ -920,16 +1320,39 @@ function PriceAnalysisResult({ result }: { result: any }) {
 
 /* ─── 5. Brand Competition Result ─── */
 function BrandCompetitionResult({ result }: { result: any }) {
-  const brands = result.brands || [];
+  // Fix: data is stored as { brandStats: { brands, cr3, cr5, cr10, ... }, ai: {...} }
+  const brandStats = result.brandStats || {};
+  const brands = brandStats.brands || result.brands || [];
   const ai = result.ai || {};
 
-  // Chart data
   const top10 = brands.slice(0, 10);
-  const pieData = top10.map((b: any) => ({ name: b.brand, value: parseFloat(b.marketShare) || 0 }));
-  const salesData = top10.map((b: any) => ({ brand: b.brand?.slice(0, 12), sales: b.totalMonthlySales || 0, revenue: b.totalMonthlyRevenue || 0 }));
+  const pieData = top10.map((b: any) => ({ name: b.brand, value: b.revenueShare ? parseFloat((b.revenueShare * 100).toFixed(1)) : 0 }));
+  const salesData = top10.map((b: any) => ({ brand: b.brand?.slice(0, 12), sales: b.totalSales || 0, revenue: b.totalRevenue || 0 }));
 
   return (
     <div className="space-y-4">
+      {/* Concentration Metrics */}
+      {(brandStats.cr3 || brandStats.cr5 || brandStats.cr10) && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Card><CardContent className="p-4 text-center">
+            <p className="text-xs text-muted-foreground">CR3 集中度</p>
+            <p className="text-2xl font-bold">{brandStats.cr3 ? `${(brandStats.cr3 * 100).toFixed(1)}%` : "--"}</p>
+          </CardContent></Card>
+          <Card><CardContent className="p-4 text-center">
+            <p className="text-xs text-muted-foreground">CR5 集中度</p>
+            <p className="text-2xl font-bold">{brandStats.cr5 ? `${(brandStats.cr5 * 100).toFixed(1)}%` : "--"}</p>
+          </CardContent></Card>
+          <Card><CardContent className="p-4 text-center">
+            <p className="text-xs text-muted-foreground">CR10 集中度</p>
+            <p className="text-2xl font-bold">{brandStats.cr10 ? `${(brandStats.cr10 * 100).toFixed(1)}%` : "--"}</p>
+          </CardContent></Card>
+          <Card><CardContent className="p-4 text-center">
+            <p className="text-xs text-muted-foreground">中国卖家份额</p>
+            <p className="text-2xl font-bold">{brandStats.chinaSellerShare != null ? `${(brandStats.chinaSellerShare * 100).toFixed(1)}%` : "--"}</p>
+          </CardContent></Card>
+        </div>
+      )}
+
       {/* Charts */}
       {top10.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -963,6 +1386,27 @@ function BrandCompetitionResult({ result }: { result: any }) {
         </div>
       )}
 
+      {/* Brand Monthly Trend */}
+      {Array.isArray(brandStats.brandMonthlyTrend) && brandStats.brandMonthlyTrend.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">品牌月度趋势</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart data={brandStats.brandMonthlyTrend} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Legend />
+                {top10.slice(0, 5).map((b: any, idx: number) => (
+                  <Line key={b.brand} type="monotone" dataKey={`brands.${b.brand}`} name={b.brand?.slice(0, 10)} stroke={CHART_COLORS[idx % CHART_COLORS.length]} strokeWidth={2} dot={false} />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Table */}
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Building2 className="h-4 w-4" />品牌竞争格局详表</CardTitle></CardHeader>
@@ -973,11 +1417,11 @@ function BrandCompetitionResult({ result }: { result: any }) {
                 <thead>
                   <tr className="border-b bg-muted/50">
                     <th className="text-left p-2 font-medium">品牌</th>
-                    <th className="text-right p-2 font-medium">产品数</th>
-                    <th className="text-right p-2 font-medium">市占率</th>
+                    <th className="text-right p-2 font-medium">ASIN数</th>
+                    <th className="text-right p-2 font-medium">销量占比</th>
+                    <th className="text-right p-2 font-medium">销额占比</th>
                     <th className="text-right p-2 font-medium">均价</th>
                     <th className="text-right p-2 font-medium">均评分</th>
-                    <th className="text-right p-2 font-medium">均评论</th>
                     <th className="text-right p-2 font-medium">总月销</th>
                     <th className="text-right p-2 font-medium">总月销售额</th>
                   </tr>
@@ -986,13 +1430,13 @@ function BrandCompetitionResult({ result }: { result: any }) {
                   {brands.map((b: any, i: number) => (
                     <tr key={i} className="border-b last:border-0">
                       <td className="p-2 font-medium">{b.brand}</td>
-                      <td className="p-2 text-right">{b.count}</td>
-                      <td className="p-2 text-right">{b.marketShare}%</td>
+                      <td className="p-2 text-right">{b.asinCount}</td>
+                      <td className="p-2 text-right">{b.salesShare ? `${(b.salesShare * 100).toFixed(1)}%` : "--"}</td>
+                      <td className="p-2 text-right">{b.revenueShare ? `${(b.revenueShare * 100).toFixed(1)}%` : "--"}</td>
                       <td className="p-2 text-right">${b.avgPrice?.toFixed(2) ?? "--"}</td>
                       <td className="p-2 text-right">{b.avgRating?.toFixed(1) ?? "--"}</td>
-                      <td className="p-2 text-right">{b.avgReviews ?? "--"}</td>
-                      <td className="p-2 text-right">{b.totalMonthlySales ?? "--"}</td>
-                      <td className="p-2 text-right">{b.totalMonthlyRevenue ? `$${Number(b.totalMonthlyRevenue).toLocaleString()}` : "--"}</td>
+                      <td className="p-2 text-right">{b.totalSales?.toLocaleString() ?? "--"}</td>
+                      <td className="p-2 text-right">{b.totalRevenue ? `$${Number(b.totalRevenue).toLocaleString()}` : "--"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1004,16 +1448,79 @@ function BrandCompetitionResult({ result }: { result: any }) {
         </CardContent>
       </Card>
 
-      {ai.brandLandscape && (
+      {/* AI Summary */}
+      {ai.summary && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Brain className="h-4 w-4" />AI品牌格局分析</CardTitle></CardHeader>
-          <CardContent><Streamdown>{typeof ai.brandLandscape === "string" ? ai.brandLandscape : JSON.stringify(ai.brandLandscape, null, 2)}</Streamdown></CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Brain className="h-4 w-4" />AI品牌竞争分析总结</CardTitle></CardHeader>
+          <CardContent><Streamdown>{ai.summary}</Streamdown></CardContent>
         </Card>
       )}
-      {ai.entryStrategy && (
+
+      {/* Competition Pattern */}
+      {ai.competitionPattern && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">入场策略建议</CardTitle></CardHeader>
-          <CardContent><Streamdown>{typeof ai.entryStrategy === "string" ? ai.entryStrategy : JSON.stringify(ai.entryStrategy, null, 2)}</Streamdown></CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">竞争格局判断</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            <Badge className="text-sm">{ai.competitionPattern}</Badge>
+            {ai.competitionPatternReason && <p className="text-sm text-muted-foreground">{ai.competitionPatternReason}</p>}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Top Brand Strategies */}
+      {Array.isArray(ai.topBrandStrategies) && ai.topBrandStrategies.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">头部品牌策略分析</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {ai.topBrandStrategies.map((b: any, i: number) => (
+                <div key={i} className="p-3 border rounded-lg space-y-2">
+                  <p className="text-sm font-semibold">{b.brand}</p>
+                  {b.strategy && <p className="text-xs">{b.strategy}</p>}
+                  <div className="grid grid-cols-2 gap-2">
+                    {Array.isArray(b.strengths) && b.strengths.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">优势</p>
+                        {b.strengths.map((s: string, j: number) => <p key={j} className="text-xs text-muted-foreground">• {s}</p>)}
+                      </div>
+                    )}
+                    {Array.isArray(b.weaknesses) && b.weaknesses.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-red-600 dark:text-red-400">劣势</p>
+                        {b.weaknesses.map((w: string, j: number) => <p key={j} className="text-xs text-muted-foreground">• {w}</p>)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Entry Strategy */}
+      {ai.entryStrategy && typeof ai.entryStrategy === "object" && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Sparkles className="h-4 w-4" />新品牌进入策略</CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            {ai.entryStrategy.approach && <p className="text-sm font-semibold">{ai.entryStrategy.approach}</p>}
+            {ai.entryStrategy.targetSegment && <p className="text-xs"><span className="text-muted-foreground">目标细分: </span>{ai.entryStrategy.targetSegment}</p>}
+            {ai.entryStrategy.differentiationPoint && <p className="text-xs"><span className="text-muted-foreground">差异化切入点: </span>{ai.entryStrategy.differentiationPoint}</p>}
+            {ai.entryStrategy.estimatedInvestment && <p className="text-xs"><span className="text-muted-foreground">预估投入: </span>{ai.entryStrategy.estimatedInvestment}</p>}
+            {ai.entryStrategy.reason && <p className="text-xs text-muted-foreground mt-1">{ai.entryStrategy.reason}</p>}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* China Seller Analysis */}
+      {ai.chinaSellerAnalysis && typeof ai.chinaSellerAnalysis === "object" && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">中国卖家分析</CardTitle></CardHeader>
+          <CardContent className="space-y-1">
+            {ai.chinaSellerAnalysis.share && <p className="text-sm"><span className="text-muted-foreground">份额: </span>{ai.chinaSellerAnalysis.share}</p>}
+            {ai.chinaSellerAnalysis.trend && <p className="text-sm"><span className="text-muted-foreground">趋势: </span>{ai.chinaSellerAnalysis.trend}</p>}
+            {ai.chinaSellerAnalysis.implication && <p className="text-sm"><span className="text-muted-foreground">影响: </span>{ai.chinaSellerAnalysis.implication}</p>}
+          </CardContent>
         </Card>
       )}
     </div>
@@ -1022,18 +1529,120 @@ function BrandCompetitionResult({ result }: { result: any }) {
 
 /* ─── 6. Review Kano Result ─── */
 function ReviewKanoResult({ result }: { result: any }) {
-  const kano = result.kano || {};
+  const stats = result.stats || {};
   const ai = result.ai || {};
+  // AI output: { kanoAnalysis: { painPoints, itchPoints, wowPoints }, overallSentiment, productImprovementPriority, summary }
+  const kano = ai.kanoAnalysis || {};
+
   const categories = [
-    { key: "must_be", label: "必备属性 (M)", desc: "缺失会引起强烈不满", color: "bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400" },
-    { key: "one_dimensional", label: "期望属性 (O)", desc: "越好越满意", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400" },
-    { key: "attractive", label: "魅力属性 (A)", desc: "有则惊喜，无则无感", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400" },
-    { key: "indifferent", label: "无差异属性 (I)", desc: "有无均可", color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
-    { key: "reverse", label: "反向属性 (R)", desc: "有反而不满", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400" },
+    { key: "painPoints", label: "痛点 (Must-be)", desc: "基本需求，缺失会导致强烈不满", color: "bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400", icon: "⚠️" },
+    { key: "itchPoints", label: "疒点 (One-dimensional)", desc: "期望需求，满足度与满意度线性相关", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400", icon: "💡" },
+    { key: "wowPoints", label: "爽点 (Attractive)", desc: "兴奋需求，有则大幅提升满意度", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400", icon: "✨" },
   ];
+
+  // Rating distribution chart data
+  const ratingDist = stats.ratingDistribution || [];
 
   return (
     <div className="space-y-4">
+      {/* Review Stats Overview */}
+      {stats.totalReviews > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Card><CardContent className="p-4 text-center">
+            <p className="text-xs text-muted-foreground">总评论数</p>
+            <p className="text-2xl font-bold">{stats.totalReviews?.toLocaleString()}</p>
+          </CardContent></Card>
+          <Card><CardContent className="p-4 text-center">
+            <p className="text-xs text-muted-foreground">平均评分</p>
+            <p className="text-2xl font-bold">{stats.avgRating?.toFixed(1)} ⭐</p>
+          </CardContent></Card>
+          <Card><CardContent className="p-4 text-center">
+            <p className="text-xs text-muted-foreground">VP评论占比</p>
+            <p className="text-2xl font-bold">{stats.vpRatio ? `${(stats.vpRatio * 100).toFixed(0)}%` : "--"}</p>
+          </CardContent></Card>
+          <Card><CardContent className="p-4 text-center">
+            <p className="text-xs text-muted-foreground">带图/视频占比</p>
+            <p className="text-2xl font-bold">{stats.withImageRatio ? `${((stats.withImageRatio + (stats.withVideoRatio || 0)) * 100).toFixed(0)}%` : "--"}</p>
+          </CardContent></Card>
+        </div>
+      )}
+
+      {/* Rating Distribution + Monthly Trend */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {ratingDist.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">评分分布</CardTitle></CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={ratingDist} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                  <XAxis dataKey="stars" tick={{ fontSize: 11 }} tickFormatter={(v: number) => `${v}★`} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(v: number) => [v, "评论数"]} />
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                    {ratingDist.map((_: any, idx: number) => {
+                      const colors = ["#ef4444", "#f97316", "#eab308", "#84cc16", "#22c55e"];
+                      return <Cell key={idx} fill={colors[idx] || "#6366f1"} />;
+                    })}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        )}
+        {Array.isArray(stats.monthlyReviewTrend) && stats.monthlyReviewTrend.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">评论月度趋势</CardTitle></CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={stats.monthlyReviewTrend} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                  <YAxis yAxisId="right" orientation="right" domain={[1, 5]} tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar yAxisId="left" dataKey="count" fill="#6366f1" name="评论数" radius={[4, 4, 0, 0]} />
+                  <Line yAxisId="right" type="monotone" dataKey="avgRating" stroke="#f59e0b" name="均评分" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {/* AI Summary */}
+      {ai.summary && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Brain className="h-4 w-4" />AI评论分析总结</CardTitle></CardHeader>
+          <CardContent><Streamdown>{ai.summary}</Streamdown></CardContent>
+        </Card>
+      )}
+
+      {/* Overall Sentiment */}
+      {ai.overallSentiment && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">情感分布</CardTitle></CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="text-center p-2 bg-emerald-50 dark:bg-emerald-900/10 rounded-lg">
+                <p className="text-xs text-muted-foreground">正面</p>
+                <p className="text-sm font-semibold text-emerald-600">{ai.overallSentiment.positive}</p>
+              </div>
+              <div className="text-center p-2 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                <p className="text-xs text-muted-foreground">中性</p>
+                <p className="text-sm font-semibold">{ai.overallSentiment.neutral}</p>
+              </div>
+              <div className="text-center p-2 bg-red-50 dark:bg-red-900/10 rounded-lg">
+                <p className="text-xs text-muted-foreground">负面</p>
+                <p className="text-sm font-semibold text-red-600">{ai.overallSentiment.negative}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* KANO Categories - Matched to actual AI output */}
       {categories.map(cat => {
         const items = kano[cat.key] || [];
         if (items.length === 0) return null;
@@ -1043,18 +1652,34 @@ function ReviewKanoResult({ result }: { result: any }) {
               <CardTitle className="text-sm flex items-center gap-2">
                 <Badge className={`text-xs ${cat.color}`}>{cat.label}</Badge>
                 <span className="text-xs text-muted-foreground font-normal">{cat.desc}</span>
+                <Badge variant="outline" className="text-xs ml-auto">{items.length} 项</Badge>
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
                 {items.map((item: any, i: number) => (
-                  <div key={i} className="flex items-start gap-3 p-2 bg-muted/30 rounded-lg">
-                    <span className="text-xs font-mono text-muted-foreground mt-0.5">{i + 1}</span>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{typeof item === "string" ? item : item.feature || item.name}</p>
-                      {item.evidence && <p className="text-xs text-muted-foreground mt-1">{item.evidence}</p>}
-                      {item.frequency && <Badge variant="outline" className="text-xs mt-1">提及频率: {item.frequency}</Badge>}
+                  <div key={i} className="p-3 bg-muted/30 rounded-lg space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium">{item.theme || item.feature || item.name}</p>
+                      <div className="flex gap-1.5">
+                        {item.frequency && <Badge variant="outline" className="text-xs">频率: {item.frequency}</Badge>}
+                        {item.severity && <Badge variant="outline" className="text-xs">严重度: {item.severity}/5</Badge>}
+                        {item.priority && <Badge variant="outline" className="text-xs">优先级: {item.priority}/5</Badge>}
+                        {item.desireLevel && <Badge variant="outline" className="text-xs">渴望度: {item.desireLevel}/5</Badge>}
+                        {item.impactLevel && <Badge variant="outline" className="text-xs">影响力: {item.impactLevel}/5</Badge>}
+                      </div>
                     </div>
+                    {item.description && <p className="text-xs text-muted-foreground">{item.description}</p>}
+                    {item.improvementSuggestion && <p className="text-xs"><span className="font-medium">改进建议: </span>{item.improvementSuggestion}</p>}
+                    {item.implementationSuggestion && <p className="text-xs"><span className="font-medium">实现建议: </span>{item.implementationSuggestion}</p>}
+                    {Array.isArray(item.representativeReviews) && item.representativeReviews.length > 0 && (
+                      <div className="mt-1">
+                        <p className="text-xs font-medium text-muted-foreground">代表性评论:</p>
+                        {item.representativeReviews.map((r: string, j: number) => (
+                          <p key={j} className="text-xs text-muted-foreground italic ml-2">“{r}”</p>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1063,16 +1688,36 @@ function ReviewKanoResult({ result }: { result: any }) {
         );
       })}
 
-      {ai.painPoints && (
+      {/* Product Improvement Priority */}
+      {Array.isArray(ai.productImprovementPriority) && ai.productImprovementPriority.length > 0 && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Brain className="h-4 w-4" />核心痛点分析</CardTitle></CardHeader>
-          <CardContent><Streamdown>{typeof ai.painPoints === "string" ? ai.painPoints : JSON.stringify(ai.painPoints, null, 2)}</Streamdown></CardContent>
-        </Card>
-      )}
-      {ai.improvementSuggestions && (
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">产品改进建议</CardTitle></CardHeader>
-          <CardContent><Streamdown>{typeof ai.improvementSuggestions === "string" ? ai.improvementSuggestions : JSON.stringify(ai.improvementSuggestions, null, 2)}</Streamdown></CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Sparkles className="h-4 w-4" />产品改进优先级</CardTitle></CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left p-2 font-medium">优先级</th>
+                    <th className="text-left p-2 font-medium">改进领域</th>
+                    <th className="text-left p-2 font-medium">预期效果</th>
+                    <th className="text-center p-2 font-medium">难度</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ai.productImprovementPriority.map((item: any, i: number) => (
+                    <tr key={i} className="border-b last:border-0">
+                      <td className="p-2"><Badge variant="outline" className="text-xs">P{item.priority}</Badge></td>
+                      <td className="p-2 font-medium">{item.area}</td>
+                      <td className="p-2 text-muted-foreground">{item.expectedImpact}</td>
+                      <td className="p-2 text-center">
+                        <Badge className={`text-xs ${item.difficulty === "高" ? "bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400" : item.difficulty === "中" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400"}`}>{item.difficulty}</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
         </Card>
       )}
     </div>
@@ -1081,20 +1726,29 @@ function ReviewKanoResult({ result }: { result: any }) {
 
 /* ─── 7. Decision Dashboard Result ─── */
 function DecisionDashboardResult({ result }: { result: any }) {
-  const dashboard = result.dashboard || result;
+  // AI output: { ai: { feasibilityScore, productPositioning, swotAnalysis, launchPlan, risks, summary } }
+  const ai = result.ai || {};
+  const feasibility = ai.feasibilityScore || {};
+  const dims = Array.isArray(feasibility.dimensions) ? feasibility.dimensions : [];
+  const radarData = dims.map((d: any) => ({ subject: d.name, score: d.score ?? 0, fullMark: 10 }));
 
   return (
     <div className="space-y-4">
-      {/* Overall Score */}
-      {dashboard.overallScore !== undefined && (
+      {/* Overall Score + Recommendation */}
+      {feasibility.overall !== undefined && (
         <Card>
           <CardContent className="p-6 text-center">
-            <p className="text-sm text-muted-foreground">综合立项评分</p>
-            <p className="text-5xl font-bold mt-2 text-primary">{dashboard.overallScore}</p>
-            <p className="text-xs text-muted-foreground mt-1">/ 100</p>
-            {dashboard.recommendation && (
-              <Badge className="mt-3 text-sm" variant={dashboard.recommendation === "强烈推荐" ? "default" : "secondary"}>
-                {dashboard.recommendation}
+            <p className="text-sm text-muted-foreground">综合可行性评分</p>
+            <p className="text-5xl font-bold mt-2 text-primary">{feasibility.overall}</p>
+            <p className="text-xs text-muted-foreground mt-1">/ 10</p>
+            {feasibility.recommendation && (
+              <Badge className={`mt-3 text-sm ${
+                feasibility.recommendation === "强烈推荐" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" :
+                feasibility.recommendation === "推荐" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" :
+                feasibility.recommendation === "谨慎推荐" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400" :
+                "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+              }`}>
+                {feasibility.recommendation}
               </Badge>
             )}
           </CardContent>
@@ -1102,83 +1756,216 @@ function DecisionDashboardResult({ result }: { result: any }) {
       )}
 
       {/* Dimension Scores with Radar Chart */}
-      {dashboard.dimensions && (() => {
-        const dims = Array.isArray(dashboard.dimensions)
-          ? dashboard.dimensions
-          : Object.entries(dashboard.dimensions).map(([k, v]: any) => ({ name: k, ...v }));
-        const radarData = dims.map((d: any) => ({ subject: d.name || d.label, score: d.score ?? d.value ?? 0, fullMark: 100 }));
-        return (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">维度评分雷达图</CardTitle></CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <RadarChart data={radarData}>
-                    <PolarGrid />
-                    <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11 }} />
-                    <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 10 }} />
-                    <Radar name="评分" dataKey="score" stroke="#6366f1" fill="#6366f1" fillOpacity={0.3} />
-                    <Tooltip />
-                  </RadarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">维度评分详情</CardTitle></CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {dims.map((dim: any, i: number) => {
-                    const score = dim.score ?? dim.value ?? 0;
-                    const color = score >= 80 ? "bg-emerald-500" : score >= 60 ? "bg-amber-500" : "bg-red-500";
-                    return (
-                      <div key={i}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs font-medium">{dim.name || dim.label}</span>
-                          <span className="text-xs font-bold">{score}</span>
-                        </div>
-                        <div className="h-2 bg-muted rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${score}%` }} />
-                        </div>
-                        {dim.comment && <p className="text-xs text-muted-foreground mt-0.5">{dim.comment}</p>}
+      {dims.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">维度评分雷达图</CardTitle></CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <RadarChart data={radarData}>
+                  <PolarGrid />
+                  <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11 }} />
+                  <PolarRadiusAxis angle={30} domain={[0, 10]} tick={{ fontSize: 10 }} />
+                  <Radar name="评分" dataKey="score" stroke="#6366f1" fill="#6366f1" fillOpacity={0.3} />
+                  <Tooltip />
+                </RadarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">维度评分详情</CardTitle></CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {dims.map((dim: any, i: number) => {
+                  const score = dim.score ?? 0;
+                  const pct = (score / 10) * 100;
+                  const color = score >= 7 ? "bg-emerald-500" : score >= 5 ? "bg-amber-500" : "bg-red-500";
+                  return (
+                    <div key={i}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium">{dim.name}</span>
+                        <span className="text-xs font-bold">{score}/10</span>
                       </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        );
-      })()}
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${pct}%` }} />
+                      </div>
+                      {dim.reason && <p className="text-xs text-muted-foreground mt-0.5">{dim.reason}</p>}
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
-      {/* Key Findings */}
-      {dashboard.keyFindings && (
+      {/* AI Summary */}
+      {ai.summary && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Sparkles className="h-4 w-4" />核心发现</CardTitle></CardHeader>
-          <CardContent><Streamdown>{typeof dashboard.keyFindings === "string" ? dashboard.keyFindings : JSON.stringify(dashboard.keyFindings, null, 2)}</Streamdown></CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Brain className="h-4 w-4" />AI综合决策总结</CardTitle></CardHeader>
+          <CardContent><Streamdown>{ai.summary}</Streamdown></CardContent>
+        </Card>
+      )}
+
+      {/* Product Positioning */}
+      {ai.productPositioning && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Sparkles className="h-4 w-4" />推荐产品定位</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            {ai.productPositioning.targetAttributes && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1">目标属性组合</p>
+                <div className="flex flex-wrap gap-1">
+                  {Object.entries(ai.productPositioning.targetAttributes).map(([k, v]: any) => (
+                    <Badge key={k} variant="outline" className="text-xs">{k}: {v}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            {ai.productPositioning.priceRange && (
+              <p className="text-sm"><span className="text-muted-foreground">价格区间: </span><span className="font-semibold">${ai.productPositioning.priceRange.min} - ${ai.productPositioning.priceRange.max}</span></p>
+            )}
+            {ai.productPositioning.differentiationDirection && (
+              <p className="text-sm"><span className="text-muted-foreground">差异化方向: </span>{ai.productPositioning.differentiationDirection}</p>
+            )}
+            {ai.productPositioning.targetAudience && (
+              <p className="text-sm"><span className="text-muted-foreground">目标用户: </span>{ai.productPositioning.targetAudience}</p>
+            )}
+            {Array.isArray(ai.productPositioning.uniqueSellingPoints) && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1">USP 售卖点</p>
+                {ai.productPositioning.uniqueSellingPoints.map((usp: string, i: number) => (
+                  <p key={i} className="text-sm">• {usp}</p>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* SWOT Analysis */}
+      {Array.isArray(ai.swotAnalysis) && ai.swotAnalysis.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">对标竞品 SWOT 分析</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {ai.swotAnalysis.map((swot: any, i: number) => (
+                <div key={i} className="border rounded-lg p-3">
+                  <p className="text-sm font-semibold mb-2">{swot.competitor}</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-emerald-50 dark:bg-emerald-900/10 p-2 rounded">
+                      <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 mb-1">Strengths 优势</p>
+                      {Array.isArray(swot.strengths) && swot.strengths.map((s: string, j: number) => <p key={j} className="text-xs">• {s}</p>)}
+                    </div>
+                    <div className="bg-red-50 dark:bg-red-900/10 p-2 rounded">
+                      <p className="text-xs font-medium text-red-700 dark:text-red-400 mb-1">Weaknesses 劣势</p>
+                      {Array.isArray(swot.weaknesses) && swot.weaknesses.map((w: string, j: number) => <p key={j} className="text-xs">• {w}</p>)}
+                    </div>
+                    <div className="bg-blue-50 dark:bg-blue-900/10 p-2 rounded">
+                      <p className="text-xs font-medium text-blue-700 dark:text-blue-400 mb-1">Opportunities 机会</p>
+                      {Array.isArray(swot.opportunities) && swot.opportunities.map((o: string, j: number) => <p key={j} className="text-xs">• {o}</p>)}
+                    </div>
+                    <div className="bg-amber-50 dark:bg-amber-900/10 p-2 rounded">
+                      <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-1">Threats 威胁</p>
+                      {Array.isArray(swot.threats) && swot.threats.map((t: string, j: number) => <p key={j} className="text-xs">• {t}</p>)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Launch Plan */}
+      {ai.launchPlan && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">产品上新计划</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {ai.launchPlan.targetPrice && (
+                <div className="text-center p-2 bg-muted/30 rounded-lg">
+                  <p className="text-xs text-muted-foreground">目标定价</p>
+                  <p className="text-lg font-bold">${ai.launchPlan.targetPrice}</p>
+                </div>
+              )}
+              {ai.launchPlan.bestLaunchMonth && (
+                <div className="text-center p-2 bg-muted/30 rounded-lg">
+                  <p className="text-xs text-muted-foreground">建议上架月</p>
+                  <p className="text-lg font-bold">{ai.launchPlan.bestLaunchMonth}</p>
+                </div>
+              )}
+              {ai.launchPlan.initialOrderQuantity && (
+                <div className="text-center p-2 bg-muted/30 rounded-lg">
+                  <p className="text-xs text-muted-foreground">首批订单量</p>
+                  <p className="text-lg font-bold">{ai.launchPlan.initialOrderQuantity}</p>
+                </div>
+              )}
+              {ai.launchPlan.targetMonthlySales && (
+                <div className="text-center p-2 bg-muted/30 rounded-lg">
+                  <p className="text-xs text-muted-foreground">目标月销</p>
+                  <p className="text-lg font-bold">{ai.launchPlan.targetMonthlySales}</p>
+                </div>
+              )}
+              {ai.launchPlan.estimatedBreakEvenMonths && (
+                <div className="text-center p-2 bg-muted/30 rounded-lg">
+                  <p className="text-xs text-muted-foreground">预估回本月</p>
+                  <p className="text-lg font-bold">{ai.launchPlan.estimatedBreakEvenMonths}个月</p>
+                </div>
+              )}
+            </div>
+            {ai.launchPlan.specifications && (
+              <p className="text-sm"><span className="text-muted-foreground">规格参数: </span>{ai.launchPlan.specifications}</p>
+            )}
+            {Array.isArray(ai.launchPlan.keyMilestones) && ai.launchPlan.keyMilestones.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">关键里程碑</p>
+                <div className="space-y-1">
+                  {ai.launchPlan.keyMilestones.map((m: any, i: number) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs shrink-0">第{m.month}月</Badge>
+                      <p className="text-xs">{m.milestone}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
         </Card>
       )}
 
       {/* Risks */}
-      {dashboard.risks && (
+      {Array.isArray(ai.risks) && ai.risks.length > 0 && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">风险提示</CardTitle></CardHeader>
-          <CardContent><Streamdown>{typeof dashboard.risks === "string" ? dashboard.risks : JSON.stringify(dashboard.risks, null, 2)}</Streamdown></CardContent>
-        </Card>
-      )}
-
-      {/* Action Plan */}
-      {dashboard.actionPlan && (
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">行动计划</CardTitle></CardHeader>
-          <CardContent><Streamdown>{typeof dashboard.actionPlan === "string" ? dashboard.actionPlan : JSON.stringify(dashboard.actionPlan, null, 2)}</Streamdown></CardContent>
-        </Card>
-      )}
-
-      {/* Full AI Summary */}
-      {dashboard.fullSummary && (
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Brain className="h-4 w-4" />AI综合分析报告</CardTitle></CardHeader>
-          <CardContent><Streamdown>{dashboard.fullSummary}</Streamdown></CardContent>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">风险与应对</CardTitle></CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left p-2 font-medium">风险</th>
+                    <th className="text-center p-2 font-medium">概率</th>
+                    <th className="text-center p-2 font-medium">影响</th>
+                    <th className="text-left p-2 font-medium">应对策略</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ai.risks.map((r: any, i: number) => (
+                    <tr key={i} className="border-b last:border-0">
+                      <td className="p-2 font-medium">{r.risk}</td>
+                      <td className="p-2 text-center">
+                        <Badge className={`text-xs ${r.probability === "高" ? "bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400" : r.probability === "中" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400"}`}>{r.probability}</Badge>
+                      </td>
+                      <td className="p-2 text-center">
+                        <Badge className={`text-xs ${r.impact === "高" ? "bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400" : r.impact === "中" ? "bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400"}`}>{r.impact}</Badge>
+                      </td>
+                      <td className="p-2 text-muted-foreground">{r.mitigation}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
         </Card>
       )}
     </div>
@@ -1197,4 +1984,290 @@ function GenericResult({ result }: { result: any }) {
       </CardContent>
     </Card>
   );
+}
+
+/* ─── Stage Form Editor ─── */
+function FormField({ label, value, onChange, multiline, type = "text" }: { label: string; value: any; onChange: (v: any) => void; multiline?: boolean; type?: string }) {
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-medium text-muted-foreground">{label}</label>
+      {multiline ? (
+        <Textarea value={value ?? ""} onChange={(e) => onChange(e.target.value)} className="text-sm min-h-[80px]" />
+      ) : type === "number" ? (
+        <Input type="number" value={value ?? ""} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : "")} className="text-sm" />
+      ) : (
+        <Input value={value ?? ""} onChange={(e) => onChange(e.target.value)} className="text-sm" />
+      )}
+    </div>
+  );
+}
+
+function FormListEditor({ label, items, onChange, renderItem }: { label: string; items: any[]; onChange: (items: any[]) => void; renderItem?: (item: any, idx: number, update: (v: any) => void) => React.ReactNode }) {
+  const addItem = () => onChange([...items, typeof items[0] === "string" ? "" : {}]);
+  const removeItem = (idx: number) => onChange(items.filter((_, i) => i !== idx));
+  const updateItem = (idx: number, val: any) => { const next = [...items]; next[idx] = val; onChange(next); };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-medium text-muted-foreground">{label}</label>
+        <Button size="sm" variant="outline" className="h-6 text-xs" onClick={addItem}>添加</Button>
+      </div>
+      {items.map((item, idx) => (
+        <div key={idx} className="flex gap-2 items-start">
+          <div className="flex-1">
+            {renderItem ? renderItem(item, idx, (v) => updateItem(idx, v)) : (
+              <Input value={typeof item === "string" ? item : JSON.stringify(item)} onChange={(e) => updateItem(idx, e.target.value)} className="text-sm" />
+            )}
+          </div>
+          <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-muted-foreground hover:text-red-500" onClick={() => removeItem(idx)}>×</Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StageFormEditor({ stageKey, data, onChange }: { stageKey: StageKey; data: any; onChange: (d: any) => void }) {
+  const update = (path: string, value: any) => {
+    const next = JSON.parse(JSON.stringify(data));
+    const keys = path.split(".");
+    let obj = next;
+    for (let i = 0; i < keys.length - 1; i++) {
+      if (!obj[keys[i]]) obj[keys[i]] = {};
+      obj = obj[keys[i]];
+    }
+    obj[keys[keys.length - 1]] = value;
+    onChange(next);
+  };
+
+  const ai = data.ai || {};
+
+  switch (stageKey) {
+    case "market_overview":
+      return (
+        <div className="space-y-4">
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">市场总结</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <FormField label="市场总结" value={ai.summary} onChange={(v) => update("ai.summary", v)} multiline />
+              <div className="grid grid-cols-2 gap-3">
+                <FormField label="市场成熟度" value={ai.maturityLevel} onChange={(v) => update("ai.maturityLevel", v)} />
+                <FormField label="增长趋势" value={ai.growthTrend} onChange={(v) => update("ai.growthTrend", v)} />
+                <FormField label="季节性" value={ai.seasonality} onChange={(v) => update("ai.seasonality", v)} />
+                <FormField label="市场容量判断" value={ai.marketCapacity} onChange={(v) => update("ai.marketCapacity", v)} />
+                <FormField label="进入时机" value={ai.entryTiming} onChange={(v) => update("ai.entryTiming", v)} />
+              </div>
+            </CardContent>
+          </Card>
+          {Array.isArray(ai.opportunities) && (
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">市场机会</CardTitle></CardHeader>
+              <CardContent>
+                <FormListEditor label="机会列表" items={ai.opportunities} onChange={(v) => update("ai.opportunities", v)} />
+              </CardContent>
+            </Card>
+          )}
+          {Array.isArray(ai.threats) && (
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">市场风险</CardTitle></CardHeader>
+              <CardContent>
+                <FormListEditor label="风险列表" items={ai.threats} onChange={(v) => update("ai.threats", v)} />
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      );
+
+    case "attribute_cross":
+      return (
+        <div className="space-y-4">
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">属性交叉分析</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <FormField label="分析总结" value={ai.summary} onChange={(v) => update("ai.summary", v)} multiline />
+            </CardContent>
+          </Card>
+          {Array.isArray(ai.mainstreamProducts) && (
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">主流产品组合</CardTitle></CardHeader>
+              <CardContent>
+                <FormListEditor label="主流组合" items={ai.mainstreamProducts} onChange={(v) => update("ai.mainstreamProducts", v)}
+                  renderItem={(item, _idx, upd) => (
+                    <div className="space-y-2 p-2 border rounded">
+                      <FormField label="组合" value={item.combination} onChange={(v) => upd({ ...item, combination: v })} />
+                      <FormField label="占比" value={item.share} onChange={(v) => upd({ ...item, share: v })} />
+                      <FormField label="分析" value={item.analysis} onChange={(v) => upd({ ...item, analysis: v })} multiline />
+                    </div>
+                  )}
+                />
+              </CardContent>
+            </Card>
+          )}
+          {Array.isArray(ai.differentiationOpportunities) && (
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">差异化机会</CardTitle></CardHeader>
+              <CardContent>
+                <FormListEditor label="机会" items={ai.differentiationOpportunities} onChange={(v) => update("ai.differentiationOpportunities", v)}
+                  renderItem={(item, _idx, upd) => (
+                    <div className="space-y-2 p-2 border rounded">
+                      <FormField label="方向" value={item.direction} onChange={(v) => upd({ ...item, direction: v })} />
+                      <FormField label="原因" value={item.reason} onChange={(v) => upd({ ...item, reason: v })} multiline />
+                    </div>
+                  )}
+                />
+              </CardContent>
+            </Card>
+          )}
+          {Array.isArray(ai.redOceanWarnings) && (
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">红海警告</CardTitle></CardHeader>
+              <CardContent>
+                <FormListEditor label="警告" items={ai.redOceanWarnings} onChange={(v) => update("ai.redOceanWarnings", v)} />
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      );
+
+    case "price_analysis":
+      return (
+        <div className="space-y-4">
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">价格分析</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <FormField label="分析总结" value={ai.summary} onChange={(v) => update("ai.summary", v)} multiline />
+              <div className="grid grid-cols-2 gap-3">
+                <FormField label="最佳价格区间(低)" value={ai.bestPriceRange?.min} onChange={(v) => update("ai.bestPriceRange.min", Number(v))} type="number" />
+                <FormField label="最佳价格区间(高)" value={ai.bestPriceRange?.max} onChange={(v) => update("ai.bestPriceRange.max", Number(v))} type="number" />
+              </div>
+              <FormField label="定价策略" value={ai.pricingStrategy} onChange={(v) => update("ai.pricingStrategy", v)} multiline />
+            </CardContent>
+          </Card>
+          {Array.isArray(ai.priceInsights) && (
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">价格洞察</CardTitle></CardHeader>
+              <CardContent>
+                <FormListEditor label="洞察" items={ai.priceInsights} onChange={(v) => update("ai.priceInsights", v)} />
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      );
+
+    case "brand_competition":
+      return (
+        <div className="space-y-4">
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">品牌竞争分析</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <FormField label="分析总结" value={ai.summary} onChange={(v) => update("ai.summary", v)} multiline />
+              <FormField label="竞争格局" value={ai.competitionPattern} onChange={(v) => update("ai.competitionPattern", v)} />
+            </CardContent>
+          </Card>
+          {ai.entryStrategy && (
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">进入策略</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <FormField label="进入方式" value={ai.entryStrategy?.approach} onChange={(v) => update("ai.entryStrategy.approach", v)} />
+                <FormField label="目标细分" value={ai.entryStrategy?.targetSegment} onChange={(v) => update("ai.entryStrategy.targetSegment", v)} />
+                <FormField label="差异化切入点" value={ai.entryStrategy?.differentiationPoint} onChange={(v) => update("ai.entryStrategy.differentiationPoint", v)} multiline />
+              </CardContent>
+            </Card>
+          )}
+          {ai.chinaSellerAnalysis && (
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">中国卖家分析</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <FormField label="份额" value={ai.chinaSellerAnalysis?.share} onChange={(v) => update("ai.chinaSellerAnalysis.share", v)} />
+                <FormField label="趋势" value={ai.chinaSellerAnalysis?.trend} onChange={(v) => update("ai.chinaSellerAnalysis.trend", v)} />
+                <FormField label="影响" value={ai.chinaSellerAnalysis?.implication} onChange={(v) => update("ai.chinaSellerAnalysis.implication", v)} multiline />
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      );
+
+    case "review_kano":
+      return (
+        <div className="space-y-4">
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">评论分析</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <FormField label="分析总结" value={ai.summary} onChange={(v) => update("ai.summary", v)} multiline />
+            </CardContent>
+          </Card>
+          {["painPoints", "itchPoints", "wowPoints"].map(catKey => {
+            const catLabel = catKey === "painPoints" ? "痛点" : catKey === "itchPoints" ? "疒点" : "爽点";
+            const items = ai.kanoAnalysis?.[catKey] || [];
+            return items.length > 0 ? (
+              <Card key={catKey}><CardHeader className="pb-2"><CardTitle className="text-sm">{catLabel}</CardTitle></CardHeader>
+                <CardContent>
+                  <FormListEditor label={catLabel} items={items} onChange={(v) => update(`ai.kanoAnalysis.${catKey}`, v)}
+                    renderItem={(item, _idx, upd) => (
+                      <div className="space-y-2 p-2 border rounded">
+                        <FormField label="主题" value={item.theme || item.feature} onChange={(v) => upd({ ...item, theme: v })} />
+                        <FormField label="描述" value={item.description} onChange={(v) => upd({ ...item, description: v })} multiline />
+                        <FormField label="改进建议" value={item.improvementSuggestion || item.implementationSuggestion} onChange={(v) => upd({ ...item, improvementSuggestion: v })} multiline />
+                      </div>
+                    )}
+                  />
+                </CardContent>
+              </Card>
+            ) : null;
+          })}
+        </div>
+      );
+
+    case "decision_dashboard":
+      return (
+        <div className="space-y-4">
+          <Card><CardHeader className="pb-2"><CardTitle className="text-sm">综合决策</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <FormField label="分析总结" value={ai.summary} onChange={(v) => update("ai.summary", v)} multiline />
+              <div className="grid grid-cols-2 gap-3">
+                <FormField label="综合评分(1-10)" value={ai.feasibilityScore?.overall} onChange={(v) => update("ai.feasibilityScore.overall", Number(v))} type="number" />
+                <FormField label="推荐等级" value={ai.feasibilityScore?.recommendation} onChange={(v) => update("ai.feasibilityScore.recommendation", v)} />
+              </div>
+            </CardContent>
+          </Card>
+          {ai.productPositioning && (
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">产品定位</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <FormField label="差异化方向" value={ai.productPositioning?.differentiationDirection} onChange={(v) => update("ai.productPositioning.differentiationDirection", v)} multiline />
+                <FormField label="目标用户" value={ai.productPositioning?.targetAudience} onChange={(v) => update("ai.productPositioning.targetAudience", v)} />
+              </CardContent>
+            </Card>
+          )}
+          {ai.launchPlan && (
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">上新计划</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-3 gap-3">
+                  <FormField label="目标定价" value={ai.launchPlan?.targetPrice} onChange={(v) => update("ai.launchPlan.targetPrice", v)} />
+                  <FormField label="建议上架月" value={ai.launchPlan?.bestLaunchMonth} onChange={(v) => update("ai.launchPlan.bestLaunchMonth", v)} />
+                  <FormField label="首批订单量" value={ai.launchPlan?.initialOrderQuantity} onChange={(v) => update("ai.launchPlan.initialOrderQuantity", v)} />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {Array.isArray(ai.risks) && (
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">风险与应对</CardTitle></CardHeader>
+              <CardContent>
+                <FormListEditor label="风险" items={ai.risks} onChange={(v) => update("ai.risks", v)}
+                  renderItem={(item, _idx, upd) => (
+                    <div className="space-y-2 p-2 border rounded">
+                      <FormField label="风险" value={item.risk} onChange={(v) => upd({ ...item, risk: v })} />
+                      <div className="grid grid-cols-2 gap-2">
+                        <FormField label="概率" value={item.probability} onChange={(v) => upd({ ...item, probability: v })} />
+                        <FormField label="影响" value={item.impact} onChange={(v) => upd({ ...item, impact: v })} />
+                      </div>
+                      <FormField label="应对策略" value={item.mitigation} onChange={(v) => upd({ ...item, mitigation: v })} multiline />
+                    </div>
+                  )}
+                />
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      );
+
+    default:
+      // Fallback: show JSON editor for stages without form editor (attribute_tagging, tag_cross)
+      return (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">该阶段使用JSON编辑器，请直接修改下方内容：</p>
+          <Textarea
+            value={JSON.stringify(data, null, 2)}
+            onChange={(e) => { try { onChange(JSON.parse(e.target.value)); } catch { /* ignore parse errors while typing */ } }}
+            className="min-h-[500px] font-mono text-xs"
+          />
+        </div>
+      );
+  }
 }

@@ -60,11 +60,18 @@ export interface MarketOverviewStats {
   maxPrice: number;
   avgRating: number;
   avgReviewCount: number;
+  medianMonthlySales: number;
+  medianMonthlyRevenue: number;
+  avgMonthlySalesPerAsin: number;
+  brandCount: number;
+  top10SalesShare: number;
   newProductRatio: number; // products listed < 12 months
   fbaRatio: number;
   monthlyTrend: Array<{ month: string; sales: number; revenue: number }>;
   seasonalityIndex: Array<{ month: string; index: number }>;
   priceDistribution: Array<{ range: string; count: number; min: number; max: number }>;
+  priceSalesScatter: Array<{ asin: string; price: number; sales: number; rating: number; reviews: number; brand: string }>;
+  newVsOldComparison: { newCount: number; oldCount: number; newAvgSales: number; oldAvgSales: number; newAvgPrice: number; oldAvgPrice: number; newAvgRating: number; oldAvgRating: number };
 }
 
 export function calcMarketOverview(products: ProductData[]): MarketOverviewStats {
@@ -108,6 +115,67 @@ export function calcMarketOverview(products: ProductData[]): MarketOverviewStats
   // Price distribution (auto-generate 6 ranges)
   const priceDistribution = calcPriceDistribution(prices);
 
+  // Median monthly sales
+  const sortedSales = [...sales].filter(s => s > 0).sort((a, b) => a - b);
+  const medianMonthlySales = sortedSales.length > 0
+    ? sortedSales.length % 2 === 0
+      ? (sortedSales[sortedSales.length / 2 - 1] + sortedSales[sortedSales.length / 2]) / 2
+      : sortedSales[Math.floor(sortedSales.length / 2)]
+    : 0;
+
+  // Median monthly revenue
+  const sortedRevenues = [...revenues].filter(r => r > 0).sort((a, b) => a - b);
+  const medianMonthlyRevenue = sortedRevenues.length > 0
+    ? sortedRevenues.length % 2 === 0
+      ? (sortedRevenues[sortedRevenues.length / 2 - 1] + sortedRevenues[sortedRevenues.length / 2]) / 2
+      : sortedRevenues[Math.floor(sortedRevenues.length / 2)]
+    : 0;
+
+  // Avg monthly sales per ASIN
+  const avgMonthlySalesPerAsin = products.length > 0 ? totalSales / products.length : 0;
+
+  // Brand count
+  const brandSet = new Set(products.map(p => p.brand || "Unknown").filter(b => b !== "Unknown"));
+  const brandCount = brandSet.size;
+
+  // Top 10 sales share
+  const sortedBySales = [...products].sort((a, b) => (b.monthlySales || 0) - (a.monthlySales || 0));
+  const top10Sales = sortedBySales.slice(0, 10).reduce((s, p) => s + (p.monthlySales || 0), 0);
+  const top10SalesShare = totalSales > 0 ? round2(top10Sales / totalSales) : 0;
+
+  // Price-Sales scatter data
+  const priceSalesScatter = products
+    .filter(p => parseFloat(p.price || "0") > 0)
+    .map(p => ({
+      asin: p.asin,
+      price: parseFloat(p.price || "0"),
+      sales: p.monthlySales || 0,
+      rating: parseFloat(p.rating || "0"),
+      reviews: parseInt(p.reviewCount || "0", 10),
+      brand: p.brand || "Unknown",
+    }));
+
+  // New vs Old product comparison
+  const oldProducts = products.filter(p => {
+    if (!p.listingDate) return true;
+    const d = new Date(p.listingDate);
+    return d <= twelveMonthsAgo;
+  });
+  const newPrices = newProducts.map(p => parseFloat(p.price || "0")).filter(p => p > 0);
+  const oldPrices = oldProducts.map(p => parseFloat(p.price || "0")).filter(p => p > 0);
+  const newRatings = newProducts.map(p => parseFloat(p.rating || "0")).filter(r => r > 0);
+  const oldRatings = oldProducts.map(p => parseFloat(p.rating || "0")).filter(r => r > 0);
+  const newVsOldComparison = {
+    newCount: newProducts.length,
+    oldCount: oldProducts.length,
+    newAvgSales: round2(avg(newProducts.map(p => p.monthlySales || 0))),
+    oldAvgSales: round2(avg(oldProducts.map(p => p.monthlySales || 0))),
+    newAvgPrice: round2(avg(newPrices)),
+    oldAvgPrice: round2(avg(oldPrices)),
+    newAvgRating: round2(avg(newRatings)),
+    oldAvgRating: round2(avg(oldRatings)),
+  };
+
   return {
     totalRevenue: round2(totalRevenue),
     totalSales,
@@ -119,11 +187,18 @@ export function calcMarketOverview(products: ProductData[]): MarketOverviewStats
     maxPrice: round2(Math.max(...prices, 0)),
     avgRating: round2(avg(ratings)),
     avgReviewCount: Math.round(avg(reviewCounts)),
+    medianMonthlySales: Math.round(medianMonthlySales),
+    medianMonthlyRevenue: round2(medianMonthlyRevenue),
+    avgMonthlySalesPerAsin: Math.round(avgMonthlySalesPerAsin),
+    brandCount,
+    top10SalesShare,
     newProductRatio: round2(newProductRatio),
     fbaRatio: round2(fbaRatio),
     monthlyTrend,
     seasonalityIndex,
     priceDistribution,
+    priceSalesScatter,
+    newVsOldComparison,
   };
 }
 
