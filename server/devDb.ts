@@ -119,6 +119,17 @@ export async function unconfirmDevFilesByType(projectId: number, fileType: strin
   );
 }
 
+export async function updateDevFileRowsByType(projectId: number, fileType: string, totalRows: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(devUploadedFiles).set({
+    totalRows,
+    status: "parsed",
+  }).where(
+    and(eq(devUploadedFiles.projectId, projectId), eq(devUploadedFiles.fileType, fileType as any))
+  );
+}
+
 export async function getDataConfirmationStatus(projectId: number) {
   const db = await getDb();
   if (!db) return { sales: false, bullet_points: false, reviews: false, history_sales: false };

@@ -85,6 +85,7 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
   const uploadFileMutation = trpc.devProject.uploadFile.useMutation();
   const saveProductsMutation = trpc.devProject.saveProducts.useMutation();
   const saveReviewsMutation = trpc.devProject.saveReviews.useMutation();
+  const updateFileRowsMutation = trpc.devProject.updateFileRows.useMutation();
   const confirmDataMutation = trpc.devProject.confirmData.useMutation({
     onSuccess: () => {
       utils.devProject.getDataStatus.invalidate({ projectId });
@@ -150,8 +151,16 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
         await parseHistorySalesData(rows, workbook);
       }
 
+      // 5. Update file record with totalRows
+      await updateFileRowsMutation.mutateAsync({
+        projectId,
+        fileType,
+        totalRows: rows.length,
+      });
+
       updateState(fileType, { status: "done", recordCount: rows.length });
       toast.success(`${FILE_TYPES.find(f => f.key === fileType)?.label}解析成功，共 ${rows.length} 条记录。请确认保存后方可用于分析。`);
+      utils.devProject.getDataStatus.invalidate({ projectId });
       utils.devProject.getById.invalidate({ id: projectId });
       utils.devProject.getProducts.invalidate({ projectId });
       onDataUploaded?.();
@@ -340,8 +349,16 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
           totalRecords += reviews.length;
         }
       }
+      // Update file record with totalRows
+      await updateFileRowsMutation.mutateAsync({
+        projectId,
+        fileType,
+        totalRows: totalRecords,
+      });
+
       updateState(fileType, { status: "done", fileName: `${fileArray.length} 个文件`, recordCount: totalRecords });
       toast.success(`评论数据批量上传成功，共 ${fileArray.length} 个文件，${totalRecords} 条评论。请确认保存。`);
+      utils.devProject.getDataStatus.invalidate({ projectId });
       utils.devProject.getById.invalidate({ id: projectId });
       utils.devProject.getProducts.invalidate({ projectId });
       onDataUploaded?.();

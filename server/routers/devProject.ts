@@ -253,4 +253,18 @@ export const devProjectRouter = router({
       await devDb.unconfirmDevFilesByType(input.projectId, input.fileType);
       return { success: true };
     }),
+
+  // Update file record with totalRows after parsing
+  updateFileRows: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      fileType: z.enum(["sales", "bullet_points", "reviews", "history_sales"]),
+      totalRows: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      await devDb.updateDevFileRowsByType(input.projectId, input.fileType, input.totalRows);
+      return { success: true };
+    }),
 });
