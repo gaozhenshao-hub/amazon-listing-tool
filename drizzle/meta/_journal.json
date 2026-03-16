@@ -127,6 +127,13 @@
       "when": 1773578745137,
       "tag": "0017_striped_wild_child",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1773629972424,
+      "tag": "0018_pale_doctor_faustus",
+      "breakpoints": true
     }
   ]
 }

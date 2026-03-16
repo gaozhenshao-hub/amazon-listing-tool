@@ -14,6 +14,11 @@ import {
   MessageSquare,
   TrendingUp,
   FileText,
+  Shield,
+  ShieldCheck,
+  Lock,
+  Unlock,
+  Database,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -80,6 +85,22 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
   const uploadFileMutation = trpc.devProject.uploadFile.useMutation();
   const saveProductsMutation = trpc.devProject.saveProducts.useMutation();
   const saveReviewsMutation = trpc.devProject.saveReviews.useMutation();
+  const confirmDataMutation = trpc.devProject.confirmData.useMutation({
+    onSuccess: () => {
+      utils.devProject.getDataStatus.invalidate({ projectId });
+      utils.devProject.getById.invalidate({ id: projectId });
+      toast.success("数据已确认保存，可作为项目基础数据永久调用");
+    },
+  });
+  const unconfirmDataMutation = trpc.devProject.unconfirmData.useMutation({
+    onSuccess: () => {
+      utils.devProject.getDataStatus.invalidate({ projectId });
+      toast.success("数据已取消确认，可重新上传");
+    },
+  });
+
+  // Query data confirmation status
+  const { data: dataStatus } = trpc.devProject.getDataStatus.useQuery({ projectId });
 
   const updateState = useCallback((fileType: FileType, update: Partial<UploadState>) => {
     setUploadStates(prev => ({ ...prev, [fileType]: { ...prev[fileType], ...update } }));
@@ -130,7 +151,7 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
       }
 
       updateState(fileType, { status: "done", recordCount: rows.length });
-      toast.success(`${FILE_TYPES.find(f => f.key === fileType)?.label}解析成功，共 ${rows.length} 条记录`);
+      toast.success(`${FILE_TYPES.find(f => f.key === fileType)?.label}解析成功，共 ${rows.length} 条记录。请确认保存后方可用于分析。`);
       utils.devProject.getById.invalidate({ id: projectId });
       utils.devProject.getProducts.invalidate({ projectId });
       onDataUploaded?.();
@@ -143,12 +164,8 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
   // ─── Parse Sales Data (Search results) ───
   const parseSalesData = async (rows: any[]) => {
     const products = rows.map((r: any) => {
-      // Map seller wizard column names (Chinese/English)
-      // Support 卖家精灵 export format with $ suffixes and various naming conventions
       const asin = r["ASIN"] || r["asin"] || "";
       if (!asin) return null;
-
-      // Helper: try multiple column names, return first non-empty value
       const pick = (...keys: string[]) => {
         for (const k of keys) {
           if (r[k] !== undefined && r[k] !== "") return r[k];
@@ -162,7 +179,6 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
         }
         return 0;
       };
-
       return {
         asin,
         title: pick("商品标题", "标题", "Title", "title"),
@@ -182,19 +198,13 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
         subcategory: pick("小类目", "子类目", "Sub Category", "Subcategory"),
         imageUrl: pick("商品主图", "图片", "Image", "Main Image"),
         searchRank: pickNum("搜索排名", "Search Rank", "Rank", "序号", "#"),
-        // Extended fields from 卖家精灵
         bulletPoints: pick("产品卖点", "Bullet Points"),
         specifications: pick("详细参数", "SKU"),
       };
     }).filter(Boolean) as any[];
-
     if (products.length > 0) {
-      // Batch save in chunks of 50
       for (let i = 0; i < products.length; i += 50) {
-        await saveProductsMutation.mutateAsync({
-          projectId,
-          products: products.slice(i, i + 50),
-        });
+        await saveProductsMutation.mutateAsync({ projectId, products: products.slice(i, i + 50) });
       }
     }
   };
@@ -204,16 +214,13 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
     const products = rows.map((r: any) => {
       const asin = r["ASIN"] || r["asin"] || "";
       if (!asin) return null;
-      // Combine bullet points
       const bullets = [];
       for (let i = 1; i <= 10; i++) {
         const b = r[`卖点${i}`] || r[`Bullet ${i}`] || r[`Bullet Point ${i}`] || r[`bullet_${i}`] || "";
         if (b) bullets.push(b);
       }
-      // Also try combined field
       const combinedBullets = r["五点描述"] || r["Bullet Points"] || r["bulletPoints"] || "";
       const bulletText = bullets.length > 0 ? bullets.join("\n") : combinedBullets;
-
       return {
         asin,
         title: r["标题"] || r["Title"] || r["title"] || "",
@@ -225,13 +232,9 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
         description: r["描述"] || r["Description"] || r["description"] || "",
       };
     }).filter(Boolean) as any[];
-
     if (products.length > 0) {
       for (let i = 0; i < products.length; i += 50) {
-        await saveProductsMutation.mutateAsync({
-          projectId,
-          products: products.slice(i, i + 50),
-        });
+        await saveProductsMutation.mutateAsync({ projectId, products: products.slice(i, i + 50) });
       }
     }
   };
@@ -241,20 +244,16 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
     const reviews = rows.map((r: any) => ({
       asin: r["ASIN"] || r["asin"] || "",
       title: r["标题"] || r["Title"] || r["Review Title"] || "",
-      content: r["内容"] || r["Content"] || r["Review Content"] || r["Review"] || "",
-      rating: Number(r["评分"] || r["Rating"] || r["Star Rating"] || r["Stars"] || 0),
-      reviewDate: r["日期"] || r["Date"] || r["Review Date"] || "",
-      isVP: Boolean(r["VP"] || r["Verified Purchase"] || r["verified_purchase"]),
-      variant: r["变体"] || r["Variant"] || r["Size"] || r["Color"] || "",
+      content: r["内容"] || r["Content"] || r["Review Content"] || r["Review"] || r["评论内容"] || "",
+      rating: Number(r["评分"] || r["Rating"] || r["Star Rating"] || r["Stars"] || r["星级"] || 0),
+      reviewDate: r["日期"] || r["Date"] || r["Review Date"] || r["评论日期"] || "",
+      isVP: Boolean(r["VP"] || r["Verified Purchase"] || r["verified_purchase"] || r["认证购买"]),
+      variant: r["变体"] || r["Variant"] || r["Size"] || r["Color"] || r["颜色"] || r["尺寸"] || "",
       helpfulCount: Number(r["有用数"] || r["Helpful"] || r["Helpful Votes"] || 0),
     })).filter((r: any) => r.content || r.title);
-
     if (reviews.length > 0) {
       for (let i = 0; i < reviews.length; i += 100) {
-        await saveReviewsMutation.mutateAsync({
-          projectId,
-          reviews: reviews.slice(i, i + 100),
-        });
+        await saveReviewsMutation.mutateAsync({ projectId, reviews: reviews.slice(i, i + 100) });
       }
     }
   };
@@ -262,20 +261,16 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
   // ─── Parse History Sales Data ───
   const parseHistorySalesData = async (rows: any[], workbook: any) => {
     const XLSX = await import("xlsx");
-    // Try to find monthly sales sheet
     const monthlySheet = workbook.Sheets["产品历史月销售额"] || workbook.Sheets["Monthly Sales"] || workbook.Sheets[workbook.SheetNames[1]];
     let monthlyRows: any[] = [];
     if (monthlySheet) {
       monthlyRows = XLSX.utils.sheet_to_json(monthlySheet, { defval: "" });
     }
-
-    // Build monthly history map by ASIN
     const historyMap: Record<string, any> = {};
     if (monthlyRows.length > 0) {
       for (const r of monthlyRows) {
         const asin = r["ASIN"] || r["asin"] || "";
         if (!asin) continue;
-        // Collect all month columns
         const salesHistory: Record<string, number> = {};
         const revenueHistory: Record<string, number> = {};
         for (const [key, val] of Object.entries(r)) {
@@ -286,8 +281,6 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
         historyMap[asin] = { salesHistory, revenueHistory };
       }
     }
-
-    // Parse main sheet products
     const products = rows.map((r: any) => {
       const asin = r["ASIN"] || r["asin"] || "";
       if (!asin) return null;
@@ -303,13 +296,9 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
         monthlyRevenueHistory: history ? JSON.stringify(history.revenueHistory) : undefined,
       };
     }).filter(Boolean) as any[];
-
     if (products.length > 0) {
       for (let i = 0; i < products.length; i += 50) {
-        await saveProductsMutation.mutateAsync({
-          projectId,
-          products: products.slice(i, i + 50),
-        });
+        await saveProductsMutation.mutateAsync({ projectId, products: products.slice(i, i + 50) });
       }
     }
   };
@@ -318,49 +307,22 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
   const handleBatchFileSelect = useCallback(async (fileType: FileType, files: FileList) => {
     const fileArray = Array.from(files);
     if (fileArray.length === 0) return;
-
-    updateState(fileType, {
-      status: "reading",
-      fileName: `${fileArray.length} 个文件`,
-      error: undefined,
-    });
-
+    updateState(fileType, { status: "reading", fileName: `${fileArray.length} 个文件`, error: undefined });
     try {
       let totalRecords = 0;
       const XLSX = await import("xlsx");
-
       for (let fi = 0; fi < fileArray.length; fi++) {
         const file = fileArray[fi];
-        updateState(fileType, {
-          status: "parsing",
-          fileName: `处理中 (${fi + 1}/${fileArray.length}): ${file.name}`,
-        });
-
+        updateState(fileType, { status: "parsing", fileName: `处理中 (${fi + 1}/${fileArray.length}): ${file.name}` });
         const arrayBuffer = await file.arrayBuffer();
-        const base64 = btoa(
-          new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
-        );
-
-        // Upload to S3
-        await uploadFileMutation.mutateAsync({
-          projectId,
-          fileName: file.name,
-          fileType,
-          fileData: base64,
-        });
-
-        // Parse Excel
+        const base64 = btoa(new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ""));
+        await uploadFileMutation.mutateAsync({ projectId, fileName: file.name, fileType, fileData: base64 });
         const workbook = XLSX.read(arrayBuffer, { type: "array" });
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
         const rows: any[] = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
-
         if (rows.length === 0) continue;
-
-        // Try to extract ASIN from filename (e.g., B0G2WP66RW-US-Reviews-xxx.xlsx)
         const asinMatch = file.name.match(/^(B[A-Z0-9]{9,})/i);
         const fileAsin = asinMatch ? asinMatch[1].toUpperCase() : "";
-
-        // Parse reviews
         const reviews = rows.map((r: any) => ({
           asin: r["ASIN"] || r["asin"] || fileAsin || "",
           title: r["标题"] || r["Title"] || r["Review Title"] || "",
@@ -371,24 +333,15 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
           variant: r["变体"] || r["Variant"] || r["Size"] || r["Color"] || r["颜色"] || r["尺寸"] || "",
           helpfulCount: Number(r["有用数"] || r["Helpful"] || r["Helpful Votes"] || 0),
         })).filter((r: any) => r.content || r.title);
-
         if (reviews.length > 0) {
           for (let i = 0; i < reviews.length; i += 100) {
-            await saveReviewsMutation.mutateAsync({
-              projectId,
-              reviews: reviews.slice(i, i + 100),
-            });
+            await saveReviewsMutation.mutateAsync({ projectId, reviews: reviews.slice(i, i + 100) });
           }
           totalRecords += reviews.length;
         }
       }
-
-      updateState(fileType, {
-        status: "done",
-        fileName: `${fileArray.length} 个文件`,
-        recordCount: totalRecords,
-      });
-      toast.success(`评论数据批量上传成功，共 ${fileArray.length} 个文件，${totalRecords} 条评论`);
+      updateState(fileType, { status: "done", fileName: `${fileArray.length} 个文件`, recordCount: totalRecords });
+      toast.success(`评论数据批量上传成功，共 ${fileArray.length} 个文件，${totalRecords} 条评论。请确认保存。`);
       utils.devProject.getById.invalidate({ id: projectId });
       utils.devProject.getProducts.invalidate({ projectId });
       onDataUploaded?.();
@@ -413,19 +366,18 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
   const handleInputChange = useCallback((fileType: FileType, e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-
-    // Check if this file type supports batch upload
     const ftConfig = FILE_TYPES.find(f => f.key === fileType);
     if (ftConfig && 'multiple' in ftConfig && ftConfig.multiple && files.length > 1) {
       handleBatchFileSelect(fileType, files);
     } else {
       handleFileSelect(fileType, files[0]);
     }
-    e.target.value = ""; // Reset input
+    e.target.value = "";
   }, [handleFileSelect, handleBatchFileSelect]);
 
   const totalDone = Object.values(uploadStates).filter(s => s.status === "done").length;
   const totalRecords = Object.values(uploadStates).reduce((sum, s) => sum + (s.recordCount || 0), 0);
+  const confirmedCount = dataStatus ? Object.values(dataStatus).filter((s: any) => s?.confirmed).length : 0;
 
   return (
     <div className="space-y-4">
@@ -437,18 +389,38 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
             卖家精灵数据上传
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            上传4种卖家精灵导出的Excel文件，系统将自动解析并入库
+            上传4种卖家精灵导出的Excel文件，确认保存后作为项目基础数据永久可用
           </p>
         </div>
-        {totalDone > 0 && (
-          <Badge variant="secondary" className="text-xs">
-            已上传 {totalDone}/4 · {totalRecords} 条记录
-          </Badge>
-        )}
+        <div className="flex items-center gap-2">
+          {confirmedCount > 0 && (
+            <Badge variant="default" className="text-xs bg-emerald-600 gap-1">
+              <Database className="h-3 w-3" />
+              {confirmedCount}/4 已确认
+            </Badge>
+          )}
+          {totalDone > 0 && (
+            <Badge variant="secondary" className="text-xs">
+              已上传 {totalDone}/4 · {totalRecords} 条记录
+            </Badge>
+          )}
+        </div>
       </div>
 
-      {totalDone > 0 && (
-        <Progress value={(totalDone / 4) * 100} className="h-1.5" />
+      {/* Confirmation Progress */}
+      {(confirmedCount > 0 || totalDone > 0) && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>数据确认进度</span>
+            <span>{confirmedCount}/4</span>
+          </div>
+          <div className="h-2 bg-muted rounded-full overflow-hidden">
+            <div
+              className="h-full bg-emerald-500 rounded-full transition-all"
+              style={{ width: `${(confirmedCount / 4) * 100}%` }}
+            />
+          </div>
+        </div>
       )}
 
       {/* File Upload Cards */}
@@ -457,40 +429,157 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
           const state = uploadStates[ft.key];
           const Icon = ft.icon;
           const isProcessing = ["reading", "parsing", "uploading", "saving"].includes(state.status);
+          const confirmStatus = dataStatus?.[ft.key as keyof typeof dataStatus] as any;
+          const isConfirmed = confirmStatus?.confirmed === true;
+          const hasUploadedData = state.status === "done" || (confirmStatus?.fileCount > 0);
 
           return (
-            <Card key={ft.key} className={`transition-all ${state.status === "done" ? "border-emerald-200 dark:border-emerald-800" : ""}`}>
+            <Card
+              key={ft.key}
+              className={`transition-all ${
+                isConfirmed
+                  ? "border-emerald-300 dark:border-emerald-700 bg-emerald-50/30 dark:bg-emerald-900/10"
+                  : state.status === "done"
+                    ? "border-amber-200 dark:border-amber-800"
+                    : ""
+              }`}
+            >
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center justify-between">
                   <span className="flex items-center gap-2">
                     <Icon className="h-4 w-4" />
                     {ft.label}
                   </span>
-                  {state.status === "done" && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
-                  {state.status === "error" && <AlertCircle className="h-4 w-4 text-red-500" />}
-                  {isProcessing && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+                  <div className="flex items-center gap-1">
+                    {isConfirmed && (
+                      <Badge variant="default" className="text-xs bg-emerald-600 gap-1">
+                        <ShieldCheck className="h-3 w-3" />
+                        已确认保存
+                      </Badge>
+                    )}
+                    {!isConfirmed && state.status === "done" && (
+                      <Badge variant="outline" className="text-xs text-amber-600 border-amber-300 gap-1">
+                        <Shield className="h-3 w-3" />
+                        待确认
+                      </Badge>
+                    )}
+                    {state.status === "error" && <AlertCircle className="h-4 w-4 text-red-500" />}
+                    {isProcessing && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="text-xs text-muted-foreground mb-3">{ft.desc}</p>
 
-                {state.status === "done" ? (
-                  <div className="flex items-center justify-between p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-md">
-                    <div className="flex items-center gap-2">
-                      <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
-                      <div>
-                        <p className="text-xs font-medium truncate max-w-[180px]">{state.fileName}</p>
-                        <p className="text-xs text-muted-foreground">{state.recordCount} 条记录</p>
+                {/* Confirmed state */}
+                {isConfirmed ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-md border border-emerald-200 dark:border-emerald-800">
+                      <div className="flex items-center gap-2">
+                        <Lock className="h-4 w-4 text-emerald-600" />
+                        <div>
+                          <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                            数据已确认保存
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {confirmStatus?.fileCount} 个文件 · {confirmStatus?.totalRows || 0} 条记录
+                            {confirmStatus?.confirmedAt && (
+                              <> · {new Date(confirmStatus.confirmedAt).toLocaleString()}</>
+                            )}
+                          </p>
+                        </div>
                       </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 gap-1 text-xs text-muted-foreground hover:text-amber-600"
+                        onClick={() => {
+                          if (window.confirm("取消确认后可重新上传数据，已保存的数据不会丢失。确定要取消确认吗？")) {
+                            unconfirmDataMutation.mutate({ projectId, fileType: ft.key });
+                            updateState(ft.key, { status: "idle", fileName: undefined, recordCount: undefined });
+                          }
+                        }}
+                        disabled={unconfirmDataMutation.isPending}
+                      >
+                        <Unlock className="h-3 w-3" />
+                        取消确认
+                      </Button>
+                    </div>
+                  </div>
+                ) : state.status === "done" ? (
+                  <div className="space-y-2">
+                    {/* Upload success - show data and confirm button */}
+                    <div className="flex items-center justify-between p-2 bg-amber-50 dark:bg-amber-900/20 rounded-md border border-amber-200 dark:border-amber-800">
+                      <div className="flex items-center gap-2">
+                        <FileSpreadsheet className="h-4 w-4 text-amber-600" />
+                        <div>
+                          <p className="text-xs font-medium truncate max-w-[180px]">{state.fileName}</p>
+                          <p className="text-xs text-muted-foreground">{state.recordCount} 条记录 · 待确认</p>
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0"
+                        onClick={() => updateState(ft.key, { status: "idle", fileName: undefined, recordCount: undefined })}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                     <Button
                       size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0"
-                      onClick={() => updateState(ft.key, { status: "idle", fileName: undefined, recordCount: undefined })}
+                      className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                      onClick={() => confirmDataMutation.mutate({ projectId, fileType: ft.key })}
+                      disabled={confirmDataMutation.isPending}
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      {confirmDataMutation.isPending ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      )}
+                      确认保存为基础数据
                     </Button>
+                  </div>
+                ) : hasUploadedData && !isConfirmed && state.status === "idle" ? (
+                  <div className="space-y-2">
+                    {/* Previously uploaded but not confirmed */}
+                    <div className="flex items-center justify-between p-2 bg-muted/50 rounded-md">
+                      <div className="flex items-center gap-2">
+                        <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">
+                            {confirmStatus?.fileCount} 个文件 · {confirmStatus?.totalRows || 0} 条记录
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="flex-1 gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                        onClick={() => confirmDataMutation.mutate({ projectId, fileType: ft.key })}
+                        disabled={confirmDataMutation.isPending}
+                      >
+                        {confirmDataMutation.isPending ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                        )}
+                        确认保存
+                      </Button>
+                      <label className="cursor-pointer flex-1">
+                        <input
+                          type="file"
+                          accept={ft.accept}
+                          className="hidden"
+                          multiple={'multiple' in ft && ft.multiple ? true : undefined}
+                          onChange={(e) => handleInputChange(ft.key, e)}
+                        />
+                        <Button size="sm" variant="outline" className="w-full gap-1" asChild>
+                          <span><Upload className="h-3.5 w-3.5" />重新上传</span>
+                        </Button>
+                      </label>
+                    </div>
                   </div>
                 ) : state.status === "error" ? (
                   <div className="space-y-2">
@@ -515,7 +604,7 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
                     <span className="text-xs">
                       {state.status === "reading" && "读取文件..."}
                       {state.status === "uploading" && "上传文件..."}
-                      {state.status === "parsing" && "解析数据..."}
+                      {state.status === "parsing" && (state.fileName?.includes("处理中") ? state.fileName : "解析数据...")}
                       {state.status === "saving" && "保存数据..."}
                     </span>
                   </div>

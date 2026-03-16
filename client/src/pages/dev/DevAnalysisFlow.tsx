@@ -19,6 +19,7 @@ import {
   Edit3,
   Loader2,
   Lock,
+  Unlock,
   Play,
   RefreshCw,
   Tag,
@@ -133,6 +134,10 @@ export default function DevAnalysisFlow() {
   const editMutation = trpc.devAnalysis.editStage.useMutation({
     onSuccess: () => { toast.success("编辑已保存"); utils.devAnalysis.getStages.invalidate({ projectId }); setEditingStage(null); },
     onError: (e: any) => toast.error(`保存失败: ${e.message}`),
+  });
+  const unlockMutation = trpc.devAnalysis.unlockStage.useMutation({
+    onSuccess: () => { toast.success("阶段已解锁，可重新分析或编辑"); utils.devAnalysis.getStages.invalidate({ projectId }); },
+    onError: (e: any) => toast.error(`解锁失败: ${e.message}`),
   });
 
   const isAnyMutating = tagMutation.isPending || marketMutation.isPending || crossMutation.isPending || tagCrossMutation.isPending || priceMutation.isPending || brandMutation.isPending || reviewMutation.isPending || dashboardMutation.isPending;
@@ -453,9 +458,32 @@ export default function DevAnalysisFlow() {
                       )}
 
                       {isConfirmed && (
-                        <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 p-2 rounded-md">
-                          <Lock className="h-3.5 w-3.5" />
-                          此阶段已确认锁定
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 p-2 rounded-md">
+                            <Lock className="h-3.5 w-3.5" />
+                            <div className="flex-1">
+                              <span>此阶段已确认锁定</span>
+                              {stageData?.confirmedAt && (
+                                <span className="block text-xs text-muted-foreground mt-0.5">
+                                  {new Date(stageData.confirmedAt).toLocaleString()}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full gap-2 text-amber-600 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-700 dark:hover:bg-amber-900/20"
+                            onClick={() => {
+                              if (window.confirm("解锁后可重新分析或编辑此阶段结果。\n\n已确认的结果不会丢失，但需要重新确认才能用于综合决策。\n\n确定解锁吗？")) {
+                                unlockMutation.mutate({ projectId, stageType: activeStage });
+                              }
+                            }}
+                            disabled={unlockMutation.isPending}
+                          >
+                            {unlockMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unlock className="h-3.5 w-3.5" />}
+                            解锁重新分析
+                          </Button>
                         </div>
                       )}
                     </>

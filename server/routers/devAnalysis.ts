@@ -1032,6 +1032,17 @@ export const devAnalysisRouter = router({
       return { success: true };
     }),
 
+  // Unlock a confirmed stage so it can be re-analyzed or re-edited
+  unlockStage: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      stageType: z.enum(STAGE_TYPES),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await devDb.unlockDevAnalysisStage(input.projectId, input.stageType);
+      return { success: true };
+    }),
+
   // ═══════════════════════════════════════════════════════════════
   // LEGACY: Existing Analysis Reports (kept for backward compat)
   // ═══════════════════════════════════════════════════════════════

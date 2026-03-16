@@ -222,4 +222,35 @@ export const devProjectRouter = router({
     .query(async ({ ctx, input }) => {
       return devDb.getDevReviewStats(input.projectId);
     }),
+
+  // ─── Data Confirmation ──────────────────────────────────────────
+  getDataStatus: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      return devDb.getDataConfirmationStatus(input.projectId);
+    }),
+
+  confirmData: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      fileType: z.enum(["sales", "bullet_points", "reviews", "history_sales"]),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      await devDb.confirmDevFilesByType(input.projectId, input.fileType);
+      return { success: true };
+    }),
+
+  unconfirmData: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      fileType: z.enum(["sales", "bullet_points", "reviews", "history_sales"]),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      await devDb.unconfirmDevFilesByType(input.projectId, input.fileType);
+      return { success: true };
+    }),
 });

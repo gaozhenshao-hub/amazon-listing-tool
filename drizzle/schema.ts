@@ -529,6 +529,8 @@ export const devUploadedFiles = mysqlTable("dev_uploaded_files", {
   parsedData: text("parsedData"), // JSON: structured parsed result
   totalRows: int("totalRows"),
   status: mysqlEnum("status", ["uploaded", "parsing", "parsed", "failed"]).default("uploaded").notNull(),
+  confirmed: int("confirmed").default(0).notNull(), // 0=未确认, 1=已确认保存
+  confirmedAt: timestamp("confirmedAt"), // 确认保存时间
   errorMessage: text("errorMessage"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

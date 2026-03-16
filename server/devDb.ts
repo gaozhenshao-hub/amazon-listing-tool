@@ -97,6 +97,46 @@ export async function updateDevFile(id: number, data: Partial<InsertDevUploadedF
   await db.update(devUploadedFiles).set(data).where(eq(devUploadedFiles.id, id));
 }
 
+export async function confirmDevFilesByType(projectId: number, fileType: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(devUploadedFiles).set({
+    confirmed: 1,
+    confirmedAt: new Date(),
+  }).where(
+    and(eq(devUploadedFiles.projectId, projectId), eq(devUploadedFiles.fileType, fileType as any))
+  );
+}
+
+export async function unconfirmDevFilesByType(projectId: number, fileType: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(devUploadedFiles).set({
+    confirmed: 0,
+    confirmedAt: null,
+  }).where(
+    and(eq(devUploadedFiles.projectId, projectId), eq(devUploadedFiles.fileType, fileType as any))
+  );
+}
+
+export async function getDataConfirmationStatus(projectId: number) {
+  const db = await getDb();
+  if (!db) return { sales: false, bullet_points: false, reviews: false, history_sales: false };
+  const files = await db.select().from(devUploadedFiles).where(eq(devUploadedFiles.projectId, projectId));
+  const status: Record<string, { confirmed: boolean; confirmedAt: Date | null; fileCount: number; totalRows: number }> = {};
+  for (const ft of ["sales", "bullet_points", "reviews", "history_sales"]) {
+    const typeFiles = files.filter(f => f.fileType === ft);
+    const confirmedFiles = typeFiles.filter(f => f.confirmed === 1);
+    status[ft] = {
+      confirmed: confirmedFiles.length > 0,
+      confirmedAt: confirmedFiles[0]?.confirmedAt ?? null,
+      fileCount: typeFiles.length,
+      totalRows: typeFiles.reduce((sum, f) => sum + (f.totalRows || 0), 0),
+    };
+  }
+  return status;
+}
+
 // ─── Dev Products ──────────────────────────────────────────────
 
 export async function getDevProductsByProject(projectId: number) {
@@ -530,7 +570,18 @@ export async function confirmDevAnalysisStage(projectId: number, stageType: stri
   );
 }
 
-// ─── Dev Product Tags ─────────────────────────────────────────
+export async function unlockDevAnalysisStage(projectId: number, stageType: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(devAnalysisStages).set({
+    status: "generated",
+    confirmedAt: null,
+  }).where(
+    and(eq(devAnalysisStages.projectId, projectId), eq(devAnalysisStages.stageType, stageType as any))
+  );
+}
+
+// --- Dev Product Tags ---
 
 export async function getDevProductTags(projectId: number) {
   const db = await getDb();
