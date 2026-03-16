@@ -143,6 +143,78 @@ describe("AI Tag Accuracy - Prompt Quality", () => {
   });
 });
 
+// ─── Chinese Output & Synonym Merging Tests ─────────────
+describe("AI Tag Generation - Chinese Output & Synonym Merging", () => {
+  const routerPath = path.join(__dirname, "routers/devProjectTags.ts");
+  const routerCode = fs.readFileSync(routerPath, "utf-8");
+
+  describe("aiGenerateTags Chinese output requirements", () => {
+    const aiGenSection = routerCode.split("aiGenerateTags:")[1]?.split("aiGenerateCategoryTags:")[0] || "";
+
+    it("should require tagName output in Chinese", () => {
+      expect(aiGenSection).toContain("tagName 必须输出中文");
+    });
+
+    it("should require tagValue output in Chinese", () => {
+      expect(aiGenSection).toContain("tagValue 必须输出中文");
+    });
+
+    it("should require evidence to keep English original", () => {
+      expect(aiGenSection).toContain("evidence 保留英文原文");
+    });
+
+    it("should include Chinese translation examples", () => {
+      expect(aiGenSection).toContain('"Waterproof" \u2192 "防水"');
+      expect(aiGenSection).toContain('"Stainless Steel" \u2192 "不锈钢"');
+    });
+  });
+
+  describe("aiGenerateTags synonym merging requirements", () => {
+    const aiGenSection = routerCode.split("aiGenerateTags:")[1]?.split("aiGenerateCategoryTags:")[0] || "";
+
+    it("should require merging synonymous Chinese tags", () => {
+      expect(aiGenSection).toContain("合并中文含义相同的标签");
+    });
+
+    it("should provide merging examples", () => {
+      expect(aiGenSection).toContain("Waterproof / Water Resistant");
+      expect(aiGenSection).toContain("防水");
+    });
+
+    it("should require merged evidence to include all sources", () => {
+      expect(aiGenSection).toContain("合并后的 evidence 字段应包含所有被合并标签的原文依据");
+    });
+  });
+
+  describe("aiGenerateCategoryTags Chinese output requirements", () => {
+    const catSection = routerCode.split("aiGenerateCategoryTags:")[1]?.split("exportTagsCsv:")[0] || "";
+
+    it("should require Chinese output for category tags", () => {
+      expect(catSection).toContain("tagName 和 tagValue 必须输出中文");
+    });
+
+    it("should require synonym merging for category tags", () => {
+      expect(catSection).toContain("合并中文含义相同的标签");
+    });
+
+    it("should require evidence to keep English for category tags", () => {
+      expect(catSection).toContain("evidence 保留英文原文");
+    });
+  });
+
+  describe("JSON schema descriptions reflect Chinese output", () => {
+    it("should describe tagName as Chinese output in aiGenerateTags schema", () => {
+      const aiGenSection = routerCode.split("aiGenerateTags:")[1]?.split("aiGenerateCategoryTags:")[0] || "";
+      expect(aiGenSection).toContain("必须输出中文，同义英文词合并为一个中文标签");
+    });
+
+    it("should describe evidence as English original in schema", () => {
+      const aiGenSection = routerCode.split("aiGenerateTags:")[1]?.split("aiGenerateCategoryTags:")[0] || "";
+      expect(aiGenSection).toContain("英文原文依据");
+    });
+  });
+});
+
 // ─── Frontend Evidence Display Tests ──────────────────────────
 describe("AI Tag Accuracy - Frontend Evidence Display", () => {
   const detailPath = path.join(__dirname, "../client/src/pages/dev/DevProjectDetail.tsx");

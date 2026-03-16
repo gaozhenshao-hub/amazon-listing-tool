@@ -510,8 +510,23 @@ export const devProjectTagsRouter = router({
 ━━━ 核心约束（必须严格遵守）━━━
 
 ⚠️ **绝对禁止编造**：你只能从产品数据原文中提取信息，绝对禁止添加任何原文中不存在的属性、功能、材质、参数或认证信息。
-⚠️ **每个标签必须有原文依据**：每个标签的 evidence 字段必须包含该标签对应的原文片段（来自哪个产品的标题或五点）。
-⚠️ **宁缺毻滥**：如果原文中没有提到某类属性，该分类下可以返回空数组，绝对不要编造。
+⚠️ **每个标签必须有原文依据**：每个标签的 evidence 字段必须包含该标签对应的英文原文片段（来自哪个产品的标题或五点）。
+⚠️ **宁缺毋滥**：如果原文中没有提到某类属性，该分类下可以返回空数组，绝对不要编造。
+
+━━━ 输出语言要求（必须严格遵守）━━━
+
+⚠️ **tagName 必须输出中文**：将英文属性名翻译为准确的中文，如 "Waterproof" → "防水"，"Stainless Steel" → "不锈钢"，"Wall Mounted" → "壁挂式"。
+⚠️ **tagValue 必须输出中文**：将英文属性值/说明翻译为中文，保持专业准确。
+⚠️ **evidence 保留英文原文**：evidence 字段必须保留英文原文片段，用于追溯验证。
+
+━━━ 同义合并规则（必须严格遵守）━━━
+
+⚠️ **合并中文含义相同的标签**：如果多个英文词翻译成中文后含义相同或高度相似，必须合并为一个中文标签。
+- 例如：Waterproof / Water Resistant / Water-proof → 合并为一个标签 "防水"
+- 例如：Adjustable / Customizable Size → 合并为 "可调节"
+- 例如：Durable / Long-lasting / Heavy Duty → 合并为 "耐用"
+- 合并后的 evidence 字段应包含所有被合并标签的原文依据
+- 合并判断标准：翻译成中文后，如果一个运营人员会认为它们是同一个属性，就应该合并
 
 ━━━ 提取规则 ━━━
 
@@ -527,13 +542,13 @@ export const devProjectTagsRouter = router({
 
 ━━━ 分类提取指南 ━━━
 
-- **基础分类属性(basic)**：从标题提取产品大类、子类目、款式类型（如 Wall Lamp, Ceiling Light, Pendant Light）
-- **材质属性(material)**：从标题和五点提取具体材质名称（如 Stainless Steel, Bamboo, ABS），不要笼统写"金属"“塑料”
-- **功能属性(function)**：从五点描述提取具体功能点（如 Waterproof, Dimmable, USB Charging）
-- **参数属性(parameter)**：从五点提取具体数值（尺寸、重量、功率、容量等），必须是原文中明确提到的数值
-- **安装方式(installation)**：从五点提取安装/使用方式（如 Wall Mounted, Plug-in, Battery Operated）
-- **认证标准(certification)**：从五点提取明确提到的认证（如 UL Listed, ETL Certified, FCC），原文没提到则返回空数组
-- **特殊属性(special)**：提取差异化卖点、独特设计、专利技术、创新功能等只有少数产品具备的特征
+- **基础分类属性(basic)**：从标题提取产品大类、子类目、款式类型，输出中文（如 壁灯、吸顶灯、吊灯）
+- **材质属性(material)**：从标题和五点提取具体材质名称，输出中文（如 不锈钢、竹子、ABS塑料），不要笼统写"金属""塑料"
+- **功能属性(function)**：从五点描述提取具体功能点，输出中文（如 防水、可调光、USB充电）
+- **参数属性(parameter)**：从五点提取具体数值（尺寸、重量、功率、容量等），数值保留原文单位，说明用中文
+- **安装方式(installation)**：从五点提取安装/使用方式，输出中文（如 壁挂式、插电式、电池供电）
+- **认证标准(certification)**：从五点提取明确提到的认证（如 UL认证、ETL认证、FCC），认证名称可保留英文缩写+中文说明，原文没提到则返回空数组
+- **特殊属性(special)**：提取差异化卖点、独特设计、专利技术、创新功能等，输出中文
 
 当前项目的标签分类：
 ${categoryList}`,
@@ -545,12 +560,13 @@ ${categoryList}`,
 ${JSON.stringify(productContext, null, 2)}
 
 请按以下规则生成标签：
-1. 每个标签的 tagName 和 tagValue 必须能在上述产品数据中找到原文依据
-2. evidence 字段必须包含具体的原文片段（标明来源产品编号和位置）
+1. tagName 和 tagValue 必须输出中文，从上述英文原文中提取并翻译
+2. evidence 字段必须保留英文原文片段（标明来源产品编号和位置）
 3. 绝对禁止添加原文中未提及的任何属性
-4. 特殊属性分类要特别仔细，逐个产品检查是否有独特的卖点、设计或技术，不能遗漏
-5. 如果某个分类在原文中没有相关信息，该分类的 tags 返回空数组 []
-6. 通用标签和差异化标签都要提取，不要只提取共性而忽略个性`,
+4. 必须合并中文含义相同的标签（如 Waterproof/Water Resistant 合并为“防水”）
+5. 特殊属性分类要特别仔细，逐个产品检查是否有独特的卖点、设计或技术，不能遗漏
+6. 如果某个分类在原文中没有相关信息，该分类的 tags 返回空数组 []
+7. 通用标签和差异化标签都要提取，不要只提取共性而忽略个性`,
           },
         ],
         response_format: {
@@ -572,9 +588,9 @@ ${JSON.stringify(productContext, null, 2)}
                         items: {
                           type: "object",
                           properties: {
-                            tagName: { type: "string", description: "标签名称，必须来自原文" },
-                            tagValue: { type: "string", description: "标签值/说明，必须来自原文" },
-                            evidence: { type: "string", description: "原文依据，格式：产品#N 标题/五点: 原文片段" },
+                            tagName: { type: "string", description: "标签名称，必须输出中文，同义英文词合并为一个中文标签" },
+                            tagValue: { type: "string", description: "标签值/说明，必须输出中文" },
+                            evidence: { type: "string", description: "英文原文依据，格式：产品#N 标题/五点: 英文原文片段" },
                           },
                           required: ["tagName", "tagValue", "evidence"],
                           additionalProperties: false,
@@ -690,19 +706,25 @@ ${JSON.stringify(productContext, null, 2)}
         messages: [
           {
             role: "system",
-            content: `你是一个严谨的亚马逊产品属性提取专家。请从产品标题和五点描述原文中，为“${category.categoryName}”分类提取标签。
+            content: `你是一个严谨的亚马逊产品属性提取专家。请从产品标题和五点描述原文中，为"${category.categoryName}"分类提取标签。
 分类说明：${category.description || "无"}
 
 ━━━ 核心约束（必须严格遵守）━━━
 ⚠️ **绝对禁止编造**：只能从产品数据原文中提取，禁止添加原文中不存在的任何属性。
-⚠️ **必须有原文依据**：每个标签的 evidence 字段必须包含具体原文片段。
-⚠️ **宁缺毻滥**：原文没提到的属性，返回空数组。
+⚠️ **必须有原文依据**：每个标签的 evidence 字段必须包含具体英文原文片段。
+⚠️ **宁缺毋滥**：原文没提到的属性，返回空数组。
+
+━━━ 输出语言要求 ━━━
+⚠️ **tagName 和 tagValue 必须输出中文**：将英文属性翻译为准确的中文。
+⚠️ **evidence 保留英文原文**：用于追溯验证。
+⚠️ **合并中文含义相同的标签**：多个英文词翻译后含义相同或高度相似，必须合并为一个中文标签（如 Waterproof/Water Resistant → 防水）。
 
 提取要求：
 1. 同时提取通用标签（多产品共有）和差异化标签（仅部分产品有）
 2. 差异化标签特别重要，逐个产品检查独特特征，不能遗漏
-3. tagName 简洁明确，tagValue 提供具体说明
-4. evidence 格式："产品#N 标题/五点: 原文片段"`,
+3. tagName 中文简洁明确，tagValue 中文提供具体说明
+4. evidence 格式："产品#N 标题/五点: 英文原文片段"
+5. 合并同义标签后，evidence 包含所有被合并标签的原文`,
           },
           {
             role: "user",
@@ -722,9 +744,9 @@ ${JSON.stringify(productContext, null, 2)}
                   items: {
                     type: "object",
                     properties: {
-                      tagName: { type: "string", description: "标签名称，必须来自原文" },
-                      tagValue: { type: "string", description: "标签值/说明，必须来自原文" },
-                      evidence: { type: "string", description: "原文依据，格式：产品#N 标题/五点: 原文片段" },
+                      tagName: { type: "string", description: "标签名称，必须输出中文，同义英文词合并为一个中文标签" },
+                      tagValue: { type: "string", description: "标签值/说明，必须输出中文" },
+                      evidence: { type: "string", description: "英文原文依据，格式：产品#N 标题/五点: 英文原文片段" },
                     },
                     required: ["tagName", "tagValue", "evidence"],
                     additionalProperties: false,
