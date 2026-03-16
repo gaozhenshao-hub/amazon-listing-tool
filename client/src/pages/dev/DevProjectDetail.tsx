@@ -652,6 +652,25 @@ function ProjectTagManager({ projectId }: { projectId: number }) {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={async () => {
+            try {
+              const result = await utils.devProjectTags.exportTagsCsv.fetch({ projectId });
+              const blob = new Blob([result.csv], { type: 'text/csv;charset=utf-8;' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = result.fileName;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+              toast.success(`导出成功：${result.totalCategories}个分类，${result.totalItems}个标签`);
+            } catch {
+              toast.error('导出失败');
+            }
+          }} className="gap-1.5">
+            <FileDown className="h-3.5 w-3.5" />导出CSV
+          </Button>
           <Button size="sm" variant="outline" onClick={() => setShowImportDialog(true)} className="gap-1.5">
             <FileUp className="h-3.5 w-3.5" />批量导入
           </Button>

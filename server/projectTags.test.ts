@@ -97,11 +97,11 @@ describe("Project Tag Management - Router Structure", () => {
     expect(procedures).toContain("aiGenerateCategoryTags");
   });
 
-  it("should have 17 procedures total (14 base + 3 batch import)", async () => {
+  it("should have 18 procedures total (14 base + 3 batch import + 1 export)", async () => {
     const mod = await import("./routers/devProjectTags");
     const router = mod.devProjectTagsRouter;
     const procedures = Object.keys((router as any)._def.procedures || {});
-    expect(procedures.length).toBe(17);
+    expect(procedures.length).toBe(18);
   });
 
   it("should have batch import procedures", async () => {
@@ -188,6 +188,6 @@ describe("Project Tag Management - Integration", () => {
     const appRouter = mod.appRouter;
     const procedures = Object.keys((appRouter as any)._def.procedures || {});
     const tagProcedures = procedures.filter(p => p.startsWith("devProjectTags."));
-    expect(tagProcedures.length).toBe(17);
+    expect(tagProcedures.length).toBe(18);
   });
 });

@@ -690,4 +690,59 @@ ${JSON.stringify(productContext, null, 2)}
 
       return { success: true, count };
     }),
+
+  // Export all tags as CSV string
+  exportTagsCsv: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const db = await ensureDb();
+      const categories = await db.select().from(devProjectTagCategories)
+        .where(eq(devProjectTagCategories.projectId, input.projectId))
+        .orderBy(asc(devProjectTagCategories.sortOrder));
+
+      const items = await db.select().from(devProjectTagItems)
+        .where(eq(devProjectTagItems.projectId, input.projectId))
+        .orderBy(asc(devProjectTagItems.sortOrder));
+
+      // Build category lookup
+      const catMap = new Map<number, string>();
+      for (const cat of categories) {
+        catMap.set(cat.id, cat.categoryName);
+      }
+
+      // CSV escape helper
+      const esc = (v: string) => {
+        if (v.includes(',') || v.includes('"') || v.includes('\n')) {
+          return '"' + v.replace(/"/g, '""') + '"';
+        }
+        return v;
+      };
+
+      // Build CSV with BOM for Excel compatibility
+      const rows: string[] = [];
+      rows.push('\uFEFF分类名称,标签名称,标签值,来源,确认状态');
+
+      for (const cat of categories) {
+        const catItems = items.filter((item: any) => item.categoryId === cat.id);
+        const confirmed = cat.confirmed === 1 ? '已确认' : '未确认';
+        if (catItems.length === 0) {
+          // Still output category row even if no items
+          rows.push(`${esc(cat.categoryName)},,,${confirmed}`);
+        } else {
+          for (const item of catItems) {
+            const source = (item as any).source === 'ai' ? 'AI生成' : '手动添加';
+            rows.push(
+              `${esc(cat.categoryName)},${esc((item as any).tagName)},${esc((item as any).tagValue || '')},${source},${confirmed}`
+            );
+          }
+        }
+      }
+
+      return {
+        csv: rows.join('\n'),
+        fileName: `标签数据_项目${input.projectId}_${new Date().toISOString().slice(0, 10)}.csv`,
+        totalCategories: categories.length,
+        totalItems: items.length,
+      };
+    }),
 });
