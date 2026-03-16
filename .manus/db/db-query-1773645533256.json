@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE dev_project_tag_items ADD COLUMN sourceEvidence text DEFAULT NULL COMMENT '原文依据：标签来源的原文片段，用于验证标签真实性';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute ALTER TABLE dev_project_tag_items ADD COLUMN sourceEvidence text DEFAULT NULL COMMENT '原文依据：标签来源的原文片段，用于验证标签真实性';",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1289
+}

@@ -796,32 +796,40 @@ function ProjectTagManager({ projectId }: { projectId: number }) {
                 {cat.items && cat.items.length > 0 ? (
                   <div className="space-y-1">
                     {cat.items.map((item: any) => (
-                      <div key={item.id} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-muted/50 group">
-                        {editingItemId === item.id ? (
-                          <div className="flex items-center gap-2 flex-1">
-                            <input className="border rounded px-2 py-1 text-sm flex-1" value={editItemName} onChange={e => setEditItemName(e.target.value)} placeholder="标签名" />
-                            <input className="border rounded px-2 py-1 text-sm flex-1" value={editItemValue} onChange={e => setEditItemValue(e.target.value)} placeholder="标签值(可选)" />
-                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => updateItemMutation.mutate({ itemId: item.id, tagName: editItemName, tagValue: editItemValue })}><Save className="h-3.5 w-3.5" /></Button>
-                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditingItemId(null)}><X className="h-3.5 w-3.5" /></Button>
+                      <div key={item.id} className="py-1.5 px-2 rounded hover:bg-muted/50 group">
+                        <div className="flex items-center gap-2">
+                          {editingItemId === item.id ? (
+                            <div className="flex items-center gap-2 flex-1">
+                              <input className="border rounded px-2 py-1 text-sm flex-1" value={editItemName} onChange={e => setEditItemName(e.target.value)} placeholder="标签名" />
+                              <input className="border rounded px-2 py-1 text-sm flex-1" value={editItemValue} onChange={e => setEditItemValue(e.target.value)} placeholder="标签值(可选)" />
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => updateItemMutation.mutate({ itemId: item.id, tagName: editItemName, tagValue: editItemValue })}><Save className="h-3.5 w-3.5" /></Button>
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditingItemId(null)}><X className="h-3.5 w-3.5" /></Button>
+                            </div>
+                          ) : (
+                            <>
+                              <Badge variant={item.source === "ai" ? "secondary" : "outline"} className="text-xs shrink-0">
+                                {item.source === "ai" ? "AI" : "手动"}
+                              </Badge>
+                              <span className="text-sm font-medium">{item.tagName}</span>
+                              {item.tagValue && <span className="text-xs text-muted-foreground">— {item.tagValue}</span>}
+                              {!isConfirmed && (
+                                <div className="ml-auto flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => { setEditingItemId(item.id); setEditItemName(item.tagName); setEditItemValue(item.tagValue || ""); }}>
+                                    <Edit2 className="h-3 w-3" />
+                                  </Button>
+                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500" onClick={() => deleteItemMutation.mutate({ itemId: item.id })}>
+                                    <X className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                        {/* Show source evidence for AI-generated tags */}
+                        {item.sourceEvidence && item.source === "ai" && (
+                          <div className="mt-1 ml-12 text-xs text-blue-600/70 bg-blue-50/50 rounded px-2 py-1 border border-blue-100">
+                            <span className="font-medium">原文依据：</span>{item.sourceEvidence}
                           </div>
-                        ) : (
-                          <>
-                            <Badge variant={item.source === "ai" ? "secondary" : "outline"} className="text-xs shrink-0">
-                              {item.source === "ai" ? "AI" : "手动"}
-                            </Badge>
-                            <span className="text-sm font-medium">{item.tagName}</span>
-                            {item.tagValue && <span className="text-xs text-muted-foreground">— {item.tagValue}</span>}
-                            {!isConfirmed && (
-                              <div className="ml-auto flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => { setEditingItemId(item.id); setEditItemName(item.tagName); setEditItemValue(item.tagValue || ""); }}>
-                                  <Edit2 className="h-3 w-3" />
-                                </Button>
-                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500" onClick={() => deleteItemMutation.mutate({ itemId: item.id })}>
-                                  <X className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            )}
-                          </>
                         )}
                       </div>
                     ))}

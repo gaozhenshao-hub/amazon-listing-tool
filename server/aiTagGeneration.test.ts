@@ -10,8 +10,11 @@ describe("AI Tag Generation from Bullet Points Data", () => {
       expect(routerCode).toContain("bullet_points");
     });
 
-    it("should include bulletPoints in product context (up to 2000 chars)", () => {
-      expect(routerCode).toContain("String(p.bulletPoints).slice(0, 2000)");
+    it("should pass full bulletPoints without truncation", () => {
+      const aiGenSection = routerCode.split("aiGenerateTags:")[1]?.split("aiGenerateCategoryTags:")[0] || "";
+      expect(aiGenSection).toContain("ctx.bulletPoints = String(p.bulletPoints)");
+      // Should NOT truncate
+      expect(aiGenSection).not.toContain("bulletPoints).slice(0, 2000)");
     });
 
     it("should include description in product context", () => {
@@ -22,51 +25,49 @@ describe("AI Tag Generation from Bullet Points Data", () => {
       expect(routerCode).toContain("p.specifications");
     });
 
-    it("should use enhanced prompt mentioning bullet points analysis", () => {
-      expect(routerCode).toContain("五点描述");
-      expect(routerCode).toContain("Bullet Points");
+    it("should use strict anti-hallucination prompt", () => {
+      expect(routerCode).toContain("绝对禁止编造");
+      expect(routerCode).toContain("每个标签必须有原文依据");
     });
 
-    it("should extract attributes from titles (品类词/材质词/功能词/场景词)", () => {
+    it("should extract attributes from titles (品类词/材质词/功能词)", () => {
       expect(routerCode).toContain("品类词");
       expect(routerCode).toContain("材质词");
       expect(routerCode).toContain("功能词");
-      expect(routerCode).toContain("场景词");
     });
 
-    it("should extract core selling points from bullet points", () => {
-      expect(routerCode).toContain("核心卖点");
-      expect(routerCode).toContain("功能特性");
-      expect(routerCode).toContain("技术参数");
+    it("should require evidence field in AI response", () => {
+      const aiGenSection = routerCode.split("aiGenerateTags:")[1]?.split("aiGenerateCategoryTags:")[0] || "";
+      expect(aiGenSection).toContain('"evidence"');
+      expect(aiGenSection).toContain("sourceEvidence: tag.evidence");
     });
 
     it("should indicate data source in prompt when bullet_points confirmed", () => {
       expect(routerCode).toContain("hasBulletPointsData");
-      expect(routerCode).toContain("已确认的标题五点描述数据");
     });
 
-    it("should process up to 30 products for context", () => {
-      expect(routerCode).toContain("products.slice(0, 30)");
+    it("should process up to 50 products for context", () => {
+      const aiGenSection = routerCode.split("aiGenerateTags:")[1]?.split("aiGenerateCategoryTags:")[0] || "";
+      expect(aiGenSection).toContain("products.slice(0, 50)");
     });
   });
 
   describe("aiGenerateCategoryTags procedure", () => {
     it("should also use enhanced product context with full bullet points", () => {
-      // The category-level AI generation should also use rich context
       const categorySection = routerCode.split("aiGenerateCategoryTags")[1];
       expect(categorySection).toContain("bulletPoints");
       expect(categorySection).toContain("description");
     });
 
-    it("should use enhanced prompt for category tags", () => {
+    it("should use strict anti-hallucination prompt for category tags", () => {
       const categorySection = routerCode.split("aiGenerateCategoryTags")[1];
-      expect(categorySection).toContain("五点描述");
-      expect(categorySection).toContain("Bullet Points");
+      expect(categorySection).toContain("绝对禁止编造");
+      expect(categorySection).toContain("evidence");
     });
 
-    it("should process up to 30 products for category context", () => {
+    it("should process up to 50 products for category context", () => {
       const categorySection = routerCode.split("aiGenerateCategoryTags")[1];
-      expect(categorySection).toContain("products.slice(0, 30)");
+      expect(categorySection).toContain("products.slice(0, 50)");
     });
   });
 

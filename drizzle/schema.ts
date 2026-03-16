@@ -1035,6 +1035,7 @@ export const devProjectTagItems = mysqlTable("dev_project_tag_items", {
   tagName: varchar("tagName", { length: 255 }).notNull(), // 标签名称
   tagValue: text("tagValue"), // 标签值/描述（可选，用于参数属性等需要值的场景）
   source: mysqlEnum("source", ["ai", "manual"]).default("ai").notNull(), // 来源
+  sourceEvidence: text("sourceEvidence"), // 原文依据：标签来源的原文片段，用于验证标签真实性
   sortOrder: int("sortOrder").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

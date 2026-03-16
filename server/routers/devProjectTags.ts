@@ -459,24 +459,26 @@ export const devProjectTagsRouter = router({
       const bpStatus = dataStatus.bullet_points;
       const hasBulletPointsData = typeof bpStatus === 'object' && bpStatus !== null && 'confirmed' in bpStatus ? bpStatus.confirmed : false;
 
-      // Build rich product context with full bullet points and title
-      const productContext = products.slice(0, 30).map((p: any) => {
+      // Build product context - pass COMPLETE title and bullet points without truncation
+      // Each product gets full text to avoid losing unique differentiating features
+      const productContext = products.slice(0, 50).map((p: any, idx: number) => {
         const ctx: any = {
+          productIndex: idx + 1,
           asin: p.asin || "",
           title: p.title || "",
           brand: p.brand || "",
           price: p.price || "",
           category: p.category || "",
         };
-        // Include full bullet points text (not truncated) for better analysis
+        // Pass FULL bullet points - do not truncate, unique features may be at the end
         if (p.bulletPoints) {
-          ctx.bulletPoints = String(p.bulletPoints).slice(0, 2000);
+          ctx.bulletPoints = String(p.bulletPoints);
         }
         if (p.description) {
-          ctx.description = String(p.description).slice(0, 500);
+          ctx.description = String(p.description);
         }
         if (p.specifications) {
-          ctx.specifications = String(p.specifications).slice(0, 500);
+          ctx.specifications = String(p.specifications);
         }
         return ctx;
       });
@@ -491,46 +493,56 @@ export const devProjectTagsRouter = router({
 
       const categoryList = categories.map((c: any) => `- ${c.categoryKey}: ${c.categoryName} (${c.description || ""})`).join("\n");
 
-      const dataSourceNote = hasBulletPointsData
-        ? "\n\n【数据来源】本次分析基于已确认的标题五点描述数据，请深度挖掘每个产品标题和五点描述中的属性特征。"
-        : "\n\n【数据来源】基于产品基础数据分析，建议上传并确认标题五点数据以获得更精准的标签。";
-
       const response = await invokeLLM({
         messages: [
           {
             role: "system",
-            content: `你是一个资深亚马逊产品分析专家，擅长从产品标题和五点描述（Bullet Points）中提取结构化属性标签。
+            content: `你是一个严谨的亚马逊产品属性提取专家。你的任务是从提供的产品标题和五点描述原文中提取结构化属性标签。
 
-你需要深度分析以下产品数据，特别是标题和五点描述中的关键属性信息，为每个标签分类生成合适的标签项。标签是后续交叉分析的基础数据，请确保：
+━━━ 核心约束（必须严格遵守）━━━
 
-1. **深度解析标题**：从标题中提取品类词、材质词、功能词、场景词、规格参数等
-2. **深度解析五点描述**：从Bullet Points中提取核心卖点、功能特性、材质信息、适用场景、技术参数、认证信息等
-3. 每个分类下的标签应覆盖该品类中所有产品的共性和差异
-4. 标签名称简洁明确，便于后续筛选和对比
-5. 参数属性类标签需要包含具体数值范围（如"重量: 1-3kg"、"尺寸: 10-20inch"）
-6. 功能属性应从五点描述中提取具体功能点（如"防水"、"可折叠"、"USB充电"）
-7. 材质属性应精确到具体材质名称（如"304不锈钢"、"ABS塑料"、"竹木"）
-8. 特殊属性应关注差异化卖点和独特特征${dataSourceNote}
+⚠️ **绝对禁止编造**：你只能从产品数据原文中提取信息，绝对禁止添加任何原文中不存在的属性、功能、材质、参数或认证信息。
+⚠️ **每个标签必须有原文依据**：每个标签的 evidence 字段必须包含该标签对应的原文片段（来自哪个产品的标题或五点）。
+⚠️ **宁缺毻滥**：如果原文中没有提到某类属性，该分类下可以返回空数组，绝对不要编造。
+
+━━━ 提取规则 ━━━
+
+**第一层：通用标签（多个产品共有的属性）**
+- 从所有产品标题中提取反复出现的品类词、材质词、功能词
+- 从五点描述中提取多个产品都强调的卖点和功能
+- evidence 格式："产品#1 标题: xxx, 产品#3 标题: xxx" 或 "产品#2 五点: xxx"
+
+**第二层：差异化标签（仅部分产品有的独特属性）**
+- 重点筛查每个产品标题和五点中的独特功能、专利技术、特殊设计
+- 这些标签往往是产品竞争力的关键，绝对不能遗漏
+- evidence 格式："产品#5 五点: 原文片段..."
+
+━━━ 分类提取指南 ━━━
+
+- **基础分类属性(basic)**：从标题提取产品大类、子类目、款式类型（如 Wall Lamp, Ceiling Light, Pendant Light）
+- **材质属性(material)**：从标题和五点提取具体材质名称（如 Stainless Steel, Bamboo, ABS），不要笼统写"金属"“塑料”
+- **功能属性(function)**：从五点描述提取具体功能点（如 Waterproof, Dimmable, USB Charging）
+- **参数属性(parameter)**：从五点提取具体数值（尺寸、重量、功率、容量等），必须是原文中明确提到的数值
+- **安装方式(installation)**：从五点提取安装/使用方式（如 Wall Mounted, Plug-in, Battery Operated）
+- **认证标准(certification)**：从五点提取明确提到的认证（如 UL Listed, ETL Certified, FCC），原文没提到则返回空数组
+- **特殊属性(special)**：提取差异化卖点、独特设计、专利技术、创新功能等只有少数产品具备的特征
 
 当前项目的标签分类：
 ${categoryList}`,
           },
           {
             role: "user",
-            content: `请根据以下${products.length}个产品的标题和五点描述数据，为每个标签分类生成标签项：
+            content: `以下是${products.length}个产品的标题和五点描述数据，请严格从原文中提取标签：
 
 ${JSON.stringify(productContext, null, 2)}
 
-请为每个分类生成5-15个标签项，格式要求：每个标签项包含tagName（标签名称）和tagValue（标签值/说明，可选）。
-
-重点要求：
-- 基础分类属性：从标题中提取产品类型、子类目、款式
-- 材质属性：从标题和五点中提取所有材质信息
-- 功能属性：从五点描述中提取所有功能特性
-- 参数属性：从五点中提取尺寸、重量、容量等参数范围
-- 安装方式：从五点中提取安装/使用方式
-- 认证标准：从五点中提取所有认证信息
-- 特殊属性：提取差异化卖点和独特特征`,
+请按以下规则生成标签：
+1. 每个标签的 tagName 和 tagValue 必须能在上述产品数据中找到原文依据
+2. evidence 字段必须包含具体的原文片段（标明来源产品编号和位置）
+3. 绝对禁止添加原文中未提及的任何属性
+4. 特殊属性分类要特别仔细，逐个产品检查是否有独特的卖点、设计或技术，不能遗漏
+5. 如果某个分类在原文中没有相关信息，该分类的 tags 返回空数组 []
+6. 通用标签和差异化标签都要提取，不要只提取共性而忽略个性`,
           },
         ],
         response_format: {
@@ -552,10 +564,11 @@ ${JSON.stringify(productContext, null, 2)}
                         items: {
                           type: "object",
                           properties: {
-                            tagName: { type: "string" },
-                            tagValue: { type: "string" },
+                            tagName: { type: "string", description: "标签名称，必须来自原文" },
+                            tagValue: { type: "string", description: "标签值/说明，必须来自原文" },
+                            evidence: { type: "string", description: "原文依据，格式：产品#N 标题/五点: 原文片段" },
                           },
-                          required: ["tagName", "tagValue"],
+                          required: ["tagName", "tagValue", "evidence"],
                           additionalProperties: false,
                         },
                       },
@@ -592,7 +605,7 @@ ${JSON.stringify(productContext, null, 2)}
           await db.delete(devProjectTagItems).where(eq(devProjectTagItems.id, item.id));
         }
 
-        // Insert new AI tags
+        // Insert new AI tags with evidence tracking
         for (let i = 0; i < (catData.tags || []).length; i++) {
           const tag = catData.tags[i];
           await db.insert(devProjectTagItems).values({
@@ -601,6 +614,7 @@ ${JSON.stringify(productContext, null, 2)}
             tagName: tag.tagName,
             tagValue: tag.tagValue || null,
             source: "ai",
+            sourceEvidence: tag.evidence || null,
             sortOrder: i + 1,
           });
           totalTags++;
@@ -636,22 +650,23 @@ ${JSON.stringify(productContext, null, 2)}
 
       if (!category) throw new Error("分类不存在");
 
-      // Build rich product context with full bullet points
-      const productContext = products.slice(0, 30).map((p: any) => {
+      // Build product context with FULL text - no truncation
+      const productContext = products.slice(0, 50).map((p: any, idx: number) => {
         const ctx: any = {
+          productIndex: idx + 1,
           asin: p.asin || "",
           title: p.title || "",
           brand: p.brand || "",
           price: p.price || "",
         };
         if (p.bulletPoints) {
-          ctx.bulletPoints = String(p.bulletPoints).slice(0, 2000);
+          ctx.bulletPoints = String(p.bulletPoints);
         }
         if (p.description) {
-          ctx.description = String(p.description).slice(0, 500);
+          ctx.description = String(p.description);
         }
         if (p.specifications) {
-          ctx.specifications = String(p.specifications).slice(0, 500);
+          ctx.specifications = String(p.specifications);
         }
         return ctx;
       });
@@ -660,15 +675,19 @@ ${JSON.stringify(productContext, null, 2)}
         messages: [
           {
             role: "system",
-            content: `你是一个资深亚马逊产品分析专家。请深度分析产品的标题和五点描述（Bullet Points），为"${category.categoryName}"分类生成标签项。
+            content: `你是一个严谨的亚马逊产品属性提取专家。请从产品标题和五点描述原文中，为“${category.categoryName}”分类提取标签。
 分类说明：${category.description || "无"}
-要求：
-1. 生成5-15个标签，覆盖该品类产品的共性和差异
-2. 标签名称简洁明确，便于后续筛选和对比
-3. 从标题中提取品类词、材质词、功能词、场景词、规格参数
-4. 从Bullet Points中提取核心卖点、功能特性、材质信息、技术参数
-5. 参数类属性的tagValue包含具体数值范围
-6. 标签应反映市场上该品类产品的真实属性分布`,
+
+━━━ 核心约束（必须严格遵守）━━━
+⚠️ **绝对禁止编造**：只能从产品数据原文中提取，禁止添加原文中不存在的任何属性。
+⚠️ **必须有原文依据**：每个标签的 evidence 字段必须包含具体原文片段。
+⚠️ **宁缺毻滥**：原文没提到的属性，返回空数组。
+
+提取要求：
+1. 同时提取通用标签（多产品共有）和差异化标签（仅部分产品有）
+2. 差异化标签特别重要，逐个产品检查独特特征，不能遗漏
+3. tagName 简洁明确，tagValue 提供具体说明
+4. evidence 格式："产品#N 标题/五点: 原文片段"`,
           },
           {
             role: "user",
@@ -688,10 +707,11 @@ ${JSON.stringify(productContext, null, 2)}
                   items: {
                     type: "object",
                     properties: {
-                      tagName: { type: "string" },
-                      tagValue: { type: "string" },
+                      tagName: { type: "string", description: "标签名称，必须来自原文" },
+                      tagValue: { type: "string", description: "标签值/说明，必须来自原文" },
+                      evidence: { type: "string", description: "原文依据，格式：产品#N 标题/五点: 原文片段" },
                     },
-                    required: ["tagName", "tagValue"],
+                    required: ["tagName", "tagValue", "evidence"],
                     additionalProperties: false,
                   },
                 },
@@ -718,7 +738,7 @@ ${JSON.stringify(productContext, null, 2)}
         await db.delete(devProjectTagItems).where(eq(devProjectTagItems.id, item.id));
       }
 
-      // Insert new tags
+      // Insert new tags with evidence
       let count = 0;
       for (let i = 0; i < (parsed.tags || []).length; i++) {
         const tag = parsed.tags[i];
@@ -728,6 +748,7 @@ ${JSON.stringify(productContext, null, 2)}
           tagName: tag.tagName,
           tagValue: tag.tagValue || null,
           source: "ai",
+          sourceEvidence: tag.evidence || null,
           sortOrder: i + 1,
         });
         count++;
@@ -771,19 +792,20 @@ ${JSON.stringify(productContext, null, 2)}
 
       // Build CSV with BOM for Excel compatibility
       const rows: string[] = [];
-      rows.push('\uFEFF分类名称,标签名称,标签值,来源,确认状态');
+      rows.push('\uFEFF分类名称,标签名称,标签值,来源,原文依据,确认状态');
 
       for (const cat of categories) {
         const catItems = items.filter((item: any) => item.categoryId === cat.id);
         const confirmed = cat.confirmed === 1 ? '已确认' : '未确认';
         if (catItems.length === 0) {
           // Still output category row even if no items
-          rows.push(`${esc(cat.categoryName)},,,${confirmed}`);
+          rows.push(`${esc(cat.categoryName)},,,,${confirmed}`);
         } else {
           for (const item of catItems) {
             const source = (item as any).source === 'ai' ? 'AI生成' : '手动添加';
+            const evidence = (item as any).sourceEvidence || '';
             rows.push(
-              `${esc(cat.categoryName)},${esc((item as any).tagName)},${esc((item as any).tagValue || '')},${source},${confirmed}`
+              `${esc(cat.categoryName)},${esc((item as any).tagName)},${esc((item as any).tagValue || '')},${source},${esc(evidence)},${confirmed}`
             );
           }
         }
