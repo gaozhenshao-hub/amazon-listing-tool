@@ -38,6 +38,7 @@ import {
   Video,
   ChevronLeft,
   Menu,
+  Home,
   type LucideIcon,
 } from "lucide-react";
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
@@ -53,7 +54,7 @@ import {
 import { toast } from "sonner";
 
 // ─── Module definitions ────────────────────────────────────────
-type ModuleId = "dev" | "listing" | "ops" | "service" | "knowledge";
+type ModuleId = "home" | "dev" | "listing" | "ops" | "service" | "knowledge";
 
 interface MenuItem {
   icon: LucideIcon;
@@ -162,7 +163,7 @@ const modules: ModuleDef[] = [
 
 // ─── Helpers ───────────────────────────────────────────────────
 function detectActiveModule(location: string): ModuleId {
-  // Check /listing first since it's more specific than /
+  if (location === "/") return "home";
   if (location.startsWith("/listing") || location.startsWith("/project/")) return "listing";
   if (location.startsWith("/dev")) return "dev";
   if (location.startsWith("/ops")) return "ops";
@@ -171,11 +172,10 @@ function detectActiveModule(location: string): ModuleId {
   // Legacy routes (before migration) - map to listing
   const legacyPaths = ["/analysis", "/comparison", "/review-history", "/review-aggregation", "/image-analysis", "/keywords", "/ad-structure", "/data-files", "/generate", "/preview", "/score"];
   if (legacyPaths.some(p => location.startsWith(p))) return "listing";
-  return "listing"; // default
+  return "home"; // default
 }
 
 const SIDEBAR_EXPANDED_KEY = "platform-sidebar-expanded";
-const ACTIVE_MODULE_KEY = "platform-active-module";
 
 // ─── Main Component ────────────────────────────────────────────
 export default function DashboardLayout({
@@ -198,7 +198,7 @@ export default function DashboardLayout({
               <Sparkles className="h-8 w-8 text-primary" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-center text-card-foreground">
-              亚马逊全链路AI工具平台
+              亚马逊全链路智能工具
             </h1>
             <p className="text-sm text-muted-foreground text-center max-w-sm leading-relaxed">
               基于AI的亚马逊全链路运营工具，覆盖产品开发、Listing优化、运营提效、售后管理和知识库五大模块。
@@ -238,7 +238,12 @@ function DashboardLayoutContent({
   });
 
   const activeModuleId = useMemo(() => detectActiveModule(location), [location]);
-  const activeModule = useMemo(() => modules.find(m => m.id === activeModuleId) || modules[1], [activeModuleId]);
+  const activeModule = useMemo(
+    () => modules.find(m => m.id === activeModuleId) || null,
+    [activeModuleId]
+  );
+
+  const isHomePage = activeModuleId === "home";
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_EXPANDED_KEY, String(sidebarExpanded));
@@ -261,7 +266,13 @@ function DashboardLayoutContent({
     if (isMobile) setMobileOpen(false);
   };
 
+  const handleHomeClick = () => {
+    setLocation("/");
+    if (isMobile) setMobileOpen(false);
+  };
+
   const isMenuActive = (item: MenuItem) => {
+    if (!activeModule) return false;
     if (item.path === activeModule.prefix) {
       return location === item.path;
     }
@@ -281,7 +292,9 @@ function DashboardLayoutContent({
             >
               <Menu className="h-5 w-5" />
             </button>
-            <span className="font-semibold text-sm truncate">{activeModule.label}</span>
+            <span className="font-semibold text-sm truncate">
+              {isHomePage ? "亚马逊全链路智能工具" : activeModule?.label || ""}
+            </span>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -310,6 +323,26 @@ function DashboardLayoutContent({
             >
               {/* Module rail */}
               <div className="w-16 bg-muted/50 border-r flex flex-col items-center py-3 gap-1">
+                {/* Home button */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={handleHomeClick}
+                      className={cn(
+                        "w-11 h-11 rounded-xl flex items-center justify-center transition-all mb-2",
+                        isHomePage
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "hover:bg-accent text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      <Home className="h-5 w-5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">首页</TooltipContent>
+                </Tooltip>
+
+                <div className="w-8 border-t border-border mb-1" />
+
                 {modules.map((mod) => (
                   <Tooltip key={mod.id}>
                     <TooltipTrigger asChild>
@@ -336,27 +369,35 @@ function DashboardLayoutContent({
               {/* Feature menu */}
               <div className="flex-1 flex flex-col">
                 <div className="h-12 flex items-center px-4 border-b">
-                  <span className="font-semibold text-sm">{activeModule.label}</span>
+                  <span className="font-semibold text-sm">
+                    {isHomePage ? "亚马逊全链路智能工具" : activeModule?.label || ""}
+                  </span>
                 </div>
                 <nav className="flex-1 overflow-y-auto py-2 px-2">
-                  {activeModule.items.map((item) => {
-                    const active = isMenuActive(item);
-                    return (
-                      <button
-                        key={item.path}
-                        onClick={() => handleMenuClick(item.path)}
-                        className={cn(
-                          "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all mb-0.5",
-                          active
-                            ? "bg-primary/10 text-primary font-medium"
-                            : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                        )}
-                      >
-                        <item.icon className={cn("h-4 w-4 shrink-0", active && "text-primary")} />
-                        <span className="truncate">{item.label}</span>
-                      </button>
-                    );
-                  })}
+                  {isHomePage ? (
+                    <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                      请选择左侧工具模块
+                    </div>
+                  ) : (
+                    activeModule?.items.map((item) => {
+                      const active = isMenuActive(item);
+                      return (
+                        <button
+                          key={item.path}
+                          onClick={() => handleMenuClick(item.path)}
+                          className={cn(
+                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all mb-0.5",
+                            active
+                              ? "bg-primary/10 text-primary font-medium"
+                              : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                          )}
+                        >
+                          <item.icon className={cn("h-4 w-4 shrink-0", active && "text-primary")} />
+                          <span className="truncate">{item.label}</span>
+                        </button>
+                      );
+                    })
+                  )}
                 </nav>
               </div>
             </div>
@@ -374,6 +415,29 @@ function DashboardLayoutContent({
       {/* Module rail (always visible, 64px) */}
       <div className="w-16 bg-muted/30 border-r flex flex-col items-center py-3 shrink-0">
         <div className="flex flex-col items-center gap-1 flex-1">
+          {/* Home button at top */}
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <button
+                onClick={handleHomeClick}
+                className={cn(
+                  "w-11 h-11 rounded-xl flex flex-col items-center justify-center transition-all group relative",
+                  isHomePage
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "hover:bg-accent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Home className="h-5 w-5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              <p>首页</p>
+            </TooltipContent>
+          </Tooltip>
+
+          {/* Separator */}
+          <div className="w-8 border-t border-border my-1" />
+
           {modules.map((mod) => (
             <Tooltip key={mod.id} delayDuration={200}>
               <TooltipTrigger asChild>
@@ -431,51 +495,53 @@ function DashboardLayoutContent({
         </div>
       </div>
 
-      {/* Feature sidebar (collapsible, 220px) */}
-      <div
-        className={cn(
-          "border-r bg-background flex flex-col shrink-0 transition-all duration-200 overflow-hidden",
-          sidebarExpanded ? "w-[220px]" : "w-0"
-        )}
-      >
-        {/* Sidebar header */}
-        <div className="h-14 flex items-center justify-between px-4 border-b shrink-0">
-          <span className="font-semibold text-sm truncate">{activeModule.label}</span>
-          <button
-            onClick={() => setSidebarExpanded(false)}
-            className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-accent transition-colors"
-          >
-            <ChevronLeft className="h-4 w-4 text-muted-foreground" />
-          </button>
-        </div>
+      {/* Feature sidebar (collapsible, 220px) — hidden on home page */}
+      {!isHomePage && activeModule && (
+        <div
+          className={cn(
+            "border-r bg-background flex flex-col shrink-0 transition-all duration-200 overflow-hidden",
+            sidebarExpanded ? "w-[220px]" : "w-0"
+          )}
+        >
+          {/* Sidebar header */}
+          <div className="h-14 flex items-center justify-between px-4 border-b shrink-0">
+            <span className="font-semibold text-sm truncate">{activeModule.label}</span>
+            <button
+              onClick={() => setSidebarExpanded(false)}
+              className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-accent transition-colors"
+            >
+              <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+            </button>
+          </div>
 
-        {/* Menu items */}
-        <nav className="flex-1 overflow-y-auto py-2 px-2">
-          {activeModule.items.map((item) => {
-            const active = isMenuActive(item);
-            return (
-              <button
-                key={item.path}
-                onClick={() => handleMenuClick(item.path)}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all mb-0.5",
-                  active
-                    ? "bg-primary/10 text-primary font-medium"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                )}
-              >
-                <item.icon className={cn("h-4 w-4 shrink-0", active && "text-primary")} />
-                <span className="truncate">{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-      </div>
+          {/* Menu items */}
+          <nav className="flex-1 overflow-y-auto py-2 px-2">
+            {activeModule.items.map((item) => {
+              const active = isMenuActive(item);
+              return (
+                <button
+                  key={item.path}
+                  onClick={() => handleMenuClick(item.path)}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all mb-0.5",
+                    active
+                      ? "bg-primary/10 text-primary font-medium"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  )}
+                >
+                  <item.icon className={cn("h-4 w-4 shrink-0", active && "text-primary")} />
+                  <span className="truncate">{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+      )}
 
       {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top bar (only when sidebar collapsed) */}
-        {!sidebarExpanded && (
+        {/* Top bar (only when sidebar collapsed and not home page) */}
+        {!isHomePage && !sidebarExpanded && activeModule && (
           <div className="h-12 flex items-center px-4 border-b shrink-0">
             <button
               onClick={() => setSidebarExpanded(true)}
