@@ -569,6 +569,35 @@ export const devProducts = mysqlTable("dev_products", {
   description: text("description"), // 产品描述
   imageUrl: text("imageUrl"), // 产品图片URL
   searchRank: int("searchRank"), // 搜索排名
+  // --- 全景分析表扩展字段 ---
+  parentAsin: varchar("parentAsin", { length: 20 }), // 父ASIN
+  sku: varchar("sku", { length: 100 }), // SKU
+  productLink: text("productLink"), // 商品链接
+  categoryPath: text("categoryPath"), // 完整类目路径
+  bsrLarge: int("bsrLarge"), // 大类BSR
+  bsrSmall: int("bsrSmall"), // 小类BSR
+  bsrGrowthRate: varchar("bsrGrowthRate", { length: 50 }), // 大类BSR增长率
+  fbaFee: varchar("fbaFee", { length: 50 }), // FBA费用
+  grossMargin: varchar("grossMargin", { length: 50 }), // 毛利率
+  monthlySalesGrowth: varchar("monthlySalesGrowth", { length: 50 }), // 月销量增长率
+  childSales: int("childSales"), // 子体销量
+  childRevenue: decimal("childRevenue", { precision: 12, scale: 2 }), // 子体销售额
+  monthlyNewReviews: int("monthlyNewReviews"), // 月新增评分数
+  reviewRate: varchar("reviewRate", { length: 50 }), // 留评率
+  lqs: int("lqs"), // Listing质量分
+  sellerCount: int("sellerCount"), // 卖家数
+  listingDays: int("listingDays"), // 上架天数
+  buyboxSeller: varchar("buyboxSeller", { length: 255 }), // Buybox卖家
+  buyboxType: varchar("buyboxType", { length: 50 }), // BuyBox类型
+  hasAPlus: int("hasAPlus").default(0), // A+页面
+  hasVideo: int("hasVideo").default(0), // 视频介绍
+  hasBrandStory: int("hasBrandStory").default(0), // 品牌故事
+  hasAmazonChoice: int("hasAmazonChoice").default(0), // Amazon's Choice
+  productWeight: varchar("productWeight", { length: 100 }), // 商品重量
+  productSize: varchar("productSize", { length: 200 }), // 商品尺寸
+  packageWeight: varchar("packageWeight", { length: 100 }), // 包装重量
+  packageSize: varchar("packageSize", { length: 200 }), // 包装尺寸
+  packageSizeTier: varchar("packageSizeTier", { length: 100 }), // 包装尺寸分段
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -1008,6 +1037,22 @@ export type InsertDevOffsiteAnalysis = typeof devOffsiteAnalyses.$inferInsert;
 // ═══════════════════════════════════════════════════════════════════
 // ─── Project-Level Tag Management (7 Categories) ─────────────────
 // ═══════════════════════════════════════════════════════════════════
+
+// 全景分析表确认状态
+export const devPanoramaStatus = mysqlTable("dev_panorama_status", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  confirmed: int("confirmed").default(0).notNull(), // 0=未确认, 1=已确认
+  confirmedAt: timestamp("confirmedAt"),
+  lastMergedAt: timestamp("lastMergedAt"),
+  totalProducts: int("totalProducts").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevPanoramaStatus = typeof devPanoramaStatus.$inferSelect;
+export type InsertDevPanoramaStatus = typeof devPanoramaStatus.$inferInsert;
 
 // 项目级标签分类表（每个项目独立的7类标签分类）
 export const devProjectTagCategories = mysqlTable("dev_project_tag_categories", {

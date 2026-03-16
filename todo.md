@@ -911,3 +911,17 @@
 - [x] 后端: evidence字段保留英文原文供追溯
 - [x] 测试: 新增12个测试验证中文输出、同义合并、evidence英文保留
 - [x] 全部1008个测试通过
+
+## 竞品全景分析表 (2026-03-16)
+- [x] 数据库: devProducts表扩展新墝字段(父ASIN/SKU/FBA费用/毛利率/LQS/留评率/A+/视频/品牌故事等)
+- [x] 数据库: 新建dev_panorama_status表存储确认状态
+- [x] 后端: devPanorama路由器(getData/getStatus/confirm/unlock/updateProductField/updateProductTag/exportCsv)
+- [x] 后端: getData合并三表数据+动态历史列+动态标签列
+- [x] 后端: 单元格编辑、标签编辑、确认锁定、解锁、CSV导出
+- [x] 前端: PanoramaTable组件(分页表格、搜索、列组显隐、内联编辑、排序)
+- [x] 前端: 分组表头(11大分组+历史月销量+属性标签)
+- [x] 前端: 确认/解锁按钮和状态显示
+- [x] 前端: 下载CSV按钮
+- [x] 前端: 全景分析表tab插入标签管理和分析报告之间
+- [x] 逻辑: 市场大盘/属性交叉/价格段/品牌竞争分析前置检查全景表确认状态
+- [x] 测试: 全部1066个测试通过

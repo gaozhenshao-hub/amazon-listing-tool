@@ -141,6 +141,20 @@
       "when": 1773645553377,
       "tag": "0019_classy_revanche",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1773658326261,
+      "tag": "0020_legal_nomad",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "5",
+      "when": 1773658393232,
+      "tag": "0021_luxuriant_electro",
+      "breakpoints": true
     }
   ]
 }

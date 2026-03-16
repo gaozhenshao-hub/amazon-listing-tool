@@ -4,7 +4,7 @@ import { invokeLLM } from "../_core/llm";
 import { callDataApi } from "../_core/dataApi";
 import * as devDb from "../devDb";
 import { getDb } from "../db";
-import { devProjectTagCategories, devProjectTagItems } from "../../drizzle/schema";
+import { devProjectTagCategories, devProjectTagItems, devPanoramaStatus } from "../../drizzle/schema";
 import { eq, and, asc } from "drizzle-orm";
 import {
   calcMarketOverview,
@@ -47,6 +47,13 @@ interface GatingResult {
   missingPrereqs: string[];
 }
 
+async function isPanoramaConfirmed(projectId: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const rows = await db.select().from(devPanoramaStatus).where(eq(devPanoramaStatus.projectId, projectId)).limit(1);
+  return rows.length > 0 && rows[0].confirmed === 1;
+}
+
 async function checkStageGating(projectId: number, stageType: StageType): Promise<GatingResult> {
   const stages = await devDb.getDevAnalysisStages(projectId);
   const stageMap = new Map(stages.map(s => [s.stageType, s]));
@@ -72,37 +79,65 @@ async function checkStageGating(projectId: number, stageType: StageType): Promis
       }
       break;
 
-    case "market_overview":
-      // Needs: attribute_tagging confirmed
+    case "market_overview": {
+      // Needs: attribute_tagging confirmed + panorama confirmed
       if (!isStageConfirmed("attribute_tagging")) {
         missing.push("属性标注未确认");
-        reason = "请先完成并确认锁定“属性标注”阶段";
+      }
+      const panoramaOk1 = await isPanoramaConfirmed(projectId);
+      if (!panoramaOk1) {
+        missing.push("竞品全景分析表未确认");
+      }
+      if (missing.length > 0) {
+        reason = `请先完成: ${missing.join("、")}`;
       }
       break;
+    }
 
-    case "attribute_cross":
-      // Needs: attribute_tagging confirmed
+    case "attribute_cross": {
+      // Needs: attribute_tagging confirmed + panorama confirmed
       if (!isStageConfirmed("attribute_tagging")) {
         missing.push("属性标注未确认");
-        reason = "请先完成并确认锁定“属性标注”阶段";
+      }
+      const panoramaOk2 = await isPanoramaConfirmed(projectId);
+      if (!panoramaOk2) {
+        missing.push("竞品全景分析表未确认");
+      }
+      if (missing.length > 0) {
+        reason = `请先完成: ${missing.join("、")}`;
       }
       break;
+    }
 
-    case "price_analysis":
-      // Needs: market_overview confirmed
+    case "price_analysis": {
+      // Needs: market_overview confirmed + panorama confirmed
       if (!isStageConfirmed("market_overview")) {
         missing.push("市场大盘未确认");
-        reason = "请先完成并确认锁定“市场大盘”阶段";
+      }
+      const panoramaOk3 = await isPanoramaConfirmed(projectId);
+      if (!panoramaOk3) {
+        missing.push("竞品全景分析表未确认");
+      }
+      if (missing.length > 0) {
+        reason = `请先完成: ${missing.join("、")}`;
       }
       break;
+    }
 
-    case "brand_competition":
-      // Needs: market_overview confirmed
+    case "brand_competition": {
+      // Needs: market_overview confirmed + panorama confirmed
       if (!isStageConfirmed("market_overview")) {
         missing.push("市场大盘未确认");
-        reason = "请先完成并确认锁定“市场大盘”阶段";
+      }
+      const panoramaOk4 = await isPanoramaConfirmed(projectId);
+      if (!panoramaOk4) {
+        missing.push("竞品全景分析表未确认");
+      }
+      if (missing.length > 0) {
+        reason = `请先完成: ${missing.join("、")}`;
       }
       break;
+    }
 
     case "review_kano":
       // Needs: reviews data confirmed

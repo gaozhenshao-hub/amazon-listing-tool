@@ -15,6 +15,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import DevDataUpload from "./DevDataUpload";
+import PanoramaTable from "./PanoramaTable";
 
 const statusLabel: Record<string, { text: string; color: string }> = {
   draft: { text: "草稿", color: "bg-gray-500/10 text-gray-600" },
@@ -86,6 +87,7 @@ export default function DevProjectDetail() {
     { value: "overview", label: "概览", icon: Target },
     { value: "data", label: "数据管理", icon: Upload },
     { value: "tags", label: "标签管理", icon: Tags },
+    { value: "panorama", label: "全景分析表", icon: FileText },
     { value: "analysis", label: "分析报告", icon: BarChart3 },
     { value: "offsite", label: "站外分析", icon: Globe },
     { value: "scoring", label: "评分立项", icon: Star },
@@ -174,7 +176,7 @@ export default function DevProjectDetail() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         {/* Dynamic Tab List */}
-        <TabsList className={`grid w-full ${isPhase2 && ["profile","bom","manual","test","profit","download"].includes(activeTab) ? "grid-cols-6" : "grid-cols-6"}`}>
+        <TabsList className={`grid w-full ${isPhase2 && ["profile","bom","manual","test","profit","download"].includes(activeTab) ? "grid-cols-6" : "grid-cols-7"}`}>
           {(isPhase2 && ["profile","bom","manual","test","profit","download"].includes(activeTab) ? phase2Tabs : phase1Tabs).map(tab => (
             <TabsTrigger key={tab.value} value={tab.value} className="text-xs gap-1">
               <tab.icon className="h-3.5 w-3.5" />{tab.label}
@@ -233,6 +235,11 @@ export default function DevProjectDetail() {
         {/* Tag Management */}
         <TabsContent value="tags" className="space-y-4">
           <ProjectTagManager projectId={projectId} />
+        </TabsContent>
+
+        {/* Panorama Table */}
+        <TabsContent value="panorama" className="space-y-4">
+          <PanoramaTable projectId={projectId} />
         </TabsContent>
 
         {/* Analysis Report */}
