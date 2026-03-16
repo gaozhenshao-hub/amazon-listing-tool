@@ -1,0 +1,170 @@
+{
+  "query": "SELECT id, projectId, asin, LEFT(title, 50) as title_preview, LEFT(bulletPoints, 50) as bp_preview, LEFT(specifications, 50) as spec_preview FROM dev_products ORDER BY id DESC LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT id, projectId, asin, LEFT(title, 50) as title_preview, LEFT(bulletPoints, 50) as bp_preview, LEFT(specifications, 50) as spec_preview FROM dev_products ORDER BY id DESC LIMIT 20;",
+  "rows": [
+    {
+      "id": "106",
+      "projectId": "60002",
+      "asin": "B0FP1433MG",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "105",
+      "projectId": "60002",
+      "asin": "B0GQ98KBNY",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "104",
+      "projectId": "60002",
+      "asin": "B0CV921GQ1",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "103",
+      "projectId": "60002",
+      "asin": "B0DWDSNZ48",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "102",
+      "projectId": "60002",
+      "asin": "B0755DRHSL",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "101",
+      "projectId": "60002",
+      "asin": "B0FQKK8H4L",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "100",
+      "projectId": "60002",
+      "asin": "B0DRTVGNRT",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "99",
+      "projectId": "60002",
+      "asin": "B0CZ44CJ7P",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "98",
+      "projectId": "60002",
+      "asin": "B0D941WYM2",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "97",
+      "projectId": "60002",
+      "asin": "B00S5CGBZ8",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "96",
+      "projectId": "60002",
+      "asin": "B0G42RCLRN",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "95",
+      "projectId": "60002",
+      "asin": "B0CB1XFXD9",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "94",
+      "projectId": "60002",
+      "asin": "B0F9PHVS3N",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "93",
+      "projectId": "60002",
+      "asin": "B0CLXF2TZD",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "92",
+      "projectId": "60002",
+      "asin": "B0G3VCYJRW",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "91",
+      "projectId": "60002",
+      "asin": "B0G3B76RXZ",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "90",
+      "projectId": "60002",
+      "asin": "B0GCCYBL74",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "89",
+      "projectId": "60002",
+      "asin": "B0FXWWVXVB",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "88",
+      "projectId": "60002",
+      "asin": "B000F71DF4",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    },
+    {
+      "id": "87",
+      "projectId": "60002",
+      "asin": "B0FPQBD4KM",
+      "title_preview": "",
+      "bp_preview": "NULL",
+      "spec_preview": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tprojectId\tasin\ttitle_preview\tbp_preview\tspec_preview\n106\t60002\tB0FP1433MG\t\tNULL\tNULL\n105\t60002\tB0GQ98KBNY\t\tNULL\tNULL\n104\t60002\tB0CV921GQ1\t\tNULL\tNULL\n103\t60002\tB0DWDSNZ48\t\tNULL\tNULL\n102\t60002\tB0755DRHSL\t\tNULL\tNULL\n101\t60002\tB0FQKK8H4L\t\tNULL\tNULL\n100\t60002\tB0DRTVGNRT\t\tNULL\tNULL\n99\t60002\tB0CZ44CJ7P\t\tNULL\tNULL\n98\t60002\tB0D941WYM2\t\tNULL\tNULL\n97\t60002\tB00S5CGBZ8\t\tNULL\tNULL\n96\t60002\tB0G42RCLRN\t\tNULL\tNULL\n95\t60002\tB0CB1XFXD9\t\tNULL\tNULL\n94\t60002\tB0F9PHVS3N\t\tNULL\tNULL\n93\t60002\tB0CLXF2TZD\t\tNULL\tNULL\n92\t60002\tB0G3VCYJRW\t\tNULL\tNULL\n91\t60002\tB0G3B76RXZ\t\tNULL\tNULL\n90\t60002\tB0GCCYBL74\t\tNULL\tNULL\n89\t60002\tB0FXWWVXVB\t\tNULL\tNULL\n88\t60002\tB000F71DF4\t\tNULL\tNULL\n87\t60002\tB0FPQBD4KM\t\tNULL\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 64
+}

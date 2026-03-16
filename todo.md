@@ -893,3 +893,12 @@
 - [x] CSV导出: 增加“原文依据”列
 - [x] 测试: 新增tagAccuracy.test.ts验证反幻觉提示词、evidence字段、数据完整性
 - [x] 全部988个测试通过
+
+## Bug修复: AI标签生成数量为0 (2026-03-16)
+- [x] 排查: 测试文件列名为「产品卖点」，但parseBulletPointsData只识别「五点描述」等列名
+- [x] 排查: 数据库确认所有产品bulletPoints均为null，title为空字符串
+- [x] 修复: parseBulletPointsData增加「产品卖点」「卖点」「产品五点」等列名映射
+- [x] 修复: parseBulletPointsData增加「详细参数」「商品标题」等列名映射
+- [x] 修复: upsertDevProducts改为只更新非空字段，避免不同文件上传时互相覆盖数据
+- [x] 修复: AI标签生成前增加数据质量检查，数据为空时给出明确错误提示
+- [x] 验证: 全部996个测试通过

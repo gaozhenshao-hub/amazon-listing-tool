@@ -226,22 +226,38 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
     const products = rows.map((r: any) => {
       const asin = r["ASIN"] || r["asin"] || "";
       if (!asin) return null;
+
+      // Helper to pick first non-empty value from multiple column name variants
+      const pick = (...keys: string[]) => {
+        for (const k of keys) {
+          if (r[k] !== undefined && r[k] !== "") return r[k];
+        }
+        return "";
+      };
+
+      // Try numbered bullet columns first (卖点1~10, Bullet 1~10)
       const bullets = [];
       for (let i = 1; i <= 10; i++) {
         const b = r[`卖点${i}`] || r[`Bullet ${i}`] || r[`Bullet Point ${i}`] || r[`bullet_${i}`] || "";
         if (b) bullets.push(b);
       }
-      const combinedBullets = r["五点描述"] || r["Bullet Points"] || r["bulletPoints"] || "";
+      // Then try combined bullet columns with extensive name variants
+      const combinedBullets = pick(
+        "产品卖点", "卖点", "五点描述", "五点", "产品五点",
+        "Bullet Points", "bulletPoints", "Selling Points", "Product Selling Points"
+      );
       const bulletText = bullets.length > 0 ? bullets.join("\n") : combinedBullets;
+
       return {
         asin,
-        title: r["标题"] || r["Title"] || r["title"] || "",
-        brand: r["品牌"] || r["Brand"] || r["brand"] || "",
-        price: String(r["价格"] || r["Price"] || r["price"] || ""),
-        rating: String(r["评分"] || r["Rating"] || r["rating"] || ""),
-        reviewCount: Number(r["评论数"] || r["Reviews"] || r["Review Count"] || 0),
+        title: pick("标题", "Title", "title", "商品标题"),
+        brand: pick("品牌", "Brand", "brand"),
+        price: String(pick("价格", "价格($)", "Price", "price") || ""),
+        rating: String(pick("评分", "Rating", "rating") || ""),
+        reviewCount: Number(pick("评论数", "评分数", "Reviews", "Review Count") || 0),
         bulletPoints: bulletText,
-        description: r["描述"] || r["Description"] || r["description"] || "",
+        description: pick("描述", "产品描述", "Description", "description"),
+        specifications: pick("详细参数", "规格参数", "Specifications", "SKU"),
       };
     }).filter(Boolean) as any[];
     if (products.length > 0) {

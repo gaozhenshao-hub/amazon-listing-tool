@@ -1,0 +1,90 @@
+{
+  "query": "SELECT id, projectId, asin, LEFT(title, 40) as title_short, LENGTH(bulletPoints) as bp_length, LENGTH(specifications) as spec_length FROM dev_products WHERE projectId = (SELECT MAX(projectId) FROM dev_products) LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT id, projectId, asin, LEFT(title, 40) as title_short, LENGTH(bulletPoints) as bp_length, LENGTH(specifications) as spec_length FROM dev_products WHERE projectId = (SELECT MAX(projectId) FROM dev_products) LIMIT 10;",
+  "rows": [
+    {
+      "id": "54",
+      "projectId": "60002",
+      "asin": "B07SZNQ3FR",
+      "title_short": "",
+      "bp_length": "NULL",
+      "spec_length": "NULL"
+    },
+    {
+      "id": "55",
+      "projectId": "60002",
+      "asin": "B0G2WP66RW",
+      "title_short": "",
+      "bp_length": "NULL",
+      "spec_length": "NULL"
+    },
+    {
+      "id": "56",
+      "projectId": "60002",
+      "asin": "B0GF671WQY",
+      "title_short": "",
+      "bp_length": "NULL",
+      "spec_length": "NULL"
+    },
+    {
+      "id": "57",
+      "projectId": "60002",
+      "asin": "B09YD1GXKV",
+      "title_short": "",
+      "bp_length": "NULL",
+      "spec_length": "NULL"
+    },
+    {
+      "id": "58",
+      "projectId": "60002",
+      "asin": "B0FM447MH3",
+      "title_short": "",
+      "bp_length": "NULL",
+      "spec_length": "NULL"
+    },
+    {
+      "id": "59",
+      "projectId": "60002",
+      "asin": "B0F4R77S5H",
+      "title_short": "",
+      "bp_length": "NULL",
+      "spec_length": "NULL"
+    },
+    {
+      "id": "60",
+      "projectId": "60002",
+      "asin": "B0F4R98D8J",
+      "title_short": "",
+      "bp_length": "NULL",
+      "spec_length": "NULL"
+    },
+    {
+      "id": "61",
+      "projectId": "60002",
+      "asin": "B0F8VGXFB6",
+      "title_short": "",
+      "bp_length": "NULL",
+      "spec_length": "NULL"
+    },
+    {
+      "id": "62",
+      "projectId": "60002",
+      "asin": "B0G4VRNKNM",
+      "title_short": "",
+      "bp_length": "NULL",
+      "spec_length": "NULL"
+    },
+    {
+      "id": "63",
+      "projectId": "60002",
+      "asin": "B0014O41NS",
+      "title_short": "",
+      "bp_length": "NULL",
+      "spec_length": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tprojectId\tasin\ttitle_short\tbp_length\tspec_length\n54\t60002\tB07SZNQ3FR\t\tNULL\tNULL\n55\t60002\tB0G2WP66RW\t\tNULL\tNULL\n56\t60002\tB0GF671WQY\t\tNULL\tNULL\n57\t60002\tB09YD1GXKV\t\tNULL\tNULL\n58\t60002\tB0FM447MH3\t\tNULL\tNULL\n59\t60002\tB0F4R77S5H\t\tNULL\tNULL\n60\t60002\tB0F4R98D8J\t\tNULL\tNULL\n61\t60002\tB0F8VGXFB6\t\tNULL\tNULL\n62\t60002\tB0G4VRNKNM\t\tNULL\tNULL\n63\t60002\tB0014O41NS\t\tNULL\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 65
+}

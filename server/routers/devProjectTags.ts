@@ -459,6 +459,14 @@ export const devProjectTagsRouter = router({
       const bpStatus = dataStatus.bullet_points;
       const hasBulletPointsData = typeof bpStatus === 'object' && bpStatus !== null && 'confirmed' in bpStatus ? bpStatus.confirmed : false;
 
+      // Check data quality - count products with meaningful content
+      const productsWithBP = products.filter((p: any) => p.bulletPoints && String(p.bulletPoints).trim().length > 10);
+      const productsWithTitle = products.filter((p: any) => p.title && String(p.title).trim().length > 5);
+      
+      if (productsWithTitle.length === 0 && productsWithBP.length === 0) {
+        throw new Error("产品数据中标题和五点描述均为空。请检查上传的文件列名是否正确（支持的列名：标题/Title、产品卖点/五点描述/Bullet Points）。如果已上传标题五点文件，请重新上传后再试。");
+      }
+
       // Build product context - pass COMPLETE title and bullet points without truncation
       // Each product gets full text to avoid losing unique differentiating features
       const productContext = products.slice(0, 50).map((p: any, idx: number) => {
@@ -649,6 +657,13 @@ ${JSON.stringify(productContext, null, 2)}
         .where(eq(devProjectTagCategories.id, input.categoryId));
 
       if (!category) throw new Error("分类不存在");
+
+      // Check data quality
+      const productsWithBP = products.filter((p: any) => p.bulletPoints && String(p.bulletPoints).trim().length > 10);
+      const productsWithTitle = products.filter((p: any) => p.title && String(p.title).trim().length > 5);
+      if (productsWithTitle.length === 0 && productsWithBP.length === 0) {
+        throw new Error("产品数据中标题和五点描述均为空。请检查上传的文件列名是否正确，或重新上传标题五点文件后再试。");
+      }
 
       // Build product context with FULL text - no truncation
       const productContext = products.slice(0, 50).map((p: any, idx: number) => {

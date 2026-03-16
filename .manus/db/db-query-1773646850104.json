@@ -1,0 +1,43 @@
+{
+  "query": "SELECT id, projectId, asin, title, bulletPoints, description, brand, price, specifications FROM dev_products WHERE projectId = 60002 LIMIT 3;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT id, projectId, asin, title, bulletPoints, description, brand, price, specifications FROM dev_products WHERE projectId = 60002 LIMIT 3;",
+  "rows": [
+    {
+      "id": "54",
+      "projectId": "60002",
+      "asin": "B07SZNQ3FR",
+      "title": "",
+      "bulletPoints": "NULL",
+      "description": "NULL",
+      "brand": "",
+      "price": "",
+      "specifications": "NULL"
+    },
+    {
+      "id": "55",
+      "projectId": "60002",
+      "asin": "B0G2WP66RW",
+      "title": "",
+      "bulletPoints": "NULL",
+      "description": "NULL",
+      "brand": "",
+      "price": "",
+      "specifications": "NULL"
+    },
+    {
+      "id": "56",
+      "projectId": "60002",
+      "asin": "B0GF671WQY",
+      "title": "",
+      "bulletPoints": "NULL",
+      "description": "NULL",
+      "brand": "",
+      "price": "",
+      "specifications": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tprojectId\tasin\ttitle\tbulletPoints\tdescription\tbrand\tprice\tspecifications\n54\t60002\tB07SZNQ3FR\t\tNULL\tNULL\t\t\tNULL\n55\t60002\tB0G2WP66RW\t\tNULL\tNULL\t\t\tNULL\n56\t60002\tB0GF671WQY\t\tNULL\tNULL\t\t\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 60
+}

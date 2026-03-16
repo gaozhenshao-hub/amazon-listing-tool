@@ -186,7 +186,19 @@ export async function upsertDevProducts(projectId: number, products: InsertDevPr
       and(eq(devProducts.projectId, projectId), eq(devProducts.asin, p.asin ?? ""))
     );
     if (existing.length > 0) {
-      await db.update(devProducts).set(p).where(eq(devProducts.id, existing[0].id));
+      // Only update fields that have non-null, non-empty values
+      // This prevents partial uploads (e.g. bullet_points file) from wiping out
+      // data saved by earlier uploads (e.g. sales file with monthlySales, bsr, etc.)
+      const updateData: Record<string, any> = {};
+      for (const [key, value] of Object.entries(p)) {
+        if (key === 'projectId' || key === 'asin') continue; // skip identity fields
+        if (value !== null && value !== undefined && value !== '' && value !== 0) {
+          updateData[key] = value;
+        }
+      }
+      if (Object.keys(updateData).length > 0) {
+        await db.update(devProducts).set(updateData).where(eq(devProducts.id, existing[0].id));
+      }
     } else {
       await db.insert(devProducts).values({ ...p, projectId });
     }

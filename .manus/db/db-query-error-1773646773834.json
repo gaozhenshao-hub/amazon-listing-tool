@@ -1,0 +1,8 @@
+{
+  "query": "SELECT id, project_id, asin, LEFT(title, 50) as title_preview, LEFT(bullet_points, 50) as bp_preview, LEFT(specifications, 50) as spec_preview FROM dev_products ORDER BY id DESC LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT id, project_id, asin, LEFT(title, 50) as title_preview, LEFT(bullet_points, 50) as bp_preview, LEFT(specifications, 50) as spec_preview FROM dev_products ORDER BY id DESC LIMIT 20;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'project_id' in 'field list'"
+  ]
+}

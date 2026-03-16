@@ -71,6 +71,59 @@ describe("AI Tag Generation from Bullet Points Data", () => {
     });
   });
 
+  describe("Data quality check", () => {
+    it("should throw error when products have no title and no bulletPoints", () => {
+      const aiGenSection = routerCode.split("aiGenerateTags:")[1]?.split("aiGenerateCategoryTags:")[0] || "";
+      expect(aiGenSection).toContain("productsWithBP");
+      expect(aiGenSection).toContain("productsWithTitle");
+      expect(aiGenSection).toContain("产品数据中标题和五点描述均为空");
+    });
+
+    it("should also check data quality in aiGenerateCategoryTags", () => {
+      const categorySection = routerCode.split("aiGenerateCategoryTags")[1];
+      expect(categorySection).toContain("productsWithBP");
+      expect(categorySection).toContain("productsWithTitle");
+    });
+  });
+
+  describe("parseBulletPointsData column name mapping", () => {
+    const uploadCode = readFileSync("client/src/pages/dev/DevDataUpload.tsx", "utf-8");
+
+    it("should support '产品卖点' column name for bullet points", () => {
+      expect(uploadCode).toContain('"\u4ea7\u54c1\u5356\u70b9"');
+    });
+
+    it("should support '五点描述' column name for bullet points", () => {
+      expect(uploadCode).toContain('"\u4e94\u70b9\u63cf\u8ff0"');
+    });
+
+    it("should support '详细参数' column name for specifications in parseBulletPointsData", () => {
+      // parseBulletPointsData appears 3 times: call site, then function def
+      // The function body is in the 3rd part (index 2)
+      const parts = uploadCode.split("parseBulletPointsData");
+      const bpFuncBody = parts[2]?.split("parseReviewsData")[0] || "";
+      expect(bpFuncBody).toContain('"\u8be6\u7ec6\u53c2\u6570"');
+    });
+
+    it("should support '商品标题' column name for title in parseBulletPointsData", () => {
+      const parts = uploadCode.split("parseBulletPointsData");
+      const bpFuncBody = parts[2]?.split("parseReviewsData")[0] || "";
+      expect(bpFuncBody).toContain('"\u5546\u54c1\u6807\u9898"');
+    });
+  });
+
+  describe("upsertDevProducts - non-destructive update", () => {
+    const dbCode = readFileSync("server/devDb.ts", "utf-8");
+
+    it("should only update non-null non-empty fields on existing products", () => {
+      expect(dbCode).toContain("Only update fields that have non-null, non-empty values");
+    });
+
+    it("should skip identity fields during update", () => {
+      expect(dbCode).toContain("key === 'projectId' || key === 'asin'");
+    });
+  });
+
   describe("Frontend data source indicator", () => {
     const detailCode = readFileSync("client/src/pages/dev/DevProjectDetail.tsx", "utf-8");
 
