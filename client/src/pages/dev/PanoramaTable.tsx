@@ -10,7 +10,8 @@ import {
 import {
   CheckCircle2, AlertCircle, Download, Lock, Unlock, Save, X,
   FileText, Search, ChevronLeft, ChevronRight, ArrowUpDown,
-  Table2, Eye, EyeOff, TrendingUp, BarChart3,
+  Table2, Eye, EyeOff, TrendingUp, BarChart3, Filter, XCircle,
+  ChevronDown, ChevronUp, Tag,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -379,6 +380,9 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
   const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(new Set());
   const [trendOpen, setTrendOpen] = useState(false);
   const [selectedTrendAsins, setSelectedTrendAsins] = useState<string[]>([]);
+  const [filterOpen, setFilterOpen] = useState(false);
+  // tagFilters: { [categoryName]: Set<selectedValue> }
+  const [tagFilters, setTagFilters] = useState<Record<string, Set<string>>>({});
   const tableRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
 
@@ -505,6 +509,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
   const filteredProducts = useMemo(() => {
     if (!data?.products) return [];
     let products = [...data.products];
+    // Text search
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       products = products.filter((p: any) =>
@@ -513,6 +518,21 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
         (p.brand || "").toLowerCase().includes(term)
       );
     }
+    // Tag filters (AND across categories, OR within category)
+    const filterEntries = Object.entries(tagFilters);
+    if (filterEntries.length > 0 && data?.tagMap) {
+      products = products.filter((p: any) => {
+        const asinTags = data.tagMap[p.asin] || {};
+        // AND: every category must match at least one selected value
+        return filterEntries.every(([catName, selectedValues]) => {
+          if (selectedValues.size === 0) return true;
+          const productTagValue = asinTags[catName] || "";
+          // Check if product's tag value matches any of the selected values
+          return selectedValues.has(productTagValue);
+        });
+      });
+    }
+    // Sort
     if (sortField) {
       products.sort((a: any, b: any) => {
         const va = getCellValue(a, columns.find(c => c.key === sortField)!);
@@ -523,7 +543,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
       });
     }
     return products;
-  }, [data?.products, searchTerm, sortField, sortDir, getCellValue, columns]);
+  }, [data?.products, searchTerm, sortField, sortDir, getCellValue, columns, tagFilters, data?.tagMap]);
 
   const totalPages = Math.ceil(filteredProducts.length / PAGE_SIZE);
   const pagedProducts = filteredProducts.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -582,6 +602,42 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
   };
 
   const cancelEdit = () => setEditingCell(null);
+
+  // ── Tag filter helpers ──
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    for (const vals of Object.values(tagFilters)) {
+      count += vals.size;
+    }
+    return count;
+  }, [tagFilters]);
+
+  const toggleTagFilter = (categoryName: string, value: string) => {
+    setTagFilters(prev => {
+      const next = { ...prev };
+      const set = new Set(prev[categoryName] || []);
+      if (set.has(value)) set.delete(value);
+      else set.add(value);
+      if (set.size === 0) delete next[categoryName];
+      else next[categoryName] = set;
+      return next;
+    });
+    setPage(0);
+  };
+
+  const clearAllFilters = () => {
+    setTagFilters({});
+    setPage(0);
+  };
+
+  const clearCategoryFilter = (categoryName: string) => {
+    setTagFilters(prev => {
+      const next = { ...prev };
+      delete next[categoryName];
+      return next;
+    });
+    setPage(0);
+  };
 
   const toggleSort = (field: string) => {
     if (sortField === field) {
@@ -691,7 +747,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
           </p>
         </CardHeader>
         <CardContent className="pt-0 space-y-3">
-          {/* Search + Column Toggle */}
+          {/* Search + Column Toggle + Tag Filter Toggle */}
           <div className="flex items-center gap-3 flex-wrap">
             <div className="relative flex-1 min-w-[200px] max-w-sm">
               <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
@@ -699,6 +755,27 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                 onChange={e => { setSearchTerm(e.target.value); setPage(0); }}
                 className="pl-8 h-8 text-xs" />
             </div>
+            {/* Tag filter toggle button */}
+            {Object.keys(tagValueOptions).length > 0 && (
+              <Button size="sm" variant={filterOpen ? "default" : "outline"}
+                className={`h-8 text-xs gap-1.5 ${activeFilterCount > 0 ? "border-primary" : ""}`}
+                onClick={() => setFilterOpen(o => !o)}>
+                <Filter className="h-3.5 w-3.5" />
+                标签筛选
+                {activeFilterCount > 0 && (
+                  <Badge variant="secondary" className="h-4 px-1 text-[10px] ml-0.5 bg-primary text-primary-foreground">
+                    {activeFilterCount}
+                  </Badge>
+                )}
+                {filterOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              </Button>
+            )}
+            {activeFilterCount > 0 && (
+              <Button size="sm" variant="ghost" className="h-8 text-xs gap-1 text-muted-foreground hover:text-destructive"
+                onClick={clearAllFilters}>
+                <XCircle className="h-3.5 w-3.5" />清除全部筛选
+              </Button>
+            )}
             <div className="flex items-center gap-1 flex-wrap">
               <span className="text-xs text-muted-foreground mr-1">列组:</span>
               {columnGroups.map(g => (
@@ -711,6 +788,86 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
               ))}
             </div>
           </div>
+
+          {/* Tag Filter Panel */}
+          {filterOpen && Object.keys(tagValueOptions).length > 0 && (
+            <div className="border rounded-lg bg-muted/20 p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Tag className="h-4 w-4 text-primary" />
+                  <span className="text-xs font-semibold">按属性标签筛选产品</span>
+                  <span className="text-[10px] text-muted-foreground">(类别间 AND 逻辑，类别内 OR 逻辑)</span>
+                </div>
+                {activeFilterCount > 0 && (
+                  <span className="text-[10px] text-primary font-medium">
+                    匹配 {filteredProducts.length} / {totalProducts} 个产品
+                  </span>
+                )}
+              </div>
+              <div className="grid gap-2">
+                {Object.entries(tagValueOptions).map(([catName, values]) => {
+                  const selectedInCat = tagFilters[catName] || new Set<string>();
+                  const hasFilter = selectedInCat.size > 0;
+                  return (
+                    <div key={catName} className={`flex items-start gap-2 p-2 rounded-md transition-colors ${
+                      hasFilter ? "bg-primary/5 border border-primary/20" : "bg-background/50"
+                    }`}>
+                      <div className="flex items-center gap-1.5 min-w-[100px] pt-0.5 flex-shrink-0">
+                        <span className={`text-xs font-medium ${hasFilter ? "text-primary" : "text-muted-foreground"}`}>
+                          {catName}
+                        </span>
+                        {hasFilter && (
+                          <button onClick={() => clearCategoryFilter(catName)}
+                            className="text-muted-foreground hover:text-destructive transition-colors">
+                            <XCircle className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {values.map(val => {
+                          const isSelected = selectedInCat.has(val);
+                          return (
+                            <button
+                              key={val}
+                              onClick={() => toggleTagFilter(catName, val)}
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border transition-all ${
+                                isSelected
+                                  ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                                  : "bg-background text-foreground border-border hover:border-primary/50 hover:bg-primary/5"
+                              }`}
+                            >
+                              {val}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Active filter summary bar */}
+          {activeFilterCount > 0 && !filterOpen && (
+            <div className="flex items-center gap-2 flex-wrap px-2 py-1.5 bg-primary/5 rounded-md border border-primary/10">
+              <Filter className="h-3 w-3 text-primary flex-shrink-0" />
+              <span className="text-[10px] text-primary font-medium">当前筛选:</span>
+              {Object.entries(tagFilters).map(([catName, values]) =>
+                Array.from(values).map(val => (
+                  <Badge key={`${catName}-${val}`} variant="secondary"
+                    className="text-[10px] gap-0.5 h-5 cursor-pointer hover:bg-destructive/10"
+                    onClick={() => toggleTagFilter(catName, val)}>
+                    {catName}: {val}
+                    <X className="h-2.5 w-2.5" />
+                  </Badge>
+                ))
+              )}
+              <span className="text-[10px] text-muted-foreground">
+                → {filteredProducts.length} / {totalProducts} 个产品
+              </span>
+            </div>
+          )}
 
           {!hasData ? (
             <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -888,7 +1045,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>
                   显示 {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, filteredProducts.length)} / 共 {filteredProducts.length} 个产品
-                  {searchTerm && ` (筛选自 ${totalProducts} 个)`}
+                  {(searchTerm || activeFilterCount > 0) && ` (筛选自 ${totalProducts} 个)`}
                 </span>
                 <div className="flex items-center gap-2">
                   <Button size="sm" variant="outline" className="h-6 text-xs px-2"
