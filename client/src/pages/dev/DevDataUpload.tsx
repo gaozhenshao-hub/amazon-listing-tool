@@ -117,14 +117,17 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
         new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
       );
 
-      // 2. Upload to S3
+      // 2. Upload to S3 (auto-replaces old files with same name)
       updateState(fileType, { status: "uploading" });
-      await uploadFileMutation.mutateAsync({
+      const uploadResult = await uploadFileMutation.mutateAsync({
         projectId,
         fileName: file.name,
         fileType,
         fileData: base64,
       });
+      if (uploadResult.replacedFiles && uploadResult.replacedFiles > 0) {
+        toast.info(`已自动替换同名旧文件（${file.name}）`);
+      }
 
       // 3. Parse Excel
       updateState(fileType, { status: "parsing" });
@@ -325,7 +328,10 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
         updateState(fileType, { status: "parsing", fileName: `处理中 (${fi + 1}/${fileArray.length}): ${file.name}` });
         const arrayBuffer = await file.arrayBuffer();
         const base64 = btoa(new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), ""));
-        await uploadFileMutation.mutateAsync({ projectId, fileName: file.name, fileType, fileData: base64 });
+        const batchUploadResult = await uploadFileMutation.mutateAsync({ projectId, fileName: file.name, fileType, fileData: base64 });
+        if (batchUploadResult.replacedFiles && batchUploadResult.replacedFiles > 0) {
+          toast.info(`已自动替换同名旧文件（${file.name}）`);
+        }
         const workbook = XLSX.read(arrayBuffer, { type: "array" });
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
         const rows: any[] = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });

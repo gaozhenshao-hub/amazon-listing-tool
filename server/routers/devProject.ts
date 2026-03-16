@@ -81,6 +81,13 @@ export const devProjectRouter = router({
       const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
 
+      // Delete old files with same name in same project & type
+      const deletedCount = await devDb.deleteOldFilesByName(
+        input.projectId,
+        input.fileType,
+        input.fileName
+      );
+
       // Upload to S3
       const buffer = Buffer.from(input.fileData, "base64");
       const suffix = Math.random().toString(36).substring(2, 8);
@@ -96,7 +103,7 @@ export const devProjectRouter = router({
         fileType: input.fileType,
       });
 
-      return { id: result.id, url };
+      return { id: result.id, url, replacedFiles: deletedCount };
     }),
 
   getFiles: protectedProcedure

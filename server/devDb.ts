@@ -78,6 +78,28 @@ export async function getDevProjectStats(userId: number) {
 
 // ─── Dev Uploaded Files ────────────────────────────────────────
 
+export async function deleteOldFilesByName(projectId: number, fileType: string, filename: string) {
+  const db = await getDb();
+  if (!db) return 0;
+  // Find existing files with same project, type, and filename
+  const existing = await db.select({ id: devUploadedFiles.id })
+    .from(devUploadedFiles)
+    .where(
+      and(
+        eq(devUploadedFiles.projectId, projectId),
+        eq(devUploadedFiles.fileType, fileType as any),
+        eq(devUploadedFiles.filename, filename)
+      )
+    );
+  if (existing.length === 0) return 0;
+  // Delete old file records
+  const ids = existing.map(f => f.id);
+  for (const id of ids) {
+    await db.delete(devUploadedFiles).where(eq(devUploadedFiles.id, id));
+  }
+  return existing.length;
+}
+
 export async function createDevUploadedFile(data: InsertDevUploadedFile) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
