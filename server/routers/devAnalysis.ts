@@ -38,17 +38,130 @@ const STAGE_TYPES = [
   "price_analysis", "brand_competition", "review_kano", "decision_dashboard",
 ] as const;
 
+// ─── Stage Gating: Define prerequisites for each stage ─────────
+type StageType = typeof STAGE_TYPES[number];
+
+interface GatingResult {
+  canRun: boolean;
+  reason: string | null;
+  missingPrereqs: string[];
+}
+
+async function checkStageGating(projectId: number, stageType: StageType): Promise<GatingResult> {
+  const stages = await devDb.getDevAnalysisStages(projectId);
+  const stageMap = new Map(stages.map(s => [s.stageType, s]));
+  const dataStatus = await devDb.getDataConfirmationStatus(projectId);
+
+  const isStageConfirmed = (st: string) => stageMap.get(st as any)?.status === "confirmed";
+  const isStageCompleted = (st: string) => {
+    const s = stageMap.get(st as any);
+    return s?.status === "confirmed" || s?.status === "completed" || s?.status === "generated" || s?.status === "editing";
+  };
+  // Type-safe data status access
+  const ds = dataStatus as Record<string, { confirmed: boolean; confirmedAt: Date | null; fileCount: number; totalRows: number }>;
+
+  const missing: string[] = [];
+  let reason: string | null = null;
+
+  switch (stageType) {
+    case "attribute_tagging":
+      // Needs: sales data confirmed + products uploaded
+      if (!ds.sales?.confirmed) {
+        missing.push("销量数据未确认");
+        reason = "请先在数据管理中上传并确认销量表格数据";
+      }
+      break;
+
+    case "market_overview":
+      // Needs: attribute_tagging confirmed
+      if (!isStageConfirmed("attribute_tagging")) {
+        missing.push("属性标注未确认");
+        reason = "请先完成并确认锁定“属性标注”阶段";
+      }
+      break;
+
+    case "attribute_cross":
+      // Needs: attribute_tagging confirmed
+      if (!isStageConfirmed("attribute_tagging")) {
+        missing.push("属性标注未确认");
+        reason = "请先完成并确认锁定“属性标注”阶段";
+      }
+      break;
+
+    case "price_analysis":
+      // Needs: market_overview confirmed
+      if (!isStageConfirmed("market_overview")) {
+        missing.push("市场大盘未确认");
+        reason = "请先完成并确认锁定“市场大盘”阶段";
+      }
+      break;
+
+    case "brand_competition":
+      // Needs: market_overview confirmed
+      if (!isStageConfirmed("market_overview")) {
+        missing.push("市场大盘未确认");
+        reason = "请先完成并确认锁定“市场大盘”阶段";
+      }
+      break;
+
+    case "review_kano":
+      // Needs: reviews data confirmed
+      if (!ds.reviews?.confirmed) {
+        missing.push("评论数据未确认");
+        reason = "请先在数据管理中上传并确认评论文件数据";
+      }
+      break;
+
+    case "decision_dashboard":
+      // Needs: ALL previous 5 stages confirmed (except review_kano which is optional if no reviews)
+      const requiredStages: StageType[] = ["attribute_tagging", "market_overview", "attribute_cross", "price_analysis", "brand_competition"];
+      for (const rs of requiredStages) {
+        if (!isStageConfirmed(rs)) {
+          const labelMap: Record<string, string> = {
+            attribute_tagging: "属性标注",
+            market_overview: "市场大盘",
+            attribute_cross: "属性交叉",
+            price_analysis: "价格分析",
+            brand_competition: "品牌竞争",
+          };
+          missing.push(`${labelMap[rs] || rs}未确认`);
+        }
+      }
+      if (missing.length > 0) {
+        reason = `请先完成并确认以下阶段: ${missing.join("、")}`;
+      }
+      break;
+  }
+
+  return {
+    canRun: missing.length === 0,
+    reason,
+    missingPrereqs: missing,
+  };
+}
+
 export const devAnalysisRouter = router({
   // ═══════════════════════════════════════════════════════════════
-  // NEW: Stage-based Analysis Flow
+  // Stage-based Analysis Flow with Gating
   // ═══════════════════════════════════════════════════════════════
 
-  // ─── Get all stages for a project ─────────────────────────────
+  // ─── Get all stages for a project ─────────────────────────
   getStages: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
       const stages = await devDb.getDevAnalysisStages(input.projectId);
       return stages;
+    }),
+
+  // ─── Get gating status for all stages ────────────────────
+  getStageGating: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const result: Record<string, GatingResult> = {};
+      for (const st of STAGE_TYPES) {
+        result[st] = await checkStageGating(input.projectId, st);
+      }
+      return result;
     }),
 
   getStage: protectedProcedure
@@ -63,6 +176,10 @@ export const devAnalysisRouter = router({
     .mutation(async ({ ctx, input }) => {
       const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
+
+      // Gate check
+      const gating = await checkStageGating(input.projectId, "attribute_tagging");
+      if (!gating.canRun) throw new Error(`门控检查未通过: ${gating.reason}`);
 
       // Mark stage as running
       await devDb.upsertDevAnalysisStage({
@@ -208,6 +325,10 @@ export const devAnalysisRouter = router({
       const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
 
+      // Gate check
+      const gating = await checkStageGating(input.projectId, "market_overview");
+      if (!gating.canRun) throw new Error(`门控检查未通过: ${gating.reason}`);
+
       await devDb.upsertDevAnalysisStage({
         projectId: input.projectId,
         userId: ctx.user.id,
@@ -315,6 +436,10 @@ export const devAnalysisRouter = router({
     .mutation(async ({ ctx, input }) => {
       const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
+
+      // Gate check
+      const gating = await checkStageGating(input.projectId, "attribute_cross");
+      if (!gating.canRun) throw new Error(`门控检查未通过: ${gating.reason}`);
 
       await devDb.upsertDevAnalysisStage({
         projectId: input.projectId,
@@ -457,6 +582,10 @@ export const devAnalysisRouter = router({
       const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
 
+      // Gate check
+      const gating = await checkStageGating(input.projectId, "price_analysis");
+      if (!gating.canRun) throw new Error(`门控检查未通过: ${gating.reason}`);
+
       await devDb.upsertDevAnalysisStage({
         projectId: input.projectId,
         userId: ctx.user.id,
@@ -562,6 +691,10 @@ export const devAnalysisRouter = router({
       const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
 
+      // Gate check
+      const gating = await checkStageGating(input.projectId, "brand_competition");
+      if (!gating.canRun) throw new Error(`门控检查未通过: ${gating.reason}`);
+
       await devDb.upsertDevAnalysisStage({
         projectId: input.projectId,
         userId: ctx.user.id,
@@ -663,6 +796,10 @@ export const devAnalysisRouter = router({
     .mutation(async ({ ctx, input }) => {
       const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
+
+      // Gate check
+      const gating = await checkStageGating(input.projectId, "review_kano");
+      if (!gating.canRun) throw new Error(`门控检查未通过: ${gating.reason}`);
 
       await devDb.upsertDevAnalysisStage({
         projectId: input.projectId,
@@ -827,6 +964,10 @@ export const devAnalysisRouter = router({
     .mutation(async ({ ctx, input }) => {
       const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
+
+      // Gate check
+      const gating = await checkStageGating(input.projectId, "decision_dashboard");
+      if (!gating.canRun) throw new Error(`门控检查未通过: ${gating.reason}`);
 
       await devDb.upsertDevAnalysisStage({
         projectId: input.projectId,

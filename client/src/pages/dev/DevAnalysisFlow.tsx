@@ -82,6 +82,9 @@ export default function DevAnalysisFlow() {
   const { data: stages, isLoading: stagesLoading } = trpc.devAnalysis.getStages.useQuery({ projectId });
   const { data: products } = trpc.devProject.getProducts.useQuery({ projectId });
 
+  // ─── Stage Gating Query ───
+  const { data: gating } = trpc.devAnalysis.getStageGating.useQuery({ projectId });
+
   // ─── Project Tags Query (for cross analysis integration) ───
   const { data: projectTags } = trpc.devAnalysis.getConfirmedProjectTags.useQuery({ projectId });
   const [selectedDim1, setSelectedDim1] = useState<number | undefined>(undefined);
@@ -95,40 +98,44 @@ export default function DevAnalysisFlow() {
   }, [stages]);
 
   // ─── Mutations ───
+  const invalidateAll = () => {
+    utils.devAnalysis.getStages.invalidate({ projectId });
+    utils.devAnalysis.getStageGating.invalidate({ projectId });
+  };
   const tagMutation = trpc.devAnalysis.runAttributeTagging.useMutation({
-    onSuccess: () => { toast.success("属性标注完成"); utils.devAnalysis.getStages.invalidate({ projectId }); },
+    onSuccess: () => { toast.success("属性标注完成"); invalidateAll(); },
     onError: (e: any) => toast.error(`属性标注失败: ${e.message}`),
   });
   const marketMutation = trpc.devAnalysis.runMarketOverview.useMutation({
-    onSuccess: () => { toast.success("市场大盘分析完成"); utils.devAnalysis.getStages.invalidate({ projectId }); },
+    onSuccess: () => { toast.success("市场大盘分析完成"); invalidateAll(); },
     onError: (e: any) => toast.error(`市场分析失败: ${e.message}`),
   });
   const crossMutation = trpc.devAnalysis.runAttributeCross.useMutation({
-    onSuccess: () => { toast.success("属性交叉分析完成"); utils.devAnalysis.getStages.invalidate({ projectId }); },
+    onSuccess: () => { toast.success("属性交叉分析完成"); invalidateAll(); },
     onError: (e: any) => toast.error(`属性交叉分析失败: ${e.message}`),
   });
   const tagCrossMutation = trpc.devAnalysis.runTagCrossAnalysis.useMutation({
-    onSuccess: () => { toast.success("标签交叉分析完成"); utils.devAnalysis.getStages.invalidate({ projectId }); utils.devAnalysis.getConfirmedProjectTags.invalidate({ projectId }); },
+    onSuccess: () => { toast.success("标签交叉分析完成"); invalidateAll(); utils.devAnalysis.getConfirmedProjectTags.invalidate({ projectId }); },
     onError: (e: any) => toast.error(`标签交叉分析失败: ${e.message}`),
   });
   const priceMutation = trpc.devAnalysis.runPriceAnalysis.useMutation({
-    onSuccess: () => { toast.success("价格段分析完成"); utils.devAnalysis.getStages.invalidate({ projectId }); },
+    onSuccess: () => { toast.success("价格段分析完成"); invalidateAll(); },
     onError: (e: any) => toast.error(`价格分析失败: ${e.message}`),
   });
   const brandMutation = trpc.devAnalysis.runBrandCompetition.useMutation({
-    onSuccess: () => { toast.success("品牌竞争分析完成"); utils.devAnalysis.getStages.invalidate({ projectId }); },
+    onSuccess: () => { toast.success("品牌竞争分析完成"); invalidateAll(); },
     onError: (e: any) => toast.error(`品牌分析失败: ${e.message}`),
   });
   const reviewMutation = trpc.devAnalysis.runReviewKano.useMutation({
-    onSuccess: () => { toast.success("评论深度分析完成"); utils.devAnalysis.getStages.invalidate({ projectId }); },
+    onSuccess: () => { toast.success("评论深度分析完成"); invalidateAll(); },
     onError: (e: any) => toast.error(`评论分析失败: ${e.message}`),
   });
   const dashboardMutation = trpc.devAnalysis.runDecisionDashboard.useMutation({
-    onSuccess: () => { toast.success("综合决策看板生成完成"); utils.devAnalysis.getStages.invalidate({ projectId }); },
+    onSuccess: () => { toast.success("综合决策看板生成完成"); invalidateAll(); },
     onError: (e: any) => toast.error(`决策看板生成失败: ${e.message}`),
   });
   const confirmMutation = trpc.devAnalysis.confirmStage.useMutation({
-    onSuccess: () => { toast.success("阶段已确认锁定"); utils.devAnalysis.getStages.invalidate({ projectId }); setEditingStage(null); },
+    onSuccess: () => { toast.success("阶段已确认锁定"); invalidateAll(); setEditingStage(null); },
     onError: (e: any) => toast.error(`确认失败: ${e.message}`),
   });
   const editMutation = trpc.devAnalysis.editStage.useMutation({
@@ -136,7 +143,7 @@ export default function DevAnalysisFlow() {
     onError: (e: any) => toast.error(`保存失败: ${e.message}`),
   });
   const unlockMutation = trpc.devAnalysis.unlockStage.useMutation({
-    onSuccess: () => { toast.success("阶段已解锁，可重新分析或编辑"); utils.devAnalysis.getStages.invalidate({ projectId }); },
+    onSuccess: () => { toast.success("阶段已解锁，可重新分析或编辑"); invalidateAll(); },
     onError: (e: any) => toast.error(`解锁失败: ${e.message}`),
   });
 
@@ -239,24 +246,30 @@ export default function DevAnalysisFlow() {
               const isConfirmed = status === "confirmed";
               const isCompleted = status === "completed" || status === "generated";
               const isRunning = status === "running" || status === "generating";
+              const stageGating = gating?.[stage.key];
+              const isGated = stageGating && !stageGating.canRun && status === "pending";
               const Icon = stage.icon;
 
               return (
                 <div key={stage.key} className="flex items-center flex-1">
                   <button
                     onClick={() => setActiveStage(stage.key)}
+                    title={isGated ? stageGating?.reason || "前置条件未满足" : stage.desc}
                     className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all w-full
                       ${isActive ? "bg-primary text-primary-foreground shadow-sm" : ""}
                       ${!isActive && isConfirmed ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400" : ""}
                       ${!isActive && isCompleted ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400" : ""}
                       ${!isActive && isRunning ? "bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400" : ""}
-                      ${!isActive && !isConfirmed && !isCompleted && !isRunning ? "text-muted-foreground hover:bg-muted/50" : ""}
+                      ${!isActive && isGated ? "text-muted-foreground/50 opacity-60" : ""}
+                      ${!isActive && !isConfirmed && !isCompleted && !isRunning && !isGated ? "text-muted-foreground hover:bg-muted/50" : ""}
                     `}
                   >
                     {isConfirmed ? (
                       <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                     ) : isRunning ? (
                       <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                    ) : isGated ? (
+                      <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
                     ) : (
                       <Icon className="h-3.5 w-3.5 shrink-0" />
                     )}
@@ -409,24 +422,50 @@ export default function DevAnalysisFlow() {
                   const isRunning = status === "running" || status === "generating";
                   const hasResult = status === "completed" || status === "generated" || status === "editing" || status === "confirmed";
                   const isConfirmed = status === "confirmed";
+                  const currentGating = gating?.[activeStage];
+                  const isCurrentGated = currentGating && !currentGating.canRun;
 
                   return (
                     <>
+                      {/* Gating Warning */}
+                      {isCurrentGated && !hasResult && (
+                        <div className="text-xs bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-2.5 space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400 font-medium">
+                            <Lock className="h-3.5 w-3.5" />
+                            前置条件未满足
+                          </div>
+                          <p className="text-amber-600 dark:text-amber-400/80">{currentGating.reason}</p>
+                          {currentGating.missingPrereqs && currentGating.missingPrereqs.length > 0 && (
+                            <div className="space-y-1 mt-1">
+                              <p className="text-amber-600/80 dark:text-amber-400/60">需要先完成：</p>
+                              {currentGating.missingPrereqs.map((prereq: string, i: number) => (
+                                <div key={i} className="flex items-center gap-1 text-amber-600/80 dark:text-amber-400/60">
+                                  <span>•</span>
+                                  <span>{prereq}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* Run / Re-run */}
                       <Button
                         size="sm"
                         className="w-full gap-2"
                         onClick={() => runStage(activeStage)}
-                        disabled={isAnyMutating || isConfirmed}
+                        disabled={isAnyMutating || isConfirmed || (isCurrentGated && !hasResult)}
                       >
                         {isRunning ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (isCurrentGated && !hasResult) ? (
+                          <Lock className="h-3.5 w-3.5" />
                         ) : hasResult ? (
                           <RefreshCw className="h-3.5 w-3.5" />
                         ) : (
                           <Play className="h-3.5 w-3.5" />
                         )}
-                        {isRunning ? "分析中..." : hasResult ? "重新分析" : "开始分析"}
+                        {isRunning ? "分析中..." : (isCurrentGated && !hasResult) ? "未解锁" : hasResult ? "重新分析" : "开始分析"}
                       </Button>
 
                       {/* Edit */}
@@ -555,6 +594,7 @@ export default function DevAnalysisFlow() {
               stageKey={activeStage}
               stageData={stageMap[activeStage]}
               productCount={productCount}
+              gatingInfo={gating?.[activeStage]}
             />
           )}
         </div>
@@ -564,17 +604,45 @@ export default function DevAnalysisFlow() {
 }
 
 /* ─── Stage Result Display Component ─── */
-function StageResultDisplay({ stageKey, stageData, productCount }: { stageKey: StageKey; stageData: any; productCount: number }) {
+function StageResultDisplay({ stageKey, stageData, productCount, gatingInfo }: { stageKey: StageKey; stageData: any; productCount: number; gatingInfo?: { canRun: boolean; reason?: string | null; missingPrereqs?: string[] | null } }) {
   if (!stageData || stageData.status === "pending") {
     const stage = STAGES.find(s => s.key === stageKey)!;
     const Icon = stage.icon;
+    const isGated = gatingInfo && !gatingInfo.canRun;
+
     return (
       <Card>
-        <CardContent className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-          <Icon className="h-12 w-12 mb-4 opacity-20" />
-          <p className="text-sm font-medium">{stage.label}</p>
-          <p className="text-xs mt-1">{stage.desc}</p>
-          <p className="text-xs mt-3">点击左侧"开始分析"按钮执行此阶段</p>
+        <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+          {isGated ? (
+            <>
+              <div className="h-16 w-16 rounded-full bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center mb-4">
+                <Lock className="h-8 w-8 text-amber-500" />
+              </div>
+              <p className="text-sm font-semibold text-foreground">{stage.label} — 未解锁</p>
+              <p className="text-xs mt-2 text-amber-600 dark:text-amber-400 max-w-md text-center">{gatingInfo.reason}</p>
+              {gatingInfo.missingPrereqs && gatingInfo.missingPrereqs.length > 0 && (
+                <div className="mt-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 max-w-md w-full">
+                  <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-2">需要先完成以下步骤：</p>
+                  <div className="space-y-1.5">
+                    {gatingInfo.missingPrereqs.map((prereq, i) => (
+                      <div key={i} className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400/80">
+                        <div className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+                        <span>{prereq}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <p className="text-xs mt-4 text-muted-foreground">完成前置条件后，此阶段将自动解锁</p>
+            </>
+          ) : (
+            <>
+              <Icon className="h-12 w-12 mb-4 opacity-20" />
+              <p className="text-sm font-medium">{stage.label}</p>
+              <p className="text-xs mt-1">{stage.desc}</p>
+              <p className="text-xs mt-3">点击左侧“开始分析”按钮执行此阶段</p>
+            </>
+          )}
         </CardContent>
       </Card>
     );
