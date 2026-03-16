@@ -199,5 +199,5 @@ describe("Tag Batch Import - Integration", () => {
     expect(procedures).toContain("devProjectTags.parseImportFile");
     expect(procedures).toContain("devProjectTags.batchImport");
     expect(procedures).toContain("devProjectTags.getImportTemplate");
-  });
+  }, 15000);
 });

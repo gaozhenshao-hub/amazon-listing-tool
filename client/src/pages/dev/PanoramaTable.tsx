@@ -1,16 +1,23 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  CheckCircle2, AlertCircle, Download, Lock, Unlock, Edit2, Save, X,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  CheckCircle2, AlertCircle, Download, Lock, Unlock, Save, X,
   FileText, Search, ChevronLeft, ChevronRight, ArrowUpDown,
-  Table2, Filter, Eye, EyeOff,
+  Table2, Eye, EyeOff, TrendingUp, BarChart3,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer,
+} from "recharts";
 
 // ═══════════════════════════════════════════════════════════════════
 // ─── Column Definitions ──────────────────────────────────────────
@@ -27,7 +34,6 @@ interface ColumnDef {
 }
 
 const FIXED_COLUMNS: ColumnDef[] = [
-  // 基础信息
   { key: "searchRank", label: "#", group: "基础信息", width: 50, type: "number" },
   { key: "asin", label: "ASIN", group: "基础信息", width: 120 },
   { key: "parentAsin", label: "父ASIN", group: "基础信息", width: 120, editable: true },
@@ -35,7 +41,6 @@ const FIXED_COLUMNS: ColumnDef[] = [
   { key: "brand", label: "品牌", group: "基础信息", width: 100, editable: true },
   { key: "imageUrl", label: "主图", group: "基础信息", width: 60, render: (v: string) => v ? <img src={v} className="w-8 h-8 object-cover rounded" alt="" /> : <span className="text-muted-foreground text-xs">-</span> },
   { key: "title", label: "商品标题", group: "基础信息", width: 250, editable: true },
-  // 类目信息
   { key: "category", label: "大类目", group: "类目", width: 120, editable: true },
   { key: "subcategory", label: "小类目", group: "类目", width: 120, editable: true },
   { key: "categoryPath", label: "类目路径", group: "类目", width: 200, editable: true },
@@ -43,50 +48,322 @@ const FIXED_COLUMNS: ColumnDef[] = [
   { key: "bsrSmall", label: "小类BSR", group: "排名", width: 90, type: "number", editable: true },
   { key: "bsr", label: "BSR", group: "排名", width: 80, type: "number", editable: true },
   { key: "bsrGrowthRate", label: "BSR增长率", group: "排名", width: 100, editable: true },
-  // 价格与利润
   { key: "price", label: "价格($)", group: "价格利润", width: 80, editable: true },
   { key: "fbaFee", label: "FBA费用", group: "价格利润", width: 80, editable: true },
   { key: "grossMargin", label: "毛利率", group: "价格利润", width: 80, editable: true },
-  // 销量
   { key: "monthlySales", label: "月销量", group: "销量", width: 80, type: "number", editable: true },
   { key: "monthlySalesGrowth", label: "月销量增长率", group: "销量", width: 110, editable: true },
   { key: "monthlyRevenue", label: "月销售额($)", group: "销量", width: 100, type: "number", editable: true },
   { key: "childSales", label: "子体销量", group: "销量", width: 80, type: "number", editable: true },
   { key: "childRevenue", label: "子体销售额", group: "销量", width: 100, type: "number", editable: true },
   { key: "variantCount", label: "变体数", group: "销量", width: 70, type: "number", editable: true },
-  // 评论
   { key: "reviewCount", label: "评分数", group: "评论", width: 80, editable: true },
   { key: "monthlyNewReviews", label: "月新增评分", group: "评论", width: 100, type: "number", editable: true },
   { key: "rating", label: "评分", group: "评论", width: 60, editable: true },
   { key: "reviewRate", label: "留评率", group: "评论", width: 80, editable: true },
-  // Listing质量
   { key: "lqs", label: "LQS", group: "Listing", width: 60, type: "number", editable: true },
   { key: "hasAPlus", label: "A+", group: "Listing", width: 50, type: "boolean" },
   { key: "hasVideo", label: "视频", group: "Listing", width: 50, type: "boolean" },
   { key: "hasBrandStory", label: "品牌故事", group: "Listing", width: 70, type: "boolean" },
   { key: "hasAmazonChoice", label: "AC", group: "Listing", width: 50, type: "boolean" },
-  // 卖家信息
   { key: "sellerCount", label: "卖家数", group: "卖家", width: 70, type: "number", editable: true },
   { key: "fulfillment", label: "配送方式", group: "卖家", width: 80, editable: true },
   { key: "buyboxSeller", label: "Buybox卖家", group: "卖家", width: 120, editable: true },
   { key: "buyboxType", label: "BuyBox类型", group: "卖家", width: 90, editable: true },
   { key: "sellerLocation", label: "卖家所属地", group: "卖家", width: 100, editable: true },
-  // 时间
   { key: "listingDate", label: "上架时间", group: "时间", width: 100, editable: true },
   { key: "listingDays", label: "上架天数", group: "时间", width: 80, type: "number", editable: true },
-  // 物流
   { key: "productWeight", label: "商品重量", group: "物流", width: 90, editable: true },
   { key: "productSize", label: "商品尺寸", group: "物流", width: 120, editable: true },
   { key: "packageWeight", label: "包装重量", group: "物流", width: 90, editable: true },
   { key: "packageSize", label: "包装尺寸", group: "物流", width: 120, editable: true },
   { key: "packageSizeTier", label: "尺寸分段", group: "物流", width: 90, editable: true },
-  // 五点描述
   { key: "bulletPoints", label: "产品卖点(五点)", group: "内容", width: 300, editable: true },
 ];
 
 const ROW_HEIGHT = 40;
-const HEADER_HEIGHT = 72;
 const PAGE_SIZE = 50;
+
+// Color palette for multi-ASIN chart lines
+const CHART_COLORS = [
+  "#2563eb", "#dc2626", "#16a34a", "#ea580c", "#9333ea",
+  "#0891b2", "#ca8a04", "#be185d", "#4f46e5", "#059669",
+  "#d97706", "#7c3aed", "#0d9488", "#e11d48", "#6366f1",
+];
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── Tag Dropdown Editor ─────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+function TagDropdownEditor({
+  value,
+  options,
+  onSave,
+  onCancel,
+}: {
+  value: string;
+  options: string[];
+  onSave: (v: string) => void;
+  onCancel: () => void;
+}) {
+  const [inputValue, setInputValue] = useState(value);
+  const [showDropdown, setShowDropdown] = useState(true);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const filteredOptions = useMemo(() => {
+    if (!inputValue) return options;
+    const lower = inputValue.toLowerCase();
+    return options.filter(o => o.toLowerCase().includes(lower));
+  }, [options, inputValue]);
+
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-0.5">
+        <Input
+          ref={inputRef}
+          value={inputValue}
+          onChange={e => { setInputValue(e.target.value); setShowDropdown(true); }}
+          className="h-6 text-xs px-1"
+          autoFocus
+          placeholder="输入或选择标签值..."
+          onKeyDown={e => {
+            if (e.key === "Enter") { onSave(inputValue); setShowDropdown(false); }
+            if (e.key === "Escape") onCancel();
+          }}
+          onFocus={() => setShowDropdown(true)}
+        />
+        <button onClick={() => { onSave(inputValue); setShowDropdown(false); }}
+          className="text-emerald-600 hover:text-emerald-700 p-0.5 flex-shrink-0">
+          <Save className="h-3 w-3" />
+        </button>
+        <button onClick={onCancel}
+          className="text-muted-foreground hover:text-foreground p-0.5 flex-shrink-0">
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+      {showDropdown && filteredOptions.length > 0 && (
+        <div className="absolute top-7 left-0 z-50 bg-popover border rounded-md shadow-lg max-h-40 overflow-y-auto w-full min-w-[150px]">
+          {filteredOptions.map((opt, i) => (
+            <button
+              key={i}
+              className={`w-full text-left px-2 py-1 text-xs hover:bg-accent transition-colors ${opt === inputValue ? "bg-accent/50 font-medium" : ""}`}
+              onMouseDown={e => {
+                e.preventDefault();
+                setInputValue(opt);
+                onSave(opt);
+                setShowDropdown(false);
+              }}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── Sales Trend Chart Dialog ────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+
+function SalesTrendDialog({
+  open,
+  onClose,
+  selectedAsins,
+  products,
+  historyCols,
+  onToggleAsin,
+  allAsins,
+}: {
+  open: boolean;
+  onClose: () => void;
+  selectedAsins: string[];
+  products: any[];
+  historyCols: string[];
+  onToggleAsin: (asin: string) => void;
+  allAsins: string[];
+}) {
+  // Build chart data: each point = { month, ASIN1: value, ASIN2: value, ... }
+  const chartData = useMemo(() => {
+    return historyCols.map(month => {
+      const point: Record<string, any> = { month };
+      for (const asin of selectedAsins) {
+        const product = products.find((p: any) => p.asin === asin);
+        if (product?.monthlySalesHistory) {
+          try {
+            const history = JSON.parse(product.monthlySalesHistory);
+            point[asin] = history[month] ?? null;
+          } catch {
+            point[asin] = null;
+          }
+        }
+      }
+      return point;
+    });
+  }, [historyCols, selectedAsins, products]);
+
+  // Get brand+title for display
+  const getProductLabel = (asin: string) => {
+    const p = products.find((pr: any) => pr.asin === asin);
+    if (!p) return asin;
+    const brand = p.brand || "";
+    const title = (p.title || "").slice(0, 30);
+    return `${asin} (${brand} ${title}${(p.title || "").length > 30 ? "..." : ""})`;
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-primary" />
+            历史月销量趋势对比
+          </DialogTitle>
+        </DialogHeader>
+
+        {/* ASIN selector */}
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">点击选择/取消ASIN进行对比（最多15个）：</p>
+          <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2 border rounded-md bg-muted/30">
+            {allAsins.map((asin, i) => {
+              const isSelected = selectedAsins.includes(asin);
+              const product = products.find((p: any) => p.asin === asin);
+              const brand = product?.brand || "";
+              return (
+                <button
+                  key={asin}
+                  onClick={() => onToggleAsin(asin)}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border transition-all ${
+                    isSelected
+                      ? "border-primary bg-primary/10 text-primary font-medium"
+                      : "border-border bg-background text-muted-foreground hover:border-primary/50"
+                  }`}
+                >
+                  {isSelected && (
+                    <span className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: CHART_COLORS[selectedAsins.indexOf(asin) % CHART_COLORS.length] }} />
+                  )}
+                  <span>{asin}</span>
+                  {brand && <span className="opacity-60">({brand})</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Chart */}
+        {selectedAsins.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+            <BarChart3 className="h-12 w-12 mb-3 opacity-30" />
+            <p className="text-sm">请选择至少一个ASIN查看销量趋势</p>
+          </div>
+        ) : (
+          <div className="w-full" style={{ height: Math.max(350, 350) }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData} margin={{ top: 10, right: 30, left: 20, bottom: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis
+                  dataKey="month"
+                  tick={{ fontSize: 10 }}
+                  angle={-45}
+                  textAnchor="end"
+                  height={60}
+                  stroke="hsl(var(--muted-foreground))"
+                />
+                <YAxis
+                  tick={{ fontSize: 10 }}
+                  stroke="hsl(var(--muted-foreground))"
+                  tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--popover))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "8px",
+                    fontSize: "11px",
+                  }}
+                  formatter={(value: number, name: string) => {
+                    const label = getProductLabel(name);
+                    return [value != null ? `$${value.toLocaleString()}` : "-", label];
+                  }}
+                />
+                <Legend
+                  wrapperStyle={{ fontSize: "10px", paddingTop: "8px" }}
+                  formatter={(value: string) => {
+                    const p = products.find((pr: any) => pr.asin === value);
+                    return `${value}${p?.brand ? ` (${p.brand})` : ""}`;
+                  }}
+                />
+                {selectedAsins.map((asin, idx) => (
+                  <Line
+                    key={asin}
+                    type="monotone"
+                    dataKey={asin}
+                    stroke={CHART_COLORS[idx % CHART_COLORS.length]}
+                    strokeWidth={2}
+                    dot={{ r: 2 }}
+                    activeDot={{ r: 4 }}
+                    connectNulls
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* Summary table */}
+        {selectedAsins.length > 0 && (
+          <div className="border rounded-md overflow-auto max-h-48">
+            <table className="text-xs w-full">
+              <thead className="bg-muted/50 sticky top-0">
+                <tr>
+                  <th className="px-2 py-1.5 text-left font-medium border-b">ASIN</th>
+                  <th className="px-2 py-1.5 text-left font-medium border-b">品牌</th>
+                  <th className="px-2 py-1.5 text-right font-medium border-b">最高月销</th>
+                  <th className="px-2 py-1.5 text-right font-medium border-b">最低月销</th>
+                  <th className="px-2 py-1.5 text-right font-medium border-b">平均月销</th>
+                  <th className="px-2 py-1.5 text-right font-medium border-b">数据月数</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedAsins.map((asin, idx) => {
+                  const product = products.find((p: any) => p.asin === asin);
+                  let values: number[] = [];
+                  if (product?.monthlySalesHistory) {
+                    try {
+                      const h = JSON.parse(product.monthlySalesHistory);
+                      values = Object.values(h).filter((v): v is number => typeof v === "number" && v > 0);
+                    } catch {}
+                  }
+                  const max = values.length > 0 ? Math.max(...values) : 0;
+                  const min = values.length > 0 ? Math.min(...values) : 0;
+                  const avg = values.length > 0 ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : 0;
+                  return (
+                    <tr key={asin} className="hover:bg-accent/30">
+                      <td className="px-2 py-1 border-b">
+                        <div className="flex items-center gap-1">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }} />
+                          {asin}
+                        </div>
+                      </td>
+                      <td className="px-2 py-1 border-b">{product?.brand || "-"}</td>
+                      <td className="px-2 py-1 border-b text-right font-mono">${max.toLocaleString()}</td>
+                      <td className="px-2 py-1 border-b text-right font-mono">${min.toLocaleString()}</td>
+                      <td className="px-2 py-1 border-b text-right font-mono">${avg.toLocaleString()}</td>
+                      <td className="px-2 py-1 border-b text-right">{values.length}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // ─── PanoramaTable Component ─────────────────────────────────────
@@ -100,6 +377,8 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(0);
   const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(new Set());
+  const [trendOpen, setTrendOpen] = useState(false);
+  const [selectedTrendAsins, setSelectedTrendAsins] = useState<string[]>([]);
   const tableRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
 
@@ -107,11 +386,11 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
   const { data: statusData } = trpc.devPanorama.getStatus.useQuery({ projectId });
   const updateFieldMutation = trpc.devPanorama.updateProductField.useMutation({
     onSuccess: () => { utils.devPanorama.getData.invalidate({ projectId }); toast.success("已更新"); },
-    onError: (e) => toast.error("更新失败: " + e.message),
+    onError: (e: any) => toast.error("更新失败: " + e.message),
   });
   const updateTagMutation = trpc.devPanorama.updateProductTag.useMutation({
     onSuccess: () => { utils.devPanorama.getData.invalidate({ projectId }); toast.success("标签已更新"); },
-    onError: (e) => toast.error("标签更新失败: " + e.message),
+    onError: (e: any) => toast.error("标签更新失败: " + e.message),
   });
   const confirmMutation = trpc.devPanorama.confirm.useMutation({
     onSuccess: () => {
@@ -119,7 +398,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
       utils.devPanorama.getData.invalidate({ projectId });
       toast.success("全景分析表已确认锁定");
     },
-    onError: (e) => toast.error("确认失败: " + e.message),
+    onError: (e: any) => toast.error("确认失败: " + e.message),
   });
   const unlockMutation = trpc.devPanorama.unlock.useMutation({
     onSuccess: () => {
@@ -127,10 +406,10 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
       utils.devPanorama.getData.invalidate({ projectId });
       toast.success("全景分析表已解锁");
     },
-    onError: (e) => toast.error("解锁失败: " + e.message),
+    onError: (e: any) => toast.error("解锁失败: " + e.message),
   });
   const exportMutation = trpc.devPanorama.exportCsv.useMutation({
-    onSuccess: (result) => {
+    onSuccess: (result: any) => {
       const blob = new Blob([result.csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -140,10 +419,35 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
       URL.revokeObjectURL(url);
       toast.success("导出成功");
     },
-    onError: (e) => toast.error("导出失败: " + e.message),
+    onError: (e: any) => toast.error("导出失败: " + e.message),
   });
 
   const isConfirmed = statusData?.confirmed ?? false;
+
+  // Build tag value options per category (for dropdown)
+  const tagValueOptions = useMemo(() => {
+    if (!data?.tagItems) return {};
+    const map: Record<string, Set<string>> = {};
+    for (const item of data.tagItems) {
+      const catName = item.tagName;
+      if (!map[catName]) map[catName] = new Set();
+      if (item.tagValue) map[catName].add(item.tagValue);
+    }
+    // Also collect existing product tag values
+    if (data.tagMap) {
+      for (const asinTags of Object.values(data.tagMap)) {
+        for (const [dimName, dimValue] of Object.entries(asinTags as Record<string, string>)) {
+          if (!map[dimName]) map[dimName] = new Set();
+          if (dimValue) map[dimName].add(dimValue);
+        }
+      }
+    }
+    const result: Record<string, string[]> = {};
+    for (const [k, v] of Object.entries(map)) {
+      result[k] = Array.from(v).sort();
+    }
+    return result;
+  }, [data?.tagItems, data?.tagMap]);
 
   // Build columns: fixed + history + tags
   const columns = useMemo(() => {
@@ -166,13 +470,11 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
     return [...FIXED_COLUMNS, ...historyCols, ...tagCols];
   }, [data]);
 
-  // Visible columns (filter by hidden groups)
   const visibleColumns = useMemo(() =>
     columns.filter(c => !hiddenGroups.has(c.group)),
     [columns, hiddenGroups]
   );
 
-  // Column groups for toggle
   const columnGroups = useMemo(() => {
     const groups: string[] = [];
     for (const c of columns) {
@@ -181,7 +483,6 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
     return groups;
   }, [columns]);
 
-  // Get cell value
   const getCellValue = useCallback((product: any, col: ColumnDef) => {
     if (col.key.startsWith("history_")) {
       const monthKey = col.key.replace("history_", "");
@@ -201,7 +502,6 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
     return product[col.key] ?? "";
   }, [data]);
 
-  // Filter products
   const filteredProducts = useMemo(() => {
     if (!data?.products) return [];
     let products = [...data.products];
@@ -228,17 +528,17 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
   const totalPages = Math.ceil(filteredProducts.length / PAGE_SIZE);
   const pagedProducts = filteredProducts.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
-  // Handle cell edit
   const startEdit = (productId: number, field: string, currentValue: any) => {
     if (isConfirmed) { toast.info("表格已锁定，请先解锁后编辑"); return; }
     setEditingCell({ productId, field });
     setEditValue(String(currentValue ?? ""));
   };
 
-  const saveEdit = () => {
+  const saveEdit = (overrideValue?: string) => {
     if (!editingCell) return;
     const col = columns.find(c => c.key === editingCell.field);
     if (!col) return;
+    const finalValue = overrideValue !== undefined ? overrideValue : editValue;
 
     if (col.key.startsWith("tag_")) {
       const tagKey = col.key.replace("tag_", "");
@@ -250,18 +550,17 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
             projectId,
             asin: product.asin || "",
             dimensionName: tagCategory.name,
-            dimensionValue: editValue,
+            dimensionValue: finalValue,
           });
         }
       }
     } else if (col.key.startsWith("history_")) {
-      // Update history field
       const monthKey = col.key.replace("history_", "");
       const product = data?.products?.find((p: any) => p.id === editingCell.productId);
       if (product) {
         try {
           const history = JSON.parse(product.monthlySalesHistory || "{}");
-          history[monthKey] = editValue ? Number(editValue) : null;
+          history[monthKey] = finalValue ? Number(finalValue) : null;
           updateFieldMutation.mutate({
             productId: editingCell.productId,
             field: "monthlySalesHistory",
@@ -272,7 +571,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
         }
       }
     } else {
-      const value = col.type === "number" ? (editValue ? Number(editValue) : null) : editValue;
+      const value = col.type === "number" ? (finalValue ? Number(finalValue) : null) : finalValue;
       updateFieldMutation.mutate({
         productId: editingCell.productId,
         field: editingCell.field,
@@ -302,6 +601,25 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
     });
   };
 
+  // Trend chart helpers
+  const openTrendForAsin = (asin: string) => {
+    setSelectedTrendAsins([asin]);
+    setTrendOpen(true);
+  };
+
+  const toggleTrendAsin = (asin: string) => {
+    setSelectedTrendAsins(prev => {
+      if (prev.includes(asin)) return prev.filter(a => a !== asin);
+      if (prev.length >= 15) { toast.info("最多选择15个ASIN进行对比"); return prev; }
+      return [...prev, asin];
+    });
+  };
+
+  const allAsins = useMemo(() =>
+    (data?.products || []).map((p: any) => p.asin).filter(Boolean),
+    [data?.products]
+  );
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -313,6 +631,13 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
 
   const totalProducts = data?.products?.length || 0;
   const hasData = totalProducts > 0;
+
+  // Get tag category name from column key
+  const getTagCategoryName = (colKey: string) => {
+    const tagKey = colKey.replace("tag_", "");
+    const tc = data?.tagCategories?.find((t: any) => t.key === tagKey);
+    return tc?.name || "";
+  };
 
   return (
     <div className="space-y-4">
@@ -335,6 +660,12 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
               )}
             </div>
             <div className="flex items-center gap-2">
+              {hasData && (
+                <Button size="sm" variant="outline" className="gap-1.5 text-xs"
+                  onClick={() => { setSelectedTrendAsins(allAsins.slice(0, 5)); setTrendOpen(true); }}>
+                  <TrendingUp className="h-3.5 w-3.5" />销量趋势
+                </Button>
+              )}
               {isConfirmed ? (
                 <Button size="sm" variant="outline" className="gap-1.5 text-xs"
                   onClick={() => unlockMutation.mutate({ projectId })}
@@ -436,7 +767,9 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                           const value = getCellValue(product, col);
                           const isEditing = editingCell?.productId === product.id && editingCell?.field === col.key;
                           const canEdit = col.editable && !isConfirmed;
+                          const isTagCol = col.key.startsWith("tag_");
 
+                          // Custom render (e.g. image)
                           if (col.render && !isEditing) {
                             return (
                               <td key={col.key} className="px-2 py-1 border-r border-b"
@@ -446,6 +779,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                             );
                           }
 
+                          // Boolean display
                           if (col.type === "boolean" && !isEditing) {
                             return (
                               <td key={col.key} className="px-2 py-1 border-r border-b text-center"
@@ -459,6 +793,43 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                             );
                           }
 
+                          // ASIN column: add trend icon
+                          if (col.key === "asin" && !isEditing) {
+                            return (
+                              <td key={col.key} className="px-2 py-1 border-r border-b"
+                                style={{ width: col.width, minWidth: col.width }}>
+                                <div className="flex items-center gap-1">
+                                  <span className="truncate">{String(value || "")}</span>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); openTrendForAsin(String(value)); }}
+                                    className="text-muted-foreground hover:text-primary transition-colors flex-shrink-0"
+                                    title="查看销量趋势"
+                                  >
+                                    <TrendingUp className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              </td>
+                            );
+                          }
+
+                          // Tag column editing: dropdown + free input
+                          if (isEditing && isTagCol) {
+                            const catName = getTagCategoryName(col.key);
+                            const options = tagValueOptions[catName] || [];
+                            return (
+                              <td key={col.key} className="px-1 py-0.5 border-r border-b"
+                                style={{ width: col.width, minWidth: col.width, overflow: "visible" }}>
+                                <TagDropdownEditor
+                                  value={editValue}
+                                  options={options}
+                                  onSave={(v) => saveEdit(v)}
+                                  onCancel={cancelEdit}
+                                />
+                              </td>
+                            );
+                          }
+
+                          // Regular editing
                           if (isEditing) {
                             return (
                               <td key={col.key} className="px-1 py-0.5 border-r border-b"
@@ -467,7 +838,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                                   <Input value={editValue} onChange={e => setEditValue(e.target.value)}
                                     className="h-6 text-xs px-1" autoFocus
                                     onKeyDown={e => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") cancelEdit(); }} />
-                                  <button onClick={saveEdit} className="text-emerald-600 hover:text-emerald-700 p-0.5">
+                                  <button onClick={() => saveEdit()} className="text-emerald-600 hover:text-emerald-700 p-0.5">
                                     <Save className="h-3 w-3" />
                                   </button>
                                   <button onClick={cancelEdit} className="text-muted-foreground hover:text-foreground p-0.5">
@@ -478,6 +849,21 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                             );
                           }
 
+                          // Tag column display: show as badge
+                          if (isTagCol && value) {
+                            return (
+                              <td key={col.key}
+                                className={`px-2 py-1 border-r border-b ${canEdit ? "cursor-pointer hover:bg-primary/5" : ""}`}
+                                style={{ width: col.width, minWidth: col.width, maxWidth: col.width }}
+                                onClick={() => canEdit && startEdit(product.id, col.key, value)}>
+                                <Badge variant="secondary" className="text-[10px] font-normal truncate max-w-full">
+                                  {String(value)}
+                                </Badge>
+                              </td>
+                            );
+                          }
+
+                          // Default cell
                           return (
                             <td key={col.key}
                               className={`px-2 py-1 border-r border-b truncate ${canEdit ? "cursor-pointer hover:bg-primary/5" : ""}`}
@@ -537,6 +923,17 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
           </CardContent>
         </Card>
       )}
+
+      {/* Sales Trend Dialog */}
+      <SalesTrendDialog
+        open={trendOpen}
+        onClose={() => setTrendOpen(false)}
+        selectedAsins={selectedTrendAsins}
+        products={data?.products || []}
+        historyCols={data?.historyCols || []}
+        onToggleAsin={toggleTrendAsin}
+        allAsins={allAsins}
+      />
     </div>
   );
 }

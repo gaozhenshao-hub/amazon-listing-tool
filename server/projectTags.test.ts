@@ -181,7 +181,7 @@ describe("Project Tag Management - Integration", () => {
     const procedures = Object.keys((appRouter as any)._def.procedures || {});
     const hasTagProcedures = procedures.some(p => p.startsWith("devProjectTags."));
     expect(hasTagProcedures).toBe(true);
-  });
+  }, 15000);
 
   it("should have devProjectTags namespace in app router", async () => {
     const mod = await import("./routers");

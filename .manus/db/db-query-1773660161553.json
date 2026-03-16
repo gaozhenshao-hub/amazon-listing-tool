@@ -1,0 +1,30 @@
+{
+  "query": "SELECT \n  projectId,\n  COUNT(*) as total,\n  SUM(CASE WHEN title IS NOT NULL AND title != '' THEN 1 ELSE 0 END) as has_title,\n  SUM(CASE WHEN bulletPoints IS NOT NULL AND bulletPoints != '' THEN 1 ELSE 0 END) as has_bp,\n  SUM(CASE WHEN monthlySalesHistory IS NOT NULL AND monthlySalesHistory != '' THEN 1 ELSE 0 END) as has_hist,\n  SUM(CASE WHEN price IS NOT NULL AND price > 0 THEN 1 ELSE 0 END) as has_price,\n  SUM(CASE WHEN parentAsin IS NOT NULL AND parentAsin != '' THEN 1 ELSE 0 END) as has_parent,\n  SUM(CASE WHEN fbaFee IS NOT NULL AND fbaFee != '' AND fbaFee != '0' THEN 1 ELSE 0 END) as has_fba\nFROM dev_products \nGROUP BY projectId;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT \n  projectId,\n  COUNT(*) as total,\n  SUM(CASE WHEN title IS NOT NULL AND title != '' THEN 1 ELSE 0 END) as has_title,\n  SUM(CASE WHEN bulletPoints IS NOT NULL AND bulletPoints != '' THEN 1 ELSE 0 END) as has_bp,\n  SUM(CASE WHEN monthlySalesHistory IS NOT NULL AND monthlySalesHistory != '' THEN 1 ELSE 0 END) as has_hist,\n  SUM(CASE WHEN price IS NOT NULL AND price > 0 THEN 1 ELSE 0 END) as has_price,\n  SUM(CASE WHEN parentAsin IS NOT NULL AND parentAsin != '' THEN 1 ELSE 0 END) as has_parent,\n  SUM(CASE WHEN fbaFee IS NOT NULL AND fbaFee != '' AND fbaFee != '0' THEN 1 ELSE 0 END) as has_fba\nFROM dev_products \nGROUP BY projectId;",
+  "rows": [
+    {
+      "projectId": "60002",
+      "total": "53",
+      "has_title": "53",
+      "has_bp": "53",
+      "has_hist": "53",
+      "has_price": "0",
+      "has_parent": "0",
+      "has_fba": "0"
+    },
+    {
+      "projectId": "60001",
+      "total": "53",
+      "has_title": "0",
+      "has_bp": "0",
+      "has_hist": "53",
+      "has_price": "0",
+      "has_parent": "0",
+      "has_fba": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "projectId\ttotal\thas_title\thas_bp\thas_hist\thas_price\thas_parent\thas_fba\n60002\t53\t53\t53\t53\t0\t0\t0\n60001\t53\t0\t0\t53\t0\t0\t0\n",
+  "stderr": "",
+  "execution_time_ms": 67
+}
