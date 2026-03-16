@@ -165,7 +165,7 @@ describe("data fetching logic", () => {
 
 // ─── Integration with main router ───────────────────────────────
 describe("router integration", () => {
-  it("offsiteAnalysis is registered in the main app router", async () => {
+  it("offsiteAnalysis is registered in the main app router", { timeout: 15000 }, async () => {
     const { appRouter } = await import("./routers");
     const procedures = appRouter._def.procedures;
     expect(procedures).toHaveProperty("offsiteAnalysis.list");

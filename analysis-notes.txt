@@ -1,0 +1,34 @@
+BUG ANALYSIS: Sales Upload Error
+
+The parseSalesData function maps columns using these Chinese keys:
+- r["标题"] → but actual column is "商品标题"
+- r["评论数"] → but actual column is "评分数" (review count)
+- r["月销售额"] → but actual column is "月销售额($)"
+- r["配送方式"] → matches
+- r["卖家"] → but actual column is "Buybox卖家"
+- r["卖家所在地"] → but actual column is "卖家所属地"
+- r["类目"] → but actual column is "大类目" or "类目路径"
+- r["子类目"] → but actual column is "小类目"
+- r["图片"] → matches (but contains empty values, actual image is "商品主图")
+- r["搜索排名"] → matches
+- r["价格"] → but actual column is "价格($)"
+- r["评分"] → matches
+- r["月销量"] → matches
+- r["BSR"] → but actual column is "大类BSR" or "小类BSR"
+- r["上架时间"] → matches
+- r["变体数"] → matches
+
+Key issues:
+1. Column names have $ suffixes: "价格($)", "月销售额($)", "子体销售额($)"
+2. Title column is "商品标题" not "标题"
+3. Review count is "评分数" not "评论数"
+4. BSR is "大类BSR" or "小类BSR" not "BSR"
+5. Seller is "Buybox卖家" not "卖家"
+6. Seller location is "卖家所属地" not "卖家所在地"
+7. Category is "大类目" not "类目"
+8. Subcategory is "小类目" not "子类目"
+9. Image URL is "商品主图" not "图片"
+
+Also: the "月新增评分数" column has a line break in the header name.
+
+SOLUTION: Add these additional column name mappings to parseSalesData.

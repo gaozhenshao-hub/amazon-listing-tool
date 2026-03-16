@@ -43,10 +43,11 @@ const FILE_TYPES = [
   {
     key: "reviews" as const,
     label: "评论数据",
-    desc: "卖家精灵 Reviews 导出文件，包含评论内容、评分、日期等",
+    desc: "卖家精灵 Reviews 导出文件，支持批量上传多个ASIN的评论文件",
     icon: MessageSquare,
     accept: ".xlsx,.xls,.csv",
-    example: "B0*-US-Reviews-*.xlsx",
+    example: "B0*-US-Reviews-*.xlsx（支持多文件）",
+    multiple: true,
   },
   {
     key: "history_sales" as const,
@@ -143,27 +144,47 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
   const parseSalesData = async (rows: any[]) => {
     const products = rows.map((r: any) => {
       // Map seller wizard column names (Chinese/English)
+      // Support 卖家精灵 export format with $ suffixes and various naming conventions
       const asin = r["ASIN"] || r["asin"] || "";
       if (!asin) return null;
+
+      // Helper: try multiple column names, return first non-empty value
+      const pick = (...keys: string[]) => {
+        for (const k of keys) {
+          if (r[k] !== undefined && r[k] !== "") return r[k];
+        }
+        return "";
+      };
+      const pickNum = (...keys: string[]) => {
+        for (const k of keys) {
+          const v = Number(r[k]);
+          if (!isNaN(v) && r[k] !== "" && r[k] !== undefined) return v;
+        }
+        return 0;
+      };
+
       return {
         asin,
-        title: r["标题"] || r["Title"] || r["title"] || "",
-        brand: r["品牌"] || r["Brand"] || r["brand"] || "",
-        price: String(r["价格"] || r["Price"] || r["price"] || ""),
-        rating: String(r["评分"] || r["Rating"] || r["rating"] || ""),
-        reviewCount: Number(r["评论数"] || r["Reviews"] || r["Review Count"] || r["reviews"] || 0),
-        monthlySales: Number(r["月销量"] || r["Monthly Sales"] || r["Est. Monthly Sales"] || 0),
-        bsr: Number(r["BSR"] || r["Best Sellers Rank"] || r["bsr"] || 0),
-        monthlyRevenue: Number(r["月销售额"] || r["Monthly Revenue"] || r["Est. Monthly Revenue"] || 0),
-        listingDate: r["上架时间"] || r["Date First Available"] || r["Listing Date"] || "",
-        fulfillment: r["配送方式"] || r["Fulfillment"] || r["FBA/FBM"] || "",
-        sellerName: r["卖家"] || r["Seller"] || r["Seller Name"] || "",
-        sellerLocation: r["卖家所在地"] || r["Seller Location"] || "",
-        variantCount: Number(r["变体数"] || r["Variants"] || r["Variation Count"] || 0),
-        category: r["类目"] || r["Category"] || r["Main Category"] || "",
-        subcategory: r["子类目"] || r["Sub Category"] || r["Subcategory"] || "",
-        imageUrl: r["图片"] || r["Image"] || r["Main Image"] || "",
-        searchRank: Number(r["搜索排名"] || r["Search Rank"] || r["Rank"] || r["序号"] || 0),
+        title: pick("商品标题", "标题", "Title", "title"),
+        brand: pick("品牌", "Brand", "brand"),
+        price: String(pick("价格($)", "价格", "Price", "price") || ""),
+        rating: String(pick("评分", "Rating", "rating") || ""),
+        reviewCount: pickNum("评分数", "评论数", "Reviews", "Review Count", "reviews"),
+        monthlySales: pickNum("月销量", "Monthly Sales", "Est. Monthly Sales"),
+        bsr: pickNum("小类BSR", "大类BSR", "BSR", "Best Sellers Rank", "bsr"),
+        monthlyRevenue: pickNum("月销售额($)", "月销售额", "Monthly Revenue", "Est. Monthly Revenue"),
+        listingDate: pick("上架时间", "Date First Available", "Listing Date"),
+        fulfillment: pick("配送方式", "Fulfillment", "FBA/FBM"),
+        sellerName: pick("Buybox卖家", "卖家", "Seller", "Seller Name"),
+        sellerLocation: pick("卖家所属地", "卖家所在地", "Seller Location"),
+        variantCount: pickNum("变体数", "Variants", "Variation Count"),
+        category: pick("大类目", "类目路径", "类目", "Category", "Main Category"),
+        subcategory: pick("小类目", "子类目", "Sub Category", "Subcategory"),
+        imageUrl: pick("商品主图", "图片", "Image", "Main Image"),
+        searchRank: pickNum("搜索排名", "Search Rank", "Rank", "序号", "#"),
+        // Extended fields from 卖家精灵
+        bulletPoints: pick("产品卖点", "Bullet Points"),
+        specifications: pick("详细参数", "SKU"),
       };
     }).filter(Boolean) as any[];
 
@@ -293,17 +314,115 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
     }
   };
 
+  // Handle batch file upload for reviews
+  const handleBatchFileSelect = useCallback(async (fileType: FileType, files: FileList) => {
+    const fileArray = Array.from(files);
+    if (fileArray.length === 0) return;
+
+    updateState(fileType, {
+      status: "reading",
+      fileName: `${fileArray.length} 个文件`,
+      error: undefined,
+    });
+
+    try {
+      let totalRecords = 0;
+      const XLSX = await import("xlsx");
+
+      for (let fi = 0; fi < fileArray.length; fi++) {
+        const file = fileArray[fi];
+        updateState(fileType, {
+          status: "parsing",
+          fileName: `处理中 (${fi + 1}/${fileArray.length}): ${file.name}`,
+        });
+
+        const arrayBuffer = await file.arrayBuffer();
+        const base64 = btoa(
+          new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+        );
+
+        // Upload to S3
+        await uploadFileMutation.mutateAsync({
+          projectId,
+          fileName: file.name,
+          fileType,
+          fileData: base64,
+        });
+
+        // Parse Excel
+        const workbook = XLSX.read(arrayBuffer, { type: "array" });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows: any[] = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+
+        if (rows.length === 0) continue;
+
+        // Try to extract ASIN from filename (e.g., B0G2WP66RW-US-Reviews-xxx.xlsx)
+        const asinMatch = file.name.match(/^(B[A-Z0-9]{9,})/i);
+        const fileAsin = asinMatch ? asinMatch[1].toUpperCase() : "";
+
+        // Parse reviews
+        const reviews = rows.map((r: any) => ({
+          asin: r["ASIN"] || r["asin"] || fileAsin || "",
+          title: r["标题"] || r["Title"] || r["Review Title"] || "",
+          content: r["内容"] || r["Content"] || r["Review Content"] || r["Review"] || r["评论内容"] || "",
+          rating: Number(r["评分"] || r["Rating"] || r["Star Rating"] || r["Stars"] || r["星级"] || 0),
+          reviewDate: r["日期"] || r["Date"] || r["Review Date"] || r["评论日期"] || "",
+          isVP: Boolean(r["VP"] || r["Verified Purchase"] || r["verified_purchase"] || r["认证购买"]),
+          variant: r["变体"] || r["Variant"] || r["Size"] || r["Color"] || r["颜色"] || r["尺寸"] || "",
+          helpfulCount: Number(r["有用数"] || r["Helpful"] || r["Helpful Votes"] || 0),
+        })).filter((r: any) => r.content || r.title);
+
+        if (reviews.length > 0) {
+          for (let i = 0; i < reviews.length; i += 100) {
+            await saveReviewsMutation.mutateAsync({
+              projectId,
+              reviews: reviews.slice(i, i + 100),
+            });
+          }
+          totalRecords += reviews.length;
+        }
+      }
+
+      updateState(fileType, {
+        status: "done",
+        fileName: `${fileArray.length} 个文件`,
+        recordCount: totalRecords,
+      });
+      toast.success(`评论数据批量上传成功，共 ${fileArray.length} 个文件，${totalRecords} 条评论`);
+      utils.devProject.getById.invalidate({ id: projectId });
+      utils.devProject.getProducts.invalidate({ projectId });
+      onDataUploaded?.();
+    } catch (err: any) {
+      updateState(fileType, { status: "error", error: err.message || "批量解析失败" });
+      toast.error(`批量解析失败: ${err.message}`);
+    }
+  }, [projectId, uploadFileMutation, saveReviewsMutation, utils, onDataUploaded, updateState]);
+
   const handleDrop = useCallback((fileType: FileType, e: React.DragEvent) => {
     e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file) handleFileSelect(fileType, file);
-  }, [handleFileSelect]);
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+    const ftConfig = FILE_TYPES.find(f => f.key === fileType);
+    if (ftConfig && 'multiple' in ftConfig && ftConfig.multiple && files.length > 1) {
+      handleBatchFileSelect(fileType, files);
+    } else {
+      handleFileSelect(fileType, files[0]);
+    }
+  }, [handleFileSelect, handleBatchFileSelect]);
 
   const handleInputChange = useCallback((fileType: FileType, e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFileSelect(fileType, file);
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    // Check if this file type supports batch upload
+    const ftConfig = FILE_TYPES.find(f => f.key === fileType);
+    if (ftConfig && 'multiple' in ftConfig && ftConfig.multiple && files.length > 1) {
+      handleBatchFileSelect(fileType, files);
+    } else {
+      handleFileSelect(fileType, files[0]);
+    }
     e.target.value = ""; // Reset input
-  }, [handleFileSelect]);
+  }, [handleFileSelect, handleBatchFileSelect]);
 
   const totalDone = Object.values(uploadStates).filter(s => s.status === "done").length;
   const totalRecords = Object.values(uploadStates).reduce((sum, s) => sum + (s.recordCount || 0), 0);
@@ -410,11 +529,14 @@ export default function DevDataUpload({ projectId, onDataUploaded }: Props) {
                       type="file"
                       accept={ft.accept}
                       className="hidden"
+                      multiple={'multiple' in ft && ft.multiple ? true : undefined}
                       onChange={(e) => handleInputChange(ft.key, e)}
                     />
                     <div className="border-2 border-dashed border-muted-foreground/20 rounded-lg p-4 text-center hover:border-primary/40 transition-colors">
                       <Upload className="h-5 w-5 mx-auto text-muted-foreground/40 mb-1" />
-                      <p className="text-xs text-muted-foreground">拖拽或点击上传</p>
+                      <p className="text-xs text-muted-foreground">
+                        {'multiple' in ft && ft.multiple ? '拖拽或点击批量上传' : '拖拽或点击上传'}
+                      </p>
                       <p className="text-xs text-muted-foreground/60 mt-0.5">格式: {ft.example}</p>
                     </div>
                   </label>
