@@ -453,14 +453,33 @@ export const devProjectTagsRouter = router({
         throw new Error("请先导入产品数据后再生成标签");
       }
 
-      const productContext = products.slice(0, 20).map((p: any) => ({
-        title: p.title || "",
-        brand: p.brand || "",
-        price: p.price || "",
-        bulletPoints: p.bulletPoints ? String(p.bulletPoints).slice(0, 500) : "",
-        specifications: p.specifications ? String(p.specifications).slice(0, 500) : "",
-        category: p.category || "",
-      }));
+      // Check if bullet_points data is confirmed (preferred data source)
+      const { getDataConfirmationStatus } = await import("../devDb");
+      const dataStatus = await getDataConfirmationStatus(input.projectId);
+      const bpStatus = dataStatus.bullet_points;
+      const hasBulletPointsData = typeof bpStatus === 'object' && bpStatus !== null && 'confirmed' in bpStatus ? bpStatus.confirmed : false;
+
+      // Build rich product context with full bullet points and title
+      const productContext = products.slice(0, 30).map((p: any) => {
+        const ctx: any = {
+          asin: p.asin || "",
+          title: p.title || "",
+          brand: p.brand || "",
+          price: p.price || "",
+          category: p.category || "",
+        };
+        // Include full bullet points text (not truncated) for better analysis
+        if (p.bulletPoints) {
+          ctx.bulletPoints = String(p.bulletPoints).slice(0, 2000);
+        }
+        if (p.description) {
+          ctx.description = String(p.description).slice(0, 500);
+        }
+        if (p.specifications) {
+          ctx.specifications = String(p.specifications).slice(0, 500);
+        }
+        return ctx;
+      });
 
       const categories = await db.select().from(devProjectTagCategories)
         .where(eq(devProjectTagCategories.projectId, input.projectId))
@@ -472,28 +491,46 @@ export const devProjectTagsRouter = router({
 
       const categoryList = categories.map((c: any) => `- ${c.categoryKey}: ${c.categoryName} (${c.description || ""})`).join("\n");
 
+      const dataSourceNote = hasBulletPointsData
+        ? "\n\n【数据来源】本次分析基于已确认的标题五点描述数据，请深度挖掘每个产品标题和五点描述中的属性特征。"
+        : "\n\n【数据来源】基于产品基础数据分析，建议上传并确认标题五点数据以获得更精准的标签。";
+
       const response = await invokeLLM({
         messages: [
           {
             role: "system",
-            content: `你是一个亚马逊产品分析专家，擅长从产品数据中提取结构化属性标签。
+            content: `你是一个资深亚马逊产品分析专家，擅长从产品标题和五点描述（Bullet Points）中提取结构化属性标签。
 
-你需要分析以下产品数据，为每个标签分类生成合适的标签项。标签是后续交叉分析的基础数据，请确保：
-1. 每个分类下的标签应覆盖该品类中所有产品的共性和差异
-2. 标签名称简洁明确，便于后续筛选和对比
-3. 参数属性类标签需要包含具体数值范围
-4. 标签应反映市场上该品类产品的真实属性分布
+你需要深度分析以下产品数据，特别是标题和五点描述中的关键属性信息，为每个标签分类生成合适的标签项。标签是后续交叉分析的基础数据，请确保：
+
+1. **深度解析标题**：从标题中提取品类词、材质词、功能词、场景词、规格参数等
+2. **深度解析五点描述**：从Bullet Points中提取核心卖点、功能特性、材质信息、适用场景、技术参数、认证信息等
+3. 每个分类下的标签应覆盖该品类中所有产品的共性和差异
+4. 标签名称简洁明确，便于后续筛选和对比
+5. 参数属性类标签需要包含具体数值范围（如"重量: 1-3kg"、"尺寸: 10-20inch"）
+6. 功能属性应从五点描述中提取具体功能点（如"防水"、"可折叠"、"USB充电"）
+7. 材质属性应精确到具体材质名称（如"304不锈钢"、"ABS塑料"、"竹木"）
+8. 特殊属性应关注差异化卖点和独特特征${dataSourceNote}
 
 当前项目的标签分类：
 ${categoryList}`,
           },
           {
             role: "user",
-            content: `请根据以下${products.length}个产品数据，为每个标签分类生成标签项：
+            content: `请根据以下${products.length}个产品的标题和五点描述数据，为每个标签分类生成标签项：
 
 ${JSON.stringify(productContext, null, 2)}
 
-请为每个分类生成5-15个标签项，格式要求：每个标签项包含tagName（标签名称）和tagValue（标签值/说明，可选）。`,
+请为每个分类生成5-15个标签项，格式要求：每个标签项包含tagName（标签名称）和tagValue（标签值/说明，可选）。
+
+重点要求：
+- 基础分类属性：从标题中提取产品类型、子类目、款式
+- 材质属性：从标题和五点中提取所有材质信息
+- 功能属性：从五点描述中提取所有功能特性
+- 参数属性：从五点中提取尺寸、重量、容量等参数范围
+- 安装方式：从五点中提取安装/使用方式
+- 认证标准：从五点中提取所有认证信息
+- 特殊属性：提取差异化卖点和独特特征`,
           },
         ],
         response_format: {
@@ -599,25 +636,39 @@ ${JSON.stringify(productContext, null, 2)}
 
       if (!category) throw new Error("分类不存在");
 
-      const productContext = products.slice(0, 20).map((p: any) => ({
-        title: p.title || "",
-        brand: p.brand || "",
-        price: p.price || "",
-        bulletPoints: p.bulletPoints ? String(p.bulletPoints).slice(0, 500) : "",
-        specifications: p.specifications ? String(p.specifications).slice(0, 500) : "",
-      }));
+      // Build rich product context with full bullet points
+      const productContext = products.slice(0, 30).map((p: any) => {
+        const ctx: any = {
+          asin: p.asin || "",
+          title: p.title || "",
+          brand: p.brand || "",
+          price: p.price || "",
+        };
+        if (p.bulletPoints) {
+          ctx.bulletPoints = String(p.bulletPoints).slice(0, 2000);
+        }
+        if (p.description) {
+          ctx.description = String(p.description).slice(0, 500);
+        }
+        if (p.specifications) {
+          ctx.specifications = String(p.specifications).slice(0, 500);
+        }
+        return ctx;
+      });
 
       const response = await invokeLLM({
         messages: [
           {
             role: "system",
-            content: `你是一个亚马逊产品分析专家。请根据产品数据，为"${category.categoryName}"分类生成标签项。
+            content: `你是一个资深亚马逊产品分析专家。请深度分析产品的标题和五点描述（Bullet Points），为"${category.categoryName}"分类生成标签项。
 分类说明：${category.description || "无"}
 要求：
 1. 生成5-15个标签，覆盖该品类产品的共性和差异
-2. 标签名称简洁明确
-3. 如果是参数类属性，tagValue中包含具体数值范围
-4. 标签应反映市场上该品类产品的真实属性分布`,
+2. 标签名称简洁明确，便于后续筛选和对比
+3. 从标题中提取品类词、材质词、功能词、场景词、规格参数
+4. 从Bullet Points中提取核心卖点、功能特性、材质信息、技术参数
+5. 参数类属性的tagValue包含具体数值范围
+6. 标签应反映市场上该品类产品的真实属性分布`,
           },
           {
             role: "user",

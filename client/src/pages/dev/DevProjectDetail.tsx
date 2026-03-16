@@ -524,6 +524,7 @@ function ProjectTagManager({ projectId }: { projectId: number }) {
   const { data: categories, isLoading } = trpc.devProjectTags.getCategories.useQuery({ projectId });
   const { data: tagStatus } = trpc.devProjectTags.getTagStatus.useQuery({ projectId });
   const { data: templateData } = trpc.devProjectTags.getImportTemplate.useQuery({ projectId });
+  const { data: dataStatus } = trpc.devProject.getDataStatus.useQuery({ projectId });
 
   const initMutation = trpc.devProjectTags.initCategories.useMutation({
     onSuccess: () => { toast.success("标签分类初始化完成"); utils.devProjectTags.getCategories.invalidate({ projectId }); utils.devProjectTags.getTagStatus.invalidate({ projectId }); },
@@ -686,6 +687,25 @@ function ProjectTagManager({ projectId }: { projectId: number }) {
           )}
         </div>
       </div>
+
+      {/* Data Source Indicator */}
+      {dataStatus && (
+        <div className={`rounded-lg border p-3 flex items-center gap-3 ${(dataStatus as any).bullet_points?.confirmed ? 'border-emerald-200 bg-emerald-50/50' : 'border-amber-200 bg-amber-50/50'}`}>
+          <div className={`h-8 w-8 rounded-full flex items-center justify-center ${(dataStatus as any).bullet_points?.confirmed ? 'bg-emerald-100' : 'bg-amber-100'}`}>
+            <FileText className="h-4 w-4" />
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium">
+              {(dataStatus as any).bullet_points?.confirmed ? '✅ 标题五点数据已确认' : '⚠️ 标题五点数据未确认'}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {(dataStatus as any).bullet_points?.confirmed
+                ? `AI将基于已确认的标题五点数据深度分析生成标签（${(dataStatus as any).bullet_points?.totalRows || 0}条记录）`
+                : 'AI将仅基于销量表格中的基础数据生成标签，建议先上传并确认标题五点数据以获得更精准的标签'}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Status Bar */}
       {tagStatus && (
