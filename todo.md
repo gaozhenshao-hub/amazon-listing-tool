@@ -925,3 +925,9 @@
 - [x] 前端: 全景分析表tab插入标签管理和分析报告之间
 - [x] 逻辑: 市场大盘/属性交叉/价格段/品牌竞争分析前置检查全景表确认状态
 - [x] 测试: 全部1066个测试通过
+
+## Bug修复: 销量表格上传失败-字段类型不匹配 (2026-03-16)
+- [x] 修复: 前端parseSalesData中bsrGrowthRate/grossMargin/monthlySalesGrowth/reviewRate/fbaFee用String()包装确保传字符串
+- [x] 修复: FBA($)列名映射优先级调整，新增“月新增\n评分数”列名支持(包含换行符)
+- [x] 修复: hasAPlus/hasVideo/hasBrandStory/hasAmazonChoice支持Y/是/1多种值格式
+- [x] 验证: 全部1066个测试通过，0个TS错误
