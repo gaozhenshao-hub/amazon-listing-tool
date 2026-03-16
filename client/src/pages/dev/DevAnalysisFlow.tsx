@@ -79,6 +79,11 @@ export default function DevAnalysisFlow() {
   const { data: stages, isLoading: stagesLoading } = trpc.devAnalysis.getStages.useQuery({ projectId });
   const { data: products } = trpc.devProject.getProducts.useQuery({ projectId });
 
+  // ─── Project Tags Query (for cross analysis integration) ───
+  const { data: projectTags } = trpc.devAnalysis.getConfirmedProjectTags.useQuery({ projectId });
+  const [selectedDim1, setSelectedDim1] = useState<number | undefined>(undefined);
+  const [selectedDim2, setSelectedDim2] = useState<number | undefined>(undefined);
+
   // ─── Stage status map ───
   const stageMap = useMemo(() => {
     const m: Record<string, any> = {};
@@ -98,6 +103,10 @@ export default function DevAnalysisFlow() {
   const crossMutation = trpc.devAnalysis.runAttributeCross.useMutation({
     onSuccess: () => { toast.success("属性交叉分析完成"); utils.devAnalysis.getStages.invalidate({ projectId }); },
     onError: (e: any) => toast.error(`属性交叉分析失败: ${e.message}`),
+  });
+  const tagCrossMutation = trpc.devAnalysis.runTagCrossAnalysis.useMutation({
+    onSuccess: () => { toast.success("标签交叉分析完成"); utils.devAnalysis.getStages.invalidate({ projectId }); utils.devAnalysis.getConfirmedProjectTags.invalidate({ projectId }); },
+    onError: (e: any) => toast.error(`标签交叉分析失败: ${e.message}`),
   });
   const priceMutation = trpc.devAnalysis.runPriceAnalysis.useMutation({
     onSuccess: () => { toast.success("价格段分析完成"); utils.devAnalysis.getStages.invalidate({ projectId }); },
@@ -124,7 +133,7 @@ export default function DevAnalysisFlow() {
     onError: (e: any) => toast.error(`保存失败: ${e.message}`),
   });
 
-  const isAnyMutating = tagMutation.isPending || marketMutation.isPending || crossMutation.isPending || priceMutation.isPending || brandMutation.isPending || reviewMutation.isPending || dashboardMutation.isPending;
+  const isAnyMutating = tagMutation.isPending || marketMutation.isPending || crossMutation.isPending || tagCrossMutation.isPending || priceMutation.isPending || brandMutation.isPending || reviewMutation.isPending || dashboardMutation.isPending;
 
   // ─── Run stage ───
   const runStage = useCallback((key: StageKey) => {
@@ -132,13 +141,21 @@ export default function DevAnalysisFlow() {
     switch (key) {
       case "attribute_tagging": tagMutation.mutate(input); break;
       case "market_overview": marketMutation.mutate(input); break;
-      case "attribute_cross": crossMutation.mutate(input); break;
+      case "attribute_cross": {
+        // If project tags are confirmed, use tag cross analysis; otherwise use old cross analysis
+        if (projectTags?.status?.allConfirmed && projectTags.categories.length >= 2) {
+          tagCrossMutation.mutate({ projectId, dim1CategoryId: selectedDim1, dim2CategoryId: selectedDim2 });
+        } else {
+          crossMutation.mutate(input);
+        }
+        break;
+      }
       case "price_analysis": priceMutation.mutate(input); break;
       case "brand_competition": brandMutation.mutate(input); break;
       case "review_kano": reviewMutation.mutate(input); break;
       case "decision_dashboard": dashboardMutation.mutate(input); break;
     }
-  }, [projectId, tagMutation, marketMutation, crossMutation, priceMutation, brandMutation, reviewMutation, dashboardMutation]);
+  }, [projectId, tagMutation, marketMutation, crossMutation, tagCrossMutation, priceMutation, brandMutation, reviewMutation, dashboardMutation, projectTags, selectedDim1, selectedDim2]);
 
   // ─── Start editing ───
   const startEditing = useCallback((key: StageKey) => {
@@ -280,6 +297,66 @@ export default function DevAnalysisFlow() {
                 );
               })()}
               <Separator />
+              {/* Tag Status for Cross Analysis */}
+              {activeStage === "attribute_cross" && projectTags && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium">项目标签状态</p>
+                  {projectTags.status.initialized ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">已确认分类</span>
+                        <Badge variant="secondary" className={`text-xs ${projectTags.status.allConfirmed ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"}`}>
+                          {projectTags.status.confirmed}/{projectTags.status.total}
+                        </Badge>
+                      </div>
+                      {projectTags.status.allConfirmed && projectTags.categories.length >= 2 ? (
+                        <div className="space-y-2">
+                          <div className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 p-2 rounded-md flex items-center gap-1">
+                            <Check className="h-3 w-3" />
+                            标签已全部确认，将使用标签体系进行交叉分析
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs text-muted-foreground">维度1</label>
+                            <select
+                              className="w-full text-xs border rounded-md p-1.5 bg-background"
+                              value={selectedDim1 || ""}
+                              onChange={(e) => setSelectedDim1(e.target.value ? Number(e.target.value) : undefined)}
+                            >
+                              <option value="">自动选择</option>
+                              {projectTags.categories.map((cat: any) => (
+                                <option key={cat.categoryId} value={cat.categoryId}>{cat.categoryName} ({cat.tags.length}个标签)</option>
+                              ))}
+                            </select>
+                            <label className="text-xs text-muted-foreground">维度2</label>
+                            <select
+                              className="w-full text-xs border rounded-md p-1.5 bg-background"
+                              value={selectedDim2 || ""}
+                              onChange={(e) => setSelectedDim2(e.target.value ? Number(e.target.value) : undefined)}
+                            >
+                              <option value="">自动选择</option>
+                              {projectTags.categories.map((cat: any) => (
+                                <option key={cat.categoryId} value={cat.categoryId}>{cat.categoryName} ({cat.tags.length}个标签)</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 p-2 rounded-md">
+                          {!projectTags.status.allConfirmed
+                            ? `还有 ${projectTags.status.total - projectTags.status.confirmed} 个分类未确认，将使用产品级标签进行分析`
+                            : "至少需要2个已确认分类才能使用标签交叉分析"
+                          }
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded-md">
+                      未初始化标签，请先在“标签管理”Tab中初始化并确认标签
+                    </div>
+                  )}
+                  <Separator />
+                </div>
+              )}
               {/* Actions */}
               <div className="space-y-2">
                 {(() => {

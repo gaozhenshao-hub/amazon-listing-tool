@@ -3,6 +3,9 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import { callDataApi } from "../_core/dataApi";
 import * as devDb from "../devDb";
+import { getDb } from "../db";
+import { devProjectTagCategories, devProjectTagItems } from "../../drizzle/schema";
+import { eq, and, asc } from "drizzle-orm";
 import {
   calcMarketOverview,
   calcPriceSegments,
@@ -1412,6 +1415,290 @@ export const devAnalysisRouter = router({
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
       return devDb.getDevExternalData(input.projectId);
+    }),
+
+  // ═══════════════════════════════════════════════════════════════
+  // Project-level Tag Cross Analysis Integration
+  // ═══════════════════════════════════════════════════════════════
+
+  // Get confirmed project-level tags grouped by category for analysis
+  getConfirmedProjectTags: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+
+      const categories = await db.select().from(devProjectTagCategories)
+        .where(and(
+          eq(devProjectTagCategories.projectId, input.projectId),
+          eq(devProjectTagCategories.confirmed, 1)
+        ))
+        .orderBy(asc(devProjectTagCategories.sortOrder));
+
+      const items = await db.select().from(devProjectTagItems)
+        .where(eq(devProjectTagItems.projectId, input.projectId))
+        .orderBy(asc(devProjectTagItems.sortOrder));
+
+      // Group items by category
+      const result = categories.map((cat: any) => ({
+        categoryId: cat.id,
+        categoryKey: cat.categoryKey,
+        categoryName: cat.categoryName,
+        confirmed: cat.confirmed === 1,
+        tags: items
+          .filter((item: any) => item.categoryId === cat.id)
+          .map((item: any) => ({
+            id: item.id,
+            tagName: item.tagName,
+            tagValue: item.tagValue || "",
+            source: item.source,
+          })),
+      }));
+
+      // Also get tag status
+      const allCategories = await db.select().from(devProjectTagCategories)
+        .where(eq(devProjectTagCategories.projectId, input.projectId));
+      const total = allCategories.length;
+      const confirmedCount = allCategories.filter((c: any) => c.confirmed === 1).length;
+
+      return {
+        categories: result,
+        status: {
+          total,
+          confirmed: confirmedCount,
+          allConfirmed: total > 0 && confirmedCount === total,
+          initialized: total > 0,
+        },
+      };
+    }),
+
+  // Run cross analysis using project-level confirmed tags as dimensions
+  runTagCrossAnalysis: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      dim1CategoryId: z.number().optional(),
+      dim2CategoryId: z.number().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+
+      // Check that tags are confirmed
+      const allCats = await db.select().from(devProjectTagCategories)
+        .where(eq(devProjectTagCategories.projectId, input.projectId));
+      const confirmedCats = allCats.filter((c: any) => c.confirmed === 1);
+      if (confirmedCats.length < 2) {
+        throw new Error("至少需要2个已确认的标签分类才能进行交叉分析。请先在标签管理中确认标签。");
+      }
+
+      // Mark stage as running
+      await devDb.upsertDevAnalysisStage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        stageType: "attribute_cross",
+        status: "running",
+        rawResult: null,
+        editedResult: null,
+        confirmedAt: null,
+      });
+
+      // Get products
+      const products = await devDb.getDevProductsByProject(input.projectId);
+      if (products.length === 0) throw new Error("No products found. Please upload data first.");
+      const productData: ProductData[] = products.map(mapToProductData);
+
+      // Get all tag items for confirmed categories
+      const allItems = await db.select().from(devProjectTagItems)
+        .where(eq(devProjectTagItems.projectId, input.projectId));
+
+      // Build category name map
+      const catNameMap = new Map(confirmedCats.map((c: any) => [c.id, c.categoryName]));
+
+      // Also get old product-level tags to merge
+      const oldTags = await devDb.getDevProductTags(input.projectId);
+      const oldTagData: TagData[] = oldTags.map((t: any) => ({
+        asin: t.asin ?? "",
+        dimensionName: t.dimensionName ?? "",
+        dimensionValue: t.dimensionValue ?? "",
+      }));
+
+      // Build project-level tag summary for AI context
+      const projectTagSummary = confirmedCats.map((cat: any) => {
+        const catItems = allItems.filter((item: any) => item.categoryId === cat.id);
+        return {
+          category: cat.categoryName,
+          categoryKey: cat.categoryKey,
+          tags: catItems.map((item: any) => ({
+            name: item.tagName,
+            value: item.tagValue || "",
+          })),
+        };
+      });
+
+      // Get dimension names from old tags
+      const dimensionNames = Array.from(new Set(oldTagData.map(t => t.dimensionName)));
+
+      // Single dimension stats using old product-level tags
+      const singleDimStats = dimensionNames.map(dim =>
+        calcSingleDimensionStats(productData, oldTagData, dim)
+      );
+
+      // Determine cross dimensions: prefer user-selected, then auto-select from confirmed categories that have matching product tags
+      let dim1Name = "";
+      let dim2Name = "";
+
+      if (input.dim1CategoryId) {
+        dim1Name = catNameMap.get(input.dim1CategoryId) || "";
+      }
+      if (input.dim2CategoryId) {
+        dim2Name = catNameMap.get(input.dim2CategoryId) || "";
+      }
+
+      // If not specified, auto-select the first 2 dimensions that exist in product tags
+      if (!dim1Name || !dim2Name) {
+        const matchingDims = dimensionNames.filter(d =>
+          Array.from(catNameMap.values()).some(cn => cn === d || d.includes(cn) || cn.includes(d))
+        );
+        if (!dim1Name) dim1Name = matchingDims[0] || dimensionNames[0] || "";
+        if (!dim2Name) dim2Name = matchingDims[1] || matchingDims[0] || dimensionNames[1] || dimensionNames[0] || "";
+      }
+
+      // Cross analysis
+      const crossResult = dim1Name && dim2Name ? calcCrossAnalysis(productData, oldTagData, dim1Name, dim2Name) : null;
+
+      // AI interpretation with project-level tag context
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: ATTRIBUTE_ANALYSIS_PROMPT },
+          {
+            role: "user",
+            content: `品类: ${project.name}\n\n` +
+              `【项目标签体系（已确认）】\n${JSON.stringify(projectTagSummary, null, 2)}\n\n` +
+              `【各维度统计】\n${JSON.stringify(singleDimStats, null, 2)}\n\n` +
+              `【交叉分析(${dim1Name} × ${dim2Name})】\n${JSON.stringify(crossResult, null, 2)}\n\n` +
+              `请基于以上项目标签体系和产品数据，进行深度交叉分析。重点关注：\n` +
+              `1. 项目标签中的各属性维度在市场中的分布情况\n` +
+              `2. 不同属性组合的市场表现差异\n` +
+              `3. 基于标签体系识别蓝海机会和差异化方向\n` +
+              `4. 红海预警：哪些属性组合竞争过于激烈`,
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "tag_cross_analysis_ai",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                mainstreamProducts: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      combo: { type: "string" },
+                      salesShare: { type: "string" },
+                      reason: { type: "string" },
+                    },
+                    required: ["combo", "salesShare", "reason"],
+                    additionalProperties: false,
+                  },
+                },
+                differentiationOpportunities: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      combo: { type: "string" },
+                      competitionLevel: { type: "string" },
+                      potential: { type: "string" },
+                      reason: { type: "string" },
+                    },
+                    required: ["combo", "competitionLevel", "potential", "reason"],
+                    additionalProperties: false,
+                  },
+                },
+                tagInsights: {
+                  type: "array",
+                  description: "基于项目标签体系的洞察",
+                  items: {
+                    type: "object",
+                    properties: {
+                      category: { type: "string" },
+                      insight: { type: "string" },
+                      recommendation: { type: "string" },
+                    },
+                    required: ["category", "insight", "recommendation"],
+                    additionalProperties: false,
+                  },
+                },
+                recommendedDirections: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      direction: { type: "string" },
+                      attributes: {
+                        type: "object",
+                        additionalProperties: { type: "string" },
+                      },
+                      estimatedPriceRange: { type: "string" },
+                      targetAudience: { type: "string" },
+                      reason: { type: "string" },
+                      priority: { type: "number" },
+                    },
+                    required: ["direction", "attributes", "estimatedPriceRange", "targetAudience", "reason", "priority"],
+                    additionalProperties: false,
+                  },
+                },
+                redOceanWarnings: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      combo: { type: "string" },
+                      reason: { type: "string" },
+                    },
+                    required: ["combo", "reason"],
+                    additionalProperties: false,
+                  },
+                },
+                summary: { type: "string" },
+              },
+              required: ["mainstreamProducts", "differentiationOpportunities", "tagInsights", "recommendedDirections", "redOceanWarnings", "summary"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const aiContent = response.choices?.[0]?.message?.content;
+      const aiResult = aiContent ? JSON.parse(aiContent as string) : {};
+
+      const result = {
+        singleDimStats,
+        crossResult,
+        dimensionNames,
+        projectTagSummary,
+        confirmedCategories: confirmedCats.map((c: any) => ({ id: c.id, name: c.categoryName, key: c.categoryKey })),
+        selectedDims: { dim1: dim1Name, dim2: dim2Name },
+        ai: aiResult,
+      };
+
+      await devDb.upsertDevAnalysisStage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        stageType: "attribute_cross",
+        status: "completed",
+        rawResult: JSON.stringify(result),
+        editedResult: null,
+        confirmedAt: null,
+      });
+
+      return result;
     }),
 });
 
