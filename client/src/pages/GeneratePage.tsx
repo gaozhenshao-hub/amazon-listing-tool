@@ -48,6 +48,7 @@ import StepTitle from "./listing/StepTitle";
 import StepDescription from "./listing/StepDescription";
 import StepSearchTerms from "./listing/StepSearchTerms";
 import StepQA from "./listing/StepQA";
+import BulletChecklistPanel from "@/components/BulletChecklistPanel";
 
 function CharCountBadge({ count, min, max, label }: { count: number; min: number; max: number; label?: string }) {
   const inRange = count >= min && count <= max;
@@ -1159,6 +1160,12 @@ export default function GeneratePage() {
                                       ))}
                                     </div>
                                   )}
+                                  {/* 15-Dimension Check List Self-Assessment Panel */}
+                                  <BulletChecklistPanel
+                                    checkListScores={generatedBullets[idx].checkListScores}
+                                    bulletIndex={idx}
+                                    aiSemanticRelations={generatedBullets[idx].semanticRelations}
+                                  />
                                 </div>
                               )}
                               <div className="flex gap-2">

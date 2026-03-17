@@ -1178,3 +1178,10 @@
 - [x] Check List评分测试 (标题10维度 + 卖点15维度 Prompt包含性验证)
 - [x] 前端组件测试 (5个Step组件存在性 + GeneratePage 5步布局 + PreviewPage QA板块)
 - [x] 全部 63个测试文件、1491个测试用例通过
+
+## 卖点15维度Checklist自检面板 (2026-03-17)
+- [x] 审查卖点精雕AI返回数据格式，确认checkListScores字段
+- [x] 更新后端SINGLE_BULLET_PROMPT确保返回15维度评分（已包含完整15维度+语义关系）
+- [x] 新建BulletChecklistPanel可折叠组件（15维度，AI评分默认勾选）
+- [x] 集成到GeneratePage卖点精雕每条卖点下方
+- [x] 编写vitest测试用例（90个测试，全部64个文件1581个测试通过）
