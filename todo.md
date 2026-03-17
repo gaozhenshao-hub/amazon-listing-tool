@@ -968,3 +968,14 @@
 - [x] 逻辑: 更新分析工作台描述，标注属性标注已独立为单独tab
 - [x] 逻辑: 全景表属性标签列读取统一后的dev_product_tags数据（已验证devPanorama.getData正确读取）
 - [x] 测试: 65个vitest测试全部通过，验证打通后的完整流程（1131 tests total）
+
+## 属性标注三项优化 (2026-03-17)
+- [x] 清理: DevAnalysisFlow中移除attribute_tagging步骤的UI组件和门控逻辑
+- [x] 清理: 后端devAnalysis门控逻辑改用areProductTagsConfirmed检查dev_product_tags表
+- [x] 清理: 分析工作台阶段列表中移除attribute_tagging阶段，confirmAll/unlockAll同步阶段状态
+- [x] 批量操作: 属性标注表格增加"全选某维度→批量修改"功能
+- [x] 批量操作: 后端新增batchUpdateTags和batchSetDimensionValue接口
+- [x] 一致性校验: 后端新增checkConsistency接口检测维度不匹配
+- [x] 一致性校验: 前端AttributeTagging组件展示一致性校验警告
+- [x] 一致性校验: 标签管理维度变更后自动提示用户重新打标
+- [x] 测试: 53个测试文件全部通过，1171 tests passed

@@ -32,11 +32,20 @@ export default function AttributeTagging({ projectId }: { projectId: number }) {
   const [expandedAsins, setExpandedAsins] = useState<Set<string>>(new Set());
   const [editingTag, setEditingTag] = useState<{ tagId: number; value: string } | null>(null);
   const [customInput, setCustomInput] = useState("");
+  // Batch operation state
+  const [batchDimension, setBatchDimension] = useState<string | null>(null);
+  const [batchSelectedIds, setBatchSelectedIds] = useState<Set<number>>(new Set());
+  const [batchValue, setBatchValue] = useState("");
 
   // ─── Queries ───
   const { data: status, isLoading: statusLoading } = trpc.devTagging.getTaggingStatus.useQuery({ projectId });
   const { data: dimensions, isLoading: dimsLoading } = trpc.devTagging.getDimensions.useQuery({ projectId });
   const { data: taggedProducts, isLoading: productsLoading } = trpc.devTagging.getTaggedProducts.useQuery({ projectId });
+  // Consistency check - only query when there are tagged products
+  const { data: consistency } = trpc.devTagging.checkConsistency.useQuery(
+    { projectId },
+    { enabled: (status?.taggedProducts ?? 0) > 0 }
+  );
 
   // ─── Mutations ───
   const startTaggingMutation = trpc.devTagging.startTagging.useMutation({
@@ -75,6 +84,18 @@ export default function AttributeTagging({ projectId }: { projectId: number }) {
       utils.devTagging.getTaggedProducts.invalidate({ projectId });
     },
     onError: (e: any) => toast.error(e.message),
+  });
+
+  const batchSetMutation = trpc.devTagging.batchSetDimensionValue.useMutation({
+    onSuccess: (result) => {
+      toast.success(`批量修改成功，更新了 ${result.updated} 个标签`);
+      setBatchDimension(null);
+      setBatchSelectedIds(new Set());
+      setBatchValue("");
+      utils.devTagging.getTaggedProducts.invalidate({ projectId });
+      utils.devTagging.getTaggingStatus.invalidate({ projectId });
+    },
+    onError: (e: any) => toast.error(`批量修改失败: ${e.message}`),
   });
 
   // ─── Derived data ───
@@ -239,6 +260,56 @@ export default function AttributeTagging({ projectId }: { projectId: number }) {
         </CardContent>
       </Card>
 
+      {/* Consistency Warning */}
+      {consistency && !consistency.consistent && (
+        <Card className="border-amber-300 bg-amber-50/50 dark:bg-amber-900/10">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2 text-amber-700 dark:text-amber-400">
+              <AlertCircle className="h-4 w-4" />
+              标签一致性检测异常
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
+              标签管理的维度框架与当前打标结果存在不一致，建议重新打标以确保数据准确性。
+            </p>
+            <div className="space-y-1.5">
+              {consistency.issues.map((issue, idx) => (
+                <div key={idx} className="flex items-start gap-2 text-xs">
+                  <Badge
+                    variant="outline"
+                    className={`shrink-0 ${
+                      issue.type === "extra_dimension" ? "border-red-300 text-red-600" :
+                      issue.type === "missing_dimension" ? "border-blue-300 text-blue-600" :
+                      "border-amber-300 text-amber-600"
+                    }`}
+                  >
+                    {issue.type === "extra_dimension" ? "多余维度" :
+                     issue.type === "missing_dimension" ? "缺少维度" : "无效值"}
+                  </Badge>
+                  <span className="text-muted-foreground">{issue.detail}</span>
+                  {issue.affectedCount > 0 && (
+                    <Badge variant="secondary" className="text-xs shrink-0">
+                      {issue.affectedCount}个
+                    </Badge>
+                  )}
+                </div>
+              ))}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-3 gap-1.5 text-amber-700 border-amber-300 hover:bg-amber-100"
+              onClick={() => startTaggingMutation.mutate({ projectId })}
+              disabled={startTaggingMutation.isPending || isConfirmed}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              重新打标以修复
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Dimension Framework Summary */}
       <Card>
         <CardHeader className="pb-2">
@@ -263,13 +334,101 @@ export default function AttributeTagging({ projectId }: { projectId: number }) {
       {hasTaggedProducts && taggedProducts && taggedProducts.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">打标结果</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm">打标结果</CardTitle>
+              {!isConfirmed && (
+                <div className="flex items-center gap-2">
+                  {batchDimension ? (
+                    <>
+                      <Badge variant="outline" className="text-xs">
+                        批量修改: {batchDimension} ({batchSelectedIds.size}已选)
+                      </Badge>
+                      {batchSelectedIds.size > 0 && (
+                        <div className="flex items-center gap-1">
+                          <Select value={batchValue} onValueChange={setBatchValue}>
+                            <SelectTrigger className="h-7 text-xs w-[140px]">
+                              <SelectValue placeholder="选择目标值" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(dimensionValuesMap.get(batchDimension) || []).map(v => (
+                                <SelectItem key={v} value={v}>{v}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            disabled={!batchValue || batchSetMutation.isPending}
+                            onClick={() => {
+                              batchSetMutation.mutate({
+                                projectId,
+                                dimensionName: batchDimension,
+                                tagIds: Array.from(batchSelectedIds),
+                                dimensionValue: batchValue,
+                              });
+                            }}
+                          >
+                            {batchSetMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                            应用
+                          </Button>
+                        </div>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs"
+                        onClick={() => { setBatchDimension(null); setBatchSelectedIds(new Set()); setBatchValue(""); }}
+                      >
+                        <X className="h-3 w-3 mr-1" />取消
+                      </Button>
+                    </>
+                  ) : (
+                    <Select onValueChange={(val) => { setBatchDimension(val); setBatchSelectedIds(new Set()); setBatchValue(""); }}>
+                      <SelectTrigger className="h-7 text-xs w-[160px]">
+                        <SelectValue placeholder="选择维度批量修改" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {dimensionNames.map(name => (
+                          <SelectItem key={name} value={name}>{name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
+                    {batchDimension && (
+                      <th className="text-center px-2 py-2 font-medium w-8">
+                        <input
+                          type="checkbox"
+                          className="rounded"
+                          checked={(() => {
+                            const allIds = (taggedProducts || []).filter(p => p.tags.length > 0).map(p => {
+                              const tag = p.tags.find(t => t.dimensionName === batchDimension);
+                              return tag?.id;
+                            }).filter(Boolean) as number[];
+                            return allIds.length > 0 && allIds.every(id => batchSelectedIds.has(id));
+                          })()}
+                          onChange={(e) => {
+                            const allIds = (taggedProducts || []).filter(p => p.tags.length > 0).map(p => {
+                              const tag = p.tags.find(t => t.dimensionName === batchDimension);
+                              return tag?.id;
+                            }).filter(Boolean) as number[];
+                            if (e.target.checked) {
+                              setBatchSelectedIds(new Set(allIds));
+                            } else {
+                              setBatchSelectedIds(new Set());
+                            }
+                          }}
+                        />
+                      </th>
+                    )}
                     <th className="text-left px-3 py-2 font-medium w-8"></th>
                     <th className="text-left px-3 py-2 font-medium whitespace-nowrap">ASIN</th>
                     <th className="text-left px-3 py-2 font-medium min-w-[200px]">标题</th>
@@ -293,7 +452,32 @@ export default function AttributeTagging({ projectId }: { projectId: number }) {
                     }
 
                     return (
-                      <tr key={product.asin} className="border-b hover:bg-muted/30 transition-colors">
+                      <tr key={product.asin} className={`border-b hover:bg-muted/30 transition-colors ${batchDimension && batchSelectedIds.has(product.tags.find(t => t.dimensionName === batchDimension)?.id as number) ? "bg-blue-50/50 dark:bg-blue-900/10" : ""}`}>
+                        {batchDimension && (() => {
+                          const tag = product.tags.find(t => t.dimensionName === batchDimension);
+                          const tagId = tag?.id as number | undefined;
+                          return (
+                            <td className="text-center px-2 py-2">
+                              {tagId ? (
+                                <input
+                                  type="checkbox"
+                                  className="rounded"
+                                  checked={batchSelectedIds.has(tagId)}
+                                  onChange={(e) => {
+                                    setBatchSelectedIds(prev => {
+                                      const next = new Set(prev);
+                                      if (e.target.checked) next.add(tagId);
+                                      else next.delete(tagId);
+                                      return next;
+                                    });
+                                  }}
+                                />
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </td>
+                          );
+                        })()}
                         <td className="px-3 py-2">
                           <button
                             onClick={() => toggleAsin(product.asin)}

@@ -369,12 +369,76 @@ ${p.specifications ? `详细参数：${p.specifications}` : ""}`).join("\n\n")}`
     }),
 
   /**
+   * 批量修改标签：按维度名称批量更新所有匹配产品的标签值
+   */
+  batchUpdateTags: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      dimensionName: z.string(),
+      updates: z.array(z.object({
+        tagId: z.number(),
+        dimensionValue: z.string(),
+      })),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      let updated = 0;
+      for (const u of input.updates) {
+        await db.update(devProductTags)
+          .set({ dimensionValue: u.dimensionValue, source: "manual" })
+          .where(
+            and(
+              eq(devProductTags.id, u.tagId),
+              eq(devProductTags.projectId, input.projectId),
+            )
+          );
+        updated++;
+      }
+      return { success: true, updated };
+    }),
+
+  /**
+   * 批量设置某个维度下所有产品的标签值为同一个值
+   */
+  batchSetDimensionValue: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      dimensionName: z.string(),
+      tagIds: z.array(z.number()),
+      dimensionValue: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      if (input.tagIds.length === 0) return { success: true, updated: 0 };
+      let updated = 0;
+      for (const tagId of input.tagIds) {
+        await db.update(devProductTags)
+          .set({ dimensionValue: input.dimensionValue, source: "manual" })
+          .where(
+            and(
+              eq(devProductTags.id, tagId),
+              eq(devProductTags.projectId, input.projectId),
+              eq(devProductTags.dimensionName, input.dimensionName),
+            )
+          );
+        updated++;
+      }
+      return { success: true, updated };
+    }),
+
+  /**
    * 确认所有标签
    */
   confirmAll: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       await devDb.confirmAllDevProductTags(input.projectId);
+      // Sync: also confirm the attribute_tagging stage in devAnalysisStages for backward compat with gating
+      try {
+        await devDb.confirmDevAnalysisStage(input.projectId, "attribute_tagging", "");
+      } catch (_) { /* stage may not exist yet, ignore */ }
       return { success: true };
     }),
 
@@ -389,7 +453,119 @@ ${p.specifications ? `详细参数：${p.specifications}` : ""}`).join("\n\n")}`
       await db.update(devProductTags)
         .set({ confirmed: 0 })
         .where(eq(devProductTags.projectId, input.projectId));
+      // Sync: also unlock the attribute_tagging stage
+      try {
+        await devDb.unlockDevAnalysisStage(input.projectId, "attribute_tagging");
+      } catch (_) { /* stage may not exist yet, ignore */ }
       return { success: true };
+    }),
+
+  /**
+   * 标签一致性校验：检测标签管理维度与已有打标结果是否匹配
+   * 返回不匹配的维度名称和异常值
+   */
+  checkConsistency: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+
+      // Get confirmed tag categories (dimensions)
+      const categories = await db.select()
+        .from(devProjectTagCategories)
+        .where(and(
+          eq(devProjectTagCategories.projectId, input.projectId),
+          eq(devProjectTagCategories.confirmed, 1),
+        ));
+
+      // Get all tag items for these categories
+      const categoryIds = categories.map(c => c.id);
+      let allItems: Array<{ categoryId: number; tagName: string }> = [];
+      if (categoryIds.length > 0) {
+        const { inArray } = await import("drizzle-orm");
+        allItems = await db.select({
+          categoryId: devProjectTagItems.categoryId,
+          tagName: devProjectTagItems.tagName,
+        }).from(devProjectTagItems).where(inArray(devProjectTagItems.categoryId, categoryIds));
+      }
+
+      // Build dimension -> valid values map
+      const dimMap = new Map<string, Set<string>>();
+      for (const cat of categories) {
+        const items = allItems.filter(i => i.categoryId === cat.id);
+        dimMap.set(cat.categoryName, new Set(items.map(i => i.tagName)));
+      }
+
+      // Get existing product tags
+      const tags = await devDb.getDevProductTags(input.projectId);
+
+      const issues: Array<{
+        type: "missing_dimension" | "extra_dimension" | "invalid_value";
+        dimensionName: string;
+        detail: string;
+        affectedCount: number;
+      }> = [];
+
+      // Check 1: Dimensions in tags but not in categories (extra/removed dimensions)
+      const tagDimNamesArr = Array.from(new Set(tags.map(t => t.dimensionName)));
+      const catDimNamesArr = Array.from(new Set(categories.map(c => c.categoryName)));
+      const catDimNamesSet = new Set(catDimNamesArr);
+      const tagDimNamesSet = new Set(tagDimNamesArr);
+
+      for (const dimName of tagDimNamesArr) {
+        if (!catDimNamesSet.has(dimName)) {
+          const count = tags.filter(t => t.dimensionName === dimName).length;
+          issues.push({
+            type: "extra_dimension",
+            dimensionName: dimName,
+            detail: `维度「${dimName}」在标签管理中已不存在或未确认，但打标结果中仍有 ${count} 个标签`,
+            affectedCount: count,
+          });
+        }
+      }
+
+      // Check 2: Dimensions in categories but not in tags (missing dimensions)
+      for (const dimName of catDimNamesArr) {
+        if (!tagDimNamesSet.has(dimName)) {
+          issues.push({
+            type: "missing_dimension",
+            dimensionName: dimName,
+            detail: `维度「${dimName}」在标签管理中已确认，但打标结果中缺少该维度`,
+            affectedCount: 0,
+          });
+        }
+      }
+
+      // Check 3: Tag values not in the valid values set
+      for (const tag of tags) {
+        const validValues = dimMap.get(tag.dimensionName);
+        if (validValues && !validValues.has(tag.dimensionValue)) {
+          // Check if this issue type already exists for this dimension
+          const existing = issues.find(
+            i => i.type === "invalid_value" && i.dimensionName === tag.dimensionName
+          );
+          if (existing) {
+            existing.affectedCount++;
+          } else {
+            issues.push({
+              type: "invalid_value",
+              dimensionName: tag.dimensionName,
+              detail: `维度「${tag.dimensionName}」中存在不在标签管理定义中的值`,
+              affectedCount: 1,
+            });
+          }
+        }
+      }
+
+      return {
+        consistent: issues.length === 0,
+        issues,
+        summary: {
+          totalDimensions: catDimNamesSet.size,
+          taggedDimensions: tagDimNamesSet.size,
+          totalTags: tags.length,
+        },
+      };
     }),
 
   // Legacy: Tag dimensions CRUD (kept for backward compatibility)

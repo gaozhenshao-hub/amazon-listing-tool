@@ -54,6 +54,12 @@ async function isPanoramaConfirmed(projectId: number): Promise<boolean> {
   return rows.length > 0 && rows[0].confirmed === 1;
 }
 
+async function areProductTagsConfirmed(projectId: number): Promise<boolean> {
+  const tags = await devDb.getDevProductTags(projectId);
+  if (tags.length === 0) return false;
+  return tags.every(t => t.confirmed === 1);
+}
+
 async function checkStageGating(projectId: number, stageType: StageType): Promise<GatingResult> {
   const stages = await devDb.getDevAnalysisStages(projectId);
   const stageMap = new Map(stages.map(s => [s.stageType, s]));
@@ -72,7 +78,7 @@ async function checkStageGating(projectId: number, stageType: StageType): Promis
 
   switch (stageType) {
     case "attribute_tagging":
-      // Needs: sales data confirmed + products uploaded
+      // Kept for backward compat - now handled by separate tab
       if (!ds.sales?.confirmed) {
         missing.push("销量数据未确认");
         reason = "请先在数据管理中上传并确认销量表格数据";
@@ -80,9 +86,10 @@ async function checkStageGating(projectId: number, stageType: StageType): Promis
       break;
 
     case "market_overview": {
-      // Needs: attribute_tagging confirmed + panorama confirmed
-      if (!isStageConfirmed("attribute_tagging")) {
-        missing.push("属性标注未确认");
+      // Needs: product tags confirmed (from separate tab) + panorama confirmed
+      const tagsOk1 = await areProductTagsConfirmed(projectId);
+      if (!tagsOk1) {
+        missing.push("属性标注未确认（请在“属性标注”tab中完成并确认）");
       }
       const panoramaOk1 = await isPanoramaConfirmed(projectId);
       if (!panoramaOk1) {
@@ -95,9 +102,10 @@ async function checkStageGating(projectId: number, stageType: StageType): Promis
     }
 
     case "attribute_cross": {
-      // Needs: attribute_tagging confirmed + panorama confirmed
-      if (!isStageConfirmed("attribute_tagging")) {
-        missing.push("属性标注未确认");
+      // Needs: product tags confirmed (from separate tab) + panorama confirmed
+      const tagsOk2 = await areProductTagsConfirmed(projectId);
+      if (!tagsOk2) {
+        missing.push("属性标注未确认（请在“属性标注”tab中完成并确认）");
       }
       const panoramaOk2 = await isPanoramaConfirmed(projectId);
       if (!panoramaOk2) {
@@ -149,11 +157,15 @@ async function checkStageGating(projectId: number, stageType: StageType): Promis
 
     case "decision_dashboard":
       // Needs: ALL previous 5 stages confirmed (except review_kano which is optional if no reviews)
-      const requiredStages: StageType[] = ["attribute_tagging", "market_overview", "attribute_cross", "price_analysis", "brand_competition"];
+      // Check product tags confirmed (from separate tab)
+      const tagsOkD = await areProductTagsConfirmed(projectId);
+      if (!tagsOkD) {
+        missing.push("属性标注未确认");
+      }
+      const requiredStages: StageType[] = ["market_overview", "attribute_cross", "price_analysis", "brand_competition"];
       for (const rs of requiredStages) {
         if (!isStageConfirmed(rs)) {
           const labelMap: Record<string, string> = {
-            attribute_tagging: "属性标注",
             market_overview: "市场大盘",
             attribute_cross: "属性交叉",
             price_analysis: "价格分析",

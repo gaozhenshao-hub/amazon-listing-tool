@@ -22,7 +22,6 @@ import {
   Unlock,
   Play,
   RefreshCw,
-  Tag,
   TrendingUp,
   DollarSign,
   Building2,
@@ -45,7 +44,6 @@ const CHART_COLORS = ["#6366f1", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#8
 
 /* ─── Stage Definition ─── */
 const STAGES = [
-  { key: "attribute_tagging", label: "属性标注", icon: Tag, desc: "AI自动识别产品属性维度并标注" },
   { key: "market_overview", label: "市场大盘", icon: TrendingUp, desc: "市场容量、竞争格局、价格分布" },
   { key: "attribute_cross", label: "属性交叉", icon: Grid3X3, desc: "多维属性交叉分析与蓝海识别" },
   { key: "price_analysis", label: "价格段分析", icon: DollarSign, desc: "价格区间分布与利润空间" },
@@ -71,7 +69,7 @@ export default function DevAnalysisFlow() {
   const [, setLocation] = useLocation();
   const params = useParams<{ id: string }>();
   const projectId = Number(params.id);
-  const [activeStage, setActiveStage] = useState<StageKey>("attribute_tagging");
+  const [activeStage, setActiveStage] = useState<StageKey>("market_overview");
   const [editingStage, setEditingStage] = useState<StageKey | null>(null);
   const [editText, setEditText] = useState("");
   const [editFormData, setEditFormData] = useState<any>(null);
@@ -102,10 +100,6 @@ export default function DevAnalysisFlow() {
     utils.devAnalysis.getStages.invalidate({ projectId });
     utils.devAnalysis.getStageGating.invalidate({ projectId });
   };
-  const tagMutation = trpc.devAnalysis.runAttributeTagging.useMutation({
-    onSuccess: () => { toast.success("属性标注完成"); invalidateAll(); },
-    onError: (e: any) => toast.error(`属性标注失败: ${e.message}`),
-  });
   const marketMutation = trpc.devAnalysis.runMarketOverview.useMutation({
     onSuccess: () => { toast.success("市场大盘分析完成"); invalidateAll(); },
     onError: (e: any) => toast.error(`市场分析失败: ${e.message}`),
@@ -147,13 +141,12 @@ export default function DevAnalysisFlow() {
     onError: (e: any) => toast.error(`解锁失败: ${e.message}`),
   });
 
-  const isAnyMutating = tagMutation.isPending || marketMutation.isPending || crossMutation.isPending || tagCrossMutation.isPending || priceMutation.isPending || brandMutation.isPending || reviewMutation.isPending || dashboardMutation.isPending;
+  const isAnyMutating = marketMutation.isPending || crossMutation.isPending || tagCrossMutation.isPending || priceMutation.isPending || brandMutation.isPending || reviewMutation.isPending || dashboardMutation.isPending;
 
   // ─── Run stage ───
   const runStage = useCallback((key: StageKey) => {
     const input = { projectId };
     switch (key) {
-      case "attribute_tagging": tagMutation.mutate(input); break;
       case "market_overview": marketMutation.mutate(input); break;
       case "attribute_cross": {
         // If project tags are confirmed, use tag cross analysis; otherwise use old cross analysis
@@ -169,7 +162,7 @@ export default function DevAnalysisFlow() {
       case "review_kano": reviewMutation.mutate(input); break;
       case "decision_dashboard": dashboardMutation.mutate(input); break;
     }
-  }, [projectId, tagMutation, marketMutation, crossMutation, tagCrossMutation, priceMutation, brandMutation, reviewMutation, dashboardMutation, projectTags, selectedDim1, selectedDim2]);
+  }, [projectId, marketMutation, crossMutation, tagCrossMutation, priceMutation, brandMutation, reviewMutation, dashboardMutation, projectTags, selectedDim1, selectedDim2]);
 
   // ─── Start editing ───
   const startEditing = useCallback((key: StageKey) => {
@@ -678,7 +671,7 @@ function StageResultDisplay({ stageKey, stageData, productCount, gatingInfo }: {
 
   // Render based on stage type
   switch (stageKey) {
-    case "attribute_tagging": return <AttributeTaggingResult result={result} />;
+    // attribute_tagging has been moved to a separate tab
     case "market_overview": return <MarketOverviewResult result={result} productCount={productCount} />;
     case "attribute_cross": return <AttributeCrossResult result={result} />;
     case "price_analysis": return <PriceAnalysisResult result={result} />;
@@ -689,52 +682,7 @@ function StageResultDisplay({ stageKey, stageData, productCount, gatingInfo }: {
   }
 }
 
-/* ─── 1. Attribute Tagging Result ─── */
-function AttributeTaggingResult({ result }: { result: any }) {
-  const dimensions = result.dimensions || [];
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm flex items-center gap-2">
-            <Tag className="h-4 w-4" />
-            AI属性标注结果 — {dimensions.length} 个维度
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {dimensions.map((dim: any, i: number) => (
-              <Card key={i} className="border-dashed">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-xs font-semibold flex items-center justify-between">
-                    <span>{dim.dimensionName || dim.name || `维度${i + 1}`}</span>
-                    <Badge variant="secondary" className="text-xs">{(dim.values || dim.possibleValues || []).length} 个值</Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(dim.values || dim.possibleValues || []).map((v: string, j: number) => (
-                      <Badge key={j} variant="outline" className="text-xs">{v}</Badge>
-                    ))}
-                  </div>
-                  {dim.description && (
-                    <p className="text-xs text-muted-foreground mt-2">{dim.description}</p>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-      {result.summary && (
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">AI分析总结</CardTitle></CardHeader>
-          <CardContent><Streamdown>{result.summary}</Streamdown></CardContent>
-        </Card>
-      )}
-    </div>
-  );
-}
+/* ─── 1. Attribute Tagging Result (Removed - now in separate tab) ─── */
 
 /* ─── 2. Market Overview Result ─── */
 function MarketOverviewResult({ result, productCount }: { result: any; productCount: number }) {
