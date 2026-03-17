@@ -1200,3 +1200,16 @@
 ## BUG修复：BulletChecklistPanel 15维度自检面板未显示 (2026-03-17)
 - [x] 排查原因：checkListScores字段不存在时组件return null，且aiSemanticRelations字段名不匹配
 - [x] 修复方案：无数据时显示"运行自检"按钮，新增evaluateBulletChecklist后端接口，修复字段名映射
+
+## 锁定状态持久化 + 导航栏标识 + 自动跳转 + 自检增强 (2026-03-17)
+- [x] DB: listings表增加lockedSteps JSON字段（存储已锁定的步骤编号数组）
+- [x] DB: listings表增加checklistScores JSON字段（存储每条卖点的15维度自检结果）
+- [x] 后端: 锁定/解锁步骤API（updateLockedSteps）
+- [x] 后端: 保存/读取自检结果API（saveChecklistScores）
+- [x] 前端: 锁定状态持久化 — 页面加载时从BB读取lockedSteps，锁定/解锁时写入DB
+- [x] 前端: 步骤导航栏锁定标识 — 已锁定步骤显示锁图标+"已锁定"Badge+绿色边框
+- [x] 前端: 全部锁定后自动弹出提示引导跳转预览页（Dialog确认）
+- [x] 前端: 自动触发自检 — 卖点生成完成后自动运行15维度评估
+- [x] 前端: 批量自检 — 汇总区域增加"一键全部自检"按钮（跳过已评估的）
+- [x] 前端: 自检结果持久化 — checkListScores保存到DB，页面刷新不丢失
+- [x] 编写vitest测试（24个测试，全部66个文件1628个测试通过）

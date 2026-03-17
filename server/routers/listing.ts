@@ -1698,6 +1698,54 @@ export const listingRouter = router({
       }
     }),
 
+  // ─── Lock State Persistence ───
+  updateLockedSteps: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      lockedSteps: z.array(z.number()), // e.g. [1, 2, 3]
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      let listing = await db.getActiveListingByProject(input.projectId);
+      if (!listing) {
+        listing = await db.createListing({
+          projectId: input.projectId,
+          title: "",
+          bulletPoints: "[]",
+          description: "",
+          searchTerms: "",
+        });
+      }
+      return db.updateListing(listing.id, {
+        lockedSteps: JSON.stringify(input.lockedSteps),
+      });
+    }),
+
+  // ─── Checklist Scores Persistence ───
+  saveChecklistScores: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      scores: z.string(), // JSON string of { [bulletIndex]: { checkListScores, aiSemanticRelations } }
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      let listing = await db.getActiveListingByProject(input.projectId);
+      if (!listing) {
+        listing = await db.createListing({
+          projectId: input.projectId,
+          title: "",
+          bulletPoints: "[]",
+          description: "",
+          searchTerms: "",
+        });
+      }
+      return db.updateListing(listing.id, {
+        checklistScores: input.scores,
+      });
+    }),
+
   // ─── Version History Procedures ───
 
   // Get version history for a project

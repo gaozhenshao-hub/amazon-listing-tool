@@ -72,6 +72,9 @@ export const listings = mysqlTable("listings", {
   // QA content fields
   qaContent: text("qaContent"), // JSON array of QA items
   qaContentCn: text("qaContentCn"), // JSON array of QA items in Chinese
+  // Lock & checklist state
+  lockedSteps: text("lockedSteps"), // JSON array of locked step numbers e.g. [1,2,3]
+  checklistScores: text("checklistScores"), // JSON: { [bulletIndex]: { checkListScores, aiSemanticRelations } }
   version: int("version").default(1).notNull(),
   isActive: int("isActive").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

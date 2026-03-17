@@ -34,10 +34,12 @@ import {
   ArrowUpDown,
   ChevronRight,
   MessageSquare,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
 import { Label } from "@/components/ui/label";
@@ -98,6 +100,63 @@ export default function GeneratePage() {
 
   // Lock state for each step (locked = confirmed + synced to preview)
   const [lockedSteps, setLockedSteps] = useState<Set<number>>(new Set());
+  const lockedStepsInitialized = useRef(false);
+
+  // Load locked steps from DB on mount
+  const { data: activeListing } = trpc.listing.getActive.useQuery(
+    { projectId: selectedProjectId! },
+    { enabled: !!selectedProjectId }
+  );
+  const updateLockedStepsMut = trpc.listing.updateLockedSteps.useMutation();
+  const saveChecklistScoresMut = trpc.listing.saveChecklistScores.useMutation();
+
+  // Initialize locked steps from DB
+  useEffect(() => {
+    if (activeListing?.lockedSteps && !lockedStepsInitialized.current) {
+      try {
+        const steps: number[] = JSON.parse(activeListing.lockedSteps);
+        if (Array.isArray(steps) && steps.length > 0) {
+          setLockedSteps(new Set(steps));
+          setCompletedSteps(new Set(steps));
+        }
+        lockedStepsInitialized.current = true;
+      } catch { /* ignore parse errors */ }
+    }
+  }, [activeListing?.lockedSteps]);
+
+  // Initialize checklist scores from DB
+  useEffect(() => {
+    if (activeListing?.checklistScores && Object.keys(generatedBullets).length > 0) {
+      try {
+        const saved = JSON.parse(activeListing.checklistScores);
+        if (saved && typeof saved === 'object') {
+          setGeneratedBullets(prev => {
+            const updated = { ...prev };
+            for (const [idx, scores] of Object.entries(saved)) {
+              if (updated[Number(idx)]) {
+                updated[Number(idx)] = {
+                  ...updated[Number(idx)],
+                  checkListScores: (scores as any).checkListScores || updated[Number(idx)].checkListScores,
+                  aiSemanticRelations: (scores as any).aiSemanticRelations || updated[Number(idx)].aiSemanticRelations,
+                };
+              }
+            }
+            return updated;
+          });
+        }
+      } catch { /* ignore parse errors */ }
+    }
+  }, [activeListing?.checklistScores, Object.keys(generatedBullets).length]);
+
+  // All-locked redirect: show prompt when all 5 steps are locked
+  const [showAllLockedDialog, setShowAllLockedDialog] = useState(false);
+  const allLockedPromptShown = useRef(false);
+  useEffect(() => {
+    if (lockedSteps.size === 5 && !allLockedPromptShown.current) {
+      allLockedPromptShown.current = true;
+      setShowAllLockedDialog(true);
+    }
+  }, [lockedSteps.size]);
 
   // Checklist evaluation state
   const [evaluatingChecklist, setEvaluatingChecklist] = useState<Record<number, boolean>>({});
@@ -414,6 +473,27 @@ export default function GeneratePage() {
       });
       setGeneratedBullets(prev => ({ ...prev, [idx]: result }));
       toast.success(`卖点 ${idx + 1} 生成完成`);
+      // Auto-trigger 15-dimension checklist evaluation
+      if (result?.subtitle && result?.fullText) {
+        setEvaluatingChecklist(prev => ({ ...prev, [idx]: true }));
+        try {
+          const checkResult = await evaluateChecklist.mutateAsync({
+            subtitle: result.subtitle,
+            fullText: result.fullText,
+            bulletIndex: idx,
+          });
+          setGeneratedBullets(prev => ({
+            ...prev,
+            [idx]: {
+              ...prev[idx],
+              checkListScores: checkResult.checkListScores,
+              aiSemanticRelations: checkResult.aiSemanticRelations,
+            },
+          }));
+          toast.success(`卖点 ${idx + 1} 自检完成`);
+        } catch { /* silent fail for auto-check */ }
+        finally { setEvaluatingChecklist(prev => ({ ...prev, [idx]: false })); }
+      }
     } catch {
       // error handled by onError
     }
@@ -470,19 +550,76 @@ export default function GeneratePage() {
         bulletIndex: idx,
       });
       // Merge checklist scores and semantic relations into the bullet data
-      setGeneratedBullets(prev => ({
-        ...prev,
-        [idx]: {
-          ...prev[idx],
-          checkListScores: result.checkListScores,
-          aiSemanticRelations: result.aiSemanticRelations,
-        },
-      }));
+      setGeneratedBullets(prev => {
+        const updated = {
+          ...prev,
+          [idx]: {
+            ...prev[idx],
+            checkListScores: result.checkListScores,
+            aiSemanticRelations: result.aiSemanticRelations,
+          },
+        };
+        // Persist to DB
+        persistChecklistScores(updated);
+        return updated;
+      });
       toast.success(`卖点 ${idx + 1} 自检完成`);
     } catch (err: any) {
       toast.error(`自检失败: ${err.message}`);
     } finally {
       setEvaluatingChecklist(prev => ({ ...prev, [idx]: false }));
+    }
+  };
+
+  // Batch checklist evaluation for all confirmed bullets
+  const [batchChecklistRunning, setBatchChecklistRunning] = useState(false);
+  const handleBatchChecklist = async () => {
+    if (!sellingPointCores) return;
+    setBatchChecklistRunning(true);
+    let successCount = 0;
+    for (let idx = 0; idx < sellingPointCores.length; idx++) {
+      const bullet = generatedBullets[idx];
+      if (!bullet?.subtitle || !bullet?.fullText) continue;
+      if (bullet.checkListScores && Object.keys(bullet.checkListScores).length > 0) continue; // skip already evaluated
+      setEvaluatingChecklist(prev => ({ ...prev, [idx]: true }));
+      try {
+        const result = await evaluateChecklist.mutateAsync({
+          subtitle: bullet.subtitle,
+          fullText: bullet.fullText,
+          bulletIndex: idx,
+        });
+        setGeneratedBullets(prev => ({
+          ...prev,
+          [idx]: {
+            ...prev[idx],
+            checkListScores: result.checkListScores,
+            aiSemanticRelations: result.aiSemanticRelations,
+          },
+        }));
+        successCount++;
+      } catch { /* continue with next */ }
+      finally { setEvaluatingChecklist(prev => ({ ...prev, [idx]: false })); }
+    }
+    // Persist all scores to DB after batch
+    persistChecklistScores(generatedBullets);
+    setBatchChecklistRunning(false);
+    toast.success(`批量自检完成，成功 ${successCount} 条`);
+  };
+
+  // Helper to persist checklist scores to DB
+  const persistChecklistScores = (bullets: Record<number, any>) => {
+    if (!selectedProjectId) return;
+    const scores: Record<number, any> = {};
+    for (const [idx, bullet] of Object.entries(bullets)) {
+      if (bullet?.checkListScores) {
+        scores[Number(idx)] = {
+          checkListScores: bullet.checkListScores,
+          aiSemanticRelations: bullet.aiSemanticRelations || null,
+        };
+      }
+    }
+    if (Object.keys(scores).length > 0) {
+      saveChecklistScoresMut.mutate({ projectId: selectedProjectId, scores: JSON.stringify(scores) });
     }
   };
 
@@ -508,13 +645,29 @@ export default function GeneratePage() {
     syncBulletsMut.mutate({ projectId: selectedProjectId, bullets });
   };
 
-  // Lock/Unlock helpers
+  // Lock/Unlock helpers - persist to DB
   const handleLockStep = (step: number) => {
-    setLockedSteps(prev => { const n = new Set(prev); n.add(step); return n; });
+    setLockedSteps(prev => {
+      const n = new Set(prev);
+      n.add(step);
+      // Persist to DB
+      if (selectedProjectId) {
+        updateLockedStepsMut.mutate({ projectId: selectedProjectId, lockedSteps: Array.from(n) });
+      }
+      return n;
+    });
   };
 
   const handleUnlockStep = (step: number) => {
-    setLockedSteps(prev => { const n = new Set(prev); n.delete(step); return n; });
+    setLockedSteps(prev => {
+      const n = new Set(prev);
+      n.delete(step);
+      // Persist to DB
+      if (selectedProjectId) {
+        updateLockedStepsMut.mutate({ projectId: selectedProjectId, lockedSteps: Array.from(n) });
+      }
+      return n;
+    });
     setCompletedSteps(prev => { const n = new Set(prev); n.delete(step); return n; });
   };
 
@@ -569,6 +722,7 @@ export default function GeneratePage() {
                   const StepIcon = step.icon;
                   const isActive = activeStep === step.id;
                   const isCompleted = completedSteps.has(step.id);
+                  const isLocked = lockedSteps.has(step.id);
                   return (
                     <div key={step.id} className="flex items-center flex-1">
                       <button
@@ -576,18 +730,23 @@ export default function GeneratePage() {
                         className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all w-full justify-center ${
                           isActive
                             ? "bg-primary text-primary-foreground shadow-sm"
+                            : isLocked
+                            ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 hover:bg-green-200 ring-1 ring-green-400"
                             : isCompleted
                             ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 hover:bg-green-200"
                             : "bg-muted/50 text-muted-foreground hover:bg-muted"
                         }`}
                       >
-                        {isCompleted && !isActive ? (
+                        {isLocked ? (
+                          <Lock className="h-4 w-4 shrink-0 text-green-600" />
+                        ) : isCompleted && !isActive ? (
                           <CheckCircle2 className="h-4 w-4 shrink-0" />
                         ) : (
                           <StepIcon className="h-4 w-4 shrink-0" />
                         )}
                         <span className="hidden sm:inline">{step.label}</span>
                         <span className="sm:hidden text-xs">{step.id}</span>
+                        {isLocked && <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-green-50 text-green-600 border-green-300 hidden md:inline-flex">已锁定</Badge>}
                       </button>
                       {idx < STEPS.length - 1 && (
                         <ChevronRight className={`h-4 w-4 mx-1 shrink-0 ${
@@ -1287,12 +1446,19 @@ export default function GeneratePage() {
                         <span className="text-sm font-semibold text-green-800">全部 {totalCoresCount} 条卖点已确认</span>
                       </div>
                       <p className="text-xs text-green-700 mb-3">所有卖点已精雕完成，点击"同步到预览页"将卖点内容更新到Listing预览页面，然后可在预览页进行编辑和中英文翻译</p>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <Button size="sm" onClick={handleSyncBullets} disabled={syncBulletsMut.isPending}>
                           {syncBulletsMut.isPending ? (
                             <><Loader2 className="h-4 w-4 mr-2 animate-spin" />同步中...</>
                           ) : (
                             <><Upload className="h-4 w-4 mr-2" />同步到预览页</>
+                          )}
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={handleBatchChecklist} disabled={batchChecklistRunning}>
+                          {batchChecklistRunning ? (
+                            <><Loader2 className="h-4 w-4 mr-2 animate-spin" />批量自检中...</>
+                          ) : (
+                            <><CheckCircle2 className="h-4 w-4 mr-2" />一键全部自检</>
                           )}
                         </Button>
                         <Button variant="outline" size="sm" onClick={() => setLocation("/listing/preview")}>
@@ -1592,6 +1758,44 @@ export default function GeneratePage() {
               )}
             </div>
           </div>
+          {/* All Steps Locked Dialog */}
+          <Dialog open={showAllLockedDialog} onOpenChange={setShowAllLockedDialog}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                  全部步骤已锁定
+                </DialogTitle>
+                <DialogDescription>
+                  恭喜！您已完成全部 5 个步骤的内容确认并锁定。建议前往结果预览页进行最终审核和翻译。
+                </DialogDescription>
+              </DialogHeader>
+              <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 space-y-2">
+                {STEPS.map(step => (
+                  <div key={step.id} className="flex items-center gap-2 text-sm">
+                    <Lock className="h-3.5 w-3.5 text-green-600" />
+                    <span className="text-green-700 dark:text-green-300">Step {step.id}: {step.label}</span>
+                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 bg-green-100 text-green-600 border-green-300 ml-auto">已锁定</Badge>
+                  </div>
+                ))}
+              </div>
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button variant="outline" onClick={() => setShowAllLockedDialog(false)}>
+                  继续编辑
+                </Button>
+                <Button
+                  className="bg-green-600 hover:bg-green-700"
+                  onClick={() => {
+                    setShowAllLockedDialog(false);
+                    setLocation(`/listing/preview?project=${selectedProjectId}`);
+                  }}
+                >
+                  <ArrowRight className="h-4 w-4 mr-2" />
+                  前往结果预览
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       )}
     </div>
