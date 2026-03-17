@@ -1131,3 +1131,13 @@
 - [x] 测试: 数据变更后下游模块自动刷新
 - [x] 修复: 数据联动链路中发现的任何Bug（未发现Bug，全部链路正常）
 - [x] 新增: devDataFlow.test.ts - 9个场景15个测试用例覆盖完整数据流
+
+## 产品画像模块解锁编辑功能检查 (2026-03-17)
+- [x] 检查: 产品画像各子模块解锁逻辑 — 发现缺少unconfirmSection接口和解锁按钮
+- [x] 修复: 后端新增unconfirmSection接口，将confirmed字段重置为0
+- [x] 修复: 前端CardHeader和ActionBar新增"解锁编辑"按钮
+- [x] 修复: SectionEditor拆分isConfirmed和readOnly两层控制
+- [x] 修复: 或8个子编辑器组件传递解锁相关props
+- [x] 检查: 解锁后可正常编辑内容 — 浏览器验证通过
+- [x] 检查: 编辑后保存正常工作 — 保存/确认锁定按钮正常显示
+- [x] 新增: profileUnlock.test.ts - 70个测试用例覆盖完整解锁功能

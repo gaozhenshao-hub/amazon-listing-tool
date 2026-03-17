@@ -75,6 +75,22 @@ export const devProfileRouter = router({
       return devDb.upsertDevProductProfile(updateData);
     }),
 
+  // Unconfirm a section (unlock it for re-editing)
+  unconfirmSection: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      section: z.enum(PROFILE_SECTIONS),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const cols = SECTION_DB_MAP[input.section];
+      const updateData: any = {
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        [cols.confirmed]: 0,
+      };
+      return devDb.upsertDevProductProfile(updateData);
+    }),
+
   // Legacy save (for backward compatibility)
   save: protectedProcedure
     .input(z.object({

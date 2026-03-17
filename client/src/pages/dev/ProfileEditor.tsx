@@ -58,6 +58,17 @@ export default function ProfileEditor({ projectId, profile, readOnly = false }: 
     onError: (err: any) => toast.error(`确认失败: ${err.message}`),
   });
 
+  const unconfirmMutation = trpc.devProfile.unconfirmSection.useMutation({
+    onSuccess: () => { toast.success("已解锁，可重新编辑"); utils.devProfile.get.invalidate({ projectId }); },
+    onError: (err: any) => toast.error(`解锁失败: ${err.message}`),
+  });
+
+  const handleUnconfirm = () => {
+    if (confirm(`确定要解锁"${currentSection.label}"子模块吗？解锁后可重新编辑内容。`)) {
+      unconfirmMutation.mutate({ projectId, section: activeSection as any });
+    }
+  };
+
   const currentSection = SECTIONS.find(s => s.key === activeSection) || SECTIONS[0];
   const isConfirmed = profile?.[currentSection.confirmedField] === 1;
   const aiRaw = safeParseJson(profile?.[currentSection.aiField]);
@@ -114,6 +125,17 @@ export default function ProfileEditor({ projectId, profile, readOnly = false }: 
               {isConfirmed && <Badge className="bg-emerald-100 text-emerald-700 text-xs">已确认锁定</Badge>}
             </CardTitle>
             <div className="flex gap-2">
+              {isConfirmed && !readOnly && (
+                <Button
+                  size="sm" variant="outline"
+                  onClick={handleUnconfirm}
+                  disabled={unconfirmMutation.isPending}
+                  className="gap-1 text-xs text-amber-600 border-amber-200 hover:bg-amber-50"
+                >
+                  {unconfirmMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlock className="h-3 w-3" />}
+                  解锁编辑
+                </Button>
+              )}
               {!isConfirmed && !readOnly && (
                 <Button
                   size="sm" variant="outline"
@@ -143,11 +165,14 @@ export default function ProfileEditor({ projectId, profile, readOnly = false }: 
             <SectionEditor
               sectionKey={activeSection}
               data={baseData}
-              isConfirmed={isConfirmed || readOnly}
+              isConfirmed={isConfirmed}
+              readOnly={readOnly}
               onSave={handleSave}
               onConfirm={handleConfirm}
+              onUnconfirm={handleUnconfirm}
               savePending={saveMutation.isPending}
               confirmPending={confirmMutation.isPending}
+              unconfirmPending={unconfirmMutation.isPending}
             />
           )}
         </CardContent>
@@ -157,34 +182,60 @@ export default function ProfileEditor({ projectId, profile, readOnly = false }: 
 }
 
 /* ─── Section Editor (dispatches to specific table editors) ─── */
-function SectionEditor({ sectionKey, data, isConfirmed, onSave, onConfirm, savePending, confirmPending }: {
-  sectionKey: SectionKey; data: any; isConfirmed: boolean;
-  onSave: (d: any) => void; onConfirm: (d: any) => void;
-  savePending: boolean; confirmPending: boolean;
+function SectionEditor({ sectionKey, data, isConfirmed, readOnly = false, onSave, onConfirm, onUnconfirm, savePending, confirmPending, unconfirmPending }: {
+  sectionKey: SectionKey; data: any; isConfirmed: boolean; readOnly?: boolean;
+  onSave: (d: any) => void; onConfirm: (d: any) => void; onUnconfirm: () => void;
+  savePending: boolean; confirmPending: boolean; unconfirmPending: boolean;
 }) {
+  const disabled = isConfirmed || readOnly;
+  const editorProps = { data, isConfirmed: disabled, onSave, onConfirm, savePending, confirmPending, onUnconfirm, unconfirmPending, isActuallyConfirmed: isConfirmed, readOnly };
   switch (sectionKey) {
-    case "appearance": return <AppearanceEditor data={data} isConfirmed={isConfirmed} onSave={onSave} onConfirm={onConfirm} savePending={savePending} confirmPending={confirmPending} />;
-    case "function": return <FunctionEditor data={data} isConfirmed={isConfirmed} onSave={onSave} onConfirm={onConfirm} savePending={savePending} confirmPending={confirmPending} />;
-    case "cost": return <CostEditor data={data} isConfirmed={isConfirmed} onSave={onSave} onConfirm={onConfirm} savePending={savePending} confirmPending={confirmPending} />;
-    case "package": return <PackageEditor data={data} isConfirmed={isConfirmed} onSave={onSave} onConfirm={onConfirm} savePending={savePending} confirmPending={confirmPending} />;
-    case "packageDesign": return <PackageDesignEditor data={data} isConfirmed={isConfirmed} onSave={onSave} onConfirm={onConfirm} savePending={savePending} confirmPending={confirmPending} />;
-    case "userPersona": return <UserPersonaEditor data={data} isConfirmed={isConfirmed} onSave={onSave} onConfirm={onConfirm} savePending={savePending} confirmPending={confirmPending} />;
-    case "usageScenarios": return <UsageScenariosEditor data={data} isConfirmed={isConfirmed} onSave={onSave} onConfirm={onConfirm} savePending={savePending} confirmPending={confirmPending} />;
-    case "productMap": return <ProductMapEditor data={data} isConfirmed={isConfirmed} onSave={onSave} onConfirm={onConfirm} savePending={savePending} confirmPending={confirmPending} />;
+    case "appearance": return <AppearanceEditor {...editorProps} />;
+    case "function": return <FunctionEditor {...editorProps} />;
+    case "cost": return <CostEditor {...editorProps} />;
+    case "package": return <PackageEditor {...editorProps} />;
+    case "packageDesign": return <PackageDesignEditor {...editorProps} />;
+    case "userPersona": return <UserPersonaEditor {...editorProps} />;
+    case "usageScenarios": return <UsageScenariosEditor {...editorProps} />;
+    case "productMap": return <ProductMapEditor {...editorProps} />;
     default: return null;
   }
 }
 
 /* ─── Shared Action Bar ─── */
-function ActionBar({ isConfirmed, onSave, onConfirm, savePending, confirmPending }: {
+function ActionBar({ isConfirmed, onSave, onConfirm, savePending, confirmPending, onUnconfirm, unconfirmPending, isActuallyConfirmed, readOnly }: {
   isConfirmed: boolean; onSave: () => void; onConfirm: () => void;
   savePending: boolean; confirmPending: boolean;
+  onUnconfirm?: () => void; unconfirmPending?: boolean;
+  isActuallyConfirmed?: boolean; readOnly?: boolean;
 }) {
-  if (isConfirmed) {
+  // When the section is confirmed (not just readOnly from parent lock)
+  if (isActuallyConfirmed ?? isConfirmed) {
     return (
-      <div className="flex justify-end pt-3 border-t">
+      <div className="flex items-center justify-between pt-3 border-t">
         <div className="p-2 rounded-lg bg-emerald-50/50 border border-emerald-100 text-xs text-emerald-700">
           此模块已确认锁定，数据可被其他模块引用
+        </div>
+        {!readOnly && onUnconfirm && (
+          <Button
+            size="sm" variant="outline"
+            onClick={onUnconfirm}
+            disabled={unconfirmPending}
+            className="gap-1 text-xs text-amber-600 border-amber-200 hover:bg-amber-50"
+          >
+            {unconfirmPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlock className="h-3 w-3" />}
+            解锁编辑
+          </Button>
+        )}
+      </div>
+    );
+  }
+  // When readOnly from parent module lock (but section itself not confirmed)
+  if (readOnly) {
+    return (
+      <div className="flex justify-end pt-3 border-t">
+        <div className="p-2 rounded-lg bg-gray-50/50 border border-gray-200 text-xs text-gray-500">
+          产品画像模块已锁定，请先在顶部解锁
         </div>
       </div>
     );
@@ -245,7 +296,7 @@ function SelectCell({ value, onChange, disabled, options, placeholder }: {
 /* ═══════════════════════════════════════════════════════════
    1. 外观设计 Editor
    ═══════════════════════════════════════════════════════════ */
-function AppearanceEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirmPending }: any) {
+function AppearanceEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirmPending, onUnconfirm, unconfirmPending, isActuallyConfirmed, readOnly }: any) {
   const [colors, setColors] = useState(() => ensureArray(data?.colors).map((c: any) => ({
     color: c.color || "", hex: c.hex || "", reason: c.reason || "", target: c.target || c.targetAudience || "",
   })));
@@ -347,7 +398,7 @@ function AppearanceEditor({ data, isConfirmed, onSave, onConfirm, savePending, c
         </div>
       </div>
 
-      <ActionBar isConfirmed={isConfirmed} onSave={() => onSave(buildData())} onConfirm={() => onConfirm(buildData())} savePending={savePending} confirmPending={confirmPending} />
+      <ActionBar isConfirmed={isConfirmed} onSave={() => onSave(buildData())} onConfirm={() => onConfirm(buildData())} savePending={savePending} confirmPending={confirmPending} onUnconfirm={onUnconfirm} unconfirmPending={unconfirmPending} isActuallyConfirmed={isActuallyConfirmed} readOnly={readOnly} />
     </div>
   );
 }
@@ -355,7 +406,7 @@ function AppearanceEditor({ data, isConfirmed, onSave, onConfirm, savePending, c
 /* ═══════════════════════════════════════════════════════════
    2. 功能提升 Editor
    ═══════════════════════════════════════════════════════════ */
-function FunctionEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirmPending }: any) {
+function FunctionEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirmPending, onUnconfirm, unconfirmPending, isActuallyConfirmed, readOnly }: any) {
   const [functions, setFunctions] = useState(() => ensureArray(data?.mainFunctions).map((f: any) => ({
     name: f.name || "", desc: f.desc || f.description || "", priority: f.priority || "中",
   })));
@@ -452,7 +503,7 @@ function FunctionEditor({ data, isConfirmed, onSave, onConfirm, savePending, con
         </table>
       </div>
 
-      <ActionBar isConfirmed={isConfirmed} onSave={() => onSave(buildData())} onConfirm={() => onConfirm(buildData())} savePending={savePending} confirmPending={confirmPending} />
+      <ActionBar isConfirmed={isConfirmed} onSave={() => onSave(buildData())} onConfirm={() => onConfirm(buildData())} savePending={savePending} confirmPending={confirmPending} onUnconfirm={onUnconfirm} unconfirmPending={unconfirmPending} isActuallyConfirmed={isActuallyConfirmed} readOnly={readOnly} />
     </div>
   );
 }
@@ -460,7 +511,7 @@ function FunctionEditor({ data, isConfirmed, onSave, onConfirm, savePending, con
 /* ═══════════════════════════════════════════════════════════
    3. 产品成本 Editor
    ═══════════════════════════════════════════════════════════ */
-function CostEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirmPending }: any) {
+function CostEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirmPending, onUnconfirm, unconfirmPending, isActuallyConfirmed, readOnly }: any) {
   const [breakdown, setBreakdown] = useState(() => ensureArray(data?.breakdown).map((b: any) => ({
     item: b.item || "", estimatedCost: b.estimatedCost || "", percentage: b.percentage || "", note: b.note || "",
   })));
@@ -541,7 +592,7 @@ function CostEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirm
         </div>
       </div>
 
-      <ActionBar isConfirmed={isConfirmed} onSave={() => onSave(buildData())} onConfirm={() => onConfirm(buildData())} savePending={savePending} confirmPending={confirmPending} />
+      <ActionBar isConfirmed={isConfirmed} onSave={() => onSave(buildData())} onConfirm={() => onConfirm(buildData())} savePending={savePending} confirmPending={confirmPending} onUnconfirm={onUnconfirm} unconfirmPending={unconfirmPending} isActuallyConfirmed={isActuallyConfirmed} readOnly={readOnly} />
     </div>
   );
 }
@@ -549,7 +600,7 @@ function CostEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirm
 /* ═══════════════════════════════════════════════════════════
    4. 包装设计 Editor
    ═══════════════════════════════════════════════════════════ */
-function PackageEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirmPending }: any) {
+function PackageEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirmPending, onUnconfirm, unconfirmPending, isActuallyConfirmed, readOnly }: any) {
   const dims = data?.dimensions || {};
   const [params, setParams] = useState(() => ({
     length: dims.length || "", width: dims.width || "", height: dims.height || "",
@@ -592,7 +643,7 @@ function PackageEditor({ data, isConfirmed, onSave, onConfirm, savePending, conf
           </tbody>
         </table>
       </div>
-      <ActionBar isConfirmed={isConfirmed} onSave={() => onSave(buildData())} onConfirm={() => onConfirm(buildData())} savePending={savePending} confirmPending={confirmPending} />
+      <ActionBar isConfirmed={isConfirmed} onSave={() => onSave(buildData())} onConfirm={() => onConfirm(buildData())} savePending={savePending} confirmPending={confirmPending} onUnconfirm={onUnconfirm} unconfirmPending={unconfirmPending} isActuallyConfirmed={isActuallyConfirmed} readOnly={readOnly} />
     </div>
   );
 }
@@ -600,7 +651,7 @@ function PackageEditor({ data, isConfirmed, onSave, onConfirm, savePending, conf
 /* ═══════════════════════════════════════════════════════════
    5. 包装外观 Editor
    ═══════════════════════════════════════════════════════════ */
-function PackageDesignEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirmPending }: any) {
+function PackageDesignEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirmPending, onUnconfirm, unconfirmPending, isActuallyConfirmed, readOnly }: any) {
   const cs = data?.colorScheme || {};
   const [params, setParams] = useState(() => ({
     designStyle: data?.designStyle || "",
@@ -649,7 +700,7 @@ function PackageDesignEditor({ data, isConfirmed, onSave, onConfirm, savePending
           </tbody>
         </table>
       </div>
-      <ActionBar isConfirmed={isConfirmed} onSave={() => onSave(buildData())} onConfirm={() => onConfirm(buildData())} savePending={savePending} confirmPending={confirmPending} />
+      <ActionBar isConfirmed={isConfirmed} onSave={() => onSave(buildData())} onConfirm={() => onConfirm(buildData())} savePending={savePending} confirmPending={confirmPending} onUnconfirm={onUnconfirm} unconfirmPending={unconfirmPending} isActuallyConfirmed={isActuallyConfirmed} readOnly={readOnly} />
     </div>
   );
 }
@@ -657,7 +708,7 @@ function PackageDesignEditor({ data, isConfirmed, onSave, onConfirm, savePending
 /* ═══════════════════════════════════════════════════════════
    6. 用户画像 Editor
    ═══════════════════════════════════════════════════════════ */
-function UserPersonaEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirmPending }: any) {
+function UserPersonaEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirmPending, onUnconfirm, unconfirmPending, isActuallyConfirmed, readOnly }: any) {
   const demo = data?.demographics || {};
   const psycho = data?.psychographics || {};
   const [demographics, setDemographics] = useState(() => ({
@@ -768,7 +819,7 @@ function UserPersonaEditor({ data, isConfirmed, onSave, onConfirm, savePending, 
         </table>
       </div>
 
-      <ActionBar isConfirmed={isConfirmed} onSave={() => onSave(buildData())} onConfirm={() => onConfirm(buildData())} savePending={savePending} confirmPending={confirmPending} />
+      <ActionBar isConfirmed={isConfirmed} onSave={() => onSave(buildData())} onConfirm={() => onConfirm(buildData())} savePending={savePending} confirmPending={confirmPending} onUnconfirm={onUnconfirm} unconfirmPending={unconfirmPending} isActuallyConfirmed={isActuallyConfirmed} readOnly={readOnly} />
     </div>
   );
 }
@@ -776,7 +827,7 @@ function UserPersonaEditor({ data, isConfirmed, onSave, onConfirm, savePending, 
 /* ═══════════════════════════════════════════════════════════
    7. 使用场景 Editor
    ═══════════════════════════════════════════════════════════ */
-function UsageScenariosEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirmPending }: any) {
+function UsageScenariosEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirmPending, onUnconfirm, unconfirmPending, isActuallyConfirmed, readOnly }: any) {
   const [scenarios, setScenarios] = useState(() => ensureArray(data?.scenarios).map((s: any) => ({
     name: s.name || "", description: s.description || "", frequency: s.frequency || "",
     environment: s.environment || "", relatedProducts: s.relatedProducts || "",
@@ -838,7 +889,7 @@ function UsageScenariosEditor({ data, isConfirmed, onSave, onConfirm, savePendin
         </table>
       </div>
 
-      <ActionBar isConfirmed={isConfirmed} onSave={() => onSave(buildData())} onConfirm={() => onConfirm(buildData())} savePending={savePending} confirmPending={confirmPending} />
+      <ActionBar isConfirmed={isConfirmed} onSave={() => onSave(buildData())} onConfirm={() => onConfirm(buildData())} savePending={savePending} confirmPending={confirmPending} onUnconfirm={onUnconfirm} unconfirmPending={unconfirmPending} isActuallyConfirmed={isActuallyConfirmed} readOnly={readOnly} />
     </div>
   );
 }
@@ -846,7 +897,7 @@ function UsageScenariosEditor({ data, isConfirmed, onSave, onConfirm, savePendin
 /* ═══════════════════════════════════════════════════════════
    8. 产品地图 Editor
    ═══════════════════════════════════════════════════════════ */
-function ProductMapEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirmPending }: any) {
+function ProductMapEditor({ data, isConfirmed, onSave, onConfirm, savePending, confirmPending, onUnconfirm, unconfirmPending, isActuallyConfirmed, readOnly }: any) {
   const pos = data?.positioning || {};
   const [positioning, setPositioning] = useState(() => ({
     priceRange: pos.priceRange || "", qualityLevel: pos.qualityLevel || "", targetSegment: pos.targetSegment || "",
@@ -967,7 +1018,7 @@ function ProductMapEditor({ data, isConfirmed, onSave, onConfirm, savePending, c
         </table>
       </div>
 
-      <ActionBar isConfirmed={isConfirmed} onSave={() => onSave(buildData())} onConfirm={() => onConfirm(buildData())} savePending={savePending} confirmPending={confirmPending} />
+      <ActionBar isConfirmed={isConfirmed} onSave={() => onSave(buildData())} onConfirm={() => onConfirm(buildData())} savePending={savePending} confirmPending={confirmPending} onUnconfirm={onUnconfirm} unconfirmPending={unconfirmPending} isActuallyConfirmed={isActuallyConfirmed} readOnly={readOnly} />
     </div>
   );
 }
