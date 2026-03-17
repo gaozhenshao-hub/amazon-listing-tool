@@ -381,7 +381,7 @@ export default function DevProjectDetail() {
           ) : (
             <>
               <ModuleLockBar moduleName="profile" isLocked={isModuleLocked("profile")} onToggle={() => handleToggleModuleLock("profile")} isPending={toggleLockMutation.isPending} />
-              <ProfileEditor projectId={projectId} profile={profile} />
+              <ProfileEditor projectId={projectId} profile={profile} readOnly={isModuleLocked("profile")} />
             </>
           )}
         </TabsContent>
@@ -393,7 +393,7 @@ export default function DevProjectDetail() {
           ) : (
             <>
               <ModuleLockBar moduleName="bom" isLocked={isModuleLocked("bom")} onToggle={() => handleToggleModuleLock("bom")} isPending={toggleLockMutation.isPending} />
-              <BomEditor projectId={projectId} />
+              <BomEditor projectId={projectId} readOnly={isModuleLocked("bom")} />
             </>
           )}
         </TabsContent>
@@ -414,7 +414,7 @@ export default function DevProjectDetail() {
                   </Button>
                 </div>
               </div>
-              <ManualEditor manual={manual} projectId={projectId} />
+              <ManualEditor manual={manual} projectId={projectId} readOnly={isModuleLocked("manual")} />
             </>
           )}
         </TabsContent>
@@ -429,14 +429,14 @@ export default function DevProjectDetail() {
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold flex items-center gap-2"><ClipboardCheck className="h-4 w-4" />测试报告</h3>
                 <div className="flex gap-2">
-                  <Button size="sm" onClick={() => testReportMutation.mutate({ projectId })} disabled={testReportMutation.isPending} className="gap-2">
+                  <Button size="sm" onClick={() => testReportMutation.mutate({ projectId })} disabled={testReportMutation.isPending || isModuleLocked("test")} className="gap-2">
                     {testReportMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                     {testReport ? "重新生成" : "AI生成测试报告"}
                   </Button>
                 </div>
               </div>
               {testReport?.testItems ? (
-                <TestReportEditor testReport={testReport} projectId={projectId} />
+                <TestReportEditor testReport={testReport} projectId={projectId} readOnly={isModuleLocked("test")} />
               ) : (
                 <Card><CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                   <ClipboardCheck className="h-10 w-10 mb-3 opacity-30" />
@@ -455,7 +455,7 @@ export default function DevProjectDetail() {
           ) : (
             <>
               <ModuleLockBar moduleName="profit" isLocked={isModuleLocked("profit")} onToggle={() => handleToggleModuleLock("profit")} isPending={toggleLockMutation.isPending} />
-              <ProfitEditor projectId={projectId} />
+              <ProfitEditor projectId={projectId} readOnly={isModuleLocked("profit")} />
             </>
           )}
         </TabsContent>

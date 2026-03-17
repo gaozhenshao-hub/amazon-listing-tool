@@ -104,23 +104,40 @@ export const devBomRouter = router({
       const profile = await devDb.getDevProductProfile(input.projectId);
       const existingBom = await devDb.getDevBomItems(input.projectId);
 
+      // Build comprehensive profile context using all 8 sub-modules
+      const { buildProfileContext } = await import("../profileContextBuilder");
+      const profileContext = buildProfileContext(profile);
+
       const context = `项目: ${project.name}
+目标市场: ${project.targetMarket || "美国"}
+
 竞品数据:
-${products.slice(0, 5).map(p => `${p.title} | $${p.price} | ${p.bulletPoints || ""}`).join("\n")}
-${profile ? `产品画像: 外观=${profile.appearanceColors || ""}, 功能=${profile.mainFunctions || ""}, 材质=${(profile as any).materialStructure || ""}` : ""}
-${existingBom.length > 0 ? `已有BOM: ${existingBom.map(b => b.partName).join(", ")}` : ""}`;
+${products.slice(0, 5).map(p => `${p.title} | $${p.price} | ${p.rating}★ | ${p.bulletPoints || ""}`).join("\n")}
+
+${profileContext}
+
+${existingBom.length > 0 ? `已有BOM: ${existingBom.map(b => `${b.partName}(${b.material || ""}/${b.process || ""})`).join(", ")}` : "暂无已有BOM"}`;
+
+      console.log("[AI BOM] Using comprehensive profile context for project:", project.name);
 
       const response = await invokeLLM({
         messages: [
           {
             role: "system",
-            content: `你是一个资深的产品工程师和供应链专家。请根据竞品信息和产品画像，建议一份完整的多层级BOM清单。
+            content: `你是一个资深的产品工程师和供应链专家。请根据竞品信息和产品画像数据，建议一份完整的多层级BOM清单。
+
+重要：请仔细参考产品画像中的以下数据：
+- 【外观设计】中的材质、颜色、尺寸、表面处理工艺，确定物料材质和工艺选择
+- 【功能提升】中的主要功能、升级点、差异化功能，确定需要哪些零部件来实现
+- 【产品成本】中的目标成本和成本约束，确保单件成本在合理范围内
+- 【包装设计】中的包装尺寸和材质，确定包装物料BOM
+- 【用户画像】和【使用场景】，确定产品耐久性和质量要求
 
 请提供：
-1. **多层级BOM结构**：主件(level=0) → 子件(level=1) → 原材料(level=2)。每个部件包含：物料名称、材质、工艺（注塑/冲压/CNC/SMT等）、规格尺寸、单件用量、单价（人民币）。
+1. **多层级BOM结构**：主件(level=0) → 子件(level=1) → 原材料(level=2)。每个部件包含：物料名称、材质、工艺（注塑/冲压/CNC/SMT等）、规格尺寸、单件用量、单价（人民币）。物料材质必须与产品画像中的外观设计一致。
 2. **模具方案**：对需要开模的零部件，推荐模具类型（注塑模/冲压模/压铸模等）、模具材质（P20/718H/NAK80等）、穴数、预估费用、开模周期。
 3. **时间规划**：打样时间、模具开发时间、首批量产时间、总开发周期（天数）。
-4. **成本汇总**：物料总成本、包装成本预估。`,
+4. **成本汇总**：物料总成本、包装成本预估。必须参考产品画像中的成本约束。`,
           },
           { role: "user", content: context },
         ],

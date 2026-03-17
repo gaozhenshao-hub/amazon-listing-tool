@@ -409,17 +409,34 @@ IMPORTANT: Spanish content must be natural, professional Spanish - not literal t
       const profile = await devDb.getDevProductProfile(input.projectId);
       const bom = await devDb.getDevBomItems(input.projectId);
 
-      const context = `Product: ${project.name}
-Target Market: ${project.targetMarket}
-Competitors: ${products.slice(0, 3).map((p: any) => `${p.title} | ${p.rating}★`).join("; ")}
-${profile ? `Functions: ${profile.mainFunctions || ""}\nMaterials: ${profile.appearanceColors || ""}` : ""}
-BOM: ${bom.map((b: any) => `${b.partName}(${b.material || ""})`).join(", ")}`;
+      // Build comprehensive profile context using all 8 sub-modules
+      const { buildProfileContext } = await import("../profileContextBuilder");
+      const profileContext = buildProfileContext(profile);
+
+      const context = `项目: ${project.name}
+目标市场: ${project.targetMarket || "美国"}
+
+竞品数据:
+${products.slice(0, 3).map((p: any) => `${p.title} | $${p.price} | ${p.rating}\u2605 | ${(p.bulletPoints || "").slice(0, 200)}`).join("\n")}
+
+${profileContext}
+
+BOM物料清单:
+${bom.map((b: any) => `${b.partName} | 材质:${b.material || "未知"} | 工艺:${b.process || "未知"} | 规格:${b.specification || ""}`).join("\n")}`;
 
       const response = await invokeLLM({
         messages: [
           {
             role: "system",
             content: `You are a product quality testing expert. Generate a comprehensive test report with 8 categories of test items.
+
+IMPORTANT: Carefully reference the product profile data provided:
+- 【外观设计】 for material testing (drop test heights, surface scratch resistance, UV resistance based on materials)
+- 【功能提升】 for function tests (each main feature and upgrade point needs specific test items)
+- 【产品成本】 for quality grade expectations
+- 【包装设计】 for packaging tests (compression, seal, dimensions)
+- 【用户画像】 for safety tests (age group, usage patterns)
+- 【使用场景】 for durability tests (environment conditions, usage frequency)
 
 Each test item must include bilingual (Chinese + English) descriptions.
 

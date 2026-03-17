@@ -11,7 +11,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 
 /* ─── Types ─── */
-interface ProfileEditorProps { projectId: number; profile: any }
+interface ProfileEditorProps { projectId: number; profile: any; readOnly?: boolean }
 
 type SectionKey = "appearance" | "function" | "cost" | "package" | "packageDesign" | "userPersona" | "usageScenarios" | "productMap";
 
@@ -39,7 +39,7 @@ function ensureArray(val: any): any[] {
 }
 
 /* ─── Main Component ─── */
-export default function ProfileEditor({ projectId, profile }: ProfileEditorProps) {
+export default function ProfileEditor({ projectId, profile, readOnly = false }: ProfileEditorProps) {
   const [activeSection, setActiveSection] = useState<SectionKey>("appearance");
   const utils = trpc.useUtils();
 
@@ -114,11 +114,11 @@ export default function ProfileEditor({ projectId, profile }: ProfileEditorProps
               {isConfirmed && <Badge className="bg-emerald-100 text-emerald-700 text-xs">已确认锁定</Badge>}
             </CardTitle>
             <div className="flex gap-2">
-              {!isConfirmed && (
+              {!isConfirmed && !readOnly && (
                 <Button
                   size="sm" variant="outline"
                   onClick={() => generateMutation.mutate({ projectId, section: activeSection as any })}
-                  disabled={generateMutation.isPending}
+                  disabled={generateMutation.isPending || readOnly}
                   className="gap-1 text-xs"
                 >
                   {generateMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Brain className="h-3 w-3" />}
@@ -143,7 +143,7 @@ export default function ProfileEditor({ projectId, profile }: ProfileEditorProps
             <SectionEditor
               sectionKey={activeSection}
               data={baseData}
-              isConfirmed={isConfirmed}
+              isConfirmed={isConfirmed || readOnly}
               onSave={handleSave}
               onConfirm={handleConfirm}
               savePending={saveMutation.isPending}

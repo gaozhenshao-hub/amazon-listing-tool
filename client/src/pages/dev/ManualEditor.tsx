@@ -27,6 +27,7 @@ interface Chapter {
 interface ManualEditorProps {
   manual: any;
   projectId: number;
+  readOnly?: boolean;
 }
 
 // ─── Theme Color Presets ─────────────────────────────────────────
@@ -77,12 +78,13 @@ function StepIndicator({ currentStep, steps }: { currentStep: number; steps: { l
 
 // ─── Asset Upload Card ──────────────────────────────────────────
 function AssetUploadCard({
-  label, desc, icon: Icon, assetType, currentUrl, projectId, onUploaded, accept,
+  label, desc, icon: Icon, assetType, currentUrl, projectId, onUploaded, accept, disabled = false,
 }: {
   label: string; desc: string; icon: any; assetType: string;
   currentUrl?: string | null; projectId: number;
   onUploaded: (url: string) => void;
   accept?: string;
+  disabled?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const uploadMut = trpc.devManual.uploadManualAsset.useMutation({
@@ -127,7 +129,7 @@ function AssetUploadCard({
         <Button
           size="sm" variant="outline" className="h-7 px-2 text-xs gap-1"
           onClick={() => fileRef.current?.click()}
-          disabled={uploadMut.isPending}
+          disabled={uploadMut.isPending || disabled}
         >
           {uploadMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
           {currentUrl ? "更换" : "上传"}
@@ -255,7 +257,7 @@ function ThemePicker({
 }
 
 // ─── Main ManualEditor Component ────────────────────────────────
-export default function ManualEditor({ manual, projectId }: ManualEditorProps) {
+export default function ManualEditor({ manual, projectId, readOnly = false }: ManualEditorProps) {
   const utils = trpc.useUtils();
   const [currentStep, setCurrentStep] = useState(0);
 
@@ -498,22 +500,22 @@ export default function ManualEditor({ manual, projectId }: ManualEditorProps) {
                 <AssetUploadCard
                   label="品牌Logo" desc="PNG/SVG, 建议透明背景" icon={Image}
                   assetType="logo" currentUrl={logoUrl} projectId={projectId}
-                  onUploaded={(url) => setLogoUrl(url)}
+                  onUploaded={(url) => setLogoUrl(url)} disabled={readOnly}
                 />
                 <AssetUploadCard
                   label="封面底图" desc="封面页背景图片" icon={Image}
                   assetType="cover" currentUrl={coverUrl} projectId={projectId}
-                  onUploaded={(url) => setCoverUrl(url)}
+                  onUploaded={(url) => setCoverUrl(url)} disabled={readOnly}
                 />
                 <AssetUploadCard
                   label="内容页底图" desc="章节页面背景/水印" icon={Image}
                   assetType="content_bg" currentUrl={contentBgUrl} projectId={projectId}
-                  onUploaded={() => assetsQuery.refetch()}
+                  onUploaded={() => assetsQuery.refetch()} disabled={readOnly}
                 />
                 <AssetUploadCard
                   label="社媒二维码" desc="社交媒体主页二维码" icon={QrCode}
                   assetType="qrcode" currentUrl={qrCodeUrl} projectId={projectId}
-                  onUploaded={(url) => setQrCodeUrl(url)}
+                  onUploaded={(url) => setQrCodeUrl(url)} disabled={readOnly}
                 />
               </div>
             </CardContent>
@@ -534,7 +536,7 @@ export default function ManualEditor({ manual, projectId }: ManualEditorProps) {
                 label="参考说明书" desc="PDF/图片格式, 最大10MB" icon={FileText}
                 assetType="reference" currentUrl={referenceUrl} projectId={projectId}
                 onUploaded={(url) => setReferenceUrl(url)}
-                accept="image/*,.pdf"
+                accept="image/*,.pdf" disabled={readOnly}
               />
               {referenceUrl && (
                 <Button

@@ -40,7 +40,7 @@ const statusConfig = {
   pending: { label: "待测", icon: Clock, color: "bg-gray-100 text-gray-600", dotColor: "bg-gray-400" },
 };
 
-export default function TestReportEditor({ testReport, projectId }: { testReport: any; projectId: number }) {
+export default function TestReportEditor({ testReport, projectId, readOnly = false }: { testReport: any; projectId: number; readOnly?: boolean }) {
   const utils = trpc.useUtils();
 
   // Parse test items from report
@@ -54,7 +54,7 @@ export default function TestReportEditor({ testReport, projectId }: { testReport
   }, [testReport?.testItems]);
 
   const [items, setItems] = useState<TestItem[]>(initialItems);
-  const [isLocked, setIsLocked] = useState(testReport?.status === "confirmed");
+  const [isLocked, setIsLocked] = useState(testReport?.status === "confirmed" || readOnly);
   const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set(CATEGORIES.map(c => c.key)));
   const [editingCell, setEditingCell] = useState<{ idx: number; field: string } | null>(null);
   const [hasChanges, setHasChanges] = useState(false);

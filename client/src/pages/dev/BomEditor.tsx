@@ -16,6 +16,7 @@ import { toast } from "sonner";
 interface BomEditorProps {
   projectId: number;
   isLocked?: boolean;
+  readOnly?: boolean;
 }
 
 interface EditingRow {
@@ -48,7 +49,8 @@ function emptyRow(parentId: number | null = null, level = 0): EditingRow {
   return { partName: "", partCategory: "", material: "", specification: "", quantity: 1, unitCost: "", supplier: "", supplierGlobalId: null, supplierName: "", notes: "", parentId, level, isNew: true };
 }
 
-export default function BomEditor({ projectId, isLocked = false }: BomEditorProps) {
+export default function BomEditor({ projectId, isLocked: isLockedProp = false, readOnly = false }: BomEditorProps) {
+  const isLocked = isLockedProp || readOnly;
   const utils = trpc.useUtils();
   const { data: bomItems, isLoading } = trpc.devBom.list.useQuery({ projectId }) as any;
   const { data: moldCostsRaw } = trpc.devBom.getBomCostSummary.useQuery({ projectId }) as any;

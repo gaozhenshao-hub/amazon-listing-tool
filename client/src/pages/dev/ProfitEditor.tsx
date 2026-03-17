@@ -13,6 +13,7 @@ import { toast } from "sonner";
 
 interface ProfitEditorProps {
   projectId: number;
+  readOnly?: boolean;
 }
 
 interface SimRow {
@@ -60,7 +61,7 @@ const paramLabels: Record<string, { label: string; unit: string; tooltip: string
 
 type DataSourceType = "bom" | "profile" | "manual";
 
-export default function ProfitEditor({ projectId }: ProfitEditorProps) {
+export default function ProfitEditor({ projectId, readOnly = false }: ProfitEditorProps) {
   const [params, setParams] = useState({ ...defaultParams });
   const [quantities, setQuantities] = useState<number[]>([100, 500, 1000, 5000]);
   const [newQty, setNewQty] = useState("");
@@ -376,7 +377,7 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
               <div>
                 <p className="text-xs text-muted-foreground">汇率 (CNY &rarr; USD)</p>
                 <input type="number" step="0.0001" className="w-28 mt-0.5 px-2 py-1 text-sm border rounded-md bg-background font-mono"
-                  value={params.exchangeRate} onChange={(e) => setParams(prev => ({ ...prev, exchangeRate: parseFloat(e.target.value) || 0 }))} />
+                  value={params.exchangeRate} onChange={(e) => setParams(prev => ({ ...prev, exchangeRate: parseFloat(e.target.value) || 0 }))} disabled={readOnly} />
               </div>
               <div className="text-center">
                 <p className="text-xs text-muted-foreground">产品成本换算</p>
@@ -428,6 +429,7 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
                       className="w-32 px-2 py-1.5 text-sm border rounded-md bg-background"
                       value={(params as any)[key]}
                       onChange={(e) => handleCostChange(key, parseFloat(e.target.value) || 0)}
+                      disabled={readOnly}
                     />
                   </td>
                   <td className="p-3 text-xs">
