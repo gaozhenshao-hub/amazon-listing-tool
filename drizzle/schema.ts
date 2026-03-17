@@ -1,4 +1,4 @@
-import { bigint, decimal, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, decimal, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -827,6 +827,8 @@ export const devBomItems = mysqlTable("dev_bom_items", {
   id: int("id").autoincrement().primaryKey(),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
+  parentId: int("parentId"), // null = top-level, otherwise references parent BOM item
+  level: int("level").default(0), // 0=main, 1=sub, 2=raw material
   partName: varchar("partName", { length: 255 }).notNull(),
   material: varchar("material", { length: 255 }),
   process: varchar("process", { length: 255 }),
@@ -837,6 +839,7 @@ export const devBomItems = mysqlTable("dev_bom_items", {
   remark: text("remark"),
   supplierGlobalId: int("supplierGlobalId"),
   supplierName: varchar("supplierName", { length: 255 }),
+  sortOrder: int("sortOrder").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -872,6 +875,10 @@ export const devTimePlans = mysqlTable("dev_time_plans", {
   estimatedDays: int("estimatedDays"),
   startOffset: int("startOffset"), // days from project start
   description: text("description"),
+  status: varchar("status", { length: 50 }).default("pending"), // pending, in_progress, completed
+  color: varchar("color", { length: 20 }), // hex color for Gantt chart
+  dependsOn: int("dependsOn"), // id of the phase this depends on
+  sortOrder: int("sortOrder").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -1090,3 +1097,36 @@ export const devProjectTagItems = mysqlTable("dev_project_tag_items", {
 
 export type DevProjectTagItem = typeof devProjectTagItems.$inferSelect;
 export type InsertDevProjectTagItem = typeof devProjectTagItems.$inferInsert;
+
+
+// 子模块锁定状态 - 每个项目的每个子模块独立锁定
+export const devModuleLocks = mysqlTable("dev_module_locks", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  moduleName: mysqlEnum("moduleName", ["profile", "bom", "manual", "test", "profit"]).notNull(),
+  isLocked: boolean("isLocked").default(false).notNull(),
+  lockedAt: timestamp("lockedAt"),
+  unlockedAt: timestamp("unlockedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DevModuleLock = typeof devModuleLocks.$inferSelect;
+export type InsertDevModuleLock = typeof devModuleLocks.$inferInsert;
+
+// 说明书素材 - 独立存储各类素材
+export const devManualAssets = mysqlTable("dev_manual_assets", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  assetType: mysqlEnum("assetType", ["logo", "cover", "content_bg", "qrcode", "chapter_image", "other"]).notNull(),
+  chapterKey: varchar("chapterKey", { length: 100 }), // for chapter-specific assets
+  fileName: varchar("fileName", { length: 255 }),
+  fileUrl: text("fileUrl").notNull(), // S3 URL
+  sortOrder: int("sortOrder").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DevManualAsset = typeof devManualAssets.$inferSelect;
+export type InsertDevManualAsset = typeof devManualAssets.$inferInsert;

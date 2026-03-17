@@ -371,6 +371,56 @@ Generate 2-4 test items per category. Consider US market regulations (CPSC, FDA,
         ],
       };
     }),
+
+  // ─── Manual Asset Management ──────────────────────────────────
+  getManualAssets: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      return devDb.getDevManualAssets(input.projectId);
+    }),
+
+  uploadManualAsset: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      assetType: z.enum(["logo", "cover", "content_bg", "qrcode", "chapter_image", "other"]),
+      chapterKey: z.string().optional(),
+      fileName: z.string(),
+      fileData: z.string(), // base64 encoded
+      mimeType: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const buffer = Buffer.from(input.fileData, "base64");
+      const ext = input.fileName.split(".").pop() || "png";
+      const key = `manual-assets/${input.projectId}/${input.assetType}-${Date.now()}.${ext}`;
+      const { url } = await storagePut(key, buffer, input.mimeType || "image/png");
+
+      const result = await devDb.upsertDevManualAsset({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        assetType: input.assetType,
+        chapterKey: input.chapterKey || null,
+        fileName: input.fileName,
+        fileUrl: url,
+      });
+
+      // Also update the manual record for logo/cover/qrcode
+      if (input.assetType === "logo") {
+        await devDb.upsertDevManual({ projectId: input.projectId, userId: ctx.user.id, logoUrl: url });
+      } else if (input.assetType === "cover") {
+        await devDb.upsertDevManual({ projectId: input.projectId, userId: ctx.user.id, coverImageUrl: url });
+      } else if (input.assetType === "qrcode") {
+        await devDb.upsertDevManual({ projectId: input.projectId, userId: ctx.user.id, qrCodeUrl: url });
+      }
+
+      return { id: result.id, url, assetType: input.assetType };
+    }),
+
+  deleteManualAsset: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await devDb.deleteDevManualAsset(input.id);
+      return { success: true };
+    }),
 });
 
 function generateManualHtml(

@@ -21,6 +21,7 @@ import {
   devAnalysisStages, InsertDevAnalysisStage,
   devProductTags, InsertDevProductTag,
   devOffsiteAnalyses, InsertDevOffsiteAnalysis,
+  devManualAssets, InsertDevManualAsset,
 } from "../drizzle/schema";
 import { getDb } from "./db";
 
@@ -726,4 +727,43 @@ export async function deleteOffsiteAnalysis(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(devOffsiteAnalyses).where(eq(devOffsiteAnalyses.id, id));
+}
+
+// ─── Dev Manual Assets ────────────────────────────────────────
+
+export async function getDevManualAssets(projectId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(devManualAssets).where(eq(devManualAssets.projectId, projectId)).orderBy(devManualAssets.sortOrder);
+}
+
+export async function getDevManualAssetsByType(projectId: number, assetType: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(devManualAssets).where(
+    and(eq(devManualAssets.projectId, projectId), eq(devManualAssets.assetType, assetType as any))
+  );
+}
+
+export async function upsertDevManualAsset(data: InsertDevManualAsset) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // For logo/cover/content_bg/qrcode, replace existing
+  if (["logo", "cover", "content_bg", "qrcode"].includes(data.assetType)) {
+    const existing = await db.select().from(devManualAssets).where(
+      and(eq(devManualAssets.projectId, data.projectId), eq(devManualAssets.assetType, data.assetType as any))
+    );
+    if (existing.length > 0) {
+      await db.update(devManualAssets).set(data).where(eq(devManualAssets.id, existing[0].id));
+      return { id: existing[0].id };
+    }
+  }
+  const [result] = await db.insert(devManualAssets).values(data);
+  return { id: result.insertId };
+}
+
+export async function deleteDevManualAsset(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(devManualAssets).where(eq(devManualAssets.id, id));
 }

@@ -26,6 +26,9 @@ export const devBomRouter = router({
       moq: z.number().optional(),
       leadTime: z.number().optional(),
       notes: z.string().optional(),
+      parentId: z.number().nullable().optional(),
+      level: z.number().optional(),
+      sortOrder: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       return devDb.saveDevBomItem({
@@ -40,6 +43,9 @@ export const devBomRouter = router({
         remark: input.notes ?? null,
         supplierGlobalId: input.supplierGlobalId ?? null,
         supplierName: input.supplierName ?? null,
+        parentId: input.parentId ?? null,
+        level: input.level ?? 0,
+        sortOrder: input.sortOrder ?? 0,
       });
     }),
 
@@ -58,9 +64,12 @@ export const devBomRouter = router({
       moq: z.number().optional(),
       leadTime: z.number().optional(),
       notes: z.string().optional(),
+      parentId: z.number().nullable().optional(),
+      level: z.number().optional(),
+      sortOrder: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { id, partName, partCategory, material, specification, quantity, unitCost, notes, supplierGlobalId, supplierName } = input;
+      const { id, partName, partCategory, material, specification, quantity, unitCost, notes, supplierGlobalId, supplierName, parentId, level, sortOrder } = input;
       return devDb.saveDevBomItem({
         id,
         partName,
@@ -72,6 +81,9 @@ export const devBomRouter = router({
         remark: notes ?? undefined,
         supplierGlobalId: supplierGlobalId ?? null,
         supplierName: supplierName ?? null,
+        parentId: parentId ?? undefined,
+        level: level ?? undefined,
+        sortOrder: sortOrder ?? undefined,
       } as any);
     }),
 
@@ -81,7 +93,7 @@ export const devBomRouter = router({
       return devDb.deleteDevBomItem(input.id);
     }),
 
-  // ─── AI BOM Suggestion ─────────────────────────────────────
+  // ─── AI BOM Suggestion (Multi-level + Mold + Timeline) ────
   aiSuggest: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
@@ -95,23 +107,27 @@ export const devBomRouter = router({
       const context = `项目: ${project.name}
 竞品数据:
 ${products.slice(0, 5).map(p => `${p.title} | $${p.price} | ${p.bulletPoints || ""}`).join("\n")}
-${profile ? `产品画像: 外观=${profile.appearanceColors || ""}, 功能=${profile.mainFunctions || ""}` : ""}
+${profile ? `产品画像: 外观=${profile.appearanceColors || ""}, 功能=${profile.mainFunctions || ""}, 材质=${(profile as any).materialStructure || ""}` : ""}
 ${existingBom.length > 0 ? `已有BOM: ${existingBom.map(b => b.partName).join(", ")}` : ""}`;
 
       const response = await invokeLLM({
         messages: [
           {
             role: "system",
-            content: `你是一个资深的产品工程师和供应链专家。请根据竞品信息和产品画像，建议一份完整的BOM清单。
-包括：主体部件、电子元件、包装材料、配件等。
-为每个部件提供材质建议、规格参数、预估单价（人民币）、最小起订量。`,
+            content: `你是一个资深的产品工程师和供应链专家。请根据竞品信息和产品画像，建议一份完整的多层级BOM清单。
+
+请提供：
+1. **多层级BOM结构**：主件(level=0) → 子件(level=1) → 原材料(level=2)。每个部件包含：物料名称、材质、工艺（注塑/冲压/CNC/SMT等）、规格尺寸、单件用量、单价（人民币）。
+2. **模具方案**：对需要开模的零部件，推荐模具类型（注塑模/冲压模/压铸模等）、模具材质（P20/718H/NAK80等）、穴数、预估费用、开模周期。
+3. **时间规划**：打样时间、模具开发时间、首批量产时间、总开发周期（天数）。
+4. **成本汇总**：物料总成本、包装成本预估。`,
           },
           { role: "user", content: context },
         ],
         response_format: {
           type: "json_schema",
           json_schema: {
-            name: "bom_suggestion",
+            name: "bom_suggestion_v2",
             strict: true,
             schema: {
               type: "object",
@@ -122,7 +138,7 @@ ${existingBom.length > 0 ? `已有BOM: ${existingBom.map(b => b.partName).join("
                     type: "object",
                     properties: {
                       partName: { type: "string" },
-                      partCategory: { type: "string" },
+                      partCategory: { type: "string", description: "工艺类型" },
                       material: { type: "string" },
                       specification: { type: "string" },
                       quantity: { type: "number" },
@@ -130,15 +146,49 @@ ${existingBom.length > 0 ? `已有BOM: ${existingBom.map(b => b.partName).join("
                       moq: { type: "number" },
                       leadTime: { type: "number" },
                       notes: { type: "string" },
+                      level: { type: "number", description: "0=主件, 1=子件, 2=原材料" },
+                      parentName: { type: "string", description: "父级部件名称，顶级为空" },
                     },
-                    required: ["partName", "partCategory", "material", "specification", "quantity", "unitCost", "moq", "leadTime", "notes"],
+                    required: ["partName", "partCategory", "material", "specification", "quantity", "unitCost", "moq", "leadTime", "notes", "level", "parentName"],
+                    additionalProperties: false,
+                  },
+                },
+                molds: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      partName: { type: "string" },
+                      moldType: { type: "string" },
+                      moldMaterial: { type: "string" },
+                      cavities: { type: "number" },
+                      estimatedCost: { type: "string" },
+                      leadTimeDays: { type: "number" },
+                      remark: { type: "string" },
+                    },
+                    required: ["partName", "moldType", "moldMaterial", "cavities", "estimatedCost", "leadTimeDays", "remark"],
+                    additionalProperties: false,
+                  },
+                },
+                timeline: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      phaseName: { type: "string" },
+                      estimatedDays: { type: "number" },
+                      startOffset: { type: "number" },
+                      description: { type: "string" },
+                    },
+                    required: ["phaseName", "estimatedDays", "startOffset", "description"],
                     additionalProperties: false,
                   },
                 },
                 totalCost: { type: "string" },
+                packagingCost: { type: "string" },
                 suggestions: { type: "string" },
               },
-              required: ["items", "totalCost", "suggestions"],
+              required: ["items", "molds", "timeline", "totalCost", "packagingCost", "suggestions"],
               additionalProperties: false,
             },
           },
@@ -146,7 +196,77 @@ ${existingBom.length > 0 ? `已有BOM: ${existingBom.map(b => b.partName).join("
       });
 
       const content = response.choices?.[0]?.message?.content;
-      return content ? JSON.parse(content as string) : { items: [], totalCost: "0", suggestions: "" };
+      return content ? JSON.parse(content as string) : { items: [], molds: [], timeline: [], totalCost: "0", packagingCost: "0", suggestions: "" };
+    }),
+
+  // ─── AI Supplier Recommendation ───────────────────────────
+  aiSupplierRecommend: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const bomItems = await devDb.getDevBomItems(input.projectId);
+      const moldCosts = await devDb.getDevMoldCosts(input.projectId);
+      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+
+      const context = `项目: ${project?.name || "未命名"}
+BOM物料清单:
+${bomItems.map(b => `${b.partName} | 材质:${b.material || "未知"} | 工艺:${b.process || "未知"} | 规格:${b.specification || ""}`).join("\n")}
+模具需求:
+${moldCosts.map(m => `${m.partName} | ${m.moldType || ""} | ${m.moldMaterial || ""}`).join("\n")}`;
+
+      const response = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `你是一个资深的供应链专家。根据BOM中的材质和工艺需求，推荐匹配的供应商类型。
+对每个推荐的供应商类型，分析以下维度：
+- 工厂规模（员工数/年产值）
+- 产品质量（良品率/认证要求）
+- 研发能力（研发人员占比/专利数）
+- 交期表现（标准交期范围）
+- 价格竞争力（价格区间）
+
+请基于BOM中的不同材质和工艺，推荐3-5类供应商。`,
+          },
+          { role: "user", content: context },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "supplier_recommendation",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                recommendations: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      supplierType: { type: "string" },
+                      matchedParts: { type: "string" },
+                      factoryScale: { type: "string" },
+                      qualityStandard: { type: "string" },
+                      rdCapability: { type: "string" },
+                      deliveryPerformance: { type: "string" },
+                      priceRange: { type: "string" },
+                      overallScore: { type: "number" },
+                      searchKeywords: { type: "string" },
+                    },
+                    required: ["supplierType", "matchedParts", "factoryScale", "qualityStandard", "rdCapability", "deliveryPerformance", "priceRange", "overallScore", "searchKeywords"],
+                    additionalProperties: false,
+                  },
+                },
+                summary: { type: "string" },
+              },
+              required: ["recommendations", "summary"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const content = response.choices?.[0]?.message?.content;
+      return content ? JSON.parse(content as string) : { recommendations: [], summary: "" };
     }),
 
   // ─── Profit Calculator ─────────────────────────────────────

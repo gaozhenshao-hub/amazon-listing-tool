@@ -25,6 +25,7 @@ import { devGlobalSupplierRouter } from "./routers/devGlobalSupplier";
 import { offsiteAnalysisRouter } from "./routers/offsiteAnalysis";
 import { devProjectTagsRouter } from "./routers/devProjectTags";
 import { devPanoramaRouter } from "./routers/devPanorama";
+import { devModuleLockRouter } from "./routers/devModuleLock";
 // Image Workflow
 import { imageWorkflowRouter } from "./routers/imageWorkflow";
 // Module 5: Knowledge Base
@@ -69,6 +70,7 @@ export const appRouter = router({
   offsiteAnalysis: offsiteAnalysisRouter,
   devProjectTags: devProjectTagsRouter,
   devPanorama: devPanoramaRouter,
+  devModuleLock: devModuleLockRouter,
   // Image Workflow
   imageWorkflow: imageWorkflowRouter,
   // Module 5: Knowledge Base

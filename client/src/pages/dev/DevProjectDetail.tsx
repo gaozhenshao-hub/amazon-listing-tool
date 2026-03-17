@@ -52,6 +52,36 @@ export default function DevProjectDetail() {
   const { data: manual } = trpc.devManual.getManual.useQuery({ projectId }) as any;
   const { data: testReport } = trpc.devManual.getTestReport.useQuery({ projectId }) as any;
   const { data: linkageStatus } = trpc.devLinkage.getLinkageStatus.useQuery({ projectId });
+  const { data: moduleLocks } = trpc.devModuleLock.getAll.useQuery({ projectId });
+  const toggleLockMutation = trpc.devModuleLock.toggle.useMutation({
+    onSuccess: (data: any) => {
+      toast.success(data.isLocked ? `${moduleNameLabels[data.moduleName as keyof typeof moduleNameLabels]}已锁定` : `${moduleNameLabels[data.moduleName as keyof typeof moduleNameLabels]}已解锁，可重新编辑`);
+      utils.devModuleLock.getAll.invalidate({ projectId });
+    },
+    onError: (err: any) => toast.error(`操作失败: ${err.message}`),
+  });
+
+  const moduleNameLabels: Record<string, string> = {
+    profile: "产品画像",
+    bom: "BOM表",
+    manual: "说明书",
+    test: "测试报告",
+    profit: "利润计算",
+  };
+
+  const isModuleLocked = (mod: string) => moduleLocks?.[mod]?.isLocked ?? false;
+
+  const handleToggleModuleLock = (mod: string) => {
+    const currentlyLocked = isModuleLocked(mod);
+    if (currentlyLocked) {
+      // Unlocking - confirm first
+      if (confirm(`确定要解锁"${moduleNameLabels[mod]}"模块吗？解锁后可重新编辑内容。`)) {
+        toggleLockMutation.mutate({ projectId, moduleName: mod as any, lock: false });
+      }
+    } else {
+      toggleLockMutation.mutate({ projectId, moduleName: mod as any, lock: true });
+    }
+  };
 
   const currentPhase = (project as any)?.phase || "market_analysis";
   const isPhase2 = currentPhase === "project_execution";
@@ -80,12 +110,12 @@ export default function DevProjectDetail() {
 
   // Phase 2 tabs
   const phase2Tabs = useMemo(() => [
-    { value: "profile", label: "产品画像", icon: Users },
-    { value: "bom", label: "BOM表", icon: Package },
-    { value: "manual", label: "说明书", icon: FileText },
-    { value: "test", label: "测试报告", icon: ClipboardCheck },
-    { value: "profit", label: "利润计算", icon: DollarSign },
-    { value: "download", label: "报告下载", icon: Download },
+    { value: "profile", label: "产品画像", icon: Users, lockable: true },
+    { value: "bom", label: "BOM表", icon: Package, lockable: true },
+    { value: "manual", label: "说明书", icon: FileText, lockable: true },
+    { value: "test", label: "测试报告", icon: ClipboardCheck, lockable: true },
+    { value: "profit", label: "利润计算", icon: DollarSign, lockable: true },
+    { value: "download", label: "报告下载", icon: Download, lockable: false },
   ], []);
 
   if (isLoading) {
@@ -163,8 +193,11 @@ export default function DevProjectDetail() {
         {/* Dynamic Tab List */}
         <TabsList className={`grid w-full ${isPhase2 && ["profile","bom","manual","test","profit","download"].includes(activeTab) ? "grid-cols-6" : "grid-cols-7"}`}>
           {(isPhase2 && ["profile","bom","manual","test","profit","download"].includes(activeTab) ? phase2Tabs : phase1Tabs).map(tab => (
-            <TabsTrigger key={tab.value} value={tab.value} className="text-xs gap-1">
+            <TabsTrigger key={tab.value} value={tab.value} className="text-xs gap-1 relative">
               <tab.icon className="h-3.5 w-3.5" />{tab.label}
+              {(tab as any).lockable && isModuleLocked(tab.value) && (
+                <Lock className="h-2.5 w-2.5 text-emerald-600 absolute -top-0.5 -right-0.5" />
+              )}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -346,7 +379,10 @@ export default function DevProjectDetail() {
           {!isPhase2 ? (
             <LockedPhaseCard />
           ) : (
-            <ProfileEditor projectId={projectId} profile={profile} />
+            <>
+              <ModuleLockBar moduleName="profile" isLocked={isModuleLocked("profile")} onToggle={() => handleToggleModuleLock("profile")} isPending={toggleLockMutation.isPending} />
+              <ProfileEditor projectId={projectId} profile={profile} />
+            </>
           )}
         </TabsContent>
 
@@ -355,7 +391,10 @@ export default function DevProjectDetail() {
           {!isPhase2 ? (
             <LockedPhaseCard />
           ) : (
-            <BomEditor projectId={projectId} />
+            <>
+              <ModuleLockBar moduleName="bom" isLocked={isModuleLocked("bom")} onToggle={() => handleToggleModuleLock("bom")} isPending={toggleLockMutation.isPending} />
+              <BomEditor projectId={projectId} />
+            </>
           )}
         </TabsContent>
 
@@ -365,10 +404,11 @@ export default function DevProjectDetail() {
             <LockedPhaseCard />
           ) : (
             <>
+              <ModuleLockBar moduleName="manual" isLocked={isModuleLocked("manual")} onToggle={() => handleToggleModuleLock("manual")} isPending={toggleLockMutation.isPending} />
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold flex items-center gap-2"><FileText className="h-4 w-4" />产品说明书</h3>
                 <div className="flex gap-2">
-                  <Button size="sm" onClick={() => manualMutation.mutate({ projectId })} disabled={manualMutation.isPending} className="gap-2">
+                  <Button size="sm" onClick={() => manualMutation.mutate({ projectId })} disabled={manualMutation.isPending || isModuleLocked("manual")} className="gap-2">
                     {manualMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                     {manual ? "重新生成" : "AI生成说明书"}
                   </Button>
@@ -385,6 +425,7 @@ export default function DevProjectDetail() {
             <LockedPhaseCard />
           ) : (
             <>
+              <ModuleLockBar moduleName="test" isLocked={isModuleLocked("test")} onToggle={() => handleToggleModuleLock("test")} isPending={toggleLockMutation.isPending} />
               <div className="flex items-center justify-between">
                 <h3 className="font-semibold flex items-center gap-2"><ClipboardCheck className="h-4 w-4" />测试报告</h3>
                 <div className="flex gap-2">
@@ -412,7 +453,10 @@ export default function DevProjectDetail() {
           {!isPhase2 ? (
             <LockedPhaseCard />
           ) : (
-            <ProfitEditor projectId={projectId} />
+            <>
+              <ModuleLockBar moduleName="profit" isLocked={isModuleLocked("profit")} onToggle={() => handleToggleModuleLock("profit")} isPending={toggleLockMutation.isPending} />
+              <ProfitEditor projectId={projectId} />
+            </>
           )}
         </TabsContent>
 
@@ -944,6 +988,65 @@ function LockedPhaseCard() {
         <p className="text-xs mt-1">请先在"评分立项"页面完成立项审批后解锁</p>
       </CardContent>
     </Card>
+  );
+}
+
+/* ─── Module Lock Bar ────────────────────────────── */
+function ModuleLockBar({ moduleName, isLocked, onToggle, isPending }: {
+  moduleName: string;
+  isLocked: boolean;
+  onToggle: () => void;
+  isPending: boolean;
+}) {
+  const labels: Record<string, string> = {
+    profile: "产品画像",
+    bom: "BOM表",
+    manual: "说明书",
+    test: "测试报告",
+    profit: "利润计算",
+  };
+  return (
+    <div className={`flex items-center justify-between px-4 py-2 rounded-lg border ${
+      isLocked
+        ? "bg-emerald-50 border-emerald-200"
+        : "bg-blue-50/50 border-blue-100"
+    }`}>
+      <div className="flex items-center gap-2">
+        {isLocked ? (
+          <Lock className="h-3.5 w-3.5 text-emerald-600" />
+        ) : (
+          <Unlock className="h-3.5 w-3.5 text-blue-500" />
+        )}
+        <span className="text-xs font-medium">
+          {labels[moduleName] || moduleName}
+        </span>
+        {isLocked ? (
+          <Badge className="bg-emerald-100 text-emerald-700 text-[10px] px-1.5 py-0">已确认锁定</Badge>
+        ) : (
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-blue-600 border-blue-200">编辑中</Badge>
+        )}
+      </div>
+      <Button
+        size="sm"
+        variant={isLocked ? "outline" : "default"}
+        className={`h-7 gap-1 text-xs ${
+          isLocked
+            ? "text-amber-600 border-amber-200 hover:bg-amber-50"
+            : "bg-emerald-600 hover:bg-emerald-700 text-white"
+        }`}
+        onClick={onToggle}
+        disabled={isPending}
+      >
+        {isPending ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : isLocked ? (
+          <Unlock className="h-3 w-3" />
+        ) : (
+          <Lock className="h-3 w-3" />
+        )}
+        {isLocked ? "解锁编辑" : "确认锁定"}
+      </Button>
+    </div>
   );
 }
 
