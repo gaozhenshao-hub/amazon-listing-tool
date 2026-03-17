@@ -1221,3 +1221,10 @@
 ## 预览页进度条 + 全局防御性JSON校验 (2026-03-17)
 - [x] 预览页顶部步骤锁定状态进度条（显示Step 1-5锁定状态，未锁定标记"待完善"+快速跳转链接）
 - [x] 全局防御性JSON解析校验（imageAdvice/imageAdviceCn/qaContent/bulletPoints等所有JSON字段增加Array.isArray/typeof校验，27个测试通过）
+
+## BUG修复：锁定状态下Step 2-5应显示已确认内容+解锁按钮 (2026-03-17)
+- [x] Step 2 标题生成：锁定后显示已保存标题+LockedContentBar解锁按钮（通过savedContent prop从BB加载）
+- [x] Step 3 产品描述：锁定后显示已保存描述+LockedContentBar解锁按钮
+- [x] Step 4 搜索词：锁定后显示已保存搜索词+字节计数+LockedContentBar解锁按钮
+- [x] Step 5 QA问答：锁定后显示已保存QA列表摘要+LockedContentBar解锁按钮
+- [x] Step 1 卖点精雕：已有锁定显示逻辑（通过bulletsLocked状态）

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +26,7 @@ interface StepQAProps {
   projectId: number;
   emphasis: string;
   locked?: boolean;
+  savedContent?: string | null;
   onLock?: () => void;
   onUnlock?: () => void;
   onComplete: () => void;
@@ -39,7 +40,7 @@ interface QAItem {
   sourceInsight?: string;
 }
 
-export default function StepQA({ projectId, emphasis, locked, onLock, onUnlock, onComplete }: StepQAProps) {
+export default function StepQA({ projectId, emphasis, locked, savedContent, onLock, onUnlock, onComplete }: StepQAProps) {
   const [qaItems, setQaItems] = useState<QAItem[]>([]);
   const [confirmed, setConfirmed] = useState(false);
   const [generated, setGenerated] = useState(false);
@@ -49,6 +50,26 @@ export default function StepQA({ projectId, emphasis, locked, onLock, onUnlock, 
   const [showAddForm, setShowAddForm] = useState(false);
   const [newQ, setNewQ] = useState("");
   const [newA, setNewA] = useState("");
+
+  // Parse saved QA content from DB for locked display
+  const savedQaItems = useMemo<QAItem[]>(() => {
+    if (!savedContent) return [];
+    try {
+      const parsed = JSON.parse(savedContent);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item: any, idx: number) => ({
+          question: item.question || item.q || "",
+          answer: item.answer || item.a || "",
+          category: item.category || "",
+          priority: item.priority || idx + 1,
+          sourceInsight: item.sourceInsight || "",
+        }));
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }, [savedContent]);
 
   const generateQA = trpc.listing.generateQA.useMutation({
     onSuccess: (data: any) => {
@@ -122,6 +143,11 @@ export default function StepQA({ projectId, emphasis, locked, onLock, onUnlock, 
   };
 
   const handleUnlock = () => {
+    // Restore saved content for editing when unlocking
+    if (savedQaItems.length > 0) {
+      setQaItems(savedQaItems);
+      setGenerated(true);
+    }
     setConfirmed(false);
     onUnlock?.();
   };
@@ -197,8 +223,9 @@ export default function StepQA({ projectId, emphasis, locked, onLock, onUnlock, 
     custom: "自定义",
   };
 
-  // Locked state
-  if (locked && confirmed) {
+  // Locked state - show saved content from DB
+  if (locked) {
+    const displayItems = confirmed ? qaItems : savedQaItems;
     return (
       <Card className="border-2 border-green-300 bg-green-50/30 dark:border-green-800 dark:bg-green-950/10">
         <CardHeader>
@@ -212,18 +239,22 @@ export default function StepQA({ projectId, emphasis, locked, onLock, onUnlock, 
             locked={true}
             label="QA问答"
             onUnlock={handleUnlock}
-            info={`${qaItems.length} 组QA · 已同步到预览页`}
+            info={displayItems.length > 0 ? `${displayItems.length} 组QA · 已同步到预览页` : "已同步到预览页"}
           />
-          <div className="space-y-1.5 pl-2">
-            {qaItems.slice(0, 3).map((qa, idx) => (
-              <div key={idx} className="text-xs text-green-800 dark:text-green-300">
-                <span className="font-medium">Q{idx + 1}:</span> {qa.question}
-              </div>
-            ))}
-            {qaItems.length > 3 && (
-              <p className="text-xs text-green-600">...还有 {qaItems.length - 3} 组QA</p>
-            )}
-          </div>
+          {displayItems.length > 0 ? (
+            <div className="space-y-1.5 pl-2">
+              {displayItems.slice(0, 5).map((qa, idx) => (
+                <div key={idx} className="text-xs text-green-800 dark:text-green-300">
+                  <span className="font-medium">Q{idx + 1}:</span> {qa.question}
+                </div>
+              ))}
+              {displayItems.length > 5 && (
+                <p className="text-xs text-green-600">...还有 {displayItems.length - 5} 组QA</p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground pl-2">QA内容已锁定</p>
+          )}
         </CardContent>
       </Card>
     );

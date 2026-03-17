@@ -25,6 +25,7 @@ interface StepTitleProps {
   projectId: number;
   emphasis: string;
   locked?: boolean;
+  savedContent?: string | null;
   onLock?: () => void;
   onUnlock?: () => void;
   onComplete: () => void;
@@ -56,7 +57,7 @@ const CHECK_LIST_LABELS: Record<string, string> = {
   seasonal: "T10 节日",
 };
 
-export default function StepTitle({ projectId, emphasis, locked, onLock, onUnlock, onComplete }: StepTitleProps) {
+export default function StepTitle({ projectId, emphasis, locked, savedContent, onLock, onUnlock, onComplete }: StepTitleProps) {
   const [candidates, setCandidates] = useState<any[]>([]);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
@@ -153,9 +154,11 @@ export default function StepTitle({ projectId, emphasis, locked, onLock, onUnloc
     return Object.values(scores || {}).filter((s: any) => s?.pass).length;
   };
 
-  // If locked, show locked state
-  if (locked && confirmed) {
-    const finalTitle = editingTitle || candidates[selectedIdx!]?.title || "";
+  // If locked, show locked state with saved content from DB
+  if (locked) {
+    const displayTitle = confirmed
+      ? (editingTitle || candidates[selectedIdx!]?.title || "")
+      : (savedContent || "");
     return (
       <Card className="border-2 border-green-300 bg-green-50/30 dark:border-green-800 dark:bg-green-950/10">
         <CardHeader>
@@ -169,9 +172,16 @@ export default function StepTitle({ projectId, emphasis, locked, onLock, onUnloc
             locked={true}
             label="标题"
             onUnlock={handleUnlock}
-            info="已同步到预览页"
+            info={displayTitle ? `${displayTitle.length} 字符 · 已同步到预览页` : "已同步到预览页"}
           />
-          <p className="text-sm text-green-800 dark:text-green-300 pl-2">{finalTitle}</p>
+          {displayTitle ? (
+            <div className="pl-2 space-y-2">
+              <p className="text-sm text-green-800 dark:text-green-300 leading-relaxed">{displayTitle}</p>
+              <CharCountBadge count={displayTitle.length} min={180} max={200} />
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground pl-2">标题内容已锁定</p>
+          )}
         </CardContent>
       </Card>
     );

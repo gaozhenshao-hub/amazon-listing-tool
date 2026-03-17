@@ -1686,6 +1686,7 @@ export default function GeneratePage() {
               projectId={selectedProjectId}
               emphasis={emphasis}
               locked={lockedSteps.has(2)}
+              savedContent={activeListing?.title || null}
               onLock={() => handleLockStep(2)}
               onUnlock={() => { handleUnlockStep(2); toast.info("标题已解锁，可重新编辑"); }}
               onComplete={() => handleStepComplete(2)}
@@ -1698,6 +1699,7 @@ export default function GeneratePage() {
               projectId={selectedProjectId}
               emphasis={emphasis}
               locked={lockedSteps.has(3)}
+              savedContent={activeListing?.description || null}
               onLock={() => handleLockStep(3)}
               onUnlock={() => { handleUnlockStep(3); toast.info("描述已解锁，可重新编辑"); }}
               onComplete={() => handleStepComplete(3)}
@@ -1710,6 +1712,7 @@ export default function GeneratePage() {
               projectId={selectedProjectId}
               emphasis={emphasis}
               locked={lockedSteps.has(4)}
+              savedContent={activeListing?.searchTerms || null}
               onLock={() => handleLockStep(4)}
               onUnlock={() => { handleUnlockStep(4); toast.info("搜索词已解锁，可重新编辑"); }}
               onComplete={() => handleStepComplete(4)}
@@ -1722,6 +1725,7 @@ export default function GeneratePage() {
               projectId={selectedProjectId}
               emphasis={emphasis}
               locked={lockedSteps.has(5)}
+              savedContent={activeListing?.qaContent || null}
               onLock={() => handleLockStep(5)}
               onUnlock={() => { handleUnlockStep(5); toast.info("QA已解锁，可重新编辑"); }}
               onComplete={() => handleStepComplete(5)}

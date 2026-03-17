@@ -22,12 +22,13 @@ interface StepDescriptionProps {
   projectId: number;
   emphasis: string;
   locked?: boolean;
+  savedContent?: string | null;
   onLock?: () => void;
   onUnlock?: () => void;
   onComplete: () => void;
 }
 
-export default function StepDescription({ projectId, emphasis, locked, onLock, onUnlock, onComplete }: StepDescriptionProps) {
+export default function StepDescription({ projectId, emphasis, locked, savedContent, onLock, onUnlock, onComplete }: StepDescriptionProps) {
   const [description, setDescription] = useState("");
   const [viewMode, setViewMode] = useState<"preview" | "source">("preview");
   const [confirmed, setConfirmed] = useState(false);
@@ -95,12 +96,18 @@ export default function StepDescription({ projectId, emphasis, locked, onLock, o
   };
 
   const handleUnlock = () => {
+    // Restore saved content for editing when unlocking
+    if (savedContent) {
+      setDescription(savedContent);
+      setGenerated(true);
+    }
     setConfirmed(false);
     onUnlock?.();
   };
 
-  // Locked state
-  if (locked && confirmed) {
+  // Locked state - show saved content from DB
+  if (locked) {
+    const displayContent = confirmed ? description : (savedContent || "");
     return (
       <Card className="border-2 border-green-300 bg-green-50/30 dark:border-green-800 dark:bg-green-950/10">
         <CardHeader>
@@ -116,10 +123,14 @@ export default function StepDescription({ projectId, emphasis, locked, onLock, o
             onUnlock={handleUnlock}
             info="已同步到预览页"
           />
-          <div
-            className="text-sm text-green-800 dark:text-green-300 prose prose-sm max-w-none line-clamp-4 pl-2"
-            dangerouslySetInnerHTML={{ __html: description }}
-          />
+          {displayContent ? (
+            <div
+              className="text-sm text-green-800 dark:text-green-300 prose prose-sm max-w-none line-clamp-6 pl-2"
+              dangerouslySetInnerHTML={{ __html: displayContent }}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground pl-2">描述内容已锁定</p>
+          )}
         </CardContent>
       </Card>
     );

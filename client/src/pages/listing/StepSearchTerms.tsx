@@ -21,12 +21,13 @@ interface StepSearchTermsProps {
   projectId: number;
   emphasis: string;
   locked?: boolean;
+  savedContent?: string | null;
   onLock?: () => void;
   onUnlock?: () => void;
   onComplete: () => void;
 }
 
-export default function StepSearchTerms({ projectId, emphasis, locked, onLock, onUnlock, onComplete }: StepSearchTermsProps) {
+export default function StepSearchTerms({ projectId, emphasis, locked, savedContent, onLock, onUnlock, onComplete }: StepSearchTermsProps) {
   const [searchTerms, setSearchTerms] = useState("");
   const [categories, setCategories] = useState<any[]>([]);
   const [confirmed, setConfirmed] = useState(false);
@@ -99,17 +100,23 @@ export default function StepSearchTerms({ projectId, emphasis, locked, onLock, o
   };
 
   const handleUnlock = () => {
+    // Restore saved content for editing when unlocking
+    if (savedContent) {
+      setSearchTerms(savedContent);
+      setGenerated(true);
+    }
     setConfirmed(false);
     onUnlock?.();
   };
 
-  // Calculate byte count (Amazon uses bytes, not characters)
-  const byteCount = new TextEncoder().encode(searchTerms).length;
+  // Calculate byte count for display content
+  const displayTerms = locked ? (confirmed ? searchTerms : (savedContent || "")) : searchTerms;
+  const byteCount = new TextEncoder().encode(displayTerms).length;
   const maxBytes = 250;
   const inRange = byteCount <= maxBytes;
 
-  // Locked state
-  if (locked && confirmed) {
+  // Locked state - show saved content from DB
+  if (locked) {
     return (
       <Card className="border-2 border-green-300 bg-green-50/30 dark:border-green-800 dark:bg-green-950/10">
         <CardHeader>
@@ -123,9 +130,13 @@ export default function StepSearchTerms({ projectId, emphasis, locked, onLock, o
             locked={true}
             label="搜索词"
             onUnlock={handleUnlock}
-            info={`${byteCount}/${maxBytes} 字节 · 已同步到预览页`}
+            info={displayTerms ? `${byteCount}/${maxBytes} 字节 · 已同步到预览页` : "已同步到预览页"}
           />
-          <p className="text-sm text-green-800 dark:text-green-300 font-mono pl-2 line-clamp-2">{searchTerms}</p>
+          {displayTerms ? (
+            <p className="text-sm text-green-800 dark:text-green-300 font-mono pl-2 line-clamp-3">{displayTerms}</p>
+          ) : (
+            <p className="text-sm text-muted-foreground pl-2">搜索词内容已锁定</p>
+          )}
         </CardContent>
       </Card>
     );
