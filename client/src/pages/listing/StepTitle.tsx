@@ -146,6 +146,13 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
   };
 
   const handleUnlock = () => {
+    // Auto-fill editing area with saved content on unlock
+    if (savedContent) {
+      setEditingTitle(savedContent);
+      // Set candidates with saved content so user can continue editing
+      setCandidates([{ title: savedContent, score: 0, analysis: "" }]);
+      setSelectedIdx(0);
+    }
     setConfirmed(false);
     onUnlock?.();
   };

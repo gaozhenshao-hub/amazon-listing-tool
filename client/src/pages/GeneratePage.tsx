@@ -766,34 +766,65 @@ export default function GeneratePage() {
           {/* ===== Step 1: 卖点精雕 ===== */}
           {activeStep === 1 && (<>
           {/* Locked state for Step 1 */}
-          {lockedSteps.has(1) && (
+          {lockedSteps.has(1) && (() => {
+            // Try to get bullets from memory first, then from DB
+            const savedBullets: { subtitle: string; fullText: string }[] = (() => {
+              // First try from memory (generatedBullets + confirmedBullets)
+              const memBullets = sellingPointCores?.map((_, idx) => {
+                const bullet = generatedBullets[idx];
+                if (bullet && confirmedBullets[idx]) return { subtitle: bullet.subtitle || "", fullText: bullet.fullText || "" };
+                return null;
+              }).filter(Boolean) as { subtitle: string; fullText: string }[] || [];
+              if (memBullets.length > 0) return memBullets;
+              // Fallback: load from activeListing.bulletPoints (DB)
+              if (activeListing?.bulletPoints) {
+                try {
+                  const parsed = JSON.parse(activeListing.bulletPoints);
+                  if (Array.isArray(parsed)) {
+                    return parsed.map((bp: any, i: number) => {
+                      if (typeof bp === "string") {
+                        // Format: "subtitle fullText" - split at first space after subtitle
+                        const parts = bp.match(/^(\S+)\s+(.+)$/);
+                        return parts ? { subtitle: parts[1], fullText: parts[2] } : { subtitle: `卖点 ${i + 1}`, fullText: bp };
+                      }
+                      if (typeof bp === "object" && bp !== null) {
+                        return { subtitle: bp.subtitle || bp.title || `卖点 ${i + 1}`, fullText: bp.fullText || bp.text || bp.content || "" };
+                      }
+                      return { subtitle: `卖点 ${i + 1}`, fullText: String(bp) };
+                    });
+                  }
+                } catch { /* ignore */ }
+              }
+              return [];
+            })();
+            return (
             <Card className="border-2 border-green-300 bg-green-50/30 dark:border-green-800 dark:bg-green-950/10">
               <CardContent className="p-4 space-y-3">
                 <LockedContentBar
                   locked={true}
                   label="卖点"
                   onUnlock={handleUnlockBullets}
-                  info={`${confirmedBulletCount} 条卖点已同步到预览页`}
+                  info={`${savedBullets.length} 条卖点已同步到预览页`}
                 />
                 {/* Show locked bullet summaries */}
                 <div className="space-y-2 pl-2">
-                  {sellingPointCores?.map((sp, idx) => {
-                    const bullet = generatedBullets[idx];
-                    if (!bullet || !confirmedBullets[idx]) return null;
-                    return (
-                      <div key={idx} className="flex items-start gap-2 text-sm text-green-800 dark:text-green-300">
-                        <Badge variant="outline" className="text-[10px] shrink-0 border-green-400">{idx + 1}</Badge>
-                        <div className="min-w-0">
-                          <span className="font-medium">{bullet.subtitle}</span>
-                          <span className="text-xs text-green-600 dark:text-green-400 ml-2 line-clamp-1">{bullet.fullText}</span>
-                        </div>
+                  {savedBullets.map((bullet, idx) => (
+                    <div key={idx} className="flex items-start gap-2 text-sm text-green-800 dark:text-green-300">
+                      <Badge variant="outline" className="text-[10px] shrink-0 border-green-400">{idx + 1}</Badge>
+                      <div className="min-w-0">
+                        <span className="font-medium">{bullet.subtitle}</span>
+                        <span className="text-xs text-green-600 dark:text-green-400 ml-2 line-clamp-1">{bullet.fullText}</span>
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
+                  {savedBullets.length === 0 && (
+                    <p className="text-sm text-muted-foreground">卖点数据已同步到预览页（刷新后可在预览页查看完整内容）</p>
+                  )}
                 </div>
               </CardContent>
             </Card>
-          )}
+            );
+          })()}
           {/* Unlocked Step 1 content */}
           {!lockedSteps.has(1) && (<>
           {/* Character count rules reminder */}
