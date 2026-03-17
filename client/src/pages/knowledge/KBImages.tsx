@@ -9,8 +9,10 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, PlusCircle, Link2, Upload, Image as ImageIcon, CheckCircle, Edit3, Trash2, Sparkles, Search, Grid3X3, LayoutGrid } from "lucide-react";
+import { Loader2, PlusCircle, Link2, Upload, Image as ImageIcon, CheckCircle, Edit3, Trash2, Sparkles, Search, Grid3X3, LayoutGrid, Package, Eye } from "lucide-react";
 import { toast } from "sonner";
+
+type ViewMode = "asin" | "waterfall" | "grid";
 
 export default function KBImages() {
   const utils = trpc.useUtils();
@@ -19,21 +21,23 @@ export default function KBImages() {
   const [linkInput, setLinkInput] = useState("");
   const [batchInput, setBatchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [viewMode, setViewMode] = useState<"waterfall" | "grid">("waterfall");
+  const [viewMode, setViewMode] = useState<ViewMode>("asin");
   const [detailSetId, setDetailSetId] = useState<number | null>(null);
   const [editingAnalysis, setEditingAnalysis] = useState("");
 
   // Filters
   const [filterImageType, setFilterImageType] = useState("all");
   const [filterStyle, setFilterStyle] = useState("all");
+  const [filterPosition, setFilterPosition] = useState("all");
 
-  // Use listSets for the set-level view
+  // Use listSets for the ASIN-grouped view (default)
   const { data: sets, isLoading } = trpc.kbImages.listSets.useQuery();
-  // Use listAllImages for image-level browsing
+  // Use listAllImages for image-level browsing (waterfall/grid)
   const { data: allImages, isLoading: imagesLoading } = trpc.kbImages.listAllImages.useQuery({
     tagImageType: filterImageType !== "all" ? filterImageType : undefined,
     tagDesignStyle: filterStyle !== "all" ? filterStyle : undefined,
-  });
+    imagePosition: filterPosition !== "all" ? filterPosition : undefined,
+  }, { enabled: viewMode !== "asin" });
   const { data: detailSet } = trpc.kbImages.getSet.useQuery({ id: detailSetId! }, { enabled: !!detailSetId });
 
   const importAsin = trpc.kbImages.importByAsin.useMutation({
@@ -64,22 +68,43 @@ export default function KBImages() {
     confirmed: { label: "已入库", variant: "outline" },
   };
 
-  // Use allImages for the waterfall/grid view
-  const images = (allImages as any[] || []);
-  const filtered = useMemo(() => {
-    return images.filter((item: any) => {
+  // Filter sets for ASIN view
+  const filteredSets = useMemo(() => {
+    if (!sets) return [];
+    return (sets as any[]).filter((s: any) => {
+      if (!searchQuery) return true;
+      const q = searchQuery.toLowerCase();
+      return (s.asin || "").toLowerCase().includes(q) || (s.productTitle || "").toLowerCase().includes(q) || (s.brand || "").toLowerCase().includes(q);
+    });
+  }, [sets, searchQuery]);
+
+  // Filter images for waterfall/grid view
+  const filteredImages = useMemo(() => {
+    if (!allImages) return [];
+    return (allImages as any[]).filter((item: any) => {
       if (!searchQuery) return true;
       const q = searchQuery.toLowerCase();
       return (item.asin || "").toLowerCase().includes(q) || (item.imageType || "").toLowerCase().includes(q);
     });
-  }, [images, searchQuery]);
+  }, [allImages, searchQuery]);
 
-  // Waterfall layout: distribute items into columns
+  // Waterfall columns
   const columns = useMemo(() => {
     const cols: any[][] = [[], [], [], []];
-    filtered.forEach((item: any, i: number) => cols[i % 4].push(item));
+    filteredImages.forEach((item: any, i: number) => cols[i % 4].push(item));
     return cols;
-  }, [filtered]);
+  }, [filteredImages]);
+
+  // Group detail set images by position
+  const groupedImages = useMemo(() => {
+    if (!detailSet) return { main: [], secondary: [], aplus: [] };
+    const imgs = (detailSet as any).images || [];
+    return {
+      main: imgs.filter((i: any) => i.imagePosition === "main"),
+      secondary: imgs.filter((i: any) => i.imagePosition === "secondary"),
+      aplus: imgs.filter((i: any) => i.imagePosition === "aplus"),
+    };
+  }, [detailSet]);
 
   return (
     <div className="space-y-6">
@@ -89,7 +114,7 @@ export default function KBImages() {
             <ImageIcon className="h-6 w-6 text-purple-500" />
             智能图片知识库
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">AI四维分类（类目/图片类型/设计风格/色系），瀑布流浏览</p>
+          <p className="text-muted-foreground text-sm mt-1">AI四维分类（类目/图片类型/设计风格/色系），按ASIN整合浏览</p>
         </div>
         <Button onClick={() => setShowImport(true)} className="gap-2"><PlusCircle className="h-4 w-4" /> 导入图片</Button>
       </div>
@@ -98,34 +123,50 @@ export default function KBImages() {
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="搜索ASIN、类型..." className="pl-9" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          <Input placeholder="搜索ASIN、产品名、品牌..." className="pl-9" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
-        <Select value={filterImageType} onValueChange={setFilterImageType}>
-          <SelectTrigger className="w-[130px]"><SelectValue placeholder="图片类型" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部类型</SelectItem>
-            <SelectItem value="main">主图</SelectItem>
-            <SelectItem value="scene">场景图</SelectItem>
-            <SelectItem value="detail">细节图</SelectItem>
-            <SelectItem value="infographic">信息图</SelectItem>
-            <SelectItem value="comparison">对比图</SelectItem>
-            <SelectItem value="size">尺寸图</SelectItem>
-            <SelectItem value="feature">功能图</SelectItem>
-            <SelectItem value="lifestyle">生活方式</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={filterStyle} onValueChange={setFilterStyle}>
-          <SelectTrigger className="w-[130px]"><SelectValue placeholder="设计风格" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">全部风格</SelectItem>
-            <SelectItem value="minimal">极简</SelectItem>
-            <SelectItem value="premium">高端质感</SelectItem>
-            <SelectItem value="colorful">色彩丰富</SelectItem>
-            <SelectItem value="tech">科技感</SelectItem>
-            <SelectItem value="natural">自然</SelectItem>
-          </SelectContent>
-        </Select>
+        {viewMode !== "asin" && (
+          <>
+            <Select value={filterImageType} onValueChange={setFilterImageType}>
+              <SelectTrigger className="w-[130px]"><SelectValue placeholder="图片类型" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部类型</SelectItem>
+                <SelectItem value="main">主图</SelectItem>
+                <SelectItem value="scene">场景图</SelectItem>
+                <SelectItem value="detail">细节图</SelectItem>
+                <SelectItem value="infographic">信息图</SelectItem>
+                <SelectItem value="comparison">对比图</SelectItem>
+                <SelectItem value="size">尺寸图</SelectItem>
+                <SelectItem value="feature">功能图</SelectItem>
+                <SelectItem value="lifestyle">生活方式</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={filterStyle} onValueChange={setFilterStyle}>
+              <SelectTrigger className="w-[130px]"><SelectValue placeholder="设计风格" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部风格</SelectItem>
+                <SelectItem value="minimal">极简</SelectItem>
+                <SelectItem value="premium">高端质感</SelectItem>
+                <SelectItem value="colorful">色彩丰富</SelectItem>
+                <SelectItem value="tech">科技感</SelectItem>
+                <SelectItem value="natural">自然</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={filterPosition} onValueChange={setFilterPosition}>
+              <SelectTrigger className="w-[130px]"><SelectValue placeholder="图片位置" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部位置</SelectItem>
+                <SelectItem value="main">主图</SelectItem>
+                <SelectItem value="secondary">副图</SelectItem>
+                <SelectItem value="aplus">A+图片</SelectItem>
+              </SelectContent>
+            </Select>
+          </>
+        )}
         <div className="ml-auto flex gap-1">
+          <Button variant={viewMode === "asin" ? "default" : "outline"} size="sm" className="h-9 gap-1.5" onClick={() => setViewMode("asin")}>
+            <Package className="h-4 w-4" /> ASIN集
+          </Button>
           <Button variant={viewMode === "waterfall" ? "default" : "outline"} size="icon" className="h-9 w-9" onClick={() => setViewMode("waterfall")}>
             <LayoutGrid className="h-4 w-4" />
           </Button>
@@ -135,57 +176,124 @@ export default function KBImages() {
         </div>
       </div>
 
-      <Badge variant="secondary" className="text-xs">{filtered.length} 张图片</Badge>
+      <Badge variant="secondary" className="text-xs">
+        {viewMode === "asin" ? `${filteredSets.length} 个ASIN图片集` : `${filteredImages.length} 张图片`}
+      </Badge>
 
-      {/* Image Grid */}
-      {(isLoading || imagesLoading) ? (
-        <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div>
-      ) : filtered.length === 0 ? (
-        <Card>
-          <CardContent className="py-16 text-center">
-            <ImageIcon className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
-            <p className="text-sm font-medium text-muted-foreground">暂无图片</p>
-            <p className="text-xs text-muted-foreground mt-1">通过ASIN或链接导入产品图片，AI将进行四维分类和评分</p>
-            <Button variant="outline" className="mt-4 gap-2" onClick={() => setShowImport(true)}><PlusCircle className="h-4 w-4" /> 导入第一批图片</Button>
-          </CardContent>
-        </Card>
-      ) : viewMode === "waterfall" ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {columns.map((col, ci) => (
-            <div key={ci} className="space-y-4">
-              {col.map((item: any) => (
-                <Card key={item.id} className="cursor-pointer hover:shadow-lg transition-all overflow-hidden group" onClick={() => { setDetailSetId(item.setId); setEditingAnalysis(""); }}>
-                  {item.imageUrl && (
-                    <div className="relative">
-                      <img src={item.imageUrl} alt="" className="w-full object-cover" loading="lazy" />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all" />
+      {/* ═══ ASIN Grouped View (Default) ═══ */}
+      {viewMode === "asin" && (
+        isLoading ? (
+          <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div>
+        ) : filteredSets.length === 0 ? (
+          <Card>
+            <CardContent className="py-16 text-center">
+              <ImageIcon className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+              <p className="text-sm font-medium text-muted-foreground">暂无图片集</p>
+              <p className="text-xs text-muted-foreground mt-1">通过ASIN或链接导入产品图片，AI将进行四维分类和12维度分析</p>
+              <Button variant="outline" className="mt-4 gap-2" onClick={() => setShowImport(true)}><PlusCircle className="h-4 w-4" /> 导入第一批图片</Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {filteredSets.map((set: any) => {
+              const status = statusMap[set.status] || { label: set.status, variant: "secondary" as const };
+              return (
+                <Card key={set.id} className="group cursor-pointer hover:shadow-lg transition-all overflow-hidden" onClick={() => { setDetailSetId(set.id); setEditingAnalysis(""); }}>
+                  {/* Thumbnail strip - show first 4 images from the set */}
+                  <div className="relative h-40 bg-muted overflow-hidden">
+                    <AsinThumbnailStrip setId={set.id} />
+                    <div className="absolute top-2 right-2">
+                      <Badge variant={status.variant} className="text-[10px] shadow-sm">{status.label}</Badge>
                     </div>
-                  )}
-                  <CardContent className="p-3">
-                    <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                      <Badge variant="outline" className="text-[10px]">{item.asin || "N/A"}</Badge>
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
+                      <span className="text-white text-xs font-medium flex items-center gap-1"><Eye className="h-3 w-3" /> 查看详情</span>
                     </div>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {item.imageType && <Badge variant="secondary" className="text-[10px]">{item.imageType}</Badge>}
-                      {item.designStyle && <Badge variant="secondary" className="text-[10px]">{item.designStyle}</Badge>}
+                  </div>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge variant="outline" className="font-mono text-xs">{set.asin}</Badge>
+                      {set.brand && <Badge variant="secondary" className="text-[10px]">{set.brand}</Badge>}
+                    </div>
+                    <h3 className="text-sm font-medium line-clamp-2 mb-2">{set.productTitle || "未命名产品"}</h3>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{set.category || "未分类"}</span>
+                      {set.overallScore && (
+                        <span className="font-medium text-primary">{set.overallScore}分</span>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
-              ))}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          {filtered.map((item: any) => (
-            <Card key={item.id} className="cursor-pointer hover:shadow-md transition-all overflow-hidden" onClick={() => { setDetailSetId(item.setId); setEditingAnalysis(""); }}>
-              {item.imageUrl && <img src={item.imageUrl} alt="" className="w-full aspect-square object-cover" loading="lazy" />}
-              <CardContent className="p-2">
-                <Badge variant="outline" className="text-[10px]">{item.asin || "N/A"}</Badge>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        )
+      )}
+
+      {/* ═══ Waterfall View ═══ */}
+      {viewMode === "waterfall" && (
+        (isLoading || imagesLoading) ? (
+          <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div>
+        ) : filteredImages.length === 0 ? (
+          <Card>
+            <CardContent className="py-16 text-center">
+              <ImageIcon className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+              <p className="text-sm font-medium text-muted-foreground">暂无图片</p>
+              <Button variant="outline" className="mt-4 gap-2" onClick={() => setShowImport(true)}><PlusCircle className="h-4 w-4" /> 导入图片</Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {columns.map((col, ci) => (
+              <div key={ci} className="space-y-4">
+                {col.map((item: any) => (
+                  <Card key={item.id} className="cursor-pointer hover:shadow-lg transition-all overflow-hidden group" onClick={() => { setDetailSetId(item.imageSetId); setEditingAnalysis(""); }}>
+                    {item.imageUrl && (
+                      <div className="relative">
+                        <img src={item.imageUrl} alt="" className="w-full object-cover" loading="lazy" />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all" />
+                      </div>
+                    )}
+                    <CardContent className="p-3">
+                      <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                        <Badge variant="outline" className="text-[10px]">{item.asin || "N/A"}</Badge>
+                        <Badge variant="secondary" className="text-[10px]">{item.imagePosition === "main" ? "主图" : item.imagePosition === "aplus" ? "A+" : `副图#${item.positionIndex}`}</Badge>
+                      </div>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {item.tagImageType && <Badge variant="secondary" className="text-[10px]">{item.tagImageType}</Badge>}
+                        {item.tagDesignStyle && <Badge variant="secondary" className="text-[10px]">{item.tagDesignStyle}</Badge>}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {/* ═══ Grid View ═══ */}
+      {viewMode === "grid" && (
+        (isLoading || imagesLoading) ? (
+          <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div>
+        ) : filteredImages.length === 0 ? (
+          <Card>
+            <CardContent className="py-16 text-center">
+              <ImageIcon className="h-12 w-12 mx-auto text-muted-foreground/30 mb-4" />
+              <p className="text-sm font-medium text-muted-foreground">暂无图片</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            {filteredImages.map((item: any) => (
+              <Card key={item.id} className="cursor-pointer hover:shadow-md transition-all overflow-hidden" onClick={() => { setDetailSetId(item.imageSetId); setEditingAnalysis(""); }}>
+                {item.imageUrl && <img src={item.imageUrl} alt="" className="w-full aspect-square object-cover" loading="lazy" />}
+                <CardContent className="p-2">
+                  <Badge variant="outline" className="text-[10px]">{item.asin || "N/A"}</Badge>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )
       )}
 
       {/* Import Dialog */}
@@ -202,7 +310,7 @@ export default function KBImages() {
               <div className="space-y-2">
                 <Label>输入单个ASIN</Label>
                 <Input placeholder="B0XXXXXXXXX" value={asinInput} onChange={(e) => setAsinInput(e.target.value)} className="font-mono" />
-                <p className="text-xs text-muted-foreground">系统将自动爬取所有产品图片（主图+副图+A+图片）</p>
+                <p className="text-xs text-muted-foreground">系统将自动爬取所有产品图片（主图+副图+A+图片），并按ASIN整合为一个图片集</p>
               </div>
               <Button onClick={() => importAsin.mutate({ asin: asinInput })} disabled={importAsin.isPending || !asinInput} className="w-full gap-2">
                 {importAsin.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -212,7 +320,8 @@ export default function KBImages() {
             <TabsContent value="link" className="space-y-4 mt-4">
               <div className="space-y-2">
                 <Label>输入亚马逊产品链接</Label>
-                <Textarea placeholder={"https://www.amazon.com/dp/B0XXXXXXXXX"} value={linkInput} onChange={(e) => setLinkInput(e.target.value)} rows={4} />
+                <Textarea placeholder={"https://www.amazon.com/dp/B0XXXXXXXXX\nhttps://www.amazon.com/dp/B0YYYYYYYYY"} value={linkInput} onChange={(e) => setLinkInput(e.target.value)} rows={4} />
+                <p className="text-xs text-muted-foreground">支持多个链接，每行一个，系统自动提取ASIN</p>
               </div>
               <Button onClick={() => importLink.mutate({ url: linkInput })} disabled={importLink.isPending || !linkInput} className="w-full gap-2">
                 {importLink.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -221,8 +330,9 @@ export default function KBImages() {
             </TabsContent>
             <TabsContent value="batch" className="space-y-4 mt-4">
               <div className="space-y-2">
-                <Label>批量输入ASIN（每行一个，最多50个）</Label>
-                <Textarea placeholder={"B0XXXXXXXXX\nB0YYYYYYYYY"} value={batchInput} onChange={(e) => setBatchInput(e.target.value)} rows={6} className="font-mono text-sm" />
+                <Label>批量输入ASIN（每行一个，最多20个）</Label>
+                <Textarea placeholder={"B0XXXXXXXXX\nB0YYYYYYYYY\nB0ZZZZZZZZZ"} value={batchInput} onChange={(e) => setBatchInput(e.target.value)} rows={6} className="font-mono text-sm" />
+                <p className="text-xs text-muted-foreground">每个ASIN将创建独立的图片集，AI分别进行12维度分析</p>
               </div>
               <Button onClick={() => {
                 const asins = batchInput.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
@@ -237,57 +347,111 @@ export default function KBImages() {
         </DialogContent>
       </Dialog>
 
-      {/* Set Detail Dialog */}
+      {/* ═══ ASIN Set Detail Dialog — Images Grouped by Position ═══ */}
       <Dialog open={!!detailSetId} onOpenChange={(open) => !open && setDetailSetId(null)}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           {detailSet ? (() => {
             const d = detailSet as any;
             const status = statusMap[d.status] || { label: d.status, variant: "secondary" as const };
             let analysis: any = {};
-            try { analysis = JSON.parse(d.userEditedAnalysis || d.aiSetAnalysis || "{}"); } catch {}
+            try { analysis = JSON.parse(d.userEditedOverallAnalysis || d.overallAnalysis || "{}"); } catch {}
+            const totalImages = (d.images || []).length;
             return (
               <>
                 <DialogHeader>
                   <DialogTitle className="flex items-center gap-2 flex-wrap">
                     <Badge variant="outline" className="font-mono">{d.asin}</Badge>
                     <Badge variant={status.variant}>{status.label}</Badge>
-                    <span className="text-sm text-muted-foreground">{d.imageCount || 0} 张图片</span>
+                    <span className="text-sm text-muted-foreground">{totalImages} 张图片</span>
+                    {d.overallScore && <Badge className="bg-primary/10 text-primary border-primary/20">{d.overallScore}分</Badge>}
                   </DialogTitle>
                 </DialogHeader>
-                <div className="space-y-4">
-                  {d.productTitle && <h3 className="font-medium">{d.productTitle}</h3>}
-                  {/* Images preview grid */}
-                  <div className="grid grid-cols-3 gap-2">
-                    {(d.images || []).slice(0, 9).map((img: any, i: number) => (
-                      <div key={i} className="relative aspect-square rounded-lg overflow-hidden bg-muted">
-                        <img src={img.imageUrl} alt="" className="w-full h-full object-cover" />
-                        {img.imageType && <Badge variant="secondary" className="absolute bottom-1 left-1 text-[10px]">{img.imageType}</Badge>}
+                <div className="space-y-6">
+                  {d.productTitle && <h3 className="font-medium text-lg">{d.productTitle}</h3>}
+
+                  {/* ── Main Image Section ── */}
+                  {groupedImages.main.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <div className="w-1 h-4 bg-blue-500 rounded-full" />
+                        主图 <Badge variant="secondary" className="text-[10px]">{groupedImages.main.length}张</Badge>
+                      </h4>
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        {groupedImages.main.map((img: any) => (
+                          <ImageCard key={img.id} img={img} />
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                  {/* AI Analysis */}
-                  {d.aiSetAnalysis && (
+                    </div>
+                  )}
+
+                  {/* ── Secondary Images Section ── */}
+                  {groupedImages.secondary.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <div className="w-1 h-4 bg-emerald-500 rounded-full" />
+                        副图 <Badge variant="secondary" className="text-[10px]">{groupedImages.secondary.length}张</Badge>
+                      </h4>
+                      <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
+                        {groupedImages.secondary.sort((a: any, b: any) => (a.positionIndex || 0) - (b.positionIndex || 0)).map((img: any) => (
+                          <ImageCard key={img.id} img={img} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── A+ Images Section ── */}
+                  {groupedImages.aplus.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <div className="w-1 h-4 bg-purple-500 rounded-full" />
+                        A+ 图片 <Badge variant="secondary" className="text-[10px]">{groupedImages.aplus.length}张</Badge>
+                      </h4>
+                      <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
+                        {groupedImages.aplus.sort((a: any, b: any) => (a.positionIndex || 0) - (b.positionIndex || 0)).map((img: any) => (
+                          <ImageCard key={img.id} img={img} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* AI Overall Analysis */}
+                  {(d.overallAnalysis || d.userEditedOverallAnalysis) && (
                     <Card>
                       <CardHeader className="pb-2">
                         <CardTitle className="text-sm flex items-center gap-2">
-                          <Sparkles className="h-4 w-4 text-purple-500" /> AI图片集分析
+                          <Sparkles className="h-4 w-4 text-purple-500" /> AI图片集整体分析
                         </CardTitle>
                       </CardHeader>
                       <CardContent>
                         {editingAnalysis ? (
-                          <Textarea rows={10} value={editingAnalysis} onChange={(e) => setEditingAnalysis(e.target.value)} className="text-xs font-mono" />
+                          <Textarea rows={12} value={editingAnalysis} onChange={(e) => setEditingAnalysis(e.target.value)} className="text-xs font-mono" />
                         ) : (
-                          <div className="space-y-2 text-sm">
+                          <div className="space-y-3 text-sm">
+                            {analysis.overallStrategy && <p><strong>整体策略:</strong> {analysis.overallStrategy}</p>}
+                            {analysis.mainImageAssessment && <p><strong>主图评估:</strong> {analysis.mainImageAssessment}</p>}
+                            {analysis.secondaryImageFlow && <p><strong>副图叙事流:</strong> {analysis.secondaryImageFlow}</p>}
                             {analysis.overallStyle && <p><strong>整体风格:</strong> {analysis.overallStyle}</p>}
                             {analysis.imageStrategy && <p><strong>图片策略:</strong> {analysis.imageStrategy}</p>}
                             {analysis.highlights && <p><strong>亮点:</strong> {analysis.highlights}</p>}
                             {analysis.improvements && <p><strong>改进建议:</strong> {analysis.improvements}</p>}
+                            {analysis.missingImageTypes && Array.isArray(analysis.missingImageTypes) && analysis.missingImageTypes.length > 0 && (
+                              <p><strong>缺少的图片类型:</strong> {analysis.missingImageTypes.join("、")}</p>
+                            )}
+                            {analysis.improvementSuggestions && Array.isArray(analysis.improvementSuggestions) && (
+                              <div>
+                                <strong>改进建议:</strong>
+                                <ul className="list-disc list-inside mt-1 space-y-1 text-muted-foreground">
+                                  {analysis.improvementSuggestions.map((s: string, i: number) => <li key={i}>{s}</li>)}
+                                </ul>
+                              </div>
+                            )}
                             {analysis.summary && <p className="text-muted-foreground italic border-l-2 pl-3">{analysis.summary}</p>}
                           </div>
                         )}
                       </CardContent>
                     </Card>
                   )}
+
                   <div className="flex gap-2 justify-end">
                     {d.status === "pending_review" && (
                       <>
@@ -312,6 +476,62 @@ export default function KBImages() {
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/** Thumbnail strip for ASIN card - loads images for the set */
+function AsinThumbnailStrip({ setId }: { setId: number }) {
+  const { data } = trpc.kbImages.getSet.useQuery({ id: setId });
+  const images = (data as any)?.images || [];
+  const displayImages = images.slice(0, 5);
+
+  if (displayImages.length === 0) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-muted">
+        <ImageIcon className="h-8 w-8 text-muted-foreground/30" />
+      </div>
+    );
+  }
+
+  if (displayImages.length === 1) {
+    return <img src={displayImages[0].imageUrl} alt="" className="w-full h-full object-cover" loading="lazy" />;
+  }
+
+  // Show main image large + secondary images small
+  return (
+    <div className="flex h-full gap-0.5">
+      <div className="flex-1 min-w-0">
+        <img src={displayImages[0].imageUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+      </div>
+      <div className="w-20 flex flex-col gap-0.5">
+        {displayImages.slice(1, 5).map((img: any, i: number) => (
+          <div key={i} className="flex-1 min-h-0">
+            <img src={img.imageUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Single image card with tags and score */
+function ImageCard({ img }: { img: any }) {
+  return (
+    <div className="relative rounded-lg overflow-hidden bg-muted group/img">
+      <img src={img.imageUrl} alt="" className="w-full aspect-square object-cover" loading="lazy" />
+      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2 opacity-0 group-hover/img:opacity-100 transition-opacity">
+        <div className="flex flex-wrap gap-1">
+          {img.tagImageType && <Badge variant="secondary" className="text-[9px] bg-white/20 text-white border-0">{img.tagImageType}</Badge>}
+          {img.tagDesignStyle && <Badge variant="secondary" className="text-[9px] bg-white/20 text-white border-0">{img.tagDesignStyle}</Badge>}
+          {img.singleImageScore && <Badge className="text-[9px] bg-primary/80 border-0">{img.singleImageScore}/10</Badge>}
+        </div>
+      </div>
+      {img.imagePosition !== "main" && (
+        <Badge variant="outline" className="absolute top-1.5 left-1.5 text-[9px] bg-white/80 backdrop-blur-sm">
+          {img.imagePosition === "aplus" ? "A+" : `#${img.positionIndex}`}
+        </Badge>
+      )}
     </div>
   );
 }

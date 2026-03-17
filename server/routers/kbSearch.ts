@@ -3,15 +3,66 @@ import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
 
 export const kbSearchRouter = router({
-  // Cross-module search
+  // Cross-module search (original)
   search: protectedProcedure
     .input(z.object({ query: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
       return kbDb.searchKnowledgeBase(ctx.user.id, input.query);
     }),
 
+  // Enhanced search with type filter
+  searchByType: protectedProcedure
+    .input(z.object({
+      query: z.string().min(1),
+      type: z.enum(["product", "listing", "image", "skill", "video"]),
+      limit: z.number().min(1).max(100).optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const allResults = await kbDb.searchKnowledgeBase(ctx.user.id, input.query);
+      const filtered = (allResults as any[]).filter((r: any) => r.type === input.type);
+      return filtered.slice(0, input.limit || 20);
+    }),
+
+  // Search by ASIN across all knowledge bases
+  searchByAsin: protectedProcedure
+    .input(z.object({ asin: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      const asin = input.asin.trim().toUpperCase();
+      const allResults = await kbDb.searchKnowledgeBase(ctx.user.id, asin);
+      // Group by type for ASIN panoramic view
+      const grouped: Record<string, any[]> = { product: [], listing: [], image: [], skill: [], video: [] };
+      for (const item of allResults as any[]) {
+        if (grouped[item.type]) {
+          grouped[item.type].push(item);
+        }
+      }
+      return { asin, results: grouped, totalCount: (allResults as any[]).length };
+    }),
+
   // Get overall KB stats
   stats: protectedProcedure.query(async ({ ctx }) => {
     return kbDb.getKbStats(ctx.user.id);
   }),
+
+  // Get confirmed knowledge items for RAG/AI reference (cross-module calling API)
+  getConfirmedForRAG: protectedProcedure
+    .input(z.object({
+      type: z.enum(["product", "listing", "image", "skill", "video"]),
+      limit: z.number().min(1).max(50).optional(),
+      query: z.string().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      // Search with query if provided, otherwise return all
+      if (input.query) {
+        const results = await kbDb.searchKnowledgeBase(ctx.user.id, input.query);
+        return (results as any[])
+          .filter((r: any) => r.type === input.type && r.status === "confirmed")
+          .slice(0, input.limit || 10);
+      }
+      // Return all confirmed items of the given type
+      const allResults = await kbDb.searchKnowledgeBase(ctx.user.id, "");
+      return (allResults as any[])
+        .filter((r: any) => r.type === input.type && r.status === "confirmed")
+        .slice(0, input.limit || 10);
+    }),
 });

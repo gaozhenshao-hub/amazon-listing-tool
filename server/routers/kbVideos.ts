@@ -147,6 +147,56 @@ export const kbVideosRouter = router({
       return { imported: results.length, items: results };
     }),
 
+  // Batch import by ASINs
+  batchImportAsins: protectedProcedure
+    .input(z.object({
+      asins: z.array(z.string().min(1)).min(1).max(50),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const results: { id: number; asin: string }[] = [];
+      for (const rawAsin of input.asins) {
+        const asin = rawAsin.trim().toUpperCase();
+        if (!asin) continue;
+        const id = await kbDb.createVideo({
+          userId: ctx.user.id,
+          asin,
+          videoUrl: `https://www.amazon.com/dp/${asin}`,
+          videoTitle: `${asin} 产品视频`,
+          status: "downloading",
+        });
+        results.push({ id: Number(id), asin });
+        // Fire-and-forget async analysis
+        (async () => {
+          try {
+            await kbDb.updateVideo(Number(id), ctx.user.id, { status: "transcribing" });
+            let transcriptText = "";
+            try {
+              const transcription = await transcribeAudio({ audioUrl: `https://www.amazon.com/dp/${asin}`, language: "en" }) as any;
+              transcriptText = transcription.text || "";
+            } catch { transcriptText = "[转写失败]"; }
+            await kbDb.updateVideo(Number(id), ctx.user.id, { transcriptText, status: "analyzing" });
+            const response = await invokeLLM({
+              messages: [
+                { role: "system", content: `你是亚马逊视频营销分析专家。分析产品视频，返回JSON: { contentSummary, videoType, sellingPoints, tags, overallScore(1-100), summary }` },
+                { role: "user", content: `ASIN: ${asin}\n转写: ${transcriptText.slice(0, 6000)}` }
+              ],
+              response_format: { type: "json_object" as const },
+            });
+            const analysis = String(response.choices?.[0]?.message?.content || "{}");
+            const parsed = JSON.parse(analysis);
+            await kbDb.updateVideo(Number(id), ctx.user.id, {
+              aiAnalysis: analysis, tags: JSON.stringify(parsed.tags || []),
+              overallScore: parsed.overallScore ?? 70, status: "pending_review",
+            });
+          } catch (err: any) {
+            console.error(`[KB Videos] Batch ASIN import failed for ${asin}:`, err.message);
+            await kbDb.updateVideo(Number(id), ctx.user.id, { status: "archived" });
+          }
+        })();
+      }
+      return { imported: results.length, items: results };
+    }),
+
   // Import by ASIN (scrape Amazon product video)
   importByAsin: protectedProcedure
     .input(z.object({ asin: z.string().min(1), videoUrl: z.string().url() }))

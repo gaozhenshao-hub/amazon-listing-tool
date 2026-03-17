@@ -36,6 +36,11 @@ export default function KBVideos() {
     onSuccess: (r: any) => { toast.success(`已导入 ${r.imported} 个视频`); utils.kbVideos.list.invalidate(); setShowImport(false); setBatchInput(""); },
     onError: (e: any) => toast.error(e.message),
   });
+  const [batchAsinInput, setBatchAsinInput] = useState("");
+  const batchImportAsins = trpc.kbVideos.batchImportAsins.useMutation({
+    onSuccess: (r: any) => { toast.success(`已导入 ${r.imported} 个ASIN视频`); utils.kbVideos.list.invalidate(); setShowImport(false); setBatchAsinInput(""); },
+    onError: (e: any) => toast.error(e.message),
+  });
   const confirmMutation = trpc.kbVideos.confirmAnalysis.useMutation({
     onSuccess: () => { toast.success("已确认入库"); utils.kbVideos.list.invalidate(); utils.kbVideos.getById.invalidate({ id: detailId! }); },
     onError: (e: any) => toast.error(e.message),
@@ -135,6 +140,7 @@ export default function KBVideos() {
               <TabsTrigger value="url" className="flex-1 gap-1.5"><Link2 className="h-3.5 w-3.5" /> 链接导入</TabsTrigger>
               <TabsTrigger value="asin" className="flex-1 gap-1.5"><Upload className="h-3.5 w-3.5" /> ASIN导入</TabsTrigger>
               <TabsTrigger value="batch" className="flex-1 gap-1.5"><PlusCircle className="h-3.5 w-3.5" /> 批量链接</TabsTrigger>
+              <TabsTrigger value="batchAsin" className="flex-1 gap-1.5"><PlusCircle className="h-3.5 w-3.5" /> 批量ASIN</TabsTrigger>
             </TabsList>
             <TabsContent value="url" className="space-y-4 mt-4">
               <div className="space-y-2">
@@ -170,6 +176,21 @@ export default function KBVideos() {
               }} disabled={batchImport.isPending || !batchInput} className="w-full gap-2">
                 {batchImport.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                 <Sparkles className="h-4 w-4" /> 批量导入并AI分析
+              </Button>
+            </TabsContent>
+            <TabsContent value="batchAsin" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label>批量输入ASIN（每行一个，或逗号分隔，最多50个）</Label>
+                <Textarea placeholder={"B0XXXXXXXXX\nB0YYYYYYYYY\nB0ZZZZZZZZZ"} value={batchAsinInput} onChange={(e) => setBatchAsinInput(e.target.value)} rows={6} className="font-mono text-sm" />
+                <p className="text-xs text-muted-foreground">系统将自动采集每个ASIN的产品视频并进行AI分析</p>
+              </div>
+              <Button onClick={() => {
+                const asins = batchAsinInput.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
+                if (asins.length === 0) return toast.error("请输入至少一个ASIN");
+                batchImportAsins.mutate({ asins });
+              }} disabled={batchImportAsins.isPending || !batchAsinInput} className="w-full gap-2">
+                {batchImportAsins.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                <Sparkles className="h-4 w-4" /> 批量采集并AI分析
               </Button>
             </TabsContent>
           </Tabs>

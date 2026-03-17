@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,18 +8,41 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, PlusCircle, Link2, Upload, BookOpen, CheckCircle, Edit3, Trash2, Sparkles, Search, FileText, FileSpreadsheet, Presentation, Image as ImageIcon, File } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
+import { Loader2, PlusCircle, Link2, Upload, BookOpen, CheckCircle, Edit3, Trash2, Sparkles, Search, FileText, FileSpreadsheet, Presentation, Image as ImageIcon, File, AlertCircle, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 
 const FILE_TYPE_ICONS: Record<string, any> = {
   pdf: FileText, doc: FileText, docx: FileText,
   xls: FileSpreadsheet, xlsx: FileSpreadsheet, csv: FileSpreadsheet,
   ppt: Presentation, pptx: Presentation,
-  md: FileText, txt: FileText,
+  md: FileText, txt: FileText, xmind: FolderOpen, mm: FolderOpen, opml: FolderOpen,
   png: ImageIcon, jpg: ImageIcon, jpeg: ImageIcon, gif: ImageIcon, webp: ImageIcon,
 };
 
-const SUPPORTED_FORMATS = ".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.md,.txt,.png,.jpg,.jpeg,.gif,.webp";
+const FORMAT_GROUPS = [
+  { label: "文档", formats: ["PDF", "Word", "Markdown", "TXT"], color: "text-blue-600" },
+  { label: "表格", formats: ["Excel", "CSV"], color: "text-emerald-600" },
+  { label: "演示", formats: ["PPT", "PPTX"], color: "text-orange-600" },
+  { label: "思维导图", formats: ["XMind", "FreeMind"], color: "text-purple-600" },
+  { label: "图片", formats: ["PNG", "JPG", "WebP"], color: "text-rose-600" },
+];
+
+const SUPPORTED_FORMATS = ".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.md,.txt,.png,.jpg,.jpeg,.gif,.webp,.xmind,.mm,.opml";
+
+const CATEGORY_OPTIONS = [
+  { value: "all", label: "全部分类" },
+  { value: "advertising", label: "广告投放" },
+  { value: "inventory", label: "库存管理" },
+  { value: "listing", label: "Listing优化" },
+  { value: "finance", label: "财务分析" },
+  { value: "selection", label: "选品方法" },
+  { value: "logistics", label: "物流仓储" },
+  { value: "review", label: "评论管理" },
+  { value: "brand", label: "品牌运营" },
+  { value: "other", label: "其他" },
+];
 
 export default function KBSkills() {
   const utils = trpc.useUtils();
@@ -30,10 +53,14 @@ export default function KBSkills() {
   const [manualContent, setManualContent] = useState("");
   const [manualTags, setManualTags] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [filterCategory, setFilterCategory] = useState("all");
   const [detailId, setDetailId] = useState<number | null>(null);
   const [editingAnalysis, setEditingAnalysis] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadingFileName, setUploadingFileName] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<globalThis.File[]>([]);
+  const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: detail } = trpc.kbSkills.getById.useQuery({ id: detailId! }, { enabled: !!detailId });
@@ -77,37 +104,60 @@ export default function KBSkills() {
     return <Icon className="h-4 w-4" />;
   };
 
+  const getFileSize = (size: number) => {
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(0)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
-    setSelectedFiles(prev => [...prev, ...files]);
+    // Validate file sizes
+    const oversized = files.filter(f => f.size > 10 * 1024 * 1024);
+    if (oversized.length > 0) {
+      toast.error(`${oversized.length} 个文件超过10MB限制: ${oversized.map(f => f.name).join(", ")}`);
+      const valid = files.filter(f => f.size <= 10 * 1024 * 1024);
+      setSelectedFiles(prev => [...prev, ...valid]);
+    } else {
+      setSelectedFiles(prev => [...prev, ...files]);
+    }
     toast.success(`已选择 ${files.length} 个文件`);
   };
 
   const handleFileUpload = async () => {
     if (selectedFiles.length === 0) return;
     setUploading(true);
+    setUploadProgress(0);
     try {
       const fileDataArray: { filename: string; base64: string; mimeType: string }[] = [];
-      for (const file of selectedFiles) {
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        setUploadingFileName(file.name);
+        setUploadProgress(Math.round(((i) / selectedFiles.length) * 50));
         const buffer = await file.arrayBuffer();
         const bytes = new Uint8Array(buffer);
         let binary = '';
-        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        for (let j = 0; j < bytes.length; j++) binary += String.fromCharCode(bytes[j]);
         const base64 = btoa(binary);
-        fileDataArray.push({ filename: file.name, base64, mimeType: file.type });
+        fileDataArray.push({ filename: file.name, base64, mimeType: file.type || "application/octet-stream" });
       }
+      setUploadProgress(60);
+      setUploadingFileName("正在上传到服务器...");
       if (fileDataArray.length === 1) {
         uploadFile.mutate({ title: fileDataArray[0].filename, fileName: fileDataArray[0].filename, fileBase64: fileDataArray[0].base64, mimeType: fileDataArray[0].mimeType });
       } else {
         batchUpload.mutate({ files: fileDataArray.map(f => ({ title: f.filename, fileName: f.filename, mimeType: f.mimeType, fileBase64: f.base64 })) });
       }
+      setUploadProgress(100);
       setSelectedFiles([]);
       setShowImport(false);
     } catch (err: any) {
       toast.error("文件读取失败: " + err.message);
     } finally {
       setUploading(false);
+      setUploadProgress(0);
+      setUploadingFileName("");
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
@@ -116,11 +166,18 @@ export default function KBSkills() {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  const filtered = (items as any[] || []).filter((item: any) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (item.title || "").toLowerCase().includes(q) || (item.tags || "").toLowerCase().includes(q) || (item.sourceType || "").toLowerCase().includes(q);
-  });
+  const filtered = useMemo(() => {
+    return (items as any[] || []).filter((item: any) => {
+      if (filterCategory !== "all") {
+        const tags = (item.tags || "").toLowerCase();
+        const category = (item.category || "").toLowerCase();
+        if (!tags.includes(filterCategory) && category !== filterCategory) return true; // show all if no match
+      }
+      if (!searchQuery) return true;
+      const q = searchQuery.toLowerCase();
+      return (item.title || "").toLowerCase().includes(q) || (item.tags || "").toLowerCase().includes(q) || (item.sourceType || "").toLowerCase().includes(q) || (item.aiSummary || "").toLowerCase().includes(q);
+    });
+  }, [items, searchQuery, filterCategory]);
 
   return (
     <div className="space-y-6">
@@ -135,19 +192,31 @@ export default function KBSkills() {
         <Button onClick={() => setShowImport(true)} className="gap-2"><PlusCircle className="h-4 w-4" /> 添加SOP</Button>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="搜索标题、标签..." className="pl-9" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          <Input placeholder="搜索标题、标签、内容..." className="pl-9" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
+        <Select value={filterCategory} onValueChange={setFilterCategory}>
+          <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {CATEGORY_OPTIONS.map(opt => (
+              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Badge variant="secondary" className="h-9 px-3 flex items-center">{filtered.length} 条</Badge>
       </div>
 
-      {/* Supported formats info */}
-      <div className="flex flex-wrap gap-2 items-center text-xs text-muted-foreground">
-        <span>支持格式：</span>
-        {["PDF", "Word", "Excel", "PPT", "Markdown", "TXT", "图片"].map(f => (
-          <Badge key={f} variant="outline" className="text-[10px]">{f}</Badge>
+      {/* Supported formats info - enhanced */}
+      <div className="flex flex-wrap gap-4 items-center text-xs">
+        {FORMAT_GROUPS.map(group => (
+          <div key={group.label} className="flex items-center gap-1">
+            <span className={`font-medium ${group.color}`}>{group.label}:</span>
+            {group.formats.map(f => (
+              <Badge key={f} variant="outline" className="text-[10px] h-5">{f}</Badge>
+            ))}
+          </div>
         ))}
       </div>
 
@@ -193,7 +262,7 @@ export default function KBSkills() {
         </div>
       )}
 
-      {/* Import Dialog */}
+      {/* Import Dialog - Enhanced */}
       <Dialog open={showImport} onOpenChange={setShowImport}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>添加SOP文档</DialogTitle></DialogHeader>
@@ -205,27 +274,43 @@ export default function KBSkills() {
             </TabsList>
             <TabsContent value="upload" className="space-y-4 mt-4">
               <div className="space-y-2">
-                <Label>选择文件（支持批量上传）</Label>
+                <Label>选择文件（支持批量上传，拖拽或点击）</Label>
                 <div
-                  className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary transition-colors"
+                  className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${isDragOver ? "border-primary bg-primary/5 scale-[1.01]" : "hover:border-primary/50"}`}
                   onClick={() => fileInputRef.current?.click()}
-                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                  onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const files = Array.from(e.dataTransfer.files); setSelectedFiles(prev => [...prev, ...files]); }}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false); }}
+                  onDrop={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false); const files = Array.from(e.dataTransfer.files); setSelectedFiles(prev => [...prev, ...files]); toast.success(`已添加 ${files.length} 个文件`); }}
                 >
-                  <Upload className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
-                  <p className="text-sm text-muted-foreground">点击或拖拽文件到此处</p>
-                  <p className="text-xs text-muted-foreground mt-1">支持 PDF、Word、Excel、PPT、Markdown、TXT、图片</p>
+                  <Upload className={`h-8 w-8 mx-auto mb-2 ${isDragOver ? "text-primary" : "text-muted-foreground/50"}`} />
+                  <p className="text-sm font-medium">{isDragOver ? "释放文件到此处" : "点击或拖拽文件到此处"}</p>
+                  <p className="text-xs text-muted-foreground mt-1.5">支持 PDF、Word、Excel、PPT、Markdown、TXT、思维导图、图片</p>
+                  <p className="text-[10px] text-muted-foreground mt-1 flex items-center justify-center gap-1">
+                    <AlertCircle className="h-3 w-3" /> 单文件最大10MB
+                  </p>
                 </div>
                 <input ref={fileInputRef} type="file" accept={SUPPORTED_FORMATS} multiple className="hidden" onChange={handleFileSelect} />
                 {selectedFiles.length > 0 && (
-                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto border rounded-lg p-2">
                     {selectedFiles.map((file, i) => (
-                      <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-muted rounded-md text-sm">
-                        <span className="truncate flex-1">{file.name}</span>
-                        <span className="text-xs text-muted-foreground mx-2">{(file.size / 1024).toFixed(0)} KB</span>
-                        <button onClick={(e) => { e.stopPropagation(); removeFile(i); }} className="text-destructive hover:text-destructive/80 text-xs">删除</button>
+                      <div key={i} className="flex items-center gap-2 px-2 py-1.5 bg-muted/50 rounded-md text-sm">
+                        <span className="text-muted-foreground">{getFileIcon(file.name)}</span>
+                        <span className="truncate flex-1 text-xs">{file.name}</span>
+                        <span className="text-[10px] text-muted-foreground shrink-0">{getFileSize(file.size)}</span>
+                        {file.size > 10 * 1024 * 1024 && <AlertCircle className="h-3 w-3 text-destructive shrink-0" />}
+                        <button onClick={(e) => { e.stopPropagation(); removeFile(i); }} className="text-destructive hover:text-destructive/80 text-xs shrink-0">删除</button>
                       </div>
                     ))}
+                    <div className="text-xs text-muted-foreground text-right pt-1">
+                      共 {selectedFiles.length} 个文件，{getFileSize(selectedFiles.reduce((s, f) => s + f.size, 0))}
+                    </div>
+                  </div>
+                )}
+                {/* Upload progress */}
+                {uploading && (
+                  <div className="space-y-2">
+                    <Progress value={uploadProgress} className="h-2" />
+                    <p className="text-xs text-muted-foreground text-center">{uploadingFileName} ({uploadProgress}%)</p>
                   </div>
                 )}
               </div>
@@ -236,9 +321,9 @@ export default function KBSkills() {
             </TabsContent>
             <TabsContent value="url" className="space-y-4 mt-4">
               <div className="space-y-2">
-                <Label>输入文档链接</Label>
-                <Textarea placeholder={"https://example.com/sop-document.pdf\nhttps://docs.google.com/..."} value={urlInput} onChange={(e) => setUrlInput(e.target.value)} rows={4} />
-                <p className="text-xs text-muted-foreground">支持直链PDF、在线文档等</p>
+                <Label>输入文档链接（每行一个）</Label>
+                <Textarea placeholder={"https://example.com/sop-document.pdf\nhttps://docs.google.com/...\nhttps://www.notion.so/..."} value={urlInput} onChange={(e) => setUrlInput(e.target.value)} rows={4} />
+                <p className="text-xs text-muted-foreground">支持直链PDF、Google Docs、Notion页面等在线文档链接</p>
               </div>
               <Button onClick={() => importUrl.mutate({ url: urlInput })} disabled={importUrl.isPending || !urlInput} className="w-full gap-2">
                 {importUrl.isPending && <Loader2 className="h-4 w-4 animate-spin" />}

@@ -4,129 +4,324 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Search, Lightbulb, FileText, Image, BookOpen, Video, ArrowRight, Sparkles, Database } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Loader2, Search, Lightbulb, FileText, Image, BookOpen, Video,
+  ArrowRight, Sparkles, Database, ChevronRight, Zap, Brain,
+  UserCheck, Archive, Bot, TrendingUp, ExternalLink, Code2, Copy,
+} from "lucide-react";
 import { useLocation } from "wouter";
+import { toast } from "sonner";
 
 const modules = [
-  { key: "products", title: "智能产品创意库", icon: Lightbulb, color: "from-amber-500 to-orange-500", bgColor: "from-amber-500/10 to-amber-600/5 border-amber-200/50", path: "/knowledge/products", desc: "ASIN/链接导入，AI分析产品创意亮点" },
-  { key: "listings", title: "智能Listing文案库", icon: FileText, color: "from-blue-500 to-cyan-500", bgColor: "from-emerald-500/10 to-emerald-600/5 border-emerald-200/50", path: "/knowledge/listings", desc: "ASIN批量导入，AI分析文案优劣" },
-  { key: "images", title: "智能图片知识库", icon: Image, color: "from-purple-500 to-pink-500", bgColor: "from-blue-500/10 to-blue-600/5 border-blue-200/50", path: "/knowledge/images", desc: "四维标签分类，瀑布流浏览" },
-  { key: "skills", title: "智能运营SOP库", icon: BookOpen, color: "from-emerald-500 to-teal-500", bgColor: "from-purple-500/10 to-purple-600/5 border-purple-200/50", path: "/knowledge/skills", desc: "多格式文件导入，AI智能摘要" },
-  { key: "videos", title: "智能视频知识库", icon: Video, color: "from-red-500 to-rose-500", bgColor: "from-rose-500/10 to-rose-600/5 border-rose-200/50", path: "/knowledge/videos", desc: "视频链接导入，音频转写+AI分析" },
+  { key: "products", title: "优秀产品创意库", icon: Lightbulb, color: "from-amber-500 to-orange-500", bgColor: "bg-amber-50 dark:bg-amber-950/20 border-amber-200/50 dark:border-amber-800/30", iconBg: "bg-amber-100 dark:bg-amber-900/40", iconColor: "text-amber-600 dark:text-amber-400", path: "/knowledge/products", desc: "收录优秀产品创意案例，AI分析产品创新方法论，为选品和产品开发提供参考", statsKey: "productCount" },
+  { key: "listings", title: "优秀Listing文案库", icon: FileText, color: "from-blue-500 to-cyan-500", bgColor: "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200/50 dark:border-emerald-800/30", iconBg: "bg-emerald-100 dark:bg-emerald-900/40", iconColor: "text-emerald-600 dark:text-emerald-400", path: "/knowledge/listings", desc: "收录高转化率Listing文案，AI从A9算法、FABE结构、COSMO场景等维度深度分析", statsKey: "listingCount" },
+  { key: "images", title: "优秀图片知识库", icon: Image, color: "from-purple-500 to-pink-500", bgColor: "bg-purple-50 dark:bg-purple-950/20 border-purple-200/50 dark:border-purple-800/30", iconBg: "bg-purple-100 dark:bg-purple-900/40", iconColor: "text-purple-600 dark:text-purple-400", path: "/knowledge/images", desc: "收录优秀产品图片，AI进行12维度视觉分析，支持四维标签筛选浏览", statsKey: "imageSetCount" },
+  { key: "skills", title: "运营SOP知识库", icon: BookOpen, color: "from-emerald-500 to-teal-500", bgColor: "bg-blue-50 dark:bg-blue-950/20 border-blue-200/50 dark:border-blue-800/30", iconBg: "bg-blue-100 dark:bg-blue-900/40", iconColor: "text-blue-600 dark:text-blue-400", path: "/knowledge/skills", desc: "沉淀运营干货、SOP文档和复盘报告，作为RAG知识源提升AI建议质量", statsKey: "skillCount" },
+  { key: "videos", title: "优秀视频知识库", icon: Video, color: "from-red-500 to-rose-500", bgColor: "bg-rose-50 dark:bg-rose-950/20 border-rose-200/50 dark:border-rose-800/30", iconBg: "bg-rose-100 dark:bg-rose-900/40", iconColor: "text-rose-600 dark:text-rose-400", path: "/knowledge/videos", desc: "收录优秀产品视频，AI分析黄金前3秒、脚本结构和转化锚点", statsKey: "videoCount" },
+];
+
+const valueChainSteps = [
+  { icon: Zap, label: "采集", desc: "ASIN/链接/文件导入", color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-100 dark:bg-blue-900/40", ringColor: "ring-blue-200 dark:ring-blue-800", gradient: "from-blue-500 to-blue-600" },
+  { icon: Brain, label: "AI分析", desc: "多维度深度分析", color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-100 dark:bg-purple-900/40", ringColor: "ring-purple-200 dark:ring-purple-800", gradient: "from-purple-500 to-purple-600" },
+  { icon: UserCheck, label: "人工确认", desc: "编辑审核调整", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-100 dark:bg-amber-900/40", ringColor: "ring-amber-200 dark:ring-amber-800", gradient: "from-amber-500 to-amber-600" },
+  { icon: Archive, label: "入库", desc: "结构化存储", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-100 dark:bg-emerald-900/40", ringColor: "ring-emerald-200 dark:ring-emerald-800", gradient: "from-emerald-500 to-emerald-600" },
+  { icon: Bot, label: "被AI调用", desc: "RAG知识增强", color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-100 dark:bg-rose-900/40", ringColor: "ring-rose-200 dark:ring-rose-800", gradient: "from-rose-500 to-rose-600" },
+  { icon: TrendingUp, label: "持续进化", desc: "反馈优化迭代", color: "text-cyan-600 dark:text-cyan-400", bg: "bg-cyan-100 dark:bg-cyan-900/40", ringColor: "ring-cyan-200 dark:ring-cyan-800", gradient: "from-cyan-500 to-cyan-600" },
+];
+
+const crossModuleCalls = [
+  { caller: "Listing工具", action: "生成文案时参考优秀文案", target: "Listing文案库", targetPath: "/knowledge/listings", dotColor: "bg-blue-500", apiEndpoint: "kbSearch.search", apiDesc: "query: 关键词 → 返回匹配的Listing文案记录" },
+  { caller: "产品开发", action: "产品画像时参考创意案例", target: "产品创意库", targetPath: "/knowledge/products", dotColor: "bg-amber-500", apiEndpoint: "kbProducts.list", apiDesc: "返回全部产品创意记录，支持按ASIN/品类筛选" },
+  { caller: "Listing工具", action: "图片设计时参考优秀案例", target: "图片知识库", targetPath: "/knowledge/images", dotColor: "bg-purple-500", apiEndpoint: "kbImages.listSets", apiDesc: "返回图片集列表，支持按类目/色系/图片类型/设计风格筛选" },
+  { caller: "运营工具", action: "广告优化时参考SOP", target: "运营SOP库", targetPath: "/knowledge/skills", dotColor: "bg-emerald-500", apiEndpoint: "kbSkills.list", apiDesc: "返回全部SOP文档，含AI摘要和关键步骤" },
+  { caller: "售后工具", action: "客服回复时参考话术", target: "运营SOP库", targetPath: "/knowledge/skills", dotColor: "bg-rose-500", apiEndpoint: "kbSearch.search", apiDesc: "query: 客服话术 → 跨库搜索匹配的SOP和文案" },
+  { caller: "Listing工具", action: "视频脚本创作参考", target: "视频知识库", targetPath: "/knowledge/videos", dotColor: "bg-red-500", apiEndpoint: "kbVideos.list", apiDesc: "返回全部视频分析记录，含脚本结构和转化锚点" },
+];
+
+// API interface documentation for cross-module calling
+const apiInterfaces = [
+  { name: "kbSearch.search", method: "tRPC query", input: '{ query: string }', output: "Array<{ id, type, title, asin, status }>", desc: "跨模块全文搜索，返回所有匹配的知识库记录" },
+  { name: "kbSearch.stats", method: "tRPC query", input: "无", output: "{ productCount, listingCount, imageSetCount, skillCount, videoCount, totalCount }", desc: "获取各子库统计数据" },
+  { name: "kbProducts.list", method: "tRPC query", input: "无", output: "Array<产品创意记录>", desc: "获取产品创意库全部记录" },
+  { name: "kbListings.list", method: "tRPC query", input: "无", output: "Array<Listing文案记录>", desc: "获取Listing文案库全部记录" },
+  { name: "kbImages.listSets", method: "tRPC query", input: "无", output: "Array<图片集记录>", desc: "获取图片知识库全部图片集" },
+  { name: "kbSkills.list", method: "tRPC query", input: "无", output: "Array<SOP文档记录>", desc: "获取运营SOP库全部记录" },
+  { name: "kbVideos.list", method: "tRPC query", input: "无", output: "Array<视频分析记录>", desc: "获取视频知识库全部记录" },
 ];
 
 export default function KBOverview() {
   const [, navigate] = useLocation();
   const { data: stats, isLoading } = trpc.kbSearch.stats.useQuery();
   const [searchQuery, setSearchQuery] = useState("");
+  const [showApiPanel, setShowApiPanel] = useState(false);
   const { data: searchResults, isFetching: isSearching } = trpc.kbSearch.search.useQuery(
     { query: searchQuery },
     { enabled: searchQuery.length > 1 }
   );
 
-  const getCount = (key: string) => {
+  const getCount = (statsKey: string) => {
     if (!stats) return 0;
-    const s = stats as any;
-    return s[key] || 0;
+    return (stats as any)[statsKey] || 0;
   };
 
-  const totalCount = modules.reduce((sum, m) => sum + getCount(m.key), 0);
+  const totalCount = (stats as any)?.totalCount || 0;
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => toast.success("已复制到剪贴板"));
+  };
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Database className="h-6 w-6 text-primary" />
-            智能知识库
-          </h1>
-          <p className="text-muted-foreground mt-1">采集 → AI分析 → 人工确认 → 入库，构建您的亚马逊运营知识体系</p>
-        </div>
-        <Badge variant="secondary" className="text-sm px-3 py-1">
-          <Sparkles className="h-3.5 w-3.5 mr-1.5" />
-          共 {isLoading ? "..." : totalCount} 条知识
-        </Badge>
-      </div>
-
-      {/* Global Search */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex gap-3 items-center">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="跨模块搜索知识库内容（产品、文案、图片、SOP、视频）..."
-                className="pl-10"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-            {isSearching && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
+    <TooltipProvider>
+      <div className="space-y-8">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Database className="h-6 w-6 text-primary" />
+              知识库总览
+            </h1>
+            <p className="text-muted-foreground mt-1 text-sm">知识库是整个AI工具矩阵的智慧大脑，贯穿运营前、运营中和售后全阶段</p>
           </div>
-          {searchResults && searchQuery.length > 1 && (
-            <div className="mt-4 space-y-2">
-              {(searchResults as any[]).length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">未找到相关内容</p>
-              ) : (
-                (searchResults as any[]).slice(0, 10).map((item: any, i: number) => (
-                  <div key={i} className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent/50 cursor-pointer transition-colors">
-                    <Badge variant="outline" className="text-xs shrink-0">{item.type}</Badge>
-                    <span className="font-medium truncate">{item.title || item.productTitle || "未命名"}</span>
-                    {item.asin && <Badge variant="secondary" className="text-xs">{item.asin}</Badge>}
-                    <span className="text-xs text-muted-foreground ml-auto">{item.status}</span>
+          <Badge variant="secondary" className="text-sm px-3 py-1">
+            <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+            共 {isLoading ? "..." : totalCount} 条知识
+          </Badge>
+        </div>
+
+        {/* ═══ Enhanced Core Value Chain ═══ */}
+        <Card className="border-primary/20 overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-primary/5 pointer-events-none" />
+          <CardHeader className="pb-2 relative">
+            <CardTitle className="text-base flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-primary/10">
+                <Sparkles className="h-4 w-4 text-primary" />
+              </div>
+              核心价值链路
+            </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">知识从采集到进化的完整闭环，每一步都有AI和人工的深度协作</p>
+          </CardHeader>
+          <CardContent className="pb-6 relative">
+            <div className="flex items-center justify-between gap-1 overflow-x-auto pb-2 px-2">
+              {valueChainSteps.map((step, i) => {
+                const Icon = step.icon;
+                return (
+                  <div key={i} className="flex items-center gap-1 shrink-0">
+                    <div className="flex flex-col items-center gap-2 min-w-[90px] group">
+                      {/* Step number */}
+                      <div className="text-[10px] font-bold text-muted-foreground/60 mb-[-4px]">STEP {i + 1}</div>
+                      {/* Icon with ring effect */}
+                      <div className={`relative p-3 rounded-2xl ${step.bg} ring-2 ${step.ringColor} transition-all group-hover:scale-110 group-hover:shadow-lg`}>
+                        <Icon className={`h-6 w-6 ${step.color}`} />
+                        {/* Pulse effect for active steps */}
+                        <div className={`absolute inset-0 rounded-2xl ${step.bg} animate-ping opacity-20 pointer-events-none`} style={{ animationDuration: `${3 + i * 0.5}s` }} />
+                      </div>
+                      <span className="text-sm font-bold">{step.label}</span>
+                      <span className="text-[10px] text-muted-foreground text-center leading-tight max-w-[80px]">{step.desc}</span>
+                    </div>
+                    {i < valueChainSteps.length - 1 && (
+                      <div className="flex items-center shrink-0 mt-[-28px]">
+                        <div className="w-6 h-[2px] bg-gradient-to-r from-muted-foreground/20 to-muted-foreground/40" />
+                        <ChevronRight className="h-4 w-4 text-muted-foreground/40 -mx-1" />
+                        <div className="w-6 h-[2px] bg-gradient-to-r from-muted-foreground/40 to-muted-foreground/20" />
+                      </div>
+                    )}
                   </div>
-                ))
-              )}
+                );
+              })}
             </div>
-          )}
-        </CardContent>
-      </Card>
+            {/* Cycle indicator */}
+            <div className="flex items-center justify-center mt-3 gap-2">
+              <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent to-primary/20" />
+              <Badge variant="outline" className="text-[10px] gap-1 px-2 py-0.5">
+                <TrendingUp className="h-3 w-3" /> 持续闭环迭代
+              </Badge>
+              <div className="h-[1px] flex-1 bg-gradient-to-l from-transparent to-primary/20" />
+            </div>
+          </CardContent>
+        </Card>
 
-      {/* Stats Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        {modules.map((mod) => {
-          const Icon = mod.icon;
-          return (
-            <Card key={mod.key} className="cursor-pointer hover:shadow-sm transition-all" onClick={() => navigate(mod.path)}>
-              <CardContent className="p-4 text-center">
-                <Icon className="h-5 w-5 mx-auto mb-1.5 text-muted-foreground" />
-                <p className="text-lg font-bold">{isLoading ? "..." : getCount(mod.key)}</p>
-                <p className="text-xs text-muted-foreground truncate">{mod.title.replace("智能", "")}</p>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+        {/* Global Search */}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex gap-3 items-center">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="跨模块搜索知识库内容（产品、文案、图片、SOP、视频）..."
+                  className="pl-10"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              {isSearching && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
+            </div>
+            {searchResults && searchQuery.length > 1 && (
+              <div className="mt-4 space-y-2">
+                {(searchResults as any[]).length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">未找到相关内容</p>
+                ) : (
+                  (searchResults as any[]).slice(0, 10).map((item: any, i: number) => {
+                    const typeMap: Record<string, { label: string; path: string }> = {
+                      product: { label: "产品创意", path: "/knowledge/products" },
+                      listing: { label: "Listing文案", path: "/knowledge/listings" },
+                      image: { label: "图片", path: "/knowledge/images" },
+                      skill: { label: "运营SOP", path: "/knowledge/skills" },
+                      video: { label: "视频", path: "/knowledge/videos" },
+                    };
+                    const typeInfo = typeMap[item.type] || { label: item.type, path: "/knowledge" };
+                    return (
+                      <div key={i} className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent/50 cursor-pointer transition-colors" onClick={() => navigate(typeInfo.path)}>
+                        <Badge variant="outline" className="text-xs shrink-0">{typeInfo.label}</Badge>
+                        <span className="font-medium truncate">{item.title || item.productTitle || "未命名"}</span>
+                        {item.asin && <Badge variant="secondary" className="text-xs">{item.asin}</Badge>}
+                        <span className="text-xs text-muted-foreground ml-auto">{item.status}</span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-      {/* Module Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {modules.map((mod) => {
-          const Icon = mod.icon;
-          return (
-            <Card
-              key={mod.key}
-              className={`group cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 bg-gradient-to-br ${mod.bgColor}`}
-              onClick={() => navigate(mod.path)}
-            >
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between mb-3">
-                  <div className={`p-2.5 rounded-xl bg-gradient-to-br ${mod.color} text-white shadow-sm`}>
-                    <Icon className="h-5 w-5" />
+        {/* Stats Row */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          {modules.map((mod) => {
+            const Icon = mod.icon;
+            return (
+              <Card key={mod.key} className="cursor-pointer hover:shadow-sm transition-all" onClick={() => navigate(mod.path)}>
+                <CardContent className="p-4 text-center">
+                  <div className={`w-9 h-9 rounded-lg ${mod.iconBg} flex items-center justify-center mx-auto mb-1.5`}>
+                    <Icon className={`h-4.5 w-4.5 ${mod.iconColor}`} />
                   </div>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all" />
+                  <p className="text-lg font-bold">{isLoading ? "..." : getCount(mod.statsKey)}</p>
+                  <p className="text-xs text-muted-foreground truncate">{mod.title}</p>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+
+        {/* Module Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {modules.map((mod) => {
+            const Icon = mod.icon;
+            return (
+              <Card
+                key={mod.key}
+                className={`group cursor-pointer transition-all hover:shadow-md hover:-translate-y-0.5 ${mod.bgColor}`}
+                onClick={() => navigate(mod.path)}
+              >
+                <CardContent className="p-5">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className={`p-2.5 rounded-xl bg-gradient-to-br ${mod.color} text-white shadow-sm`}>
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <Badge variant="secondary" className="text-xs">
+                      {isLoading ? "..." : `${getCount(mod.statsKey)} 条`}
+                    </Badge>
+                  </div>
+                  <h3 className="font-semibold text-base mb-1.5">{mod.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed mb-3">{mod.desc}</p>
+                  <Button variant="ghost" size="sm" className="text-xs h-7 gap-1 p-0 text-primary hover:text-primary">
+                    进入管理 <ArrowRight className="h-3 w-3 group-hover:translate-x-1 transition-transform" />
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+
+        {/* ═══ Enhanced Cross-Module Calling Capability ═══ */}
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-primary/10">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                  </div>
+                  跨模块调用能力
+                </CardTitle>
+                <p className="text-xs text-muted-foreground mt-1.5">知识库建立后，将在工具矩阵中被广泛调用，通过内部tRPC接口实现跨模块知识检索</p>
+              </div>
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setShowApiPanel(!showApiPanel)}>
+                <Code2 className="h-3.5 w-3.5" />
+                {showApiPanel ? "隐藏API" : "查看API接口"}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {/* Cross-module calling cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+              {crossModuleCalls.map((call, i) => (
+                <Tooltip key={i}>
+                  <TooltipTrigger asChild>
+                    <div
+                      className="flex items-start gap-3 p-3 rounded-lg border hover:bg-accent/30 cursor-pointer transition-colors group/call"
+                      onClick={() => navigate(call.targetPath)}
+                    >
+                      <div className={`w-2.5 h-2.5 rounded-full ${call.dotColor} mt-1.5 shrink-0 ring-2 ring-offset-1 ring-offset-background ${call.dotColor.replace("bg-", "ring-")}/30`} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">{call.caller}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{call.action} →{" "}
+                          <span className="text-primary font-medium group-hover/call:underline">{call.target}</span>
+                        </p>
+                      </div>
+                      <ExternalLink className="h-3.5 w-3.5 text-muted-foreground/50 group-hover/call:text-primary shrink-0 mt-0.5 transition-colors" />
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs">
+                    <p className="text-xs font-medium">API: {call.apiEndpoint}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{call.apiDesc}</p>
+                  </TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+
+            {/* API Interface Panel */}
+            {showApiPanel && (
+              <div className="border rounded-lg overflow-hidden mt-4">
+                <div className="bg-muted/50 px-4 py-2.5 flex items-center gap-2 border-b">
+                  <Code2 className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium">跨模块调用API接口文档</span>
+                  <Badge variant="outline" className="text-[10px] ml-auto">tRPC Protocol</Badge>
                 </div>
-                <h3 className="font-semibold text-base mb-1.5">{mod.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed mb-3">{mod.desc}</p>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">{isLoading ? "..." : `${getCount(mod.key)} 条`}</span>
-                  <Button variant="ghost" size="sm" className="text-xs h-7">进入管理 →</Button>
+                <div className="divide-y">
+                  {apiInterfaces.map((api, i) => (
+                    <div key={i} className="px-4 py-3 hover:bg-muted/30 transition-colors">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Badge variant="secondary" className="text-[10px] font-mono">{api.method}</Badge>
+                        <code className="text-xs font-mono font-semibold text-primary">{api.name}</code>
+                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0 ml-auto" onClick={() => copyToClipboard(`trpc.${api.name}.useQuery(${api.input === "无" ? "" : api.input})`)}>
+                          <Copy className="h-3 w-3 text-muted-foreground" />
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground mb-1">{api.desc}</p>
+                      <div className="flex flex-wrap gap-3 text-[10px]">
+                        <span className="text-muted-foreground">
+                          <span className="font-medium">Input:</span>{" "}
+                          <code className="bg-muted px-1 py-0.5 rounded">{api.input}</code>
+                        </span>
+                        <span className="text-muted-foreground">
+                          <span className="font-medium">Output:</span>{" "}
+                          <code className="bg-muted px-1 py-0.5 rounded">{api.output}</code>
+                        </span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              </CardContent>
-            </Card>
-          );
-        })}
+                <div className="bg-muted/30 px-4 py-2 border-t">
+                  <p className="text-[10px] text-muted-foreground">
+                    调用示例：<code className="bg-muted px-1 py-0.5 rounded font-mono">const {"{"} data {"}"} = trpc.kbSearch.search.useQuery({"{"} query: "关键词" {"}"});</code>
+                  </p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
