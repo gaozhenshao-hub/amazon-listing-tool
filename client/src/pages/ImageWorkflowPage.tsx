@@ -46,6 +46,11 @@ import {
   Send,
   Lock,
   Unlock,
+  Upload,
+  Zap,
+  Grid3X3,
+  LayoutGrid,
+  RefreshCw,
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -61,6 +66,7 @@ const STEPS = [
   { id: 3, label: "风格确认", icon: Palette, desc: "视觉风格选择" },
   { id: 4, label: "参考图确认", icon: Eye, desc: "构图+效果参考" },
   { id: 5, label: "图片建议", icon: FileText, desc: "最终输出" },
+  { id: 6, label: "AI提示词", icon: Zap, desc: "生成图片Prompt" },
 ];
 
 function StepProgressBar({
@@ -81,6 +87,7 @@ function StepProgressBar({
       !!session.step3Confirmed,
       !!session.step4Confirmed,
       !!session.step5Confirmed,
+      !!session.step6Confirmed,
     ];
     if (confirmed[stepId]) return "completed";
     if (stepId === currentStep) return "current";
@@ -150,8 +157,10 @@ function Step1SellingPoints({
 }) {
   const generateMutation = trpc.imageWorkflow.generateStep1.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep1.useMutation();
+  const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
   const [editData, setEditData] = useState<any>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [isLocked, setIsLocked] = useState(!!session?.step1Confirmed);
 
   // Load existing data
   useEffect(() => {
@@ -160,7 +169,19 @@ function Step1SellingPoints({
     } else if (session?.step1AiResult) {
       try { setEditData(JSON.parse(session.step1AiResult)); } catch {}
     }
-  }, [session?.step1AiResult, session?.step1UserEdit]);
+    setIsLocked(!!session?.step1Confirmed);
+  }, [session?.step1AiResult, session?.step1UserEdit, session?.step1Confirmed]);
+
+  const handleUnlock = async () => {
+    try {
+      await resetMutation.mutateAsync({ projectId, step: 1 });
+      setIsLocked(false);
+      setIsEditing(true);
+      toast.success("已解锁，可编辑卖点内容");
+    } catch (err: any) {
+      toast.error(err.message || "解锁失败");
+    }
+  };
 
   const handleGenerate = async () => {
     try {
@@ -215,7 +236,7 @@ function Step1SellingPoints({
     setEditData(newData);
   };
 
-  const isConfirmed = !!session?.step1Confirmed;
+  const isConfirmed = isLocked;
 
   return (
     <div className="space-y-4">
@@ -230,7 +251,7 @@ function Step1SellingPoints({
               <CardDescription>AI分析竞品数据和产品画像，梳理核心卖点、次要卖点、好差评点、必要性描述和使用场景</CardDescription>
             </div>
             <div className="flex gap-2">
-              {!editData && (
+              {!editData && !isConfirmed && (
                 <Button onClick={handleGenerate} disabled={generateMutation.isPending}>
                   {generateMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
                   AI生成卖点
@@ -249,9 +270,15 @@ function Step1SellingPoints({
                 </>
               )}
               {isConfirmed && (
-                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                  <Check className="w-3 h-3 mr-1" /> 已确认
-                </Badge>
+                <div className="flex gap-2 items-center">
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                    <Lock className="w-3 h-3 mr-1" /> 已锁定
+                  </Badge>
+                  <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={resetMutation.isPending}>
+                    {resetMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
+                    解锁编辑
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -638,7 +665,9 @@ function Step2ImageOutline({
 }) {
   const generateMutation = trpc.imageWorkflow.generateStep2.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep2.useMutation();
+  const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
   const [editData, setEditData] = useState<any>(null);
+  const [isLocked, setIsLocked] = useState(!!session?.step2Confirmed);
 
   useEffect(() => {
     if (session?.step2UserEdit) {
@@ -646,7 +675,18 @@ function Step2ImageOutline({
     } else if (session?.step2AiResult) {
       try { setEditData(JSON.parse(session.step2AiResult)); } catch {}
     }
-  }, [session?.step2AiResult, session?.step2UserEdit]);
+    setIsLocked(!!session?.step2Confirmed);
+  }, [session?.step2AiResult, session?.step2UserEdit, session?.step2Confirmed]);
+
+  const handleUnlock = async () => {
+    try {
+      await resetMutation.mutateAsync({ projectId, step: 2 });
+      setIsLocked(false);
+      toast.success("已解锁，可编辑图片大纲");
+    } catch (err: any) {
+      toast.error(err.message || "解锁失败");
+    }
+  };
 
   const handleGenerate = async () => {
     try {
@@ -669,7 +709,7 @@ function Step2ImageOutline({
     }
   };
 
-  const isConfirmed = !!session?.step2Confirmed;
+  const isConfirmed = isLocked;
 
   const updateSecondaryImage = (idx: number, field: string, value: any) => {
     if (!editData) return;
@@ -716,9 +756,15 @@ function Step2ImageOutline({
                 </>
               )}
               {isConfirmed && (
-                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                  <Check className="w-3 h-3 mr-1" /> 已确认
-                </Badge>
+                <div className="flex gap-2 items-center">
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                    <Lock className="w-3 h-3 mr-1" /> 已锁定
+                  </Badge>
+                  <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={resetMutation.isPending}>
+                    {resetMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
+                    解锁编辑
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -879,7 +925,9 @@ function Step3StyleConfirm({
 }) {
   const generateMutation = trpc.imageWorkflow.generateStep3.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep3.useMutation();
+  const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
   const [aiResult, setAiResult] = useState<any>(null);
+  const [isLocked, setIsLocked] = useState(!!session?.step3Confirmed);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   // KB image picker state for style references
   const [kbPickerOpen, setKbPickerOpen] = useState(false);
@@ -898,6 +946,18 @@ function Step3StyleConfirm({
       try { setAiResult(JSON.parse(session.step3AiResult)); } catch {}
     }
   }, [session?.step3AiResult, session?.step3UserEdit]);
+
+  useEffect(() => { setIsLocked(!!session?.step3Confirmed); }, [session?.step3Confirmed]);
+
+  const handleUnlock = async () => {
+    try {
+      await resetMutation.mutateAsync({ projectId, step: 3 });
+      setIsLocked(false);
+      toast.success("已解锁，可重新选择风格");
+    } catch (err: any) {
+      toast.error(err.message || "解锁失败");
+    }
+  };
 
   const handleGenerate = async () => {
     try {
@@ -962,7 +1022,7 @@ function Step3StyleConfirm({
     });
   };
 
-  const isConfirmed = !!session?.step3Confirmed;
+  const isConfirmed = isLocked;
 
   // Color swatch helper
   const ColorDot = ({ color }: { color: string }) => {
@@ -1001,9 +1061,15 @@ function Step3StyleConfirm({
                 </>
               )}
               {isConfirmed && (
-                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                  <Check className="w-3 h-3 mr-1" /> 已确认
-                </Badge>
+                <div className="flex gap-2 items-center">
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                    <Lock className="w-3 h-3 mr-1" /> 已锁定
+                  </Badge>
+                  <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={resetMutation.isPending}>
+                    {resetMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
+                    解锁编辑
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -1012,7 +1078,7 @@ function Step3StyleConfirm({
           <CardContent>
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-primary mr-3" />
-              <span className="text-muted-foreground">AI正在分析产品特性，推荐视觉风格...</span>
+              <span className="text-muted-foreground">AI正在推荐视觉风格方案...</span>
             </div>
           </CardContent>
         )}
@@ -1397,10 +1463,15 @@ function Step4References({
 }) {
   const generateMutation = trpc.imageWorkflow.generateStep4.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep4.useMutation();
+  const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
+  const uploadRefMutation = trpc.imageWorkflow.uploadStep4RefImage.useMutation();
+  const reoptimizeMutation = trpc.imageWorkflow.reoptimizeStep4WithRefs.useMutation();
   const [editData, setEditData] = useState<any>(null);
+  const [isLocked, setIsLocked] = useState(!!session?.step4Confirmed);
   const [kbPickerOpen, setKbPickerOpen] = useState(false);
   const [kbPickerTargetIdx, setKbPickerTargetIdx] = useState<number | null>(null);
   const [kbPickerTargetType, setKbPickerTargetType] = useState<string>("");
+  const [uploadingRef, setUploadingRef] = useState<{idx: number; type: 'composition'|'effect'} | null>(null);
 
   useEffect(() => {
     if (session?.step4UserEdit) {
@@ -1408,7 +1479,75 @@ function Step4References({
     } else if (session?.step4AiResult) {
       try { setEditData(JSON.parse(session.step4AiResult)); } catch {}
     }
-  }, [session?.step4AiResult, session?.step4UserEdit]);
+    setIsLocked(!!session?.step4Confirmed);
+  }, [session?.step4AiResult, session?.step4UserEdit, session?.step4Confirmed]);
+
+  const handleUnlock = async () => {
+    try {
+      await resetMutation.mutateAsync({ projectId, step: 4 });
+      setIsLocked(false);
+      toast.success("已解锁，可编辑参考图");
+    } catch (err: any) {
+      toast.error(err.message || "解锁失败");
+    }
+  };
+
+  // Upload independent reference image (composition or effect)
+  const handleRefImageUpload = async (idx: number, refType: 'composition' | 'effect', file: File) => {
+    setUploadingRef({ idx, type: refType });
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = (reader.result as string).split(',')[1];
+        const result = await uploadRefMutation.mutateAsync({
+          projectId,
+          imageKey: `step4-ref-${idx}-${refType}`,
+          refType,
+          imageData: base64,
+          fileName: file.name,
+        });
+        // Update editData with the uploaded image URL
+        if (editData) {
+          const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
+          const ref = { ...newData.imageReferences[idx] };
+          if (refType === 'composition') {
+            ref.compositionRefImageUrl = result.url;
+          } else {
+            ref.effectRefImageUrl = result.url;
+          }
+          newData.imageReferences[idx] = ref;
+          setEditData(newData);
+        }
+        toast.success(`${refType === 'composition' ? '构图' : '效果'}参考图已上传`);
+        setUploadingRef(null);
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      toast.error(err.message || "上传失败");
+      setUploadingRef(null);
+    }
+  };
+
+  // Re-optimize Step 4 based on uploaded reference images
+  const handleReoptimize = async (idx: number) => {
+    if (!editData) return;
+    try {
+      const ref = editData.imageReferences[idx];
+      const result = await reoptimizeMutation.mutateAsync({
+        projectId,
+        imageKey: `step4-ref-${idx}`,
+        compositionRefUrl: ref.compositionRefImageUrl || '',
+        effectRefUrl: ref.effectRefImageUrl || '',
+      });
+      // Merge the re-optimized result into editData
+      const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
+      newData.imageReferences[idx] = { ...newData.imageReferences[idx], ...result };
+      setEditData(newData);
+      toast.success("已根据参考图重新优化");
+    } catch (err: any) {
+      toast.error(err.message || "优化失败");
+    }
+  };
 
   const handleGenerate = async () => {
     try {
@@ -1431,7 +1570,7 @@ function Step4References({
     }
   };
 
-  const isConfirmed = !!session?.step4Confirmed;
+  const isConfirmed = isLocked;
 
   const updateRef = (idx: number, section: string, field: string, value: any) => {
     if (!editData) return;
@@ -1516,9 +1655,15 @@ function Step4References({
                 </>
               )}
               {isConfirmed && (
-                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                  <Check className="w-3 h-3 mr-1" /> 已确认
-                </Badge>
+                <div className="flex gap-2 items-center">
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                    <Lock className="w-3 h-3 mr-1" /> 已锁定
+                  </Badge>
+                  <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={resetMutation.isPending}>
+                    {resetMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
+                    解锁编辑
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -1582,11 +1727,90 @@ function Step4References({
               </div>
             )}
 
+            {/* Independent Reference Image Upload Section */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              {/* Composition Reference Image Upload */}
+              <div className="border-2 border-dashed border-blue-200 rounded-lg p-3 bg-blue-50/20">
+                <h4 className="text-sm font-medium text-blue-700 mb-2 flex items-center gap-1">
+                  <Upload className="w-3.5 h-3.5" /> 构图参考图
+                </h4>
+                {ref.compositionRefImageUrl ? (
+                  <div className="relative group">
+                    <img src={ref.compositionRefImageUrl} alt="构图参考" className="w-full h-32 object-cover rounded-lg border" />
+                    {!isConfirmed && (
+                      <div className="absolute top-1 right-1 flex gap-1">
+                        <label className="cursor-pointer bg-white/90 hover:bg-white rounded-full p-1 shadow-sm">
+                          <RotateCcw className="w-3.5 h-3.5 text-blue-600" />
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleRefImageUpload(idx, 'composition', f); }} />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <label className={`flex flex-col items-center justify-center h-28 rounded-lg border-2 border-dashed border-blue-300 cursor-pointer hover:bg-blue-50/50 transition-colors ${uploadingRef?.idx === idx && uploadingRef?.type === 'composition' ? 'opacity-50' : ''}`}>
+                    {uploadingRef?.idx === idx && uploadingRef?.type === 'composition' ? (
+                      <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
+                    ) : (
+                      <>
+                        <Upload className="w-6 h-6 text-blue-400 mb-1" />
+                        <span className="text-xs text-blue-500">上传构图参考图</span>
+                        <span className="text-[10px] text-muted-foreground">或从知识库选择</span>
+                      </>
+                    )}
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleRefImageUpload(idx, 'composition', f); }} disabled={!!uploadingRef} />
+                  </label>
+                )}
+              </div>
+
+              {/* Effect Reference Image Upload */}
+              <div className="border-2 border-dashed border-amber-200 rounded-lg p-3 bg-amber-50/20">
+                <h4 className="text-sm font-medium text-amber-700 mb-2 flex items-center gap-1">
+                  <Upload className="w-3.5 h-3.5" /> 效果参考图
+                </h4>
+                {ref.effectRefImageUrl ? (
+                  <div className="relative group">
+                    <img src={ref.effectRefImageUrl} alt="效果参考" className="w-full h-32 object-cover rounded-lg border" />
+                    {!isConfirmed && (
+                      <div className="absolute top-1 right-1 flex gap-1">
+                        <label className="cursor-pointer bg-white/90 hover:bg-white rounded-full p-1 shadow-sm">
+                          <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleRefImageUpload(idx, 'effect', f); }} />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <label className={`flex flex-col items-center justify-center h-28 rounded-lg border-2 border-dashed border-amber-300 cursor-pointer hover:bg-amber-50/50 transition-colors ${uploadingRef?.idx === idx && uploadingRef?.type === 'effect' ? 'opacity-50' : ''}`}>
+                    {uploadingRef?.idx === idx && uploadingRef?.type === 'effect' ? (
+                      <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
+                    ) : (
+                      <>
+                        <Upload className="w-6 h-6 text-amber-400 mb-1" />
+                        <span className="text-xs text-amber-500">上传效果参考图</span>
+                        <span className="text-[10px] text-muted-foreground">或从知识库选择</span>
+                      </>
+                    )}
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleRefImageUpload(idx, 'effect', f); }} disabled={!!uploadingRef} />
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {/* AI Re-optimize button when both ref images are uploaded */}
+            {(ref.compositionRefImageUrl || ref.effectRefImageUrl) && !isConfirmed && (
+              <div className="mb-4 flex justify-center">
+                <Button variant="outline" size="sm" onClick={() => handleReoptimize(idx)} disabled={reoptimizeMutation.isPending} className="text-xs">
+                  {reoptimizeMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1" />}
+                  根据参考图重新优化构图和效果方案
+                </Button>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Composition Reference */}
               <div className="border rounded-lg p-3 bg-blue-50/30">
                 <h4 className="text-sm font-medium text-blue-700 mb-2 flex items-center gap-1">
-                  <Layout className="w-3.5 h-3.5" /> 构图参考
+                  <Layout className="w-3.5 h-3.5" /> 构图方案
                 </h4>
                 {isConfirmed ? (
                   <div className="space-y-1 text-xs">
@@ -1610,7 +1834,7 @@ function Step4References({
               {/* Effect Reference */}
               <div className="border rounded-lg p-3 bg-amber-50/30">
                 <h4 className="text-sm font-medium text-amber-700 mb-2 flex items-center gap-1">
-                  <Paintbrush className="w-3.5 h-3.5" /> 效果参考
+                  <Paintbrush className="w-3.5 h-3.5" /> 效果方案
                 </h4>
                 {isConfirmed ? (
                   <div className="space-y-1 text-xs">
@@ -1968,9 +2192,71 @@ function Step5FinalSuggestions({
 }) {
   const generateMutation = trpc.imageWorkflow.generateStep5.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep5.useMutation();
+  const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
+  const aplusOptimizeMutation = trpc.imageWorkflow.optimizeWithAplusModule.useMutation();
   const [enData, setEnData] = useState<any>(null);
   const [cnData, setCnData] = useState<any>(null);
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
+  const [isLocked, setIsLocked] = useState(!!session?.step5Confirmed);
+  const [showModuleSelector, setShowModuleSelector] = useState(false);
+  const [selectedModules, setSelectedModules] = useState<string[]>([]);
+
+  // Amazon Premium A+ Module Types
+  const APLUS_MODULES = [
+    { id: 'hero_banner', name: '英雄横幅模块', desc: '全屏背景图+文字覆盖，970x600px', category: '全屏展示' },
+    { id: 'comparison_table', name: '对比表格模块', desc: '产品对比表格，最多6列', category: '对比展示' },
+    { id: 'hotspot', name: '热点交互模块', desc: '可点击热点区域，展示产品细节', category: '交互展示' },
+    { id: 'carousel', name: '轮播图模块', desc: '多图轮播展示，最多8张', category: '交互展示' },
+    { id: 'video', name: '视频模块', desc: '产品视频展示，支持自动播放', category: '多媒体' },
+    { id: 'brand_story', name: '品牌故事模块', desc: '品牌叙事+图片组合', category: '品牌建设' },
+    { id: 'four_image_text', name: '四图文字模块', desc: '4张图片+文字描述，各300x300px', category: '图文组合' },
+    { id: 'single_image_sidebar', name: '单图侧边栏模块', desc: '左图右文或右图左文布局', category: '图文组合' },
+    { id: 'full_image', name: '全屏图片模块', desc: '全宽单图展示，970x300px', category: '全屏展示' },
+    { id: 'text_overlay', name: '文字覆盖模块', desc: '图片上叠加文字层', category: '图文组合' },
+    { id: 'qa_module', name: 'Q&A模块', desc: '问答式内容展示', category: '信息展示' },
+    { id: 'tech_specs', name: '技术规格模块', desc: '参数表格展示', category: '信息展示' },
+    { id: 'three_image_text', name: '三图文字模块', desc: '3张图片+文字，各300x300px', category: '图文组合' },
+    { id: 'brand_highlight', name: '品牌亮点模块', desc: '品牌Logo+核心价值主张', category: '品牌建设' },
+    { id: 'navigation', name: '导航模块', desc: '产品线内部导航链接', category: '导航' },
+  ];
+
+  const MODULE_CATEGORIES = Array.from(new Set(APLUS_MODULES.map(m => m.category)));
+
+  useEffect(() => {
+    setIsLocked(!!session?.step5Confirmed);
+  }, [session?.step5Confirmed]);
+
+  const handleUnlock = async () => {
+    try {
+      await resetMutation.mutateAsync({ projectId, step: 5 });
+      setIsLocked(false);
+      toast.success("已解锁Step 5，可重新编辑");
+    } catch (err: any) {
+      toast.error(err.message || "解锁失败");
+    }
+  };
+
+  const handleAplusModuleOptimize = async () => {
+    if (selectedModules.length === 0) {
+      toast.error("请先选择至少一个A+模块");
+      return;
+    }
+    try {
+      const result = await aplusOptimizeMutation.mutateAsync({
+        projectId,
+        selectedModules: selectedModules.map((id, i) => {
+          const mod = APLUS_MODULES.find(m => m.id === id);
+          return { moduleType: id, moduleName: mod?.name || id, position: i + 1 };
+        }),
+      });
+      if (result.en) setEnData(result.en);
+      if (result.cn) setCnData(result.cn);
+      setShowModuleSelector(false);
+      toast.success("已根据A+模块样式二次优化");
+    } catch (err: any) {
+      toast.error(err.message || "A+模块优化失败");
+    }
+  };
 
   useEffect(() => {
     if (session?.step5AiResult) {
@@ -2142,9 +2428,15 @@ function Step5FinalSuggestions({
                   <Button variant="outline" onClick={handleExportPdf}>
                     <FileText className="w-4 h-4 mr-2" /> 导出PDF
                   </Button>
-                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                    <Check className="w-3 h-3 mr-1" /> 已确认
-                  </Badge>
+                  <div className="flex gap-2 items-center">
+                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                      <Lock className="w-3 h-3 mr-1" /> 已锁定
+                    </Badge>
+                    <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={resetMutation.isPending}>
+                      {resetMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
+                      解锁编辑
+                    </Button>
+                  </div>
                 </>
               )}
             </div>
@@ -2159,6 +2451,71 @@ function Step5FinalSuggestions({
           </CardContent>
         )}
       </Card>
+
+      {/* A+ Module Selector Panel */}
+      {enData && !isConfirmed && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Layers className="w-4 h-4 text-purple-500" /> 选择亚马逊超级A+模块样式
+              </CardTitle>
+              <Button variant={showModuleSelector ? "secondary" : "outline"} size="sm" onClick={() => setShowModuleSelector(!showModuleSelector)}>
+                {showModuleSelector ? "收起" : "选择A+模块"}
+              </Button>
+            </div>
+            <CardDescription>选择亚马逊高级A+模块样式，AI将根据模块规格二次优化图片建议</CardDescription>
+          </CardHeader>
+          {showModuleSelector && (
+            <CardContent>
+              <div className="space-y-4">
+                {MODULE_CATEGORIES.map(cat => (
+                  <div key={cat}>
+                    <h4 className="text-sm font-medium text-muted-foreground mb-2">{cat}</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      {APLUS_MODULES.filter(m => m.category === cat).map(mod => {
+                        const isSelected = selectedModules.includes(mod.id);
+                        return (
+                          <button
+                            key={mod.id}
+                            onClick={() => {
+                              setSelectedModules(prev =>
+                                isSelected ? prev.filter(id => id !== mod.id) : [...prev, mod.id]
+                              );
+                            }}
+                            className={`p-3 rounded-lg border text-left transition-all ${
+                              isSelected
+                                ? "border-purple-400 bg-purple-50 shadow-sm"
+                                : "border-gray-200 hover:border-purple-200 hover:bg-purple-50/30"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className={`w-4 h-4 rounded border flex items-center justify-center ${
+                                isSelected ? "bg-purple-500 border-purple-500" : "border-gray-300"
+                              }`}>
+                                {isSelected && <Check className="w-3 h-3 text-white" />}
+                              </div>
+                              <span className="text-sm font-medium">{mod.name}</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1 ml-6">{mod.desc}</p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between pt-2 border-t">
+                  <span className="text-sm text-muted-foreground">已选择 {selectedModules.length} 个模块</span>
+                  <Button onClick={handleAplusModuleOptimize} disabled={selectedModules.length === 0 || aplusOptimizeMutation.isPending}>
+                    {aplusOptimizeMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                    根据模块二次优化
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
 
       {enData && !generateMutation.isPending && (
         <>
@@ -2487,7 +2844,8 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
   s.push(`<a href="#step2">Step 2: 图片大纲</a><br/>`);
   s.push(`<a href="#step3">Step 3: 风格确认</a><br/>`);
   s.push(`<a href="#step4">Step 4: 参考图确认</a><br/>`);
-  s.push(`<a href="#step5">Step 5: 图片结构及内容建议</a>`);
+  s.push(`<a href="#step5">Step 5: 图片结构及内容建议</a><br/>`);
+  s.push(`<a href="#step6">Step 6: AI图片提示词</a>`);
   s.push(`</div>`);
 
   // ===== Step 1: Selling Points =====
@@ -2670,6 +3028,32 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
     s.push(`<p style="color:#999;">未生成或未确认</p>`);
   }
 
+  // ===== Step 6: AI Prompts =====
+  if (session) {
+    s.push(`<h2 id="step6"><span class="step-badge">Step 6</span>AI图片提示词</h2>`);
+    const s6 = safeJsonParse(session.step6UserEdit || session.step6AiResult);
+    if (s6?.imagePrompts?.length) {
+      if (s6.globalSettings) {
+        s.push(`<div class="card"><strong>全局设置</strong><br/>`);
+        s.push(`<p>推荐工具: ${s6.globalSettings.recommendedTool || ''}</p>`);
+        s.push(`<p>一致性提示: ${s6.globalSettings.consistencyTips || ''}</p>`);
+        s.push(`<p>品牌色融入: ${s6.globalSettings.brandColorIntegration || ''}</p></div>`);
+      }
+      s6.imagePrompts.forEach((p: any, idx: number) => {
+        s.push(`<div class="card"><h4>${p.imageLabel || `Image ${idx + 1}`} - ${p.purpose || ''}</h4>`);
+        s.push(`<p style="color:green;"><strong>Positive Prompt:</strong></p><pre style="background:#f0fff0;padding:8px;border-radius:4px;font-size:12px;white-space:pre-wrap;">${p.prompt || ''}</pre>`);
+        s.push(`<p style="color:red;"><strong>Negative Prompt:</strong></p><pre style="background:#fff0f0;padding:8px;border-radius:4px;font-size:12px;white-space:pre-wrap;">${p.negativePrompt || ''}</pre>`);
+        if (p.parameters) {
+          s.push(`<p><span class="badge">宽高比: ${p.parameters.aspectRatio || ''}</span> <span class="badge">风格: ${p.parameters.style || ''}</span> <span class="badge">质量: ${p.parameters.quality || ''}</span></p>`);
+        }
+        if (p.notes) s.push(`<p style="color:#8B4513;font-size:12px;">提示: ${p.notes}</p>`);
+        s.push(`</div>`);
+      });
+    } else {
+      s.push(`<p style="color:#999;">未生成或未确认</p>`);
+    }
+  }
+
   s.push(`</body></html>`);
   return s.join("\n");
 }
@@ -2678,10 +3062,334 @@ function safeJsonParse(str: string | null | undefined): any {
   if (!str) return null;
   try { return JSON.parse(str); } catch { return null; }
 }
+// ═════════════════════════════════════════════════════════════════
+// ─── Step 6: AI Prompts Generation ──────────────────────────────────
+// ═════════════════════════════════════════════════════════════════
+function Step6AIPrompts({
+  projectId,
+  session,
+  onConfirm,
+}: {
+  projectId: number;
+  session: any;
+  onConfirm: () => void;
+}) {
+  const generateMutation = trpc.imageWorkflow.generateStep6.useMutation();
+  const confirmMutation = trpc.imageWorkflow.confirmStep6.useMutation();
+  const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
+  const [enData, setEnData] = useState<any>(null);
+  const [cnData, setCnData] = useState<any>(null);
+  const [isLocked, setIsLocked] = useState(!!session?.step6Confirmed);
+  const [showLang, setShowLang] = useState<"en" | "cn">("en");
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
-// ═══════════════════════════════════════════════════════════════════
-// ─── Main Page Component ─────────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════════
+  useEffect(() => {
+    if (session?.step6AiResult) {
+      try { setEnData(JSON.parse(session.step6UserEdit || session.step6AiResult)); } catch {}
+    }
+    if (session?.step6AiResultCn) {
+      try { setCnData(JSON.parse(session.step6AiResultCn)); } catch {}
+    }
+  }, [session?.step6AiResult, session?.step6AiResultCn, session?.step6UserEdit]);
+
+  useEffect(() => {
+    setIsLocked(!!session?.step6Confirmed);
+  }, [session?.step6Confirmed]);
+
+  const handleGenerate = async () => {
+    try {
+      const result = await generateMutation.mutateAsync({ projectId });
+      setEnData(result.en);
+      setCnData(result.cn);
+      toast.success("AI提示词生成完成");
+    } catch (err: any) {
+      toast.error(err.message || "生成失败");
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!enData) return;
+    try {
+      await confirmMutation.mutateAsync({ projectId, userEdit: JSON.stringify(enData) });
+      setIsLocked(true);
+      toast.success("AI提示词已确认");
+      onConfirm();
+    } catch (err: any) {
+      toast.error(err.message || "确认失败");
+    }
+  };
+
+  const handleUnlock = async () => {
+    try {
+      await resetMutation.mutateAsync({ projectId, step: 6 });
+      setIsLocked(false);
+      toast.success("已解锁Step 6，可重新编辑");
+    } catch (err: any) {
+      toast.error(err.message || "解锁失败");
+    }
+  };
+
+  const handleCopyPrompt = (prompt: string, idx: number) => {
+    navigator.clipboard.writeText(prompt).then(() => {
+      setCopiedIdx(idx);
+      toast.success("提示词已复制到剪贴板");
+      setTimeout(() => setCopiedIdx(null), 2000);
+    });
+  };
+
+  const handleCopyAll = () => {
+    if (!enData?.imagePrompts) return;
+    const allPrompts = enData.imagePrompts.map((p: any, i: number) =>
+      `--- ${p.imageLabel || `Image ${i + 1}`} ---\nPrompt: ${p.prompt}\nNegative: ${p.negativePrompt}\nAspect Ratio: ${p.parameters?.aspectRatio || 'N/A'}\nStyle: ${p.parameters?.style || 'N/A'}\n`
+    ).join('\n');
+    navigator.clipboard.writeText(allPrompts).then(() => {
+      toast.success("全部提示词已复制");
+    });
+  };
+
+  const handleEditPrompt = (idx: number, field: string, value: string) => {
+    setEnData((prev: any) => {
+      const prompts = [...(prev.imagePrompts || [])];
+      prompts[idx] = { ...prompts[idx], [field]: value };
+      return { ...prev, imagePrompts: prompts };
+    });
+  };
+
+  const isConfirmed = isLocked;
+  const data = showLang === "cn" && cnData ? cnData : enData;
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Wand2 className="w-5 h-5 text-purple-500" />
+                Step 6: AI图片提示词生成
+              </CardTitle>
+              <CardDescription>根据前5步确认的内容，生成可直接用于AI图片生成工具的提示词（支持Midjourney/DALL-E/Stable Diffusion）</CardDescription>
+            </div>
+            <div className="flex gap-2">
+              {!enData && (
+                <Button onClick={handleGenerate} disabled={generateMutation.isPending}>
+                  {generateMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                  生成AI提示词
+                </Button>
+              )}
+              {enData && !isConfirmed && (
+                <>
+                  <Button variant="outline" onClick={handleGenerate} disabled={generateMutation.isPending}>
+                    <RotateCcw className="w-4 h-4 mr-2" /> 重新生成
+                  </Button>
+                  <Button variant="outline" onClick={handleCopyAll}>
+                    <Copy className="w-4 h-4 mr-2" /> 复制全部
+                  </Button>
+                  <Button onClick={handleConfirm} disabled={confirmMutation.isPending}>
+                    {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
+                    确认提示词
+                  </Button>
+                </>
+              )}
+              {isConfirmed && (
+                <div className="flex gap-2 items-center">
+                  <Button variant="outline" onClick={handleCopyAll}>
+                    <Copy className="w-4 h-4 mr-2" /> 复制全部
+                  </Button>
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                    <Lock className="w-3 h-3 mr-1" /> 已锁定
+                  </Badge>
+                  <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={resetMutation.isPending}>
+                    {resetMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
+                    解锁编辑
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        {generateMutation.isPending && (
+          <CardContent>
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-purple-500 mr-3" />
+              <span className="text-muted-foreground">AI正在综合生成图片提示词（包含正面/负面提示词、参数建议）...</span>
+            </div>
+          </CardContent>
+        )}
+      </Card>
+
+      {data?.imagePrompts && !generateMutation.isPending && (
+        <>
+          {/* Language toggle */}
+          {cnData && (
+            <div className="flex justify-end">
+              <div className="inline-flex rounded-lg border p-0.5 bg-muted">
+                <button
+                  className={`px-3 py-1 rounded-md text-sm transition-all ${showLang === 'en' ? 'bg-white shadow-sm font-medium' : 'text-muted-foreground'}`}
+                  onClick={() => setShowLang('en')}
+                >
+                  English
+                </button>
+                <button
+                  className={`px-3 py-1 rounded-md text-sm transition-all ${showLang === 'cn' ? 'bg-white shadow-sm font-medium' : 'text-muted-foreground'}`}
+                  onClick={() => setShowLang('cn')}
+                >
+                  中文
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Global Settings */}
+          {data.globalSettings && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-amber-500" /> 全局设置与建议
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                    <p className="text-xs font-medium text-blue-700 mb-1">推荐工具</p>
+                    <p className="text-sm">{data.globalSettings.recommendedTool}</p>
+                  </div>
+                  <div className="p-3 bg-green-50 rounded-lg border border-green-100">
+                    <p className="text-xs font-medium text-green-700 mb-1">一致性提示</p>
+                    <p className="text-sm">{data.globalSettings.consistencyTips}</p>
+                  </div>
+                  <div className="p-3 bg-purple-50 rounded-lg border border-purple-100">
+                    <p className="text-xs font-medium text-purple-700 mb-1">品牌色融入</p>
+                    <p className="text-sm">{data.globalSettings.brandColorIntegration}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Image Prompts */}
+          {data.imagePrompts.map((prompt: any, idx: number) => (
+            <Card key={idx} className="overflow-hidden">
+              <CardHeader className="pb-3 bg-gradient-to-r from-purple-50 to-blue-50">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Badge className={`${
+                      prompt.imageType === 'mainImage' ? 'bg-amber-500' :
+                      prompt.imageType === 'secondaryImage' ? 'bg-blue-500' : 'bg-purple-500'
+                    }`}>
+                      {prompt.imageLabel || `Image ${idx + 1}`}
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">{prompt.purpose}</span>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => handleCopyPrompt(prompt.prompt, idx)}
+                    >
+                      {copiedIdx === idx ? <Check className="w-3 h-3 mr-1 text-green-500" /> : <Copy className="w-3 h-3 mr-1" />}
+                      {copiedIdx === idx ? "已复制" : "复制Prompt"}
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-4 space-y-4">
+                {/* Main Prompt */}
+                <div>
+                  <label className="text-xs font-medium text-green-700 flex items-center gap-1 mb-1">
+                    <Sparkles className="w-3 h-3" /> Positive Prompt
+                  </label>
+                  {!isConfirmed ? (
+                    <Textarea
+                      value={showLang === 'en' ? (enData?.imagePrompts?.[idx]?.prompt || '') : prompt.prompt}
+                      onChange={(e) => showLang === 'en' && handleEditPrompt(idx, 'prompt', e.target.value)}
+                      className="min-h-[80px] text-sm font-mono bg-green-50/50 border-green-200"
+                      readOnly={showLang !== 'en'}
+                    />
+                  ) : (
+                    <div className="p-3 bg-green-50/50 rounded-lg border border-green-200 text-sm font-mono whitespace-pre-wrap">
+                      {prompt.prompt}
+                    </div>
+                  )}
+                </div>
+
+                {/* Negative Prompt */}
+                <div>
+                  <label className="text-xs font-medium text-red-700 flex items-center gap-1 mb-1">
+                    <X className="w-3 h-3" /> Negative Prompt
+                  </label>
+                  {!isConfirmed ? (
+                    <Textarea
+                      value={showLang === 'en' ? (enData?.imagePrompts?.[idx]?.negativePrompt || '') : prompt.negativePrompt}
+                      onChange={(e) => showLang === 'en' && handleEditPrompt(idx, 'negativePrompt', e.target.value)}
+                      className="min-h-[60px] text-sm font-mono bg-red-50/50 border-red-200"
+                      readOnly={showLang !== 'en'}
+                    />
+                  ) : (
+                    <div className="p-3 bg-red-50/50 rounded-lg border border-red-200 text-sm font-mono whitespace-pre-wrap">
+                      {prompt.negativePrompt}
+                    </div>
+                  )}
+                </div>
+
+                {/* Parameters */}
+                {prompt.parameters && (
+                  <div className="flex flex-wrap gap-3">
+                    <div className="px-3 py-1.5 bg-gray-100 rounded-lg">
+                      <span className="text-xs text-muted-foreground">宽高比</span>
+                      <p className="text-sm font-medium">{prompt.parameters.aspectRatio}</p>
+                    </div>
+                    <div className="px-3 py-1.5 bg-gray-100 rounded-lg">
+                      <span className="text-xs text-muted-foreground">风格</span>
+                      <p className="text-sm font-medium">{prompt.parameters.style}</p>
+                    </div>
+                    <div className="px-3 py-1.5 bg-gray-100 rounded-lg">
+                      <span className="text-xs text-muted-foreground">质量</span>
+                      <p className="text-sm font-medium">{prompt.parameters.quality}</p>
+                    </div>
+                    {prompt.parameters.seed && (
+                      <div className="px-3 py-1.5 bg-gray-100 rounded-lg">
+                        <span className="text-xs text-muted-foreground">Seed</span>
+                        <p className="text-sm font-medium">{prompt.parameters.seed}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Prompt Breakdown */}
+                {prompt.promptBreakdown && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-2">提示词拆解</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      {Object.entries(prompt.promptBreakdown).map(([key, val]: [string, any]) => (
+                        <div key={key} className="p-2 bg-gray-50 rounded border text-xs">
+                          <span className="text-muted-foreground capitalize">{key === 'subject' ? '主体' : key === 'scene' ? '场景' : key === 'composition' ? '构图' : key === 'lighting' ? '光影' : key === 'color' ? '色彩' : key === 'styleKeywords' ? '风格' : key === 'qualityKeywords' ? '质量' : key}</span>
+                          <p className="mt-0.5 font-mono text-[11px]">{val as string}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Notes */}
+                {prompt.notes && (
+                  <div className="p-2 bg-amber-50 rounded border border-amber-100 text-xs text-amber-800">
+                    <strong>使用提示：</strong> {prompt.notes}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════
+// ─── Main Page Component ─────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════
 export default function ImageWorkflowPage() {
   const { selectedProjectId } = useProject();
   const [currentStep, setCurrentStep] = useState(1);
@@ -2708,7 +3416,7 @@ export default function ImageWorkflowPage() {
 
   const handleStepConfirm = () => {
     sessionQuery.refetch();
-    if (currentStep < 5) {
+    if (currentStep < 6) {
       setCurrentStep(currentStep + 1);
     }
   };
@@ -2746,7 +3454,7 @@ export default function ImageWorkflowPage() {
               <Image className="w-6 h-6 text-primary" />
               智能图片建议
             </h1>
-            <p className="text-muted-foreground text-sm mt-1">5步工作流：卖点梳理 → 图片大纲 → 风格确认 → 参考图确认 → 图片建议</p>
+            <p className="text-muted-foreground text-sm mt-1">6步工作流：卖点梳理 → 图片大纲 → 风格确认 → 参考图确认 → 图片建议 → AI提示词</p>
           </div>
           <ProjectSelector />
         </div>
@@ -2770,11 +3478,11 @@ export default function ImageWorkflowPage() {
             <Image className="w-6 h-6 text-primary" />
             智能图片建议
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">5步工作流：卖点梳理 → 图片大纲 → 风格确认 → 参考图确认 → 图片建议</p>
+          <p className="text-muted-foreground text-sm mt-1">6步工作流：卖点梳理 → 图片大纲 → 风格确认 → 参考图确认 → 图片建议 → AI提示词</p>
         </div>
         <div className="flex items-center gap-2">
           <ProjectSelector />
-          {session && session.step5Confirmed && (
+          {session && session.step6Confirmed && (
             <Button variant="outline" size="sm" onClick={() => {
               toast.info("正在生成完整方案...");
               try {
@@ -2815,7 +3523,7 @@ export default function ImageWorkflowPage() {
               <Image className="w-16 h-16 text-primary/30 mx-auto" />
               <div>
                 <p className="text-lg font-medium">开始图片建议工作流</p>
-                <p className="text-sm text-muted-foreground mt-1">通过5个步骤，AI将帮助你规划产品图片的完整方案</p>
+                <p className="text-sm text-muted-foreground mt-1">通过6个步骤，AI将帮助你规划产品图片的完整方案并生成AI图片提示词</p>
               </div>
               <Button onClick={handleStartNew} disabled={createSessionMutation.isPending} size="lg">
                 {createSessionMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
@@ -2840,6 +3548,9 @@ export default function ImageWorkflowPage() {
       )}
       {session && currentStep === 5 && (
         <Step5FinalSuggestions projectId={selectedProjectId} session={session} onConfirm={handleStepConfirm} />
+      )}
+      {session && currentStep === 6 && (
+        <Step6AIPrompts projectId={selectedProjectId} session={session} onConfirm={handleStepConfirm} />
       )}
     </div>
   );

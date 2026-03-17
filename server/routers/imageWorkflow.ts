@@ -11,8 +11,13 @@ import {
   STEP4_REFERENCE_PROMPT,
   STEP5_FINAL_SUGGESTION_PROMPT,
   STEP5_TRANSLATION_PROMPT,
+  STEP4_REOPTIMIZE_WITH_REFS_PROMPT,
+  STEP5_APLUS_MODULE_OPTIMIZE_PROMPT,
+  STEP6_AI_PROMPT_GENERATION,
+  STEP6_TRANSLATION_PROMPT,
 } from "../imageWorkflowPrompts";
 import { IMAGE_ADVICE_TRANSLATION_PROMPT } from "../prompts";
+import { storagePut } from "../storage";
 
 // ─── Helper: Build context from project data ─────────────────────
 async function buildImageWorkflowContext(projectId: number) {
@@ -509,11 +514,206 @@ export const imageWorkflowRouter = router({
       return { success: true };
     }),
 
+  // ─── Step 4: Upload composition/effect reference images ────────
+  uploadStep4RefImage: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      imageKey: z.string(), // e.g. "mainImage", "secondary-2", "aplus-1"
+      refType: z.enum(["composition", "effect"]),
+      imageData: z.string(), // base64 encoded image data
+      fileName: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+
+      // Upload to S3
+      const buffer = Buffer.from(input.imageData, "base64");
+      const ext = input.fileName.split(".").pop() || "png";
+      const key = `image-workflow/${input.projectId}/step4-refs/${input.refType}-${input.imageKey}-${Date.now()}.${ext}`;
+      const { url } = await storagePut(key, buffer, `image/${ext}`);
+
+      // Update the refs JSON in DB
+      const field = input.refType === "composition" ? "step4CompositionRefs" : "step4EffectRefs";
+      const existingRefs = session[field] ? JSON.parse(session[field] as string) : {};
+      existingRefs[input.imageKey] = url;
+
+      await db.updateImageWorkflowSession(session.id, {
+        [field]: JSON.stringify(existingRefs),
+      });
+
+      return { url, imageKey: input.imageKey, refType: input.refType };
+    }),
+
+  // ─── Step 4: Re-optimize single image reference with uploaded refs ─
+  reoptimizeStep4WithRefs: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      imageKey: z.string(),
+      compositionRefUrl: z.string().optional(),
+      effectRefUrl: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+
+      // Build context with reference images
+      const messages: any[] = [
+        { role: "system", content: STEP4_REOPTIMIZE_WITH_REFS_PROMPT },
+      ];
+
+      const userContent: any[] = [];
+      userContent.push({
+        type: "text",
+        text: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}\n\n--- 已确认的风格方案 ---\n${session.step3UserEdit || session.step3AiResult}\n\n--- 当前图片参考方案 ---\n${session.step4AiResult}\n\n目标图片: ${input.imageKey}\n\n请根据上传的参考图重新优化该图的构图参考和效果参考方案。`,
+      });
+
+      if (input.compositionRefUrl) {
+        userContent.push({
+          type: "image_url",
+          image_url: { url: input.compositionRefUrl, detail: "high" },
+        });
+        userContent.push({ type: "text", text: "[上面是构图参考图]" });
+      }
+      if (input.effectRefUrl) {
+        userContent.push({
+          type: "image_url",
+          image_url: { url: input.effectRefUrl, detail: "high" },
+        });
+        userContent.push({ type: "text", text: "[上面是效果参考图]" });
+      }
+
+      messages.push({ role: "user", content: userContent });
+
+      const response = await invokeLLM({
+        messages,
+        response_format: { type: "json_object" },
+      });
+
+      return parseLLMJson(response);
+    }),
+
+  // ─── Step 5: Optimize with A+ module selection ────────────────────
+  optimizeWithAplusModule: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      selectedModules: z.array(z.object({
+        moduleType: z.string(),
+        moduleName: z.string(),
+        position: z.number(),
+      })),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+      if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
+
+      const currentSuggestions = session.step5UserEdit || session.step5AiResult;
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: STEP5_APLUS_MODULE_OPTIMIZE_PROMPT },
+          {
+            role: "user",
+            content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 当前图片建议 ---\n${currentSuggestions}\n\n--- 用户选择的A+模块 ---\n${JSON.stringify(input.selectedModules)}\n\n请根据用户选择的A+模块类型，重新优化A+内容部分的建议，严格按照各模块的规格要求（尺寸、字符数限制）来输出内容。`,
+          },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const result = parseLLMJson(response);
+
+      await db.updateImageWorkflowSession(session.id, {
+        step5SelectedModule: JSON.stringify(input.selectedModules),
+        step5OptimizedResult: JSON.stringify(result.en || result),
+        step5OptimizedResultCn: result.cn ? JSON.stringify(result.cn) : null,
+      });
+
+      return result;
+    }),
+
+  // ─── Step 6: Generate AI prompts ──────────────────────────────────
+  generateStep6: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+      if (!session.step5Confirmed) throw new Error("Step 5 not confirmed yet");
+
+      const step5Data = session.step5OptimizedResult || session.step5UserEdit || session.step5AiResult;
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: STEP6_AI_PROMPT_GENERATION },
+          {
+            role: "user",
+            content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}\n\n--- 已确认的风格方案 ---\n${session.step3UserEdit || session.step3AiResult}\n\n--- 已确认的参考图 ---\n${session.step4UserEdit || session.step4AiResult}\n\n--- 已确认的图片建议 ---\n${step5Data}\n\n请为每张图生成可直接使用的AI图片生成提示词（prompt），包含正面提示词、负面提示词和推荐参数。`,
+          },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const result = parseLLMJson(response);
+      const resultStr = JSON.stringify(result);
+
+      // Generate Chinese translation
+      let cnStr: string | null = null;
+      try {
+        const cnResponse = await invokeLLM({
+          messages: [
+            { role: "system", content: STEP6_TRANSLATION_PROMPT },
+            { role: "user", content: `请将以下AI提示词建议翻译为简体中文：\n\n${resultStr}` },
+          ],
+          response_format: { type: "json_object" },
+        });
+        const cnContent = typeof cnResponse.choices[0].message.content === "string"
+          ? cnResponse.choices[0].message.content
+          : JSON.stringify(cnResponse.choices[0].message.content);
+        JSON.parse(cnContent); // validate
+        cnStr = cnContent;
+      } catch (err) {
+        console.error("Step 6 CN translation failed:", err);
+      }
+
+      await db.updateImageWorkflowSession(session.id, {
+        step6AiResult: resultStr,
+        step6AiResultCn: cnStr,
+        currentStep: 6,
+      });
+
+      return { en: result, cn: cnStr ? JSON.parse(cnStr) : null };
+    }),
+
+  // ─── Step 6: Confirm ──────────────────────────────────────────────
+  confirmStep6: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      userEdit: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+
+      await db.updateImageWorkflowSession(session.id, {
+        step6UserEdit: input.userEdit,
+        step6Confirmed: 1,
+        status: "completed",
+      });
+
+      return { success: true };
+    }),
+
   // ─── Reset to a specific step ─────────────────────────────────
   resetToStep: protectedProcedure
     .input(z.object({
       projectId: z.number(),
-      step: z.number().min(1).max(5),
+      step: z.number().min(1).max(6),
     }))
     .mutation(async ({ ctx, input }) => {
       const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
@@ -540,12 +740,23 @@ export const imageWorkflowRouter = router({
         clearData.step4AiResult = null;
         clearData.step4UserEdit = null;
         clearData.step4Confirmed = 0;
+        clearData.step4CompositionRefs = null;
+        clearData.step4EffectRefs = null;
       }
       if (input.step <= 5) {
         clearData.step5AiResult = null;
         clearData.step5AiResultCn = null;
         clearData.step5UserEdit = null;
         clearData.step5Confirmed = 0;
+        clearData.step5SelectedModule = null;
+        clearData.step5OptimizedResult = null;
+        clearData.step5OptimizedResultCn = null;
+      }
+      if (input.step <= 6) {
+        clearData.step6AiResult = null;
+        clearData.step6AiResultCn = null;
+        clearData.step6UserEdit = null;
+        clearData.step6Confirmed = 0;
       }
       clearData.status = "in_progress";
 

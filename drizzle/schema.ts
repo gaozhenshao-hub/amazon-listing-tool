@@ -994,7 +994,7 @@ export const imageWorkflowSessions = mysqlTable("image_workflow_sessions", {
   id: int("id").autoincrement().primaryKey(),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
-  currentStep: int("currentStep").default(1).notNull(), // 1-5
+  currentStep: int("currentStep").default(1).notNull(), // 1-6
 
   // Step 1: 卖点梳理
   step1AiResult: text("step1AiResult"),       // AI generated selling points JSON
@@ -1022,6 +1022,18 @@ export const imageWorkflowSessions = mysqlTable("image_workflow_sessions", {
   step5UserEdit: text("step5UserEdit"),        // User edited final suggestions JSON
   step5Confirmed: int("step5Confirmed").default(0).notNull(),
 
+  // Step 4: Reference images (per-image composition + effect reference URLs)
+  step4CompositionRefs: text("step4CompositionRefs"),  // JSON: { [imageKey]: url } per-image composition reference
+  step4EffectRefs: text("step4EffectRefs"),            // JSON: { [imageKey]: url } per-image effect reference
+  // Step 5: A+ module selection
+  step5SelectedModule: text("step5SelectedModule"),    // JSON: selected A+ module type for re-optimization
+  step5OptimizedResult: text("step5OptimizedResult"),  // JSON: re-optimized result after module selection
+  step5OptimizedResultCn: text("step5OptimizedResultCn"), // JSON: Chinese version of re-optimized result
+  // Step 6: AI提示词生成
+  step6AiResult: text("step6AiResult"),        // AI generated prompts JSON (English)
+  step6AiResultCn: text("step6AiResultCn"),    // AI generated prompts JSON (Chinese)
+  step6UserEdit: text("step6UserEdit"),        // User edited prompts JSON
+  step6Confirmed: int("step6Confirmed").default(0).notNull(),
   // PDF export
   pdfUrl: text("pdfUrl"),                      // S3 URL for exported PDF
 

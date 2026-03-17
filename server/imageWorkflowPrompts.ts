@@ -335,3 +335,182 @@ export const STEP5_TRANSLATION_PROMPT = `你是一名专业的中英文翻译专
 
 输入：英文图片建议JSON
 输出：仅返回翻译后的JSON，结构完全一致`;
+
+
+// ─── Step 4: Re-optimize with reference images ─────────────────
+export const STEP4_REOPTIMIZE_WITH_REFS_PROMPT = `${EXPERT_ROLE}
+
+你的任务：用户已经为某张图上传了构图参考图和/或效果参考图。请根据参考图的视觉特征，重新优化该图的构图参考和效果参考方案。
+
+**分析要求：**
+1. 如果提供了构图参考图，分析其构图方式、元素布局、视觉焦点、留白比例
+2. 如果提供了效果参考图，分析其色彩运用、光影效果、材质质感、整体氛围
+3. 结合已确认的风格方案和图片大纲，输出优化后的构图参考和效果参考
+
+请以JSON格式输出：
+{
+  "compositionReference": {
+    "compositionType": "构图方式（基于参考图分析）",
+    "layout": "具体布局描述",
+    "focalPoint": "视觉焦点位置",
+    "visualFlow": "视线引导路径",
+    "proportions": "各元素占比",
+    "referenceAnalysis": "对构图参考图的分析总结"
+  },
+  "effectReference": {
+    "colorApplication": "配色应用（基于参考图分析）",
+    "typographyApplication": "字体应用",
+    "iconApplication": "图标应用",
+    "atmosphere": "整体视觉氛围",
+    "lightingStyle": "光影风格",
+    "textureStyle": "材质/纹理风格",
+    "referenceAnalysis": "对效果参考图的分析总结"
+  },
+  "designNotes": "设计师注意事项",
+  "improvementSummary": "相比原方案的改进点总结"
+}`;
+
+// ─── Step 5: A+ Module Selection Re-optimization ────────────────
+export const STEP5_APLUS_MODULE_OPTIMIZE_PROMPT = `${EXPERT_ROLE}
+
+你的任务：用户已经选择了特定的亚马逊高级A+模块类型，请根据所选模块的规格要求，重新优化A+内容建议。
+
+**亚马逊高级A+模块规格参考：**
+1. 高级完整图片 - 桌面1464x600px, 移动600x450px, 标题80字符, 正文300字符
+2. 高级文本 - 标题80字符, 正文300字符
+3. 包含文本的高级背景图像 - 桌面1464x600px, 移动600x450px, 副标题40字符, 标题60字符, 正文300字符
+4. 高级四图片和文本 - 桌面300x225px x4张, 副标题80字符, 标题30字符, 正文150字符
+5. 包含文本的高级双图片 - 桌面650x350px x2张, 副标题50字符, 标题50字符, 正文300字符
+6. 带文本的单张高级图片 - 桌面800x600px, 副标题40字符, 标题80字符, 正文500字符
+7. 高级全视频 - 视频960:540px, 200MB, 180秒, 标题80字符, 正文300字符
+8. 包含文本的高级视频 - 视频800x600px, 副标题40字符, 标题80字符, 正文500字符
+9. 高级比较表1 - 图像200x225px, 4-7个产品, 5-12个特征
+10. 高级比较表2 - 图像300x225px, 2-3个产品, 2-5个特征
+11. 高级比较表3 - 图像488x700px, 2-4个产品, 3-7个特征
+12. 高级热点1 - 图像1464x600px, 2-6个热点, 标题50字符, 正文200字符
+13. 高级热点2 - 图像1464x600px, 2-6个热点, 模块标题80字符
+14. 高级导航轮播 - 桌面1464x600px, 2-5个面板, 导航文本25字符
+15. 高级规则轮播 - 桌面1464x600px, 2-5个面板, 模块标题100字符
+16. 高级简单图像轮播 - 桌面1464x600px, 2-6个面板, 标题50字符
+17. 高级视频图像轮播 - 视频800x600px, 2-6个面板, 标题80字符
+18. 高级问答 - 图像1464x600px, 2-5个问答, 问题120字符, 回答250字符
+19. 高级技术规格 - 图像300x300px, 3-15个规格, 标题80字符
+20. 品牌亮点 - 图像135x135px, 3-4个亮点, 标题30字符, 正文80字符
+
+**优化要求：**
+1. 严格按照所选模块的尺寸和字符限制来优化内容
+2. 保持原有的卖点策略和品牌调性
+3. 针对模块特点优化内容布局和表达方式
+4. 输出中英文双版本
+
+请以JSON格式输出：
+{
+  "en": {
+    "selectedModules": [
+      {
+        "moduleType": "模块类型ID",
+        "moduleName": "模块名称",
+        "position": 1,
+        "purpose": "模块目的",
+        "specs": {
+          "desktopSize": "桌面尺寸",
+          "mobileSize": "移动尺寸",
+          "maxTitleChars": 80,
+          "maxBodyChars": 300
+        },
+        "content": {
+          "title": "标题（严格控制字符数）",
+          "subtitle": "副标题",
+          "body": "正文（严格控制字符数）",
+          "imageDescription": "图片内容描述",
+          "composition": "构图方式",
+          "colorScheme": { "primary": "", "secondary": "", "accent": "" }
+        },
+        "fabe": {
+          "feature": "特征",
+          "advantage": "优势",
+          "benefit": "利益",
+          "evidence": "证据"
+        },
+        "tips": ["设计提示"]
+      }
+    ],
+    "overallStrategy": "整体A+模块策略",
+    "moduleFlow": "模块间的叙事逻辑"
+  },
+  "cn": {
+    "selectedModules": [...],
+    "overallStrategy": "...",
+    "moduleFlow": "..."
+  }
+}`;
+
+// ─── Step 6: AI Prompt Generation (nanobanana) ──────────────────
+export const STEP6_AI_PROMPT_GENERATION = `${EXPERT_ROLE}
+
+你的任务：根据前5步确认的所有内容（卖点、大纲、风格、参考图、图片建议），为每张图生成可以直接用于AI图片生成工具（如Midjourney、DALL-E、Stable Diffusion等）的提示词。
+
+**提示词生成要求：**
+1. 每张图生成一个完整的英文提示词（prompt）
+2. 提示词应包含：主体描述、构图方式、光影效果、色彩方案、风格关键词、质量关键词
+3. 提示词格式遵循主流AI绘图工具的最佳实践
+4. 同时生成负面提示词（negative prompt）排除不需要的元素
+5. 提供推荐的生成参数（宽高比、风格强度等）
+
+**提示词结构模板：**
+[主体描述], [场景/背景], [构图方式], [光影效果], [色彩描述], [风格关键词], [质量关键词]
+
+**质量关键词参考：**
+- 高质量: high quality, 8k, ultra detailed, professional photography
+- 产品摄影: product photography, studio lighting, white background, commercial photography
+- 场景: lifestyle photography, environmental portrait, in-context shot
+- 风格: minimalist, modern, elegant, premium, luxury
+
+请以JSON格式输出：
+{
+  "imagePrompts": [
+    {
+      "imageType": "mainImage/secondaryImage/aPlusSection",
+      "imageNumber": 1,
+      "imageLabel": "图片标签（如：主图、辅图2、A+模块1）",
+      "purpose": "图片目的简述",
+      "prompt": "完整的英文提示词",
+      "negativePrompt": "负面提示词",
+      "parameters": {
+        "aspectRatio": "推荐宽高比（如 1:1, 16:9, 4:3）",
+        "style": "推荐风格（如 photographic, digital art, 3d render）",
+        "quality": "推荐质量等级",
+        "seed": "可选的种子建议"
+      },
+      "promptBreakdown": {
+        "subject": "主体描述部分",
+        "scene": "场景/背景部分",
+        "composition": "构图部分",
+        "lighting": "光影部分",
+        "color": "色彩部分",
+        "styleKeywords": "风格关键词",
+        "qualityKeywords": "质量关键词"
+      },
+      "notes": "使用提示和注意事项"
+    }
+  ],
+  "globalSettings": {
+    "recommendedTool": "推荐的AI生成工具",
+    "consistencyTips": "保持整套图片一致性的提示",
+    "brandColorIntegration": "品牌色融入建议"
+  }
+}`;
+
+export const STEP6_TRANSLATION_PROMPT = `你是一名专业的中英文翻译专家，精通AI图片生成和亚马逊电商领域的术语。
+
+你的任务：将以下AI提示词建议翻译为简体中文。
+
+**翻译要求：**
+1. 保持完全相同的JSON结构
+2. prompt和negativePrompt字段保留英文原文（因为AI工具需要英文输入），但添加中文注释说明
+3. 其他描述性字段翻译为中文
+4. 保留所有技术参数不翻译
+5. 翻译要自然流畅，使用专业术语
+
+输入：英文AI提示词建议JSON
+输出：仅返回翻译后的JSON，结构完全一致`;
