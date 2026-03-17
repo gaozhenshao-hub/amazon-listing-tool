@@ -9,7 +9,7 @@ import {
   ArrowLeft, BarChart3, FileText, Loader2, Package, Star, Target, Users,
   Wrench, ClipboardCheck, Brain, RefreshCw, Globe, Upload, CheckCircle2,
   AlertCircle, DollarSign, Download, Lock, Unlock, ChevronRight,
-  Edit2, Save, X, ArrowDownUp, Copy, Tags, Tag, FileUp, FileDown, Eye,
+  Edit2, Save, X, Copy, Tags, Tag, FileUp, FileDown, Eye,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -17,6 +17,12 @@ import { Streamdown } from "streamdown";
 import DevDataUpload from "./DevDataUpload";
 import PanoramaTable from "./PanoramaTable";
 import AttributeTagging from "./AttributeTagging";
+import BomEditor from "./BomEditor";
+import ProfileEditor from "./ProfileEditor";
+import TestReportEditor from "./TestReportEditor";
+import ScoringEditor from "./ScoringEditor";
+import ManualEditor from "./ManualEditor";
+import ProfitEditor from "./ProfitEditor";
 
 const statusLabel: Record<string, { text: string; color: string }> = {
   draft: { text: "草稿", color: "bg-gray-500/10 text-gray-600" },
@@ -43,37 +49,13 @@ export default function DevProjectDetail() {
   const { data: products } = trpc.devProject.getProducts.useQuery({ projectId });
   const { data: profile } = trpc.devProfile.get.useQuery({ projectId }) as any;
   const { data: score } = trpc.devScoring.getScore.useQuery({ projectId }) as any;
-  const { data: bom } = trpc.devBom.list.useQuery({ projectId }) as any;
   const { data: manual } = trpc.devManual.getManual.useQuery({ projectId }) as any;
   const { data: testReport } = trpc.devManual.getTestReport.useQuery({ projectId }) as any;
 
   const currentPhase = (project as any)?.phase || "market_analysis";
   const isPhase2 = currentPhase === "project_execution";
 
-  const approveMutation = trpc.devScoring.approveProject.useMutation({
-    onSuccess: () => {
-      toast.success("项目已立项！进入落地阶段");
-      utils.devProject.getById.invalidate({ id: projectId });
-    },
-    onError: (err: any) => toast.error(`立项失败: ${err.message}`),
-  });
-
-  const revokeMutation = trpc.devScoring.revokeApproval.useMutation({
-    onSuccess: () => {
-      toast.success("已撤销立项，回到市场分析阶段");
-      utils.devProject.getById.invalidate({ id: projectId });
-    },
-    onError: (err: any) => toast.error(`撤销失败: ${err.message}`),
-  });
-
-  const scoreMutation = trpc.devScoring.generate.useMutation({
-    onSuccess: () => { toast.success("项目评分完成"); utils.devScoring.getScore.invalidate({ projectId }); },
-    onError: (err: any) => toast.error(`评分失败: ${err.message}`),
-  });
-  const bomSuggestMutation = trpc.devBom.aiSuggest.useMutation({
-    onSuccess: () => { toast.success("BOM建议生成完成"); utils.devBom.list.invalidate({ projectId }); },
-    onError: (err: any) => toast.error(`生成失败: ${err.message}`),
-  });
+  /* scoring mutations moved to ScoringEditor.tsx */
   const manualMutation = trpc.devManual.generateManual.useMutation({
     onSuccess: () => { toast.success("说明书生成完成"); utils.devManual.getManual.invalidate({ projectId }); },
     onError: (err: any) => toast.error(`生成失败: ${err.message}`),
@@ -194,7 +176,7 @@ export default function DevProjectDetail() {
         <TabsContent value="overview" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card><CardContent className="p-4 text-center"><p className="text-sm text-muted-foreground">竞品数量</p><p className="text-2xl font-bold mt-1">{products?.length ?? 0}</p></CardContent></Card>
-            <Card><CardContent className="p-4 text-center"><p className="text-sm text-muted-foreground">BOM部件</p><p className="text-2xl font-bold mt-1">{bom?.length ?? 0}</p></CardContent></Card>
+            <Card><CardContent className="p-4 text-center"><p className="text-sm text-muted-foreground">BOM部件</p><p className="text-2xl font-bold mt-1">--</p></CardContent></Card>
             <Card><CardContent className="p-4 text-center"><p className="text-sm text-muted-foreground">综合评分</p><p className="text-2xl font-bold mt-1">{score?.totalScore ?? "--"}</p></CardContent></Card>
             <Card><CardContent className="p-4 text-center"><p className="text-sm text-muted-foreground">当前阶段</p><p className="text-lg font-bold mt-1">{isPhase2 ? "落地执行" : "市场分析"}</p></CardContent></Card>
           </div>
@@ -277,102 +259,7 @@ export default function DevProjectDetail() {
 
         {/* Scoring + Approval */}
         <TabsContent value="scoring" className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold flex items-center gap-2"><Star className="h-4 w-4" />AI立项评分</h3>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={() => scoreMutation.mutate({ projectId })} disabled={scoreMutation.isPending} className="gap-2">
-                {scoreMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                {score ? "重新评分" : "AI评分"}
-              </Button>
-            </div>
-          </div>
-
-          {score ? (
-            <div className="space-y-4">
-              <Card><CardContent className="p-6 text-center">
-                <p className="text-sm text-muted-foreground">综合评分</p>
-                <p className="text-5xl font-bold mt-2 text-primary">{score.totalScore}</p>
-                <p className="text-xs text-muted-foreground mt-1">/ 100</p>
-              </CardContent></Card>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {[
-                  { label: "市场容量", value: score.marketCapacity },
-                  { label: "竞争强度", value: score.competitiveness },
-                  { label: "利润空间", value: score.profit },
-                  { label: "差异化", value: score.differentiation },
-                  { label: "入场机会", value: score.entryOpportunity },
-                  { label: "风险", value: score.risk },
-                ].map((dim, i) => (
-                  <Card key={i}><CardContent className="p-4 text-center">
-                    <p className="text-xs text-muted-foreground">{dim.label}</p>
-                    <p className="text-xl font-bold mt-1">{dim.value ?? "--"}</p>
-                  </CardContent></Card>
-                ))}
-              </div>
-              {score?.aiReasoning && (
-                <Card><CardHeader><CardTitle className="text-sm">AI分析</CardTitle></CardHeader>
-                  <CardContent><Streamdown>{score.aiReasoning}</Streamdown></CardContent></Card>
-              )}
-
-              {/* Approval Action */}
-              <Card className={`border-2 ${isPhase2 ? "border-emerald-300 bg-emerald-50/50" : "border-blue-300 bg-blue-50/50"}`}>
-                <CardContent className="p-6">
-                  {isPhase2 ? (
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <CheckCircle2 className="h-8 w-8 text-emerald-600" />
-                        <div>
-                          <p className="font-semibold text-emerald-800">项目已立项</p>
-                          <p className="text-sm text-emerald-600">
-                            评分 {(project as any).approvedScore ?? score.totalScore} 分 · 
-                            立项时间 {(project as any).approvedAt ? new Date((project as any).approvedAt).toLocaleDateString() : ""}
-                          </p>
-                        </div>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-red-600 border-red-200 hover:bg-red-50"
-                        onClick={() => {
-                          if (confirm("确定撤销立项？项目将回到市场分析阶段。")) {
-                            revokeMutation.mutate({ projectId });
-                          }
-                        }}
-                        disabled={revokeMutation.isPending}
-                      >
-                        {revokeMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : null}
-                        撤销立项
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <AlertCircle className="h-8 w-8 text-blue-600" />
-                        <div>
-                          <p className="font-semibold text-blue-800">确认立项</p>
-                          <p className="text-sm text-blue-600">
-                            当前评分 {score.totalScore} 分 · 立项后将解锁"项目落地"阶段（产品画像、BOM、说明书、测试报告、利润计算）
-                          </p>
-                        </div>
-                      </div>
-                      <Button
-                        className="bg-emerald-600 hover:bg-emerald-700 gap-2"
-                        onClick={() => approveMutation.mutate({ projectId })}
-                        disabled={approveMutation.isPending}
-                      >
-                        {approveMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                        确认立项
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          ) : (
-            <Card><CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-              <Star className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">点击"AI评分"开始立项评估</p>
-            </CardContent></Card>
-          )}
+          <ScoringEditor score={score} project={project} projectId={projectId} isPhase2={isPhase2} />
         </TabsContent>
 
         {/* ═══════════════════════════════════════════════════════ */}
@@ -384,7 +271,7 @@ export default function DevProjectDetail() {
           {!isPhase2 ? (
             <LockedPhaseCard />
           ) : (
-            <ProfileSection projectId={projectId} profile={profile} />
+            <ProfileEditor projectId={projectId} profile={profile} />
           )}
         </TabsContent>
 
@@ -393,43 +280,7 @@ export default function DevProjectDetail() {
           {!isPhase2 ? (
             <LockedPhaseCard />
           ) : (
-            <>
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold flex items-center gap-2"><Package className="h-4 w-4" />BOM物料清单</h3>
-                <Button size="sm" onClick={() => bomSuggestMutation.mutate({ projectId })} disabled={bomSuggestMutation.isPending} className="gap-2">
-                  {bomSuggestMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}
-                  AI建议BOM
-                </Button>
-              </div>
-              {bom && bom.length > 0 ? (
-                <Card><CardContent className="p-0"><div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead><tr className="border-b bg-muted/50">
-                      <th className="text-left p-3 font-medium">部件名称</th>
-                      <th className="text-left p-3 font-medium">材质</th>
-                      <th className="text-left p-3 font-medium">工艺</th>
-                      <th className="text-right p-3 font-medium">数量</th>
-                      <th className="text-right p-3 font-medium">单价</th>
-                      <th className="text-left p-3 font-medium">备注</th>
-                    </tr></thead>
-                    <tbody>{bom.map((item: any) => (
-                      <tr key={item.id} className="border-b last:border-0">
-                        <td className="p-3 font-medium">{item.partName}</td>
-                        <td className="p-3 text-muted-foreground">{item.material || "-"}</td>
-                        <td className="p-3 text-muted-foreground">{item.process || "-"}</td>
-                        <td className="p-3 text-right">{item.quantity}</td>
-                        <td className="p-3 text-right">{item.unitPrice ? `¥${item.unitPrice}` : "-"}</td>
-                        <td className="p-3 text-muted-foreground">{item.remark || "-"}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div></CardContent></Card>
-              ) : (
-                <Card><CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                  <Package className="h-10 w-10 mb-3 opacity-30" /><p className="text-sm">暂无BOM数据，点击"AI建议BOM"自动生成</p>
-                </CardContent></Card>
-              )}
-            </>
+            <BomEditor projectId={projectId} />
           )}
         </TabsContent>
 
@@ -448,15 +299,7 @@ export default function DevProjectDetail() {
                   </Button>
                 </div>
               </div>
-              {manual?.contentSections ? (
-                <ManualViewer manual={manual} projectId={projectId} />
-              ) : (
-                <Card><CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                  <FileText className="h-10 w-10 mb-3 opacity-30" />
-                  <p className="text-sm">三步流程：AI生成9章节 → 编辑确认+上传素材 → 生成双语HTML/PDF</p>
-                  <p className="text-xs text-muted-foreground mt-1">点击"AI生成说明书"开始</p>
-                </CardContent></Card>
-              )}
+              <ManualEditor manual={manual} projectId={projectId} />
             </>
           )}
         </TabsContent>
@@ -477,7 +320,7 @@ export default function DevProjectDetail() {
                 </div>
               </div>
               {testReport?.testItems ? (
-                <TestReportViewer testReport={testReport} projectId={projectId} />
+                <TestReportEditor testReport={testReport} projectId={projectId} />
               ) : (
                 <Card><CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                   <ClipboardCheck className="h-10 w-10 mb-3 opacity-30" />
@@ -494,7 +337,7 @@ export default function DevProjectDetail() {
           {!isPhase2 ? (
             <LockedPhaseCard />
           ) : (
-            <ProfitCalculator projectId={projectId} bom={bom} />
+            <ProfitEditor projectId={projectId} />
           )}
         </TabsContent>
 
@@ -1029,652 +872,16 @@ function LockedPhaseCard() {
   );
 }
 
-/* ─── Profile Section (8 Sub-modules) with Rich Text Editor ── */
-function ProfileSection({ projectId, profile }: { projectId: number; profile: any }) {
-  const [activeSection, setActiveSection] = useState("appearance");
-  const [isEditing, setIsEditing] = useState(false);
-  const [editContent, setEditContent] = useState("");
-  const utils = trpc.useUtils();
+/* ─── ProfileSection removed - replaced by ProfileEditor.tsx ─── */
+/* Old ProfileSection was here (lines 993-1240), now using ProfileEditor component */
 
-  const generateMutation = trpc.devProfile.generateSuggestions.useMutation({
-    onSuccess: () => {
-      toast.success("AI建议生成完成");
-      utils.devProfile.get.invalidate({ projectId });
-    },
-    onError: (err: any) => toast.error(`生成失败: ${err.message}`),
-  });
 
-  const saveMutation = trpc.devProfile.saveSection.useMutation({
-    onSuccess: () => {
-      toast.success("已保存编辑内容");
-      setIsEditing(false);
-      utils.devProfile.get.invalidate({ projectId });
-    },
-    onError: (err: any) => toast.error(`保存失败: ${err.message}`),
-  });
 
-  const confirmMutation = trpc.devProfile.confirmSection.useMutation({
-    onSuccess: () => {
-      toast.success("已确认并锁定");
-      setIsEditing(false);
-      utils.devProfile.get.invalidate({ projectId });
-    },
-    onError: (err: any) => toast.error(`确认失败: ${err.message}`),
-  });
+/* ─── ManualViewer removed - replaced by ManualEditor.tsx ───── */
+/* ─── TestReportViewer removed - replaced by TestReportEditor.tsx ─── */
 
-  const sections = [
-    { key: "appearance", label: "外观设计", icon: "🎨", dataField: "appearanceColors", aiField: "appearanceAiSuggestion", confirmedField: "appearanceConfirmed" },
-    { key: "function", label: "功能提升", icon: "⚡", dataField: "mainFunctions", aiField: "functionsAiSuggestion", confirmedField: "functionsConfirmed" },
-    { key: "cost", label: "产品成本", icon: "💰", dataField: "costBreakdown", aiField: "costAiSuggestion", confirmedField: "costConfirmed" },
-    { key: "package", label: "包装设计", icon: "📦", dataField: "packageDimensions", aiField: "packageAiSuggestion", confirmedField: "packageConfirmed" },
-    { key: "packageDesign", label: "包装外观", icon: "🎁", dataField: "packageDesign", aiField: "packageDesignAiSuggestion", confirmedField: "packageDesignConfirmed" },
-    { key: "userPersona", label: "用户画像", icon: "👤", dataField: "userPersona", aiField: "userPersonaAiSuggestion", confirmedField: "userPersonaConfirmed" },
-    { key: "usageScenarios", label: "使用场景", icon: "🏠", dataField: "usageScenarios", aiField: "usageScenariosAiSuggestion", confirmedField: "usageScenariosConfirmed" },
-    { key: "productMap", label: "产品地图", icon: "🗺️", dataField: "productMap", aiField: "productMapAiSuggestion", confirmedField: "productMapConfirmed" },
-  ];
-
-  const currentSection = sections.find(s => s.key === activeSection) || sections[0];
-  const isConfirmed = profile?.[currentSection.confirmedField] === 1;
-  const aiSuggestion = profile?.[currentSection.aiField];
-  const userData = profile?.[currentSection.dataField];
-
-  // Helper to format content for display
-  const formatContent = (raw: any): string => {
-    if (!raw) return "";
-    if (typeof raw === "string") {
-      try {
-        return JSON.stringify(JSON.parse(raw), null, 2);
-      } catch {
-        return raw;
-      }
-    }
-    return JSON.stringify(raw, null, 2);
-  };
-
-  // Start editing with current best content
-  const handleStartEdit = () => {
-    const content = userData || aiSuggestion || "";
-    setEditContent(formatContent(content));
-    setIsEditing(true);
-  };
-
-  // Copy AI suggestion to editor
-  const handleCopyAiToEditor = () => {
-    setEditContent(formatContent(aiSuggestion));
-    toast.success("AI建议已复制到编辑器");
-  };
-
-  // Save edited content
-  const handleSave = () => {
-    saveMutation.mutate({ projectId, section: activeSection as any, data: editContent });
-  };
-
-  // Confirm and lock with current editor content
-  const handleConfirmLock = () => {
-    const data = isEditing ? editContent : (userData || aiSuggestion || "{}");
-    const finalData = typeof data === "string" ? data : JSON.stringify(data);
-    confirmMutation.mutate({ projectId, section: activeSection as any, data: finalData });
-  };
-
-  // Reset editing state when switching sections
-  const handleSectionSwitch = (key: string) => {
-    setActiveSection(key);
-    setIsEditing(false);
-    setEditContent("");
-  };
-
-  const confirmedCount = sections.filter(s => profile?.[s.confirmedField] === 1).length;
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold flex items-center gap-2">
-          <Brain className="h-4 w-4" />产品画像 · 8子模块
-          <Badge variant="outline" className="text-xs ml-2">{confirmedCount}/8 已确认</Badge>
-        </h3>
-      </div>
-
-      {/* Sub-module Navigation */}
-      <div className="flex flex-wrap gap-2">
-        {sections.map(s => {
-          const confirmed = profile?.[s.confirmedField] === 1;
-          return (
-            <Button
-              key={s.key}
-              variant={activeSection === s.key ? "default" : "outline"}
-              size="sm"
-              className="gap-1 text-xs"
-              onClick={() => handleSectionSwitch(s.key)}
-            >
-              <span>{s.icon}</span>
-              {s.label}
-              {confirmed && <CheckCircle2 className="h-3 w-3 text-emerald-500 ml-0.5" />}
-            </Button>
-          );
-        })}
-      </div>
-
-      {/* Current Section Content */}
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <span className="text-lg">{currentSection.icon}</span>
-              {currentSection.label}
-              {isConfirmed && <Badge className="bg-emerald-100 text-emerald-700 text-xs">已确认锁定</Badge>}
-              {isEditing && !isConfirmed && <Badge className="bg-amber-100 text-amber-700 text-xs">编辑中</Badge>}
-            </CardTitle>
-            <div className="flex gap-2">
-              {!isConfirmed && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => generateMutation.mutate({ projectId, section: activeSection as any })}
-                    disabled={generateMutation.isPending}
-                    className="gap-1 text-xs"
-                  >
-                    {generateMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Brain className="h-3 w-3" />}
-                    AI生成建议
-                  </Button>
-                  {(aiSuggestion || userData) && !isEditing && (
-                    <Button size="sm" variant="outline" onClick={handleStartEdit} className="gap-1 text-xs">
-                      <Edit2 className="h-3 w-3" />编辑修改
-                    </Button>
-                  )}
-                  {isEditing && (
-                    <>
-                      <Button size="sm" variant="outline" onClick={handleSave} disabled={saveMutation.isPending} className="gap-1 text-xs">
-                        {saveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                        保存
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setIsEditing(false)} className="gap-1 text-xs">
-                        <X className="h-3 w-3" />取消
-                      </Button>
-                    </>
-                  )}
-                  {(aiSuggestion || userData) && (
-                    <Button
-                      size="sm"
-                      className="gap-1 text-xs bg-emerald-600 hover:bg-emerald-700"
-                      onClick={handleConfirmLock}
-                      disabled={confirmMutation.isPending}
-                    >
-                      {confirmMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
-                      确认锁定
-                    </Button>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {isEditing && !isConfirmed ? (
-            /* ─── Rich Text Editor Mode ─── */
-            <div className="space-y-3">
-              {aiSuggestion && (
-                <div className="p-2 rounded-lg bg-blue-50/50 border border-blue-100">
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-xs font-medium text-blue-700">AI建议参考</p>
-                    <Button size="sm" variant="ghost" onClick={handleCopyAiToEditor} className="h-6 gap-1 text-xs text-blue-600 hover:text-blue-800">
-                      <Copy className="h-3 w-3" />复制到编辑器
-                    </Button>
-                  </div>
-                  <pre className="text-xs whitespace-pre-wrap text-blue-900 max-h-32 overflow-y-auto">
-                    {formatContent(aiSuggestion)}
-                  </pre>
-                </div>
-              )}
-              <div className="relative">
-                <textarea
-                  className="w-full min-h-[300px] p-3 text-sm font-mono border rounded-lg bg-background resize-y focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  placeholder="在此编辑内容...\n\n支持JSON格式或纯文本。\n您可以在AI建议的基础上进行修改、补充或重写。"
-                />
-                <div className="absolute bottom-2 right-2 text-xs text-muted-foreground">
-                  {editContent.length} 字符
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">提示：您可以直接修改AI建议的内容，也可以完全重写。保存后点击"确认锁定"将永久保留此版本。</p>
-            </div>
-          ) : aiSuggestion || userData ? (
-            /* ─── Display Mode ─── */
-            <div className="space-y-3">
-              {aiSuggestion && (
-                <div className="p-3 rounded-lg bg-blue-50/50 border border-blue-100">
-                  <p className="text-xs font-medium text-blue-700 mb-2">AI建议</p>
-                  <pre className="text-xs whitespace-pre-wrap text-blue-900 max-h-64 overflow-y-auto">
-                    {formatContent(aiSuggestion)}
-                  </pre>
-                </div>
-              )}
-              {userData && userData !== aiSuggestion && (
-                <div className="p-3 rounded-lg bg-amber-50/50 border border-amber-100">
-                  <p className="text-xs font-medium text-amber-700 mb-2">用户编辑版本</p>
-                  <pre className="text-xs whitespace-pre-wrap text-amber-900 max-h-64 overflow-y-auto">
-                    {formatContent(userData)}
-                  </pre>
-                </div>
-              )}
-              {isConfirmed && (
-                <div className="p-2 rounded-lg bg-emerald-50/50 border border-emerald-100 text-center">
-                  <p className="text-xs text-emerald-700">此模块已确认锁定，数据可被其他模块引用</p>
-                </div>
-              )}
-            </div>
-          ) : (
-            /* ─── Empty State ─── */
-            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
-              <Brain className="h-8 w-8 mb-2 opacity-30" />
-              <p className="text-sm">点击"AI生成建议"获取{currentSection.label}方案</p>
-              <p className="text-xs mt-1">AI将基于竞品数据和市场分析给出专业建议，您可在此基础上编辑修改</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-/* ─── Manual Viewer ─────────────────────────────────────── */
-function ManualViewer({ manual, projectId }: { manual: any; projectId: number }) {
-  let chapters: any[] = [];
-  try {
-    chapters = JSON.parse(manual.contentSections);
-  } catch {}
-
-  const htmlMutation = trpc.devManual.generateHtml.useMutation({
-    onSuccess: (data: any) => {
-      toast.success("HTML说明书生成完成");
-      if (data.htmlEnUrl) window.open(data.htmlEnUrl, "_blank");
-    },
-    onError: (err: any) => toast.error(`生成失败: ${err.message}`),
-  });
-
-  const pdfMutation = trpc.devManual.exportPdf.useMutation({
-    onSuccess: (data: any) => {
-      toast.success("PDF导出完成");
-      if (data.htmlUrl) window.open(data.htmlUrl, "_blank");
-    },
-    onError: (err: any) => toast.error(`导出失败: ${err.message}`),
-  });
-
-  return (
-    <div className="space-y-4">
-      <div className="flex gap-2 justify-end">
-        <Button size="sm" variant="outline" onClick={() => htmlMutation.mutate({ projectId })} disabled={htmlMutation.isPending} className="gap-1 text-xs">
-          {htmlMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Globe className="h-3 w-3" />}
-          生成HTML(EN+ES)
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => pdfMutation.mutate({ projectId, language: "en" })} disabled={pdfMutation.isPending} className="gap-1 text-xs">
-          <Download className="h-3 w-3" />PDF(EN)
-        </Button>
-        <Button size="sm" variant="outline" onClick={() => pdfMutation.mutate({ projectId, language: "es" })} disabled={pdfMutation.isPending} className="gap-1 text-xs">
-          <Download className="h-3 w-3" />PDF(ES)
-        </Button>
-      </div>
-
-      {chapters.length > 0 ? (
-        <div className="space-y-3">
-          {chapters.map((ch: any, i: number) => (
-            <Card key={i}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">Ch.{i + 1}</span>
-                  {ch.titleEn || ch.key}
-                  {ch.titleEs && <span className="text-xs text-muted-foreground">/ {ch.titleEs}</span>}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs font-medium text-blue-600 mb-1">English</p>
-                    <p className="text-sm whitespace-pre-wrap">{ch.contentEn || "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-orange-600 mb-1">Español</p>
-                    <p className="text-sm whitespace-pre-wrap">{ch.contentEs || "—"}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : (
-        <Card><CardContent className="p-6"><Streamdown>{String(manual.contentSections || "")}</Streamdown></CardContent></Card>
-      )}
-    </div>
-  );
-}
-
-/* ─── Test Report Viewer ────────────────────────────────── */
-function TestReportViewer({ testReport, projectId }: { testReport: any; projectId: number }) {
-  let items: any[] = [];
-  try {
-    items = JSON.parse(testReport.testItems);
-  } catch {}
-
-  const updateMutation = trpc.devManual.updateTestItemStatus.useMutation({
-    onSuccess: () => toast.success("状态已更新"),
-    onError: (err: any) => toast.error(`更新失败: ${err.message}`),
-  });
-
-  const categories = ["installation", "usage", "drop", "shipping", "function", "durability", "safety", "packaging"];
-  const categoryLabels: Record<string, string> = {
-    installation: "安装测试", usage: "使用测试", drop: "跌落测试", shipping: "运输测试",
-    function: "功能测试", durability: "耐久性测试", safety: "安全测试", packaging: "包装测试",
-  };
-
-  const statusColors: Record<string, string> = {
-    pass: "bg-emerald-100 text-emerald-700",
-    fail: "bg-red-100 text-red-700",
-    pending: "bg-gray-100 text-gray-600",
-  };
-
-  const handleExportExcel = () => {
-    // Client-side CSV export as fallback
-    const headers = ["Category", "Test Name (EN)", "测试名称", "Status", "Pass Standard", "Actual Result", "Notes"];
-    const rows = items.map((item: any) => [
-      item.category, item.nameEn, item.nameCn, item.testStatus, item.passStandard, item.actualResult || "", item.notes || "",
-    ]);
-    const csv = [headers.join(","), ...rows.map(r => r.map((c: string) => `"${(c || "").replace(/"/g, '""')}"`).join(","))].join("\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `test-report-${projectId}.csv`; a.click();
-    URL.revokeObjectURL(url);
-    toast.success("测试报告已导出");
-  };
-
-  const stats = {
-    total: items.length,
-    pass: items.filter((i: any) => i.testStatus === "pass").length,
-    fail: items.filter((i: any) => i.testStatus === "fail").length,
-    pending: items.filter((i: any) => i.testStatus === "pending").length,
-  };
-
-  return (
-    <div className="space-y-4">
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-3">
-        <Card><CardContent className="p-3 text-center"><p className="text-xs text-muted-foreground">总测试项</p><p className="text-xl font-bold">{stats.total}</p></CardContent></Card>
-        <Card><CardContent className="p-3 text-center"><p className="text-xs text-emerald-600">通过</p><p className="text-xl font-bold text-emerald-600">{stats.pass}</p></CardContent></Card>
-        <Card><CardContent className="p-3 text-center"><p className="text-xs text-red-600">未通过</p><p className="text-xl font-bold text-red-600">{stats.fail}</p></CardContent></Card>
-        <Card><CardContent className="p-3 text-center"><p className="text-xs text-gray-500">待测</p><p className="text-xl font-bold text-gray-500">{stats.pending}</p></CardContent></Card>
-      </div>
-
-      <div className="flex justify-end">
-        <Button size="sm" variant="outline" onClick={handleExportExcel} className="gap-1 text-xs">
-          <Download className="h-3 w-3" />导出Excel
-        </Button>
-      </div>
-
-      {/* Test Items by Category */}
-      {categories.map(cat => {
-        const catItems = items.filter((i: any) => i.category === cat);
-        if (catItems.length === 0) return null;
-        return (
-          <Card key={cat}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">{categoryLabels[cat] || cat} ({catItems.length})</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead><tr className="border-b bg-muted/30">
-                    <th className="text-left p-2 pl-4 text-xs font-medium">测试项</th>
-                    <th className="text-left p-2 text-xs font-medium">通过标准</th>
-                    <th className="text-center p-2 text-xs font-medium">状态</th>
-                    <th className="text-left p-2 text-xs font-medium">实际结果</th>
-                  </tr></thead>
-                  <tbody>
-                    {catItems.map((item: any, idx: number) => {
-                      const globalIdx = items.indexOf(item);
-                      return (
-                        <tr key={idx} className="border-b last:border-0">
-                          <td className="p-2 pl-4">
-                            <p className="font-medium text-xs">{item.nameEn}</p>
-                            <p className="text-xs text-muted-foreground">{item.nameCn}</p>
-                          </td>
-                          <td className="p-2 text-xs text-muted-foreground max-w-48">{item.passStandard || "-"}</td>
-                          <td className="p-2 text-center">
-                            <select
-                              className={`text-xs px-2 py-1 rounded-full border-0 cursor-pointer ${statusColors[item.testStatus] || statusColors.pending}`}
-                              value={item.testStatus || "pending"}
-                              onChange={(e) => {
-                                updateMutation.mutate({
-                                  projectId,
-                                  itemIndex: globalIdx,
-                                  testStatus: e.target.value as any,
-                                });
-                              }}
-                            >
-                              <option value="pending">待测</option>
-                              <option value="pass">通过</option>
-                              <option value="fail">未通过</option>
-                            </select>
-                          </td>
-                          <td className="p-2 text-xs text-muted-foreground">{item.actualResult || "-"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })}
-    </div>
-  );
-}
 
 /* ─── Profit Calculator ─────────────────────────────────── */
-function ProfitCalculator({ projectId, bom }: { projectId: number; bom: any[] }) {
-  const [params, setParams] = useState({
-    sellingPrice: 29.99,
-    productCostCny: 0,
-    shippingCost: 3.5,
-    fbaFee: 5.0,
-    referralFeeRate: 15,
-    advertisingCost: 3.0,
-    otherCosts: 1.0,
-    totalMoldCostCny: 0,
-    exchangeRate: 0.137,
-  });
-
-  const { data: bomCostSummary } = trpc.devBom.getBomCostSummary.useQuery({ projectId });
-  const { data: rateData } = trpc.devBom.getExchangeRate.useQuery();
-
-  // Auto-fill from BOM
-  useMemo(() => {
-    if (bomCostSummary) {
-      setParams(prev => ({
-        ...prev,
-        productCostCny: bomCostSummary.totalMaterialCost || prev.productCostCny,
-        totalMoldCostCny: bomCostSummary.totalMoldCost || prev.totalMoldCostCny,
-      }));
-    }
-  }, [bomCostSummary]);
-
-  // Auto-fill exchange rate
-  useMemo(() => {
-    if (rateData?.rate) {
-      setParams(prev => ({ ...prev, exchangeRate: rateData.rate }));
-    }
-  }, [rateData]);
-
-  const batchMutation = trpc.devBom.batchSimulate.useMutation();
-
-  const productCostUsd = params.productCostCny * params.exchangeRate;
-  const moldCostUsd = params.totalMoldCostCny * params.exchangeRate;
-
-  const handleSimulate = () => {
-    batchMutation.mutate({
-      projectId,
-      sellingPrice: params.sellingPrice,
-      productCostCny: params.productCostCny,
-      exchangeRate: params.exchangeRate,
-      shippingCost: params.shippingCost,
-      fbaFee: params.fbaFee,
-      referralFeeRate: params.referralFeeRate,
-      advertisingCost: params.advertisingCost,
-      otherCosts: params.otherCosts,
-      totalMoldCostCny: params.totalMoldCostCny,
-      quantities: [100, 500, 1000, 5000],
-    });
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold flex items-center gap-2"><DollarSign className="h-4 w-4" />利润计算器</h3>
-        <div className="flex items-center gap-2">
-          {bomCostSummary && (
-            <Badge variant="outline" className="text-xs">
-              BOM自动填入: ¥{bomCostSummary.totalMaterialCost} ({bomCostSummary.bomItemCount}项)
-            </Badge>
-          )}
-          <Badge variant="secondary" className="text-xs gap-1">
-            <ArrowDownUp className="h-3 w-3" />
-            1 CNY = {params.exchangeRate.toFixed(4)} USD
-            {rateData?.source === "fallback" && <span className="text-amber-600">(离线)</span>}
-          </Badge>
-        </div>
-      </div>
-
-      {/* Exchange Rate Card */}
-      <Card className="bg-gradient-to-r from-blue-50/50 to-indigo-50/50 border-blue-100">
-        <CardContent className="p-3">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-4 flex-wrap">
-              <div>
-                <p className="text-xs text-muted-foreground">汇率 (CNY → USD)</p>
-                <input
-                  type="number"
-                  step="0.0001"
-                  className="w-28 mt-0.5 px-2 py-1 text-sm border rounded-md bg-background font-mono"
-                  value={params.exchangeRate}
-                  onChange={(e) => setParams(prev => ({ ...prev, exchangeRate: parseFloat(e.target.value) || 0 }))}
-                />
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground">产品成本换算</p>
-                <p className="text-sm font-medium">¥{params.productCostCny.toFixed(2)} → ${productCostUsd.toFixed(2)}</p>
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-muted-foreground">模具费换算</p>
-                <p className="text-sm font-medium">¥{params.totalMoldCostCny.toFixed(2)} → ${moldCostUsd.toFixed(2)}</p>
-              </div>
-            </div>
-            {rateData && (
-              <p className="text-xs text-muted-foreground">
-                数据源: {rateData.source} · {new Date(rateData.updatedAt).toLocaleString()}
-              </p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="p-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div>
-              <label className="text-xs text-muted-foreground">售价 ($)</label>
-              <input type="number" step="0.01" className="w-full mt-1 px-2 py-1.5 text-sm border rounded-md bg-background"
-                value={params.sellingPrice} onChange={(e) => setParams(prev => ({ ...prev, sellingPrice: parseFloat(e.target.value) || 0 }))} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">产品成本 (¥) <span className="text-blue-500">= ${productCostUsd.toFixed(2)}</span></label>
-              <input type="number" step="0.01" className="w-full mt-1 px-2 py-1.5 text-sm border rounded-md bg-background"
-                value={params.productCostCny} onChange={(e) => setParams(prev => ({ ...prev, productCostCny: parseFloat(e.target.value) || 0 }))} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">头程运费 ($)</label>
-              <input type="number" step="0.01" className="w-full mt-1 px-2 py-1.5 text-sm border rounded-md bg-background"
-                value={params.shippingCost} onChange={(e) => setParams(prev => ({ ...prev, shippingCost: parseFloat(e.target.value) || 0 }))} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">FBA费用 ($)</label>
-              <input type="number" step="0.01" className="w-full mt-1 px-2 py-1.5 text-sm border rounded-md bg-background"
-                value={params.fbaFee} onChange={(e) => setParams(prev => ({ ...prev, fbaFee: parseFloat(e.target.value) || 0 }))} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">佣金比例 (%)</label>
-              <input type="number" step="0.1" className="w-full mt-1 px-2 py-1.5 text-sm border rounded-md bg-background"
-                value={params.referralFeeRate} onChange={(e) => setParams(prev => ({ ...prev, referralFeeRate: parseFloat(e.target.value) || 0 }))} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">广告费 ($)</label>
-              <input type="number" step="0.01" className="w-full mt-1 px-2 py-1.5 text-sm border rounded-md bg-background"
-                value={params.advertisingCost} onChange={(e) => setParams(prev => ({ ...prev, advertisingCost: parseFloat(e.target.value) || 0 }))} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">其他费用 ($)</label>
-              <input type="number" step="0.01" className="w-full mt-1 px-2 py-1.5 text-sm border rounded-md bg-background"
-                value={params.otherCosts} onChange={(e) => setParams(prev => ({ ...prev, otherCosts: parseFloat(e.target.value) || 0 }))} />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">模具总费 (¥) <span className="text-blue-500">= ${moldCostUsd.toFixed(2)}</span></label>
-              <input type="number" step="0.01" className="w-full mt-1 px-2 py-1.5 text-sm border rounded-md bg-background"
-                value={params.totalMoldCostCny} onChange={(e) => setParams(prev => ({ ...prev, totalMoldCostCny: parseFloat(e.target.value) || 0 }))} />
-            </div>
-          </div>
-          <Button className="mt-4 w-full gap-2" onClick={handleSimulate} disabled={batchMutation.isPending}>
-            {batchMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
-            批量模拟 (100/500/1000/5000件)
-          </Button>
-        </CardContent>
-      </Card>
-
-      {batchMutation.data && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center justify-between">
-              批量模拟结果
-              <Badge variant="outline" className="text-xs font-normal">汇率: 1 CNY = {batchMutation.data.exchangeRate.toFixed(4)} USD</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead><tr className="border-b bg-muted/50">
-                  <th className="text-right p-3 font-medium">订单量</th>
-                  <th className="text-right p-3 font-medium">模具分摊(¥)</th>
-                  <th className="text-right p-3 font-medium">模具分摊($)</th>
-                  <th className="text-right p-3 font-medium">产品成本($)</th>
-                  <th className="text-right p-3 font-medium">单件总成本($)</th>
-                  <th className="text-right p-3 font-medium">单件利润($)</th>
-                  <th className="text-right p-3 font-medium">利润率</th>
-                  <th className="text-right p-3 font-medium">ROI</th>
-                  <th className="text-right p-3 font-medium">总利润($)</th>
-                </tr></thead>
-                <tbody>
-                  {batchMutation.data.simulations.map((sim: any) => (
-                    <tr key={sim.quantity} className="border-b last:border-0">
-                      <td className="p-3 text-right font-medium">{sim.quantity.toLocaleString()}</td>
-                      <td className="p-3 text-right text-muted-foreground">¥{sim.moldPerUnitCny}</td>
-                      <td className="p-3 text-right">${sim.moldPerUnit}</td>
-                      <td className="p-3 text-right">${sim.productCostUsd}</td>
-                      <td className="p-3 text-right">${sim.totalUnitCost}</td>
-                      <td className={`p-3 text-right font-medium ${sim.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}>${sim.profit}</td>
-                      <td className={`p-3 text-right ${sim.profitMargin >= 0 ? "text-emerald-600" : "text-red-600"}`}>{sim.profitMargin}%</td>
-                      <td className="p-3 text-right">{sim.roi}%</td>
-                      <td className={`p-3 text-right font-bold ${sim.totalProfit >= 0 ? "text-emerald-600" : "text-red-600"}`}>${sim.totalProfit.toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  );
-}
-
 /* ─── Report Download ───────────────────────────────────── */
 function ReportDownload({ projectId }: { projectId: number }) {
   const { data: reportData, isLoading } = trpc.devBom.getProjectReportData.useQuery({ projectId });
