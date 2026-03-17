@@ -20,6 +20,8 @@ import { devScoringRouter } from "./routers/devScoring";
 import { devProfileRouter } from "./routers/devProfile";
 import { devBomRouter } from "./routers/devBom";
 import { devManualRouter } from "./routers/devManual";
+import { devLinkageRouter } from "./routers/devLinkage";
+import { devGlobalSupplierRouter } from "./routers/devGlobalSupplier";
 import { offsiteAnalysisRouter } from "./routers/offsiteAnalysis";
 import { devProjectTagsRouter } from "./routers/devProjectTags";
 import { devPanoramaRouter } from "./routers/devPanorama";
@@ -62,6 +64,8 @@ export const appRouter = router({
   devProfile: devProfileRouter,
   devBom: devBomRouter,
   devManual: devManualRouter,
+  devLinkage: devLinkageRouter,
+  devGlobalSupplier: devGlobalSupplierRouter,
   offsiteAnalysis: offsiteAnalysisRouter,
   devProjectTags: devProjectTagsRouter,
   devPanorama: devPanoramaRouter,
