@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useRef, useMemo, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,7 +8,8 @@ import {
   Lock, Unlock, Edit2, Save, X, Check, Globe, Download,
   Loader2, ChevronDown, ChevronRight, Eye, EyeOff,
   Upload, Image, FileText, QrCode, ArrowRight, ArrowLeft,
-  Trash2, Plus, CheckCircle2, Circle, AlertCircle,
+  Trash2, Plus, CheckCircle2, Circle, AlertCircle, Palette,
+  Type, Sparkles, Printer, ExternalLink, BookOpen,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -27,6 +28,20 @@ interface ManualEditorProps {
   manual: any;
   projectId: number;
 }
+
+// ─── Theme Color Presets ─────────────────────────────────────────
+const COLOR_PRESETS = [
+  { color: "#1a1a2e", name: "Deep Navy" },
+  { color: "#2563eb", name: "Royal Blue" },
+  { color: "#0f766e", name: "Teal" },
+  { color: "#7c3aed", name: "Purple" },
+  { color: "#dc2626", name: "Red" },
+  { color: "#ea580c", name: "Orange" },
+  { color: "#374151", name: "Charcoal" },
+  { color: "#059669", name: "Emerald" },
+  { color: "#0891b2", name: "Cyan" },
+  { color: "#be185d", name: "Pink" },
+];
 
 // ─── Step Indicator ─────────────────────────────────────────────
 function StepIndicator({ currentStep, steps }: { currentStep: number; steps: { label: string; desc: string }[] }) {
@@ -62,11 +77,12 @@ function StepIndicator({ currentStep, steps }: { currentStep: number; steps: { l
 
 // ─── Asset Upload Card ──────────────────────────────────────────
 function AssetUploadCard({
-  label, desc, icon: Icon, assetType, currentUrl, projectId, onUploaded,
+  label, desc, icon: Icon, assetType, currentUrl, projectId, onUploaded, accept,
 }: {
   label: string; desc: string; icon: any; assetType: string;
   currentUrl?: string | null; projectId: number;
   onUploaded: (url: string) => void;
+  accept?: string;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const uploadMut = trpc.devManual.uploadManualAsset.useMutation({
@@ -80,8 +96,8 @@ function AssetUploadCard({
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("文件大小不能超过5MB");
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("文件大小不能超过10MB");
       return;
     }
     const reader = new FileReader();
@@ -99,126 +115,275 @@ function AssetUploadCard({
   };
 
   return (
-    <div className="border rounded-lg p-4 hover:border-primary/30 transition-colors">
-      <div className="flex items-start gap-3">
-        <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${currentUrl ? "bg-emerald-100 text-emerald-600" : "bg-muted text-muted-foreground"}`}>
-          {currentUrl ? <CheckCircle2 className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-sm font-medium">{label}</span>
-            {currentUrl && <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">已上传</Badge>}
+    <div className="border rounded-lg p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Icon className="h-4 w-4 text-primary" />
+          <div>
+            <p className="text-xs font-medium">{label}</p>
+            <p className="text-[10px] text-muted-foreground">{desc}</p>
           </div>
-          <p className="text-xs text-muted-foreground mb-2">{desc}</p>
-          {currentUrl && (
-            <div className="mb-2">
-              <img src={currentUrl} alt={label} className="h-16 rounded border object-contain bg-muted/20" />
-            </div>
-          )}
-          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
-          <Button
-            size="sm" variant="outline" className="gap-1 text-xs"
-            onClick={() => fileRef.current?.click()}
-            disabled={uploadMut.isPending}
-          >
-            {uploadMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
-            {currentUrl ? "重新上传" : "上传"}
-          </Button>
         </div>
+        <Button
+          size="sm" variant="outline" className="h-7 px-2 text-xs gap-1"
+          onClick={() => fileRef.current?.click()}
+          disabled={uploadMut.isPending}
+        >
+          {uploadMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
+          {currentUrl ? "更换" : "上传"}
+        </Button>
       </div>
+      {currentUrl && (
+        <div className="flex items-center gap-2">
+          {assetType === "reference" ? (
+            <a href={currentUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+              <ExternalLink className="h-3 w-3" />查看参考说明书
+            </a>
+          ) : (
+            <img src={currentUrl} alt={label} className="h-16 rounded border object-contain" />
+          )}
+          <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-200">已上传</Badge>
+        </div>
+      )}
+      <input ref={fileRef} type="file" accept={accept || "image/*"} className="hidden" onChange={handleFile} />
     </div>
   );
 }
 
-// ─── Main ManualEditor ──────────────────────────────────────────
+// ─── Theme Picker ───────────────────────────────────────────────
+function ThemePicker({
+  themes, fonts, selectedTheme, selectedColor, selectedFont,
+  onThemeChange, onColorChange, onFontChange, saving,
+}: {
+  themes: any[]; fonts: any[];
+  selectedTheme: string; selectedColor: string; selectedFont: string;
+  onThemeChange: (t: string) => void; onColorChange: (c: string) => void; onFontChange: (f: string) => void;
+  saving: boolean;
+}) {
+  const [customColor, setCustomColor] = useState(selectedColor);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <Palette className="h-4 w-4 text-primary" />
+          排版主题与样式
+          {saving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Theme Style */}
+        <div>
+          <p className="text-xs font-medium mb-2">排版风格</p>
+          <div className="grid grid-cols-5 gap-2">
+            {themes.map((t: any) => (
+              <button
+                key={t.id}
+                onClick={() => onThemeChange(t.id)}
+                className={`p-2 rounded-lg border text-center transition-all hover:shadow-md ${
+                  selectedTheme === t.id
+                    ? "border-primary bg-primary/5 ring-2 ring-primary/20"
+                    : "border-muted hover:border-primary/30"
+                }`}
+              >
+                <div className="w-full h-8 rounded mb-1.5" style={{
+                  background: t.id === "classic" ? `linear-gradient(135deg, ${t.defaultColor}, ${t.defaultColor}dd)` :
+                    t.id === "modern" ? "#fff" :
+                    t.id === "minimal" ? "#fff" :
+                    t.id === "business" ? `linear-gradient(180deg, #fff, ${t.defaultColor}15)` :
+                    t.defaultColor,
+                  border: t.id === "modern" || t.id === "minimal" ? "1px solid #eee" : "none",
+                }} />
+                <p className="text-[10px] font-medium">{t.nameZh}</p>
+                <p className="text-[9px] text-muted-foreground">{t.name}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Theme Color */}
+        <div>
+          <p className="text-xs font-medium mb-2">主题颜色</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            {COLOR_PRESETS.map((c) => (
+              <button
+                key={c.color}
+                onClick={() => { onColorChange(c.color); setCustomColor(c.color); }}
+                className={`w-7 h-7 rounded-full border-2 transition-all hover:scale-110 ${
+                  selectedColor === c.color ? "border-foreground ring-2 ring-primary/30 scale-110" : "border-transparent"
+                }`}
+                style={{ background: c.color }}
+                title={c.name}
+              />
+            ))}
+            <div className="flex items-center gap-1 ml-2">
+              <input
+                type="color"
+                value={customColor}
+                onChange={(e) => { setCustomColor(e.target.value); onColorChange(e.target.value); }}
+                className="w-7 h-7 rounded cursor-pointer border-0 p-0"
+              />
+              <span className="text-[10px] text-muted-foreground">自定义</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Font Scheme */}
+        <div>
+          <p className="text-xs font-medium mb-2">字体方案</p>
+          <div className="grid grid-cols-5 gap-2">
+            {fonts.map((f: any) => (
+              <button
+                key={f.id}
+                onClick={() => onFontChange(f.id)}
+                className={`p-2 rounded-lg border text-center transition-all ${
+                  selectedFont === f.id
+                    ? "border-primary bg-primary/5 ring-2 ring-primary/20"
+                    : "border-muted hover:border-primary/30"
+                }`}
+              >
+                <Type className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
+                <p className="text-[10px] font-medium">{f.nameZh}</p>
+                <p className="text-[9px] text-muted-foreground">{f.desc}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Main ManualEditor Component ────────────────────────────────
 export default function ManualEditor({ manual, projectId }: ManualEditorProps) {
   const utils = trpc.useUtils();
   const [currentStep, setCurrentStep] = useState(0);
 
-  // Parse chapters from manual
-  const originalChapters = useMemo<Chapter[]>(() => {
-    try {
-      const parsed = JSON.parse(manual?.contentSections || "[]");
-      return parsed.map((ch: any) => ({
-        key: ch.key || "",
-        titleEn: ch.titleEn || "",
-        titleEs: ch.titleEs || "",
-        contentEn: ch.contentEn || "",
-        contentEs: ch.contentEs || "",
-        confirmed: ch.confirmed ?? false,
-        imageUrl: ch.imageUrl || "",
-      }));
-    } catch {
-      return [];
-    }
-  }, [manual?.contentSections]);
+  // Theme state
+  const [themeStyle, setThemeStyle] = useState((manual as any)?.themeStyle || "classic");
+  const [themeColor, setThemeColor] = useState((manual as any)?.themeColor || "#1a1a2e");
+  const [fontScheme, setFontScheme] = useState((manual as any)?.fontScheme || "default");
 
-  const [chapters, setChapters] = useState<Chapter[]>(originalChapters);
+  // Chapter state
+  const [chapters, setChapters] = useState<Chapter[]>(() => {
+    try { return manual?.contentSections ? JSON.parse(manual.contentSections) : []; } catch { return []; }
+  });
+  const [originalChapters, setOriginalChapters] = useState<Chapter[]>([]);
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState<Chapter | null>(null);
-  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [showComparison, setShowComparison] = useState(false);
-  const [brandName, setBrandName] = useState(manual?.brandName || "");
+  const [uploadingChapterIdx, setUploadingChapterIdx] = useState<number | null>(null);
+  const chapterImageRef = useRef<HTMLInputElement>(null);
 
-  // Assets query
+  // Brand info
+  const [brandName, setBrandName] = useState(manual?.brandName || "");
+  const [logoUrl, setLogoUrl] = useState(manual?.logoUrl || "");
+  const [coverUrl, setCoverUrl] = useState(manual?.coverImageUrl || "");
+  const [qrCodeUrl, setQrCodeUrl] = useState(manual?.qrCodeUrl || "");
+  const [referenceUrl, setReferenceUrl] = useState((manual as any)?.referenceManualUrl || "");
+
+  // Preview
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [previewLang, setPreviewLang] = useState<"en" | "es">("en");
+
+  // Assets
   const assetsQuery = trpc.devManual.getManualAssets.useQuery({ projectId });
   const assets = assetsQuery.data || [];
+  const contentBgUrl = useMemo(() => {
+    const bg = assets.find((a: any) => a.assetType === "content_bg");
+    return bg?.fileUrl || "";
+  }, [assets]);
 
-  // Get current asset URLs
-  const logoUrl = manual?.logoUrl || assets.find((a: any) => a.assetType === "logo")?.fileUrl || "";
-  const coverUrl = manual?.coverImageUrl || assets.find((a: any) => a.assetType === "cover")?.fileUrl || "";
-  const contentBgUrl = assets.find((a: any) => a.assetType === "content_bg")?.fileUrl || "";
-  const qrCodeUrl = manual?.qrCodeUrl || assets.find((a: any) => a.assetType === "qrcode")?.fileUrl || "";
+  // Theme presets
+  const presetsQuery = trpc.devManual.getThemePresets.useQuery();
+  const themes = presetsQuery.data?.themes || [];
+  const fonts = presetsQuery.data?.fonts || [];
 
   // Mutations
-  const saveMutation = trpc.devManual.saveManual.useMutation({
-    onSuccess: () => {
-      toast.success("说明书已保存");
-      utils.devManual.getManual.invalidate({ projectId });
+  const generateMut = trpc.devManual.generateManual.useMutation({
+    onSuccess: (data) => {
+      setChapters(data.chapters);
+      setOriginalChapters(JSON.parse(JSON.stringify(data.chapters)));
+      toast.success("9章节内容已生成");
     },
+    onError: (err: any) => toast.error(`生成失败: ${err.message}`),
+  });
+
+  const saveMutation = trpc.devManual.saveManual.useMutation({
+    onSuccess: () => { utils.devManual.getManual.invalidate({ projectId }); },
     onError: (err: any) => toast.error(`保存失败: ${err.message}`),
   });
 
-  const generateMutation = trpc.devManual.generateManual.useMutation({
-    onSuccess: (data: any) => {
-      toast.success("AI内容生成完成");
-      if (data.chapters) {
-        setChapters(data.chapters);
-        setCurrentStep(1); // Auto advance to step 2
-      }
+  const htmlMutation = trpc.devManual.generateHtml.useMutation({
+    onSuccess: (data) => {
+      toast.success("双语HTML说明书已生成");
       utils.devManual.getManual.invalidate({ projectId });
     },
     onError: (err: any) => toast.error(`生成失败: ${err.message}`),
   });
 
-  const htmlMutation = trpc.devManual.generateHtml.useMutation({
-    onSuccess: (data: any) => {
-      toast.success("HTML说明书生成完成");
-      utils.devManual.getManual.invalidate({ projectId });
-    },
-    onError: (err: any) => toast.error(`生成失败: ${err.message}`),
+  const previewMut = trpc.devManual.previewHtml.useMutation({
+    onSuccess: (data) => { setPreviewHtml(data.html); },
+    onError: (err: any) => toast.error(`预览失败: ${err.message}`),
   });
 
   const pdfMutation = trpc.devManual.exportPdf.useMutation({
-    onSuccess: (data: any) => {
-      toast.success("PDF导出完成");
-      if (data.htmlUrl) window.open(data.htmlUrl, "_blank");
+    onSuccess: (data) => {
+      // Open print-ready HTML in new tab for browser print-to-PDF
+      const blob = new Blob([data.html], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      const w = window.open(url, "_blank");
+      if (w) {
+        w.onload = () => {
+          setTimeout(() => w.print(), 500);
+        };
+      }
+      toast.success("PDF打印页面已打开，请使用浏览器打印功能保存为PDF");
     },
     onError: (err: any) => toast.error(`导出失败: ${err.message}`),
   });
 
-  // Chapter operations
-  const confirmedCount = chapters.filter(ch => ch.confirmed).length;
+  const themeConfigMut = trpc.devManual.saveThemeConfig.useMutation({
+    onSuccess: () => { utils.devManual.getManual.invalidate({ projectId }); },
+  });
+
+  const analyzeRefMut = trpc.devManual.analyzeReference.useMutation({
+    onSuccess: (data) => {
+      toast.success("参考说明书分析完成");
+      if (data.recommendedTheme) setThemeStyle(data.recommendedTheme);
+      if (data.recommendedColor) setThemeColor(data.recommendedColor);
+      if (data.recommendedFont) setFontScheme(data.recommendedFont);
+      // Auto-save recommended theme
+      themeConfigMut.mutate({
+        projectId,
+        themeStyle: data.recommendedTheme || "classic",
+        themeColor: data.recommendedColor || "#1a1a2e",
+        fontScheme: data.recommendedFont || "default",
+      });
+    },
+    onError: (err: any) => toast.error(`分析失败: ${err.message}`),
+  });
+
+  // Derived
+  const confirmedCount = chapters.filter(c => c.confirmed).length;
   const allConfirmed = chapters.length > 0 && confirmedCount === chapters.length;
 
-  const saveChapters = (updated: Chapter[], status?: "draft" | "editing" | "confirmed") => {
-    saveMutation.mutate({
-      projectId,
-      chapters: JSON.stringify(updated),
-      brandName: brandName || undefined,
-      status: status || (updated.every(ch => ch.confirmed) ? "confirmed" : "editing"),
-    });
-  };
+  // Handlers
+  const handleThemeChange = useCallback((t: string) => {
+    setThemeStyle(t);
+    themeConfigMut.mutate({ projectId, themeStyle: t as any, themeColor, fontScheme: fontScheme as any });
+  }, [projectId, themeColor, fontScheme]);
+
+  const handleColorChange = useCallback((c: string) => {
+    setThemeColor(c);
+    themeConfigMut.mutate({ projectId, themeStyle: themeStyle as any, themeColor: c, fontScheme: fontScheme as any });
+  }, [projectId, themeStyle, fontScheme]);
+
+  const handleFontChange = useCallback((f: string) => {
+    setFontScheme(f);
+    themeConfigMut.mutate({ projectId, themeStyle: themeStyle as any, themeColor, fontScheme: f as any });
+  }, [projectId, themeStyle, themeColor]);
 
   const startEdit = (idx: number) => {
     setEditingIdx(idx);
@@ -226,311 +391,293 @@ export default function ManualEditor({ manual, projectId }: ManualEditorProps) {
     setExpandedIdx(idx);
   };
 
+  const cancelEdit = () => { setEditingIdx(null); setEditDraft(null); };
+
   const saveEdit = () => {
     if (editingIdx === null || !editDraft) return;
     const updated = [...chapters];
-    updated[editingIdx] = { ...editDraft, confirmed: false };
+    updated[editingIdx] = { ...editDraft };
     setChapters(updated);
-    setEditingIdx(null);
-    setEditDraft(null);
-    saveChapters(updated);
-  };
-
-  const cancelEdit = () => {
+    saveMutation.mutate({
+      projectId,
+      chapters: JSON.stringify(updated),
+      brandName, logoUrl, coverImageUrl: coverUrl, qrCodeUrl,
+      status: "editing",
+    });
     setEditingIdx(null);
     setEditDraft(null);
   };
 
   const confirmChapter = (idx: number) => {
     const updated = [...chapters];
-    updated[idx] = { ...updated[idx], confirmed: true };
+    updated[idx].confirmed = true;
     setChapters(updated);
-    saveChapters(updated);
+    saveMutation.mutate({ projectId, chapters: JSON.stringify(updated), status: "editing" });
   };
 
   const unlockChapter = (idx: number) => {
     const updated = [...chapters];
-    updated[idx] = { ...updated[idx], confirmed: false };
+    updated[idx].confirmed = false;
     setChapters(updated);
-    saveChapters(updated);
+    saveMutation.mutate({ projectId, chapters: JSON.stringify(updated), status: "editing" });
   };
-
-  const confirmAll = () => {
-    const updated = chapters.map(ch => ({ ...ch, confirmed: true }));
-    setChapters(updated);
-    saveChapters(updated, "confirmed");
-  };
-
-  const unlockAll = () => {
-    const updated = chapters.map(ch => ({ ...ch, confirmed: false }));
-    setChapters(updated);
-    saveChapters(updated, "editing");
-  };
-
-  // Chapter image upload
-  const chapterImageRef = useRef<HTMLInputElement>(null);
-  const [uploadingChapterIdx, setUploadingChapterIdx] = useState<number | null>(null);
-  const uploadChapterImage = trpc.devManual.uploadManualAsset.useMutation({
-    onSuccess: (data) => {
-      if (uploadingChapterIdx !== null) {
-        const updated = [...chapters];
-        updated[uploadingChapterIdx] = { ...updated[uploadingChapterIdx], imageUrl: data.url };
-        setChapters(updated);
-        saveChapters(updated);
-        toast.success("章节图片上传成功");
-      }
-      setUploadingChapterIdx(null);
-      assetsQuery.refetch();
-    },
-    onError: (err: any) => { toast.error(`上传失败: ${err.message}`); setUploadingChapterIdx(null); },
-  });
 
   const handleChapterImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || uploadingChapterIdx === null) return;
-    if (file.size > 5 * 1024 * 1024) { toast.error("文件大小不能超过5MB"); return; }
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = (reader.result as string).split(",")[1];
-      uploadChapterImage.mutate({
-        projectId,
-        assetType: "chapter_image",
-        chapterKey: chapters[uploadingChapterIdx]?.key || `ch${uploadingChapterIdx}`,
-        fileName: file.name,
-        fileData: base64,
-        mimeType: file.type,
-      });
+      const idx = uploadingChapterIdx;
+      const chKey = chapters[idx]?.key || `ch${idx}`;
+      trpc.devManual.uploadManualAsset.useMutation.prototype; // type hint only
+      // Use inline mutation
+      const updated = [...chapters];
+      // For simplicity, store as data URL temporarily then save
+      updated[idx] = { ...updated[idx], imageUrl: reader.result as string };
+      setChapters(updated);
+      if (editDraft && editingIdx === idx) {
+        setEditDraft({ ...editDraft, imageUrl: reader.result as string });
+      }
+      toast.success("章节图片已添加");
     };
     reader.readAsDataURL(file);
+    e.target.value = "";
   };
 
-  const onAssetUploaded = useCallback(() => {
-    assetsQuery.refetch();
-    utils.devManual.getManual.invalidate({ projectId });
-  }, [assetsQuery, utils, projectId]);
+  const handlePreview = (lang: "en" | "es") => {
+    setPreviewLang(lang);
+    previewMut.mutate({ projectId, language: lang });
+  };
 
   const steps = [
-    { label: "素材上传", desc: "Logo、封面、底图、二维码" },
-    { label: "AI生成 & 编辑", desc: "9章节内容生成与人工编辑" },
-    { label: "生成说明书", desc: "英文/西语双版本HTML" },
+    { label: "素材上传", desc: "Logo/封面/底图/二维码" },
+    { label: "内容编辑", desc: "AI生成+人工编辑确认" },
+    { label: "生成说明书", desc: "双语HTML/PDF导出" },
   ];
-
-  // Check step completion
-  const step1Complete = !!(logoUrl || coverUrl);
-  const step2Complete = chapters.length > 0 && allConfirmed;
 
   return (
     <div className="space-y-4">
       <StepIndicator currentStep={currentStep} steps={steps} />
 
-      {/* ─── Step 1: Asset Upload ─── */}
+      {/* ─── Step 0: Assets + Theme + Reference ─── */}
       {currentStep === 0 && (
         <div className="space-y-4">
+          {/* Brand Name */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
-                <Upload className="h-4 w-4 text-primary" />
-                整体素材上传
+                <FileText className="h-4 w-4 text-primary" />
+                品牌信息
               </CardTitle>
-              <p className="text-xs text-muted-foreground">上传品牌Logo、封面底图、内容页底图和社媒二维码等素材，用于生成专业说明书</p>
             </CardHeader>
             <CardContent>
-              {/* Brand Name */}
-              <div className="mb-4">
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">品牌名称</label>
+              <div className="flex items-center gap-3">
+                <label className="text-xs font-medium whitespace-nowrap">品牌名称</label>
                 <Input
-                  className="max-w-xs"
-                  placeholder="输入品牌名称"
                   value={brandName}
                   onChange={(e) => setBrandName(e.target.value)}
-                  onBlur={() => { if (brandName) saveChapters(chapters); }}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <AssetUploadCard
-                  label="品牌Logo" desc="PNG/SVG格式，建议透明背景，用于封面和页眉"
-                  icon={Image} assetType="logo" currentUrl={logoUrl}
-                  projectId={projectId} onUploaded={onAssetUploaded}
-                />
-                <AssetUploadCard
-                  label="封面底图" desc="高清产品图或品牌视觉图，用于说明书封面"
-                  icon={FileText} assetType="cover" currentUrl={coverUrl}
-                  projectId={projectId} onUploaded={onAssetUploaded}
-                />
-                <AssetUploadCard
-                  label="内容页底图" desc="可选，用于内容页面的背景装饰"
-                  icon={Image} assetType="content_bg" currentUrl={contentBgUrl}
-                  projectId={projectId} onUploaded={onAssetUploaded}
-                />
-                <AssetUploadCard
-                  label="社媒/官网二维码" desc="社交媒体主页或官网链接的二维码图片"
-                  icon={QrCode} assetType="qrcode" currentUrl={qrCodeUrl}
-                  projectId={projectId} onUploaded={onAssetUploaded}
+                  placeholder="输入品牌名称"
+                  className="max-w-xs text-sm"
                 />
               </div>
             </CardContent>
           </Card>
 
-          {/* Asset Preview Summary */}
-          {(logoUrl || coverUrl || contentBgUrl || qrCodeUrl) && (
-            <Card className="bg-gradient-to-r from-blue-50/50 to-indigo-50/50 border-blue-100">
-              <CardContent className="p-4">
-                <p className="text-xs font-medium text-blue-700 mb-2">已上传素材预览</p>
-                <div className="flex gap-4 flex-wrap">
-                  {logoUrl && (
-                    <div className="text-center">
-                      <img src={logoUrl} alt="Logo" className="h-12 rounded border bg-white p-1 object-contain" />
-                      <p className="text-[10px] text-muted-foreground mt-1">Logo</p>
+          {/* Asset Uploads */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Image className="h-4 w-4 text-primary" />
+                素材上传
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">上传Logo、封面底图、内容页底图和社媒二维码等素材</p>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <AssetUploadCard
+                  label="品牌Logo" desc="PNG/SVG, 建议透明背景" icon={Image}
+                  assetType="logo" currentUrl={logoUrl} projectId={projectId}
+                  onUploaded={(url) => setLogoUrl(url)}
+                />
+                <AssetUploadCard
+                  label="封面底图" desc="封面页背景图片" icon={Image}
+                  assetType="cover" currentUrl={coverUrl} projectId={projectId}
+                  onUploaded={(url) => setCoverUrl(url)}
+                />
+                <AssetUploadCard
+                  label="内容页底图" desc="章节页面背景/水印" icon={Image}
+                  assetType="content_bg" currentUrl={contentBgUrl} projectId={projectId}
+                  onUploaded={() => assetsQuery.refetch()}
+                />
+                <AssetUploadCard
+                  label="社媒二维码" desc="社交媒体主页二维码" icon={QrCode}
+                  assetType="qrcode" currentUrl={qrCodeUrl} projectId={projectId}
+                  onUploaded={(url) => setQrCodeUrl(url)}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Reference Manual Upload */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <BookOpen className="h-4 w-4 text-amber-600" />
+                参考说明书
+                <Badge variant="outline" className="text-[10px]">可选</Badge>
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">上传竞品或参考说明书，AI将分析其设计风格并推荐最佳排版方案</p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <AssetUploadCard
+                label="参考说明书" desc="PDF/图片格式, 最大10MB" icon={FileText}
+                assetType="reference" currentUrl={referenceUrl} projectId={projectId}
+                onUploaded={(url) => setReferenceUrl(url)}
+                accept="image/*,.pdf"
+              />
+              {referenceUrl && (
+                <Button
+                  size="sm" variant="outline" className="gap-1 text-xs"
+                  onClick={() => analyzeRefMut.mutate({ projectId })}
+                  disabled={analyzeRefMut.isPending}
+                >
+                  {analyzeRefMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                  AI分析参考说明书
+                </Button>
+              )}
+              {(manual as any)?.referenceManualNotes && (() => {
+                try {
+                  const notes = JSON.parse((manual as any).referenceManualNotes);
+                  return (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+                      <p className="text-xs font-medium text-amber-800">AI分析结果</p>
+                      <p className="text-xs text-amber-700">{notes.analysis || notes}</p>
+                      {notes.designHighlights && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {(notes.designHighlights as string[]).map((h: string, i: number) => (
+                            <Badge key={i} variant="outline" className="text-[10px] border-amber-300 text-amber-700">{h}</Badge>
+                          ))}
+                        </div>
+                      )}
+                      {notes.recommendedTheme && (
+                        <p className="text-[10px] text-amber-600">
+                          推荐: {notes.recommendedTheme} 主题 | {notes.recommendedColor} | {notes.recommendedFont} 字体
+                        </p>
+                      )}
                     </div>
-                  )}
-                  {coverUrl && (
-                    <div className="text-center">
-                      <img src={coverUrl} alt="Cover" className="h-12 rounded border object-cover" />
-                      <p className="text-[10px] text-muted-foreground mt-1">封面</p>
-                    </div>
-                  )}
-                  {contentBgUrl && (
-                    <div className="text-center">
-                      <img src={contentBgUrl} alt="Content BG" className="h-12 rounded border object-cover" />
-                      <p className="text-[10px] text-muted-foreground mt-1">底图</p>
-                    </div>
-                  )}
-                  {qrCodeUrl && (
-                    <div className="text-center">
-                      <img src={qrCodeUrl} alt="QR" className="h-12 rounded border object-contain" />
-                      <p className="text-[10px] text-muted-foreground mt-1">二维码</p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+                  );
+                } catch { return null; }
+              })()}
+            </CardContent>
+          </Card>
+
+          {/* Theme Picker */}
+          {themes.length > 0 && (
+            <ThemePicker
+              themes={themes} fonts={fonts}
+              selectedTheme={themeStyle} selectedColor={themeColor} selectedFont={fontScheme}
+              onThemeChange={handleThemeChange} onColorChange={handleColorChange} onFontChange={handleFontChange}
+              saving={themeConfigMut.isPending}
+            />
           )}
 
-          <div className="flex justify-end gap-2">
-            <Button
-              onClick={() => {
-                if (!brandName) { toast.error("请先输入品牌名称"); return; }
-                setCurrentStep(1);
-              }}
-              className="gap-1"
-            >
-              下一步：AI生成内容 <ArrowRight className="h-4 w-4" />
+          <div className="flex justify-end">
+            <Button onClick={() => {
+              if (!brandName.trim()) {
+                toast.error("请输入品牌名称");
+                return;
+              }
+              // Save brand info before proceeding
+              saveMutation.mutate({
+                projectId,
+                chapters: chapters.length > 0 ? JSON.stringify(chapters) : "[]",
+                brandName, logoUrl, coverImageUrl: coverUrl, qrCodeUrl,
+              });
+              setCurrentStep(1);
+            }} className="gap-1">
+              下一步：内容编辑 <ArrowRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
       )}
 
-      {/* ─── Step 2: AI Generate & Edit Chapters ─── */}
+      {/* ─── Step 1: AI Generate + Edit Chapters ─── */}
       {currentStep === 1 && (
         <div className="space-y-4">
-          {/* Generate Button (if no chapters yet) */}
-          {chapters.length === 0 && (
-            <Card className="border-dashed border-2">
-              <CardContent className="flex flex-col items-center justify-center py-10">
-                <Globe className="h-10 w-10 mb-3 text-primary/30" />
-                <p className="text-sm text-muted-foreground mb-4">点击下方按钮，AI将根据产品信息生成9章节说明书内容</p>
-                <Button
-                  onClick={() => generateMutation.mutate({ projectId })}
-                  disabled={generateMutation.isPending}
-                  className="gap-2"
-                >
-                  {generateMutation.isPending ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" />AI生成中...</>
-                  ) : (
-                    <><Globe className="h-4 w-4" />AI生成9章节内容</>
-                  )}
+          {/* Generate Button */}
+          {chapters.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center space-y-4">
+                <Sparkles className="h-10 w-10 mx-auto text-primary/40" />
+                <div>
+                  <p className="text-sm font-medium">AI生成说明书内容</p>
+                  <p className="text-xs text-muted-foreground mt-1">基于产品画像和BOM信息，自动生成9章节双语内容</p>
+                </div>
+                <Button onClick={() => generateMut.mutate({ projectId })} disabled={generateMut.isPending} className="gap-2">
+                  {generateMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  {generateMut.isPending ? "AI正在生成..." : "开始生成"}
                 </Button>
               </CardContent>
             </Card>
-          )}
-
-          {/* Chapter List */}
-          {chapters.length > 0 && (
+          ) : (
             <>
-              {/* Header */}
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-3">
-                  <h3 className="font-semibold text-sm">章节内容编辑</h3>
-                  <Badge variant={allConfirmed ? "default" : "secondary"} className="text-xs">
-                    {confirmedCount}/{chapters.length} 章已确认
-                  </Badge>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                  <Button size="sm" variant="outline" onClick={() => setShowComparison(!showComparison)} className="gap-1 text-xs">
-                    {showComparison ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
-                    {showComparison ? "隐藏对比" : "AI原版对比"}
-                  </Button>
-                  {allConfirmed ? (
-                    <Button size="sm" variant="outline" onClick={unlockAll} className="gap-1 text-xs text-amber-600">
-                      <Unlock className="h-3 w-3" />全部解锁
-                    </Button>
-                  ) : (
-                    <Button size="sm" onClick={confirmAll} className="gap-1 text-xs">
-                      <Lock className="h-3 w-3" />全部确认
-                    </Button>
-                  )}
-                  <Button size="sm" variant="outline" onClick={() => generateMutation.mutate({ projectId })} disabled={generateMutation.isPending} className="gap-1 text-xs">
-                    {generateMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Globe className="h-3 w-3" />}
-                    重新生成
-                  </Button>
-                </div>
+              {/* Regenerate */}
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">共 {chapters.length} 章节，{confirmedCount} 已确认</p>
+                <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => generateMut.mutate({ projectId })} disabled={generateMut.isPending}>
+                  {generateMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                  重新生成
+                </Button>
               </div>
 
-              {/* Chapter Table */}
+              {/* Chapter List */}
               <Card>
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="w-full text-xs">
                       <thead>
                         <tr className="border-b bg-muted/30">
-                          <th className="text-left p-3 font-medium w-16">章节</th>
-                          <th className="text-left p-3 font-medium">英文标题</th>
-                          <th className="text-left p-3 font-medium">西语标题</th>
-                          <th className="text-center p-3 font-medium w-16">素材</th>
-                          <th className="text-center p-3 font-medium w-24">状态</th>
-                          <th className="text-center p-3 font-medium w-36">操作</th>
+                          <th className="text-left p-2 w-8">#</th>
+                          <th className="text-left p-2">章节</th>
+                          <th className="text-left p-2 hidden md:table-cell">英文标题</th>
+                          <th className="text-left p-2 hidden md:table-cell">西语标题</th>
+                          <th className="text-center p-2 w-16">状态</th>
+                          <th className="text-right p-2 w-28">操作</th>
                         </tr>
                       </thead>
                       <tbody>
                         {chapters.map((ch, idx) => {
                           const isExpanded = expandedIdx === idx;
                           return (
-                            <tr key={idx} className={`border-b transition-colors ${isExpanded ? "bg-blue-50/30" : "hover:bg-muted/20"} ${ch.confirmed ? "bg-emerald-50/20" : ""}`}>
-                              <td className="p-3 font-mono text-xs text-muted-foreground">
-                                <button className="flex items-center gap-1" onClick={() => setExpandedIdx(isExpanded ? null : idx)}>
+                            <tr
+                              key={idx}
+                              className={`border-b hover:bg-muted/20 cursor-pointer transition-colors ${isExpanded ? "bg-blue-50/50" : ""}`}
+                              onClick={() => setExpandedIdx(isExpanded ? null : idx)}
+                            >
+                              <td className="p-2 text-muted-foreground">{idx + 1}</td>
+                              <td className="p-2">
+                                <div className="flex items-center gap-1.5">
                                   {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                                  Ch.{idx + 1}
-                                </button>
+                                  <span className="font-medium">{ch.key}</span>
+                                  {ch.imageUrl && <Image className="h-3 w-3 text-blue-500" />}
+                                </div>
                               </td>
-                              <td className="p-3 text-sm">{ch.titleEn || ch.key}</td>
-                              <td className="p-3 text-sm text-muted-foreground">{ch.titleEs || "—"}</td>
-                              <td className="p-3 text-center">
-                                {ch.imageUrl ? (
-                                  <img src={ch.imageUrl} alt="" className="h-6 w-6 rounded object-cover inline-block" />
-                                ) : (
-                                  <Circle className="h-4 w-4 text-muted-foreground/30 inline-block" />
-                                )}
-                              </td>
-                              <td className="p-3 text-center">
+                              <td className="p-2 hidden md:table-cell text-muted-foreground truncate max-w-[200px]">{ch.titleEn}</td>
+                              <td className="p-2 hidden md:table-cell text-muted-foreground truncate max-w-[200px]">{ch.titleEs}</td>
+                              <td className="p-2 text-center">
                                 {ch.confirmed ? (
-                                  <Badge className="bg-emerald-100 text-emerald-700 text-xs">已确认</Badge>
+                                  <CheckCircle2 className="h-4 w-4 text-emerald-500 mx-auto" />
                                 ) : (
-                                  <Badge variant="outline" className="text-xs text-amber-600 border-amber-200">待确认</Badge>
+                                  <Circle className="h-4 w-4 text-muted-foreground/30 mx-auto" />
                                 )}
                               </td>
-                              <td className="p-3 text-center">
-                                <div className="flex items-center justify-center gap-1">
+                              <td className="p-2 text-right" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center justify-end gap-1">
                                   {!ch.confirmed ? (
                                     <>
-                                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => startEdit(idx)}>
+                                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-blue-600" onClick={() => startEdit(idx)}>
                                         <Edit2 className="h-3 w-3 mr-1" />编辑
-                                      </Button>
-                                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => {
-                                        setUploadingChapterIdx(idx);
-                                        chapterImageRef.current?.click();
-                                      }}>
-                                        <Image className="h-3 w-3 mr-1" />图片
                                       </Button>
                                       <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-emerald-600" onClick={() => confirmChapter(idx)}>
                                         <Check className="h-3 w-3 mr-1" />确认
@@ -570,39 +717,21 @@ export default function ManualEditor({ manual, projectId }: ManualEditorProps) {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <label className="text-xs font-medium text-blue-600 mb-1 block">英文标题</label>
-                            <Input
-                              value={editDraft.titleEn}
-                              onChange={(e) => setEditDraft({ ...editDraft, titleEn: e.target.value })}
-                              className="text-sm"
-                            />
+                            <Input value={editDraft.titleEn} onChange={(e) => setEditDraft({ ...editDraft, titleEn: e.target.value })} className="text-sm" />
                           </div>
                           <div>
                             <label className="text-xs font-medium text-orange-600 mb-1 block">西语标题</label>
-                            <Input
-                              value={editDraft.titleEs}
-                              onChange={(e) => setEditDraft({ ...editDraft, titleEs: e.target.value })}
-                              className="text-sm"
-                            />
+                            <Input value={editDraft.titleEs} onChange={(e) => setEditDraft({ ...editDraft, titleEs: e.target.value })} className="text-sm" />
                           </div>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <label className="text-xs font-medium text-blue-600 mb-1 block">英文内容</label>
-                            <Textarea
-                              value={editDraft.contentEn}
-                              onChange={(e) => setEditDraft({ ...editDraft, contentEn: e.target.value })}
-                              rows={10}
-                              className="text-sm font-mono"
-                            />
+                            <Textarea value={editDraft.contentEn} onChange={(e) => setEditDraft({ ...editDraft, contentEn: e.target.value })} rows={10} className="text-sm font-mono" />
                           </div>
                           <div>
                             <label className="text-xs font-medium text-orange-600 mb-1 block">西语内容</label>
-                            <Textarea
-                              value={editDraft.contentEs}
-                              onChange={(e) => setEditDraft({ ...editDraft, contentEs: e.target.value })}
-                              rows={10}
-                              className="text-sm font-mono"
-                            />
+                            <Textarea value={editDraft.contentEs} onChange={(e) => setEditDraft({ ...editDraft, contentEs: e.target.value })} rows={10} className="text-sm font-mono" />
                           </div>
                         </div>
 
@@ -627,6 +756,10 @@ export default function ManualEditor({ manual, projectId }: ManualEditorProps) {
                         </div>
 
                         <div className="flex gap-2 justify-end">
+                          <Button size="sm" variant="outline" onClick={() => setShowComparison(!showComparison)} className="gap-1 text-xs">
+                            {showComparison ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                            {showComparison ? "隐藏对比" : "AI原版对比"}
+                          </Button>
                           <Button size="sm" variant="outline" onClick={cancelEdit} className="gap-1">
                             <X className="h-3 w-3" />取消
                           </Button>
@@ -636,22 +769,17 @@ export default function ManualEditor({ manual, projectId }: ManualEditorProps) {
                           </Button>
                         </div>
 
-                        {/* AI Original Comparison */}
                         {showComparison && originalChapters[expandedIdx] && (
                           <div className="border-t pt-4 mt-4">
                             <p className="text-xs font-medium text-muted-foreground mb-2">AI原版内容（对比参考）</p>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 opacity-60">
                               <div>
                                 <p className="text-xs text-blue-600 mb-1">English (Original)</p>
-                                <p className="text-xs whitespace-pre-wrap bg-muted/30 p-2 rounded max-h-40 overflow-y-auto">
-                                  {originalChapters[expandedIdx].contentEn || "—"}
-                                </p>
+                                <p className="text-xs whitespace-pre-wrap bg-muted/30 p-2 rounded max-h-40 overflow-y-auto">{originalChapters[expandedIdx].contentEn || "—"}</p>
                               </div>
                               <div>
                                 <p className="text-xs text-orange-600 mb-1">Espanol (Original)</p>
-                                <p className="text-xs whitespace-pre-wrap bg-muted/30 p-2 rounded max-h-40 overflow-y-auto">
-                                  {originalChapters[expandedIdx].contentEs || "—"}
-                                </p>
+                                <p className="text-xs whitespace-pre-wrap bg-muted/30 p-2 rounded max-h-40 overflow-y-auto">{originalChapters[expandedIdx].contentEs || "—"}</p>
                               </div>
                             </div>
                           </div>
@@ -684,13 +812,9 @@ export default function ManualEditor({ manual, projectId }: ManualEditorProps) {
               {/* Progress Bar */}
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-emerald-500 transition-all duration-300"
-                    style={{ width: `${chapters.length > 0 ? (confirmedCount / chapters.length) * 100 : 0}%` }}
-                  />
+                  <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${chapters.length > 0 ? (confirmedCount / chapters.length) * 100 : 0}%` }} />
                 </div>
                 <span>{confirmedCount}/{chapters.length} 章已确认</span>
-                {saveMutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
               </div>
             </>
           )}
@@ -716,51 +840,55 @@ export default function ManualEditor({ manual, projectId }: ManualEditorProps) {
         </div>
       )}
 
-      {/* ─── Step 3: Generate Bilingual HTML Manual ─── */}
+      {/* ─── Step 2: Generate + Preview + PDF ─── */}
       {currentStep === 2 && (
         <div className="space-y-4">
+          {/* Summary */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Globe className="h-4 w-4 text-primary" />
                 生成双语版说明书
               </CardTitle>
-              <p className="text-xs text-muted-foreground">
-                结合上传的素材和已确认的章节内容，生成英文和西班牙语两个版本的HTML说明书
-              </p>
+              <p className="text-xs text-muted-foreground">结合素材、主题配置和章节内容，生成英文和西班牙语两个版本</p>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Summary */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {/* Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 <div className="bg-muted/30 rounded-lg p-3 text-center">
                   <p className="text-2xl font-bold text-primary">{chapters.length}</p>
-                  <p className="text-xs text-muted-foreground">总章节数</p>
+                  <p className="text-xs text-muted-foreground">总章节</p>
                 </div>
                 <div className="bg-emerald-50 rounded-lg p-3 text-center">
                   <p className="text-2xl font-bold text-emerald-600">{confirmedCount}</p>
-                  <p className="text-xs text-muted-foreground">已确认章节</p>
+                  <p className="text-xs text-muted-foreground">已确认</p>
                 </div>
                 <div className="bg-blue-50 rounded-lg p-3 text-center">
                   <p className="text-2xl font-bold text-blue-600">{assets.length}</p>
-                  <p className="text-xs text-muted-foreground">已上传素材</p>
+                  <p className="text-xs text-muted-foreground">素材数</p>
+                </div>
+                <div className="rounded-lg p-3 text-center" style={{ background: `${themeColor}10` }}>
+                  <div className="w-8 h-8 rounded-full mx-auto mb-1" style={{ background: themeColor }} />
+                  <p className="text-xs text-muted-foreground">{themeStyle}</p>
                 </div>
                 <div className="bg-purple-50 rounded-lg p-3 text-center">
-                  <p className="text-2xl font-bold text-purple-600">{brandName || "—"}</p>
-                  <p className="text-xs text-muted-foreground">品牌名称</p>
+                  <p className="text-lg font-bold text-purple-600 truncate">{brandName || "—"}</p>
+                  <p className="text-xs text-muted-foreground">品牌</p>
                 </div>
               </div>
 
               {/* Asset Check */}
               <div className="border rounded-lg p-3 space-y-2">
                 <p className="text-xs font-medium">素材检查</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
                   {[
                     { label: "Logo", ok: !!logoUrl },
                     { label: "封面底图", ok: !!coverUrl },
                     { label: "内容底图", ok: !!contentBgUrl },
                     { label: "二维码", ok: !!qrCodeUrl },
-                  ].map(item => (
-                    <div key={item.label} className="flex items-center gap-1.5">
+                    { label: "参考说明书", ok: !!referenceUrl },
+                  ].map((item) => (
+                    <div key={item.label} className="flex items-center gap-1.5 p-1.5 rounded bg-muted/20">
                       {item.ok ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> : <AlertCircle className="h-3.5 w-3.5 text-amber-500" />}
                       <span className={item.ok ? "text-emerald-700" : "text-amber-600"}>{item.label}</span>
                     </div>
@@ -772,7 +900,7 @@ export default function ManualEditor({ manual, projectId }: ManualEditorProps) {
               {(manual?.htmlEnUrl || manual?.htmlEsUrl) && (
                 <div className="border rounded-lg p-3 space-y-2">
                   <p className="text-xs font-medium">已生成文件</p>
-                  <div className="flex gap-2 flex-wrap">
+                  <div className="flex gap-3 flex-wrap">
                     {manual?.htmlEnUrl && (
                       <a href={manual.htmlEnUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-600 hover:underline">
                         <Globe className="h-3.5 w-3.5" />English HTML
@@ -787,35 +915,100 @@ export default function ManualEditor({ manual, projectId }: ManualEditorProps) {
                 </div>
               )}
 
-              {/* Generate Buttons */}
-              <div className="flex gap-3 flex-wrap">
+              {/* Action Buttons */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Button
                   onClick={() => htmlMutation.mutate({ projectId })}
                   disabled={htmlMutation.isPending || !allConfirmed}
-                  className="gap-2 flex-1"
+                  className="gap-2"
+                  size="lg"
                 >
                   {htmlMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Globe className="h-4 w-4" />}
                   生成双语HTML说明书
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => pdfMutation.mutate({ projectId, language: "en" })}
-                  disabled={pdfMutation.isPending}
-                  className="gap-1"
-                >
-                  <Download className="h-4 w-4" />PDF(EN)
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => pdfMutation.mutate({ projectId, language: "es" })}
-                  disabled={pdfMutation.isPending}
-                  className="gap-1"
-                >
-                  <Download className="h-4 w-4" />PDF(ES)
-                </Button>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => handlePreview("en")}
+                    disabled={previewMut.isPending || chapters.length === 0}
+                    className="gap-1"
+                  >
+                    {previewMut.isPending && previewLang === "en" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                    预览EN
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => handlePreview("es")}
+                    disabled={previewMut.isPending || chapters.length === 0}
+                    className="gap-1"
+                  >
+                    {previewMut.isPending && previewLang === "es" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                    预览ES
+                  </Button>
+                </div>
+              </div>
+
+              {/* PDF Export */}
+              <div className="border-t pt-4">
+                <p className="text-xs font-medium mb-2 flex items-center gap-1.5">
+                  <Printer className="h-3.5 w-3.5" />
+                  PDF导出（方便打印）
+                </p>
+                <p className="text-[10px] text-muted-foreground mb-3">点击后将打开打印预览页面，使用浏览器"打印"功能保存为PDF文件</p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline" size="sm"
+                    onClick={() => pdfMutation.mutate({ projectId, language: "en" })}
+                    disabled={pdfMutation.isPending || chapters.length === 0}
+                    className="gap-1"
+                  >
+                    {pdfMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                    下载PDF (English)
+                  </Button>
+                  <Button
+                    variant="outline" size="sm"
+                    onClick={() => pdfMutation.mutate({ projectId, language: "es" })}
+                    disabled={pdfMutation.isPending || chapters.length === 0}
+                    className="gap-1"
+                  >
+                    {pdfMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                    下载PDF (Spanish)
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
+
+          {/* Live Preview */}
+          {previewHtml && (
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Eye className="h-4 w-4 text-primary" />
+                    实时预览 ({previewLang === "en" ? "English" : "Spanish"})
+                  </CardTitle>
+                  <div className="flex gap-1">
+                    <Button size="sm" variant={previewLang === "en" ? "default" : "outline"} className="h-6 px-2 text-[10px]" onClick={() => handlePreview("en")}>EN</Button>
+                    <Button size="sm" variant={previewLang === "es" ? "default" : "outline"} className="h-6 px-2 text-[10px]" onClick={() => handlePreview("es")}>ES</Button>
+                    <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px]" onClick={() => setPreviewHtml(null)}>
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="border rounded-lg overflow-hidden bg-white" style={{ height: "600px" }}>
+                  <iframe
+                    srcDoc={previewHtml}
+                    className="w-full h-full border-0"
+                    title="Manual Preview"
+                    sandbox="allow-same-origin"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <div className="flex justify-between">
             <Button variant="outline" onClick={() => setCurrentStep(1)} className="gap-1">

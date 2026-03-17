@@ -3,19 +3,21 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import * as devDb from "../devDb";
 import { storagePut } from "../storage";
+import { generateThemedManualHtml, THEME_PRESETS, FONT_PRESETS } from "../manualTemplates";
 
 const MANUAL_CHAPTERS = [
-  { key: "overview", titleEn: "Product Overview", titleEs: "Descripción del Producto" },
+  { key: "overview", titleEn: "Product Overview", titleEs: "Descripcion del Producto" },
   { key: "contents", titleEn: "Package Contents", titleEs: "Contenido del Paquete" },
   { key: "specs", titleEn: "Specifications", titleEs: "Especificaciones" },
-  { key: "installation", titleEn: "Installation Guide", titleEs: "Guía de Instalación" },
+  { key: "installation", titleEn: "Installation Guide", titleEs: "Guia de Instalacion" },
   { key: "usage", titleEn: "Usage Instructions", titleEs: "Instrucciones de Uso" },
   { key: "safety", titleEn: "Safety Warnings", titleEs: "Advertencias de Seguridad" },
   { key: "maintenance", titleEn: "Maintenance & Care", titleEs: "Mantenimiento y Cuidado" },
-  { key: "troubleshooting", titleEn: "Troubleshooting", titleEs: "Solución de Problemas" },
-  { key: "warranty", titleEn: "Warranty & Contact", titleEs: "Garantía y Contacto" },
+  { key: "troubleshooting", titleEn: "Troubleshooting", titleEs: "Solucion de Problemas" },
+  { key: "warranty", titleEn: "Warranty & Contact", titleEs: "Garantia y Contacto" },
 ] as const;
 
+// 说明书生成与测试报告管理路由
 export const devManualRouter = router({
   // ─── Get Manual ────────────────────────────────────────────
   getManual: protectedProcedure
@@ -24,7 +26,113 @@ export const devManualRouter = router({
       return devDb.getDevManual(input.projectId);
     }),
 
-  // ─── Step 1: AI Generate 9 Chapters (English) ─────────────
+  // ─── Get Theme Presets ─────────────────────────────────────
+  getThemePresets: protectedProcedure
+    .query(async () => {
+      return { themes: THEME_PRESETS, fonts: FONT_PRESETS };
+    }),
+
+  // ─── Save Theme Config ─────────────────────────────────────
+  saveThemeConfig: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      themeStyle: z.enum(["classic", "modern", "minimal", "business", "creative"]),
+      themeColor: z.string(),
+      fontScheme: z.enum(["default", "serif", "sans", "elegant", "tech"]),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await devDb.upsertDevManual({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        themeStyle: input.themeStyle,
+        themeColor: input.themeColor,
+        fontScheme: input.fontScheme,
+      });
+      return { success: true };
+    }),
+
+  // ─── 上传参考说明书 (Upload Reference Manual) ───────────────────────────────
+  uploadReference: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      fileName: z.string(),
+      fileData: z.string(), // base64
+      mimeType: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const buffer = Buffer.from(input.fileData, "base64");
+      const ext = input.fileName.split(".").pop() || "pdf";
+      const key = `manual-refs/${input.projectId}/ref-${Date.now()}.${ext}`;
+      const { url } = await storagePut(key, buffer, input.mimeType || "application/pdf");
+
+      await devDb.upsertDevManual({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        referenceManualUrl: url,
+      });
+
+      return { url };
+    }),
+
+  // ─── AI Analyze Reference Manual ───────────────────────────
+  analyzeReference: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const manual = await devDb.getDevManual(input.projectId);
+      if (!manual?.referenceManualUrl) throw new Error("Please upload a reference manual first");
+
+      const response = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `You are a product manual design expert. Analyze the reference manual and extract:
+1. Layout style and structure
+2. Color scheme and typography choices
+3. Content organization pattern
+4. Key design elements worth replicating
+5. Recommended theme style (classic/modern/minimal/business/creative)
+6. Recommended color palette (primary hex color)
+7. Recommended font scheme (default/serif/sans/elegant/tech)
+
+Return JSON:
+{
+  "analysis": "Detailed analysis text",
+  "recommendedTheme": "modern",
+  "recommendedColor": "#2563eb",
+  "recommendedFont": "sans",
+  "layoutNotes": "Layout observations",
+  "contentStructure": "Content structure notes",
+  "designHighlights": ["highlight1", "highlight2"]
+}`,
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text" as const, text: "Please analyze this reference manual and provide design recommendations:" },
+              { type: "image_url" as const, image_url: { url: manual.referenceManualUrl } },
+            ],
+          },
+        ],
+      });
+
+      const content = (response.choices?.[0]?.message?.content as string) || "";
+      let analysis;
+      try {
+        analysis = JSON.parse(content.replace(/```json\n?|\n?```/g, ""));
+      } catch {
+        analysis = { analysis: content, recommendedTheme: "classic", recommendedColor: "#1a1a2e", recommendedFont: "default" };
+      }
+
+      await devDb.upsertDevManual({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        referenceManualNotes: JSON.stringify(analysis),
+      });
+
+      return analysis;
+    }),
+
+  // ─── Step 1: AI Generate 9 Chapters ────────────────────────
   generateManual: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
@@ -34,12 +142,22 @@ export const devManualRouter = router({
       const products = await devDb.getDevProductsByProject(input.projectId);
       const profile = await devDb.getDevProductProfile(input.projectId);
       const bom = await devDb.getDevBomItems(input.projectId);
+      const manual = await devDb.getDevManual(input.projectId);
+
+      // Include reference analysis if available
+      let refContext = "";
+      if (manual?.referenceManualNotes) {
+        try {
+          const refAnalysis = JSON.parse(manual.referenceManualNotes as string);
+          refContext = `\nReference Manual Analysis:\n${refAnalysis.analysis || ""}\nLayout Notes: ${refAnalysis.layoutNotes || ""}`;
+        } catch {}
+      }
 
       const context = `Product: ${project.name}
 Target Market: ${project.targetMarket}
-Competitor References: ${products.slice(0, 3).map(p => p.title).join("; ")}
+Competitor References: ${products.slice(0, 3).map((p: any) => p.title).join("; ")}
 ${profile ? `Functions: ${profile.mainFunctions || ""}\nAppearance: ${profile.appearanceColors || ""}\nPackage: ${profile.packageDimensions || ""}` : ""}
-BOM Components: ${bom.map(b => b.partName).join(", ")}`;
+BOM Components: ${bom.map((b: any) => b.partName).join(", ")}${refContext}`;
 
       const response = await invokeLLM({
         messages: [
@@ -48,6 +166,7 @@ BOM Components: ${bom.map(b => b.partName).join(", ")}`;
             content: `You are a professional product manual writer for US consumer products.
 Generate a complete product manual with 9 chapters in BOTH English and Spanish.
 Each chapter should be detailed, professional, and comply with US market standards.
+Use clear formatting with numbered steps, bullet points, and proper sections.
 
 Return JSON format:
 {
@@ -57,7 +176,7 @@ Return JSON format:
       "titleEn": "English Title",
       "titleEs": "Spanish Title",
       "contentEn": "English content (detailed, with numbered steps where applicable)",
-      "contentEs": "Spanish content (professional translation)",
+      "contentEs": "Spanish content (professional translation, not machine-translated feel)",
       "confirmed": false
     }
   ]
@@ -72,7 +191,9 @@ The 9 chapters are:
 6. Safety Warnings - Safety precautions and warnings (CPSC compliant)
 7. Maintenance & Care - Cleaning and maintenance tips
 8. Troubleshooting - Common problems and solutions
-9. Warranty & Contact - Warranty terms and customer service info`,
+9. Warranty & Contact - Warranty terms and customer service info
+
+IMPORTANT: Spanish content must be natural, professional Spanish - not literal translation.`,
           },
           { role: "user", content: context },
         ],
@@ -84,7 +205,6 @@ The 9 chapters are:
         const parsed = JSON.parse(content.replace(/```json\n?|\n?```/g, ""));
         chapters = parsed.chapters || parsed;
       } catch {
-        // If AI returns non-JSON, create structured chapters from text
         chapters = MANUAL_CHAPTERS.map(ch => ({
           key: ch.key,
           titleEn: ch.titleEn,
@@ -109,7 +229,7 @@ The 9 chapters are:
   saveManual: protectedProcedure
     .input(z.object({
       projectId: z.number(),
-      chapters: z.string(), // JSON string of chapters array
+      chapters: z.string(),
       brandName: z.string().optional(),
       logoUrl: z.string().optional(),
       coverImageUrl: z.string().optional(),
@@ -132,30 +252,42 @@ The 9 chapters are:
       return { success: true };
     }),
 
-  // ─── Step 3: Generate HTML manuals (EN + ES) ──────────────
+  // ─── Step 3: Generate HTML manuals (EN + ES) with theme ───
   generateHtml: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const manual = await devDb.getDevManual(input.projectId);
-      if (!manual?.contentSections) throw new Error("请先生成说明书内容");
+      if (!manual?.contentSections) throw new Error("Please generate manual content first");
 
       let chapters: any[];
       try {
         chapters = JSON.parse(manual.contentSections as string);
       } catch {
-        throw new Error("说明书内容格式错误");
+        throw new Error("Manual content format error");
       }
 
-      const brandName = manual.brandName || "Brand";
-      const logoUrl = manual.logoUrl || "";
-      const coverImageUrl = manual.coverImageUrl || "";
-      const qrCodeUrl = manual.qrCodeUrl || "";
+      // Get assets from the assets table
+      const assets = await devDb.getDevManualAssets(input.projectId);
+      const contentBgAsset = assets.find((a: any) => a.assetType === "content_bg");
 
-      // Generate English HTML
-      const htmlEn = generateManualHtml(chapters, "en", brandName, logoUrl, coverImageUrl, qrCodeUrl);
-      const htmlEs = generateManualHtml(chapters, "es", brandName, logoUrl, coverImageUrl, qrCodeUrl);
+      const manualData = {
+        chapters,
+        brandName: manual.brandName || "Brand",
+        logoUrl: manual.logoUrl || "",
+        coverImageUrl: manual.coverImageUrl || "",
+        contentBgUrl: contentBgAsset?.fileUrl || "",
+        qrCodeUrl: manual.qrCodeUrl || "",
+      };
 
-      // Upload to S3
+      const themeConfig = {
+        themeStyle: (manual as any).themeStyle || "classic",
+        themeColor: (manual as any).themeColor || "#1a1a2e",
+        fontScheme: (manual as any).fontScheme || "default",
+      };
+
+      const htmlEn = generateThemedManualHtml(manualData, "en", themeConfig);
+      const htmlEs = generateThemedManualHtml(manualData, "es", themeConfig);
+
       const enKey = `manuals/${input.projectId}/manual-en-${Date.now()}.html`;
       const esKey = `manuals/${input.projectId}/manual-es-${Date.now()}.html`;
 
@@ -173,29 +305,81 @@ The 9 chapters are:
       return { htmlEnUrl: enResult.url, htmlEsUrl: esResult.url };
     }),
 
-  // ─── Export PDF ────────────────────────────────────────────
-  exportPdf: protectedProcedure
-    .input(z.object({ projectId: z.number(), language: z.enum(["en", "es"]) }))
+  // ─── Preview HTML (without saving to S3) ───────────────────
+  previewHtml: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      language: z.enum(["en", "es"]),
+    }))
     .mutation(async ({ ctx, input }) => {
       const manual = await devDb.getDevManual(input.projectId);
-      if (!manual?.contentSections) throw new Error("请先生成说明书内容");
+      if (!manual?.contentSections) throw new Error("Please generate manual content first");
 
       let chapters: any[];
       try {
         chapters = JSON.parse(manual.contentSections as string);
       } catch {
-        throw new Error("说明书内容格式错误");
+        throw new Error("Manual content format error");
       }
 
-      const brandName = manual.brandName || "Brand";
-      const logoUrl = manual.logoUrl || "";
-      const coverImageUrl = manual.coverImageUrl || "";
-      const qrCodeUrl = manual.qrCodeUrl || "";
+      const assets = await devDb.getDevManualAssets(input.projectId);
+      const contentBgAsset = assets.find((a: any) => a.assetType === "content_bg");
 
-      const html = generateManualHtml(chapters, input.language, brandName, logoUrl, coverImageUrl, qrCodeUrl);
+      const manualData = {
+        chapters,
+        brandName: manual.brandName || "Brand",
+        logoUrl: manual.logoUrl || "",
+        coverImageUrl: manual.coverImageUrl || "",
+        contentBgUrl: contentBgAsset?.fileUrl || "",
+        qrCodeUrl: manual.qrCodeUrl || "",
+      };
 
-      // Store HTML for PDF generation (client-side will handle actual PDF conversion)
-      const key = `manuals/${input.projectId}/manual-${input.language}-${Date.now()}.html`;
+      const themeConfig = {
+        themeStyle: (manual as any).themeStyle || "classic",
+        themeColor: (manual as any).themeColor || "#1a1a2e",
+        fontScheme: (manual as any).fontScheme || "default",
+      };
+
+      const html = generateThemedManualHtml(manualData, input.language, themeConfig);
+      return { html };
+    }),
+
+  // ─── Export PDF (generates print-ready HTML) ───────────────
+  exportPdf: protectedProcedure
+    .input(z.object({ projectId: z.number(), language: z.enum(["en", "es"]) }))
+    .mutation(async ({ ctx, input }) => {
+      const manual = await devDb.getDevManual(input.projectId);
+      if (!manual?.contentSections) throw new Error("Please generate manual content first");
+
+      let chapters: any[];
+      try {
+        chapters = JSON.parse(manual.contentSections as string);
+      } catch {
+        throw new Error("Manual content format error");
+      }
+
+      const assets = await devDb.getDevManualAssets(input.projectId);
+      const contentBgAsset = assets.find((a: any) => a.assetType === "content_bg");
+
+      const manualData = {
+        chapters,
+        brandName: manual.brandName || "Brand",
+        logoUrl: manual.logoUrl || "",
+        coverImageUrl: manual.coverImageUrl || "",
+        contentBgUrl: contentBgAsset?.fileUrl || "",
+        qrCodeUrl: manual.qrCodeUrl || "",
+      };
+
+      const themeConfig = {
+        themeStyle: (manual as any).themeStyle || "classic",
+        themeColor: (manual as any).themeColor || "#1a1a2e",
+        fontScheme: (manual as any).fontScheme || "default",
+      };
+
+      const html = generateThemedManualHtml(manualData, input.language, themeConfig);
+
+      // Upload print-ready HTML to S3
+      const key = `manuals/${input.projectId}/manual-print-${input.language}-${Date.now()}.html`;
       const result = await storagePut(key, Buffer.from(html, "utf-8"), "text/html");
 
       const pdfField = input.language === "en" ? "pdfEnUrl" : "pdfEsUrl";
@@ -208,7 +392,7 @@ The 9 chapters are:
       return { htmlUrl: result.url, html };
     }),
 
-  // ─── Test Report ───────────────────────────────────────────
+  // ─── 测试报告 (Test Report) ───────────────────────────────────────────
   getTestReport: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
@@ -227,9 +411,9 @@ The 9 chapters are:
 
       const context = `Product: ${project.name}
 Target Market: ${project.targetMarket}
-Competitors: ${products.slice(0, 3).map(p => `${p.title} | ${p.rating}★`).join("; ")}
+Competitors: ${products.slice(0, 3).map((p: any) => `${p.title} | ${p.rating}★`).join("; ")}
 ${profile ? `Functions: ${profile.mainFunctions || ""}\nMaterials: ${profile.appearanceColors || ""}` : ""}
-BOM: ${bom.map(b => `${b.partName}(${b.material || ""})`).join(", ")}`;
+BOM: ${bom.map((b: any) => `${b.partName}(${b.material || ""})`).join(", ")}`;
 
       const response = await invokeLLM({
         messages: [
@@ -245,9 +429,9 @@ Return JSON format:
     {
       "category": "installation|usage|drop|shipping|function|durability|safety|packaging",
       "nameEn": "Test Name (English)",
-      "nameCn": "测试名称 (中文)",
+      "nameCn": "Test Name (Chinese)",
       "descEn": "Test description in English",
-      "descCn": "测试描述（中文）",
+      "descCn": "Test description in Chinese",
       "requirement": "Test requirement/standard",
       "passStandard": "Pass criteria",
       "testMethod": "Testing method",
@@ -259,14 +443,14 @@ Return JSON format:
 }
 
 8 categories:
-1. Installation Tests (安装测试) - Assembly, mounting, setup
-2. Usage Tests (使用测试) - Normal operation, user interaction
-3. Drop Tests (跌落测试) - Various heights and angles
-4. Shipping Tests (运输测试) - Vibration, compression, stacking
-5. Function Tests (功能测试) - All features verification
-6. Durability Tests (耐久性测试) - Lifecycle, wear, fatigue
-7. Safety Tests (安全测试) - CPSC, electrical, chemical
-8. Packaging Tests (包装测试) - Seal, label, barcode
+1. Installation Tests - Assembly, mounting, setup
+2. Usage Tests - Normal operation, user interaction
+3. Drop Tests - Various heights and angles
+4. Shipping Tests - Vibration, compression, climate
+5. Function Tests - All features verification
+6. Durability Tests - Lifecycle, wear, fatigue
+7. Safety Tests - CPSC, electrical, chemical
+8. Packaging Tests - Seal, label, barcode
 
 Generate 2-4 test items per category. Consider US market regulations (CPSC, FDA, FCC, UL).`,
           },
@@ -294,11 +478,10 @@ Generate 2-4 test items per category. Consider US market regulations (CPSC, FDA,
       return { testItems };
     }),
 
-  // Save test report with status tracking
   saveTestReport: protectedProcedure
     .input(z.object({
       projectId: z.number(),
-      testItems: z.string(), // JSON string of test items
+      testItems: z.string(),
       status: z.enum(["draft", "editing", "confirmed"]).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -311,7 +494,6 @@ Generate 2-4 test items per category. Consider US market regulations (CPSC, FDA,
       return { success: true };
     }),
 
-  // Update individual test item status
   updateTestItemStatus: protectedProcedure
     .input(z.object({
       projectId: z.number(),
@@ -322,17 +504,17 @@ Generate 2-4 test items per category. Consider US market regulations (CPSC, FDA,
     }))
     .mutation(async ({ ctx, input }) => {
       const report = await devDb.getDevTestReport(input.projectId);
-      if (!report?.testItems) throw new Error("测试报告不存在");
+      if (!report?.testItems) throw new Error("Test report not found");
 
       let items: any[];
       try {
         items = JSON.parse(report.testItems as string);
       } catch {
-        throw new Error("测试项目数据格式错误");
+        throw new Error("Test items format error");
       }
 
       if (input.itemIndex < 0 || input.itemIndex >= items.length) {
-        throw new Error("测试项目索引无效");
+        throw new Error("Invalid test item index");
       }
 
       items[input.itemIndex].testStatus = input.testStatus;
@@ -348,31 +530,29 @@ Generate 2-4 test items per category. Consider US market regulations (CPSC, FDA,
       return { success: true, items };
     }),
 
-  // Export test report as Excel (returns data for client-side generation)
   exportTestExcel: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const report = await devDb.getDevTestReport(input.projectId);
-      if (!report?.testItems) throw new Error("测试报告不存在");
+      if (!report?.testItems) throw new Error("Test report not found");
 
       let items: any[];
       try {
         items = JSON.parse(report.testItems as string);
       } catch {
-        throw new Error("测试项目数据格式错误");
+        throw new Error("Test items format error");
       }
 
-      // Return structured data for client-side Excel generation
       return {
         items,
         headers: [
-          "Category", "Test Name (EN)", "测试名称 (CN)", "Description (EN)", "描述 (CN)",
+          "Category", "Test Name (EN)", "Test Name (CN)", "Description (EN)", "Description (CN)",
           "Requirement", "Pass Standard", "Test Method", "Status", "Actual Result", "Notes"
         ],
       };
     }),
 
-  // ─── Manual Asset Management ──────────────────────────────────
+  // ─── Manual Asset Management ──────────────────────────────
   getManualAssets: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
@@ -382,10 +562,10 @@ Generate 2-4 test items per category. Consider US market regulations (CPSC, FDA,
   uploadManualAsset: protectedProcedure
     .input(z.object({
       projectId: z.number(),
-      assetType: z.enum(["logo", "cover", "content_bg", "qrcode", "chapter_image", "other"]),
+      assetType: z.enum(["logo", "cover", "content_bg", "qrcode", "chapter_image", "reference", "other"]),
       chapterKey: z.string().optional(),
       fileName: z.string(),
-      fileData: z.string(), // base64 encoded
+      fileData: z.string(),
       mimeType: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -403,13 +583,15 @@ Generate 2-4 test items per category. Consider US market regulations (CPSC, FDA,
         fileUrl: url,
       });
 
-      // Also update the manual record for logo/cover/qrcode
+      // Auto-update manual record for specific asset types
       if (input.assetType === "logo") {
         await devDb.upsertDevManual({ projectId: input.projectId, userId: ctx.user.id, logoUrl: url });
       } else if (input.assetType === "cover") {
         await devDb.upsertDevManual({ projectId: input.projectId, userId: ctx.user.id, coverImageUrl: url });
       } else if (input.assetType === "qrcode") {
         await devDb.upsertDevManual({ projectId: input.projectId, userId: ctx.user.id, qrCodeUrl: url });
+      } else if (input.assetType === "reference") {
+        await devDb.upsertDevManual({ projectId: input.projectId, userId: ctx.user.id, referenceManualUrl: url });
       }
 
       return { id: result.id, url, assetType: input.assetType };
@@ -422,73 +604,3 @@ Generate 2-4 test items per category. Consider US market regulations (CPSC, FDA,
       return { success: true };
     }),
 });
-
-function generateManualHtml(
-  chapters: any[],
-  lang: string,
-  brandName: string,
-  logoUrl: string,
-  coverImageUrl: string,
-  qrCodeUrl: string
-): string {
-  const isEn = lang === "en";
-  const title = isEn ? `${brandName} Product Manual` : `${brandName} Manual del Producto`;
-
-  const chaptersHtml = chapters.map((ch, i) => {
-    const chTitle = isEn ? (ch.titleEn || ch.key) : (ch.titleEs || ch.titleEn || ch.key);
-    const chContent = isEn ? (ch.contentEn || "") : (ch.contentEs || ch.contentEn || "");
-    return `
-    <div class="chapter">
-      <h2>${i + 1}. ${chTitle}</h2>
-      <div class="content">${chContent.replace(/\n/g, "<br/>")}</div>
-    </div>`;
-  }).join("\n");
-
-  return `<!DOCTYPE html>
-<html lang="${lang}">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; line-height: 1.6; }
-    .cover { text-align: center; padding: 60px 40px; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: white; min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-    .cover img.logo { max-width: 200px; margin-bottom: 30px; }
-    .cover img.cover-bg { max-width: 400px; margin: 20px 0; border-radius: 12px; }
-    .cover h1 { font-size: 2.5em; margin: 20px 0; }
-    .cover .subtitle { font-size: 1.2em; opacity: 0.8; }
-    .toc { padding: 40px; max-width: 800px; margin: 0 auto; }
-    .toc h2 { font-size: 1.8em; margin-bottom: 20px; border-bottom: 2px solid #1a1a2e; padding-bottom: 10px; }
-    .toc ul { list-style: none; }
-    .toc li { padding: 8px 0; border-bottom: 1px solid #eee; font-size: 1.1em; }
-    .toc li span { color: #666; }
-    .chapter { padding: 40px; max-width: 800px; margin: 0 auto; page-break-before: always; }
-    .chapter h2 { font-size: 1.6em; color: #1a1a2e; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #e0e0e0; }
-    .chapter .content { font-size: 1em; white-space: pre-wrap; }
-    .footer { text-align: center; padding: 40px; background: #f5f5f5; }
-    .footer img.qr { max-width: 120px; }
-    @media print { .cover { page-break-after: always; } .chapter { page-break-before: always; } }
-  </style>
-</head>
-<body>
-  <div class="cover">
-    ${logoUrl ? `<img class="logo" src="${logoUrl}" alt="Logo"/>` : ""}
-    ${coverImageUrl ? `<img class="cover-bg" src="${coverImageUrl}" alt="Cover"/>` : ""}
-    <h1>${title}</h1>
-    <p class="subtitle">${isEn ? "User Manual" : "Manual de Usuario"}</p>
-  </div>
-  <div class="toc">
-    <h2>${isEn ? "Table of Contents" : "Índice"}</h2>
-    <ul>
-      ${chapters.map((ch, i) => `<li>${i + 1}. ${isEn ? (ch.titleEn || ch.key) : (ch.titleEs || ch.titleEn || ch.key)}</li>`).join("\n      ")}
-    </ul>
-  </div>
-  ${chaptersHtml}
-  <div class="footer">
-    ${qrCodeUrl ? `<img class="qr" src="${qrCodeUrl}" alt="QR Code"/>` : ""}
-    <p>&copy; ${new Date().getFullYear()} ${brandName}. All rights reserved.</p>
-  </div>
-</body>
-</html>`;
-}

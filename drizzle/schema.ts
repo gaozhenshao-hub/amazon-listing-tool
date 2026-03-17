@@ -798,6 +798,13 @@ export const devProductManuals = mysqlTable("dev_product_manuals", {
   pdfEsUrl: text("pdfEsUrl"), // S3 URL for Spanish PDF
   contentStatus: mysqlEnum("contentStatus", ["draft", "editing", "confirmed"]).default("draft").notNull(),
   finalManualUrl: text("finalManualUrl"), // S3 URL for final combined PDF
+  // Theme & style configuration
+  themeStyle: varchar("themeStyle", { length: 50 }).default("classic"), // classic|modern|minimal|business|creative
+  themeColor: varchar("themeColor", { length: 50 }).default("#1a1a2e"), // Primary color hex
+  fontScheme: varchar("fontScheme", { length: 50 }).default("default"), // default|serif|sans|elegant|tech
+  // Reference manual
+  referenceManualUrl: text("referenceManualUrl"), // Uploaded reference manual PDF/image URL
+  referenceManualNotes: text("referenceManualNotes"), // AI analysis notes from reference
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -1120,7 +1127,7 @@ export const devManualAssets = mysqlTable("dev_manual_assets", {
   id: int("id").autoincrement().primaryKey(),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
-  assetType: mysqlEnum("assetType", ["logo", "cover", "content_bg", "qrcode", "chapter_image", "other"]).notNull(),
+  assetType: mysqlEnum("assetType", ["logo", "cover", "content_bg", "qrcode", "chapter_image", "reference", "other"]).notNull(),
   chapterKey: varchar("chapterKey", { length: 100 }), // for chapter-specific assets
   fileName: varchar("fileName", { length: 255 }),
   fileUrl: text("fileUrl").notNull(), // S3 URL

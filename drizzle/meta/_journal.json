@@ -176,6 +176,20 @@
       "when": 1773733819693,
       "tag": "0024_unusual_blackheart",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1773736276461,
+      "tag": "0025_salty_plazm",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "5",
+      "when": 1773736739193,
+      "tag": "0026_first_bishop",
+      "breakpoints": true
     }
   ]
 }
