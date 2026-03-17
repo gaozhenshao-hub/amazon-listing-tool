@@ -453,6 +453,22 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
     return result;
   }, [data?.tagItems, data?.tagMap]);
 
+  // Count products per tag value for filter display
+  const tagValueCounts = useMemo(() => {
+    if (!data?.products || !data?.tagMap) return {} as Record<string, Record<string, number>>;
+    const counts: Record<string, Record<string, number>> = {};
+    for (const p of data.products) {
+      if (!p.asin) continue;
+      const asinTags = data.tagMap[p.asin] || {};
+      for (const [catName, catValue] of Object.entries(asinTags as Record<string, string>)) {
+        if (!catValue) continue;
+        if (!counts[catName]) counts[catName] = {};
+        counts[catName][catValue] = (counts[catName][catValue] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [data?.products, data?.tagMap]);
+
   // Build columns: fixed + history + tags
   const columns = useMemo(() => {
     if (!data) return FIXED_COLUMNS;
@@ -826,17 +842,21 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                       <div className="flex flex-wrap gap-1">
                         {values.map(val => {
                           const isSelected = selectedInCat.has(val);
+                          const count = tagValueCounts[catName]?.[val] || 0;
                           return (
                             <button
                               key={val}
                               onClick={() => toggleTagFilter(catName, val)}
-                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border transition-all ${
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] border transition-all ${
                                 isSelected
                                   ? "bg-primary text-primary-foreground border-primary shadow-sm"
                                   : "bg-background text-foreground border-border hover:border-primary/50 hover:bg-primary/5"
                               }`}
                             >
                               {val}
+                              <span className={`text-[9px] font-medium ${
+                                isSelected ? "text-primary-foreground/80" : "text-muted-foreground"
+                              }`}>({count})</span>
                             </button>
                           );
                         })}
