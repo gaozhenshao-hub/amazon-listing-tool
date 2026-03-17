@@ -116,7 +116,7 @@ describe("devAnalysisPrompts", () => {
   it("should export all 7 stage prompt generators", async () => {
     const prompts = await import("./devAnalysisPrompts");
     
-    // ATTRIBUTE_TAGGING_PROMPT is kept in prompts file but no longer used by devAnalysis router
+    // ATTRIBUTE_TAGGING_PROMPT has been removed from prompts file (moved to devTagging router)
     expect(prompts.MARKET_OVERVIEW_PROMPT).toBeDefined();
     expect(prompts.ATTRIBUTE_ANALYSIS_PROMPT).toBeDefined();
     expect(prompts.PRICE_ANALYSIS_PROMPT).toBeDefined();

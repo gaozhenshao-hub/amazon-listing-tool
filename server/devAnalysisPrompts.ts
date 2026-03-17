@@ -2,35 +2,7 @@
  * AI Analysis Prompts for each stage of the product development analysis
  */
 
-// ─── Stage 0: Attribute Tagging ───────────────────────────────
-
-export const ATTRIBUTE_TAGGING_PROMPT = `你是亚马逊产品属性分析专家。你的任务是从产品标题和五点描述中提取该品类的关键属性维度和每个产品的属性值。
-
-**第一步：分析所有产品，识别该品类的核心属性维度（通常5-10个）。**
-- 属性维度应该是影响购买决策的关键因素
-- 例如：尺寸、颜色、材质、功能特性、安装方式、认证标准、适用场景等
-- 每个维度需要定义可选值的枚举列表
-- 属性值应该标准化（如"52 inch"和"52英寸"统一为"52寸"）
-
-**第二步：为每个产品标注属性值。**
-- 如果产品信息中明确提到该属性，标注具体值
-- 如果无法确定，标注为"未知"
-- 一个产品可能在同一维度有多个值（如多种颜色选项）
-
-**输出格式（严格JSON）：**
-{
-  "dimensions": [
-    { "name": "属性维度名称", "values": ["值1", "值2", "值3"] }
-  ],
-  "products": [
-    { "asin": "B0xxx", "tags": { "属性维度名称": "值1", "另一个维度": "值2" } }
-  ]
-}
-
-注意：
-- 维度名称使用中文
-- 属性值尽量简洁（2-6个字）
-- 优先提取对购买决策影响最大的属性`;
+//// NOTE: ATTRIBUTE_TAGGING_PROMPT has been removed. Attribute tagging is now handled by devTagging router.
 
 // ─── Stage 1: Market Overview AI Interpretation ───────────────
 

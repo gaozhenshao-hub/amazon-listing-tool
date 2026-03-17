@@ -642,24 +642,7 @@ export async function getDevProductTagsByAsin(projectId: number, asin: string) {
   );
 }
 
-export async function bulkInsertDevProductTags(tags: InsertDevProductTag[]) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  if (tags.length === 0) return;
-  // Delete existing tags for the project first
-  const projectId = tags[0].projectId;
-  await db.delete(devProductTags).where(eq(devProductTags.projectId, projectId));
-  // Insert in batches of 100
-  for (let i = 0; i < tags.length; i += 100) {
-    await db.insert(devProductTags).values(tags.slice(i, i + 100));
-  }
-}
-
-export async function updateDevProductTag(id: number, data: Partial<InsertDevProductTag>) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.update(devProductTags).set(data).where(eq(devProductTags.id, id));
-}
+// NOTE: bulkInsertDevProductTags and updateDevProductTag removed — attribute tagging now handled by devTagging router.
 
 export async function confirmAllDevProductTags(projectId: number) {
   const db = await getDb();

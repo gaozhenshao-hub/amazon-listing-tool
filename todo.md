@@ -985,3 +985,8 @@
 - [x] 移除devAnalysis.ts中confirmAllTags、getProductTags、updateProductTag procedures
 - [x] 确认前端无残留引用（已在上一次重构中完成迁移）
 - [x] 54个测试文件全部通过，1187 tests passed
+
+## 清理死代码 (2026-03-17)
+- [x] 删除devAnalysisPrompts.ts中ATTRIBUTE_TAGGING_PROMPT常量
+- [x] 清理devDb.ts中bulkInsertDevProductTags和updateDevProductTag（confirmAllDevProductTags保留，devTagging仍在使用）
+- [x] 54个测试文件全部通过，1187 tests passed
