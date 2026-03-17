@@ -6,7 +6,6 @@ import { useLocation } from "wouter";
 import {
   FolderOpen,
   PlusCircle,
-  BarChart3,
   Package,
   TrendingUp,
   Clock,
@@ -132,20 +131,6 @@ export default function DevDashboard() {
               <div>
                 <h3 className="font-semibold">项目列表</h3>
                 <p className="text-sm text-muted-foreground">查看和管理所有产品开发项目</p>
-              </div>
-            </div>
-            <ArrowRight className="h-4 w-4 text-muted-foreground" />
-          </CardContent>
-        </Card>
-        <Card className="cursor-pointer hover:shadow-md transition-all" onClick={() => setLocation("/dev/profit-calculator")}>
-          <CardContent className="p-5 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                <BarChart3 className="h-6 w-6 text-emerald-500" />
-              </div>
-              <div>
-                <h3 className="font-semibold">利润计算器</h3>
-                <p className="text-sm text-muted-foreground">快速计算产品利润和ROI</p>
               </div>
             </div>
             <ArrowRight className="h-4 w-4 text-muted-foreground" />

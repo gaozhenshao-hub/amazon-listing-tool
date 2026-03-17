@@ -30,8 +30,6 @@ import DevNewProject from "./pages/dev/DevNewProject";
 import DevProjectList from "./pages/dev/DevProjectList";
 import DevProjectDetail from "./pages/dev/DevProjectDetail";
 import DevCompare from "./pages/dev/DevCompare";
-import DevTagSettings from "./pages/dev/DevTagSettings";
-import DevProfitCalculator from "./pages/dev/DevProfitCalculator";
 import DevSupplierLibrary from "./pages/dev/DevSupplierLibrary";
 import DevAnalysisFlow from "./pages/dev/DevAnalysisFlow";
 import DevOffsiteAnalysis from "./pages/dev/DevOffsiteAnalysis";
@@ -94,8 +92,6 @@ function Router() {
         <Route path="/dev/projects" component={DevProjectList} />
         <Route path="/dev/project/:id" component={DevProjectDetail} />
         <Route path="/dev/compare" component={DevCompare} />
-        <Route path="/dev/tag-settings" component={DevTagSettings} />
-        <Route path="/dev/profit-calculator" component={DevProfitCalculator} />
         <Route path="/dev/supplier-library" component={DevSupplierLibrary} />
         <Route path="/dev/project/:id/analysis" component={DevAnalysisFlow} />
         <Route path="/dev/project/:id/offsite" component={DevOffsiteAnalysis} />

@@ -990,3 +990,10 @@
 - [x] 删除devAnalysisPrompts.ts中ATTRIBUTE_TAGGING_PROMPT常量
 - [x] 清理devDb.ts中bulkInsertDevProductTags和updateDevProductTag（confirmAllDevProductTags保留，devTagging仍在使用）
 - [x] 54个测试文件全部通过，1187 tests passed
+
+## 删除侧边栏标签管理和利润计算器 (2026-03-17)
+- [x] 删除侧边栏中"标签管理"和"利润计算器"导航项
+- [x] 删除DevTagSettings.tsx和DevProfitCalculator.tsx页面文件
+- [x] 清理App.tsx中的路由注册和导入
+- [x] 后端无独立路由，无需清理
+- [x] 54个测试文件全部通过，1187 tests passed
