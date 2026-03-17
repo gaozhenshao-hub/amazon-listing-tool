@@ -45,6 +45,9 @@ import {
   Trash2,
   MessageCircle,
   HelpCircle,
+  Lock,
+  Unlock,
+  ArrowUpRight,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useState, useEffect, useMemo, useCallback } from "react";
@@ -140,12 +143,20 @@ export default function PreviewPage() {
 
   const imageAdvice = useMemo(() => {
     if (!listing?.imageAdvice) return null;
-    try { return JSON.parse(listing.imageAdvice); } catch { return null; }
+    try {
+      const parsed = JSON.parse(listing.imageAdvice);
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+      return parsed;
+    } catch { return null; }
   }, [listing?.imageAdvice]);
 
   const imageAdviceCn = useMemo(() => {
     if (!listing?.imageAdviceCn) return null;
-    try { return JSON.parse(listing.imageAdviceCn); } catch { return null; }
+    try {
+      const parsed = JSON.parse(listing.imageAdviceCn);
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null;
+      return parsed;
+    } catch { return null; }
   }, [listing?.imageAdviceCn]);
 
   const qaContent = useMemo(() => {
@@ -183,6 +194,26 @@ export default function PreviewPage() {
     if (completionItems.length === 0) return 0;
     return Math.round((completionItems.filter(i => i.done).length / completionItems.length) * 100);
   }, [completionItems]);
+
+  // Parse locked steps from listing
+  const lockedSteps = useMemo(() => {
+    if (!(listing as any)?.lockedSteps) return [];
+    try {
+      const parsed = JSON.parse((listing as any).lockedSteps);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  }, [(listing as any)?.lockedSteps]);
+
+  const STEP_LABELS = [
+    { step: 1, label: "卖点精雕", icon: List },
+    { step: 2, label: "标题生成", icon: Type },
+    { step: 3, label: "描述生成", icon: FileText },
+    { step: 4, label: "搜索词", icon: Key },
+    { step: 5, label: "QA问答", icon: MessageCircle },
+  ];
+
+  const lockedCount = lockedSteps.length;
+  const allLocked = lockedCount === 5;
 
   // Version history
   const [expandedVersionId, setExpandedVersionId] = useState<number | null>(null);
@@ -352,10 +383,79 @@ export default function PreviewPage() {
         </Card>
       ) : (
         <Tabs defaultValue="preview" className="space-y-4">
+          {/* Step Lock Progress Bar */}
+          <Card className="mb-2">
+            <CardContent className="py-4 px-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Lock className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-semibold">工作台步骤锁定状态</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{lockedCount}/5 已锁定</span>
+                  {allLocked ? (
+                    <Badge className="bg-green-600 text-white text-xs">全部完成</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs border-amber-300 text-amber-600">待完善</Badge>
+                  )}
+                </div>
+              </div>
+              {/* Progress bar */}
+              <div className="w-full bg-muted rounded-full h-2 mb-3">
+                <div
+                  className={`h-2 rounded-full transition-all duration-500 ${allLocked ? 'bg-green-500' : 'bg-primary'}`}
+                  style={{ width: `${(lockedCount / 5) * 100}%` }}
+                />
+              </div>
+              {/* Step indicators */}
+              <div className="grid grid-cols-5 gap-2">
+                {STEP_LABELS.map(({ step, label, icon: Icon }) => {
+                  const isLocked = lockedSteps.includes(step);
+                  return (
+                    <div
+                      key={step}
+                      className={`flex flex-col items-center gap-1.5 p-2 rounded-lg border transition-all ${
+                        isLocked
+                          ? 'bg-green-50 border-green-200 dark:bg-green-950/30 dark:border-green-800'
+                          : 'bg-amber-50/50 border-amber-200/60 dark:bg-amber-950/20 dark:border-amber-800/40'
+                      }`}
+                    >
+                      <div className={`flex items-center gap-1 ${
+                        isLocked ? 'text-green-600' : 'text-amber-500'
+                      }`}>
+                        {isLocked ? (
+                          <Lock className="h-3.5 w-3.5" />
+                        ) : (
+                          <Unlock className="h-3.5 w-3.5" />
+                        )}
+                        <Icon className="h-3.5 w-3.5" />
+                      </div>
+                      <span className={`text-xs font-medium ${
+                        isLocked ? 'text-green-700' : 'text-amber-600'
+                      }`}>
+                        {label}
+                      </span>
+                      {isLocked ? (
+                        <Badge className="bg-green-100 text-green-700 border-green-300 text-[10px] px-1.5 py-0">已锁定</Badge>
+                      ) : (
+                        <button
+                          onClick={() => setLocation('/listing/generate')}
+                          className="flex items-center gap-0.5 text-[10px] text-amber-600 hover:text-amber-800 hover:underline transition-colors"
+                        >
+                          待完善 <ArrowUpRight className="h-2.5 w-2.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+
           <TabsList>
             <TabsTrigger value="preview">
               <Eye className="h-3.5 w-3.5 mr-1.5" />
-              \u9884\u89c8\u7f16\u8f91
+              预览编辑
             </TabsTrigger>
             <TabsTrigger value="bilingual">
               <Languages className="h-3.5 w-3.5 mr-1.5" />
@@ -1104,7 +1204,7 @@ export default function PreviewPage() {
                               </div>
                             </div>
                           )}
-                          {imageAdvice.mainImage.keyElements && (
+                          {Array.isArray(imageAdvice.mainImage.keyElements) && imageAdvice.mainImage.keyElements.length > 0 && (
                             <div>
                               <p className="text-xs font-medium text-blue-700 mb-1">关键元素</p>
                               <div className="flex flex-wrap gap-1.5">
@@ -1114,7 +1214,7 @@ export default function PreviewPage() {
                               </div>
                             </div>
                           )}
-                          {imageAdvice.mainImage.tips && (
+                          {Array.isArray(imageAdvice.mainImage.tips) && imageAdvice.mainImage.tips.length > 0 && (
                             <div>
                               <p className="text-xs font-medium text-blue-700 mb-1">拍摄提示</p>
                               <ul className="text-sm space-y-1 text-muted-foreground">
@@ -1166,7 +1266,7 @@ export default function PreviewPage() {
                 )}
 
                 {/* Secondary Images */}
-                {imageAdvice.secondaryImages && imageAdvice.secondaryImages.length > 0 && (
+                {Array.isArray(imageAdvice.secondaryImages) && imageAdvice.secondaryImages.length > 0 && (
                   <Card>
                     <CardHeader>
                       <CardTitle className="text-base">辅图建议 ({imageAdvice.secondaryImages.length} 张)</CardTitle>
@@ -1198,14 +1298,14 @@ export default function PreviewPage() {
                                       <p className="text-sm text-muted-foreground">{img.dataVisualization}</p>
                                     </div>
                                   )}
-                                  {img.keyElements && (
+                                  {Array.isArray(img.keyElements) && img.keyElements.length > 0 && (
                                     <div className="flex flex-wrap gap-1">
                                       {img.keyElements.map((e: string, j: number) => (
                                         <Badge key={j} variant="secondary" className="text-[10px]">{e}</Badge>
                                       ))}
                                     </div>
                                   )}
-                                  {img.icons && img.icons.length > 0 && (
+                                  {Array.isArray(img.icons) && img.icons.length > 0 && (
                                     <div>
                                       <p className="text-xs font-medium text-blue-700">图标建议</p>
                                       <div className="flex flex-wrap gap-1">
@@ -1222,7 +1322,7 @@ export default function PreviewPage() {
                                       {img.colorScheme.accent && <span className="text-xs">点缀色: {img.colorScheme.accent}</span>}
                                     </div>
                                   )}
-                                  {img.tips && img.tips.length > 0 && (
+                                  {Array.isArray(img.tips) && img.tips.length > 0 && (
                                     <ul className="text-xs text-muted-foreground space-y-0.5">
                                       {img.tips.map((t: string, j: number) => <li key={j}>• {t}</li>)}
                                     </ul>
@@ -1235,7 +1335,7 @@ export default function PreviewPage() {
                                       <p className="text-sm text-orange-900">{imgCn.concept || imgCn.content}</p>
                                       {imgCn.expressionMethod && <p className="text-xs text-orange-700">表达方式: {imgCn.expressionMethod}</p>}
                                       {imgCn.dataVisualization && <p className="text-xs text-orange-700">数据可视化: {imgCn.dataVisualization}</p>}
-                                      {imgCn.tips && imgCn.tips.length > 0 && (
+                                      {Array.isArray(imgCn.tips) && imgCn.tips.length > 0 && (
                                         <ul className="text-xs text-orange-700 space-y-0.5">
                                           {imgCn.tips.map((t: string, j: number) => <li key={j}>• {t}</li>)}
                                         </ul>
@@ -1278,7 +1378,7 @@ export default function PreviewPage() {
                           <p className="text-sm mt-1 text-orange-900">{imageAdviceCn?.aPlusContent?.overallStrategy || "暂无中文翻译"}</p>
                         </div>
                       </div>
-                      {imageAdvice.aPlusContent.sections && (
+                      {Array.isArray(imageAdvice.aPlusContent.sections) && imageAdvice.aPlusContent.sections.length > 0 && (
                         <div className="space-y-4">
                           {imageAdvice.aPlusContent.sections.map((section: any, i: number) => {
                             const sectionCn = imageAdviceCn?.aPlusContent?.sections?.[i];

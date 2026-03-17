@@ -1217,3 +1217,7 @@
 ## BUG修复：PreviewPage qaContent.map is not a function (2026-03-17)
 - [x] 排查原因：qaContent解析后可能不是数组，且(x as any[] || [])运算符优先级错误
 - [x] 修复：useMemo解析时增加Array.isArray检查，替换所有不安全的as any[]强转
+
+## 预览页进度条 + 全局防御性JSON校验 (2026-03-17)
+- [x] 预览页顶部步骤锁定状态进度条（显示Step 1-5锁定状态，未锁定标记"待完善"+快速跳转链接）
+- [x] 全局防御性JSON解析校验（imageAdvice/imageAdviceCn/qaContent/bulletPoints等所有JSON字段增加Array.isArray/typeof校验，27个测试通过）
