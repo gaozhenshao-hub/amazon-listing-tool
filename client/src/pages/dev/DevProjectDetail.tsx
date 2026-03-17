@@ -9,13 +9,14 @@ import {
   ArrowLeft, BarChart3, FileText, Loader2, Package, Star, Target, Users,
   Wrench, ClipboardCheck, Brain, RefreshCw, Globe, Upload, CheckCircle2,
   AlertCircle, DollarSign, Download, Lock, Unlock, ChevronRight,
-  Edit2, Save, X, ArrowDownUp, Copy, Tags, FileUp, FileDown, Eye,
+  Edit2, Save, X, ArrowDownUp, Copy, Tags, Tag, FileUp, FileDown, Eye,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import DevDataUpload from "./DevDataUpload";
 import PanoramaTable from "./PanoramaTable";
+import AttributeTagging from "./AttributeTagging";
 
 const statusLabel: Record<string, { text: string; color: string }> = {
   draft: { text: "草稿", color: "bg-gray-500/10 text-gray-600" },
@@ -87,6 +88,7 @@ export default function DevProjectDetail() {
     { value: "overview", label: "概览", icon: Target },
     { value: "data", label: "数据管理", icon: Upload },
     { value: "tags", label: "标签管理", icon: Tags },
+    { value: "tagging", label: "属性标注", icon: Tag },
     { value: "panorama", label: "全景分析表", icon: FileText },
     { value: "analysis", label: "分析报告", icon: BarChart3 },
     { value: "offsite", label: "站外分析", icon: Globe },
@@ -237,6 +239,11 @@ export default function DevProjectDetail() {
           <ProjectTagManager projectId={projectId} />
         </TabsContent>
 
+        {/* Attribute Tagging */}
+        <TabsContent value="tagging" className="space-y-4">
+          <AttributeTagging projectId={projectId} />
+        </TabsContent>
+
         {/* Panorama Table */}
         <TabsContent value="panorama" className="space-y-4">
           <PanoramaTable projectId={projectId} />
@@ -247,7 +254,7 @@ export default function DevProjectDetail() {
           <Card><CardContent className="flex flex-col items-center justify-center py-12">
             <BarChart3 className="h-10 w-10 mb-3 text-primary opacity-60" />
             <p className="text-sm font-medium">市场分析工作台</p>
-            <p className="text-xs text-muted-foreground mt-1">7阶段数据驱动分析：属性标注 → 市场大盘 → 属性交叉 → 价格段 → 品牌竞争 → 评论深度 → 综合决策</p>
+            <p className="text-xs text-muted-foreground mt-1">6阶段数据驱动分析：市场大盘 → 属性交叉 → 价格段 → 品牌竞争 → 评论深度 → 综合决策（属性标注已独立为单独tab）</p>
             <Button className="mt-4 gap-2" onClick={() => setLocation(`/dev/project/${projectId}/analysis`)}>
               <BarChart3 className="h-4 w-4" />
               进入分析工作台

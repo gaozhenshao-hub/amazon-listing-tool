@@ -957,3 +957,14 @@
 - [x] 前端: tagValueCounts useMemo计算每个标签值对应的产品数量
 - [x] 前端: 筛选器中每个标签值旁显示产品数量如"防水(12)"，选中/未选中状态下数字颜色自适应
 - [x] 测试: 全部1066个测试通过，0个TS错误
+
+## 属性标注与标签管理打通重构 (2026-03-17)
+- [x] 后端: 重写devTagging.startTagging，读取devProjectTagCategories维度框架，按维度名称为每个ASIN打标
+- [x] 后端: 打标结果写入dev_product_tags表，dimensionName与标签管理categoryName一致
+- [x] 后端: 新增属性标注状态查询和确认/解锁接口
+- [x] 前端: 属性标注从分析工作台(DevAnalysisFlow)中拆分为独立tab
+- [x] 前端: 新增独立的"属性标注"tab，放在标签管理和全景分析表之间
+- [x] 前端: 属性标注页面展示打标进度、结果预览、手动编辑、确认锁定
+- [x] 逻辑: 更新分析工作台描述，标注属性标注已独立为单独tab
+- [x] 逻辑: 全景表属性标签列读取统一后的dev_product_tags数据（已验证devPanorama.getData正确读取）
+- [x] 测试: 65个vitest测试全部通过，验证打通后的完整流程（1131 tests total）
