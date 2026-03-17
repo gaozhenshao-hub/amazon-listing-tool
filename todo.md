@@ -1213,3 +1213,7 @@
 - [x] 前端: 批量自检 — 汇总区域增加"一键全部自检"按钮（跳过已评估的）
 - [x] 前端: 自检结果持久化 — checkListScores保存到DB，页面刷新不丢失
 - [x] 编写vitest测试（24个测试，全部66个文件1628个测试通过）
+
+## BUG修复：PreviewPage qaContent.map is not a function (2026-03-17)
+- [x] 排查原因：qaContent解析后可能不是数组，且(x as any[] || [])运算符优先级错误
+- [x] 修复：useMemo解析时增加Array.isArray检查，替换所有不安全的as any[]强转

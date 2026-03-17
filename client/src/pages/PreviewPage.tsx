@@ -150,12 +150,18 @@ export default function PreviewPage() {
 
   const qaContent = useMemo(() => {
     if (!(listing as any)?.qaContent) return null;
-    try { return JSON.parse((listing as any).qaContent); } catch { return null; }
+    try {
+      const parsed = JSON.parse((listing as any).qaContent);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch { return null; }
   }, [(listing as any)?.qaContent]);
 
   const qaContentCn = useMemo(() => {
     if (!(listing as any)?.qaContentCn) return null;
-    try { return JSON.parse((listing as any).qaContentCn); } catch { return null; }
+    try {
+      const parsed = JSON.parse((listing as any).qaContentCn);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch { return null; }
   }, [(listing as any)?.qaContentCn]);
 
   const hasChinese = !!(listing?.titleCn || listing?.bulletPointsCn || listing?.descriptionCn || listing?.searchTermsCn);
@@ -675,7 +681,7 @@ export default function PreviewPage() {
                   </CardTitle>
                   {!isEditing && qaContent && (
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
-                      const qaText = (qaContent as any[]).map((qa: any, i: number) => `Q${i+1}: ${qa.question}\nA${i+1}: ${qa.answer}`).join('\n\n');
+                      const qaText = (Array.isArray(qaContent) ? qaContent : []).map((qa: any, i: number) => `Q${i+1}: ${qa.question}\nA${i+1}: ${qa.answer}`).join('\n\n');
                       copyToClipboard(qaText, "QA问答");
                     }}>
                       <Copy className="h-3.5 w-3.5" />
@@ -686,7 +692,7 @@ export default function PreviewPage() {
               <CardContent>
                 {qaContent && Array.isArray(qaContent) && qaContent.length > 0 ? (
                   <div className="space-y-3">
-                    {(qaContent as any[]).map((qa: any, i: number) => (
+                    {qaContent.map((qa: any, i: number) => (
                       <div key={i} className="rounded-lg border p-3 space-y-2">
                         <div className="flex items-start gap-2">
                           <HelpCircle className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
@@ -972,7 +978,7 @@ export default function PreviewPage() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                      {(qaContent as any[] || []).map((qa: any, i: number) => {
+                      {(Array.isArray(qaContent) ? qaContent : []).map((qa: any, i: number) => {
                         const cnQa = qaContentCn && Array.isArray(qaContentCn) ? (qaContentCn as any[])[i] : null;
                         return (
                           <div key={i} className="rounded-lg border overflow-hidden">
