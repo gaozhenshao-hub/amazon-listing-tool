@@ -1141,3 +1141,40 @@
 - [x] 检查: 解锁后可正常编辑内容 — 浏览器验证通过
 - [x] 检查: 编辑后保存正常工作 — 保存/确认锁定按钮正常显示
 - [x] 新增: profileUnlock.test.ts - 70个测试用例覆盖完整解锁功能
+
+## Listing生成工具V3优化 (2026-03-17)
+
+### Phase 1: 数据聚合层 + 数据库
+- [x] 新建 server/listingContext.ts 统一聚合4大数据源
+- [x] listings表新增 qaContent 和 qaContentCn 字段
+
+### Phase 2: Prompt增强 + 后端API
+- [x] 增强 TITLE_GENERATION_PROMPT (10维度Check List + 4大数据源上下文)
+- [x] 增强 SELLING_POINTS_CORE_PROMPT (7维度覆盖要求 + 数据源上下文)
+- [x] 增强 SINGLE_BULLET_PROMPT (15维度Check List + checkListScores输出)
+- [x] 新增 QA_GENERATION_PROMPT + generateQA API + checkDataReadiness API
+- [x] 更新 translateToChinese 支持QA字段
+- [x] 更新 update API 支持QA字段 + fieldMap添加QA映射
+
+### Phase 3: GeneratePage改造
+- [x] 改造为分步引导式布局 (Step 1-5 进度指示器)
+- [x] 新增数据就绪检查面板
+- [x] Step 1卖点精雕保留现有功能
+- [x] 新增Step 2标题生成板块UI (StepTitle.tsx - 10维度Check List)
+- [x] 新增Step 3产品描述生成板块UI (StepDescription.tsx)
+- [x] 新增Step 4搜索词生成板块UI (StepSearchTerms.tsx)
+- [x] 新增Step 5 QA生成板块UI (StepQA.tsx)
+- [x] 后端新增 updateByProject API端点
+
+### Phase 4: PreviewPage修复
+- [x] 各板块空状态处理（引导用户去Step 5生成QA）
+- [x] 新增QA展示板块（预览编辑Tab，含分类/优先级/来源洞察）
+- [x] 中英对比Tab新增QA对比（左右分栏布局）
+- [x] 新增Listing完成度进度条（6项指标：标题/卖点/描述/搜索词/QA/翻译）
+
+### Phase 5: 测试
+- [x] listingContext.ts 数据聚合测试 (4大模块 + 数据就绪检查 + 上下文转换)
+- [x] 后端API测试 (generateQA + updateByProject + checkDataReadiness + 翻译QA支持)
+- [x] Check List评分测试 (标题10维度 + 卖点15维度 Prompt包含性验证)
+- [x] 前端组件测试 (5个Step组件存在性 + GeneratePage 5步布局 + PreviewPage QA板块)
+- [x] 全部 63个测试文件、1491个测试用例通过

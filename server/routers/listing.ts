@@ -13,7 +13,9 @@ import {
   SELLING_POINTS_CORE_PROMPT,
   SINGLE_BULLET_PROMPT,
   EXPAND_KEYWORD_TO_FABE_PROMPT,
+  QA_GENERATION_PROMPT,
 } from "../prompts";
+import { buildListingContext, checkDataReadiness, contextToPromptText } from "../listingContext";
 
 const MAX_RETRIES = 2;
 
@@ -205,9 +207,10 @@ async function generateChineseTranslation(
   title: string,
   bulletPoints: any[],
   description: string,
-  searchTerms: string
-): Promise<{ titleCn: string; bulletPointsCn: any[]; descriptionCn: string; searchTermsCn: string }> {
-  const inputContent = {
+  searchTerms: string,
+  qaContent?: string
+): Promise<{ titleCn: string; bulletPointsCn: any[]; descriptionCn: string; searchTermsCn: string; qaContentCn?: string }> {
+  const inputContent: any = {
     title,
     bulletPoints: bulletPoints.map(bp => ({
       subtitle: bp.subtitle || "",
@@ -217,9 +220,23 @@ async function generateChineseTranslation(
     searchTerms,
   };
 
+  // Add QA content if available
+  if (qaContent) {
+    try {
+      const qaData = JSON.parse(qaContent);
+      inputContent.qaItems = qaData.qaItems || qaData;
+    } catch {
+      // skip if invalid JSON
+    }
+  }
+
+  const translationPrompt = qaContent
+    ? CHINESE_TRANSLATION_PROMPT + `\n\nALSO translate the "qaItems" array. For each QA item, translate "question" to "questionZh" and "answer" to "answerZh". Return the translated QA as "qaContentCn" in the response.`
+    : CHINESE_TRANSLATION_PROMPT;
+
   const response = await invokeLLM({
     messages: [
-      { role: "system", content: CHINESE_TRANSLATION_PROMPT },
+      { role: "system", content: translationPrompt },
       { role: "user", content: `Please translate the following Amazon listing content into Chinese:\n\n${JSON.stringify(inputContent, null, 2)}` },
     ],
     response_format: { type: "json_object" },
@@ -236,6 +253,7 @@ async function generateChineseTranslation(
       bulletPointsCn: parsed.bulletPointsCn || [],
       descriptionCn: parsed.descriptionCn || "",
       searchTermsCn: parsed.searchTermsCn || "",
+      qaContentCn: parsed.qaContentCn ? JSON.stringify(parsed.qaContentCn) : undefined,
     };
   } catch {
     return { titleCn: "", bulletPointsCn: [], descriptionCn: "", searchTermsCn: "" };
@@ -1197,7 +1215,8 @@ export const listingRouter = router({
         listing.title || "",
         bulletPoints,
         listing.description || "",
-        listing.searchTerms || ""
+        listing.searchTerms || "",
+        listing.qaContent || undefined
       );
 
       // Translate image advice to Chinese if available
@@ -1207,13 +1226,17 @@ export const listingRouter = router({
       }
 
       // Save Chinese translations to the listing
-      const updated = await db.updateListing(listing.id, {
+      const updateData: any = {
         titleCn: cnData.titleCn,
         bulletPointsCn: JSON.stringify(cnData.bulletPointsCn),
         descriptionCn: cnData.descriptionCn,
         searchTermsCn: cnData.searchTermsCn,
         imageAdviceCn: imageAdviceCnStr,
-      });
+      };
+      if (cnData.qaContentCn) {
+        updateData.qaContentCn = cnData.qaContentCn;
+      }
+      const updated = await db.updateListing(listing.id, updateData);
 
       // Save version snapshot after translation
       await saveListingVersion(
@@ -1228,6 +1251,36 @@ export const listingRouter = router({
     }),
 
   // Update a listing (for manual edits)
+  // Update listing by project ID (for Step components that only know projectId)
+  updateByProject: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      field: z.string(),
+      value: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      let listing = await db.getActiveListingByProject(input.projectId);
+      if (!listing) {
+        // Auto-create listing if not exists
+        listing = await db.createListing({
+          projectId: input.projectId,
+          title: "",
+          bulletPoints: "[]",
+          description: "",
+          searchTerms: "",
+        });
+      }
+      const data: Record<string, string> = { [input.field]: input.value };
+      const result = await db.updateListing(listing.id, data);
+      if (result && ctx.user) {
+        const fieldMap: Record<string, string> = { title: '标题', bulletPoints: '卖点', description: '描述', searchTerms: '搜索词', qaContent: 'QA问答', titleCn: '中文标题', bulletPointsCn: '中文卖点', descriptionCn: '中文描述', searchTermsCn: '中文搜索词', qaContentCn: '中文QA问答' };
+        await saveListingVersion(result, ctx.user.id, "manual_edit", `Step编辑: ${fieldMap[input.field] || input.field}`);
+      }
+      return result;
+    }),
+
   update: protectedProcedure
     .input(z.object({
       id: z.number(),
@@ -1235,10 +1288,12 @@ export const listingRouter = router({
       bulletPoints: z.string().optional(),
       description: z.string().optional(),
       searchTerms: z.string().optional(),
+      qaContent: z.string().optional(),
       titleCn: z.string().optional(),
       bulletPointsCn: z.string().optional(),
       descriptionCn: z.string().optional(),
       searchTermsCn: z.string().optional(),
+      qaContentCn: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
@@ -1246,7 +1301,7 @@ export const listingRouter = router({
       // Save version snapshot after manual edit
       if (result && ctx.user) {
         const updatedFields = Object.keys(data).filter(k => (data as any)[k] !== undefined);
-        const fieldMap: Record<string, string> = { title: '标题', bulletPoints: '卖点', description: '描述', searchTerms: '搜索词', titleCn: '中文标题', bulletPointsCn: '中文卖点', descriptionCn: '中文描述', searchTermsCn: '中文搜索词' };
+        const fieldMap: Record<string, string> = { title: '标题', bulletPoints: '卖点', description: '描述', searchTerms: '搜索词', qaContent: 'QA问答', titleCn: '中文标题', bulletPointsCn: '中文卖点', descriptionCn: '中文描述', searchTermsCn: '中文搜索词', qaContentCn: '中文QA问答' };
         const fieldNames = updatedFields.map(f => fieldMap[f] || f).join('、');
         await saveListingVersion(result, ctx.user.id, "manual_edit", `手动编辑: ${fieldNames}`);
       }
@@ -1769,6 +1824,86 @@ Please expand this keyword/theme into a complete selling point core with FABE di
         }
         return { action: "created", listingId: newListing?.id, bulletCount: bullets.length };
       }
+    }),
+
+  // Check data readiness for listing generation
+  checkDataReadiness: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      return checkDataReadiness(input.projectId);
+    }),
+
+  // Generate QA (Questions & Answers)
+  generateQA: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      emphasis: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
+      const enrichedData = await loadEnrichedData(input.projectId);
+      let context = buildProductContext(project, analyses, enrichedData);
+
+      // Include confirmed listing content for context
+      const listing = await db.getActiveListingByProject(input.projectId);
+      if (listing) {
+        context += "\n\n--- [Confirmed Listing Content] ---";
+        if (listing.title) context += `\nTitle: ${listing.title}`;
+        if (listing.bulletPoints) {
+          try {
+            const bps = JSON.parse(listing.bulletPoints);
+            if (Array.isArray(bps)) {
+              context += `\nBullet Points:\n${bps.map((bp: any, i: number) => {
+                if (typeof bp === 'string') return `  ${i + 1}. ${bp}`;
+                return `  ${i + 1}. ${bp.subtitle || ''} ${bp.fullText || ''}`;
+              }).join("\n")}`;
+            }
+          } catch {}
+        }
+        if (listing.description) context += `\nDescription: ${listing.description}`;
+        if (listing.searchTerms) context += `\nSearch Terms: ${listing.searchTerms}`;
+      }
+
+      if (input.emphasis?.trim()) {
+        context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
+      }
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: QA_GENERATION_PROMPT },
+          { role: "user", content: `Generate Q&A pairs for this Amazon product listing:\n\n${context}` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const content = typeof response.choices[0].message.content === "string"
+        ? response.choices[0].message.content
+        : JSON.stringify(response.choices[0].message.content);
+
+      let parsed;
+      try {
+        parsed = JSON.parse(content);
+      } catch {
+        return { raw: content };
+      }
+
+      // Auto-save QA to listing if active listing exists
+      if (listing) {
+        await db.updateListing(listing.id, {
+          qaContent: JSON.stringify(parsed),
+        });
+        await saveListingVersion(
+          { ...listing, qaContent: JSON.stringify(parsed) },
+          ctx.user.id, "generate", "AI生成QA问答"
+        );
+      }
+
+      return parsed;
     }),
 
 });

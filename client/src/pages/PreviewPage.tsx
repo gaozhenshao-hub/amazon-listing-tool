@@ -43,6 +43,8 @@ import {
   X,
   Plus,
   Trash2,
+  MessageCircle,
+  HelpCircle,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useState, useEffect, useMemo, useCallback } from "react";
@@ -146,7 +148,35 @@ export default function PreviewPage() {
     try { return JSON.parse(listing.imageAdviceCn); } catch { return null; }
   }, [listing?.imageAdviceCn]);
 
+  const qaContent = useMemo(() => {
+    if (!(listing as any)?.qaContent) return null;
+    try { return JSON.parse((listing as any).qaContent); } catch { return null; }
+  }, [(listing as any)?.qaContent]);
+
+  const qaContentCn = useMemo(() => {
+    if (!(listing as any)?.qaContentCn) return null;
+    try { return JSON.parse((listing as any).qaContentCn); } catch { return null; }
+  }, [(listing as any)?.qaContentCn]);
+
   const hasChinese = !!(listing?.titleCn || listing?.bulletPointsCn || listing?.descriptionCn || listing?.searchTermsCn);
+
+  // Completion progress
+  const completionItems = useMemo(() => {
+    if (!listing) return [];
+    return [
+      { label: "标题", done: !!listing.title },
+      { label: "卖点", done: !!listing.bulletPoints },
+      { label: "描述", done: !!listing.description },
+      { label: "搜索词", done: !!listing.searchTerms },
+      { label: "QA问答", done: !!(listing as any)?.qaContent },
+      { label: "中文翻译", done: hasChinese },
+    ];
+  }, [listing, hasChinese]);
+
+  const completionRate = useMemo(() => {
+    if (completionItems.length === 0) return 0;
+    return Math.round((completionItems.filter(i => i.done).length / completionItems.length) * 100);
+  }, [completionItems]);
 
   // Version history
   const [expandedVersionId, setExpandedVersionId] = useState<number | null>(null);
@@ -401,6 +431,27 @@ export default function PreviewPage() {
               </CardContent>
             </Card>
 
+            {/* Completion Progress */}
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium">Listing完成度</span>
+                  <span className="text-sm font-bold text-primary">{completionRate}%</span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-2 mb-3">
+                  <div className="bg-primary h-2 rounded-full transition-all duration-500" style={{ width: `${completionRate}%` }} />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {completionItems.map((item, i) => (
+                    <Badge key={i} variant={item.done ? "default" : "outline"} className={`text-xs ${item.done ? "bg-green-100 text-green-700 border-green-300" : "text-muted-foreground"}`}>
+                      {item.done ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <div className="h-3 w-3 mr-1 rounded-full border border-muted-foreground/50" />}
+                      {item.label}
+                    </Badge>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Title */}
             <Card>
               <CardHeader className="pb-3">
@@ -610,6 +661,63 @@ export default function PreviewPage() {
                   <p className="text-sm font-mono bg-muted/30 p-3 rounded-lg break-all">{listing.searchTerms}</p>
                 ) : (
                   <p className="text-sm text-muted-foreground italic">\u6682\u65e0\u641c\u7d22\u8bcd</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* QA问答 */}
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <MessageCircle className="h-4 w-4 text-teal-600" />
+                    QA问答 (Customer Q&A)
+                  </CardTitle>
+                  {!isEditing && qaContent && (
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => {
+                      const qaText = (qaContent as any[]).map((qa: any, i: number) => `Q${i+1}: ${qa.question}\nA${i+1}: ${qa.answer}`).join('\n\n');
+                      copyToClipboard(qaText, "QA问答");
+                    }}>
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                {qaContent && Array.isArray(qaContent) && qaContent.length > 0 ? (
+                  <div className="space-y-3">
+                    {(qaContent as any[]).map((qa: any, i: number) => (
+                      <div key={i} className="rounded-lg border p-3 space-y-2">
+                        <div className="flex items-start gap-2">
+                          <HelpCircle className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant="secondary" className="text-[10px]">Q{i + 1}</Badge>
+                              {qa.category && <Badge variant="outline" className="text-[10px]">{qa.category}</Badge>}
+                              {qa.priority && <Badge variant="outline" className={`text-[10px] ${qa.priority === 'high' ? 'border-red-300 text-red-600' : qa.priority === 'medium' ? 'border-amber-300 text-amber-600' : 'border-gray-300'}`}>{qa.priority}</Badge>}
+                            </div>
+                            <p className="text-sm font-medium">{qa.question}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2 pl-6">
+                          <MessageCircle className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                          <div className="flex-1">
+                            <Badge variant="secondary" className="text-[10px] mb-1">A{i + 1}</Badge>
+                            <p className="text-sm text-muted-foreground">{qa.answer}</p>
+                          </div>
+                        </div>
+                        {qa.sourceInsight && (
+                          <p className="text-xs text-muted-foreground italic pl-6">💡 {qa.sourceInsight}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-8">
+                    <MessageCircle className="h-6 w-6 text-muted-foreground mb-2" />
+                    <p className="text-sm text-muted-foreground">暂无QA问答数据</p>
+                    <p className="text-xs text-muted-foreground mt-1">请在“Listing生成”页面的Step 5生成QA内容</p>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -850,6 +958,53 @@ export default function PreviewPage() {
                     </div>
                   </CardContent>
                 </Card>
+
+                {/* QA Comparison */}
+                {(qaContent || qaContentCn) && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <MessageCircle className="h-4 w-4 text-teal-600" />
+                        QA问答
+                        <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
+                          <Languages className="h-3 w-3 mr-1" />中英对照
+                        </Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {(qaContent as any[] || []).map((qa: any, i: number) => {
+                        const cnQa = qaContentCn && Array.isArray(qaContentCn) ? (qaContentCn as any[])[i] : null;
+                        return (
+                          <div key={i} className="rounded-lg border overflow-hidden">
+                            <div className="grid grid-cols-1 lg:grid-cols-2">
+                              <div className="p-3 bg-blue-50/30 border-b lg:border-b-0 lg:border-r border-blue-200">
+                                <div className="flex items-center gap-2 mb-1.5">
+                                  <Badge variant="secondary" className="text-xs">EN Q{i + 1}</Badge>
+                                  {qa.category && <Badge variant="outline" className="text-[10px]">{qa.category}</Badge>}
+                                </div>
+                                <p className="text-sm font-medium mb-1">{qa.question}</p>
+                                <p className="text-sm text-muted-foreground">{qa.answer}</p>
+                              </div>
+                              <div className="p-3 bg-orange-50/30">
+                                <div className="flex items-center gap-2 mb-1.5">
+                                  <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-700">中 Q{i + 1}</Badge>
+                                </div>
+                                {cnQa ? (
+                                  <>
+                                    <p className="text-sm font-medium mb-1 text-orange-900">{cnQa.question}</p>
+                                    <p className="text-sm text-orange-700">{cnQa.answer}</p>
+                                  </>
+                                ) : (
+                                  <p className="text-sm text-muted-foreground italic">暂无翻译</p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </CardContent>
+                  </Card>
+                )}
 
                 {/* Regenerate translation button */}
                 <div className="flex justify-center">

@@ -69,6 +69,9 @@ export const listings = mysqlTable("listings", {
   bulletPointsCn: text("bulletPointsCn"), // JSON array of 5 bullet points in Chinese
   descriptionCn: text("descriptionCn"),
   searchTermsCn: text("searchTermsCn"),
+  // QA content fields
+  qaContent: text("qaContent"), // JSON array of QA items
+  qaContentCn: text("qaContentCn"), // JSON array of QA items in Chinese
   version: int("version").default(1).notNull(),
   isActive: int("isActive").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

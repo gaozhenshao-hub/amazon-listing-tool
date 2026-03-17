@@ -52,32 +52,66 @@ Respond in JSON format:
 
 export const TITLE_GENERATION_PROMPT = `${EXPERT_ROLE}
 
-Your task: Generate an optimized Amazon product title following Amazon's rules.
+Your task: Generate an optimized Amazon product title following Amazon's rules AND passing ALL 10 dimensions of the Title Check List.
 
-**Amazon Title Rules:**
+=== DATA CONTEXT ===
+
+You will receive structured data from 4 modules:
+
+[Module 1 - Product Attributes]: Product specs, materials, dimensions from Rufus attribute extraction.
+[Module 2 - Competitor Insights]: Competitor titles, bullet points, review pain/itch/delight points.
+[Module 3 - COSMO Scenes]: Top usage scenes from keyword scene tags.
+[Module 4 - A9 Keywords]: Keywords grouped by strategyCategory and listingPlacement.
+  - Use keywords with listingPlacement="title_front" at the BEGINNING of the title
+  - Use keywords with listingPlacement="title_mid" in the MIDDLE
+  - Use keywords with listingPlacement="title_end" at the END
+  - Use keywords with strategyCategory="core_main" as mandatory core keywords
+
+=== AMAZON TITLE RULES ===
+
 - Core selling point FIRST
-- Include 1-2 core keywords
+- Include 1-2 core keywords (from strategyCategory="core_main")
 - Use Arabic numerals (not spelled out)
-- Logical word order
-- Structure: Brand + Selling Point + Product + Specs + Scene
+- Logical word order following listingPlacement positions
+- Structure: Brand + Core Keyword (title_front) + Selling Point + Product + Specs (title_mid) + Scene/Users (title_end)
 - **CRITICAL: Each title MUST be between 180-200 characters (inclusive). This is the MOST IMPORTANT requirement.**
 - You MUST fully utilize the character space. Titles shorter than 180 characters are NOT acceptable.
-- If a title is too short, add more relevant keywords, specs, use cases, or product features to reach 180+ characters.
 - No promotional language (e.g., "best", "#1", "sale")
 - Capitalize first letter of each major word
 - No special characters except necessary punctuation
+- Spell out measurement units (e.g., "6 inches" NOT "6\"")
 
-**Character Count Strategy:**
-- Start by drafting the title with all key elements
-- Count characters precisely (including spaces and punctuation)
-- If under 180 characters: add more descriptive keywords, additional specs, usage scenarios, or compatible models
-- If over 200 characters: trim less important modifiers while keeping core keywords
-- Double-check the final character count before submitting
+=== TITLE CHECK LIST (10 Dimensions) ===
 
-Generate 3 title variations with different keyword emphasis. For each title:
-1. Count the EXACT character length (must be 180-200)
-2. Highlight the core keywords used
-3. Explain the strategic positioning
+Before outputting each title, you MUST self-check against ALL 10 dimensions:
+
+[T1] READABILITY: No grammar errors. Logical flow. Natural for North American readers.
+     NO keyword stuffing. Use proper sentence breaks with commas.
+[T2] FORMATTING: Use Arabic numerals. Consistent capitalization (Title Case).
+     Spell out measurement units (e.g., "6 Inches" NOT "6\""). Proper punctuation.
+[T3] CHARACTER COUNT: Must be 180-200 characters. Fully utilize the allowed length.
+[T4] CONTENT COVERAGE: Must include: core selling points, key features,
+     specifications/parameters, usage scenarios, and target user groups.
+[T5] CORE KEYWORDS: Include 1-2 core keywords from strategyCategory="core_main".
+     Example: "power bank", "portable charger".
+[T6] WORD ORDER: Place core selling points and differentiators FIRST.
+     Follow listingPlacement order: title_front → title_mid → title_end.
+     Emphasize product highlights and brand differentiation.
+[T7] BUNDLE/PACK: If product is multi-pack/bundle (from Module 1 attributes), clearly state pack quantity.
+[T8] TRAFFIC KEYWORDS: Incorporate high-traffic keywords with title_* placement.
+     Blend long-tail keywords and traffic keywords organically with product context.
+[T9] BRAND: If brand has recognition, position brand name prominently at the start.
+[T10] SEASONAL: Optionally include holiday/seasonal terms from rootCategory="gift_holiday".
+
+=== CHARACTER COUNT STRATEGY ===
+
+1. Start by drafting the title with all key elements
+2. Count characters precisely (including spaces and punctuation)
+3. If under 180 characters: add more descriptive keywords, additional specs, usage scenarios, or compatible models
+4. If over 200 characters: trim less important modifiers while keeping core keywords
+5. Double-check the final character count before submitting
+
+Generate 3 title variations with different keyword emphasis and positioning strategies.
 
 Respond in JSON format:
 {
@@ -85,8 +119,30 @@ Respond in JSON format:
     {
       "title": "",
       "characterCount": 0,
+      "inRange": true,
       "coreKeywords": [],
-      "strategy": ""
+      "trafficKeywords": [],
+      "strategy": "",
+      "wordOrderStrategy": "Brand→Core(title_front)→Differentiator(title_mid)→Specs+Scene(title_end)",
+      "contentCoverage": {
+        "sellingPoints": true,
+        "features": true,
+        "specs": true,
+        "scenarios": true,
+        "targetUsers": true
+      },
+      "checkListScores": {
+        "readability": { "pass": true, "notes": "" },
+        "formatting": { "pass": true, "notes": "" },
+        "characterCount": { "pass": true, "notes": "" },
+        "contentCoverage": { "pass": true, "notes": "" },
+        "coreKeywords": { "pass": true, "notes": "" },
+        "wordOrder": { "pass": true, "notes": "" },
+        "bundlePack": { "pass": true, "notes": "" },
+        "trafficKeywords": { "pass": true, "notes": "" },
+        "brand": { "pass": true, "notes": "" },
+        "seasonal": { "pass": false, "notes": "" }
+      }
     }
   ],
   "recommendedTitle": "",
@@ -456,6 +512,44 @@ Your task: Based on the product information, competitor analysis, keyword data, 
 
 **This is a PLANNING step, NOT the final copy.** You are identifying WHAT to write about, not writing the actual bullet points yet.
 
+=== DATA CONTEXT ===
+
+[Module 1 - Product Attributes]: Use specific specs as selling point material.
+[Module 2 - Competitor Insights]:
+  - Parity points (共性): Standard selling points ALL competitors emphasize → must cover.
+  - Gap opportunities (缺口): Points competitors miss OR pain points from reviews → differentiate.
+  - Pain/Itch/Delight from reviewAggregations → address in bullet points.
+[Module 3 - COSMO Scenes]: Top usage scenes → integrate into selling points.
+[Module 4 - A9 Keywords]:
+  - Keywords with listingPlacement="bullet_first" → use at the start of bullets.
+  - Keywords with listingPlacement="bullet_body" → weave naturally into text.
+
+=== BULLET CHECK LIST (Coverage Requirements for 7 Cores) ===
+
+When designing the 7 selling point cores, ensure the OVERALL set covers:
+
+[B4] SELLING POINT ORDER: Arrange by priority - customer top concerns first,
+     then core features, then special notes. Client attention/core selling points/special instructions upfront.
+[B8] USER PSYCHOLOGY: At least 2 cores should leverage loss aversion ("don't miss out",
+     "avoid the frustration of...") or social proof ("trusted by X users", "50,000+ sold").
+[B9] FAQ COVERAGE: At least 2 cores must address top pain points from reviewAggregations.
+     Identify the top 5 frequently asked questions from reviews and Q&A, and ensure
+     they are answered within the 5 final bullet points.
+[B10] QUANTIFIED DATA: At least 3 cores should include quantifiable claims
+      (e.g., "30% lighter", "charges 2x faster", "compared to Anker, lasts 1 more year").
+[B11] SCENE INTEGRATION: At least 3 cores should incorporate COSMO scenes naturally
+      (e.g., "office", "travel", "gym").
+[B13] WARRANTY/TRUST: One core should be dedicated to quality assurance/warranty
+      with data backing (e.g., "50,000+ 5-star reviews") or authoritative certification
+      (e.g., "FCC certified").
+[B15] AI-FRIENDLY STRUCTURE: Design cores that will naturally express 4 semantic
+      relationships when expanded into full bullets:
+      - PURPOSE (用途关系): what the product is used for
+      - CAPABILITY (能力关系): what the product can do
+      - IDENTITY (定义关系): what the product is
+      - CAUSATION (因果关系): what the product causes/prevents
+      Ensure the overall 7 cores cover all 4 relationships.
+
 **Rules:**
 1. Each selling point must focus on ONE distinct theme/angle
 2. Order by importance (most impactful first)
@@ -472,6 +566,7 @@ Your task: Based on the product information, competitor analysis, keyword data, 
 - The FABE direction: which Feature, Advantage, Benefit, and Evidence to highlight
 - Which keywords from the keyword strategy should be incorporated
 - Which competitor weakness or review insight this addresses
+- Which Check List dimensions this core primarily targets
 
 Respond in JSON format:
 {
@@ -489,22 +584,42 @@ Respond in JSON format:
         "evidence": "What evidence/data to cite"
       },
       "targetKeywords": ["keyword1", "keyword2"],
-      "addressesGap": "Brief note on which competitor weakness or review pain point this addresses"
+      "addressesGap": "Brief note on which competitor weakness or review pain point this addresses",
+      "checkListTargets": ["B10", "B11"]
     }
   ],
+  "checkListCoverage": {
+    "B4_order": "Explanation of priority ordering logic",
+    "B8_psychology": "Which cores use loss aversion/social proof",
+    "B9_faq": "Which cores address top review pain points",
+    "B10_data": "Which cores include quantified claims",
+    "B11_scenes": "Which cores integrate COSMO scenes",
+    "B13_trust": "Which core handles warranty/trust",
+    "B15_semantic": "How 4 semantic relationships are distributed across cores"
+  },
   "overallStrategy": "Brief explanation of the overall 7-point strategy and how they work together, noting that the user may add 2 more custom points"
 }`;
 
 // ─── Single Bullet Point Generation Prompt ─────────────────────
 export const SINGLE_BULLET_PROMPT = `${EXPERT_ROLE}
 
-Your task: Generate ONE optimized Amazon bullet point based on the confirmed selling point core theme.
+Your task: Generate ONE optimized Amazon bullet point based on the confirmed selling point core theme, passing ALL 15 dimensions of the Bullet Check List.
 
-**Amazon Bullet Point Rules:**
+=== DATA CONTEXT ===
+
+[Module 1 - Product Attributes]: Reference specific specs and parameters for evidence.
+[Module 2 - Competitor Insights]: Use pain points from reviewAggregations as FABE Evidence.
+[Module 3 - COSMO Scenes]: Naturally integrate relevant usage scenes.
+[Module 4 - A9 Keywords]:
+  - Keywords with listingPlacement="bullet_first" → use at the start of the bullet.
+  - Keywords with listingPlacement="bullet_body" → weave naturally into the text.
+
+=== AMAZON BULLET POINT RULES ===
+
 - Format: SHORT SUBTITLE in brackets + descriptive text
 - FABE Method: Feature → Advantage → Benefit → Evidence
 - Include usage scenarios and data comparisons
-- AI-friendly format: use "used for", "capable of", "designed for"
+- Structured format: Selling point + explanation/answer
 
 ## ⚠️ ABSOLUTE CHARACTER LIMIT — THIS IS THE #1 PRIORITY ⚠️
 
@@ -528,6 +643,49 @@ Total = subtitle.length + 1 (space) + fullText.length
 
 Keep subtitles SHORT (under 30 chars including brackets). This leaves 170-250 chars for fullText.
 
+=== BULLET CHECK LIST (15 Dimensions) ===
+
+Before outputting the bullet, you MUST self-check against ALL 15 dimensions:
+
+[B1] READABILITY: No grammar errors. Logical flow. Natural for North American readers.
+     NO keyword stuffing. Proper use of sentence structure.
+[B2] FORMATTING: Use Arabic numerals. Consistent capitalization.
+     Spell out measurement units (e.g., "6 Inches" NOT "6\""). Proper punctuation.
+[B3] LAYOUT: Consistent format with other bullets (subtitle + body structure).
+[B4] SELLING POINT FOCUS: ONE core selling point per bullet. Clear and focused.
+     Highlight main features, customer concerns, or special instructions.
+[B5] SUBTITLE: Short and clear (under 30 chars including brackets).
+     Helps users quickly summarize the selling point.
+[B6] FABE METHOD: Complete FABE structure (Feature → Advantage → Benefit → Evidence).
+     Refine each selling point through FABE thinking to extract what users care about most
+     and what benefits them the most.
+[B7] STRUCTURED FORMAT: Selling point + explanation/answer format.
+     Information is clear at a glance.
+[B8] USER PSYCHOLOGY: Apply consumer psychology principles where appropriate.
+     Examples: loss aversion ("Don't settle for..."), social proof ("Join 50,000+ satisfied users"),
+     scarcity, anchoring, etc.
+[B9] FAQ COVERAGE: Address common questions identified from reviews and Q&A.
+     Through reviews, Q&A, and brand analysis, identify high-frequency questions
+     and answer them within the 5 bullet points.
+[B10] QUANTIFIED DATA: Include specific numbers and comparisons.
+      Examples: "30% lighter", "charges 2x faster", "compared to Anker, lasts 1 more year".
+[B11] SCENE INTEGRATION: Naturally embed usage scenarios from COSMO scenes.
+      Examples: "perfect for office desks", "ideal for travel", "great for home gym".
+[B12] TRUST SIGNALS: Include social proof and authority endorsements.
+      Examples: loss aversion, social proof, authority bias.
+[B13] WARRANTY/QUALITY: Include data backing or authoritative certifications.
+      Examples: "50,000+ 5-star reviews", "FCC certified", "backed by 2-year warranty".
+[B14] TRAFFIC KEYWORDS: Incorporate keywords from Module 4 with bullet_first/bullet_body placement.
+      Regularly update with rising ARA-ranked long-tail keywords.
+[B15] AI-FRIENDLY STRUCTURE: Content should naturally express semantic relationships.
+      The 4 types of semantic relationships (not required to use exact phrases, just express the meaning):
+      - PURPOSE: what the product is used for (e.g., "delivers rapid power to devices on the go")
+      - CAPABILITY: what the product can do (e.g., "charges 2x faster than standard chargers")
+      - IDENTITY: what the product is (e.g., "a professional-grade GaN charger")
+      - CAUSATION: what the product causes/prevents (e.g., "eliminates battery anxiety")
+      Each bullet should naturally cover at least 2 semantic relationships.
+      The overall 5 bullets should cover all 4 relationships.
+
 **You MUST incorporate the target keywords naturally into the bullet text.**
 
 Respond in JSON format:
@@ -542,7 +700,36 @@ Respond in JSON format:
     "evidence": ""
   },
   "characterCount": 0,
-  "incorporatedKeywords": []
+  "inRange": true,
+  "incorporatedKeywords": [],
+  "psychologyTechnique": "social_proof / loss_aversion / scarcity / anchoring / none",
+  "quantifiedClaims": [],
+  "scenesIncluded": [],
+  "trustSignals": [],
+  "trafficKeywords": [],
+  "aiSemanticRelations": {
+    "purpose": "natural expression of what product is used for, or null",
+    "capability": "natural expression of what product can do, or null",
+    "identity": "natural expression of what product is, or null",
+    "causation": "natural expression of what product causes/prevents, or null"
+  },
+  "checkListScores": {
+    "readability": { "pass": true, "notes": "" },
+    "formatting": { "pass": true, "notes": "" },
+    "layout": { "pass": true, "notes": "" },
+    "sellingPointFocus": { "pass": true, "notes": "" },
+    "subtitle": { "pass": true, "notes": "" },
+    "fabe": { "pass": true, "notes": "" },
+    "structured": { "pass": true, "notes": "" },
+    "psychology": { "pass": true, "notes": "" },
+    "faqCoverage": { "pass": true, "notes": "" },
+    "quantifiedData": { "pass": true, "notes": "" },
+    "scenes": { "pass": true, "notes": "" },
+    "trustSignals": { "pass": true, "notes": "" },
+    "warranty": { "pass": true, "notes": "" },
+    "trafficKeywords": { "pass": true, "notes": "" },
+    "aiReadability": { "pass": true, "notes": "" }
+  }
 }`;
 
 // ─── Expand Keyword to FABE Selling Point Prompt ─────────────────────
@@ -577,4 +764,77 @@ Respond in JSON format:
   },
   "targetKeywords": ["keyword1", "keyword2"],
   "addressesGap": "Which competitor weakness or customer pain point this addresses"
+}`;
+
+
+// ─── QA (Questions & Answers) Generation Prompt ─────────────────────
+export const QA_GENERATION_PROMPT = `${EXPERT_ROLE}
+
+Your task: Generate 5-8 high-quality Q&A pairs for an Amazon product listing. These Q&A pairs should preemptively address the most common customer questions, reduce purchase hesitation, and reinforce the product's selling points.
+
+=== DATA CONTEXT ===
+
+You will receive:
+[Module 1 - Product Attributes]: Product specs, materials, dimensions → generate spec-related questions.
+[Module 2 - Competitor Insights]:
+  - reviewAggregations.painPoints → extract top customer concerns as questions.
+  - reviewAggregations.itchPoints → extract customer desires as questions.
+  - Competitor weaknesses → frame as differentiating Q&A.
+[Confirmed Listing Content]: Title, bullet points, description → answers should reinforce selling points.
+
+=== QA GENERATION STRATEGY ===
+
+1. **Pain Point Questions (2-3)**: Extract from reviewAggregations.painPoints. These are the most critical—address the top concerns that cause purchase hesitation.
+2. **Differentiation Questions (2-3)**: Based on product's unique selling points and competitor gaps. Highlight what makes this product stand out.
+3. **Category Standard Questions (1-2)**: Common questions for this product category (compatibility, sizing, warranty, shipping, etc.).
+
+=== QA QUALITY RULES ===
+
+For each Q&A pair:
+- **Question**: Simulate a real customer's natural language. Use first-person perspective. Keep it concise (under 100 characters).
+  Examples: "Will this fit in my carry-on bag?", "How long does the battery actually last?"
+- **Answer**: Professional but friendly tone. 150-300 characters.
+  - Start with a direct answer to the question
+  - Reinforce a product selling point with specific data
+  - Include quantified claims where possible
+  - Naturally express semantic relationships (PURPOSE/CAPABILITY/IDENTITY/CAUSATION)
+  - End with a confidence-building statement if appropriate
+
+=== SEMANTIC RELATIONSHIPS IN ANSWERS ===
+
+Each answer should naturally express at least 1-2 of these semantic relationships:
+- PURPOSE: what the product is used for
+- CAPABILITY: what the product can do
+- IDENTITY: what the product is
+- CAUSATION: what the product causes/prevents
+
+=== PRIORITY ORDERING ===
+
+Order Q&A pairs by customer impact:
+1. Most common pain point questions first
+2. Key differentiator questions next
+3. Standard category questions last
+
+Respond in JSON format:
+{
+  "qaItems": [
+    {
+      "index": 1,
+      "question": "Customer question in natural language",
+      "questionZh": "中文翻译的问题",
+      "answer": "Professional answer with selling point reinforcement",
+      "answerZh": "中文翻译的回答",
+      "category": "pain_point | differentiation | category_standard",
+      "priority": "high | medium | low",
+      "sourceInsight": "Brief note on which review pain point or competitor gap this addresses",
+      "quantifiedClaims": ["specific data points used in the answer"],
+      "semanticRelations": ["purpose", "capability"]
+    }
+  ],
+  "coverageSummary": {
+    "painPointsAddressed": 2,
+    "differentiationHighlighted": 3,
+    "categoryStandards": 1,
+    "totalQA": 6
+  }
 }`;
