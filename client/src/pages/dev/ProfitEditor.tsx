@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import {
   DollarSign, BarChart3, Loader2, Save, Trash2, Plus,
   ArrowDownUp, TrendingUp, Target, History, X,
+  Link2, RefreshCw, AlertTriangle, CheckCircle2, ArrowRight,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -57,6 +58,8 @@ const paramLabels: Record<string, { label: string; unit: string; tooltip: string
   totalMoldCostCny: { label: "模具总费", unit: "¥", tooltip: "模具开模总费用（人民币）" },
 };
 
+type DataSourceType = "bom" | "profile" | "manual";
+
 export default function ProfitEditor({ projectId }: ProfitEditorProps) {
   const [params, setParams] = useState({ ...defaultParams });
   const [quantities, setQuantities] = useState<number[]>([100, 500, 1000, 5000]);
@@ -67,20 +70,38 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
   const [showPlans, setShowPlans] = useState(false);
   const [showSensitivity, setShowSensitivity] = useState(false);
   const [comparePlanIdx, setComparePlanIdx] = useState<number | null>(null);
+  const [costDataSource, setCostDataSource] = useState<DataSourceType>("manual");
+  const [moldDataSource, setMoldDataSource] = useState<DataSourceType>("manual");
+  const [costManualOverride, setCostManualOverride] = useState(false);
+  const [moldManualOverride, setMoldManualOverride] = useState(false);
 
-  // Fetch BOM cost and exchange rate
+  // Fetch BOM cost summary
   const { data: bomCostSummary } = trpc.devBom.getBomCostSummary.useQuery({ projectId });
   const { data: rateData } = trpc.devBom.getExchangeRate.useQuery();
+  // Fetch enhanced linkage data
+  const { data: bomForProfit } = trpc.devLinkage.getBomCostForProfit.useQuery({ projectId });
+  const { data: linkageStatus } = trpc.devLinkage.getLinkageStatus.useQuery({ projectId });
   const batchMutation = trpc.devBom.batchSimulate.useMutation();
 
-  // Auto-fill from BOM
+  // Auto-fill from BOM (with data source tracking)
   useMemo(() => {
-    if (bomCostSummary) {
-      setParams(prev => ({
-        ...prev,
-        productCostCny: bomCostSummary.totalMaterialCost || prev.productCostCny,
-        totalMoldCostCny: bomCostSummary.totalMoldCost || prev.totalMoldCostCny,
-      }));
+    if (bomCostSummary && !costManualOverride) {
+      if (bomCostSummary.totalMaterialCost > 0) {
+        setParams(prev => ({
+          ...prev,
+          productCostCny: bomCostSummary.totalMaterialCost,
+        }));
+        setCostDataSource("bom");
+      }
+    }
+    if (bomCostSummary && !moldManualOverride) {
+      if (bomCostSummary.totalMoldCost > 0) {
+        setParams(prev => ({
+          ...prev,
+          totalMoldCostCny: bomCostSummary.totalMoldCost,
+        }));
+        setMoldDataSource("bom");
+      }
     }
   }, [bomCostSummary]);
 
@@ -90,6 +111,27 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
       setParams(prev => ({ ...prev, exchangeRate: rateData.rate }));
     }
   }, [rateData]);
+
+  // If BOM has no data but profile does, use profile cost as reference
+  useMemo(() => {
+    if (!bomCostSummary?.totalMaterialCost && bomForProfit?.profileCostAvailable && bomForProfit.profileTotalCost > 0 && !costManualOverride) {
+      setParams(prev => ({
+        ...prev,
+        productCostCny: bomForProfit.profileTotalCost,
+      }));
+      setCostDataSource("profile");
+    }
+  }, [bomForProfit, bomCostSummary]);
+
+  // Auto-fill selling price from profile target retail price
+  useMemo(() => {
+    if (bomForProfit?.targetRetailPrice && params.sellingPrice === defaultParams.sellingPrice) {
+      const price = parseFloat(String(bomForProfit.targetRetailPrice).replace(/[^0-9.]/g, ""));
+      if (price > 0) {
+        setParams(prev => ({ ...prev, sellingPrice: price }));
+      }
+    }
+  }, [bomForProfit]);
 
   const productCostUsd = params.productCostCny * params.exchangeRate;
   const moldCostUsd = params.totalMoldCostCny * params.exchangeRate;
@@ -125,6 +167,35 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
     });
   }, [params, quantities, projectId, batchMutation]);
 
+  // Refresh from BOM
+  const handleRefreshFromBom = () => {
+    if (bomCostSummary) {
+      setParams(prev => ({
+        ...prev,
+        productCostCny: bomCostSummary.totalMaterialCost || prev.productCostCny,
+        totalMoldCostCny: bomCostSummary.totalMoldCost || prev.totalMoldCostCny,
+      }));
+      setCostDataSource("bom");
+      setMoldDataSource("bom");
+      setCostManualOverride(false);
+      setMoldManualOverride(false);
+      toast.success("已从BOM刷新成本数据");
+    }
+  };
+
+  // Handle manual override of cost
+  const handleCostChange = (key: string, value: number) => {
+    setParams(prev => ({ ...prev, [key]: value }));
+    if (key === "productCostCny") {
+      setCostManualOverride(true);
+      setCostDataSource("manual");
+    }
+    if (key === "totalMoldCostCny") {
+      setMoldManualOverride(true);
+      setMoldDataSource("manual");
+    }
+  };
+
   // Add custom quantity
   const addQuantity = () => {
     const qty = parseInt(newQty);
@@ -142,14 +213,8 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
 
   // Save plan
   const savePlan = () => {
-    if (!planName.trim()) {
-      toast.error("请输入方案名称");
-      return;
-    }
-    if (simulations.length === 0) {
-      toast.error("请先运行模拟");
-      return;
-    }
+    if (!planName.trim()) { toast.error("请输入方案名称"); return; }
+    if (simulations.length === 0) { toast.error("请先运行模拟"); return; }
     const plan: SavedPlan = {
       name: planName.trim(),
       params: { ...params },
@@ -161,7 +226,6 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
     toast.success(`方案"${plan.name}"已保存`);
   };
 
-  // Load plan
   const loadPlan = (plan: SavedPlan) => {
     setParams({ ...plan.params });
     setSimulations([...plan.simulations]);
@@ -169,7 +233,6 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
     toast.info(`已加载方案"${plan.name}"`);
   };
 
-  // Delete plan
   const deletePlan = (idx: number) => {
     setSavedPlans(prev => prev.filter((_, i) => i !== idx));
     if (comparePlanIdx === idx) setComparePlanIdx(null);
@@ -205,6 +268,24 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
     return "bg-red-100 text-red-800";
   };
 
+  // Data source badge renderer
+  const renderDataSourceBadge = (source: DataSourceType, field: string) => {
+    const badges: Record<DataSourceType, { label: string; color: string; icon: any }> = {
+      bom: { label: "BOM联动", color: "bg-blue-100 text-blue-700 border-blue-200", icon: Link2 },
+      profile: { label: "画像参考", color: "bg-purple-100 text-purple-700 border-purple-200", icon: Target },
+      manual: { label: "手动输入", color: "bg-gray-100 text-gray-600 border-gray-200", icon: null },
+    };
+    const b = badges[source];
+    if (source === "manual") return null;
+    const Icon = b.icon;
+    return (
+      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${b.color}`}>
+        {Icon && <Icon className="h-2.5 w-2.5 mr-0.5" />}
+        {b.label}
+      </Badge>
+    );
+  };
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -213,9 +294,17 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
           <DollarSign className="h-4 w-4" />利润计算器
         </h3>
         <div className="flex items-center gap-2 flex-wrap">
-          {bomCostSummary && (
-            <Badge variant="outline" className="text-xs">
-              BOM自动填入: ¥{bomCostSummary.totalMaterialCost} ({bomCostSummary.bomItemCount}项)
+          {bomCostSummary && bomCostSummary.totalMaterialCost > 0 && (
+            <Badge variant="outline" className="text-xs gap-1">
+              <Link2 className="h-3 w-3 text-blue-500" />
+              BOM: ¥{bomCostSummary.totalMaterialCost} ({bomCostSummary.bomItemCount}项)
+            </Badge>
+          )}
+          {bomForProfit?.profileCostAvailable && (
+            <Badge variant="outline" className="text-xs gap-1">
+              <Target className="h-3 w-3 text-purple-500" />
+              画像: ¥{bomForProfit.profileTotalCost}
+              {bomForProfit.profileCostConfirmed && <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500" />}
             </Badge>
           )}
           <Badge variant="secondary" className="text-xs gap-1">
@@ -226,30 +315,90 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
         </div>
       </div>
 
+      {/* Data Linkage Status Banner */}
+      {linkageStatus && (linkageStatus.syncWarnings.profileNewerThanBom || linkageStatus.syncWarnings.bomNewerThanSummary) && (
+        <Card className="border-amber-200 bg-amber-50/50">
+          <CardContent className="p-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+              <div className="space-y-1">
+                {linkageStatus.syncWarnings.profileNewerThanBom && (
+                  <p className="text-xs text-amber-700">
+                    产品画像成本数据已更新（{linkageStatus.profileCost.updatedAt ? new Date(linkageStatus.profileCost.updatedAt).toLocaleString() : ""}），
+                    BOM可能需要同步更新
+                  </p>
+                )}
+                {linkageStatus.syncWarnings.bomNewerThanSummary && (
+                  <p className="text-xs text-amber-700">
+                    BOM数据已更新，利润计算器的成本参数可能需要刷新
+                  </p>
+                )}
+                <Button size="sm" variant="outline" className="h-6 text-[10px] gap-1 border-amber-300 text-amber-700 hover:bg-amber-100" onClick={handleRefreshFromBom}>
+                  <RefreshCw className="h-3 w-3" />刷新成本数据
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Data Flow Indicator */}
+      <Card className="bg-gradient-to-r from-slate-50/50 to-blue-50/50 border-slate-200">
+        <CardContent className="p-3">
+          <div className="flex items-center gap-2 text-xs flex-wrap">
+            <span className="font-medium text-muted-foreground">数据流向:</span>
+            <span className={`px-2 py-0.5 rounded ${linkageStatus?.profileCost.available ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-400"}`}>
+              产品画像
+              {linkageStatus?.profileCost.confirmed && <CheckCircle2 className="h-2.5 w-2.5 inline ml-0.5" />}
+            </span>
+            <ArrowRight className="h-3 w-3 text-muted-foreground" />
+            <span className={`px-2 py-0.5 rounded ${linkageStatus?.bom.hasData ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-400"}`}>
+              BOM ({linkageStatus?.bom.itemCount || 0}项)
+            </span>
+            <ArrowRight className="h-3 w-3 text-muted-foreground" />
+            <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">
+              利润计算器
+            </span>
+            {(costManualOverride || moldManualOverride) && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-200 text-amber-600">
+                含手动覆盖
+              </Badge>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Exchange Rate Card */}
       <Card className="bg-gradient-to-r from-blue-50/50 to-indigo-50/50 border-blue-100">
         <CardContent className="p-3">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-4 flex-wrap">
               <div>
-                <p className="text-xs text-muted-foreground">汇率 (CNY → USD)</p>
+                <p className="text-xs text-muted-foreground">汇率 (CNY &rarr; USD)</p>
                 <input type="number" step="0.0001" className="w-28 mt-0.5 px-2 py-1 text-sm border rounded-md bg-background font-mono"
                   value={params.exchangeRate} onChange={(e) => setParams(prev => ({ ...prev, exchangeRate: parseFloat(e.target.value) || 0 }))} />
               </div>
               <div className="text-center">
                 <p className="text-xs text-muted-foreground">产品成本换算</p>
-                <p className="text-sm font-medium">¥{params.productCostCny.toFixed(2)} → ${productCostUsd.toFixed(2)}</p>
+                <p className="text-sm font-medium">&yen;{params.productCostCny.toFixed(2)} &rarr; ${productCostUsd.toFixed(2)}</p>
               </div>
               <div className="text-center">
                 <p className="text-xs text-muted-foreground">模具费换算</p>
-                <p className="text-sm font-medium">¥{params.totalMoldCostCny.toFixed(2)} → ${moldCostUsd.toFixed(2)}</p>
+                <p className="text-sm font-medium">&yen;{params.totalMoldCostCny.toFixed(2)} &rarr; ${moldCostUsd.toFixed(2)}</p>
               </div>
             </div>
-            {rateData && (
-              <p className="text-xs text-muted-foreground">
-                数据源: {rateData.source} · {new Date(rateData.updatedAt).toLocaleString()}
-              </p>
-            )}
+            <div className="flex items-center gap-2">
+              {bomCostSummary && bomCostSummary.totalMaterialCost > 0 && (costManualOverride || moldManualOverride) && (
+                <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={handleRefreshFromBom}>
+                  <RefreshCw className="h-3 w-3" />从BOM刷新
+                </Button>
+              )}
+              {rateData && (
+                <p className="text-xs text-muted-foreground">
+                  数据源: {rateData.source} &middot; {new Date(rateData.updatedAt).toLocaleString()}
+                </p>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -263,13 +412,13 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
                 <th className="text-left p-3 font-medium w-40">参数</th>
                 <th className="text-left p-3 font-medium w-24">单位</th>
                 <th className="text-left p-3 font-medium">值</th>
-                <th className="text-left p-3 font-medium">换算</th>
+                <th className="text-left p-3 font-medium">数据来源</th>
                 <th className="text-left p-3 font-medium">说明</th>
               </tr>
             </thead>
             <tbody>
               {Object.entries(paramLabels).map(([key, meta]) => (
-                <tr key={key} className="border-b hover:bg-muted/10">
+                <tr key={key} className="border-b last:border-0 hover:bg-muted/10">
                   <td className="p-3 font-medium">{meta.label}</td>
                   <td className="p-3 text-muted-foreground">{meta.unit}</td>
                   <td className="p-3">
@@ -278,13 +427,15 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
                       step={key === "referralFeeRate" ? "0.1" : "0.01"}
                       className="w-32 px-2 py-1.5 text-sm border rounded-md bg-background"
                       value={(params as any)[key]}
-                      onChange={(e) => setParams(prev => ({ ...prev, [key]: parseFloat(e.target.value) || 0 }))}
+                      onChange={(e) => handleCostChange(key, parseFloat(e.target.value) || 0)}
                     />
                   </td>
-                  <td className="p-3 text-xs text-blue-600">
+                  <td className="p-3 text-xs">
+                    {key === "productCostCny" && renderDataSourceBadge(costDataSource, key)}
+                    {key === "totalMoldCostCny" && renderDataSourceBadge(moldDataSource, key)}
                     {key === "productCostCny" && `= $${productCostUsd.toFixed(2)}`}
                     {key === "totalMoldCostCny" && `= $${moldCostUsd.toFixed(2)}`}
-                    {key === "referralFeeRate" && `= $${(params.sellingPrice * params.referralFeeRate / 100).toFixed(2)}/件`}
+                    {key === "referralFeeRate" && <span className="text-blue-600">= ${(params.sellingPrice * params.referralFeeRate / 100).toFixed(2)}/件</span>}
                   </td>
                   <td className="p-3 text-xs text-muted-foreground">{meta.tooltip}</td>
                 </tr>
@@ -446,7 +597,7 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
         <Card className="border-blue-200">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center justify-between">
-              <span>对比: 当前 vs "{savedPlans[comparePlanIdx].name}"</span>
+              <span>对比: 当前 vs &quot;{savedPlans[comparePlanIdx].name}&quot;</span>
               <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setComparePlanIdx(null)}>
                 <X className="h-3 w-3" />关闭对比
               </Button>
@@ -474,7 +625,7 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
                         <td className="p-3 text-right">{current}</td>
                         <td className="p-3 text-right text-muted-foreground">{saved}</td>
                         <td className={`p-3 text-right font-medium ${diff > 0 ? "text-emerald-600" : diff < 0 ? "text-red-600" : ""}`}>
-                          {diff !== 0 ? (diff > 0 ? "+" : "") + diff.toFixed(2) : "—"}
+                          {diff !== 0 ? (diff > 0 ? "+" : "") + diff.toFixed(2) : "\u2014"}
                         </td>
                       </tr>
                     );
@@ -492,7 +643,7 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <TrendingUp className="h-4 w-4" />
-              敏感性分析矩阵（售价 × 产品成本 → 利润率）
+              敏感性分析矩阵（售价 &times; 产品成本 &rarr; 利润率）
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
@@ -500,10 +651,10 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    <th className="p-3 font-medium text-left">售价($) \ 成本(¥)</th>
+                    <th className="p-3 font-medium text-left">售价($) \ 成本(&yen;)</th>
                     {sensitivityMatrix.costSteps.map(cost => (
                       <th key={cost} className="p-3 font-medium text-center">
-                        ¥{cost}
+                        &yen;{cost}
                         {cost === params.productCostCny && <span className="text-xs text-blue-500 block">当前</span>}
                       </th>
                     ))}
@@ -531,7 +682,7 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
               </table>
             </div>
             <div className="p-3 flex gap-4 text-xs text-muted-foreground border-t">
-              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-100 border border-emerald-200" /> ≥30% 优秀</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-100 border border-emerald-200" /> &ge;30% 优秀</span>
               <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-100 border border-amber-200" /> 20-30% 可接受</span>
               <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-100 border border-red-200" /> &lt;20% 风险</span>
             </div>
@@ -558,8 +709,8 @@ export default function ProfitEditor({ projectId }: ProfitEditorProps) {
                     <div>
                       <p className="text-sm font-medium">{plan.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        售价 ${plan.params.sellingPrice} · 成本 ¥{plan.params.productCostCny} · {plan.simulations.length}档模拟
-                        · {new Date(plan.savedAt).toLocaleString()}
+                        售价 ${plan.params.sellingPrice} &middot; 成本 &yen;{plan.params.productCostCny} &middot; {plan.simulations.length}档模拟
+                        &middot; {new Date(plan.savedAt).toLocaleString()}
                       </p>
                     </div>
                     <div className="flex gap-1">

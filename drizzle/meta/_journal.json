@@ -155,6 +155,13 @@
       "when": 1773658393232,
       "tag": "0021_luxuriant_electro",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "5",
+      "when": 1773732351151,
+      "tag": "0022_chief_sally_floyd",
+      "breakpoints": true
     }
   ]
 }

@@ -9,7 +9,7 @@ import {
   ArrowLeft, BarChart3, FileText, Loader2, Package, Star, Target, Users,
   Wrench, ClipboardCheck, Brain, RefreshCw, Globe, Upload, CheckCircle2,
   AlertCircle, DollarSign, Download, Lock, Unlock, ChevronRight,
-  Edit2, Save, X, Copy, Tags, Tag, FileUp, FileDown, Eye,
+  Edit2, Save, X, Copy, Tags, Tag, FileUp, FileDown, Eye, Link2, ArrowRight, AlertTriangle,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -51,6 +51,7 @@ export default function DevProjectDetail() {
   const { data: score } = trpc.devScoring.getScore.useQuery({ projectId }) as any;
   const { data: manual } = trpc.devManual.getManual.useQuery({ projectId }) as any;
   const { data: testReport } = trpc.devManual.getTestReport.useQuery({ projectId }) as any;
+  const { data: linkageStatus } = trpc.devLinkage.getLinkageStatus.useQuery({ projectId });
 
   const currentPhase = (project as any)?.phase || "market_analysis";
   const isPhase2 = currentPhase === "project_execution";
@@ -198,6 +199,80 @@ export default function DevProjectDetail() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Data Linkage Status - only show in phase 2 */}
+          {isPhase2 && linkageStatus && (
+            <Card className="border-blue-100">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Link2 className="h-4 w-4 text-blue-500" />
+                  阶段间数据联动
+                  {(linkageStatus.syncWarnings.profileNewerThanBom || linkageStatus.syncWarnings.bomNewerThanSummary) && (
+                    <Badge className="bg-amber-100 text-amber-700 text-[10px] px-1.5 py-0">
+                      <AlertTriangle className="h-2.5 w-2.5 mr-0.5" />需同步
+                    </Badge>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-3 text-xs flex-wrap">
+                  <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${
+                    linkageStatus.profileCost.available
+                      ? linkageStatus.profileCost.confirmed
+                        ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                        : "bg-amber-50 border-amber-200 text-amber-700"
+                      : "bg-gray-50 border-gray-200 text-gray-400"
+                  }`}>
+                    <Users className="h-3.5 w-3.5" />
+                    <div>
+                      <p className="font-medium">产品画像 · 成本</p>
+                      <p className="text-[10px] opacity-80">
+                        {linkageStatus.profileCost.available
+                          ? linkageStatus.profileCost.confirmed ? "已确认" : "未确认"
+                          : "无数据"}
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight className={`h-4 w-4 ${linkageStatus.syncWarnings.profileNewerThanBom ? "text-amber-500" : "text-muted-foreground"}`} />
+                  <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${
+                    linkageStatus.bom.hasData
+                      ? "bg-blue-50 border-blue-200 text-blue-700"
+                      : "bg-gray-50 border-gray-200 text-gray-400"
+                  }`}>
+                    <Package className="h-3.5 w-3.5" />
+                    <div>
+                      <p className="font-medium">BOM物料清单</p>
+                      <p className="text-[10px] opacity-80">
+                        {linkageStatus.bom.hasData
+                          ? `${linkageStatus.bom.itemCount}项 · \u00a5${linkageStatus.bom.totalMaterialCost}`
+                          : "无数据"}
+                      </p>
+                    </div>
+                  </div>
+                  <ArrowRight className={`h-4 w-4 ${linkageStatus.syncWarnings.bomNewerThanSummary ? "text-amber-500" : "text-muted-foreground"}`} />
+                  <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${
+                    linkageStatus.profitSummary.hasData
+                      ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                      : "bg-gray-50 border-gray-200 text-gray-400"
+                  }`}>
+                    <DollarSign className="h-3.5 w-3.5" />
+                    <div>
+                      <p className="font-medium">利润计算器</p>
+                      <p className="text-[10px] opacity-80">
+                        {linkageStatus.profitSummary.hasData ? "已配置" : "待配置"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                {(linkageStatus.syncWarnings.profileNewerThanBom || linkageStatus.syncWarnings.bomNewerThanSummary) && (
+                  <p className="text-[10px] text-amber-600 mt-2 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    上游数据已更新，建议进入对应模块刷新数据以保持一致性
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {project.description && (
             <Card><CardHeader><CardTitle className="text-sm">项目描述</CardTitle></CardHeader><CardContent><p className="text-sm text-muted-foreground">{project.description}</p></CardContent></Card>

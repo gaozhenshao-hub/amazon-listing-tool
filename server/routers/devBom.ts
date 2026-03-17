@@ -21,6 +21,8 @@ export const devBomRouter = router({
       quantity: z.number().default(1),
       unitCost: z.string().optional(),
       supplier: z.string().optional(),
+      supplierGlobalId: z.number().optional(),
+      supplierName: z.string().optional(),
       moq: z.number().optional(),
       leadTime: z.number().optional(),
       notes: z.string().optional(),
@@ -36,6 +38,8 @@ export const devBomRouter = router({
         quantity: input.quantity,
         unitPrice: input.unitCost ?? null,
         remark: input.notes ?? null,
+        supplierGlobalId: input.supplierGlobalId ?? null,
+        supplierName: input.supplierName ?? null,
       });
     }),
 
@@ -49,13 +53,26 @@ export const devBomRouter = router({
       quantity: z.number().optional(),
       unitCost: z.string().optional(),
       supplier: z.string().optional(),
+      supplierGlobalId: z.number().optional(),
+      supplierName: z.string().optional(),
       moq: z.number().optional(),
       leadTime: z.number().optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { id, ...data } = input;
-      return devDb.saveDevBomItem({ id, ...data } as any);
+      const { id, partName, partCategory, material, specification, quantity, unitCost, notes, supplierGlobalId, supplierName } = input;
+      return devDb.saveDevBomItem({
+        id,
+        partName,
+        material: material ?? undefined,
+        process: partCategory ?? undefined,
+        specification: specification ?? undefined,
+        quantity,
+        unitPrice: unitCost ?? undefined,
+        remark: notes ?? undefined,
+        supplierGlobalId: supplierGlobalId ?? null,
+        supplierName: supplierName ?? null,
+      } as any);
     }),
 
   delete: protectedProcedure

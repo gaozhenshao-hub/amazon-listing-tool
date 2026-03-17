@@ -835,6 +835,8 @@ export const devBomItems = mysqlTable("dev_bom_items", {
   unitPrice: varchar("unitPrice", { length: 50 }),
   subtotal: varchar("subtotal", { length: 50 }),
   remark: text("remark"),
+  supplierGlobalId: int("supplierGlobalId"),
+  supplierName: varchar("supplierName", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
