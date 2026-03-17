@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   ChevronDown,
@@ -8,6 +9,8 @@ import {
   XCircle,
   ClipboardCheck,
   ShieldCheck,
+  Loader2,
+  PlayCircle,
 } from "lucide-react";
 
 // ─── 15 Dimensions Definition ─────────────────────────────────────
@@ -35,16 +38,62 @@ interface BulletChecklistPanelProps {
   checkListScores?: CheckListScores;
   bulletIndex: number;
   aiSemanticRelations?: Record<string, string | null>;
+  onRunCheck?: () => void;
+  isRunningCheck?: boolean;
 }
 
 export default function BulletChecklistPanel({
   checkListScores,
   bulletIndex,
   aiSemanticRelations,
+  onRunCheck,
+  isRunningCheck,
 }: BulletChecklistPanelProps) {
   const [expanded, setExpanded] = useState(false);
 
-  if (!checkListScores) return null;
+  // When no checkListScores data, show a "Run Check" button
+  if (!checkListScores) {
+    return (
+      <div className="mt-2">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onRunCheck && !isRunningCheck) onRunCheck();
+          }}
+          disabled={isRunningCheck}
+          className="w-full flex items-center justify-between px-3 py-2 rounded-lg border border-dashed border-muted-foreground/30 text-xs transition-colors hover:bg-muted/50 hover:border-muted-foreground/50 disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          <div className="flex items-center gap-2">
+            {isRunningCheck ? (
+              <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin" />
+            ) : (
+              <ClipboardCheck className="h-3.5 w-3.5 text-muted-foreground" />
+            )}
+            <span className="font-medium text-muted-foreground">
+              {isRunningCheck ? "正在进行15维度自检..." : "Check List 自检"}
+            </span>
+            {!isRunningCheck && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground border-muted-foreground/30">
+                点击运行
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="flex gap-0.5">
+              {CHECKLIST_DIMENSIONS.map((d) => (
+                <div
+                  key={d.key}
+                  className="w-1.5 h-1.5 rounded-full bg-muted-foreground/20"
+                  title={`${d.code} ${d.label}`}
+                />
+              ))}
+            </div>
+            {!isRunningCheck && <PlayCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+          </div>
+        </button>
+      </div>
+    );
+  }
 
   const passCount = CHECKLIST_DIMENSIONS.filter(
     (d) => checkListScores[d.key]?.pass
@@ -110,7 +159,7 @@ export default function BulletChecklistPanel({
           {/* Header */}
           <div className="px-3 py-2 bg-muted/30 border-b flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground">
-              卖点 #{bulletIndex + 1} — 15维度质量自检
+              卖点 #{bulletIndex + 1} - 15维度质量自检
             </span>
             <div className="flex gap-3 text-[10px] text-muted-foreground">
               <span className="flex items-center gap-1">
@@ -119,6 +168,20 @@ export default function BulletChecklistPanel({
               <span className="flex items-center gap-1">
                 <XCircle className="h-3 w-3 text-red-400" /> 待优化 {totalCount - passCount}
               </span>
+              {onRunCheck && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-5 px-1.5 text-[10px] text-blue-600 hover:text-blue-700"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onRunCheck && !isRunningCheck) onRunCheck();
+                  }}
+                  disabled={isRunningCheck}
+                >
+                  {isRunningCheck ? <Loader2 className="h-3 w-3 animate-spin" /> : "重新自检"}
+                </Button>
+              )}
             </div>
           </div>
 
@@ -170,7 +233,7 @@ export default function BulletChecklistPanel({
                     </p>
                     {notes && (
                       <p className={`mt-1 text-[11px] leading-relaxed ${passed ? "text-green-700" : "text-red-600 font-medium"}`}>
-                        {passed ? "✓ " : "✗ "}{notes}
+                        {passed ? "\u2713 " : "\u2717 "}{notes}
                       </p>
                     )}
                   </div>
@@ -196,10 +259,10 @@ export default function BulletChecklistPanel({
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                 {[
-                  { key: "purpose", label: "用途关系", icon: "🎯" },
-                  { key: "capability", label: "能力关系", icon: "⚡" },
-                  { key: "identity", label: "定义关系", icon: "📌" },
-                  { key: "causation", label: "因果关系", icon: "🔗" },
+                  { key: "purpose", label: "用途关系", icon: "\ud83c\udfaf" },
+                  { key: "capability", label: "能力关系", icon: "\u26a1" },
+                  { key: "identity", label: "定义关系", icon: "\ud83d\udccc" },
+                  { key: "causation", label: "因果关系", icon: "\ud83d\udd17" },
                 ].map(({ key, label, icon }) => {
                   const val = aiSemanticRelations[key];
                   return (
@@ -210,7 +273,7 @@ export default function BulletChecklistPanel({
                           {label}:
                         </span>{" "}
                         {val ? (
-                          <span className="text-blue-600 italic">"{val}"</span>
+                          <span className="text-blue-600 italic">&quot;{val}&quot;</span>
                         ) : (
                           <span className="text-gray-400">未覆盖</span>
                         )}
@@ -226,11 +289,11 @@ export default function BulletChecklistPanel({
           <div className={`px-3 py-2 border-t text-[10px] ${allPassed ? "bg-green-50" : "bg-amber-50"}`}>
             {allPassed ? (
               <span className="text-green-700 font-medium">
-                ✅ 全部15维度通过 — 此卖点质量优秀
+                \u2705 全部15维度通过 - 此卖点质量优秀
               </span>
             ) : (
               <span className="text-amber-700">
-                ⚠️ 有 {totalCount - passCount} 项未通过 — 建议编辑优化后重新生成，或手动调整对应内容
+                \u26a0\ufe0f 有 {totalCount - passCount} 项未通过 - 建议编辑优化后重新生成，或手动调整对应内容
               </span>
             )}
           </div>

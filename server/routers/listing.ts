@@ -14,6 +14,7 @@ import {
   SINGLE_BULLET_PROMPT,
   EXPAND_KEYWORD_TO_FABE_PROMPT,
   QA_GENERATION_PROMPT,
+  EVALUATE_BULLET_CHECKLIST_PROMPT,
 } from "../prompts";
 import { buildListingContext, checkDataReadiness, contextToPromptText } from "../listingContext";
 
@@ -1662,6 +1663,39 @@ export const listingRouter = router({
       }
 
       return parsed;
+    }),
+
+  // ─── Evaluate Bullet Checklist (15 Dimensions) ───
+  evaluateBulletChecklist: protectedProcedure
+    .input(z.object({
+      subtitle: z.string(),
+      fullText: z.string(),
+      bulletIndex: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      const bulletText = `${input.subtitle} ${input.fullText}`;
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: EVALUATE_BULLET_CHECKLIST_PROMPT },
+          { role: "user", content: `Evaluate this Amazon bullet point (Bullet #${input.bulletIndex + 1}):\n\n${bulletText}` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const content = typeof response.choices[0].message.content === "string"
+        ? response.choices[0].message.content
+        : JSON.stringify(response.choices[0].message.content);
+
+      try {
+        const parsed = JSON.parse(content);
+        return {
+          checkListScores: parsed.checkListScores || {},
+          aiSemanticRelations: parsed.aiSemanticRelations || null,
+        };
+      } catch {
+        return { checkListScores: {}, aiSemanticRelations: null };
+      }
     }),
 
   // ─── Version History Procedures ───

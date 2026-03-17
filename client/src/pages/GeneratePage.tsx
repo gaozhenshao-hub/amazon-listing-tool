@@ -99,6 +99,10 @@ export default function GeneratePage() {
   // Lock state for each step (locked = confirmed + synced to preview)
   const [lockedSteps, setLockedSteps] = useState<Set<number>>(new Set());
 
+  // Checklist evaluation state
+  const [evaluatingChecklist, setEvaluatingChecklist] = useState<Record<number, boolean>>({});
+  const evaluateChecklist = trpc.listing.evaluateBulletChecklist.useMutation();
+
   // Step navigation state
   const [activeStep, setActiveStep] = useState(1);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
@@ -452,6 +456,34 @@ export default function GeneratePage() {
     setEditingCore(null);
     setEditingBullet(null);
     setShowAddForm(false);
+  };
+
+  // Run 15-dimension checklist evaluation for a bullet
+  const handleRunChecklist = async (idx: number) => {
+    const bullet = generatedBullets[idx];
+    if (!bullet?.subtitle || !bullet?.fullText) return;
+    setEvaluatingChecklist(prev => ({ ...prev, [idx]: true }));
+    try {
+      const result = await evaluateChecklist.mutateAsync({
+        subtitle: bullet.subtitle,
+        fullText: bullet.fullText,
+        bulletIndex: idx,
+      });
+      // Merge checklist scores and semantic relations into the bullet data
+      setGeneratedBullets(prev => ({
+        ...prev,
+        [idx]: {
+          ...prev[idx],
+          checkListScores: result.checkListScores,
+          aiSemanticRelations: result.aiSemanticRelations,
+        },
+      }));
+      toast.success(`卖点 ${idx + 1} 自检完成`);
+    } catch (err: any) {
+      toast.error(`自检失败: ${err.message}`);
+    } finally {
+      setEvaluatingChecklist(prev => ({ ...prev, [idx]: false }));
+    }
   };
 
   // Sync confirmed bullets to listing preview
@@ -1217,7 +1249,9 @@ export default function GeneratePage() {
                                   <BulletChecklistPanel
                                     checkListScores={generatedBullets[idx].checkListScores}
                                     bulletIndex={idx}
-                                    aiSemanticRelations={generatedBullets[idx].semanticRelations}
+                                    aiSemanticRelations={generatedBullets[idx].aiSemanticRelations}
+                                    onRunCheck={() => handleRunChecklist(idx)}
+                                    isRunningCheck={!!evaluatingChecklist[idx]}
                                   />
                                 </div>
                               )}

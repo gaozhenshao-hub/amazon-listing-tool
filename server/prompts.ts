@@ -732,6 +732,63 @@ Respond in JSON format:
   }
 }`;
 
+// ─── Evaluate Bullet Checklist Prompt ─────────────────────────────
+export const EVALUATE_BULLET_CHECKLIST_PROMPT = `You are an expert Amazon listing quality auditor. Your task is to evaluate a single Amazon bullet point against 15 quality dimensions.
+
+For each dimension, provide:
+- "pass": true/false (whether the bullet meets this criterion)
+- "notes": a brief explanation in English of why it passes or fails
+
+=== 15 DIMENSIONS ===
+[B1] READABILITY: No grammar errors. Logical flow. Natural for North American readers.
+[B2] FORMATTING: Arabic numerals, consistent capitalization, proper punctuation.
+[B3] LAYOUT: Consistent format (subtitle + body structure).
+[B4] SELLING POINT FOCUS: ONE core selling point per bullet. Clear and focused.
+[B5] SUBTITLE: Short and clear subtitle (under 30 chars).
+[B6] FABE METHOD: Feature → Advantage → Benefit → Evidence structure.
+[B7] STRUCTURED FORMAT: Selling point + explanation format, clear at a glance.
+[B8] USER PSYCHOLOGY: Uses consumer psychology (loss aversion, social proof, etc.).
+[B9] FAQ COVERAGE: Addresses common customer questions.
+[B10] QUANTIFIED DATA: Includes specific numbers and comparisons.
+[B11] SCENE INTEGRATION: Naturally embeds usage scenarios.
+[B12] TRUST SIGNALS: Includes social proof or authority endorsements.
+[B13] WARRANTY/QUALITY: Includes certifications, warranty, or quality backing.
+[B14] TRAFFIC KEYWORDS: Incorporates relevant search keywords.
+[B15] AI-FRIENDLY STRUCTURE: Expresses semantic relationships (purpose/capability/identity/causation).
+
+Also extract the 4 semantic relationships if present:
+- purpose: what the product is used for
+- capability: what the product can do
+- identity: what the product is
+- causation: what the product causes/prevents
+
+Respond in JSON format:
+{
+  "checkListScores": {
+    "readability": { "pass": true, "notes": "" },
+    "formatting": { "pass": true, "notes": "" },
+    "layout": { "pass": true, "notes": "" },
+    "sellingPointFocus": { "pass": true, "notes": "" },
+    "subtitle": { "pass": true, "notes": "" },
+    "fabe": { "pass": true, "notes": "" },
+    "structured": { "pass": true, "notes": "" },
+    "psychology": { "pass": true, "notes": "" },
+    "faqCoverage": { "pass": true, "notes": "" },
+    "quantifiedData": { "pass": true, "notes": "" },
+    "scenes": { "pass": true, "notes": "" },
+    "trustSignals": { "pass": true, "notes": "" },
+    "warranty": { "pass": true, "notes": "" },
+    "trafficKeywords": { "pass": true, "notes": "" },
+    "aiReadability": { "pass": true, "notes": "" }
+  },
+  "aiSemanticRelations": {
+    "purpose": "expression or null",
+    "capability": "expression or null",
+    "identity": "expression or null",
+    "causation": "expression or null"
+  }
+}`;
+
 // ─── Expand Keyword to FABE Selling Point Prompt ─────────────────────
 export const EXPAND_KEYWORD_TO_FABE_PROMPT = `${EXPERT_ROLE}
 

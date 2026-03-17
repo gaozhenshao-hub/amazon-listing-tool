@@ -1196,3 +1196,7 @@
 - [x] 锁定状态视觉指示：绿色边框+锁图标+已锁定标签
 - [x] 解锁编辑时清除锁定状态，允许重新生成/编辑/确认
 - [x] 编写vitest测试（23个测试，全部65个文件1604个测试通过）
+
+## BUG修复：BulletChecklistPanel 15维度自检面板未显示 (2026-03-17)
+- [x] 排查原因：checkListScores字段不存在时组件return null，且aiSemanticRelations字段名不匹配
+- [x] 修复方案：无数据时显示"运行自检"按钮，新增evaluateBulletChecklist后端接口，修复字段名映射

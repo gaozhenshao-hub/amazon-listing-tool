@@ -24,8 +24,10 @@ describe("BulletChecklistPanel Component", () => {
       expect(componentCode).toContain("aiSemanticRelations");
     });
 
-    it("should return null when checkListScores is undefined", () => {
-      expect(componentCode).toContain("if (!checkListScores) return null");
+    it("should show run-check button when checkListScores is undefined", () => {
+      expect(componentCode).toContain("if (!checkListScores)");
+      expect(componentCode).toContain("Check List \u81ea\u68c0");
+      expect(componentCode).toContain("onRunCheck");
     });
   });
 
@@ -367,7 +369,7 @@ describe("GeneratePage - BulletChecklistPanel Integration", () => {
   });
 
   it("should pass aiSemanticRelations prop from generatedBullets", () => {
-    expect(pageCode).toContain("aiSemanticRelations={generatedBullets[idx].semanticRelations}");
+    expect(pageCode).toContain("aiSemanticRelations={generatedBullets[idx].aiSemanticRelations}");
   });
 
   it("should place BulletChecklistPanel after incorporatedKeywords section", () => {
