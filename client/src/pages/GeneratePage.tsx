@@ -49,6 +49,7 @@ import StepDescription from "./listing/StepDescription";
 import StepSearchTerms from "./listing/StepSearchTerms";
 import StepQA from "./listing/StepQA";
 import BulletChecklistPanel from "@/components/BulletChecklistPanel";
+import LockedContentBar from "@/components/LockedContentBar";
 
 function CharCountBadge({ count, min, max, label }: { count: number; min: number; max: number; label?: string }) {
   const inRange = count >= min && count <= max;
@@ -94,6 +95,9 @@ export default function GeneratePage() {
   const [aiKeyword, setAiKeyword] = useState("");
   const [aiResult, setAiResult] = useState<any>(null);
   const [aiResultEditing, setAiResultEditing] = useState(false);
+
+  // Lock state for each step (locked = confirmed + synced to preview)
+  const [lockedSteps, setLockedSteps] = useState<Set<number>>(new Set());
 
   // Step navigation state
   const [activeStep, setActiveStep] = useState(1);
@@ -453,7 +457,10 @@ export default function GeneratePage() {
   // Sync confirmed bullets to listing preview
   const syncBulletsMut = trpc.listing.syncBulletsFromSellingPoints.useMutation({
     onSuccess: (data) => {
-      toast.success(`已成功同步 ${data.bulletCount} 条卖点到Listing预览页`);
+      toast.success(`已成功同步 ${data.bulletCount} 条卖点并锁定`);
+      // Auto-lock Step 1 after sync
+      setLockedSteps(prev => { const n = new Set(prev); n.add(1); return n; });
+      handleStepComplete(1);
     },
     onError: (err) => toast.error("同步失败: " + err.message),
   });
@@ -467,6 +474,21 @@ export default function GeneratePage() {
       .map(b => ({ subtitle: b.subtitle || "", fullText: b.fullText || "" }));
     if (bullets.length === 0) { toast.error("没有已确认的卖点可同步"); return; }
     syncBulletsMut.mutate({ projectId: selectedProjectId, bullets });
+  };
+
+  // Lock/Unlock helpers
+  const handleLockStep = (step: number) => {
+    setLockedSteps(prev => { const n = new Set(prev); n.add(step); return n; });
+  };
+
+  const handleUnlockStep = (step: number) => {
+    setLockedSteps(prev => { const n = new Set(prev); n.delete(step); return n; });
+    setCompletedSteps(prev => { const n = new Set(prev); n.delete(step); return n; });
+  };
+
+  const handleUnlockBullets = () => {
+    handleUnlockStep(1);
+    toast.info("卖点已解锁，可重新编辑");
   };
 
   const allBulletsConfirmed = sellingPointCores
@@ -552,6 +574,37 @@ export default function GeneratePage() {
           </Card>
           {/* ===== Step 1: 卖点精雕 ===== */}
           {activeStep === 1 && (<>
+          {/* Locked state for Step 1 */}
+          {lockedSteps.has(1) && (
+            <Card className="border-2 border-green-300 bg-green-50/30 dark:border-green-800 dark:bg-green-950/10">
+              <CardContent className="p-4 space-y-3">
+                <LockedContentBar
+                  locked={true}
+                  label="卖点"
+                  onUnlock={handleUnlockBullets}
+                  info={`${confirmedBulletCount} 条卖点已同步到预览页`}
+                />
+                {/* Show locked bullet summaries */}
+                <div className="space-y-2 pl-2">
+                  {sellingPointCores?.map((sp, idx) => {
+                    const bullet = generatedBullets[idx];
+                    if (!bullet || !confirmedBullets[idx]) return null;
+                    return (
+                      <div key={idx} className="flex items-start gap-2 text-sm text-green-800 dark:text-green-300">
+                        <Badge variant="outline" className="text-[10px] shrink-0 border-green-400">{idx + 1}</Badge>
+                        <div className="min-w-0">
+                          <span className="font-medium">{bullet.subtitle}</span>
+                          <span className="text-xs text-green-600 dark:text-green-400 ml-2 line-clamp-1">{bullet.fullText}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {/* Unlocked Step 1 content */}
+          {!lockedSteps.has(1) && (<>
           {/* Character count rules reminder */}
           <Card className="bg-blue-50/50 border-blue-200">
             <CardContent className="p-4">
@@ -1424,6 +1477,7 @@ export default function GeneratePage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          </>)}{/* end unlocked Step 1 */}
           </>)}
 
           {/* ===== Step 2: 标题生成 ===== */}
@@ -1431,6 +1485,9 @@ export default function GeneratePage() {
             <StepTitle
               projectId={selectedProjectId}
               emphasis={emphasis}
+              locked={lockedSteps.has(2)}
+              onLock={() => handleLockStep(2)}
+              onUnlock={() => { handleUnlockStep(2); toast.info("标题已解锁，可重新编辑"); }}
               onComplete={() => handleStepComplete(2)}
             />
           )}
@@ -1440,6 +1497,9 @@ export default function GeneratePage() {
             <StepDescription
               projectId={selectedProjectId}
               emphasis={emphasis}
+              locked={lockedSteps.has(3)}
+              onLock={() => handleLockStep(3)}
+              onUnlock={() => { handleUnlockStep(3); toast.info("描述已解锁，可重新编辑"); }}
               onComplete={() => handleStepComplete(3)}
             />
           )}
@@ -1449,6 +1509,9 @@ export default function GeneratePage() {
             <StepSearchTerms
               projectId={selectedProjectId}
               emphasis={emphasis}
+              locked={lockedSteps.has(4)}
+              onLock={() => handleLockStep(4)}
+              onUnlock={() => { handleUnlockStep(4); toast.info("搜索词已解锁，可重新编辑"); }}
               onComplete={() => handleStepComplete(4)}
             />
           )}
@@ -1458,6 +1521,9 @@ export default function GeneratePage() {
             <StepQA
               projectId={selectedProjectId}
               emphasis={emphasis}
+              locked={lockedSteps.has(5)}
+              onLock={() => handleLockStep(5)}
+              onUnlock={() => { handleUnlockStep(5); toast.info("QA已解锁，可重新编辑"); }}
               onComplete={() => handleStepComplete(5)}
             />
           )}

@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import LockedContentBar from "@/components/LockedContentBar";
 import {
   Sparkles,
   Loader2,
@@ -23,6 +24,9 @@ import {
 interface StepTitleProps {
   projectId: number;
   emphasis: string;
+  locked?: boolean;
+  onLock?: () => void;
+  onUnlock?: () => void;
   onComplete: () => void;
 }
 
@@ -52,7 +56,7 @@ const CHECK_LIST_LABELS: Record<string, string> = {
   seasonal: "T10 节日",
 };
 
-export default function StepTitle({ projectId, emphasis, onComplete }: StepTitleProps) {
+export default function StepTitle({ projectId, emphasis, locked, onLock, onUnlock, onComplete }: StepTitleProps) {
   const [candidates, setCandidates] = useState<any[]>([]);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
@@ -67,7 +71,6 @@ export default function StepTitle({ projectId, emphasis, onComplete }: StepTitle
         const content = data.title || data;
         let parsed: any;
         if (typeof content === "string") {
-          // Try to extract JSON from markdown code blocks
           const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
           if (jsonMatch) {
             parsed = JSON.parse(jsonMatch[1].trim());
@@ -85,7 +88,6 @@ export default function StepTitle({ projectId, emphasis, onComplete }: StepTitle
           setConfirmed(false);
           toast.success(`已生成 ${titles.length} 个候选标题`);
         } else {
-          // Fallback: treat the whole response as a single title
           setCandidates([{
             title: typeof content === "string" ? content : JSON.stringify(content),
             characterCount: (typeof content === "string" ? content : "").length,
@@ -94,7 +96,6 @@ export default function StepTitle({ projectId, emphasis, onComplete }: StepTitle
           toast.success("标题已生成");
         }
       } catch {
-        // If parsing fails, use raw text
         const text = typeof data.title === "string" ? data.title : JSON.stringify(data);
         setCandidates([{
           title: text,
@@ -109,8 +110,9 @@ export default function StepTitle({ projectId, emphasis, onComplete }: StepTitle
 
   const updateListing = trpc.listing.updateByProject.useMutation({
     onSuccess: () => {
-      toast.success("标题已保存");
+      toast.success("标题已保存并锁定");
       setConfirmed(true);
+      onLock?.();
       onComplete();
     },
     onError: (err) => toast.error("保存失败: " + err.message),
@@ -142,9 +144,38 @@ export default function StepTitle({ projectId, emphasis, onComplete }: StepTitle
     });
   };
 
+  const handleUnlock = () => {
+    setConfirmed(false);
+    onUnlock?.();
+  };
+
   const passCount = (scores: Record<string, any>) => {
     return Object.values(scores || {}).filter((s: any) => s?.pass).length;
   };
+
+  // If locked, show locked state
+  if (locked && confirmed) {
+    const finalTitle = editingTitle || candidates[selectedIdx!]?.title || "";
+    return (
+      <Card className="border-2 border-green-300 bg-green-50/30 dark:border-green-800 dark:bg-green-950/10">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Type className="h-5 w-5 text-blue-600" />
+            Step 2: 标题生成
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <LockedContentBar
+            locked={true}
+            label="标题"
+            onUnlock={handleUnlock}
+            info="已同步到预览页"
+          />
+          <p className="text-sm text-green-800 dark:text-green-300 pl-2">{finalTitle}</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -292,8 +323,8 @@ export default function StepTitle({ projectId, emphasis, onComplete }: StepTitle
                             key={key}
                             className={`flex items-start gap-1.5 rounded-md px-2 py-1.5 text-xs ${
                               val?.pass
-                                ? "bg-green-50 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-                                : "bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                                ? "bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400"
+                                : "bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400"
                             }`}
                           >
                             <span className="shrink-0">{val?.pass ? "✅" : "❌"}</span>
@@ -357,7 +388,7 @@ export default function StepTitle({ projectId, emphasis, onComplete }: StepTitle
                   {updateListing.isPending ? (
                     <><Loader2 className="h-4 w-4 mr-2 animate-spin" />保存中...</>
                   ) : (
-                    <><Check className="h-4 w-4 mr-2" />确认标题</>
+                    <><Check className="h-4 w-4 mr-2" />确认并锁定标题</>
                   )}
                 </Button>
               </div>
@@ -365,8 +396,8 @@ export default function StepTitle({ projectId, emphasis, onComplete }: StepTitle
           </div>
         )}
 
-        {/* Confirmed state */}
-        {confirmed && (
+        {/* Confirmed but not yet locked (transitional state) */}
+        {confirmed && !locked && (
           <div className="p-4 rounded-lg border-2 border-green-300 bg-green-50/50">
             <div className="flex items-center gap-2 mb-2">
               <CheckCircle2 className="h-5 w-5 text-green-600" />

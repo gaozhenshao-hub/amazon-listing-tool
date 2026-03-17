@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import LockedContentBar from "@/components/LockedContentBar";
 import {
   Sparkles,
   Loader2,
@@ -19,10 +20,13 @@ import {
 interface StepSearchTermsProps {
   projectId: number;
   emphasis: string;
+  locked?: boolean;
+  onLock?: () => void;
+  onUnlock?: () => void;
   onComplete: () => void;
 }
 
-export default function StepSearchTerms({ projectId, emphasis, onComplete }: StepSearchTermsProps) {
+export default function StepSearchTerms({ projectId, emphasis, locked, onLock, onUnlock, onComplete }: StepSearchTermsProps) {
   const [searchTerms, setSearchTerms] = useState("");
   const [categories, setCategories] = useState<any[]>([]);
   const [confirmed, setConfirmed] = useState(false);
@@ -67,8 +71,9 @@ export default function StepSearchTerms({ projectId, emphasis, onComplete }: Ste
 
   const updateListing = trpc.listing.updateByProject.useMutation({
     onSuccess: () => {
-      toast.success("搜索词已保存");
+      toast.success("搜索词已保存并锁定");
       setConfirmed(true);
+      onLock?.();
       onComplete();
     },
     onError: (err) => toast.error("保存失败: " + err.message),
@@ -93,10 +98,38 @@ export default function StepSearchTerms({ projectId, emphasis, onComplete }: Ste
     });
   };
 
+  const handleUnlock = () => {
+    setConfirmed(false);
+    onUnlock?.();
+  };
+
   // Calculate byte count (Amazon uses bytes, not characters)
   const byteCount = new TextEncoder().encode(searchTerms).length;
   const maxBytes = 250;
   const inRange = byteCount <= maxBytes;
+
+  // Locked state
+  if (locked && confirmed) {
+    return (
+      <Card className="border-2 border-green-300 bg-green-50/30 dark:border-green-800 dark:bg-green-950/10">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Search className="h-5 w-5 text-orange-600" />
+            Step 4: 后台搜索词
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <LockedContentBar
+            locked={true}
+            label="搜索词"
+            onUnlock={handleUnlock}
+            info={`${byteCount}/${maxBytes} 字节 · 已同步到预览页`}
+          />
+          <p className="text-sm text-green-800 dark:text-green-300 font-mono pl-2 line-clamp-2">{searchTerms}</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -192,15 +225,15 @@ export default function StepSearchTerms({ projectId, emphasis, onComplete }: Ste
                 {updateListing.isPending ? (
                   <><Loader2 className="h-4 w-4 mr-2 animate-spin" />保存中...</>
                 ) : (
-                  <><Check className="h-4 w-4 mr-2" />确认搜索词</>
+                  <><Check className="h-4 w-4 mr-2" />确认并锁定搜索词</>
                 )}
               </Button>
             </div>
           </div>
         )}
 
-        {/* Confirmed state */}
-        {confirmed && (
+        {/* Confirmed but not yet locked */}
+        {confirmed && !locked && (
           <div className="p-4 rounded-lg border-2 border-green-300 bg-green-50/50">
             <div className="flex items-center gap-2 mb-2">
               <CheckCircle2 className="h-5 w-5 text-green-600" />

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import LockedContentBar from "@/components/LockedContentBar";
 import {
   Sparkles,
   Loader2,
@@ -24,6 +25,9 @@ import {
 interface StepQAProps {
   projectId: number;
   emphasis: string;
+  locked?: boolean;
+  onLock?: () => void;
+  onUnlock?: () => void;
   onComplete: () => void;
 }
 
@@ -35,7 +39,7 @@ interface QAItem {
   sourceInsight?: string;
 }
 
-export default function StepQA({ projectId, emphasis, onComplete }: StepQAProps) {
+export default function StepQA({ projectId, emphasis, locked, onLock, onUnlock, onComplete }: StepQAProps) {
   const [qaItems, setQaItems] = useState<QAItem[]>([]);
   const [confirmed, setConfirmed] = useState(false);
   const [generated, setGenerated] = useState(false);
@@ -90,8 +94,9 @@ export default function StepQA({ projectId, emphasis, onComplete }: StepQAProps)
 
   const updateListing = trpc.listing.updateByProject.useMutation({
     onSuccess: () => {
-      toast.success("QA已保存");
+      toast.success("QA已保存并锁定");
       setConfirmed(true);
+      onLock?.();
       onComplete();
     },
     onError: (err) => toast.error("保存失败: " + err.message),
@@ -114,6 +119,11 @@ export default function StepQA({ projectId, emphasis, onComplete }: StepQAProps)
       field: "qaContent",
       value: JSON.stringify(qaItems),
     });
+  };
+
+  const handleUnlock = () => {
+    setConfirmed(false);
+    onUnlock?.();
   };
 
   const handleStartEdit = (idx: number) => {
@@ -186,6 +196,38 @@ export default function StepQA({ projectId, emphasis, onComplete }: StepQAProps)
     generic: "通用问题",
     custom: "自定义",
   };
+
+  // Locked state
+  if (locked && confirmed) {
+    return (
+      <Card className="border-2 border-green-300 bg-green-50/30 dark:border-green-800 dark:bg-green-950/10">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-teal-600" />
+            Step 5: QA问答
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <LockedContentBar
+            locked={true}
+            label="QA问答"
+            onUnlock={handleUnlock}
+            info={`${qaItems.length} 组QA · 已同步到预览页`}
+          />
+          <div className="space-y-1.5 pl-2">
+            {qaItems.slice(0, 3).map((qa, idx) => (
+              <div key={idx} className="text-xs text-green-800 dark:text-green-300">
+                <span className="font-medium">Q{idx + 1}:</span> {qa.question}
+              </div>
+            ))}
+            {qaItems.length > 3 && (
+              <p className="text-xs text-green-600">...还有 {qaItems.length - 3} 组QA</p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -353,14 +395,14 @@ export default function StepQA({ projectId, emphasis, onComplete }: StepQAProps)
               {updateListing.isPending ? (
                 <><Loader2 className="h-4 w-4 mr-2 animate-spin" />保存中...</>
               ) : (
-                <><Check className="h-4 w-4 mr-2" />确认QA ({qaItems.length}组)</>
+                <><Check className="h-4 w-4 mr-2" />确认并锁定QA ({qaItems.length}组)</>
               )}
             </Button>
           </div>
         )}
 
-        {/* Confirmed state */}
-        {confirmed && (
+        {/* Confirmed but not yet locked */}
+        {confirmed && !locked && (
           <div className="p-4 rounded-lg border-2 border-green-300 bg-green-50/50">
             <div className="flex items-center gap-2 mb-2">
               <CheckCircle2 className="h-5 w-5 text-green-600" />
