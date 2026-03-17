@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import LockedContentBar from "@/components/LockedContentBar";
+import ChecklistPanel from "@/components/ChecklistPanel";
 import {
   Sparkles,
   Loader2,
@@ -17,6 +18,18 @@ import {
   Code,
   Eye,
 } from "lucide-react";
+
+// ─── Description 8 Dimensions Definition ─────────────────────────────────
+const DESCRIPTION_CHECKLIST_DIMENSIONS = [
+  { key: "readability", code: "D1", label: "可读性", labelEn: "Readability", description: "无语法错误，段落简短，逻辑通顺" },
+  { key: "characterLimit", code: "D2", label: "字符限制", labelEn: "Character Limit", description: "总长度不超过2000字符，不少于500字符" },
+  { key: "hookOpening", code: "D3", label: "开头吸引力", labelEn: "Hook Opening", description: "以场景/痛点/利益开头，抓住注意力" },
+  { key: "sellingPointCoverage", code: "D4", label: "卖点覆盖", labelEn: "Selling Point Coverage", description: "覆盖主要产品卖点和使用场景" },
+  { key: "keywordIntegration", code: "D5", label: "关键词融入", labelEn: "Keyword Integration", description: "自然融入关键词，不堆砌" },
+  { key: "htmlFormatting", code: "D6", label: "HTML格式", labelEn: "HTML Formatting", description: "正确使用HTML标签提升排版" },
+  { key: "specsParameters", code: "D7", label: "规格参数", labelEn: "Specs & Parameters", description: "包含尺寸/材质/重量/容量等具体参数" },
+  { key: "trustClosing", code: "D8", label: "信任收尾", labelEn: "Trust Closing", description: "以质保/品牌承诺/行动号召结尾" },
+] as const;
 
 interface StepDescriptionProps {
   projectId: number;
@@ -33,6 +46,34 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
   const [viewMode, setViewMode] = useState<"preview" | "source">("preview");
   const [confirmed, setConfirmed] = useState(false);
   const [generated, setGenerated] = useState(false);
+  const [checkScores, setCheckScores] = useState<Record<string, { pass: boolean; notes: string }> | undefined>(undefined);
+  const autoCheckTriggered = useRef(false);
+
+  const evaluateCheck = trpc.listing.evaluateDescriptionChecklist.useMutation({
+    onSuccess: (data) => {
+      if (data.checkListScores && Object.keys(data.checkListScores).length > 0) {
+        setCheckScores(data.checkListScores);
+      }
+    },
+    onError: () => toast.error("描述自检失败"),
+  });
+
+  // Auto-trigger checklist when description is generated
+  useEffect(() => {
+    if (generated && description && !autoCheckTriggered.current && !checkScores) {
+      autoCheckTriggered.current = true;
+      evaluateCheck.mutate({ description });
+    }
+  }, [generated, description]);
+
+  const handleRunCheck = () => {
+    if (!description.trim()) {
+      toast.error("请先生成产品描述");
+      return;
+    }
+    setCheckScores(undefined);
+    evaluateCheck.mutate({ description });
+  };
 
   const generateDescription = trpc.listing.generateDescription.useMutation({
     onSuccess: (data: any) => {
@@ -55,11 +96,15 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
         }
         setDescription(text);
         setGenerated(true);
+        setCheckScores(undefined);
+        autoCheckTriggered.current = false;
         toast.success("产品描述已生成");
       } catch {
         const text = typeof data === "string" ? data : JSON.stringify(data);
         setDescription(text);
         setGenerated(true);
+        setCheckScores(undefined);
+        autoCheckTriggered.current = false;
         toast.success("产品描述已生成");
       }
     },
@@ -144,7 +189,7 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
           Step 3: 产品描述
         </CardTitle>
         <CardDescription>
-          AI生成HTML格式产品描述 → 编辑优化 → 确认保存
+          AI生成HTML格式产品描述 → 8维度自检 → 编辑优化 → 确认保存
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -211,6 +256,16 @@ export default function StepDescription({ projectId, emphasis, locked, savedCont
                 />
               </div>
             )}
+
+            {/* 8-Dimension Checklist Panel */}
+            <ChecklistPanel
+              dimensions={DESCRIPTION_CHECKLIST_DIMENSIONS}
+              checkListScores={checkScores}
+              panelTitle="产品描述 - 8维度质量自检"
+              checkLabel="8维度自检"
+              onRunCheck={handleRunCheck}
+              isRunningCheck={evaluateCheck.isPending}
+            />
 
             <div className="flex items-center justify-between">
               <Badge variant="secondary" className="text-xs">

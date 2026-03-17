@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import LockedContentBar from "@/components/LockedContentBar";
+import ChecklistPanel from "@/components/ChecklistPanel";
 import {
   Sparkles,
   Loader2,
@@ -21,6 +22,18 @@ import {
   ArrowUp,
   ArrowDown,
 } from "lucide-react";
+
+// ─── QA 8 Dimensions Definition ─────────────────────────────────────
+const QA_CHECKLIST_DIMENSIONS = [
+  { key: "questionNaturalness", code: "Q1", label: "问题自然度", labelEn: "Question Naturalness", description: "问题模拟真实消费者口吻，第一人称，简洁(<100字符)" },
+  { key: "answerProfessionalism", code: "Q2", label: "回答专业度", labelEn: "Answer Professionalism", description: "回答专业友好，150-300字符，直接回答问题" },
+  { key: "painPointCoverage", code: "Q3", label: "痛点覆盖", labelEn: "Pain Point Coverage", description: "包含2-3个来自评论的高频痛点问题" },
+  { key: "differentiationCoverage", code: "Q4", label: "差异化覆盖", labelEn: "Differentiation Coverage", description: "包含2-3个突出产品差异化优势的问题" },
+  { key: "categoryStandard", code: "Q5", label: "品类标准问题", labelEn: "Category Standard", description: "包含1-2个品类通用问题（兼容性/尺寸/质保/物流）" },
+  { key: "dataQuantification", code: "Q6", label: "数据量化", labelEn: "Data Quantification", description: "回答中包含具体数据和量化表述" },
+  { key: "semanticRelation", code: "Q7", label: "语义关系", labelEn: "Semantic Relation", description: "回答自然体现语义关系（用途/能力/定义/因果）" },
+  { key: "priorityOrder", code: "Q8", label: "优先级排序", labelEn: "Priority Order", description: "按客户影响力排序：痛点→差异化→品类标准" },
+] as const;
 
 interface StepQAProps {
   projectId: number;
@@ -50,6 +63,34 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
   const [showAddForm, setShowAddForm] = useState(false);
   const [newQ, setNewQ] = useState("");
   const [newA, setNewA] = useState("");
+  const [checkScores, setCheckScores] = useState<Record<string, { pass: boolean; notes: string }> | undefined>(undefined);
+  const autoCheckTriggered = useRef(false);
+
+  const evaluateCheck = trpc.listing.evaluateQAChecklist.useMutation({
+    onSuccess: (data) => {
+      if (data.checkListScores && Object.keys(data.checkListScores).length > 0) {
+        setCheckScores(data.checkListScores);
+      }
+    },
+    onError: () => toast.error("QA自检失败"),
+  });
+
+  // Auto-trigger checklist when QA items are generated
+  useEffect(() => {
+    if (generated && qaItems.length > 0 && !autoCheckTriggered.current && !checkScores) {
+      autoCheckTriggered.current = true;
+      evaluateCheck.mutate({ qaContent: JSON.stringify(qaItems) });
+    }
+  }, [generated, qaItems.length]);
+
+  const handleRunCheck = () => {
+    if (qaItems.length === 0) {
+      toast.error("请先生成QA问答");
+      return;
+    }
+    setCheckScores(undefined);
+    evaluateCheck.mutate({ qaContent: JSON.stringify(qaItems) });
+  };
 
   // Parse saved QA content from DB for locked display
   const savedQaItems = useMemo<QAItem[]>(() => {
@@ -102,6 +143,8 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
             sourceInsight: item.sourceInsight || item.source || "",
           })));
           setGenerated(true);
+          setCheckScores(undefined);
+          autoCheckTriggered.current = false;
           toast.success(`已生成 ${items.length} 组QA`);
         } else {
           toast.error("QA生成结果格式异常");
@@ -268,7 +311,7 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
           Step 5: QA问答
         </CardTitle>
         <CardDescription>
-          AI生成5-8组结构化QA → 编辑/增删/排序 → 确认保存
+          AI生成5-8组结构化QA → 8维度自检 → 编辑/增删/排序 → 确认保存
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -416,6 +459,16 @@ export default function StepQA({ projectId, emphasis, locked, savedContent, onLo
                 )}
               </div>
             ))}
+
+            {/* QA 8-Dimension Checklist Panel */}
+            <ChecklistPanel
+              dimensions={QA_CHECKLIST_DIMENSIONS}
+              checkListScores={checkScores}
+              panelTitle="QA问答 - 8维度质量自检"
+              checkLabel="8维度自检"
+              onRunCheck={handleRunCheck}
+              isRunningCheck={evaluateCheck.isPending}
+            />
 
             {/* Confirm button */}
             <Button

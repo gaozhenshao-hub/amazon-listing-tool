@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import LockedContentBar from "@/components/LockedContentBar";
+import ChecklistPanel from "@/components/ChecklistPanel";
 import {
   Sparkles,
   Loader2,
@@ -20,6 +21,20 @@ import {
   Type,
   AlertCircle,
 } from "lucide-react";
+
+// ─── Title 10 Dimensions Definition ─────────────────────────────────────
+const TITLE_CHECKLIST_DIMENSIONS = [
+  { key: "readability", code: "T1", label: "可读性", labelEn: "Readability", description: "无语法错误，逻辑通顺，无关键词堆砌" },
+  { key: "formatting", code: "T2", label: "格式规范", labelEn: "Formatting", description: "阿拉伯数字、Title Case大小写、拼写计量单位" },
+  { key: "characterCount", code: "T3", label: "字符数", labelEn: "Character Count", description: "180-200字符区间，充分利用长度" },
+  { key: "contentCoverage", code: "T4", label: "内容覆盖", labelEn: "Content Coverage", description: "包含核心卖点、关键特性、规格参数、使用场景、目标用户" },
+  { key: "coreKeywords", code: "T5", label: "核心关键词", labelEn: "Core Keywords", description: "包含1-2个core_main策略关键词" },
+  { key: "wordOrder", code: "T6", label: "词序策略", labelEn: "Word Order", description: "核心卖点前置，遵循title_front→mid→end布局" },
+  { key: "bundlePack", code: "T7", label: "套装/多件装", labelEn: "Bundle/Pack", description: "多件装产品是否标注数量" },
+  { key: "trafficKeywords", code: "T8", label: "流量词", labelEn: "Traffic Keywords", description: "融入高流量关键词" },
+  { key: "brand", code: "T9", label: "品牌", labelEn: "Brand", description: "品牌名是否合理放置" },
+  { key: "seasonal", code: "T10", label: "季节性", labelEn: "Seasonal", description: "是否适当包含节日/季节性词汇" },
+] as const;
 
 interface StepTitleProps {
   projectId: number;
@@ -65,6 +80,38 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
   const [confirmed, setConfirmed] = useState(false);
   const [expandedCheckList, setExpandedCheckList] = useState<number | null>(null);
   const [holidayTerm, setHolidayTerm] = useState("");
+  const [titleCheckScores, setTitleCheckScores] = useState<Record<string, { pass: boolean; notes: string }> | undefined>(undefined);
+  const autoCheckTriggered = useRef(false);
+
+  const evaluateTitleCheck = trpc.listing.evaluateTitleChecklist.useMutation({
+    onSuccess: (data) => {
+      if (data.checkListScores && Object.keys(data.checkListScores).length > 0) {
+        setTitleCheckScores(data.checkListScores);
+      }
+    },
+    onError: () => toast.error("标题自检失败"),
+  });
+
+  // Auto-trigger title checklist when candidates are generated
+  useEffect(() => {
+    if (candidates.length > 0 && selectedIdx !== null && !autoCheckTriggered.current) {
+      const title = candidates[selectedIdx]?.title;
+      if (title && !titleCheckScores) {
+        autoCheckTriggered.current = true;
+        evaluateTitleCheck.mutate({ title });
+      }
+    }
+  }, [candidates, selectedIdx]);
+
+  const handleRunTitleCheck = () => {
+    const title = isEditing ? editingTitle : (selectedIdx !== null ? candidates[selectedIdx]?.title : null);
+    if (!title) {
+      toast.error("请先选择或生成标题");
+      return;
+    }
+    setTitleCheckScores(undefined);
+    evaluateTitleCheck.mutate({ title });
+  };
 
   const generateTitle = trpc.listing.generateTitle.useMutation({
     onSuccess: (data: any) => {
@@ -87,6 +134,8 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
           setCandidates(titles);
           setSelectedIdx(null);
           setConfirmed(false);
+          setTitleCheckScores(undefined);
+          autoCheckTriggered.current = false;
           toast.success(`已生成 ${titles.length} 个候选标题`);
         } else {
           setCandidates([{
@@ -409,6 +458,18 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
                   )}
                 </Button>
               </div>
+            )}
+
+            {/* Title 10-Dimension Checklist Panel */}
+            {selectedIdx !== null && (
+              <ChecklistPanel
+                dimensions={TITLE_CHECKLIST_DIMENSIONS}
+                checkListScores={titleCheckScores}
+                panelTitle="标题 - 10维度质量自检"
+                checkLabel="10维度自检"
+                onRunCheck={handleRunTitleCheck}
+                isRunningCheck={evaluateTitleCheck.isPending}
+              />
             )}
           </div>
         )}

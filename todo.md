@@ -1235,3 +1235,20 @@
 - [x] 解锁后自动填充编辑区 — 点击解锁时将已保存内容填充到编辑区
 - [x] 一键导出完整Listing包 — 全部锁定后在预览页增加导出Excel/CSV按钮（含UTF-8 BOM，中英文双语，标题/卖点/描述/搜索词/QA全覆盖）
 - [x] 编写vitest测试（17个新测试，全部68个文件1672个测试通过）
+
+## Step 2-5 自检面板 (2026-03-17)
+- [x] Step 2 标题10维度自检面板 — 后端evaluateTitleChecklist API
+- [x] Step 2 标题10维度自检面板 — 前端通用ChecklistPanel组件集成
+- [x] Step 2 标题10维度自检面板 — 标题生成后自动触发自检
+- [x] Step 3 产品描述8维度自检面板 — 后端evaluateDescriptionChecklist API
+- [x] Step 3 产品描述8维度自检面板 — 前端ChecklistPanel组件集成
+- [x] Step 3 产品描述8维度自检面板 — 描述生成后自动触发自检
+- [x] Step 4 搜索词5维度自检面板 — 后端evaluateSearchTermsChecklist API
+- [x] Step 4 搜索词5维度自检面板 — 前端ChecklistPanel组件集成
+- [x] Step 4 搜索词5维度自检面板 — 搜索词生成后自动触发自检
+- [x] Step 5 QA 8维度自检面板 — 后端evaluateQAChecklist API
+- [x] Step 5 QA 8维度自检面板 — 前端ChecklistPanel组件集成
+- [x] Step 5 QA 8维度自检面板 — QA生成后自动触发自检
+- [x] 通用ChecklistPanel组件 — 可复用的自检面板（支持任意维度数）
+- [x] 4个后端LLM评估Prompt（标题/描述/搜索词/QA）
+- [x] 编写vitest测试覆盖所有自检面板（131个新测试，全部69个文件1803个测试通过）

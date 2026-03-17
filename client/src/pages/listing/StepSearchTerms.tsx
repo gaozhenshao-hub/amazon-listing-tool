@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import LockedContentBar from "@/components/LockedContentBar";
+import ChecklistPanel from "@/components/ChecklistPanel";
 import {
   Sparkles,
   Loader2,
@@ -16,6 +17,15 @@ import {
   Search,
   AlertCircle,
 } from "lucide-react";
+
+// ─── Search Terms 5 Dimensions Definition ─────────────────────────────────
+const SEARCH_TERMS_CHECKLIST_DIMENSIONS = [
+  { key: "byteLimit", code: "S1", label: "字节限制", labelEn: "Byte Limit", description: "总长度不超过250字节" },
+  { key: "noTitleDuplication", code: "S2", label: "去重标题词", labelEn: "No Title Duplication", description: "不重复标题中已有的关键词" },
+  { key: "formatCompliance", code: "S3", label: "格式规范", labelEn: "Format Compliance", description: "用空格分隔，不使用逗号或其他分隔符" },
+  { key: "prohibitedWords", code: "S4", label: "禁用词检查", labelEn: "Prohibited Words", description: "不包含品牌名、ASIN、竞品名或主观描述" },
+  { key: "longTailPriority", code: "S5", label: "长尾词优先", labelEn: "Long-tail Priority", description: "优先放入标题和卖点未覆盖的长尾词" },
+] as const;
 
 interface StepSearchTermsProps {
   projectId: number;
@@ -32,6 +42,34 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
   const [categories, setCategories] = useState<any[]>([]);
   const [confirmed, setConfirmed] = useState(false);
   const [generated, setGenerated] = useState(false);
+  const [checkScores, setCheckScores] = useState<Record<string, { pass: boolean; notes: string }> | undefined>(undefined);
+  const autoCheckTriggered = useRef(false);
+
+  const evaluateCheck = trpc.listing.evaluateSearchTermsChecklist.useMutation({
+    onSuccess: (data) => {
+      if (data.checkListScores && Object.keys(data.checkListScores).length > 0) {
+        setCheckScores(data.checkListScores);
+      }
+    },
+    onError: () => toast.error("搜索词自检失败"),
+  });
+
+  // Auto-trigger checklist when search terms are generated
+  useEffect(() => {
+    if (generated && searchTerms && !autoCheckTriggered.current && !checkScores) {
+      autoCheckTriggered.current = true;
+      evaluateCheck.mutate({ searchTerms });
+    }
+  }, [generated, searchTerms]);
+
+  const handleRunCheck = () => {
+    if (!searchTerms.trim()) {
+      toast.error("请先生成搜索词");
+      return;
+    }
+    setCheckScores(undefined);
+    evaluateCheck.mutate({ searchTerms });
+  };
 
   const generateSearchTerms = trpc.listing.generateSearchTerms.useMutation({
     onSuccess: (data: any) => {
@@ -59,11 +97,15 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
         setSearchTerms(typeof text === "string" ? text : JSON.stringify(text));
         setCategories(cats);
         setGenerated(true);
+        setCheckScores(undefined);
+        autoCheckTriggered.current = false;
         toast.success("搜索词已生成");
       } catch {
         const text = typeof data === "string" ? data : JSON.stringify(data);
         setSearchTerms(text);
         setGenerated(true);
+        setCheckScores(undefined);
+        autoCheckTriggered.current = false;
         toast.success("搜索词已生成");
       }
     },
@@ -150,7 +192,7 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
           Step 4: 后台搜索词
         </CardTitle>
         <CardDescription>
-          AI生成后台Search Terms → 编辑优化 → 确认保存（250字节限制）
+          AI生成后台Search Terms → 5维度自检 → 编辑优化 → 确认保存（250字节限制）
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -226,6 +268,16 @@ export default function StepSearchTerms({ projectId, emphasis, locked, savedCont
                 </div>
               </div>
             )}
+
+            {/* 5-Dimension Checklist Panel */}
+            <ChecklistPanel
+              dimensions={SEARCH_TERMS_CHECKLIST_DIMENSIONS}
+              checkListScores={checkScores}
+              panelTitle="搜索词 - 5维度质量自检"
+              checkLabel="5维度自检"
+              onRunCheck={handleRunCheck}
+              isRunningCheck={evaluateCheck.isPending}
+            />
 
             <div className="flex justify-end">
               <Button

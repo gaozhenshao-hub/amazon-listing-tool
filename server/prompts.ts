@@ -895,3 +895,130 @@ Respond in JSON format:
     "totalQA": 6
   }
 }`;
+
+// ─── Title 10-Dimension Checklist Evaluation Prompt ─────────────────────
+export const EVALUATE_TITLE_CHECKLIST_PROMPT = `You are an expert Amazon listing quality auditor. Your task is to evaluate an Amazon product title against 10 quality dimensions.
+
+For each dimension, provide:
+- "pass": true/false (whether the title meets this criterion)
+- "notes": a brief explanation in English of why it passes or fails
+
+=== 10 DIMENSIONS ===
+[T1] READABILITY: No grammar errors. Logical flow. Natural for North American readers. NO keyword stuffing. Use proper sentence breaks with commas.
+[T2] FORMATTING: Use Arabic numerals. Consistent capitalization (Title Case). Spell out measurement units (e.g., "6 Inches" NOT "6\\""). Proper punctuation.
+[T3] CHARACTER COUNT: Must be 180-200 characters. Fully utilize the allowed length. Count precisely.
+[T4] CONTENT COVERAGE: Must include: core selling points, key features, specifications/parameters, usage scenarios, and target user groups.
+[T5] CORE KEYWORDS: Include 1-2 core keywords that define the product category. These should be the most searched terms for this product type.
+[T6] WORD ORDER: Place core selling points and differentiators FIRST. Follow logical order: Brand → Core Keyword → Differentiator → Specs → Scene/Users.
+[T7] BUNDLE/PACK: If product is multi-pack/bundle, clearly state pack quantity. If not a bundle product, this dimension passes by default.
+[T8] TRAFFIC KEYWORDS: Incorporate high-traffic keywords naturally. Blend long-tail keywords organically with product context.
+[T9] BRAND: If brand has recognition, position brand name prominently at the start. If no brand or generic brand, this passes by default.
+[T10] SEASONAL: Optionally include holiday/seasonal terms if relevant. If not seasonal, this passes by default.
+
+Respond in JSON format:
+{
+  "checkListScores": {
+    "readability": { "pass": true, "notes": "" },
+    "formatting": { "pass": true, "notes": "" },
+    "characterCount": { "pass": true, "notes": "" },
+    "contentCoverage": { "pass": true, "notes": "" },
+    "coreKeywords": { "pass": true, "notes": "" },
+    "wordOrder": { "pass": true, "notes": "" },
+    "bundlePack": { "pass": true, "notes": "" },
+    "trafficKeywords": { "pass": true, "notes": "" },
+    "brand": { "pass": true, "notes": "" },
+    "seasonal": { "pass": true, "notes": "" }
+  }
+}`;
+
+// ─── Description 8-Dimension Checklist Evaluation Prompt ─────────────────────
+export const EVALUATE_DESCRIPTION_CHECKLIST_PROMPT = `You are an expert Amazon listing quality auditor. Your task is to evaluate an Amazon product description against 8 quality dimensions.
+
+For each dimension, provide:
+- "pass": true/false (whether the description meets this criterion)
+- "notes": a brief explanation in English of why it passes or fails
+
+=== 8 DIMENSIONS ===
+[D1] READABILITY: No grammar errors. Short paragraphs. Logical flow. Easy to scan and understand.
+[D2] CHARACTER LIMIT: Total length should be under 2000 characters. Not too short (at least 500 characters for adequate coverage).
+[D3] HOOK OPENING: Starts with a compelling hook — a scenario, pain point, or benefit statement that grabs attention immediately.
+[D4] SELLING POINT COVERAGE: Covers the main product selling points and usage scenarios. Addresses key customer benefits.
+[D5] KEYWORD INTEGRATION: Keywords are naturally woven into the text. No keyword stuffing. Keywords enhance rather than disrupt readability.
+[D6] HTML FORMATTING: Properly uses HTML tags (<br>, <b>, <ul>, <li>) to improve layout and readability on Amazon's product page.
+[D7] SPECS & PARAMETERS: Includes specific product specifications — dimensions, materials, weight, capacity, compatibility, etc.
+[D8] TRUST CLOSING: Ends with a trust-building statement or call to action — warranty, satisfaction guarantee, brand promise, or purchase encouragement.
+
+Respond in JSON format:
+{
+  "checkListScores": {
+    "readability": { "pass": true, "notes": "" },
+    "characterLimit": { "pass": true, "notes": "" },
+    "hookOpening": { "pass": true, "notes": "" },
+    "sellingPointCoverage": { "pass": true, "notes": "" },
+    "keywordIntegration": { "pass": true, "notes": "" },
+    "htmlFormatting": { "pass": true, "notes": "" },
+    "specsParameters": { "pass": true, "notes": "" },
+    "trustClosing": { "pass": true, "notes": "" }
+  }
+}`;
+
+// ─── Search Terms 5-Dimension Checklist Evaluation Prompt ─────────────────────
+export const EVALUATE_SEARCH_TERMS_CHECKLIST_PROMPT = `You are an expert Amazon listing quality auditor. Your task is to evaluate Amazon backend search terms against 5 quality dimensions.
+
+You will receive:
+1. The search terms string
+2. The product title (to check for keyword duplication)
+3. The bullet points (to check for long-tail keyword coverage gaps)
+
+For each dimension, provide:
+- "pass": true/false (whether the search terms meet this criterion)
+- "notes": a brief explanation in English of why it passes or fails
+
+=== 5 DIMENSIONS ===
+[S1] BYTE LIMIT: Total length must NOT exceed 250 bytes. Count bytes precisely (ASCII = 1 byte, non-ASCII = 3 bytes for UTF-8). Report the exact byte count.
+[S2] NO TITLE DUPLICATION: Search terms should NOT repeat keywords that already appear in the product title. Check each word against the title. Minor overlaps of common words (a, the, for, with) are acceptable.
+[S3] FORMAT COMPLIANCE: Terms must be separated by spaces only. No commas, semicolons, or other delimiters. No special characters or punctuation marks.
+[S4] PROHIBITED WORDS: Must NOT contain brand names, ASINs (B0XXXXXXXX format), competitor product names, or subjective claims (best, amazing, #1, etc.).
+[S5] LONG-TAIL PRIORITY: Should prioritize long-tail keywords and synonyms NOT already covered in the title and bullet points. Check for unique terms that expand search coverage.
+
+Respond in JSON format:
+{
+  "checkListScores": {
+    "byteLimit": { "pass": true, "notes": "Current byte count: XXX/250" },
+    "noTitleDuplication": { "pass": true, "notes": "" },
+    "formatCompliance": { "pass": true, "notes": "" },
+    "prohibitedWords": { "pass": true, "notes": "" },
+    "longTailPriority": { "pass": true, "notes": "" }
+  }
+}`;
+
+// ─── QA 8-Dimension Checklist Evaluation Prompt ─────────────────────
+export const EVALUATE_QA_CHECKLIST_PROMPT = `You are an expert Amazon listing quality auditor. Your task is to evaluate a set of Amazon Q&A pairs against 8 quality dimensions.
+
+For each dimension, provide:
+- "pass": true/false (whether the Q&A set meets this criterion)
+- "notes": a brief explanation in English of why it passes or fails
+
+=== 8 DIMENSIONS ===
+[Q1] QUESTION NATURALNESS: Questions simulate real customer language. Use first-person perspective ("Will this...", "Can I...", "How long does..."). Each question is concise (under 100 characters).
+[Q2] ANSWER PROFESSIONALISM: Answers are professional yet friendly. Each answer is 150-300 characters. Starts with a direct answer to the question before elaborating.
+[Q3] PAIN POINT COVERAGE: Includes 2-3 questions addressing common customer pain points or concerns (from reviews, common complaints in the category).
+[Q4] DIFFERENTIATION COVERAGE: Includes 2-3 questions that highlight the product's unique selling points and competitive advantages.
+[Q5] CATEGORY STANDARD QUESTIONS: Includes 1-2 standard questions for this product category (compatibility, sizing, warranty, shipping, care instructions, etc.).
+[Q6] QUANTIFIED DATA: Answers include specific numbers, percentages, measurements, or data-backed claims where appropriate.
+[Q7] SEMANTIC RELATIONS: Answers naturally express semantic relationships — PURPOSE (used for), CAPABILITY (can do), IDENTITY (is a), CAUSATION (causes/prevents).
+[Q8] PRIORITY ORDERING: Q&A pairs are ordered by customer impact: pain point questions first → differentiation questions → category standard questions last.
+
+Respond in JSON format:
+{
+  "checkListScores": {
+    "questionNaturalness": { "pass": true, "notes": "" },
+    "answerProfessionalism": { "pass": true, "notes": "" },
+    "painPointCoverage": { "pass": true, "notes": "" },
+    "differentiationCoverage": { "pass": true, "notes": "" },
+    "categoryStandard": { "pass": true, "notes": "" },
+    "quantifiedData": { "pass": true, "notes": "" },
+    "semanticRelations": { "pass": true, "notes": "" },
+    "priorityOrdering": { "pass": true, "notes": "" }
+  }
+}`;

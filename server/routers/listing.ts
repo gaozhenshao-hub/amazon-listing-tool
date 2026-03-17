@@ -15,6 +15,10 @@ import {
   EXPAND_KEYWORD_TO_FABE_PROMPT,
   QA_GENERATION_PROMPT,
   EVALUATE_BULLET_CHECKLIST_PROMPT,
+  EVALUATE_TITLE_CHECKLIST_PROMPT,
+  EVALUATE_DESCRIPTION_CHECKLIST_PROMPT,
+  EVALUATE_SEARCH_TERMS_CHECKLIST_PROMPT,
+  EVALUATE_QA_CHECKLIST_PROMPT,
 } from "../prompts";
 import { buildListingContext, checkDataReadiness, contextToPromptText } from "../listingContext";
 
@@ -1986,6 +1990,131 @@ Please expand this keyword/theme into a complete selling point core with FABE di
       }
 
       return parsed;
+    }),
+
+  // ─── Title 10-Dimension Checklist Evaluation ───
+  evaluateTitleChecklist: protectedProcedure
+    .input(z.object({
+      title: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: EVALUATE_TITLE_CHECKLIST_PROMPT },
+          { role: "user", content: `Evaluate this Amazon product title:\n\n${input.title}\n\nCharacter count: ${input.title.length}` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const content = typeof response.choices[0].message.content === "string"
+        ? response.choices[0].message.content
+        : JSON.stringify(response.choices[0].message.content);
+
+      try {
+        const parsed = JSON.parse(content);
+        return { checkListScores: parsed.checkListScores || {} };
+      } catch {
+        return { checkListScores: {} };
+      }
+    }),
+
+  // ─── Description 8-Dimension Checklist Evaluation ───
+  evaluateDescriptionChecklist: protectedProcedure
+    .input(z.object({
+      description: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: EVALUATE_DESCRIPTION_CHECKLIST_PROMPT },
+          { role: "user", content: `Evaluate this Amazon product description:\n\n${input.description}\n\nCharacter count: ${input.description.length}` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const content = typeof response.choices[0].message.content === "string"
+        ? response.choices[0].message.content
+        : JSON.stringify(response.choices[0].message.content);
+
+      try {
+        const parsed = JSON.parse(content);
+        return { checkListScores: parsed.checkListScores || {} };
+      } catch {
+        return { checkListScores: {} };
+      }
+    }),
+
+  // ─── Search Terms 5-Dimension Checklist Evaluation ───
+  evaluateSearchTermsChecklist: protectedProcedure
+    .input(z.object({
+      searchTerms: z.string(),
+      title: z.string().optional(),
+      bulletPoints: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      let userMsg = `Evaluate these Amazon backend search terms:\n\n${input.searchTerms}`;
+      userMsg += `\n\nByte count: ${new TextEncoder().encode(input.searchTerms).length}`;
+      if (input.title) userMsg += `\n\nProduct Title (for duplication check):\n${input.title}`;
+      if (input.bulletPoints) userMsg += `\n\nBullet Points (for long-tail coverage check):\n${input.bulletPoints}`;
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: EVALUATE_SEARCH_TERMS_CHECKLIST_PROMPT },
+          { role: "user", content: userMsg },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const content = typeof response.choices[0].message.content === "string"
+        ? response.choices[0].message.content
+        : JSON.stringify(response.choices[0].message.content);
+
+      try {
+        const parsed = JSON.parse(content);
+        return { checkListScores: parsed.checkListScores || {} };
+      } catch {
+        return { checkListScores: {} };
+      }
+    }),
+
+  // ─── QA 8-Dimension Checklist Evaluation ───
+  evaluateQAChecklist: protectedProcedure
+    .input(z.object({
+      qaContent: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      let qaText = input.qaContent;
+      try {
+        const parsed = JSON.parse(input.qaContent);
+        if (Array.isArray(parsed)) {
+          qaText = parsed.map((qa: any, i: number) =>
+            `Q${i + 1}: ${qa.question || ""}\nA${i + 1}: ${qa.answer || ""}`
+          ).join("\n\n");
+        } else if (parsed.qaItems && Array.isArray(parsed.qaItems)) {
+          qaText = parsed.qaItems.map((qa: any, i: number) =>
+            `Q${i + 1}: ${qa.question || ""}\nA${i + 1}: ${qa.answer || ""}`
+          ).join("\n\n");
+        }
+      } catch {}
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: EVALUATE_QA_CHECKLIST_PROMPT },
+          { role: "user", content: `Evaluate these Amazon Q&A pairs:\n\n${qaText}` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const content = typeof response.choices[0].message.content === "string"
+        ? response.choices[0].message.content
+        : JSON.stringify(response.choices[0].message.content);
+
+      try {
+        const parsed = JSON.parse(content);
+        return { checkListScores: parsed.checkListScores || {} };
+      } catch {
+        return { checkListScores: {} };
+      }
     }),
 
 });
