@@ -57,10 +57,8 @@ describe("Stage Gating Mechanism", () => {
   });
 
   describe("Backend: Gate checks in run handlers", () => {
-    it("should have gate check in runAttributeTagging", () => {
-      const tagSection = devAnalysisRouter.split("runAttributeTagging")[1]?.split("runMarketOverview")[0] || "";
-      expect(tagSection).toContain("checkStageGating");
-      expect(tagSection).toContain("门控检查未通过");
+    it("should NOT have runAttributeTagging (moved to devTagging router)", () => {
+      expect(devAnalysisRouter).not.toContain("runAttributeTagging:");
     });
 
     it("should have gate check in runMarketOverview", () => {

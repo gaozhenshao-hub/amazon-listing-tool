@@ -979,3 +979,9 @@
 - [x] 一致性校验: 前端AttributeTagging组件展示一致性校验警告
 - [x] 一致性校验: 标签管理维度变更后自动提示用户重新打标
 - [x] 测试: 53个测试文件全部通过，1171 tests passed
+
+## 清理旧runAttributeTagging代码 (2026-03-17)
+- [x] 移除devAnalysis.ts中runAttributeTagging procedure及ATTRIBUTE_TAGGING_PROMPT引用
+- [x] 移除devAnalysis.ts中confirmAllTags、getProductTags、updateProductTag procedures
+- [x] 确认前端无残留引用（已在上一次重构中完成迁移）
+- [x] 54个测试文件全部通过，1187 tests passed

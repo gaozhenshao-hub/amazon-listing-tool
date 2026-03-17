@@ -18,7 +18,6 @@ import {
   type ReviewData,
 } from "../devStatsEngine";
 import {
-  ATTRIBUTE_TAGGING_PROMPT,
   MARKET_OVERVIEW_PROMPT,
   ATTRIBUTE_ANALYSIS_PROMPT,
   PRICE_ANALYSIS_PROMPT,
@@ -217,155 +216,9 @@ export const devAnalysisRouter = router({
       return devDb.getDevAnalysisStage(input.projectId, input.stageType);
     }),
 
-  // ─── Stage 0: AI Attribute Tagging ────────────────────────────
-  runAttributeTagging: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
-      if (!project) throw new Error("Project not found");
-
-      // Gate check
-      const gating = await checkStageGating(input.projectId, "attribute_tagging");
-      if (!gating.canRun) throw new Error(`门控检查未通过: ${gating.reason}`);
-
-      // Mark stage as running
-      await devDb.upsertDevAnalysisStage({
-        projectId: input.projectId,
-        userId: ctx.user.id,
-        stageType: "attribute_tagging",
-        status: "running",
-        rawResult: null,
-        editedResult: null,
-        confirmedAt: null,
-      });
-
-      const products = await devDb.getDevProductsByProject(input.projectId);
-      if (products.length === 0) throw new Error("No products found. Please upload data first.");
-
-      // Build product list for AI
-      const productList = products.slice(0, 60).map(p => ({
-        asin: p.asin,
-        title: p.title,
-        bulletPoints: p.bulletPoints,
-        price: p.price,
-        category: p.category,
-      }));
-
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: ATTRIBUTE_TAGGING_PROMPT },
-          {
-            role: "user",
-            content: `品类: ${project.name}\n关键词: ${project.keywords}\n\n产品列表(${products.length}个):\n${JSON.stringify(productList, null, 2)}`,
-          },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "attribute_tagging",
-            strict: true,
-            schema: {
-              type: "object",
-              properties: {
-                dimensions: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      name: { type: "string" },
-                      values: { type: "array", items: { type: "string" } },
-                    },
-                    required: ["name", "values"],
-                    additionalProperties: false,
-                  },
-                },
-                products: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      asin: { type: "string" },
-                      tags: {
-                        type: "object",
-                        additionalProperties: { type: "string" },
-                      },
-                    },
-                    required: ["asin", "tags"],
-                    additionalProperties: false,
-                  },
-                },
-              },
-              required: ["dimensions", "products"],
-              additionalProperties: false,
-            },
-          },
-        },
-      });
-
-      const content = response.choices?.[0]?.message?.content;
-      const parsed = content ? JSON.parse(content as string) : { dimensions: [], products: [] };
-
-      // Save tags to database
-      const tagRows: Array<{
-        projectId: number;
-        asin: string;
-        dimensionName: string;
-        dimensionValue: string;
-        confirmed: number;
-      }> = [];
-      for (const prod of parsed.products) {
-        for (const [dimName, dimValue] of Object.entries(prod.tags)) {
-          tagRows.push({
-            projectId: input.projectId,
-            asin: prod.asin,
-            dimensionName: dimName,
-            dimensionValue: dimValue as string,
-            confirmed: 0,
-          });
-        }
-      }
-      await devDb.bulkInsertDevProductTags(tagRows);
-
-      // Save stage result
-      await devDb.upsertDevAnalysisStage({
-        projectId: input.projectId,
-        userId: ctx.user.id,
-        stageType: "attribute_tagging",
-        status: "completed",
-        rawResult: JSON.stringify(parsed),
-        editedResult: null,
-        confirmedAt: null,
-      });
-
-      return parsed;
-    }),
-
-  // ─── Get / Update Product Tags ────────────────────────────────
-  getProductTags: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
-    .query(async ({ ctx, input }) => {
-      return devDb.getDevProductTags(input.projectId);
-    }),
-
-  updateProductTag: protectedProcedure
-    .input(z.object({
-      tagId: z.number(),
-      dimensionValue: z.string(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      await devDb.updateDevProductTag(input.tagId, { dimensionValue: input.dimensionValue });
-      return { success: true };
-    }),
-
-  confirmAllTags: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      await devDb.confirmAllDevProductTags(input.projectId);
-      await devDb.confirmDevAnalysisStage(input.projectId, "attribute_tagging", "");
-      return { success: true };
-    }),
-
   // ─── Stage 1: Market Overview ─────────────────────────────────
+  // NOTE: Attribute tagging (Stage 0) has been moved to devTagging router.
+  // Use devTagging.startTagging / confirmAll / unlockAll instead.
   runMarketOverview: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {

@@ -138,8 +138,7 @@ describe("Tag Cross Analysis Integration", () => {
     it("should have all required analysis procedures in devAnalysis router", async () => {
       const { devAnalysisRouter } = await import("./routers/devAnalysis");
       const procedures = Object.keys((devAnalysisRouter as any)._def.procedures || {});
-      // Core analysis procedures
-      expect(procedures).toContain("runAttributeTagging");
+      // Core analysis procedures (runAttributeTagging moved to devTagging router)
       expect(procedures).toContain("runAttributeCross");
       expect(procedures).toContain("runTagCrossAnalysis");
       expect(procedures).toContain("getConfirmedProjectTags");
