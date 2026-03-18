@@ -125,12 +125,13 @@ export default function KBImages() {
 
   // Group detail set images by position
   const groupedImages = useMemo(() => {
-    if (!detailSet) return { main: [], secondary: [], aplus: [] };
+    if (!detailSet) return { main: [], secondary: [], aplus: [], brand_story: [] };
     const imgs = (detailSet as any).images || [];
     return {
       main: imgs.filter((i: any) => i.imagePosition === "main"),
       secondary: imgs.filter((i: any) => i.imagePosition === "secondary"),
       aplus: imgs.filter((i: any) => i.imagePosition === "aplus"),
+      brand_story: imgs.filter((i: any) => i.imagePosition === "brand_story"),
     };
   }, [detailSet]);
 
@@ -190,6 +191,7 @@ export default function KBImages() {
                 <SelectItem value="main">主图</SelectItem>
                 <SelectItem value="secondary">副图</SelectItem>
                 <SelectItem value="aplus">A+图片</SelectItem>
+                <SelectItem value="brand_story">品牌故事</SelectItem>
               </SelectContent>
             </Select>
           </>
@@ -445,6 +447,21 @@ export default function KBImages() {
                     </div>
                   )}
 
+                  {/* ── Brand Story Images Section ── */}
+                  {groupedImages.brand_story.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <div className="w-1 h-4 bg-amber-500 rounded-full" />
+                        品牌故事 <Badge variant="secondary" className="text-[10px]">{groupedImages.brand_story.length}张</Badge>
+                      </h4>
+                      <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
+                        {groupedImages.brand_story.sort((a: any, b: any) => (a.positionIndex || 0) - (b.positionIndex || 0)).map((img: any) => (
+                          <ImageCardEnhanced key={img.id} img={img} onSelectImage={setSelectedImageId} selectedImageId={selectedImageId} onUpdateTags={updateImageTagsMutation} onUpdateScore={updateImageScoreMutation} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* AI Overall Analysis */}
                   {(d.overallAnalysis || d.userEditedOverallAnalysis) && (
                     <Card>
@@ -461,6 +478,8 @@ export default function KBImages() {
                             {analysis.overallStrategy && <p><strong>整体策略:</strong> {analysis.overallStrategy}</p>}
                             {analysis.mainImageAssessment && <p><strong>主图评估:</strong> {analysis.mainImageAssessment}</p>}
                             {analysis.secondaryImageFlow && <p><strong>副图叙事流:</strong> {analysis.secondaryImageFlow}</p>}
+                            {analysis.aplusAssessment && <p><strong>A+内容评估:</strong> {analysis.aplusAssessment}</p>}
+                            {analysis.brandStoryAssessment && <p><strong>品牌故事评估:</strong> {analysis.brandStoryAssessment}</p>}
                             {analysis.overallStyle && <p><strong>整体风格:</strong> {analysis.overallStyle}</p>}
                             {analysis.imageStrategy && <p><strong>图片策略:</strong> {analysis.imageStrategy}</p>}
                             {analysis.highlights && <p><strong>亮点:</strong> {analysis.highlights}</p>}
@@ -575,7 +594,7 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
         </div>
         {img.imagePosition !== "main" && (
           <Badge variant="outline" className="absolute top-1.5 left-1.5 text-[9px] bg-white/80 backdrop-blur-sm">
-            {img.imagePosition === "aplus" ? "A+" : `#${img.positionIndex}`}
+            {img.imagePosition === "aplus" ? "A+" : img.imagePosition === "brand_story" ? "品牌故事" : `#${img.positionIndex}`}
           </Badge>
         )}
       </div>

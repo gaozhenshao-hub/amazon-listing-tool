@@ -1311,3 +1311,14 @@
 - [x] 前端：展示3套推荐方案（含评分徽章+模块列表+优势标签+适用场景）
 - [x] 前端：一键应用后自动填充各模块的样式选择器（支持重新推荐）
 - [x] 编写vitest测试覆盖新功能（16个测试全部通过）
+
+## 图片知识库爬虫修复 (2026-03-18)
+- [x] BUG修复: 从colorImages JSON提取hiRes/large高清图片URL，缩略图自动升级为_SL1500_
+- [x] BUG修复: 过滤VIDEO variant和视频缩略图，仅保留真实产品图片
+- [x] BUG修复: 基MAIN/PT01-PT06 variant正确分类主图和副图
+- [x] BUG修复: 完善图片列表提取（colorImages JSON + DOM fallback双重策略）
+- [x] 新增A+内容图片爬取（aplus-media-library + aplus-seller-content）
+- [x] 新增品牌故事图片爬取（apm-brand-story-hero/carousel）
+- [x] 数据库：添加brand_story到imagePosition枚举（迁移已应用）
+- [x] 前端适配：品牌故事图片分区展示（琥珀色标记）+ 位置筛选器 + AI分析字段
+- [x] 编写vitest测试覆盖爬虫解析逻辑（20个测试全部通过）

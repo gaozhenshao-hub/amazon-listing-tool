@@ -1,0 +1,1 @@
+ALTER TABLE `kb_images` MODIFY COLUMN `imagePosition` enum('main','secondary','aplus','brand_story') NOT NULL;

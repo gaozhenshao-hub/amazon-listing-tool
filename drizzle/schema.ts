@@ -426,7 +426,7 @@ export const kbImages = mysqlTable("kb_images", {
   id: int("id").autoincrement().primaryKey(),
   imageSetId: int("imageSetId").notNull(),
   imageUrl: varchar("imageUrl", { length: 1024 }).notNull(), // S3 URL
-  imagePosition: mysqlEnum("imagePosition", ["main", "secondary", "aplus"]).notNull(),
+  imagePosition: mysqlEnum("imagePosition", ["main", "secondary", "aplus", "brand_story"]).notNull(),
   positionIndex: int("positionIndex"), // e.g. secondary image #2
   // Four-dimension tags
   tagCategory: varchar("tagCategory", { length: 64 }),
