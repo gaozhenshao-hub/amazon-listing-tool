@@ -84,6 +84,20 @@ export const kbSyncLogs = mysqlTable("kb_sync_logs", {
 export type KbSyncLog = typeof kbSyncLogs.$inferSelect;
 export type InsertKbSyncLog = typeof kbSyncLogs.$inferInsert;
 
+// Role permissions configuration (dynamic, stored in DB)
+export const rolePermissions = mysqlTable("role_permissions", {
+  id: int("id").autoincrement().primaryKey(),
+  role: varchar("role", { length: 50 }).notNull().unique(),
+  modules: text("modules").notNull(), // JSON array of module IDs
+  description: varchar("description", { length: 200 }),
+  updatedBy: int("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type RolePermission = typeof rolePermissions.$inferSelect;
+export type InsertRolePermission = typeof rolePermissions.$inferInsert;
+
 // Project assignments (admin assigns projects to team members)
 export const projectAssignments = mysqlTable("project_assignments", {
   id: int("id").autoincrement().primaryKey(),

@@ -1,0 +1,9 @@
+{
+  "query": "INSERT INTO `role_permissions` (`role`, `modules`, `description`) VALUES\n('super_admin', '[\"dev\",\"listing\",\"ops\",\"service\",\"knowledge\",\"admin\"]', '超级管理员 - 所有模块完全访问权限'),\n('admin', '[\"dev\",\"listing\",\"ops\",\"service\",\"knowledge\",\"admin\"]', '公司管理员 - 所有模块完全访问权限'),\n('ops_manager', '[\"listing\",\"knowledge\",\"ops\"]', '运营主管 - Listing、知识库和运营模块'),\n('ops_specialist', '[\"listing\",\"knowledge\"]', '运营专员 - Listing和知识库模块'),\n('product_dev', '[\"dev\",\"knowledge\"]', '产品开发 - 产品开发和知识库模块'),\n('finance', '[\"dev\"]', '财务 - 产品开发模块'),\n('purchaser', '[\"dev\"]', '采购 - 产品开发模块'),\n('designer', '[\"listing\",\"knowledge\"]', '美工 - Listing和知识库模块')\nON DUPLICATE KEY UPDATE `modules` = VALUES(`modules`), `description` = VALUES(`description`);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute INSERT INTO `role_permissions` (`role`, `modules`, `description`) VALUES\n('super_admin', '[\"dev\",\"listing\",\"ops\",\"service\",\"knowledge\",\"admin\"]', '超级管理员 - 所有模块完全访问权限'),\n('admin', '[\"dev\",\"listing\",\"ops\",\"service\",\"knowledge\",\"admin\"]', '公司管理员 - 所有模块完全访问权限'),\n('ops_manager', '[\"listing\",\"knowledge\",\"ops\"]', '运营主管 - Listing、知识库和运营模块'),\n('ops_specialist', '[\"listing\",\"knowledge\"]', '运营专员 - Listing和知识库模块'),\n('product_dev', '[\"dev\",\"knowledge\"]', '产品开发 - 产品开发和知识库模块'),\n('finance', '[\"dev\"]', '财务 - 产品开发模块'),\n('purchaser', '[\"dev\"]', '采购 - 产品开发模块'),\n('designer', '[\"listing\",\"knowledge\"]', '美工 - Listing和知识库模块')\nON DUPLICATE KEY UPDATE `modules` = VALUES(`modules`), `description` = VALUES(`description`);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 102
+}

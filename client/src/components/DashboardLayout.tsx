@@ -176,6 +176,7 @@ const modules: ModuleDef[] = [
       { icon: ClipboardCheck, label: "审核中心", path: "/admin/review" },
       { icon: FolderKanban, label: "项目分配", path: "/admin/assignments" },
       { icon: Shield, label: "SOP权限", path: "/admin/sop-access" },
+      { icon: Shield, label: "角色管理", path: "/admin/roles" },
       { icon: RefreshCw, label: "同步与监控", path: "/admin/sync" },
     ],
   },

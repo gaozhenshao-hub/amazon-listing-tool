@@ -59,6 +59,7 @@ import ReviewCenter from "./pages/ReviewCenter";
 import SopAccessPage from "./pages/SopAccessPage";
 import ProjectAssignmentPage from "./pages/ProjectAssignmentPage";
 import SyncManagement from "./pages/SyncManagement";
+import RoleManagement from "./pages/RoleManagement";
 
 function Router() {
   return (
@@ -134,6 +135,7 @@ function Router() {
         <Route path="/admin/sop-access" component={SopAccessPage} />
         <Route path="/admin/assignments" component={ProjectAssignmentPage} />
         <Route path="/admin/sync" component={SyncManagement} />
+        <Route path="/admin/roles" component={RoleManagement} />
         <Route path="/profile" component={ProfilePage} />
 
         <Route path="/404" component={NotFound} />

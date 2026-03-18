@@ -15,6 +15,7 @@ import {
   InsertListingVersion, listingVersions,
   InsertReviewAggregation, reviewAggregations,
   InsertLoginLog, loginLogs,
+  rolePermissions,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -702,4 +703,39 @@ export async function deleteImageWorkflowSession(id: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.delete(imageWorkflowSessions).where(eq(imageWorkflowSessions.id, id));
+}
+
+// ─── Role Permissions Helpers ──────────────────────────────────────
+
+export async function getAllRolePermissions() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(rolePermissions).orderBy(rolePermissions.role);
+}
+
+export async function getRolePermission(role: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(rolePermissions).where(eq(rolePermissions.role, role)).limit(1);
+  return rows[0] || null;
+}
+
+export async function upsertRolePermission(role: string, modules: string[], description: string | null, updatedBy: number | null) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const existing = await getRolePermission(role);
+  if (existing) {
+    await db.update(rolePermissions).set({
+      modules: JSON.stringify(modules),
+      description,
+      updatedBy,
+    }).where(eq(rolePermissions.role, role));
+  } else {
+    await db.insert(rolePermissions).values({
+      role,
+      modules: JSON.stringify(modules),
+      description,
+      updatedBy,
+    });
+  }
 }

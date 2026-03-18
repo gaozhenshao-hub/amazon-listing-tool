@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, PlusCircle, Link2, Upload, BookOpen, CheckCircle, Edit3, Trash2, Sparkles, Search, FileText, FileSpreadsheet, Presentation, Image as ImageIcon, File, AlertCircle, FolderOpen, Tag } from "lucide-react";
+import { Loader2, PlusCircle, Link2, Upload, BookOpen, CheckCircle, Edit3, Trash2, Sparkles, Search, FileText, FileSpreadsheet, Presentation, Image as ImageIcon, File, AlertCircle, FolderOpen, Tag, Send } from "lucide-react";
 import { toast } from "sonner";
 import { TagEditor } from "@/components/TagEditor";
 
@@ -89,6 +89,10 @@ export default function KBSkills() {
   });
   const createManual = trpc.kbSkills.createManual.useMutation({
     onSuccess: () => { toast.success("已创建SOP文档"); utils.kbSkills.list.invalidate(); setShowImport(false); setManualTitle(""); setManualContent(""); setManualTags(""); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const submitReviewMutation = trpc.kbReview.submitForReview.useMutation({
+    onSuccess: () => { toast.success("已提交审核，等待管理员审批"); utils.kbSkills.getById.invalidate({ id: detailId! }); utils.kbSkills.list.invalidate(); },
     onError: (e: any) => toast.error(e.message),
   });
   const confirmMutation = trpc.kbSkills.confirmSummary.useMutation({
@@ -459,6 +463,12 @@ export default function KBSkills() {
                           确认入库
                         </Button>
                       </>
+                    )}
+                    {(d.status === "confirmed" || d.reviewStatus === "draft" || d.reviewStatus === "rejected") && (
+                      <Button variant="outline" size="sm" onClick={() => submitReviewMutation.mutate({ type: "skill", id: detailId!, visibility: "team" })} disabled={submitReviewMutation.isPending} className="gap-1.5 border-blue-200 text-blue-600 hover:bg-blue-50">
+                        {submitReviewMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                        提交审核
+                      </Button>
                     )}
                     <Button variant="destructive" size="sm" onClick={() => { if (confirm("确定删除？")) deleteMutation.mutate({ id: detailId! }); }} className="gap-1.5">
                       <Trash2 className="h-3.5 w-3.5" /> 删除

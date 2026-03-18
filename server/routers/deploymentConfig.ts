@@ -8,8 +8,16 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { ENV } from "../_core/env";
 import { getDb } from "../db";
-import { kbSyncLogs, remoteUsageSnapshots, users, usageStats } from "../../drizzle/schema";
+import { kbSyncLogs, remoteUsageSnapshots, users, usageStats, systemSettings } from "../../drizzle/schema";
 import { eq, desc, sql, and, gte, lte } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
+
+// Sync config setting keys
+const SYNC_SETTING_KEYS = {
+  PEER_API_URL: "peer_api_url",
+  PEER_API_KEY: "peer_api_key",
+  PEER_SYNC_ENABLED: "peer_sync_enabled",
+} as const;
 
 export const deploymentConfigRouter = router({
   // 获取当前部署信息
@@ -231,6 +239,151 @@ export const deploymentConfigRouter = router({
       return { success: response.ok };
     } catch (error) {
       return { success: false, error: (error as Error).message };
+    }
+  }),
+
+  // 获取同步API配置
+  getSyncConfig: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) {
+      return {
+        peerApiUrl: ENV.peerApiUrl || "",
+        peerApiKey: ENV.peerApiKey ? "••••••••" : "",
+        peerSyncEnabled: ENV.peerSyncEnabled,
+        source: "env" as const,
+      };
+    }
+
+    // Try to read from DB first
+    const rows = await db.select().from(systemSettings).where(
+      eq(systemSettings.category, "sync")
+    );
+    const map: Record<string, string | null> = {};
+    for (const row of rows) {
+      map[row.settingKey] = row.settingValue;
+    }
+
+    const hasDbConfig = Object.keys(map).length > 0;
+    return {
+      peerApiUrl: map[SYNC_SETTING_KEYS.PEER_API_URL] ?? ENV.peerApiUrl ?? "",
+      peerApiKey: (map[SYNC_SETTING_KEYS.PEER_API_KEY] || ENV.peerApiKey) ? "••••••••" : "",
+      peerSyncEnabled: map[SYNC_SETTING_KEYS.PEER_SYNC_ENABLED] === "true" || (!hasDbConfig && ENV.peerSyncEnabled),
+      source: hasDbConfig ? "database" as const : "env" as const,
+    };
+  }),
+
+  // 保存同步API配置
+  updateSyncConfig: protectedProcedure
+    .input(z.object({
+      peerApiUrl: z.string().optional(),
+      peerApiKey: z.string().optional(),
+      peerSyncEnabled: z.boolean().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (ctx.user.role !== "super_admin" && ctx.user.role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "只有管理员可以修改同步配置" });
+      }
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const userId = ctx.user.id;
+      const settings: Record<string, string> = {};
+
+      if (input.peerApiUrl !== undefined) {
+        settings[SYNC_SETTING_KEYS.PEER_API_URL] = input.peerApiUrl;
+      }
+      if (input.peerApiKey !== undefined && input.peerApiKey !== "••••••••") {
+        settings[SYNC_SETTING_KEYS.PEER_API_KEY] = input.peerApiKey;
+      }
+      if (input.peerSyncEnabled !== undefined) {
+        settings[SYNC_SETTING_KEYS.PEER_SYNC_ENABLED] = input.peerSyncEnabled ? "true" : "false";
+      }
+
+      for (const [key, value] of Object.entries(settings)) {
+        const existing = await db.select().from(systemSettings).where(
+          eq(systemSettings.settingKey, key)
+        );
+        if (existing.length > 0) {
+          await db.update(systemSettings)
+            .set({ settingValue: value, updatedBy: userId, category: "sync" })
+            .where(eq(systemSettings.settingKey, key));
+        } else {
+          await db.insert(systemSettings).values({
+            settingKey: key,
+            settingValue: value,
+            category: "sync",
+            updatedBy: userId,
+          });
+        }
+      }
+
+      // Dynamically update ENV so the sync module picks up changes immediately
+      if (input.peerApiUrl !== undefined) (ENV as any).peerApiUrl = input.peerApiUrl;
+      if (input.peerApiKey !== undefined && input.peerApiKey !== "••••••••") (ENV as any).peerApiKey = input.peerApiKey;
+      if (input.peerSyncEnabled !== undefined) (ENV as any).peerSyncEnabled = input.peerSyncEnabled;
+
+      return { success: true };
+    }),
+
+  // 测试对端API连接
+  testPeerConnection: protectedProcedure.mutation(async () => {
+    // Read from DB first, fallback to ENV
+    const db = await getDb();
+    let peerApiUrl = ENV.peerApiUrl;
+    let peerApiKey = ENV.peerApiKey;
+
+    if (db) {
+      const rows = await db.select().from(systemSettings).where(
+        eq(systemSettings.category, "sync")
+      );
+      const map: Record<string, string | null> = {};
+      for (const row of rows) map[row.settingKey] = row.settingValue;
+      if (map[SYNC_SETTING_KEYS.PEER_API_URL]) peerApiUrl = map[SYNC_SETTING_KEYS.PEER_API_URL]!;
+      if (map[SYNC_SETTING_KEYS.PEER_API_KEY]) peerApiKey = map[SYNC_SETTING_KEYS.PEER_API_KEY]!;
+    }
+
+    if (!peerApiUrl) {
+      return { success: false, message: "对端API地址未配置", latency: null };
+    }
+
+    try {
+      const startTime = Date.now();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const response = await fetch(`${peerApiUrl}/api/sync/status`, {
+        method: "GET",
+        headers: {
+          "x-sync-api-key": peerApiKey || "",
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      const latency = Date.now() - startTime;
+
+      if (response.ok) {
+        const data = await response.json() as any;
+        return {
+          success: true,
+          message: `连接成功！对端实例: ${data.instanceId || "未知"}, 公司: ${data.companyName || "未知"}`,
+          latency,
+          peerInfo: data,
+        };
+      } else {
+        return {
+          success: false,
+          message: `对端响应异常: HTTP ${response.status} ${response.statusText}`,
+          latency,
+        };
+      }
+    } catch (err: any) {
+      return {
+        success: false,
+        message: `连接失败: ${err.message || "未知错误"}`,
+        latency: null,
+      };
     }
   }),
 });

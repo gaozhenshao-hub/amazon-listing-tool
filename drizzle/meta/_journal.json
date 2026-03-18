@@ -232,6 +232,13 @@
       "when": 1773829986957,
       "tag": "0032_complex_shadow_king",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "5",
+      "when": 1773840921316,
+      "tag": "0033_burly_zarda",
+      "breakpoints": true
     }
   ]
 }

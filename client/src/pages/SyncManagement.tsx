@@ -9,13 +9,16 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
 import {
   RefreshCw, Server, Cloud, Activity, BarChart3,
   CheckCircle, XCircle, AlertTriangle, Clock, Wifi, WifiOff,
-  ArrowUpDown, Users, Cpu, Database, Globe
+  ArrowUpDown, Users, Cpu, Database, Globe, Settings, Loader2, Plug, Eye, EyeOff, Save
 } from "lucide-react";
 
 // ===== 部署信息卡片 =====
@@ -405,6 +408,158 @@ function formatBytes(bytes: number): string {
   return `${bytes} B`;
 }
 
+// ===== 同步API配置卡片 =====
+function SyncConfigCard() {
+  const { data, isLoading, refetch } = trpc.deploymentConfig.getSyncConfig.useQuery();
+  const updateConfig = trpc.deploymentConfig.updateSyncConfig.useMutation({
+    onSuccess: () => { toast.success("同步配置已保存"); refetch(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const testConnection = trpc.deploymentConfig.testPeerConnection.useMutation();
+
+  const [peerApiUrl, setPeerApiUrl] = useState("");
+  const [peerApiKey, setPeerApiKey] = useState("");
+  const [peerSyncEnabled, setPeerSyncEnabled] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+
+  // Initialize form from server data
+  if (data && !initialized) {
+    setPeerApiUrl(data.peerApiUrl || "");
+    setPeerApiKey(data.peerApiKey || "");
+    setPeerSyncEnabled(data.peerSyncEnabled);
+    setInitialized(true);
+  }
+
+  const handleSave = () => {
+    updateConfig.mutate({
+      peerApiUrl,
+      peerApiKey: peerApiKey === "••••••••" ? undefined : peerApiKey,
+      peerSyncEnabled,
+    });
+  };
+
+  const handleTest = async () => {
+    try {
+      const result = await testConnection.mutateAsync();
+      if (result.success) {
+        toast.success("连接成功", { description: result.message });
+      } else {
+        toast.error("连接失败", { description: result.message });
+      }
+    } catch {
+      toast.error("连接测试出错");
+    }
+  };
+
+  if (isLoading) return <Card><CardContent className="p-6"><div className="animate-pulse h-40 bg-muted rounded" /></CardContent></Card>;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2"><Settings className="h-5 w-5" /> 对端同步API配置</CardTitle>
+            <CardDescription>配置知识库双向同步的对端系统连接信息</CardDescription>
+          </div>
+          {data?.source && (
+            <Badge variant={data.source === "database" ? "default" : "secondary"}>
+              {data.source === "database" ? "数据库配置" : "环境变量"}
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* 启用开关 */}
+        <div className="flex items-center justify-between p-4 border rounded-lg">
+          <div className="space-y-0.5">
+            <Label className="text-base font-medium">启用对端同步</Label>
+            <p className="text-sm text-muted-foreground">开启后可与对端系统进行知识库双向同步</p>
+          </div>
+          <Switch checked={peerSyncEnabled} onCheckedChange={setPeerSyncEnabled} />
+        </div>
+
+        {/* API地址 */}
+        <div className="space-y-2">
+          <Label htmlFor="peerApiUrl">对端API地址</Label>
+          <Input
+            id="peerApiUrl"
+            placeholder="例如: https://other-instance.manus.space"
+            value={peerApiUrl}
+            onChange={(e) => setPeerApiUrl(e.target.value)}
+            className="font-mono"
+          />
+          <p className="text-xs text-muted-foreground">对端系统的基础URL，不需要包含 /api/sync 路径</p>
+        </div>
+
+        {/* API密钥 */}
+        <div className="space-y-2">
+          <Label htmlFor="peerApiKey">同步密钥</Label>
+          <div className="relative">
+            <Input
+              id="peerApiKey"
+              type={showKey ? "text" : "password"}
+              placeholder="输入同步认证密钥"
+              value={peerApiKey}
+              onChange={(e) => setPeerApiKey(e.target.value)}
+              className="font-mono pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowKey(!showKey)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">两套系统需使用相同的同步密钥进行身份验证</p>
+        </div>
+
+        {/* 操作按钮 */}
+        <div className="flex gap-3 pt-2">
+          <Button onClick={handleSave} disabled={updateConfig.isPending} className="gap-2">
+            {updateConfig.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            保存配置
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleTest}
+            disabled={testConnection.isPending || !peerApiUrl}
+            className="gap-2"
+          >
+            {testConnection.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plug className="h-4 w-4" />}
+            测试连接
+          </Button>
+        </div>
+
+        {/* 测试结果 */}
+        {testConnection.data && (
+          <div className={`p-4 rounded-lg border ${testConnection.data.success ? "bg-green-50 border-green-200 dark:bg-green-950/30 dark:border-green-800" : "bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-800"}`}>
+            <div className="flex items-center gap-2">
+              {testConnection.data.success ? <CheckCircle className="h-5 w-5 text-green-600" /> : <XCircle className="h-5 w-5 text-red-600" />}
+              <span className="font-medium">{testConnection.data.success ? "连接成功" : "连接失败"}</span>
+              {testConnection.data.latency && <Badge variant="outline" className="ml-auto">{testConnection.data.latency}ms</Badge>}
+            </div>
+            <p className="text-sm mt-1 text-muted-foreground">{testConnection.data.message}</p>
+          </div>
+        )}
+
+        {/* 配置说明 */}
+        <div className="p-4 bg-muted/50 rounded-lg space-y-2">
+          <p className="text-sm font-medium">配置说明</p>
+          <ul className="text-xs text-muted-foreground space-y-1">
+            <li>• 对端系统需要部署相同版本的亚马逊Listing智能工具</li>
+            <li>• 两套系统必须配置相同的同步密钥，否则无法建立连接</li>
+            <li>• 同步内容包括：产品创意库、Listing文案库、图片知识库、视频知识库、运营技能库</li>
+            <li>• 配置保存后立即生效，无需重启服务</li>
+            <li>• 建议保存后先点击"测试连接"验证对端可达性</li>
+          </ul>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ===== 主页面 =====
 export default function SyncManagement() {
   return (
@@ -417,6 +572,7 @@ export default function SyncManagement() {
       <Tabs defaultValue="sync" className="space-y-4">
         <TabsList>
           <TabsTrigger value="sync">同步管理</TabsTrigger>
+          <TabsTrigger value="config">同步配置</TabsTrigger>
           <TabsTrigger value="usage">使用量统计</TabsTrigger>
           <TabsTrigger value="deployment">部署信息</TabsTrigger>
         </TabsList>
@@ -424,6 +580,10 @@ export default function SyncManagement() {
         <TabsContent value="sync" className="space-y-4">
           <SyncStatusCard />
           <SyncLogsTable />
+        </TabsContent>
+
+        <TabsContent value="config" className="space-y-4">
+          <SyncConfigCard />
         </TabsContent>
 
         <TabsContent value="usage" className="space-y-4">

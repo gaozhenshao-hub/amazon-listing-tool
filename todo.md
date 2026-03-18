@@ -1483,3 +1483,45 @@
 - [x] Vitest测试覆盖项目分配（listAvailableProjects/listAvailableUsers/listAll）
 - [x] Vitest测试覆盖ENV配置（companyName/erpType/instanceId/peerSyncEnabled）
 - [x] 全部2134个测试通过，81个测试文件
+
+## 新增需求 (2026-03-18)
+
+### 需求1：角色权限管理页面 + 用户管理编辑功能
+- [x] 后端：角色权限CRUD API（获取角色列表、更新角色权限配置）— roleManagement router
+- [x] 后端：用户编辑API（更新用户角色、状态、基本信息）— roleManagement router
+- [x] 前端：角色管理页面（展示所有角色、可编辑每个角色的模块访问权限）— RoleManagement.tsx
+- [x] 前端：用户管理页面增加编辑功能（编辑用户角色、状态、基本信息）— UserManagement.tsx增强
+- [x] 侧边栏：添加"角色管理"菜单项
+- [x] 路由：注册角色管理页面路由 /admin/roles
+
+### 需求2：知识库编辑页面添加"提交审核"按钮
+- [x] 后端：知识库内容提交审核API（kbReview.submitForReview已存在）
+- [x] 前端：KBProducts编辑页面添加"提交审核"按钮
+- [x] 前端：KBListings编辑页面添加"提交审核"按钮
+- [x] 前端：KBImages编辑页面添加"提交审核"按钮
+- [x] 前端：KBVideos编辑页面添加"提交审核"按钮
+- [x] 前端：KBSkills编辑页面添加"提交审核"按钮
+- [x] 前端：提交审核后toast提示状态变更
+
+### 需求3：配置对端同步环境变量
+- [x] 跳过：对端系统尚未部署，环境变量暂不配置
+- [x] 已通过需求4的UI配置方案替代手动环境变量配置
+
+### 测试
+- [x] Vitest测试覆盖角色权限管理API（roleManagement router导出验证）
+- [x] Vitest测试覆盖用户编辑API（updateUser输入验证）
+- [x] Vitest测试覆盖知识库提交审核API（submitForReview类型验证）
+- [x] Vitest测试覆盖syncConfig API（getSyncConfig/updateSyncConfig/testPeerConnection）
+- [x] 全部2161个测试通过，82个测试文件（1个预存超时测试除外）
+
+### 需求4：同步监控页面添加API配置功能
+- [x] 后端：新增getSyncConfig/updateSyncConfig/testPeerConnection API
+- [x] 后端：syncConfig更新后动态刷新ENV配置（立即生效无需重启）
+- [x] 后端：配置存储到systemSettings表（category=sync）
+- [x] 前端：同步监控页面新增"同步配置"Tab
+- [x] 前端：表单编辑PEER_API_URL/PEER_API_KEY/PEER_SYNC_ENABLED
+- [x] 前端：启用/禁用开关、密钥显示/隐藏切换
+- [x] 前端：保存配置按钮 + 测试连接按钮
+- [x] 前端：连接测试结果展示（成功/失败/延迟）
+- [x] 前端：配置来源标识（数据库配置/环境变量）
+- [x] Vitest测试覆盖syncConfig API（8个新测试）

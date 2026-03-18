@@ -45,6 +45,8 @@ import { projectAssignmentRouter } from "./routers/projectAssignment";
 import { userAuthRouter, userManagementRouter } from "./routers/userManagement";
 // Deployment & Sync
 import { deploymentConfigRouter } from "./routers/deploymentConfig";
+// Role Management
+import { roleManagementRouter } from "./routers/roleManagement";
 
 export const appRouter = router({
   system: systemRouter,
@@ -101,6 +103,8 @@ export const appRouter = router({
   userManagement: userManagementRouter,
   // Deployment & Sync
   deploymentConfig: deploymentConfigRouter,
+  // Role Management
+  roleManagement: roleManagementRouter,
 });
 
 export type AppRouter = typeof appRouter;
