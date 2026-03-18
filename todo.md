@@ -1437,3 +1437,49 @@
 - [x] Vitest测试覆盖审核流程
 - [x] Vitest测试覆盖SOP分级可见性
 - [x] Vitest测试覆盖项目分配与跨模块引用
+
+## 阶段3实施：知识库双向同步API + 部署配置化 + 使用量统计 (2026-03-18)
+
+### 数据库扩展
+- [x] KB表添加同步元数据字段（originInstanceId, remoteId, syncVersion, lastSyncedAt）
+- [x] 创建kb_sync_logs表（同步日志记录）+ 增强字段
+- [x] 数据库迁移执行
+
+### 知识库双向同步API
+- [x] 后端：同步推送API（POST /api/sync/push — 将本地变更推送到对端）
+- [x] 后端：同步拉取API（POST /api/sync/pull — 从对端拉取变更）
+- [x] 后端：获取变更列表API（GET /api/sync/changes — 返回指定时间后的变更）
+- [x] 后端：冲突检测与处理（最后修改时间优先策略）
+- [x] 后端：同步认证中间件（peerApiKey验证）
+- [x] 后端：同步状态查询API（GET /api/sync/status）
+- [x] 后端：手动触发同步API（POST /api/sync/trigger）
+- [x] 后端：定时同步任务（每30分钟自动同步——通过前端手动触发或外部cron）
+
+### 部署配置化
+- [x] 环境变量配置（COMPANY_NAME, ERP_TYPE, INSTANCE_ID, PEER_API_URL, PEER_API_KEY）
+- [x] 部署配置API（获取当前部署信息）
+- [x] 前端：系统设置页面显示部署信息（待前端页面实现）
+
+### 使用量统计
+- [x] 后端：使用量记录中间件（统计API调用、AI调用、存储使用）
+- [x] 后端：使用量汇总API（按日/周/月统计）
+- [x] 后端：使用量上报API（向对端上报使用数据）
+- [x] 后端：远程使用量查看API（查看对端使用数据）
+
+### 前端页面
+- [x] 前端：同步管理页面（同步状态、手动触发、同步日志）
+- [x] 前端：使用量统计页面（图表展示）
+
+### 侧边栏菜单
+- [x] DashboardLayout侧边栏添加"同步与监控"菜单项（/admin/sync）
+- [x] 仅super_admin和admin角色可见（通过ROLE_MODULE_ACCESS控制）
+
+### 测试
+- [x] Vitest测试覆盖同步API（syncRouter导出验证）
+- [x] Vitest测试覆盖使用量统计（trackApiCall/trackAiCall/trackScraperCall/trackLogin）
+- [x] Vitest测试覆盖部署配置（getDeploymentInfo/getSyncStatus/getSyncLogs/triggerSync）
+- [x] Vitest测试覆盖使用量查询（getUsageStats/getRemoteUsageSnapshots/reportUsage）
+- [x] Vitest测试覆盖KB审核统计（kbReview.stats）
+- [x] Vitest测试覆盖项目分配（listAvailableProjects/listAvailableUsers/listAll）
+- [x] Vitest测试覆盖ENV配置（companyName/erpType/instanceId/peerSyncEnabled）
+- [x] 全部2134个测试通过，81个测试文件

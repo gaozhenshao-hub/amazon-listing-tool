@@ -74,6 +74,9 @@ export const kbSyncLogs = mysqlTable("kb_sync_logs", {
   remoteResourceId: int("remoteResourceId"),
   syncStatus: mysqlEnum("syncStatus", ["pending", "synced", "conflict", "failed"]).default("pending").notNull(),
   conflictDetail: text("conflictDetail"),
+  peerInstanceId: varchar("peer_instance_id", { length: 100 }),
+  itemCount: int("item_count").default(0),
+  errorDetail: text("error_detail"),
   syncedAt: timestamp("syncedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
@@ -486,6 +489,11 @@ export const kbProductInnovations = mysqlTable("kb_product_innovations", {
   submittedAt: timestamp("submittedAt"),
   visibility: mysqlEnum("visibility", ["private", "team", "public"]).default("private").notNull(),
   confirmedAt: timestamp("confirmedAt"),
+  // Sync metadata
+  originInstanceId: varchar("origin_instance_id", { length: 100 }),
+  remoteId: int("remote_id"),
+  syncVersion: int("sync_version").default(0),
+  lastSyncedAt: timestamp("last_synced_at"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -519,6 +527,11 @@ export const kbListingCopywriting = mysqlTable("kb_listing_copywriting", {
   submittedAt: timestamp("submittedAt"),
   visibility: mysqlEnum("visibility", ["private", "team", "public"]).default("private").notNull(),
   confirmedAt: timestamp("confirmedAt"),
+  // Sync metadata
+  originInstanceId: varchar("origin_instance_id", { length: 100 }),
+  remoteId: int("remote_id"),
+  syncVersion: int("sync_version").default(0),
+  lastSyncedAt: timestamp("last_synced_at"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -545,6 +558,11 @@ export const kbImageSets = mysqlTable("kb_image_sets", {
   submittedAt: timestamp("submittedAt"),
   visibility: mysqlEnum("visibility", ["private", "team", "public"]).default("private").notNull(),
   confirmedAt: timestamp("confirmedAt"),
+  // Sync metadata
+  originInstanceId: varchar("origin_instance_id", { length: 100 }),
+  remoteId: int("remote_id"),
+  syncVersion: int("sync_version").default(0),
+  lastSyncedAt: timestamp("last_synced_at"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -608,6 +626,11 @@ export const kbOperationSkills = mysqlTable("kb_operation_skills", {
   accessLevel: mysqlEnum("accessLevel", ["public", "team", "restricted"]).default("public").notNull(),
   allowedRoles: text("allowedRoles"), // JSON array of allowed role keys
   confirmedAt: timestamp("confirmedAt"),
+  // Sync metadata
+  originInstanceId: varchar("origin_instance_id", { length: 100 }),
+  remoteId: int("remote_id"),
+  syncVersion: int("sync_version").default(0),
+  lastSyncedAt: timestamp("last_synced_at"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -639,6 +662,11 @@ export const kbVideos = mysqlTable("kb_videos", {
   submittedAt: timestamp("submittedAt"),
   visibility: mysqlEnum("visibility", ["private", "team", "public"]).default("private").notNull(),
   confirmedAt: timestamp("confirmedAt"),
+  // Sync metadata
+  originInstanceId: varchar("origin_instance_id", { length: 100 }),
+  remoteId: int("remote_id"),
+  syncVersion: int("sync_version").default(0),
+  lastSyncedAt: timestamp("last_synced_at"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

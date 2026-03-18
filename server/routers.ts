@@ -43,6 +43,8 @@ import { sopAccessRouter } from "./routers/sopAccess";
 import { projectAssignmentRouter } from "./routers/projectAssignment";
 // User Management
 import { userAuthRouter, userManagementRouter } from "./routers/userManagement";
+// Deployment & Sync
+import { deploymentConfigRouter } from "./routers/deploymentConfig";
 
 export const appRouter = router({
   system: systemRouter,
@@ -97,6 +99,8 @@ export const appRouter = router({
   // User Management
   userAuth: userAuthRouter,
   userManagement: userManagementRouter,
+  // Deployment & Sync
+  deploymentConfig: deploymentConfigRouter,
 });
 
 export type AppRouter = typeof appRouter;

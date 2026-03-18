@@ -44,6 +44,7 @@ import {
   ClipboardCheck,
   FolderKanban,
   Shield,
+  RefreshCw,
   type LucideIcon,
 } from "lucide-react";
 import { ROLE_LABELS, ROLE_MODULE_ACCESS, ADMIN_ROLES } from "@shared/const";
@@ -175,6 +176,7 @@ const modules: ModuleDef[] = [
       { icon: ClipboardCheck, label: "审核中心", path: "/admin/review" },
       { icon: FolderKanban, label: "项目分配", path: "/admin/assignments" },
       { icon: Shield, label: "SOP权限", path: "/admin/sop-access" },
+      { icon: RefreshCw, label: "同步与监控", path: "/admin/sync" },
     ],
   },
 ];

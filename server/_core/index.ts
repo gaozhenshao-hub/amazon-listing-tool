@@ -5,8 +5,10 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
+import { syncRouter } from "../syncRoutes";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { startUsageTracking } from "../usageTracking";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -35,6 +37,8 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
+  // Knowledge base P2P sync routes
+  app.use("/api/sync", syncRouter);
   // tRPC API
   app.use(
     "/api/trpc",
@@ -59,6 +63,8 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+    // Start usage tracking background flush
+    startUsageTracking();
   });
 }
 
