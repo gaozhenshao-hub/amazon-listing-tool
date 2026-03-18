@@ -203,6 +203,7 @@ export default function DevDashboard() {
                       <div className="min-w-0">
                         <p className="font-medium text-sm truncate">{p.name}</p>
                         <p className="text-xs text-muted-foreground truncate">
+                          {('ownerName' in p) && <><span className="text-primary/70">{(p as any).ownerName}</span> · </>}
                           {p.targetMarket || "全球"} · {p.keywords || "未分类"}
                         </p>
                       </div>

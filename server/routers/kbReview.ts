@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, managerProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
+import { sendReviewSubmittedNotification, sendReviewResultNotification } from "./notification";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import {
   kbProductInnovations,
@@ -67,6 +68,14 @@ export const kbReviewRouter = router({
       }
 
       await db.update(table).set(updateData).where(eq((table as any).id, input.id));
+      // Send notification to reviewers
+      try {
+        const itemTitle = item.title || item.productTitle || item.videoTitle || item.asin || `#${input.id}`;
+        await sendReviewSubmittedNotification(
+          ctx.user.id, ctx.user.name || '未命名用户',
+          input.type, input.id, itemTitle
+        );
+      } catch (e) { console.warn('[Notification] submit notify failed:', e); }
       return { success: true };
     }),
 
@@ -141,6 +150,14 @@ export const kbReviewRouter = router({
       if (input.visibility) updateData.visibility = input.visibility;
 
       await db.update(table).set(updateData).where(eq((table as any).id, input.id));
+      // Notify submitter of approval
+      try {
+        const itemTitle = item.title || item.productTitle || item.videoTitle || item.asin || `#${input.id}`;
+        await sendReviewResultNotification(
+          ctx.user.id, ctx.user.name || '未命名',
+          item.userId, input.type, input.id, itemTitle, true, input.reviewNote
+        );
+      } catch (e) { console.warn('[Notification] approve notify failed:', e); }
       return { success: true };
     }),
 
@@ -170,6 +187,14 @@ export const kbReviewRouter = router({
         reviewedAt: new Date(),
         reviewNote: input.reviewNote,
       } as any).where(eq((table as any).id, input.id));
+      // Notify submitter of rejection
+      try {
+        const itemTitle = item.title || item.productTitle || item.videoTitle || item.asin || `#${input.id}`;
+        await sendReviewResultNotification(
+          ctx.user.id, ctx.user.name || '未命名',
+          item.userId, input.type, input.id, itemTitle, false, input.reviewNote
+        );
+      } catch (e) { console.warn('[Notification] reject notify failed:', e); }
       return { success: true };
     }),
 

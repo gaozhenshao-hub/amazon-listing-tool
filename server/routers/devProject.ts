@@ -5,13 +5,23 @@ import { storagePut } from "../storage";
 
 export const devProjectRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
+    // super_admin and admin can see all dev projects
+    if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
+      return devDb.getAllDevProjects();
+    }
     return devDb.getDevProjectsByUser(ctx.user.id);
   }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const project = await devDb.getDevProjectById(input.id, ctx.user.id);
+      // super_admin and admin can access any project
+      let project;
+      if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
+        project = await devDb.getDevProjectByIdAdmin(input.id);
+      } else {
+        project = await devDb.getDevProjectById(input.id, ctx.user.id);
+      }
       if (!project) throw new Error("Project not found");
       // Load related data
       const [files, products, reviews, reports, score] = await Promise.all([
@@ -55,12 +65,24 @@ export const devProjectRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
+      // Admin can update any project
+      if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
+        const project = await devDb.getDevProjectByIdAdmin(id);
+        if (!project) throw new Error("Project not found");
+        return devDb.updateDevProject(id, project.userId, data as any);
+      }
       return devDb.updateDevProject(id, ctx.user.id, data as any);
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      // Admin can delete any project
+      if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
+        const project = await devDb.getDevProjectByIdAdmin(input.id);
+        if (!project) throw new Error("Project not found");
+        return devDb.deleteDevProject(input.id, project.userId);
+      }
       return devDb.deleteDevProject(input.id, ctx.user.id);
     }),
 

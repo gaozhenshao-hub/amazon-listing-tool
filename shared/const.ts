@@ -40,6 +40,64 @@ export const ROLE_MODULE_ACCESS: Record<string, string[]> = {
   designer:       ['listing', 'knowledge'],
 };
 
+// Operation-level permissions
+export const PERMISSION_OPERATIONS = ['read', 'edit', 'delete'] as const;
+export type PermissionOperation = typeof PERMISSION_OPERATIONS[number];
+
+export const OPERATION_LABELS: Record<string, string> = {
+  read: '只读',
+  edit: '编辑',
+  delete: '删除',
+};
+
+// Sub-module definitions (二级模块)
+export const SUB_MODULES: Record<string, { id: string; label: string }[]> = {
+  knowledge: [
+    { id: 'kb_products', label: '优秀产品创意库' },
+    { id: 'kb_listings', label: '优秀Listing文案库' },
+    { id: 'kb_images', label: '优秀图片知识库' },
+    { id: 'kb_videos', label: '视频知识库' },
+    { id: 'kb_skills', label: '运营技能知识库' },
+  ],
+  dev: [
+    { id: 'dev_analysis', label: '选品分析' },
+    { id: 'dev_profile', label: '产品画像' },
+    { id: 'dev_bom', label: 'BOM管理' },
+  ],
+  listing: [
+    { id: 'listing_create', label: 'Listing创建' },
+    { id: 'listing_optimize', label: 'Listing优化' },
+    { id: 'listing_keywords', label: '关键词管理' },
+  ],
+  ops: [
+    { id: 'ops_profit', label: '利润分析' },
+    { id: 'ops_inventory', label: '库存预警' },
+    { id: 'ops_ads', label: '广告优化' },
+    { id: 'ops_forecast', label: '销量预测' },
+  ],
+  service: [
+    { id: 'service_reply', label: 'AI客服回复' },
+    { id: 'service_returns', label: '退货分析' },
+  ],
+  admin: [
+    { id: 'admin_users', label: '用户管理' },
+    { id: 'admin_roles', label: '角色管理' },
+    { id: 'admin_review', label: '审核中心' },
+    { id: 'admin_projects', label: '项目分配' },
+    { id: 'admin_sync', label: '同步与监控' },
+  ],
+};
+
+// Permission entry type for fine-grained control
+export interface ModulePermission {
+  moduleId: string;
+  operations: PermissionOperation[];
+  subModules?: {
+    subModuleId: string;
+    operations: PermissionOperation[];
+  }[];
+}
+
 // Password policy
 export const PASSWORD_MIN_LENGTH = 8;
 export const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;

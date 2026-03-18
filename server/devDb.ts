@@ -1,4 +1,4 @@
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import {
   devProjects, InsertDevProject, DevProject,
   devUploadedFiles, InsertDevUploadedFile,
@@ -766,4 +766,28 @@ export async function deleteDevManualAsset(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(devManualAssets).where(eq(devManualAssets.id, id));
+}
+
+// ─── Admin: get all dev projects ───
+export async function getAllDevProjects() {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select().from(devProjects).orderBy(desc(devProjects.updatedAt));
+  const userIds = Array.from(new Set(rows.map(r => r.userId)));
+  let userMap: Record<number, string> = {};
+  if (userIds.length > 0) {
+    const { users } = await import("../drizzle/schema");
+    const userRows = await db.select({ id: users.id, name: users.name })
+      .from(users)
+      .where(inArray(users.id, userIds));
+    userMap = Object.fromEntries(userRows.map(u => [u.id, u.name || '未知']));
+  }
+  return rows.map(r => ({ ...r, ownerName: userMap[r.userId] || '未知用户' }));
+}
+
+export async function getDevProjectByIdAdmin(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(devProjects).where(eq(devProjects.id, id));
+  return rows[0] || null;
 }

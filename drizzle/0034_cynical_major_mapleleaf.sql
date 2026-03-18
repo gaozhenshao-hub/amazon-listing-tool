@@ -1,0 +1,1 @@
+ALTER TABLE `role_permissions` ADD `detailedPermissions` text;

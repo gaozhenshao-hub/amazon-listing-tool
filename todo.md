@@ -1537,3 +1537,35 @@
 - [x] 改为：允许编辑所有用户，但禁止修改自己的角色（角色下拉框置灰并提示）
 - [x] 编辑按钮样式优化：outline变体+Pencil图标，更加醒目
 - [x] 角色选择器包含所有角色（包括super_admin）
+
+## 新增需求 (2026-03-18 第二批)
+
+### 需求6：审核流程通知
+- [x] 后端：提交审核时自动通知审核人员（admin/super_admin）— kbReview.submitForReview触发
+- [x] 后端：审核完成（通过/驳回）时自动通知提交者 — kbReview.approve/reject触发
+- [x] 后端：创建notifications表存储站内通知 — drizzle migration 0035
+- [x] 前端：通知铃铛图标+未读数量Badge — NotificationBell组件
+- [x] 前端：通知下拉列表展示通知内容（标题、内容、时间）
+- [x] 前端：标记已读/全部已读功能
+- [x] 前端：DashboardLayout集成NotificationBell（移动端+桌面端）
+
+### 需求7：角色权限细粒度控制
+- [x] 数据库：扩展rolePermissions表新增detailedPermissions列（JSON存储操作级+二级模块权限）— migration 0034
+- [x] shared/const：新增SUB_MODULES定义（knowledge下6个二级模块、listing下5个、dev下4个、admin下3个）
+- [x] shared/const：新增PERMISSION_OPERATIONS = ['read', 'edit', 'delete']
+- [x] 后端：roleManagement router支持操作级+二级模块权限的读写
+- [x] 前端：RoleManagement页面支持操作级权限编辑（read/edit/delete复选框）
+- [x] 前端：RoleManagement页面支持二级模块展开编辑（可折叠子模块列表）
+
+### 需求8：超管/公司管理员查看所有项目
+- [x] 后端：project router修改，super_admin和admin角色调用getAllProjects查看所有项目
+- [x] 后端：devProject router修改，super_admin和admin角色调用getAllDevProjects查看所有项目
+- [x] 后端：管理员可更新/删除任意项目（getProjectByIdAdmin/getDevProjectByIdAdmin）
+- [x] 前端：Home.tsx项目卡片增加创建者名称显示（仅管理员可见）
+- [x] 前端：DevDashboard.tsx项目列表增加创建者名称显示（仅管理员可见）
+- [x] 前端：非管理员保持现有逻辑（只看自己的项目）
+
+### 测试
+- [x] 24个新Vitest测试全部通过（phase5.test.ts）
+- [x] 全部83个测试文件、2186个测试全部通过
+- [x] TypeScript零错误

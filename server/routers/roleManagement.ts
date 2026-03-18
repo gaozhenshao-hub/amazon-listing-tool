@@ -2,7 +2,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
-import { ADMIN_ROLES, ALL_ROLES, ROLE_LABELS, ROLE_MODULE_ACCESS } from "@shared/const";
+import { ADMIN_ROLES, ALL_ROLES, ROLE_LABELS, ROLE_MODULE_ACCESS, SUB_MODULES, type ModulePermission } from "@shared/const";
 
 const ALL_MODULES = [
   { id: "dev", label: "智能产品开发", description: "产品开发AI分析、选品调研、竞品分析" },
@@ -14,7 +14,7 @@ const ALL_MODULES = [
 ];
 
 export const roleManagementRouter = router({
-  // List all roles with their permissions
+  // List all roles with their permissions (including detailed permissions)
   list: protectedProcedure.query(async ({ ctx }) => {
     if (!ADMIN_ROLES.includes(ctx.user.role as any)) {
       throw new TRPCError({ code: "FORBIDDEN", message: "需要管理员权限" });
@@ -23,16 +23,20 @@ export const roleManagementRouter = router({
     const dbPermissions = await db.getAllRolePermissions();
     const dbMap = new Map(dbPermissions.map(p => [p.role, p]));
 
-    // Merge DB permissions with static role definitions
     return ALL_ROLES.map(role => {
       const dbPerm = dbMap.get(role);
       const modules = dbPerm
         ? (JSON.parse(dbPerm.modules) as string[])
         : (ROLE_MODULE_ACCESS[role] || []);
+      let detailedPermissions: ModulePermission[] | null = null;
+      if (dbPerm?.detailedPermissions) {
+        try { detailedPermissions = JSON.parse(dbPerm.detailedPermissions); } catch {}
+      }
       return {
         role,
         label: ROLE_LABELS[role] || role,
         modules,
+        detailedPermissions,
         description: dbPerm?.description || null,
         updatedAt: dbPerm?.updatedAt || null,
         isSystem: role === "super_admin",
@@ -40,32 +44,41 @@ export const roleManagementRouter = router({
     });
   }),
 
-  // Get all available modules
+  // Get all available modules with sub-modules
   modules: protectedProcedure.query(async ({ ctx }) => {
     if (!ADMIN_ROLES.includes(ctx.user.role as any)) {
       throw new TRPCError({ code: "FORBIDDEN", message: "需要管理员权限" });
     }
-    return ALL_MODULES;
+    return ALL_MODULES.map(m => ({
+      ...m,
+      subModules: SUB_MODULES[m.id] || [],
+    }));
   }),
 
-  // Update role permissions
+  // Update role permissions (with optional fine-grained control)
   update: protectedProcedure
     .input(z.object({
       role: z.string().min(1),
       modules: z.array(z.string()),
       description: z.string().optional(),
+      detailedPermissions: z.array(z.object({
+        moduleId: z.string(),
+        operations: z.array(z.enum(['read', 'edit', 'delete'])),
+        subModules: z.array(z.object({
+          subModuleId: z.string(),
+          operations: z.array(z.enum(['read', 'edit', 'delete'])),
+        })).optional(),
+      })).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       if (!ADMIN_ROLES.includes(ctx.user.role as any)) {
         throw new TRPCError({ code: "FORBIDDEN", message: "需要管理员权限" });
       }
 
-      // Cannot modify super_admin permissions unless you are super_admin
       if (input.role === "super_admin" && ctx.user.role !== "super_admin") {
         throw new TRPCError({ code: "FORBIDDEN", message: "无法修改超级管理员权限" });
       }
 
-      // Validate module IDs
       const validModuleIds = ALL_MODULES.map(m => m.id);
       const invalidModules = input.modules.filter(m => !validModuleIds.includes(m));
       if (invalidModules.length > 0) {
@@ -76,7 +89,8 @@ export const roleManagementRouter = router({
         input.role,
         input.modules,
         input.description || null,
-        ctx.user.id
+        ctx.user.id,
+        input.detailedPermissions || null
       );
 
       return { success: true };
@@ -98,7 +112,7 @@ export const roleManagementRouter = router({
 
       for (const update of input.updates) {
         if (update.role === "super_admin" && ctx.user.role !== "super_admin") {
-          continue; // Skip super_admin if not super_admin
+          continue;
         }
         await db.upsertRolePermission(
           update.role,
@@ -126,4 +140,20 @@ export const roleManagementRouter = router({
 
     return result;
   }),
+
+  // Get detailed permissions for a specific role
+  getDetailedPermissions: protectedProcedure
+    .input(z.object({ role: z.string() }))
+    .query(async ({ ctx, input }) => {
+      if (!ADMIN_ROLES.includes(ctx.user.role as any)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "需要管理员权限" });
+      }
+      const perm = await db.getRolePermission(input.role);
+      if (!perm?.detailedPermissions) return null;
+      try {
+        return JSON.parse(perm.detailedPermissions) as ModulePermission[];
+      } catch {
+        return null;
+      }
+    }),
 });

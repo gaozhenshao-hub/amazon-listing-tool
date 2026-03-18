@@ -292,6 +292,14 @@ export default function Home() {
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0">
+                  {('ownerName' in project) && (
+                    <p className="text-xs text-muted-foreground mb-2">
+                      <span className="inline-flex items-center gap-1">
+                        <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                        {(project as any).ownerName}
+                      </span>
+                    </p>
+                  )}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 text-xs text-muted-foreground">
                       <span>{project.targetMarket || "US"}</span>

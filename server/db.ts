@@ -1,4 +1,4 @@
-import { eq, desc, and, or } from "drizzle-orm";
+import { eq, desc, and, or, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
@@ -16,6 +16,7 @@ import {
   InsertReviewAggregation, reviewAggregations,
   InsertLoginLog, loginLogs,
   rolePermissions,
+  notifications, InsertNotification,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -720,22 +721,135 @@ export async function getRolePermission(role: string) {
   return rows[0] || null;
 }
 
-export async function upsertRolePermission(role: string, modules: string[], description: string | null, updatedBy: number | null) {
+export async function upsertRolePermission(
+  role: string,
+  modules: string[],
+  description: string | null,
+  updatedBy: number | null,
+  detailedPerms?: any[] | null
+) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const existing = await getRolePermission(role);
+  const setData: any = {
+    modules: JSON.stringify(modules),
+    description,
+    updatedBy,
+  };
+  if (detailedPerms !== undefined) {
+    setData.detailedPermissions = detailedPerms ? JSON.stringify(detailedPerms) : null;
+  }
   if (existing) {
-    await db.update(rolePermissions).set({
-      modules: JSON.stringify(modules),
-      description,
-      updatedBy,
-    }).where(eq(rolePermissions.role, role));
+    await db.update(rolePermissions).set(setData).where(eq(rolePermissions.role, role));
   } else {
     await db.insert(rolePermissions).values({
       role,
       modules: JSON.stringify(modules),
+      detailedPermissions: detailedPerms ? JSON.stringify(detailedPerms) : null,
       description,
       updatedBy,
     });
   }
+}
+
+// ─── Notifications ───
+export async function createNotification(data: InsertNotification) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(notifications).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function createBulkNotifications(items: InsertNotification[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (items.length === 0) return;
+  await db.insert(notifications).values(items);
+}
+
+export async function getNotificationsByUser(userId: number, limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(notifications)
+    .where(eq(notifications.userId, userId))
+    .orderBy(desc(notifications.createdAt))
+    .limit(limit);
+}
+
+export async function getUnreadNotificationCount(userId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const rows = await db.select().from(notifications)
+    .where(and(eq(notifications.userId, userId), eq(notifications.isRead, 0)));
+  return rows.length;
+}
+
+export async function markNotificationRead(id: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(notifications).set({ isRead: 1 })
+    .where(and(eq(notifications.id, id), eq(notifications.userId, userId)));
+}
+
+export async function markAllNotificationsRead(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(notifications).set({ isRead: 1 })
+    .where(and(eq(notifications.userId, userId), eq(notifications.isRead, 0)));
+}
+
+// Get admin/manager users for notification targeting
+export async function getAdminUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: users.id, name: users.name, role: users.role })
+    .from(users)
+    .where(and(
+      or(
+        eq(users.role, "super_admin"),
+        eq(users.role, "admin"),
+        eq(users.role, "ops_manager")
+      ),
+      eq(users.status, "active")
+    ));
+}
+
+// ─── Admin: get all projects (for super_admin/admin) ───
+export async function getAllProjects() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select({
+    id: projects.id,
+    name: projects.name,
+    brand: projects.brand,
+    productName: projects.productName,
+    category: projects.category,
+    targetMarket: projects.targetMarket,
+    status: projects.status,
+    userId: projects.userId,
+    createdAt: projects.createdAt,
+    updatedAt: projects.updatedAt,
+  }).from(projects).orderBy(desc(projects.updatedAt));
+
+  // Enrich with user info
+  const userIds = Array.from(new Set(rows.map(r => r.userId)));
+  let userMap: Record<number, string> = {};
+  if (userIds.length > 0) {
+    const userRows = await db.select({ id: users.id, name: users.name })
+      .from(users)
+      .where(inArray(users.id, userIds));
+    userMap = Object.fromEntries(userRows.map(u => [u.id, u.name || '未知']));
+  }
+
+  return rows.map(r => ({
+    ...r,
+    ownerName: userMap[r.userId] || '未知用户',
+  }));
+}
+
+export async function getProjectByIdAdmin(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
+  return rows[0] ?? null;
 }

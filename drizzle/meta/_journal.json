@@ -239,6 +239,20 @@
       "when": 1773840921316,
       "tag": "0033_burly_zarda",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "5",
+      "when": 1773843819700,
+      "tag": "0034_cynical_major_mapleleaf",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "5",
+      "when": 1773844080110,
+      "tag": "0035_condemned_kat_farrell",
+      "breakpoints": true
     }
   ]
 }

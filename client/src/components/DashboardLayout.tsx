@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { getLoginUrl } from "@/const";
+import NotificationBell from "@/components/NotificationBell";
 import { useIsMobile } from "@/hooks/useMobile";
 import {
   LayoutDashboard,
@@ -334,33 +335,36 @@ function DashboardLayoutContent({
               {isHomePage ? "亚马逊全链路智能工具" : activeModule?.label || ""}
             </span>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                <span className="text-xs font-medium text-primary">
-                  {user?.name?.charAt(0).toUpperCase() || "U"}
-                </span>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <div className="px-2 py-1.5 text-sm">
-                <p className="font-medium">{user?.name || "-"}</p>
-                <p className="text-xs text-muted-foreground">
-                  {ROLE_LABELS[user?.role || ""] || user?.role || "-"}
-                </p>
-              </div>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setLocation("/profile")} className="cursor-pointer">
-                <User className="mr-2 h-4 w-4" />
-                个人设置
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={logout} className="text-destructive cursor-pointer">
-                <LogOut className="mr-2 h-4 w-4" />
-                退出登录
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex items-center gap-1">
+            <NotificationBell />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                  <span className="text-xs font-medium text-primary">
+                    {user?.name?.charAt(0).toUpperCase() || "U"}
+                  </span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <div className="px-2 py-1.5 text-sm">
+                  <p className="font-medium">{user?.name || "-"}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {ROLE_LABELS[user?.role || ""] || user?.role || "-"}
+                  </p>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => setLocation("/profile")} className="cursor-pointer">
+                  <User className="mr-2 h-4 w-4" />
+                  个人设置
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={logout} className="text-destructive cursor-pointer">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  退出登录
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </header>
 
         {/* Mobile drawer overlay */}
@@ -538,8 +542,12 @@ function DashboardLayoutContent({
           </Tooltip>
         </div>
 
+        {/* Notification bell */}
+        <div className="flex justify-center">
+          <NotificationBell />
+        </div>
         {/* User avatar at bottom of rail */}
-        <div className="pt-2">
+        <div className="pt-1">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="w-10 h-10 rounded-xl flex items-center justify-center hover:bg-accent transition-colors">

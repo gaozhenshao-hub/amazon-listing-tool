@@ -89,6 +89,7 @@ export const rolePermissions = mysqlTable("role_permissions", {
   id: int("id").autoincrement().primaryKey(),
   role: varchar("role", { length: 50 }).notNull().unique(),
   modules: text("modules").notNull(), // JSON array of module IDs
+  detailedPermissions: text("detailedPermissions"), // JSON: ModulePermission[] with operations & sub-modules
   description: varchar("description", { length: 200 }),
   updatedBy: int("updatedBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1364,3 +1365,23 @@ export const systemSettings = mysqlTable("system_settings", {
 
 export type SystemSetting = typeof systemSettings.$inferSelect;
 export type InsertSystemSetting = typeof systemSettings.$inferInsert;
+
+
+// In-app notifications for review workflow
+export const notifications = mysqlTable("notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // recipient
+  type: mysqlEnum("type", [
+    "review_submitted", "review_approved", "review_rejected",
+    "project_assigned", "system_alert"
+  ]).notNull(),
+  title: varchar("title", { length: 200 }).notNull(),
+  content: text("content"),
+  relatedType: varchar("relatedType", { length: 50 }), // e.g., "kb_product", "kb_listing"
+  relatedId: int("relatedId"), // ID of the related item
+  isRead: int("isRead").default(0).notNull(), // 0=unread, 1=read
+  createdBy: int("createdBy"), // who triggered the notification
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = typeof notifications.$inferInsert;

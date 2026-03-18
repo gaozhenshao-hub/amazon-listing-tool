@@ -47,6 +47,8 @@ import { userAuthRouter, userManagementRouter } from "./routers/userManagement";
 import { deploymentConfigRouter } from "./routers/deploymentConfig";
 // Role Management
 import { roleManagementRouter } from "./routers/roleManagement";
+// Notifications
+import { notificationRouter } from "./routers/notification";
 
 export const appRouter = router({
   system: systemRouter,
@@ -105,6 +107,7 @@ export const appRouter = router({
   deploymentConfig: deploymentConfigRouter,
   // Role Management
   roleManagement: roleManagementRouter,
+  notification: notificationRouter,
 });
 
 export type AppRouter = typeof appRouter;
