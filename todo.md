@@ -1623,3 +1623,10 @@
 ### 需求13：项目分配页面增加分页功能
 - [x] 后端：项目分配列表API已支持page/pageSize参数（已有）
 - [x] 前端：添加分页控件（首页/上一页/页码/下一页/末页），切换筛选时自动重置到第1页
+
+### 需求14：清理无用代码文件
+- [x] 删除DevProjectList.tsx占位文件（33行，已被DevProjects.tsx替代）
+- [x] 删除ComponentShowcase.tsx（1437行，UI展示页，无任何引用）
+- [x] 删除ManusDialog.tsx（89行，无任何组件引用）
+- [x] 全面扫描确认无其他无用文件（hooks/contexts/shared/server均有引用）
+- [x] 验证：TSC编译0错误，84测试文件2198测试全部通过
