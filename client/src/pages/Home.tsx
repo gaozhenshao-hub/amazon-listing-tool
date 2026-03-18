@@ -27,6 +27,7 @@ import { Plus, FolderOpen, Trash2, ArrowRight, Package, Search, Sparkles } from 
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   draft: { label: "草稿", variant: "secondary" },
@@ -38,6 +39,8 @@ const statusMap: Record<string, { label: string; variant: "default" | "secondary
 export default function Home() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+  const { canDelete } = usePermissions();
+  const allowDeleteListing = canDelete('listing', 'listing_projects');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
@@ -307,19 +310,21 @@ export default function Home() {
                       <span>{project.category || "未分类"}</span>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (confirm("确定要删除此项目吗？")) {
-                            deleteProject.mutate({ id: project.id });
-                          }
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {allowDeleteListing && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm("确定要删除此项目吗？")) {
+                              deleteProject.mutate({ id: project.id });
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                       <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
                     </div>
                   </div>

@@ -87,6 +87,10 @@ export const devProjectRouter = router({
     }),
 
   stats: protectedProcedure.query(async ({ ctx }) => {
+    // admin/super_admin see all project stats
+    if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
+      return devDb.getDevProjectStats(null as any);
+    }
     return devDb.getDevProjectStats(ctx.user.id);
   }),
 

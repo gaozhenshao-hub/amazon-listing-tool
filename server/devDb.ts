@@ -61,13 +61,17 @@ export async function deleteDevProject(id: number, userId: number) {
   return { success: true };
 }
 
-export async function getDevProjectStats(userId: number) {
+export async function getDevProjectStats(userId: number | null) {
   const db = await getDb();
   if (!db) return { total: 0, draft: 0, analyzing: 0, completed: 0, archived: 0 };
-  const rows = await db.select({
+  const query = db.select({
     status: devProjects.status,
     count: sql<number>`count(*)`,
-  }).from(devProjects).where(eq(devProjects.userId, userId)).groupBy(devProjects.status);
+  }).from(devProjects);
+  // If userId is null, get stats for all projects (admin mode)
+  const rows = userId
+    ? await query.where(eq(devProjects.userId, userId)).groupBy(devProjects.status)
+    : await query.groupBy(devProjects.status);
   const stats = { total: 0, draft: 0, data_collection: 0, analyzing: 0, scoring: 0, completed: 0, archived: 0 };
   for (const row of rows) {
     const s = row.status as keyof typeof stats;

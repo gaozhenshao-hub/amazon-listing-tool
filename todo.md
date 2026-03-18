@@ -1578,3 +1578,25 @@
 - [x] 删除ProjectDetailPage工作流程中的图片识别卡片，更新步骤编号
 - [x] 清理测试文件中的imageAnalysis引用
 - [x] 全部83个测试文件、2184个测试通过，TS零错误
+
+## 新增需求 (2026-03-18 第三批)
+
+### 需求9：权限前端拦截
+- [x] 创建usePermissions Hook（读取当前用户角色权限配置）
+- [x] 各页面根据操作权限动态隐藏编辑/删除按钮（KBProducts/KBListings/KBImages/KBVideos/KBSkills/DevProjects/Home）
+- [x] 知识库页面集成权限拦截（提交审核按钮+删除按钮）
+- [x] 项目管理页面集成权限拦截（模块一DevProjects删除按钮+模块二Home删除按钮）
+
+### 需求10：模块一项目管理修复+删除功能
+- [x] 修复模块一stats接口：admin/super_admin传null userId获取全部项目统计
+- [x] devDb.getDevProjectStats支持userId为null时查询所有项目
+- [x] 模块一项目删除功能已存在（DevProjects.tsx已有删除确认弹窗+后端delete API）
+
+### 需求11：清理image_analyses数据库表
+- [x] 从drizzle/schema.ts移除imageAnalyses表定义
+- [x] 生成migration 0036_legal_gargoyle.sql
+- [x] 执行DROP TABLE imageAnalyses清理数据库
+
+### Bug修复：关键词管理页面Unicode显示问题
+- [x] 修复词根分类Tab中标题和描述显示为Unicode转义字符（如\u7b56\u7565）的问题
+- [x] 确保中文字符正确渲染而非显示为\uXXXX编码

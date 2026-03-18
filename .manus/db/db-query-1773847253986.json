@@ -1,0 +1,9 @@
+{
+  "query": "DROP TABLE IF EXISTS `imageAnalyses`;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute DROP TABLE IF EXISTS `imageAnalyses`;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 972
+}

@@ -31,10 +31,10 @@ export async function getDb() {
       _db = null;
     }
   }
-  return _db;
+   return _db;
 }
 
-// ─── User Helpers ───────────────────────────────────────────────────────
+// --- Review Import Helpers ---
 
 export async function upsertUser(user: InsertUser): Promise<void> {
   const db = await getDb();
@@ -182,7 +182,7 @@ export async function getLoginLogs(limit = 100) {
   return db.select().from(loginLogs).orderBy(desc(loginLogs.createdAt)).limit(limit);
 }
 
-// ─── Project Helpers ────────────────────────────────────────────────────
+// --- Project Helpers ----------------------------------------------------
 
 export async function createProject(data: InsertProject) {
   const db = await getDb();
@@ -223,7 +223,7 @@ export async function deleteProject(id: number, userId: number) {
   return { success: true };
 }
 
-// ─── Competitor Analysis Helpers ────────────────────────────────
+// --- Competitor Analysis Helpers --------------------------------
 
 export async function createCompetitorAnalysis(data: InsertCompetitorAnalysis) {
   const db = await getDb();
@@ -255,7 +255,7 @@ export async function deleteCompetitorAnalysis(id: number) {
   return { success: true };
 }
 
-// ─── Listing Helpers ────────────────────────────────────────────
+// --- Listing Helpers --------------------------------------------
 
 export async function createListing(data: InsertListing) {
   const db = await getDb();
@@ -297,7 +297,7 @@ export async function updateListing(id: number, data: Partial<InsertListing>) {
   return rows[0];
 }
 
-// ─── Review Import Helpers ─────────────────────────────────────────
+// --- Review Import Helpers -----------------------------------------
 
 export async function createReviewImport(data: InsertReviewImport) {
   const db = await getDb();
@@ -336,7 +336,7 @@ export async function deleteReviewImport(id: number) {
   return { success: true };
 }
 
-// ─── Project File Helpers ─────────────────────────────────────
+// --- Project File Helpers -------------------------------------
 
 export async function createProjectFile(data: InsertProjectFile) {
   const db = await getDb();
@@ -383,7 +383,7 @@ export async function deleteProjectFile(id: number) {
   return { success: true };
 }
 
-// ─── Analysis Version Helpers ─────────────────────────────────
+// --- Analysis Version Helpers ---------------------------------
 
 export async function createAnalysisVersion(data: InsertAnalysisVersion) {
   const db = await getDb();
@@ -426,7 +426,7 @@ export async function deleteAnalysisVersionsByFileId(projectFileId: number) {
   return { success: true };
 }
 
-// ─── Keyword Helpers ─────────────────────────────────────────
+// --- Keyword Helpers -----------------------------------------
 
 export async function createKeyword(data: InsertKeyword) {
   const db = await getDb();
@@ -508,7 +508,7 @@ export async function getKeywordStats(projectId: number) {
   return { total, negativeCount, byStatus, byStrategy, byRoot };
 }
 
-// ─── Negative Keyword Helpers ────────────────────────────────
+// --- Negative Keyword Helpers --------------------------------
 
 export async function createNegativeKeyword(data: InsertNegativeKeyword) {
   const db = await getDb();
@@ -549,7 +549,7 @@ export async function deleteNegativeKeywordsByProject(projectId: number) {
   return { success: true };
 }
 
-// ─── Ad Structure CRUD ─────────────────────────────────────────
+// --- Ad Structure CRUD -----------------------------------------
 
 export async function createAdStructure(data: InsertAdStructure) {
   const db = await getDb();
@@ -585,7 +585,7 @@ export async function deleteAdStructure(id: number) {
   return { success: true };
 }
 
-// ─── Listing Version History ───
+// --- Listing Version History ---
 
 export async function createListingVersion(data: InsertListingVersion) {
   const db = await getDb();
@@ -619,7 +619,7 @@ export async function getLatestListingVersionNumber(listingId: number): Promise<
 }
 
 
-// ─── Review Aggregation Helpers ────────────────────────────────
+// --- Review Aggregation Helpers --------------------------------
 export async function createReviewAggregation(data: InsertReviewAggregation) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -653,7 +653,7 @@ export async function deleteReviewAggregation(id: number) {
   await db.delete(reviewAggregations).where(eq(reviewAggregations.id, id));
 }
 
-// ─── Image Workflow Sessions ──────────────────────────────────────
+// --- Image Workflow Sessions --------------------------------------
 import { imageWorkflowSessions, InsertImageWorkflowSession } from "../drizzle/schema";
 
 export async function getImageWorkflowSession(projectId: number, userId: number) {
@@ -688,7 +688,7 @@ export async function deleteImageWorkflowSession(id: number) {
   await db.delete(imageWorkflowSessions).where(eq(imageWorkflowSessions.id, id));
 }
 
-// ─── Role Permissions Helpers ──────────────────────────────────────
+// --- Role Permissions Helpers --------------------------------------
 
 export async function getAllRolePermissions() {
   const db = await getDb();
@@ -734,7 +734,7 @@ export async function upsertRolePermission(
   }
 }
 
-// ─── Notifications ───
+// --- Notifications ---
 export async function createNotification(data: InsertNotification) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -796,7 +796,7 @@ export async function getAdminUsers() {
     ));
 }
 
-// ─── Admin: get all projects (for super_admin/admin) ───
+// --- Admin: get all projects (for super_admin/admin) ---
 export async function getAllProjects() {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

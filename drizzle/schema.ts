@@ -215,18 +215,6 @@ export const listings = mysqlTable("listings", {
 export type Listing = typeof listings.$inferSelect;
 export type InsertListing = typeof listings.$inferInsert;
 
-// Image analysis results
-export const imageAnalyses = mysqlTable("imageAnalyses", {
-  id: int("id").autoincrement().primaryKey(),
-  projectId: int("projectId").notNull(),
-  imageUrl: text("imageUrl").notNull(),
-  analysisResult: text("analysisResult"), // JSON: extracted title, bullet points, brand, ASIN, features
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
-
-export type ImageAnalysis = typeof imageAnalyses.$inferSelect;
-export type InsertImageAnalysis = typeof imageAnalyses.$inferInsert;
-
 // Review import history
 export const reviewImports = mysqlTable("reviewImports", {
   id: int("id").autoincrement().primaryKey(),

@@ -253,6 +253,13 @@
       "when": 1773844080110,
       "tag": "0035_condemned_kat_farrell",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "5",
+      "when": 1773847181992,
+      "tag": "0036_legal_gargoyle",
+      "breakpoints": true
     }
   ]
 }

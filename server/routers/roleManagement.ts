@@ -156,4 +156,26 @@ export const roleManagementRouter = router({
         return null;
       }
     }),
+
+  // Get current user's own permissions (no admin check needed)
+  myPermissions: protectedProcedure.query(async ({ ctx }) => {
+    const role = ctx.user.role;
+    // Super admin has full access
+    if (role === 'super_admin') {
+      return {
+        role,
+        modules: ALL_MODULES.map(m => m.id),
+        detailedPermissions: null as ModulePermission[] | null,
+      };
+    }
+    const perm = await db.getRolePermission(role);
+    const modules = perm
+      ? (JSON.parse(perm.modules) as string[])
+      : (ROLE_MODULE_ACCESS[role] || []);
+    let detailedPermissions: ModulePermission[] | null = null;
+    if (perm?.detailedPermissions) {
+      try { detailedPermissions = JSON.parse(perm.detailedPermissions); } catch {}
+    }
+    return { role, modules, detailedPermissions };
+  }),
 });

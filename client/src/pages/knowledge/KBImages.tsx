@@ -14,6 +14,7 @@ import { Loader2, PlusCircle, Link2, Upload, Image as ImageIcon, CheckCircle, Ed
 import { toast } from "sonner";
 import { TagEditor } from "@/components/TagEditor";
 import { ScoreSlider } from "@/components/ScoreSlider";
+import { usePermissions } from "@/hooks/usePermissions";
 
 type ViewMode = "asin" | "waterfall" | "grid";
 
@@ -31,6 +32,9 @@ const DIMENSION_LABELS: Record<string, string> = {
 
 export default function KBImages() {
   const utils = trpc.useUtils();
+  const { canEdit, canDelete } = usePermissions();
+  const allowEdit = canEdit('knowledge', 'kb_images');
+  const allowDelete = canDelete('knowledge', 'kb_images');
   const [showImport, setShowImport] = useState(false);
   const [asinInput, setAsinInput] = useState("");
   const [linkInput, setLinkInput] = useState("");
@@ -520,15 +524,17 @@ export default function KBImages() {
                         </Button>
                       </>
                     )}
-                    {(d.status === "confirmed" || d.reviewStatus === "draft" || d.reviewStatus === "rejected") && (
+                    {allowEdit && (d.status === "confirmed" || d.reviewStatus === "draft" || d.reviewStatus === "rejected") && (
                       <Button variant="outline" size="sm" onClick={() => submitReviewMutation.mutate({ type: "image", id: detailSetId!, visibility: "team" })} disabled={submitReviewMutation.isPending} className="gap-1.5 border-blue-200 text-blue-600 hover:bg-blue-50">
                         {submitReviewMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                         提交审核
                       </Button>
                     )}
-                    <Button variant="destructive" size="sm" onClick={() => { if (confirm("确定删除整个图片集？")) deleteMutation.mutate({ id: detailSetId! }); }} className="gap-1.5">
-                      <Trash2 className="h-3.5 w-3.5" /> 删除
-                    </Button>
+                    {allowDelete && (
+                      <Button variant="destructive" size="sm" onClick={() => { if (confirm("确定删除整个图片集？")) deleteMutation.mutate({ id: detailSetId! }); }} className="gap-1.5">
+                        <Trash2 className="h-3.5 w-3.5" /> 删除
+                      </Button>
+                    )}
                   </div>
                 </div>
               </>

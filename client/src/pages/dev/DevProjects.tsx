@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const statusOptions = [
   { value: "all", label: "全部状态" },
@@ -66,6 +67,8 @@ const phaseLabel: Record<string, { text: string; icon: any; color: string }> = {
 
 export default function DevProjects() {
   const [, setLocation] = useLocation();
+  const { canDelete } = usePermissions();
+  const allowDelete = canDelete('product_dev', 'dev_projects');
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -260,17 +263,19 @@ export default function DevProjects() {
                     <Badge variant="secondary" className={`text-xs ${st.color}`}>
                       {st.text}
                     </Badge>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      onClick={e => {
-                        e.stopPropagation();
-                        setDeleteId(p.id);
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    {allowDelete && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={e => {
+                          e.stopPropagation();
+                          setDeleteId(p.id);
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                     <ArrowRight className="h-4 w-4 text-muted-foreground" />
                   </div>
                 </CardContent>

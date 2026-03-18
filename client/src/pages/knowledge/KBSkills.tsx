@@ -14,6 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import { Loader2, PlusCircle, Link2, Upload, BookOpen, CheckCircle, Edit3, Trash2, Sparkles, Search, FileText, FileSpreadsheet, Presentation, Image as ImageIcon, File, AlertCircle, FolderOpen, Tag, Send } from "lucide-react";
 import { toast } from "sonner";
 import { TagEditor } from "@/components/TagEditor";
+import { usePermissions } from "@/hooks/usePermissions";
 
 const SOP_TAG_SUGGESTIONS = [
   "广告投放", "库存管理", "Listing优化", "财务分析", "选品方法",
@@ -55,6 +56,9 @@ const CATEGORY_OPTIONS = [
 ];
 
 export default function KBSkills() {
+  const { canEdit, canDelete } = usePermissions();
+  const allowEdit = canEdit('knowledge', 'kb_skills');
+  const allowDelete = canDelete('knowledge', 'kb_skills');
   const utils = trpc.useUtils();
   const { data: items, isLoading } = trpc.kbSkills.list.useQuery();
   const [showImport, setShowImport] = useState(false);
@@ -464,15 +468,17 @@ export default function KBSkills() {
                         </Button>
                       </>
                     )}
-                    {(d.status === "confirmed" || d.reviewStatus === "draft" || d.reviewStatus === "rejected") && (
+                    {allowEdit && (d.status === "confirmed" || d.reviewStatus === "draft" || d.reviewStatus === "rejected") && (
                       <Button variant="outline" size="sm" onClick={() => submitReviewMutation.mutate({ type: "skill", id: detailId!, visibility: "team" })} disabled={submitReviewMutation.isPending} className="gap-1.5 border-blue-200 text-blue-600 hover:bg-blue-50">
                         {submitReviewMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                         提交审核
                       </Button>
                     )}
-                    <Button variant="destructive" size="sm" onClick={() => { if (confirm("确定删除？")) deleteMutation.mutate({ id: detailId! }); }} className="gap-1.5">
-                      <Trash2 className="h-3.5 w-3.5" /> 删除
-                    </Button>
+                    {allowDelete && (
+                      <Button variant="destructive" size="sm" onClick={() => { if (confirm("确定删除？")) deleteMutation.mutate({ id: detailId! }); }} className="gap-1.5">
+                        <Trash2 className="h-3.5 w-3.5" /> 删除
+                      </Button>
+                    )}
                   </div>
                 </div>
               </>
