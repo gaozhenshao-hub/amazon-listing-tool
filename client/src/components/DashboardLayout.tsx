@@ -284,7 +284,9 @@ function DashboardLayoutContent({
       toast.info(`${mod.label}模块即将推出，敬请期待`);
       return;
     }
-    setLocation(mod.prefix);
+    // Navigate to first item path if available, otherwise prefix
+    const target = mod.items.length > 0 ? mod.items[0].path : mod.prefix;
+    setLocation(target);
     if (isMobile) setMobileOpen(false);
   };
 

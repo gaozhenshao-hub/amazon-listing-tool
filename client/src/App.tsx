@@ -124,6 +124,7 @@ function Router() {
         <Route path="/settings" component={SystemSettings} />
 
         {/* ─── User Management ─── */}
+        <Route path="/admin">{() => <Redirect to="/admin/users" />}</Route>
         <Route path="/admin/users" component={UserManagement} />
         <Route path="/profile" component={ProfilePage} />
 
