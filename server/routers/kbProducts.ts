@@ -2,6 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
 import { scrapeAmazonProduct } from "../scraper";
+import { getScraperConfig } from "./systemSettings";
 import { invokeLLM } from "../_core/llm";
 
 export const kbProductsRouter = router({
@@ -28,7 +29,8 @@ export const kbProductsRouter = router({
       // Async crawl + analyze
       (async () => {
         try {
-          const data = await scrapeAmazonProduct(asin);
+          const scraperCfg = await getScraperConfig();
+          const data = await scrapeAmazonProduct(asin, scraperCfg);
           await kbDb.updateProductInnovation(Number(id), ctx.user.id, {
             productTitle: data.title,
             brand: data.brand,
@@ -108,7 +110,8 @@ export const kbProductsRouter = router({
         // Fire-and-forget crawl + analyze for each
         (async () => {
           try {
-            const data = await scrapeAmazonProduct(asin);
+            const scraperCfg = await getScraperConfig();
+          const data = await scrapeAmazonProduct(asin, scraperCfg);
             await kbDb.updateProductInnovation(Number(id), ctx.user.id, {
               productTitle: data.title, brand: data.brand, price: data.price,
               rating: data.rating, reviewCount: data.reviewCount, category: data.category,
@@ -151,7 +154,8 @@ export const kbProductsRouter = router({
       // Same async flow as importByAsin
       (async () => {
         try {
-          const data = await scrapeAmazonProduct(asin);
+          const scraperCfg = await getScraperConfig();
+          const data = await scrapeAmazonProduct(asin, scraperCfg);
           await kbDb.updateProductInnovation(Number(id), ctx.user.id, {
             productTitle: data.title, brand: data.brand, price: data.price,
             rating: data.rating, reviewCount: data.reviewCount, category: data.category,

@@ -225,6 +225,13 @@
       "when": 1773829227774,
       "tag": "0031_aspiring_aaron_stack",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1773829986957,
+      "tag": "0032_complex_shadow_king",
+      "breakpoints": true
     }
   ]
 }

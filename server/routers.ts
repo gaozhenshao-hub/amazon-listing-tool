@@ -35,6 +35,8 @@ import { kbImagesRouter } from "./routers/kbImages";
 import { kbSkillsRouter } from "./routers/kbSkills";
 import { kbVideosRouter } from "./routers/kbVideos";
 import { kbSearchRouter } from "./routers/kbSearch";
+// System Settings
+import { systemSettingsRouter } from "./routers/systemSettings";
 
 export const appRouter = router({
   system: systemRouter,
@@ -80,6 +82,8 @@ export const appRouter = router({
   kbSkills: kbSkillsRouter,
   kbVideos: kbVideosRouter,
   kbSearch: kbSearchRouter,
+  // System Settings
+  systemSettings: systemSettingsRouter,
 });
 
 export type AppRouter = typeof appRouter;

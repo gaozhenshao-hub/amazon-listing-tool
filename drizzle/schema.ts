@@ -1157,3 +1157,23 @@ export const devManualAssets = mysqlTable("dev_manual_assets", {
 
 export type DevManualAsset = typeof devManualAssets.$inferSelect;
 export type InsertDevManualAsset = typeof devManualAssets.$inferInsert;
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// System Settings - global configuration (proxy, API keys, etc.)
+// ═══════════════════════════════════════════════════════════════════════
+
+export const systemSettings = mysqlTable("system_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  settingKey: varchar("settingKey", { length: 100 }).notNull().unique(),
+  settingValue: text("settingValue"), // JSON or plain text
+  description: varchar("description", { length: 500 }),
+  category: varchar("category", { length: 50 }).default("general"), // proxy, api, general
+  isEncrypted: boolean("isEncrypted").default(false),
+  updatedBy: int("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SystemSetting = typeof systemSettings.$inferSelect;
+export type InsertSystemSetting = typeof systemSettings.$inferInsert;

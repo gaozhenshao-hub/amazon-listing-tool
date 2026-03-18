@@ -2,6 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
 import { scrapeAmazonProduct } from "../scraper";
+import { getScraperConfig } from "./systemSettings";
 import { invokeLLM } from "../_core/llm";
 
 export const kbListingsRouter = router({
@@ -22,7 +23,8 @@ export const kbListingsRouter = router({
       const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, asin, status: "crawling" });
       (async () => {
         try {
-          const data = await scrapeAmazonProduct(asin);
+          const scraperCfg = await getScraperConfig();
+          const data = await scrapeAmazonProduct(asin, scraperCfg);
           await kbDb.updateListingCopywriting(Number(id), ctx.user.id, {
             productTitle: data.title, brand: data.brand, category: data.category,
             titleText: data.title,
@@ -82,7 +84,8 @@ export const kbListingsRouter = router({
         results.push({ asin, id: Number(id) });
         (async () => {
           try {
-            const data = await scrapeAmazonProduct(asin);
+            const scraperCfg = await getScraperConfig();
+          const data = await scrapeAmazonProduct(asin, scraperCfg);
             await kbDb.updateListingCopywriting(Number(id), ctx.user.id, {
               productTitle: data.title, brand: data.brand, category: data.category,
               titleText: data.title, bulletPoints: JSON.stringify(data.bulletPoints),
@@ -118,7 +121,8 @@ export const kbListingsRouter = router({
       const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, asin, status: "crawling" });
       (async () => {
         try {
-          const data = await scrapeAmazonProduct(asin);
+          const scraperCfg = await getScraperConfig();
+          const data = await scrapeAmazonProduct(asin, scraperCfg);
           await kbDb.updateListingCopywriting(Number(id), ctx.user.id, {
             productTitle: data.title, brand: data.brand, category: data.category,
             titleText: data.title, bulletPoints: JSON.stringify(data.bulletPoints),

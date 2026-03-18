@@ -37,6 +37,7 @@ import {
   ChevronLeft,
   Menu,
   Home,
+  Settings,
   type LucideIcon,
 } from "lucide-react";
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
@@ -462,8 +463,30 @@ function DashboardLayoutContent({
           ))}
         </div>
 
+        {/* Settings button */}
+        <div className="mt-auto">
+          <Tooltip delayDuration={200}>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => { setLocation("/settings"); }}
+                className={cn(
+                  "w-11 h-11 rounded-xl flex items-center justify-center transition-all",
+                  location.startsWith("/settings")
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "hover:bg-accent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Settings className="h-5 w-5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              <p>系统设置</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+
         {/* User avatar at bottom of rail */}
-        <div className="mt-auto pt-3">
+        <div className="pt-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="w-10 h-10 rounded-xl flex items-center justify-center hover:bg-accent transition-colors">

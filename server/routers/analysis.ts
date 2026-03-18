@@ -4,6 +4,7 @@ import { invokeLLM } from "../_core/llm";
 import * as db from "../db";
 import { COMPETITOR_ANALYSIS_PROMPT, REVIEW_ANALYSIS_PROMPT, COMPARISON_SUMMARY_PROMPT } from "../prompts";
 import { scrapeAmazonProduct, type AmazonProductData } from "../scraper";
+import { getScraperConfig } from "./systemSettings";
 import { parseReviewFile, reviewsToText, type ParseResult } from "../reviewParser";
 
 // Helper: run a single ASIN analysis (scrape + LLM)
@@ -20,7 +21,8 @@ async function analyzeSingleAsin(
   // Step 1: Auto-scrape Amazon product data
   let scrapedData: AmazonProductData | null = null;
   try {
-    scrapedData = await scrapeAmazonProduct(asin);
+    const scraperCfg = await getScraperConfig();
+    scrapedData = await scrapeAmazonProduct(asin, scraperCfg);
   } catch (error: any) {
     console.warn(`[Analysis] Scraping failed for ${asin}: ${error.message}`);
   }
@@ -136,7 +138,8 @@ export const analysisRouter = router({
       asin: z.string().min(10).max(10),
     }))
     .mutation(async ({ input }) => {
-      const data = await scrapeAmazonProduct(input.asin);
+      const scraperCfg2 = await getScraperConfig();
+      const data = await scrapeAmazonProduct(input.asin, scraperCfg2);
       return data;
     }),
 

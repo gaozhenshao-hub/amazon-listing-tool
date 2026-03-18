@@ -1333,3 +1333,13 @@
 - [x] 数据库：kbImages表添加aplusModuleType + aplusModuleClass字段（迁移已应用）
 - [x] 前端：A+图片卡片右上角展示模块类型徽章（14种颜色编码+中文标签）
 - [x] 编写vitest测试覆盖新功能（38个测试全部通过）
+
+## 代理服务器配置功能 (2026-03-18)
+- [x] 数据库：新增systemSettings表存储代理配置（迁移已应用）
+- [x] 后端：代理配置CRUD接口（getProxyConfig/updateProxyConfig/applyProviderPreset）
+- [x] 后端：爬虫自动读取数据库代理配置（getScraperConfig全局集成）
+- [x] 后端：代理连接测试接口（testProxy + testScrape）
+- [x] 前端：设置页面新增代理配置面板（3Tab布局：代理配置/爬虫策略/连接测试）
+- [x] 前端：支持多种代理供应商（SmartProxy/Oxylabs/BrightData/ScraperAPI/自定义）
+- [x] 前端：代理测试按钮 + 爬虫功能测试 + 结果展示
+- [x] 编写vitest测试覆盖新功能（14个测试全部通过）

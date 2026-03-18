@@ -2,6 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
 import { scrapeAmazonProduct, type ProductImage } from "../scraper";
+import { getScraperConfig } from "./systemSettings";
 import { invokeLLM } from "../_core/llm";
 import { storagePut } from "../storage";
 import axios from "axios";
@@ -25,7 +26,8 @@ async function downloadAndStoreImage(imageUrl: string, asin: string, index: numb
  */
 async function processImport(setId: number, asin: string, userId: number, runAnalysis: boolean) {
   try {
-    const data = await scrapeAmazonProduct(asin);
+    const scraperConfig = await getScraperConfig();
+    const data = await scrapeAmazonProduct(asin, scraperConfig);
     await kbDb.updateImageSet(setId, userId, {
       productTitle: data.title, brand: data.brand, category: data.category,
     });

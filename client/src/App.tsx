@@ -48,6 +48,9 @@ import ComingSoonPage from "./pages/ComingSoonPage";
 // ─── Platform Home ──────────────────────────────────────────────
 import PlatformHome from "./pages/PlatformHome";
 
+// ─── System Settings ────────────────────────────────────────────
+import SystemSettings from "./pages/SystemSettings";
+
 function Router() {
   return (
     <DashboardLayout>
@@ -111,6 +114,9 @@ function Router() {
         {/* ─── Module 4: After-sales (placeholder) ─── */}
         <Route path="/service">{() => <ComingSoonPage moduleName="智能售后管理" />}</Route>
         <Route path="/service/:rest*">{() => <ComingSoonPage moduleName="智能售后管理" />}</Route>
+
+        {/* ─── System Settings ─── */}
+        <Route path="/settings" component={SystemSettings} />
 
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
