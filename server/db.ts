@@ -5,7 +5,7 @@ import {
   InsertProject, projects,
   InsertCompetitorAnalysis, competitorAnalyses,
   InsertListing, listings,
-  InsertImageAnalysis, imageAnalyses,
+
   InsertReviewImport, reviewImports,
   InsertProjectFile, projectFiles,
   InsertAnalysisVersion, analysisVersions,
@@ -219,7 +219,6 @@ export async function deleteProject(id: number, userId: number) {
   // Delete related data first
   await db.delete(competitorAnalyses).where(eq(competitorAnalyses.projectId, id));
   await db.delete(listings).where(eq(listings.projectId, id));
-  await db.delete(imageAnalyses).where(eq(imageAnalyses.projectId, id));
   await db.delete(projects).where(and(eq(projects.id, id), eq(projects.userId, userId)));
   return { success: true };
 }
@@ -298,24 +297,7 @@ export async function updateListing(id: number, data: Partial<InsertListing>) {
   return rows[0];
 }
 
-// ─── Image Analysis Helpers ─────────────────────────────────────
-
-export async function createImageAnalysis(data: InsertImageAnalysis) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const result = await db.insert(imageAnalyses).values(data);
-  const insertId = result[0].insertId;
-  const rows = await db.select().from(imageAnalyses).where(eq(imageAnalyses.id, insertId)).limit(1);
-  return rows[0];
-}
-
-export async function getImageAnalysesByProject(projectId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  return db.select().from(imageAnalyses).where(eq(imageAnalyses.projectId, projectId)).orderBy(desc(imageAnalyses.createdAt));
-}
-
-// ─── Review Import Helpers ─────────────────────────────────────
+// ─── Review Import Helpers ─────────────────────────────────────────
 
 export async function createReviewImport(data: InsertReviewImport) {
   const db = await getDb();

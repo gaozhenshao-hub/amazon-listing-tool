@@ -1569,3 +1569,12 @@
 - [x] 24个新Vitest测试全部通过（phase5.test.ts）
 - [x] 全部83个测试文件、2186个测试全部通过
 - [x] TypeScript零错误
+
+### 删除：模块二图片识别功能
+- [x] 删除侧边栏"图片识别"菜单项（DashboardLayout.tsx）
+- [x] 删除图片识别页面路由（App.tsx + legacy redirect）
+- [x] 删除图片识别页面文件（ImageAnalysisPage.tsx）
+- [x] 删除后端imageAnalysis router和db helpers
+- [x] 删除ProjectDetailPage工作流程中的图片识别卡片，更新步骤编号
+- [x] 清理测试文件中的imageAnalysis引用
+- [x] 全部83个测试文件、2184个测试通过，TS零错误

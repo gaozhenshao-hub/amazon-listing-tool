@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Save, Search, Image, Sparkles, FileText } from "lucide-react";
+import { ArrowLeft, Save, Search, Sparkles, FileText } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import { toast } from "sonner";
@@ -227,22 +227,6 @@ export default function ProjectDetailPage() {
             </Card>
             <Card
               className="cursor-pointer hover:shadow-md transition-all group"
-              onClick={() => setLocation("/listing/image-analysis")}
-            >
-              <CardContent className="p-6 flex items-start gap-4">
-                <div className="h-12 w-12 rounded-xl bg-purple-50 flex items-center justify-center shrink-0 group-hover:bg-purple-100 transition-colors">
-                  <Image className="h-6 w-6 text-purple-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold mb-1">步骤2: 图片识别（可选）</h3>
-                  <p className="text-sm text-muted-foreground">
-                    上传产品图片，AI自动识别产品特征、材质、卖点等信息
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-            <Card
-              className="cursor-pointer hover:shadow-md transition-all group"
               onClick={() => setLocation("/listing/generate")}
             >
               <CardContent className="p-6 flex items-start gap-4">
@@ -250,7 +234,7 @@ export default function ProjectDetailPage() {
                   <Sparkles className="h-6 w-6 text-amber-600" />
                 </div>
                 <div>
-                  <h3 className="font-semibold mb-1">步骤3: 生成Listing</h3>
+                  <h3 className="font-semibold mb-1">步骤2: 生成Listing</h3>
                   <p className="text-sm text-muted-foreground">
                     一键生成标题、五点、描述、关键词和图片建议
                   </p>
@@ -266,7 +250,7 @@ export default function ProjectDetailPage() {
                   <FileText className="h-6 w-6 text-green-600" />
                 </div>
                 <div>
-                  <h3 className="font-semibold mb-1">步骤4: 预览与编辑</h3>
+                  <h3 className="font-semibold mb-1">步骤3: 预览与编辑</h3>
                   <p className="text-sm text-muted-foreground">
                     预览生成结果，手动编辑调整，确认最终Listing内容
                   </p>

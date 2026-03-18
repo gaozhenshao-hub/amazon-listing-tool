@@ -109,7 +109,6 @@ const modules: ModuleDef[] = [
       { icon: GitCompareArrows, label: "竞品对比", path: "/listing/comparison" },
       { icon: History, label: "导入历史", path: "/listing/review-history" },
       { icon: MessageSquareText, label: "评论聚合分析", path: "/listing/review-aggregation" },
-      { icon: Image, label: "图片识别", path: "/listing/image-analysis" },
       { icon: Key, label: "关键词管理", path: "/listing/keywords" },
       { icon: Target, label: "广告架构", path: "/listing/ad-structure" },
       { icon: Database, label: "数据文件", path: "/listing/data-files" },
@@ -193,7 +192,7 @@ function detectActiveModule(location: string): ModuleId {
   if (location.startsWith("/knowledge")) return "knowledge";
   if (location.startsWith("/admin")) return "admin";
   // Legacy routes (before migration) - map to listing
-  const legacyPaths = ["/analysis", "/comparison", "/review-history", "/review-aggregation", "/image-analysis", "/keywords", "/ad-structure", "/data-files", "/generate", "/preview", "/score"];
+  const legacyPaths = ["/analysis", "/comparison", "/review-history", "/review-aggregation", "/keywords", "/ad-structure", "/data-files", "/generate", "/preview", "/score"];
   if (legacyPaths.some(p => location.startsWith(p))) return "listing";
   return "home"; // default
 }

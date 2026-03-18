@@ -10,7 +10,6 @@ import { lazy, Suspense } from "react";
 // ─── Module 2: Listing (existing pages) ────────────────────────
 import Home from "./pages/Home";
 import AnalysisPage from "./pages/AnalysisPage";
-import ImageAnalysisPage from "./pages/ImageAnalysisPage";
 import GeneratePage from "./pages/GeneratePage";
 import PreviewPage from "./pages/PreviewPage";
 import ProjectDetailPage from "./pages/ProjectDetailPage";
@@ -71,7 +70,6 @@ function Router() {
         {/* ─── Module 2: Listing (with /listing prefix) ─── */}
         <Route path="/listing" component={Home} />
         <Route path="/listing/analysis" component={AnalysisPage} />
-        <Route path="/listing/image-analysis" component={ImageAnalysisPage} />
         <Route path="/listing/generate" component={GeneratePage} />
         <Route path="/listing/preview" component={PreviewPage} />
         <Route path="/listing/comparison" component={ComparisonPage} />
@@ -90,7 +88,6 @@ function Router() {
         <Route path="/comparison">{() => <Redirect to="/listing/comparison" />}</Route>
         <Route path="/review-history">{() => <Redirect to="/listing/review-history" />}</Route>
         <Route path="/review-aggregation">{() => <Redirect to="/listing/review-aggregation" />}</Route>
-        <Route path="/image-analysis">{() => <Redirect to="/listing/image-analysis" />}</Route>
         <Route path="/keywords">{() => <Redirect to="/listing/keywords" />}</Route>
         <Route path="/ad-structure">{() => <Redirect to="/listing/ad-structure" />}</Route>
         <Route path="/data-files">{() => <Redirect to="/listing/data-files" />}</Route>

@@ -63,7 +63,6 @@ vi.mock("./db", () => ({
   deleteCompetitorAnalysis: vi.fn().mockResolvedValue({ success: true }),
   createListing: vi.fn().mockResolvedValue({ id: 1 }),
   updateListing: vi.fn().mockResolvedValue({ id: 1 }),
-  createImageAnalysis: vi.fn().mockResolvedValue({ id: 1 }),
   upsertUser: vi.fn(),
   getUserByOpenId: vi.fn(),
 }));
@@ -223,21 +222,3 @@ describe("listing router", () => {
   });
 });
 
-describe("image analysis router", () => {
-  it("lists image analyses for a project", async () => {
-    const ctx = createAuthContext();
-    const caller = appRouter.createCaller(ctx);
-    const result = await caller.imageAnalysis.listByProject({ projectId: 1 });
-
-    expect(result).toEqual([]);
-  });
-
-  it("throws error for non-existent project", async () => {
-    const ctx = createAuthContext();
-    const caller = appRouter.createCaller(ctx);
-
-    await expect(
-      caller.imageAnalysis.listByProject({ projectId: 999 })
-    ).rejects.toThrow("Project not found");
-  });
-});
