@@ -18,9 +18,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { ROLE_LABELS, ALL_ROLES } from "@shared/const";
+import { useAuth } from "@/_core/hooks/useAuth";
 import {
   UserPlus, Upload, Search, RotateCcw, Shield, ShieldAlert,
-  Loader2, Users, UserCheck, UserX, Clock,
+  Loader2, Users, UserCheck, UserX, Clock, Pencil,
 } from "lucide-react";
 
 // ─── Status badge ────────────────────────────────────────────
@@ -196,7 +197,8 @@ function BulkImportDialog({ onSuccess }: { onSuccess: () => void }) {
 }
 
 // ─── Edit User Dialog ────────────────────────────────────────
-function EditUserDialog({ user, onSuccess }: { user: any; onSuccess: () => void }) {
+function EditUserDialog({ user, currentUserId, onSuccess }: { user: any; currentUserId?: string; onSuccess: () => void }) {
+  const isSelf = currentUserId && user.id === currentUserId;
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     name: user.name || "",
@@ -227,7 +229,10 @@ function EditUserDialog({ user, onSuccess }: { user: any; onSuccess: () => void 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm">编辑</Button>
+        <Button variant="outline" size="sm" className="gap-1.5">
+          <Pencil className="h-3.5 w-3.5" />
+          编辑
+        </Button>
       </DialogTrigger>
       <DialogContent className="max-w-lg">
         <DialogHeader>
@@ -240,11 +245,11 @@ function EditUserDialog({ user, onSuccess }: { user: any; onSuccess: () => void 
               <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
             </div>
             <div className="space-y-2">
-              <Label>角色</Label>
-              <Select value={form.role} onValueChange={v => setForm({ ...form, role: v })}>
+              <Label>角色 {isSelf && <span className="text-xs text-muted-foreground">(不可修改自己的角色)</span>}</Label>
+              <Select value={form.role} onValueChange={v => setForm({ ...form, role: v })} disabled={!!isSelf}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {ALL_ROLES.filter(r => r !== "super_admin").map(r => (
+                  {ALL_ROLES.map(r => (
                     <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
                   ))}
                 </SelectContent>
@@ -308,6 +313,7 @@ function EditUserDialog({ user, onSuccess }: { user: any; onSuccess: () => void 
 
 // ─── Main Page ───────────────────────────────────────────────
 export default function UserManagement() {
+  const { user: currentUser } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -492,9 +498,7 @@ export default function UserManagement() {
                           {user.lastSignedIn ? new Date(user.lastSignedIn).toLocaleString("zh-CN") : "-"}
                         </TableCell>
                         <TableCell className="text-right">
-                          {user.role !== "super_admin" && (
-                            <EditUserDialog user={user} onSuccess={handleRefresh} />
-                          )}
+                          <EditUserDialog user={user} currentUserId={currentUser?.id?.toString()} onSuccess={handleRefresh} />
                         </TableCell>
                       </TableRow>
                     ))
