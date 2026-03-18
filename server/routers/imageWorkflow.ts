@@ -14,6 +14,7 @@ import {
   STEP4_REOPTIMIZE_WITH_REFS_PROMPT,
   STEP5_APLUS_MODULE_OPTIMIZE_PROMPT,
   STEP5_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT,
+  STEP5_APLUS_COMBO_RECOMMEND_PROMPT,
   STEP6_AI_PROMPT_GENERATION,
   STEP6_TRANSLATION_PROMPT,
 } from "../imageWorkflowPrompts";
@@ -672,6 +673,39 @@ export const imageWorkflowRouter = router({
 
       const result = parseLLMJson(response);
       return { en: result.en || result, cn: result.cn || null };
+    }),
+
+  // ─── Step 5d: Recommend A+ module combination ───────────────────
+  recommendAplusCombo: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+
+      // Gather product context
+      const sellingPoints = session.step1UserEdit || session.step1AiResult || '';
+      let spCount = 0;
+      try {
+        const spData = JSON.parse(sellingPoints);
+        spCount = (spData.coreSellingPoints?.length || 0) + (spData.secondarySellingPoints?.length || 0);
+      } catch { spCount = 5; }
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: STEP5_APLUS_COMBO_RECOMMEND_PROMPT },
+          {
+            role: "user",
+            content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n卖点数量: ${spCount}个\n\n--- 已确认的卖点体系 ---\n${sellingPoints}\n\n请根据以上产品信息，推荐3套最佳的A+模块组合方案。`,
+          },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      return parseLLMJson(response);
     }),
 
   // ─── Step 6: Generate AI prompts ──────────────────────────────

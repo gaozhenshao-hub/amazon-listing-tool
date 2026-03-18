@@ -2204,6 +2204,10 @@ function Step5FinalSuggestions({
   const [sectionModuleStyles, setSectionModuleStyles] = useState<Record<number, string>>({});
   const [optimizingSectionIdx, setOptimizingSectionIdx] = useState<number | null>(null);
   const singleModuleOptimizeMutation = trpc.imageWorkflow.optimizeSingleAplusModule.useMutation();
+  const comboRecommendMutation = trpc.imageWorkflow.recommendAplusCombo.useMutation();
+  const [comboRecommendations, setComboRecommendations] = useState<any>(null);
+  const [showComboPanel, setShowComboPanel] = useState(false);
+  const [selectedComboIdx, setSelectedComboIdx] = useState<number | null>(null);
 
   // Amazon Premium A+ Module Types - comprehensive list matching backend prompt
   const APLUS_MODULES = [
@@ -2310,6 +2314,32 @@ function Step5FinalSuggestions({
     } catch (err: any) {
       toast.error(err.message || "A+模块优化失败");
     }
+  };
+
+  // Handle AI combo recommendation
+  const handleComboRecommend = async () => {
+    try {
+      const result = await comboRecommendMutation.mutateAsync({ projectId });
+      setComboRecommendations(result);
+      setShowComboPanel(true);
+      toast.success("AI已生成3套推荐方案");
+    } catch (err: any) {
+      toast.error(err.message || "推荐失败");
+    }
+  };
+
+  // Apply a recommended combo to per-section module styles
+  const handleApplyCombo = (comboIdx: number) => {
+    const combo = comboRecommendations?.recommendations?.[comboIdx];
+    if (!combo?.modules) return;
+    const newStyles: Record<number, string> = {};
+    combo.modules.forEach((mod: any) => {
+      const idx = (mod.position || 1) - 1;
+      if (mod.moduleType) newStyles[idx] = mod.moduleType;
+    });
+    setSectionModuleStyles(newStyles);
+    setSelectedComboIdx(comboIdx);
+    toast.success(`已应用「${combo.name}」方案，可在各模块单独微调后点击AI优化`);
   };
 
   useEffect(() => {
@@ -2505,6 +2535,129 @@ function Step5FinalSuggestions({
           </CardContent>
         )}
       </Card>
+
+      {/* A+ Module Combo Recommendation Panel */}
+      {enData && !isConfirmed && (
+        <Card className="border-purple-200 bg-gradient-to-r from-purple-50/50 to-indigo-50/50">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-purple-500" /> AI推荐A+模块组合方案
+              </CardTitle>
+              <Button
+                variant={showComboPanel ? "secondary" : "default"}
+                size="sm"
+                className={showComboPanel ? "" : "bg-purple-600 hover:bg-purple-700"}
+                onClick={() => {
+                  if (!comboRecommendations) handleComboRecommend();
+                  else setShowComboPanel(!showComboPanel);
+                }}
+                disabled={comboRecommendMutation.isPending}
+              >
+                {comboRecommendMutation.isPending ? (
+                  <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> 分析中...</>
+                ) : showComboPanel ? "收起" : (
+                  <><Sparkles className="w-4 h-4 mr-1" /> {comboRecommendations ? "查看推荐" : "AI智能推荐"}</>
+                )}
+              </Button>
+            </div>
+            <CardDescription>基于产品类目、卖点数量和品牌调性，AI自动推荐3套最佳的A+模块组合方案，一键应用后可单独微调</CardDescription>
+          </CardHeader>
+          {showComboPanel && comboRecommendations?.recommendations && (
+            <CardContent>
+              {comboRecommendations.analysisNote && (
+                <div className="mb-4 p-3 bg-white/80 rounded-lg border border-purple-100 text-sm text-muted-foreground">
+                  <strong className="text-purple-700">分析说明：</strong> {comboRecommendations.analysisNote}
+                </div>
+              )}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {comboRecommendations.recommendations.map((combo: any, cIdx: number) => {
+                  const isApplied = selectedComboIdx === cIdx;
+                  return (
+                    <div
+                      key={cIdx}
+                      className={`relative p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                        isApplied
+                          ? "border-purple-500 bg-purple-50 shadow-md"
+                          : "border-gray-200 bg-white hover:border-purple-300 hover:shadow-sm"
+                      }`}
+                      onClick={() => handleApplyCombo(cIdx)}
+                    >
+                      {/* Score badge */}
+                      {combo.score && (
+                        <div className={`absolute -top-2 -right-2 w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white ${
+                          combo.score >= 85 ? 'bg-green-500' : combo.score >= 70 ? 'bg-blue-500' : 'bg-orange-500'
+                        }`}>
+                          {combo.score}
+                        </div>
+                      )}
+                      {isApplied && (
+                        <div className="absolute -top-2 -left-2">
+                          <Badge className="bg-purple-600 text-white text-[10px]">已应用</Badge>
+                        </div>
+                      )}
+                      <h4 className="font-semibold text-sm text-purple-800 mb-1">{combo.name}</h4>
+                      <p className="text-xs text-muted-foreground mb-2">{combo.description}</p>
+                      {combo.visualRhythm && (
+                        <p className="text-[10px] text-purple-600 mb-2 italic">节奏: {combo.visualRhythm}</p>
+                      )}
+                      {/* Module list */}
+                      <div className="space-y-1.5 mb-3">
+                        {combo.modules?.map((mod: any, mIdx: number) => {
+                          const modInfo = APLUS_MODULES.find(m => m.id === mod.moduleType);
+                          return (
+                            <div key={mIdx} className="flex items-start gap-2">
+                              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-purple-100 text-purple-700 text-[10px] font-bold flex items-center justify-center">{mod.position || mIdx + 1}</span>
+                              <div className="min-w-0">
+                                <span className="text-xs font-medium">{mod.moduleName || modInfo?.name}</span>
+                                {mod.purpose && <p className="text-[10px] text-muted-foreground truncate">{mod.purpose}</p>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {/* Strengths */}
+                      {combo.strengths?.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {combo.strengths.map((s: string, sIdx: number) => (
+                            <Badge key={sIdx} variant="outline" className="text-[10px] bg-green-50 text-green-700 border-green-200">{s}</Badge>
+                          ))}
+                        </div>
+                      )}
+                      {combo.bestFor && (
+                        <p className="text-[10px] text-muted-foreground">✅ 最适合: {combo.bestFor}</p>
+                      )}
+                      <Button
+                        size="sm"
+                        variant={isApplied ? "secondary" : "default"}
+                        className={`w-full mt-2 text-xs ${isApplied ? '' : 'bg-purple-600 hover:bg-purple-700'}`}
+                        onClick={(e) => { e.stopPropagation(); handleApplyCombo(cIdx); }}
+                      >
+                        {isApplied ? <><Check className="w-3 h-3 mr-1" /> 已应用</> : <>一键应用该方案</>}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+                <span>点击方案卡片或“一键应用”按钮，将自动填充各A+模块的样式选择器</span>
+                <Button variant="ghost" size="sm" className="text-xs" onClick={handleComboRecommend} disabled={comboRecommendMutation.isPending}>
+                  {comboRecommendMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+                  重新推荐
+                </Button>
+              </div>
+            </CardContent>
+          )}
+          {showComboPanel && comboRecommendMutation.isPending && (
+            <CardContent>
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-purple-500 mr-2" />
+                <span className="text-sm text-muted-foreground">AI正在分析产品特征并生成最佳模块组合方案...</span>
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
 
       {/* A+ Module Selector Panel */}
       {enData && !isConfirmed && (
