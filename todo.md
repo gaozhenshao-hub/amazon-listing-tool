@@ -1600,3 +1600,18 @@
 ### Bug修复：关键词管理页面Unicode显示问题
 - [x] 修复词根分类Tab中标题和描述显示为Unicode转义字符（如\u7b56\u7565）的问题
 - [x] 确保中文字符正确渲染而非显示为\uXXXX编码
+
+## 新增需求 (2026-03-18 第四批)
+
+### 需求12：本品属性表"从产品画像导入"功能
+- [x] 后端：查询当前用户被分配的模块一项目列表API（通过project_assignments表，已有listImportableDevProjects）
+- [x] 后端：获取模块一项目的产品画像数据API（已有getDevProjectProfile）
+- [x] 后端：importFromProfile将产品画像数据转换为本品属性表格式并运行Rufus分析
+- [x] 前端：DataFilesPage本品属性表区域添加“从产品画像导入”按钮
+- [x] 前端：ImportFromProfileButton组件（弹窗选择项目+预览数据+确认导入）
+- [x] 前端：选择后自动导入产品画像数据并运行AI分析填充到本品属性表
+- [x] 测试：Vitest测试覆盖跨模块数据导入逻辑（14测试通过）
+
+### Bug修复：项目分配列表不显示记录
+- [x] 诊断原因：前端传pageSize=200超过后端限制的100，导致zod验证失败
+- [x] 修复：将pageSize从200改为100

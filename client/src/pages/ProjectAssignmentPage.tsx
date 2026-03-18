@@ -63,7 +63,7 @@ export default function ProjectAssignmentPage() {
   // Queries
   const assignmentsQuery = trpc.projectAssignment.listAll.useQuery({
     page: 1,
-    pageSize: 200,
+    pageSize: 100,
     projectType: filterType !== "all" ? filterType : undefined,
   });
 
