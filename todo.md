@@ -1322,3 +1322,14 @@
 - [x] 数据库：添加brand_story到imagePosition枚举（迁移已应用）
 - [x] 前端适配：品牌故事图片分区展示（琥珀色标记）+ 位置筛选器 + AI分析字段
 - [x] 编写vitest测试覆盖爬虫解析逻辑（20个测试全部通过）
+
+## 爬虫反爬策略增强 + A+模块类型识别 (2026-03-18)
+- [x] 爬虫：请求重试机制（指数退避 + CAPTCHA检测 + 503节流特殊处理）
+- [x] 爬虫：User-Agent轮换池（21个真实UA，Chrome/Firefox/Safari/Edge多平台）
+- [x] 爬虫：代理支持（ScraperConfig.proxyUrl，支持认证）
+- [x] 爬虫：请求间隔随机化（randomDelay + 可配置min/max）
+- [x] 爬虫：请求头完善（Sec-*/Accept-Language轮换/Referer模拟）
+- [x] A+模块类型识别：解析HTML上下文识别14种模块类型 + unknown
+- [x] 数据库：kbImages表添加aplusModuleType + aplusModuleClass字段（迁移已应用）
+- [x] 前端：A+图片卡片右上角展示模块类型徽章（14种颜色编码+中文标签）
+- [x] 编写vitest测试覆盖新功能（38个测试全部通过）

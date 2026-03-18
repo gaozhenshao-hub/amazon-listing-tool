@@ -597,6 +597,41 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
             {img.imagePosition === "aplus" ? "A+" : img.imagePosition === "brand_story" ? "品牌故事" : `#${img.positionIndex}`}
           </Badge>
         )}
+        {img.aplusModuleType && img.aplusModuleType !== "unknown" && (
+          <Badge className={`absolute top-1.5 right-1.5 text-[9px] border-0 backdrop-blur-sm ${
+            img.aplusModuleType === "comparison_table" ? "bg-blue-500/80 text-white" :
+            img.aplusModuleType === "image_carousel" ? "bg-green-500/80 text-white" :
+            img.aplusModuleType === "full_width_image" ? "bg-purple-500/80 text-white" :
+            img.aplusModuleType === "image_text_overlay" ? "bg-orange-500/80 text-white" :
+            img.aplusModuleType === "four_image_text" ? "bg-cyan-500/80 text-white" :
+            img.aplusModuleType === "three_image_text" ? "bg-teal-500/80 text-white" :
+            img.aplusModuleType === "hotspot_interactive" ? "bg-pink-500/80 text-white" :
+            img.aplusModuleType === "video_module" ? "bg-red-500/80 text-white" :
+            img.aplusModuleType === "brand_story_hero" ? "bg-amber-600/80 text-white" :
+            img.aplusModuleType === "brand_story_card" ? "bg-amber-500/80 text-white" :
+            img.aplusModuleType === "single_image_sidebar" ? "bg-indigo-500/80 text-white" :
+            img.aplusModuleType === "tech_specs" ? "bg-slate-500/80 text-white" :
+            img.aplusModuleType === "navigation_carousel" ? "bg-emerald-500/80 text-white" :
+            "bg-violet-500/80 text-white"
+          }`}>
+            {({
+              comparison_table: "对比表格",
+              image_carousel: "图片轮播",
+              full_width_image: "全宽图",
+              image_text_overlay: "图文叠加",
+              standard_image_text: "标准图文",
+              four_image_text: "四图文",
+              three_image_text: "三图文",
+              hotspot_interactive: "热点交互",
+              video_module: "视频模块",
+              brand_story_hero: "品牌主图",
+              brand_story_card: "品牌卡片",
+              single_image_sidebar: "单图侧栏",
+              tech_specs: "技术参数",
+              navigation_carousel: "导航轮播",
+            } as Record<string, string>)[img.aplusModuleType] || img.aplusModuleType}
+          </Badge>
+        )}
       </div>
 
       {isExpanded && (

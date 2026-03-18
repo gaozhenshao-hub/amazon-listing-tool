@@ -436,6 +436,8 @@ export const kbImages = mysqlTable("kb_images", {
   // AI analysis
   aiDimensionAnalysis: text("aiDimensionAnalysis"), // 12-dimension analysis JSON
   userEditedDimensionAnalysis: text("userEditedDimensionAnalysis"),
+  aplusModuleType: varchar("aplusModuleType", { length: 64 }), // e.g. comparison_table, image_carousel
+  aplusModuleClass: varchar("aplusModuleClass", { length: 128 }), // raw CSS class
   singleImageScore: int("singleImageScore"), // 1-10
   highlights: text("highlights"),
   tagsConfirmed: int("tagsConfirmed").default(0).notNull(), // 0=no, 1=yes

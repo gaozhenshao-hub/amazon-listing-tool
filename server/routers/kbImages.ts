@@ -44,6 +44,8 @@ async function processImport(setId: number, asin: string, userId: number, runAna
         imageUrl: storedUrl,
         imagePosition: img.position as any,
         positionIndex: img.positionIndex,
+        aplusModuleType: img.aplusModuleType || null,
+        aplusModuleClass: img.aplusModuleClass || null,
       });
     }
 
