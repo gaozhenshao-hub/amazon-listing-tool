@@ -992,9 +992,60 @@ function MatrixTab({ projectId }: { projectId: number }) {
 
 // ─── Roots Tab ─────────────────────────────────────────────────
 
+// ─── Strategy Category Computation (Fallback) ─────────────────────
+function computeStrategyCategory(kw: any): string {
+  // If AI already assigned, use it
+  if (kw.strategyCategory) return kw.strategyCategory;
+  // Fallback: compute from traffic × relevance × competition
+  const t = kw.trafficLevel || "low";
+  const r = kw.relevance || "low";
+  const c = kw.competition || "low";
+  if (r === "none" || r === "low") {
+    if (t === "high") return "observe_test";
+    return "negative";
+  }
+  if (r === "high" && t === "high" && c === "high") return "core_main";
+  if (r === "high" && t === "high" && c === "medium") return "core_main";
+  if (r === "high" && t === "medium" && (c === "medium" || c === "high")) return "sub_core";
+  if (r === "high" && (t === "low" || t === "medium") && c === "low") return "precise_longtail";
+  if (r === "high" && t === "low" && c === "medium") return "precise_longtail";
+  if (r === "medium" && t === "high") return "observe_test";
+  if (r === "medium" && t === "medium" && c === "low") return "longtail_main";
+  if (r === "medium" && t === "medium" && c === "medium") return "longtail_main";
+  if (r === "medium" && t === "low") return "precise_longtail";
+  // Scene intent: if scene tags exist
+  if (kw.sceneTags && kw.sceneTags !== "[]" && kw.sceneTags !== "null") return "scene_intent";
+  return "longtail_main";
+}
+
+// ─── Strategy Badge Compact ─────────────────────────────────────
+const STRATEGY_SHORT: Record<string, { label: string; bg: string; text: string }> = {
+  core_main: { label: "\u6838\u5fc3", bg: "bg-red-500", text: "text-white" },
+  sub_core: { label: "\u6b21\u6838\u5fc3", bg: "bg-orange-500", text: "text-white" },
+  precise_longtail: { label: "\u7cbe\u51c6\u957f\u5c3e", bg: "bg-green-500", text: "text-white" },
+  scene_intent: { label: "\u573a\u666f", bg: "bg-blue-500", text: "text-white" },
+  longtail_main: { label: "\u957f\u5c3e", bg: "bg-purple-500", text: "text-white" },
+  observe_test: { label: "\u89c2\u5bdf", bg: "bg-yellow-500", text: "text-white" },
+  negative: { label: "\u5426\u5b9a", bg: "bg-gray-500", text: "text-white" },
+  brand_offensive: { label: "\u54c1\u724c\u8fdb\u653b", bg: "bg-pink-500", text: "text-white" },
+};
+
+function StrategyBadge({ category }: { category: string }) {
+  const info = STRATEGY_SHORT[category];
+  if (!info) return null;
+  return (
+    <span className={`inline-flex items-center px-1 py-0.5 rounded text-[10px] font-medium leading-none ${info.bg} ${info.text} ml-0.5`}>
+      {info.label}
+    </span>
+  );
+}
+
 function RootsTab({ projectId }: { projectId: number }) {
   const keywordsQuery = trpc.keyword.list.useQuery({ projectId });
   const allKeywords = keywordsQuery.data || [];
+  const [showStrategyLegend, setShowStrategyLegend] = useState(false);
+  const [filterStrategy, setFilterStrategy] = useState<string>("all");
+  const [expandedRoots, setExpandedRoots] = useState<Set<string>>(new Set());
 
   const rootGroups = useMemo(() => {
     const groups: Record<string, { rootWord: string; keywords: any[] }[]> = {};
@@ -1005,8 +1056,8 @@ function RootsTab({ projectId }: { projectId: number }) {
       const root = (kw as any).rootWord;
       if (!cat) continue;
       if (!rootMap[cat]) rootMap[cat] = {};
-      if (!rootMap[cat][root || "其他"]) rootMap[cat][root || "其他"] = [];
-      rootMap[cat][root || "其他"].push(kw);
+      if (!rootMap[cat][root || "\u5176\u4ed6"]) rootMap[cat][root || "\u5176\u4ed6"] = [];
+      rootMap[cat][root || "\u5176\u4ed6"].push(kw);
     }
 
     for (const [cat, roots] of Object.entries(rootMap)) {
@@ -1017,48 +1068,176 @@ function RootsTab({ projectId }: { projectId: number }) {
     return groups;
   }, [allKeywords]);
 
-  const rootOrder = ["core", "function", "scene", "audience", "spec", "painpoint", "gift_holiday"];
+  // Strategy distribution stats
+  const strategyStats = useMemo(() => {
+    const stats: Record<string, number> = {};
+    for (const kw of allKeywords) {
+      if (!(kw as any).rootCategory) continue;
+      const cat = computeStrategyCategory(kw);
+      stats[cat] = (stats[cat] || 0) + 1;
+    }
+    return stats;
+  }, [allKeywords]);
+
+  const totalClassified = Object.values(strategyStats).reduce((s, n) => s + n, 0);
+
+  const rootOrder = ["core", "function", "scene", "audience", "spec", "painpoint", "gift_holiday", "brand_competitor"];
 
   return (
     <div className="space-y-6">
+      {/* Strategy Distribution Summary */}
+      {totalClassified > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-base"><BarChart3 className="h-4 w-4" />\u7b56\u7565\u7c7b\u522b\u5206\u5e03\u6982\u89c8</CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setShowStrategyLegend(!showStrategyLegend)}>
+                {showStrategyLegend ? "\u6536\u8d77\u56fe\u4f8b" : "\u5c55\u5f00\u56fe\u4f8b"}
+                {showStrategyLegend ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="flex flex-wrap gap-2 mb-3">
+              {Object.entries(STRATEGY_SHORT).filter(([k]) => strategyStats[k]).map(([key, info]) => (
+                <button
+                  key={key}
+                  onClick={() => setFilterStrategy(filterStrategy === key ? "all" : key)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all border ${
+                    filterStrategy === key
+                      ? `${info.bg} ${info.text} border-transparent shadow-sm`
+                      : "bg-background border-border hover:bg-muted"
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${info.bg}`} />
+                  {info.label}
+                  <span className="font-bold">{strategyStats[key] || 0}</span>
+                  <span className="text-[10px] opacity-70">({((strategyStats[key] || 0) / totalClassified * 100).toFixed(0)}%)</span>
+                </button>
+              ))}
+              {filterStrategy !== "all" && (
+                <button onClick={() => setFilterStrategy("all")} className="flex items-center gap-1 px-2 py-1.5 rounded-md text-xs text-muted-foreground hover:bg-muted border border-dashed">
+                  <X className="h-3 w-3" />\u6e05\u9664\u7b5b\u9009
+                </button>
+              )}
+            </div>
+            {/* Strategy progress bar */}
+            <div className="flex h-2 rounded-full overflow-hidden bg-muted">
+              {["core_main", "sub_core", "precise_longtail", "scene_intent", "longtail_main", "observe_test", "brand_offensive", "negative"].map(key => {
+                const count = strategyStats[key] || 0;
+                if (!count) return null;
+                const pct = (count / totalClassified) * 100;
+                const colors: Record<string, string> = {
+                  core_main: "bg-red-500", sub_core: "bg-orange-500", precise_longtail: "bg-green-500",
+                  scene_intent: "bg-blue-500", longtail_main: "bg-purple-500", observe_test: "bg-yellow-500",
+                  brand_offensive: "bg-pink-500", negative: "bg-gray-500",
+                };
+                return <div key={key} className={`${colors[key]} transition-all`} style={{ width: `${pct}%` }} title={`${STRATEGY_SHORT[key]?.label}: ${count} (${pct.toFixed(1)}%)`} />;
+              })}
+            </div>
+            {/* Legend */}
+            {showStrategyLegend && (
+              <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                {Object.entries(STRATEGY_LABELS).map(([key, info]) => (
+                  <div key={key} className="flex items-start gap-1.5">
+                    <span className={`mt-0.5 w-2.5 h-2.5 rounded-sm flex-shrink-0 ${STRATEGY_SHORT[key]?.bg || "bg-gray-400"}`} />
+                    <div>
+                      <span className="font-medium">{info.label}</span>
+                      <p className="text-muted-foreground text-[10px] leading-tight">{info.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Root Classification Cards */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><GitBranch className="h-5 w-5" />词根分类 & Listing语义地图</CardTitle>
-          <CardDescription>将关键词按7类词根分组，展示每个词根下的关键词集合，用于指导Listing内容布局</CardDescription>
+          <CardTitle className="flex items-center gap-2"><GitBranch className="h-5 w-5" />\u8bcd\u6839\u5206\u7c7b & Listing\u8bed\u4e49\u5730\u56fe</CardTitle>
+          <CardDescription>\u5c06\u5173\u952e\u8bcd\u6309\u8bcd\u6839\u5206\u7ec4\uff0c\u6bcf\u4e2a\u5173\u952e\u8bcd\u540e\u7f00\u663e\u793a\u57fa\u4e8e\u6d41\u91cf\u00d7\u76f8\u5173\u6027\u00d7\u7ade\u4e89\u5ea6\u4e09\u7ef4\u6570\u636e\u7684\u7b56\u7565\u7c7b\u522b\u6807\u7b7e</CardDescription>
         </CardHeader>
         <CardContent>
           {rootOrder.filter(cat => rootGroups[cat]?.length).length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">暂无词根分类数据，请先在"AI分析"中执行词根分类</div>
+            <div className="text-center py-8 text-muted-foreground">\u6682\u65e0\u8bcd\u6839\u5206\u7c7b\u6570\u636e\uff0c\u8bf7\u5148\u5728\u201cAI\u5206\u6790\u201d\u4e2d\u6267\u884c\u8bcd\u6839\u5206\u7c7b</div>
           ) : (
             <div className="space-y-6">
               {rootOrder.filter(cat => rootGroups[cat]?.length).map(cat => {
-                const info = ROOT_LABELS[cat] || { label: cat, icon: "📌" };
-                const roots = rootGroups[cat] || [];
+                const info = ROOT_LABELS[cat] || { label: cat, icon: "\ud83d\udccc" };
+                let roots = rootGroups[cat] || [];
+                // Filter by strategy if active
+                if (filterStrategy !== "all") {
+                  roots = roots.map(r => ({
+                    ...r,
+                    keywords: r.keywords.filter((kw: any) => computeStrategyCategory(kw) === filterStrategy),
+                  })).filter(r => r.keywords.length > 0);
+                }
+                if (roots.length === 0) return null;
                 const totalKws = roots.reduce((s, r) => s + r.keywords.length, 0);
+                // Strategy breakdown for this root category
+                const catStratStats: Record<string, number> = {};
+                for (const r of roots) {
+                  for (const kw of r.keywords) {
+                    const sc = computeStrategyCategory(kw);
+                    catStratStats[sc] = (catStratStats[sc] || 0) + 1;
+                  }
+                }
                 return (
                   <div key={cat}>
-                    <h3 className="font-medium mb-3 flex items-center gap-2">
+                    <h3 className="font-medium mb-2 flex items-center gap-2 flex-wrap">
                       <span className="text-lg">{info.icon}</span>
                       <span>{info.label}</span>
-                      <Badge variant="secondary">{totalKws}个关键词</Badge>
+                      <Badge variant="secondary">{totalKws}\u4e2a\u5173\u952e\u8bcd</Badge>
+                      {/* Mini strategy breakdown */}
+                      <span className="flex items-center gap-1 ml-2">
+                        {Object.entries(catStratStats).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([sk, cnt]) => (
+                          <span key={sk} className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${STRATEGY_SHORT[sk]?.bg || "bg-gray-400"} ${STRATEGY_SHORT[sk]?.text || "text-white"}`}>
+                            {STRATEGY_SHORT[sk]?.label || sk} {cnt}
+                          </span>
+                        ))}
+                      </span>
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {roots.map((root, i) => (
-                        <Card key={i} className="overflow-hidden">
-                          <CardContent className="p-3">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="font-medium text-sm">{root.rootWord}</span>
-                              <Badge variant="outline" className="text-xs">{root.keywords.length}</Badge>
-                            </div>
-                            <div className="flex flex-wrap gap-1">
-                              {root.keywords.slice(0, 8).map((kw: any) => (
-                                <Badge key={kw.id} variant="secondary" className="text-xs">{kw.keyword}</Badge>
-                              ))}
-                              {root.keywords.length > 8 && <Badge variant="outline" className="text-xs">+{root.keywords.length - 8}</Badge>}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
+                      {roots.map((root, i) => {
+                        const rootKey = `${cat}-${root.rootWord}`;
+                        const isExpanded = expandedRoots.has(rootKey);
+                        const displayCount = isExpanded ? root.keywords.length : 8;
+                        return (
+                          <Card key={i} className="overflow-hidden">
+                            <CardContent className="p-3">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="font-medium text-sm">{root.rootWord}</span>
+                                <Badge variant="outline" className="text-xs">{root.keywords.length}</Badge>
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {root.keywords.slice(0, displayCount).map((kw: any) => {
+                                  const sc = computeStrategyCategory(kw);
+                                  return (
+                                    <span key={kw.id} className="inline-flex items-center bg-secondary text-secondary-foreground rounded px-1.5 py-0.5 text-xs">
+                                      {kw.keyword}
+                                      <StrategyBadge category={sc} />
+                                    </span>
+                                  );
+                                })}
+                                {root.keywords.length > 8 && (
+                                  <button
+                                    onClick={() => {
+                                      const next = new Set(expandedRoots);
+                                      if (isExpanded) next.delete(rootKey); else next.add(rootKey);
+                                      setExpandedRoots(next);
+                                    }}
+                                    className="inline-flex items-center px-1.5 py-0.5 rounded text-xs border border-dashed border-border text-muted-foreground hover:bg-muted transition-colors"
+                                  >
+                                    {isExpanded ? "\u6536\u8d77" : `+${root.keywords.length - 8}`}
+                                  </button>
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
                     </div>
                     <Separator className="mt-4" />
                   </div>
