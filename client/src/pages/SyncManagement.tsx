@@ -18,7 +18,8 @@ import { toast } from "sonner";
 import {
   RefreshCw, Server, Cloud, Activity, BarChart3,
   CheckCircle, XCircle, AlertTriangle, Clock, Wifi, WifiOff,
-  ArrowUpDown, Users, Cpu, Database, Globe, Settings, Loader2, Plug, Eye, EyeOff, Save
+  ArrowUpDown, Users, Cpu, Database, Globe, Settings, Loader2, Plug, Eye, EyeOff, Save,
+  Copy, KeyRound, Info, ExternalLink
 } from "lucide-react";
 
 // ===== 部署信息卡片 =====
@@ -408,6 +409,72 @@ function formatBytes(bytes: number): string {
   return `${bytes} B`;
 }
 
+// ===== 本机同步信息卡片 =====
+function LocalSyncInfoCard() {
+  const { data, isLoading } = trpc.deploymentConfig.getDeploymentInfo.useQuery();
+  const localApiUrl = typeof window !== "undefined" ? window.location.origin : "";
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      toast.success(`已复制${label}`);
+    }).catch(() => {
+      toast.error("复制失败");
+    });
+  };
+
+  if (isLoading) return <Card><CardContent className="p-6"><div className="animate-pulse h-24 bg-muted rounded" /></CardContent></Card>;
+
+  return (
+    <Card className="border-blue-200 bg-blue-50/30 dark:bg-blue-950/10 dark:border-blue-800">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
+          <Info className="h-5 w-5" /> 本机同步信息
+        </CardTitle>
+        <CardDescription>将以下信息提供给对端系统管理员，便于对方配置连接</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* 本机API地址 */}
+          <div className="p-3 bg-white dark:bg-background rounded-lg border">
+            <p className="text-xs text-muted-foreground mb-1">本机API地址</p>
+            <div className="flex items-center gap-2">
+              <p className="font-mono text-sm truncate flex-1">{localApiUrl}</p>
+              <button
+                onClick={() => copyToClipboard(localApiUrl, "API地址")}
+                className="text-muted-foreground hover:text-foreground shrink-0"
+                title="复制"
+              >
+                <Copy className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+          {/* 实例ID */}
+          <div className="p-3 bg-white dark:bg-background rounded-lg border">
+            <p className="text-xs text-muted-foreground mb-1">实例ID</p>
+            <div className="flex items-center gap-2">
+              <p className="font-mono text-sm truncate flex-1">{data?.instanceId || "未配置"}</p>
+              {data?.instanceId && (
+                <button
+                  onClick={() => copyToClipboard(data.instanceId, "实例ID")}
+                  className="text-muted-foreground hover:text-foreground shrink-0"
+                  title="复制"
+                >
+                  <Copy className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          </div>
+          {/* 公司名称 */}
+          <div className="p-3 bg-white dark:bg-background rounded-lg border">
+            <p className="text-xs text-muted-foreground mb-1">公司名称</p>
+            <p className="font-medium text-sm">{data?.companyName || "未配置"}</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ===== 同步API配置卡片 =====
 function SyncConfigCard() {
   const { data, isLoading, refetch } = trpc.deploymentConfig.getSyncConfig.useQuery();
@@ -452,6 +519,28 @@ function SyncConfigCard() {
     }
   };
 
+  const generateRandomKey = () => {
+    // Generate a UUID-like random key
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const segments = [8, 4, 4, 4, 12];
+    const key = segments.map(len => {
+      let s = "";
+      for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+      return s;
+    }).join("-");
+    setPeerApiKey(key);
+    setShowKey(true);
+    toast.success("已生成随机密钥", { description: "请复制此密钥并发送给对端系统管理员" });
+  };
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      toast.success(`已复制${label}`);
+    }).catch(() => {
+      toast.error("复制失败");
+    });
+  };
+
   if (isLoading) return <Card><CardContent className="p-6"><div className="animate-pulse h-40 bg-muted rounded" /></CardContent></Card>;
 
   return (
@@ -492,27 +581,39 @@ function SyncConfigCard() {
           <p className="text-xs text-muted-foreground">对端系统的基础URL，不需要包含 /api/sync 路径</p>
         </div>
 
-        {/* API密钥 */}
+        {/* 同步密钥 */}
         <div className="space-y-2">
-          <Label htmlFor="peerApiKey">同步密钥</Label>
-          <div className="relative">
-            <Input
-              id="peerApiKey"
-              type={showKey ? "text" : "password"}
-              placeholder="输入同步认证密钥"
-              value={peerApiKey}
-              onChange={(e) => setPeerApiKey(e.target.value)}
-              className="font-mono pr-10"
-            />
-            <button
-              type="button"
-              onClick={() => setShowKey(!showKey)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
+          <div className="flex items-center justify-between">
+            <Label htmlFor="peerApiKey">同步密钥</Label>
+            <Button variant="ghost" size="sm" onClick={generateRandomKey} className="gap-1 h-7 text-xs">
+              <KeyRound className="h-3 w-3" /> 生成随机密钥
+            </Button>
           </div>
-          <p className="text-xs text-muted-foreground">两套系统需使用相同的同步密钥进行身份验证</p>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Input
+                id="peerApiKey"
+                type={showKey ? "text" : "password"}
+                placeholder="输入同步认证密钥，或点击右侧生成"
+                value={peerApiKey}
+                onChange={(e) => setPeerApiKey(e.target.value)}
+                className="font-mono pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey(!showKey)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+            {peerApiKey && peerApiKey !== "••••••••" && (
+              <Button variant="outline" size="icon" onClick={() => copyToClipboard(peerApiKey, "同步密钥")} title="复制密钥">
+                <Copy className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">两套系统需使用相同的同步密钥。可点击"生成随机密钥"创建新密钥，然后复制给对端管理员填入</p>
         </div>
 
         {/* 操作按钮 */}
@@ -544,16 +645,31 @@ function SyncConfigCard() {
           </div>
         )}
 
-        {/* 配置说明 */}
-        <div className="p-4 bg-muted/50 rounded-lg space-y-2">
-          <p className="text-sm font-medium">配置说明</p>
-          <ul className="text-xs text-muted-foreground space-y-1">
-            <li>• 对端系统需要部署相同版本的亚马逊Listing智能工具</li>
-            <li>• 两套系统必须配置相同的同步密钥，否则无法建立连接</li>
-            <li>• 同步内容包括：产品创意库、Listing文案库、图片知识库、视频知识库、运营技能库</li>
-            <li>• 配置保存后立即生效，无需重启服务</li>
-            <li>• 建议保存后先点击"测试连接"验证对端可达性</li>
-          </ul>
+        {/* 配置流程说明 */}
+        <div className="p-4 bg-muted/50 rounded-lg space-y-3">
+          <p className="text-sm font-medium flex items-center gap-1.5"><ExternalLink className="h-4 w-4" /> 双向同步配置流程</p>
+          <div className="space-y-2">
+            <div className="flex gap-3 items-start">
+              <Badge variant="outline" className="shrink-0 mt-0.5">1</Badge>
+              <p className="text-xs text-muted-foreground">在本系统点击"生成随机密钥"，复制生成的密钥</p>
+            </div>
+            <div className="flex gap-3 items-start">
+              <Badge variant="outline" className="shrink-0 mt-0.5">2</Badge>
+              <p className="text-xs text-muted-foreground">将本机API地址和密钥发送给对端系统管理员</p>
+            </div>
+            <div className="flex gap-3 items-start">
+              <Badge variant="outline" className="shrink-0 mt-0.5">3</Badge>
+              <p className="text-xs text-muted-foreground">对端管理员在其系统填入本机API地址和相同的密钥，并把对端API地址发回给你</p>
+            </div>
+            <div className="flex gap-3 items-start">
+              <Badge variant="outline" className="shrink-0 mt-0.5">4</Badge>
+              <p className="text-xs text-muted-foreground">在本系统填入对端API地址，保存配置并点击"测试连接"验证</p>
+            </div>
+            <div className="flex gap-3 items-start">
+              <Badge variant="outline" className="shrink-0 mt-0.5">5</Badge>
+              <p className="text-xs text-muted-foreground">双方均开启"启用对端同步"开关，即可开始知识库双向同步</p>
+            </div>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -583,6 +699,7 @@ export default function SyncManagement() {
         </TabsContent>
 
         <TabsContent value="config" className="space-y-4">
+          <LocalSyncInfoCard />
           <SyncConfigCard />
         </TabsContent>
 
