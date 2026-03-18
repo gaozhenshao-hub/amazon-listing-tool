@@ -1400,3 +1400,40 @@
 
 ## Bug修复
 - [x] 修复 /admin 路径404错误（侧边栏点击系统管理跳转到/admin，但路由未注册）
+
+## 阶段2实施：知识库审核 + SOP分级 + 项目分配跨模块引用 (2026-03-18)
+
+### 数据库扩展
+- [x] 知识库表添加审核字段（status: draft/pending/approved/rejected, reviewedBy, reviewNote, visibility）
+- [x] SOP表添加分级可见性字段（accessLevel: public/team/restricted, allowedRoles）
+- [x] 创建sop_access_grants表（SOP授权记录）
+- [x] 数据库迁移执行
+
+### 知识库审核流程
+- [x] 后端：知识库内容提交审核API（submitForReview）
+- [x] 后端：审核操作API（approve/reject + 审核备注）
+- [x] 后端：待审核列表API（按状态筛选）
+- [x] 后端：审核历史API
+- [x] 前端：审核中心页面（待审核/已审核/已拒绝 Tab）
+- [x] 前端：知识库页面添加审核状态标识和提交审核按钮（审核中心已实现）
+- [x] 前端：审核详情弹窗（查看内容 + 通过/拒绝 + 备注）
+
+### SOP分级可见性
+- [x] 后端：SOP可见性设置API（setAccessLevel）
+- [x] 后端：SOP授权API（grantAccess/revokeAccess）
+- [x] 后端：SOP查询改造（按角色和授权过滤）
+- [x] 前端：SOP编辑页添加可见性设置面板（SOP权限管理页面）
+- [x] 前端：SOP列表按权限过滤展示
+
+### 项目分配与跨模块引用
+- [x] 后端：项目分配CRUD API（assign/unassign/listMyAssignments/listProjectAssignments）
+- [x] 后端：跨模块数据读取API（getAssignedDevProjects → 读取产品画像数据）
+- [x] 后端：产品画像导入API（从dev_product_profiles导入到Listing本品属性表）
+- [x] 前端：项目分配管理页面（管理员：选项目→选用户→设权限）
+- [x] 前端：Listing创建时“从产品画像导入”入口
+- [x] 前端：产品画像选择弹窗（展示被分配的模块1项目列表）
+
+### 测试
+- [x] Vitest测试覆盖审核流程
+- [x] Vitest测试覆盖SOP分级可见性
+- [x] Vitest测试覆盖项目分配与跨模块引用

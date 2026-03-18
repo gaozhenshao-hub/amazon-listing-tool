@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE kb_product_innovations\n  ADD COLUMN reviewStatus ENUM('draft','pending_review','approved','rejected') NOT NULL DEFAULT 'draft',\n  ADD COLUMN reviewedBy INT NULL,\n  ADD COLUMN reviewNote TEXT NULL,\n  ADD COLUMN reviewedAt TIMESTAMP NULL,\n  ADD COLUMN submittedAt TIMESTAMP NULL,\n  ADD COLUMN visibility ENUM('private','team','public') NOT NULL DEFAULT 'private';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute ALTER TABLE kb_product_innovations\n  ADD COLUMN reviewStatus ENUM('draft','pending_review','approved','rejected') NOT NULL DEFAULT 'draft',\n  ADD COLUMN reviewedBy INT NULL,\n  ADD COLUMN reviewNote TEXT NULL,\n  ADD COLUMN reviewedAt TIMESTAMP NULL,\n  ADD COLUMN submittedAt TIMESTAMP NULL,\n  ADD COLUMN visibility ENUM('private','team','public') NOT NULL DEFAULT 'private';",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 4207
+}

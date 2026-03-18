@@ -479,6 +479,12 @@ export const kbProductInnovations = mysqlTable("kb_product_innovations", {
   tags: text("tags"), // Tags JSON array
   overallScore: int("overallScore"), // 1-10
   status: mysqlEnum("status", ["crawling", "analyzing", "pending_review", "confirmed", "archived"]).default("crawling").notNull(),
+  reviewStatus: mysqlEnum("reviewStatus", ["draft", "pending_review", "approved", "rejected"]).default("draft").notNull(),
+  reviewedBy: int("reviewedBy"),
+  reviewNote: text("reviewNote"),
+  reviewedAt: timestamp("reviewedAt"),
+  submittedAt: timestamp("submittedAt"),
+  visibility: mysqlEnum("visibility", ["private", "team", "public"]).default("private").notNull(),
   confirmedAt: timestamp("confirmedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -506,6 +512,12 @@ export const kbListingCopywriting = mysqlTable("kb_listing_copywriting", {
   tags: text("tags"), // Tags JSON array
   overallScore: int("overallScore"), // 1-100
   status: mysqlEnum("status", ["crawling", "analyzing", "pending_review", "confirmed", "archived"]).default("crawling").notNull(),
+  reviewStatus: mysqlEnum("reviewStatus", ["draft", "pending_review", "approved", "rejected"]).default("draft").notNull(),
+  reviewedBy: int("reviewedBy"),
+  reviewNote: text("reviewNote"),
+  reviewedAt: timestamp("reviewedAt"),
+  submittedAt: timestamp("submittedAt"),
+  visibility: mysqlEnum("visibility", ["private", "team", "public"]).default("private").notNull(),
   confirmedAt: timestamp("confirmedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -526,6 +538,12 @@ export const kbImageSets = mysqlTable("kb_image_sets", {
   userEditedOverallAnalysis: text("userEditedOverallAnalysis"),
   overallScore: int("overallScore"), // 1-100
   status: mysqlEnum("status", ["crawling", "analyzing", "pending_review", "confirmed", "archived"]).default("crawling").notNull(),
+  reviewStatus: mysqlEnum("reviewStatus", ["draft", "pending_review", "approved", "rejected"]).default("draft").notNull(),
+  reviewedBy: int("reviewedBy"),
+  reviewNote: text("reviewNote"),
+  reviewedAt: timestamp("reviewedAt"),
+  submittedAt: timestamp("submittedAt"),
+  visibility: mysqlEnum("visibility", ["private", "team", "public"]).default("private").notNull(),
   confirmedAt: timestamp("confirmedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -581,6 +599,14 @@ export const kbOperationSkills = mysqlTable("kb_operation_skills", {
   tags: text("tags"), // Custom tags JSON array
   practicalityScore: int("practicalityScore"), // 1-10
   status: mysqlEnum("status", ["parsing", "analyzing", "pending_review", "confirmed", "archived"]).default("parsing").notNull(),
+  reviewStatus: mysqlEnum("reviewStatus", ["draft", "pending_review", "approved", "rejected"]).default("draft").notNull(),
+  reviewedBy: int("reviewedBy"),
+  reviewNote: text("reviewNote"),
+  reviewedAt: timestamp("reviewedAt"),
+  submittedAt: timestamp("submittedAt"),
+  visibility: mysqlEnum("visibility", ["private", "team", "public"]).default("private").notNull(),
+  accessLevel: mysqlEnum("accessLevel", ["public", "team", "restricted"]).default("public").notNull(),
+  allowedRoles: text("allowedRoles"), // JSON array of allowed role keys
   confirmedAt: timestamp("confirmedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -606,6 +632,12 @@ export const kbVideos = mysqlTable("kb_videos", {
   tags: text("tags"), // Tags JSON array
   overallScore: int("overallScore"), // 1-100
   status: mysqlEnum("status", ["downloading", "transcribing", "analyzing", "pending_review", "confirmed", "archived"]).default("downloading").notNull(),
+  reviewStatus: mysqlEnum("reviewStatus", ["draft", "pending_review", "approved", "rejected"]).default("draft").notNull(),
+  reviewedBy: int("reviewedBy"),
+  reviewNote: text("reviewNote"),
+  reviewedAt: timestamp("reviewedAt"),
+  submittedAt: timestamp("submittedAt"),
+  visibility: mysqlEnum("visibility", ["private", "team", "public"]).default("private").notNull(),
   confirmedAt: timestamp("confirmedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

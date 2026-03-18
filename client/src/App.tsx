@@ -55,6 +55,9 @@ import SystemSettings from "./pages/SystemSettings";
 import LoginPage from "./pages/LoginPage";
 import UserManagement from "./pages/UserManagement";
 import ProfilePage from "./pages/ProfilePage";
+import ReviewCenter from "./pages/ReviewCenter";
+import SopAccessPage from "./pages/SopAccessPage";
+import ProjectAssignmentPage from "./pages/ProjectAssignmentPage";
 
 function Router() {
   return (
@@ -123,9 +126,12 @@ function Router() {
         {/* ─── System Settings ─── */}
         <Route path="/settings" component={SystemSettings} />
 
-        {/* ─── User Management ─── */}
+        {/* ─── User Management & Admin ─── */}
         <Route path="/admin">{() => <Redirect to="/admin/users" />}</Route>
         <Route path="/admin/users" component={UserManagement} />
+        <Route path="/admin/review" component={ReviewCenter} />
+        <Route path="/admin/sop-access" component={SopAccessPage} />
+        <Route path="/admin/assignments" component={ProjectAssignmentPage} />
         <Route path="/profile" component={ProfilePage} />
 
         <Route path="/404" component={NotFound} />
