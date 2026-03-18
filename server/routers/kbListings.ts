@@ -160,6 +160,13 @@ export const kbListingsRouter = router({
       return { success: true };
     }),
 
+  updateScore: protectedProcedure
+    .input(z.object({ id: z.number(), score: z.number().min(1).max(100) }))
+    .mutation(async ({ ctx, input }) => {
+      await kbDb.updateListingCopywriting(input.id, ctx.user.id, { overallScore: input.score });
+      return { success: true };
+    }),
+
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {

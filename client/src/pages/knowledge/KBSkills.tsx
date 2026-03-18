@@ -10,8 +10,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-import { Loader2, PlusCircle, Link2, Upload, BookOpen, CheckCircle, Edit3, Trash2, Sparkles, Search, FileText, FileSpreadsheet, Presentation, Image as ImageIcon, File, AlertCircle, FolderOpen } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { Loader2, PlusCircle, Link2, Upload, BookOpen, CheckCircle, Edit3, Trash2, Sparkles, Search, FileText, FileSpreadsheet, Presentation, Image as ImageIcon, File, AlertCircle, FolderOpen, Tag } from "lucide-react";
 import { toast } from "sonner";
+import { TagEditor } from "@/components/TagEditor";
+
+const SOP_TAG_SUGGESTIONS = [
+  "广告投放", "库存管理", "Listing优化", "财务分析", "选品方法",
+  "物流仓储", "评论管理", "品牌运营", "新品上架", "促销活动",
+  "PPC策略", "SP广告", "SB广告", "SD广告", "DSP广告",
+  "关键词研究", "竞品分析", "价格策略", "A+内容", "品牌旗舰店",
+  "FBA补货", "FBM运营", "客服模板", "差评处理", "账号安全",
+];
 
 const FILE_TYPE_ICONS: Record<string, any> = {
   pdf: FileText, doc: FileText, docx: FileText,
@@ -87,6 +97,10 @@ export default function KBSkills() {
   });
   const deleteMutation = trpc.kbSkills.delete.useMutation({
     onSuccess: () => { toast.success("已删除"); utils.kbSkills.list.invalidate(); setDetailId(null); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const updateTagsMutation = trpc.kbSkills.updateTags?.useMutation?.({
+    onSuccess: () => { toast.success("标签已更新"); utils.kbSkills.getById.invalidate({ id: detailId! }); utils.kbSkills.list.invalidate(); },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -373,13 +387,29 @@ export default function KBSkills() {
                     {d.originalFilename && <span>文件: {d.originalFilename}</span>}
                     {d.createdAt && <span>创建: {new Date(d.createdAt).toLocaleString()}</span>}
                   </div>
-                  {d.tags && (
-                    <div className="flex flex-wrap gap-1">
-                      {(d.tags as string).split(",").filter(Boolean).map((tag: string) => (
-                        <Badge key={tag} variant="secondary" className="text-xs">{tag.trim()}</Badge>
-                      ))}
-                    </div>
-                  )}
+                  {/* Tag Editor */}
+                  <Card>
+                    <CardHeader className="pb-2 pt-3 px-4">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Tag className="h-4 w-4 text-green-500" />
+                        标签管理
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-3">
+                      <TagEditor
+                        tags={(d.tags || "").split(",").filter(Boolean).map((t: string) => t.trim())}
+                        onChange={(newTags) => {
+                          if (updateTagsMutation) {
+                            updateTagsMutation.mutate({ id: d.id, tags: newTags.join(",") });
+                          } else {
+                            toast.info("标签更新功能即将上线");
+                          }
+                        }}
+                        suggestions={SOP_TAG_SUGGESTIONS}
+                        placeholder="添加标签（回车确认）..."
+                      />
+                    </CardContent>
+                  </Card>
                   {/* AI Summary */}
                   {d.aiSummary && (
                     <Card>
@@ -416,6 +446,8 @@ export default function KBSkills() {
                       </CardContent>
                     </Card>
                   )}
+                  <Separator />
+
                   <div className="flex gap-2 justify-end">
                     {d.status === "pending_review" && (
                       <>

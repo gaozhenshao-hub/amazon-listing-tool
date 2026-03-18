@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -6,10 +6,21 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, PlusCircle, Link2, Upload, Lightbulb, Star, CheckCircle, Edit3, Trash2, Sparkles, Search } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { Loader2, PlusCircle, Link2, Upload, Lightbulb, Star, CheckCircle, Edit3, Trash2, Sparkles, Search, Tag } from "lucide-react";
 import { toast } from "sonner";
+import { TagEditor } from "@/components/TagEditor";
+import { ScoreSlider } from "@/components/ScoreSlider";
+
+const PRODUCT_TAG_SUGGESTIONS = [
+  "创新设计", "差异化", "高评分", "爆款", "新品", "高转化",
+  "3C数码", "家居生活", "户外运动", "美妆个护", "母婴玩具",
+  "宠物用品", "服装鞋包", "厨房用品", "汽车配件", "办公用品",
+  "健康保健", "食品饮料", "工具五金", "高性价比", "品牌标杆",
+  "功能创新", "外观创新", "材质创新", "包装创新", "场景创新",
+];
 
 export default function KBProducts() {
   const utils = trpc.useUtils();
@@ -44,6 +55,14 @@ export default function KBProducts() {
     onSuccess: () => { toast.success("已删除"); utils.kbProducts.list.invalidate(); setDetailId(null); },
     onError: (e: any) => toast.error(e.message),
   });
+  const updateTagsMutation = trpc.kbProducts.updateTags.useMutation({
+    onSuccess: () => { toast.success("标签已更新"); utils.kbProducts.getById.invalidate({ id: detailId! }); utils.kbProducts.list.invalidate(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const updateScoreMutation = trpc.kbProducts.updateScore.useMutation({
+    onSuccess: () => { toast.success("评分已更新"); utils.kbProducts.getById.invalidate({ id: detailId! }); utils.kbProducts.list.invalidate(); },
+    onError: (e: any) => toast.error(e.message),
+  });
 
   const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
     crawling: { label: "爬取中", variant: "secondary" },
@@ -57,11 +76,20 @@ export default function KBProducts() {
     try { return JSON.parse(item.userEditedAnalysis || item.aiAnalysis || "{}"); } catch { return {}; }
   };
 
-  const filtered = (items as any[] || []).filter((item: any) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (item.asin || "").toLowerCase().includes(q) || (item.productTitle || "").toLowerCase().includes(q) || (item.brand || "").toLowerCase().includes(q);
-  });
+  const getTags = (item: any): string[] => {
+    try {
+      const parsed = JSON.parse(item.tags || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  };
+
+  const filtered = useMemo(() => {
+    return (items as any[] || []).filter((item: any) => {
+      if (!searchQuery) return true;
+      const q = searchQuery.toLowerCase();
+      return (item.asin || "").toLowerCase().includes(q) || (item.productTitle || "").toLowerCase().includes(q) || (item.brand || "").toLowerCase().includes(q);
+    });
+  }, [items, searchQuery]);
 
   return (
     <div className="space-y-6">
@@ -105,6 +133,7 @@ export default function KBProducts() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((item: any) => {
             const analysis = getAnalysis(item);
+            const tags = getTags(item);
             const status = statusMap[item.status] || { label: item.status, variant: "secondary" as const };
             return (
               <Card key={item.id} className="cursor-pointer hover:shadow-md transition-all" onClick={() => { setDetailId(item.id); setEditingAnalysis(""); }}>
@@ -123,6 +152,16 @@ export default function KBProducts() {
                       </span>
                     )}
                   </div>
+                  {tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {tags.slice(0, 3).map((t: string, i: number) => (
+                        <Badge key={i} variant="secondary" className="text-xs py-0 px-1.5 h-5 font-normal">
+                          <Tag className="h-2.5 w-2.5 mr-0.5 opacity-50" />{t}
+                        </Badge>
+                      ))}
+                      {tags.length > 3 && <Badge variant="secondary" className="text-xs py-0 px-1.5 h-5 font-normal">+{tags.length - 3}</Badge>}
+                    </div>
+                  )}
                   {analysis.summary && <p className="text-xs text-muted-foreground mt-2 line-clamp-2">{analysis.summary}</p>}
                 </CardContent>
               </Card>
@@ -185,6 +224,7 @@ export default function KBProducts() {
           {detail ? (() => {
             const d = detail as any;
             const analysis = getAnalysis(d);
+            const tags = getTags(d);
             const status = statusMap[d.status] || { label: d.status, variant: "secondary" as const };
             return (
               <>
@@ -199,10 +239,43 @@ export default function KBProducts() {
                   <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                     {d.brand && <span>品牌: <strong className="text-foreground">{d.brand}</strong></span>}
                     {d.category && <span>类目: <strong className="text-foreground">{d.category}</strong></span>}
-                    {d.overallScore && (
-                      <span className="flex items-center gap-1">评分: <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" /><strong className="text-foreground">{d.overallScore}/10</strong></span>
-                    )}
                   </div>
+
+                  {/* Score Slider */}
+                  <Card>
+                    <CardContent className="pt-4 pb-3 px-4">
+                      <ScoreSlider
+                        value={d.overallScore || 5}
+                        onChange={() => {}}
+                        onSave={(val) => updateScoreMutation.mutate({ id: d.id, score: val })}
+                        min={1}
+                        max={10}
+                        label="创意评分"
+                        disabled={updateScoreMutation.isPending}
+                      />
+                    </CardContent>
+                  </Card>
+
+                  {/* Tags Editor */}
+                  <Card>
+                    <CardHeader className="pb-2 pt-3 px-4">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Tag className="h-4 w-4 text-amber-500" />
+                        标签管理
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-3">
+                      <TagEditor
+                        tags={tags}
+                        onChange={(newTags) => {
+                          updateTagsMutation.mutate({ id: d.id, tags: JSON.stringify(newTags) });
+                        }}
+                        suggestions={PRODUCT_TAG_SUGGESTIONS}
+                        placeholder="添加标签（回车确认）..."
+                        disabled={updateTagsMutation.isPending}
+                      />
+                    </CardContent>
+                  </Card>
 
                   {/* AI Analysis */}
                   {d.aiAnalysis && (
@@ -232,6 +305,8 @@ export default function KBProducts() {
                       </CardContent>
                     </Card>
                   )}
+
+                  <Separator />
 
                   {/* Actions */}
                   <div className="flex gap-2 justify-end">

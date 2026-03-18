@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,10 +9,25 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, PlusCircle, Link2, Upload, Image as ImageIcon, CheckCircle, Edit3, Trash2, Sparkles, Search, Grid3X3, LayoutGrid, Package, Eye } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { Loader2, PlusCircle, Link2, Upload, Image as ImageIcon, CheckCircle, Edit3, Trash2, Sparkles, Search, Grid3X3, LayoutGrid, Package, Eye, Tag } from "lucide-react";
 import { toast } from "sonner";
+import { TagEditor } from "@/components/TagEditor";
+import { ScoreSlider } from "@/components/ScoreSlider";
 
 type ViewMode = "asin" | "waterfall" | "grid";
+
+const CATEGORY_OPTIONS = ["3C数码","家居生活","户外运动","美妆个护","母婴玩具","宠物用品","服装鞋包","厨房用品","汽车配件","办公用品","健康保健","食品饮料","工具五金","其他"];
+const COLOR_OPTIONS = ["暖色系","冷色系","中性色系","撞色/对比色","品牌色","渐变色"];
+const IMAGE_TYPE_OPTIONS = ["场景图","功能图","卖点图","尺寸图","参数图","对比图","细节图","包装图","使用步骤图","成分图","认证图","生活方式图"];
+const DESIGN_STYLE_OPTIONS = ["简约现代","科技感","自然清新","温馨家居","运动活力","奢华高端","可爱卡通","工业硬朗","日系极简","北欧风","美式复古","扁平化"];
+
+const DIMENSION_LABELS: Record<string, string> = {
+  copywriting: "文案", structure: "结构", expression: "表达方式",
+  color: "色彩", dataVisualization: "数据可视化", icons: "图标",
+  keyElements: "关键元素", composition: "构图", brandTone: "品牌调性",
+  storytelling: "故事性", consistency: "一致性", overallArchitecture: "整体架构",
+};
 
 export default function KBImages() {
   const utils = trpc.useUtils();
@@ -25,15 +40,20 @@ export default function KBImages() {
   const [detailSetId, setDetailSetId] = useState<number | null>(null);
   const [editingAnalysis, setEditingAnalysis] = useState("");
 
-  // Filters
+  // Filters (four dimensions + position)
+  const [filterCategory, setFilterCategory] = useState("all");
+  const [filterColorScheme, setFilterColorScheme] = useState("all");
   const [filterImageType, setFilterImageType] = useState("all");
   const [filterStyle, setFilterStyle] = useState("all");
   const [filterPosition, setFilterPosition] = useState("all");
+  const [selectedImageId, setSelectedImageId] = useState<number | null>(null);
 
   // Use listSets for the ASIN-grouped view (default)
   const { data: sets, isLoading } = trpc.kbImages.listSets.useQuery();
   // Use listAllImages for image-level browsing (waterfall/grid)
   const { data: allImages, isLoading: imagesLoading } = trpc.kbImages.listAllImages.useQuery({
+    tagCategory: filterCategory !== "all" ? filterCategory : undefined,
+    tagColorScheme: filterColorScheme !== "all" ? filterColorScheme : undefined,
     tagImageType: filterImageType !== "all" ? filterImageType : undefined,
     tagDesignStyle: filterStyle !== "all" ? filterStyle : undefined,
     imagePosition: filterPosition !== "all" ? filterPosition : undefined,
@@ -58,6 +78,14 @@ export default function KBImages() {
   });
   const deleteMutation = trpc.kbImages.deleteSet.useMutation({
     onSuccess: () => { toast.success("已删除"); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setDetailSetId(null); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const updateImageTagsMutation = trpc.kbImages.confirmImageTags.useMutation({
+    onSuccess: () => { toast.success("标签已更新"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listAllImages.invalidate(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const updateImageScoreMutation = trpc.kbImages.updateImageScore.useMutation({
+    onSuccess: () => { toast.success("评分已更新"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -127,33 +155,36 @@ export default function KBImages() {
         </div>
         {viewMode !== "asin" && (
           <>
+            <Select value={filterCategory} onValueChange={setFilterCategory}>
+              <SelectTrigger className="w-[120px]"><SelectValue placeholder="类目" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部类目</SelectItem>
+                {CATEGORY_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={filterColorScheme} onValueChange={setFilterColorScheme}>
+              <SelectTrigger className="w-[120px]"><SelectValue placeholder="色系" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部色系</SelectItem>
+                {COLOR_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
             <Select value={filterImageType} onValueChange={setFilterImageType}>
-              <SelectTrigger className="w-[130px]"><SelectValue placeholder="图片类型" /></SelectTrigger>
+              <SelectTrigger className="w-[120px]"><SelectValue placeholder="图片类型" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部类型</SelectItem>
-                <SelectItem value="main">主图</SelectItem>
-                <SelectItem value="scene">场景图</SelectItem>
-                <SelectItem value="detail">细节图</SelectItem>
-                <SelectItem value="infographic">信息图</SelectItem>
-                <SelectItem value="comparison">对比图</SelectItem>
-                <SelectItem value="size">尺寸图</SelectItem>
-                <SelectItem value="feature">功能图</SelectItem>
-                <SelectItem value="lifestyle">生活方式</SelectItem>
+                {IMAGE_TYPE_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={filterStyle} onValueChange={setFilterStyle}>
-              <SelectTrigger className="w-[130px]"><SelectValue placeholder="设计风格" /></SelectTrigger>
+              <SelectTrigger className="w-[120px]"><SelectValue placeholder="设计风格" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部风格</SelectItem>
-                <SelectItem value="minimal">极简</SelectItem>
-                <SelectItem value="premium">高端质感</SelectItem>
-                <SelectItem value="colorful">色彩丰富</SelectItem>
-                <SelectItem value="tech">科技感</SelectItem>
-                <SelectItem value="natural">自然</SelectItem>
+                {DESIGN_STYLE_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={filterPosition} onValueChange={setFilterPosition}>
-              <SelectTrigger className="w-[130px]"><SelectValue placeholder="图片位置" /></SelectTrigger>
+              <SelectTrigger className="w-[120px]"><SelectValue placeholder="图片位置" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部位置</SelectItem>
                 <SelectItem value="main">主图</SelectItem>
@@ -378,7 +409,7 @@ export default function KBImages() {
                       </h4>
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                         {groupedImages.main.map((img: any) => (
-                          <ImageCard key={img.id} img={img} />
+                          <ImageCardEnhanced key={img.id} img={img} onSelectImage={setSelectedImageId} selectedImageId={selectedImageId} onUpdateTags={updateImageTagsMutation} onUpdateScore={updateImageScoreMutation} />
                         ))}
                       </div>
                     </div>
@@ -393,7 +424,7 @@ export default function KBImages() {
                       </h4>
                       <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
                         {groupedImages.secondary.sort((a: any, b: any) => (a.positionIndex || 0) - (b.positionIndex || 0)).map((img: any) => (
-                          <ImageCard key={img.id} img={img} />
+                          <ImageCardEnhanced key={img.id} img={img} onSelectImage={setSelectedImageId} selectedImageId={selectedImageId} onUpdateTags={updateImageTagsMutation} onUpdateScore={updateImageScoreMutation} />
                         ))}
                       </div>
                     </div>
@@ -408,7 +439,7 @@ export default function KBImages() {
                       </h4>
                       <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
                         {groupedImages.aplus.sort((a: any, b: any) => (a.positionIndex || 0) - (b.positionIndex || 0)).map((img: any) => (
-                          <ImageCard key={img.id} img={img} />
+                          <ImageCardEnhanced key={img.id} img={img} onSelectImage={setSelectedImageId} selectedImageId={selectedImageId} onUpdateTags={updateImageTagsMutation} onUpdateScore={updateImageScoreMutation} />
                         ))}
                       </div>
                     </div>
@@ -451,6 +482,8 @@ export default function KBImages() {
                       </CardContent>
                     </Card>
                   )}
+
+                  <Separator />
 
                   <div className="flex gap-2 justify-end">
                     {d.status === "pending_review" && (
@@ -515,22 +548,114 @@ function AsinThumbnailStrip({ setId }: { setId: number }) {
   );
 }
 
-/** Single image card with tags and score */
-function ImageCard({ img }: { img: any }) {
+/** Enhanced single image card with expandable tag editing, score slider, and 12-dimension analysis */
+function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, onUpdateScore }: {
+  img: any;
+  onSelectImage: (id: number | null) => void;
+  selectedImageId: number | null;
+  onUpdateTags: any;
+  onUpdateScore: any;
+}) {
+  const isExpanded = selectedImageId === img.id;
+  let dimensions: any = {};
+  try { dimensions = JSON.parse(img.aiDimensionAnalysis || "{}"); } catch {}
+
   return (
-    <div className="relative rounded-lg overflow-hidden bg-muted group/img">
-      <img src={img.imageUrl} alt="" className="w-full aspect-square object-cover" loading="lazy" />
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2 opacity-0 group-hover/img:opacity-100 transition-opacity">
-        <div className="flex flex-wrap gap-1">
-          {img.tagImageType && <Badge variant="secondary" className="text-[9px] bg-white/20 text-white border-0">{img.tagImageType}</Badge>}
-          {img.tagDesignStyle && <Badge variant="secondary" className="text-[9px] bg-white/20 text-white border-0">{img.tagDesignStyle}</Badge>}
-          {img.singleImageScore && <Badge className="text-[9px] bg-primary/80 border-0">{img.singleImageScore}/10</Badge>}
+    <div className={`rounded-lg overflow-hidden bg-muted border transition-all ${isExpanded ? "ring-2 ring-primary col-span-full" : ""}`}>
+      <div className="relative cursor-pointer" onClick={() => onSelectImage(isExpanded ? null : img.id)}>
+        <img src={img.imageUrl} alt="" className={`w-full ${isExpanded ? "max-h-80 object-contain bg-black/5" : "aspect-square object-cover"}`} loading="lazy" />
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
+          <div className="flex flex-wrap gap-1">
+            {img.tagCategory && <Badge variant="secondary" className="text-[9px] bg-white/20 text-white border-0">{img.tagCategory}</Badge>}
+            {img.tagColorScheme && <Badge variant="secondary" className="text-[9px] bg-white/20 text-white border-0">{img.tagColorScheme}</Badge>}
+            {img.tagImageType && <Badge variant="secondary" className="text-[9px] bg-white/20 text-white border-0">{img.tagImageType}</Badge>}
+            {img.tagDesignStyle && <Badge variant="secondary" className="text-[9px] bg-white/20 text-white border-0">{img.tagDesignStyle}</Badge>}
+            {img.singleImageScore && <Badge className="text-[9px] bg-primary/80 border-0">{img.singleImageScore}/10</Badge>}
+          </div>
         </div>
+        {img.imagePosition !== "main" && (
+          <Badge variant="outline" className="absolute top-1.5 left-1.5 text-[9px] bg-white/80 backdrop-blur-sm">
+            {img.imagePosition === "aplus" ? "A+" : `#${img.positionIndex}`}
+          </Badge>
+        )}
       </div>
-      {img.imagePosition !== "main" && (
-        <Badge variant="outline" className="absolute top-1.5 left-1.5 text-[9px] bg-white/80 backdrop-blur-sm">
-          {img.imagePosition === "aplus" ? "A+" : `#${img.positionIndex}`}
-        </Badge>
+
+      {isExpanded && (
+        <div className="p-4 space-y-4 bg-card">
+          {/* Four-dimension tag selectors */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">类目</Label>
+              <Select value={img.tagCategory || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagCategory: v, tagColorScheme: img.tagColorScheme, tagImageType: img.tagImageType, tagDesignStyle: img.tagDesignStyle })}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择类目" /></SelectTrigger>
+                <SelectContent>
+                  {CATEGORY_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">色系</Label>
+              <Select value={img.tagColorScheme || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagCategory: img.tagCategory, tagColorScheme: v, tagImageType: img.tagImageType, tagDesignStyle: img.tagDesignStyle })}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择色系" /></SelectTrigger>
+                <SelectContent>
+                  {COLOR_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">图片类型</Label>
+              <Select value={img.tagImageType || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagCategory: img.tagCategory, tagColorScheme: img.tagColorScheme, tagImageType: v, tagDesignStyle: img.tagDesignStyle })}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择类型" /></SelectTrigger>
+                <SelectContent>
+                  {IMAGE_TYPE_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">设计风格</Label>
+              <Select value={img.tagDesignStyle || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagCategory: img.tagCategory, tagColorScheme: img.tagColorScheme, tagImageType: img.tagImageType, tagDesignStyle: v })}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择风格" /></SelectTrigger>
+                <SelectContent>
+                  {DESIGN_STYLE_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Score Slider */}
+          <ScoreSlider
+            value={img.singleImageScore || 5}
+            onChange={() => {}}
+            onSave={(val) => onUpdateScore.mutate({ imageId: img.id, score: val })}
+            min={1}
+            max={10}
+            label="单图评分"
+            disabled={onUpdateScore.isPending}
+          />
+
+          {/* 12-Dimension Analysis Display */}
+          {img.aiDimensionAnalysis && (
+            <div className="space-y-2">
+              <h5 className="text-xs font-semibold flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-purple-500" />
+                12维度分析
+              </h5>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(DIMENSION_LABELS).map(([key, label]) => {
+                  const dim = dimensions[key];
+                  if (!dim) return null;
+                  const analysis = typeof dim === "string" ? dim : dim?.analysis || dim?.content || JSON.stringify(dim);
+                  return (
+                    <div key={key} className="bg-muted/50 rounded-md p-2">
+                      <span className="text-[10px] font-medium text-muted-foreground">{label}</span>
+                      <p className="text-xs mt-0.5 line-clamp-3">{analysis}</p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

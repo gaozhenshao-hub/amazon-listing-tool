@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,8 +8,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, PlusCircle, Link2, Upload, Video, CheckCircle, Edit3, Trash2, Sparkles, Search, Play, Clock } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { Loader2, PlusCircle, Link2, Upload, Video, CheckCircle, Edit3, Trash2, Sparkles, Search, Play, Clock, Tag, Zap, Timer } from "lucide-react";
 import { toast } from "sonner";
+import { TagEditor } from "@/components/TagEditor";
+import { ScoreSlider } from "@/components/ScoreSlider";
+
+const VIDEO_TAG_SUGGESTIONS = [
+  "产品展示", "使用教程", "开箱视频", "对比测评", "场景演示",
+  "品牌故事", "客户证言", "广告素材", "A+视频", "主图视频",
+  "短视频", "长视频", "TikTok风格", "YouTube风格", "专业制作",
+  "UGC风格", "动画制作", "实拍素材", "快节奏", "慢动作",
+  "3C数码", "家居生活", "户外运动", "美妆个护", "母婴玩具",
+];
 
 export default function KBVideos() {
   const utils = trpc.useUtils();
@@ -49,6 +60,14 @@ export default function KBVideos() {
     onSuccess: () => { toast.success("已删除"); utils.kbVideos.list.invalidate(); setDetailId(null); },
     onError: (e: any) => toast.error(e.message),
   });
+  const updateTagsMutation = trpc.kbVideos.updateTags?.useMutation?.({
+    onSuccess: () => { toast.success("标签已更新"); utils.kbVideos.getById.invalidate({ id: detailId! }); utils.kbVideos.list.invalidate(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const updateScoreMutation = trpc.kbVideos.updateScore?.useMutation?.({
+    onSuccess: () => { toast.success("评分已更新"); utils.kbVideos.getById.invalidate({ id: detailId! }); utils.kbVideos.list.invalidate(); },
+    onError: (e: any) => toast.error(e.message),
+  });
 
   const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
     crawling: { label: "爬取中", variant: "secondary" },
@@ -58,11 +77,25 @@ export default function KBVideos() {
     confirmed: { label: "已入库", variant: "outline" },
   };
 
-  const filtered = (items as any[] || []).filter((item: any) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (item.title || "").toLowerCase().includes(q) || (item.asin || "").toLowerCase().includes(q) || (item.tags || "").toLowerCase().includes(q);
-  });
+  const filtered = useMemo(() => {
+    return (items as any[] || []).filter((item: any) => {
+      if (!searchQuery) return true;
+      const q = searchQuery.toLowerCase();
+      return (item.title || "").toLowerCase().includes(q) || (item.asin || "").toLowerCase().includes(q) || (item.tags || "").toLowerCase().includes(q);
+    });
+  }, [items, searchQuery]);
+
+  const getTags = (item: any): string[] => {
+    const t = item.tags || "";
+    return t.split(",").filter(Boolean).map((s: string) => s.trim());
+  };
+
+  const getGolden3s = (item: any) => {
+    try {
+      const analysis = JSON.parse(item.aiAnalysis || "{}");
+      return analysis.golden3Seconds || analysis.goldenThreeSeconds || null;
+    } catch { return null; }
+  };
 
   return (
     <div className="space-y-6">
@@ -219,13 +252,76 @@ export default function KBVideos() {
                     {d.duration && <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> {d.duration}</span>}
                     {d.sourceUrl && <a href={d.sourceUrl} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline truncate max-w-xs">原始链接</a>}
                   </div>
-                  {d.tags && (
-                    <div className="flex flex-wrap gap-1">
-                      {(d.tags as string).split(",").filter(Boolean).map((tag: string) => (
-                        <Badge key={tag} variant="secondary" className="text-xs">{tag.trim()}</Badge>
-                      ))}
-                    </div>
-                  )}
+                  {/* Score Slider */}
+                  <Card>
+                    <CardContent className="pt-4 pb-3 px-4">
+                      <ScoreSlider
+                        value={d.overallScore || 50}
+                        onChange={() => {}}
+                        onSave={(val) => updateScoreMutation?.mutate?.({ id: d.id, score: val })}
+                        min={1}
+                        max={100}
+                        label="视频综合评分"
+                        disabled={!updateScoreMutation}
+                      />
+                    </CardContent>
+                  </Card>
+
+                  {/* Tag Editor */}
+                  <Card>
+                    <CardHeader className="pb-2 pt-3 px-4">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Tag className="h-4 w-4 text-red-500" />
+                        标签管理
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-3">
+                      <TagEditor
+                        tags={getTags(d)}
+                        onChange={(newTags) => {
+                          if (updateTagsMutation) {
+                            updateTagsMutation.mutate({ id: d.id, tags: newTags.join(",") });
+                          } else {
+                            toast.info("标签更新功能即将上线");
+                          }
+                        }}
+                        suggestions={VIDEO_TAG_SUGGESTIONS}
+                        placeholder="添加标签（回车确认）..."
+                      />
+                    </CardContent>
+                  </Card>
+
+                  {/* Golden 3 Seconds Analysis */}
+                  {(() => {
+                    const g3s = getGolden3s(d);
+                    if (!g3s) return null;
+                    return (
+                      <Card className="border-amber-200 bg-amber-50/30 dark:bg-amber-950/10 dark:border-amber-800">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm flex items-center gap-2">
+                            <Timer className="h-4 w-4 text-amber-500" />
+                            <span className="text-amber-700 dark:text-amber-400">黄金3秒分析</span>
+                            <Zap className="h-3.5 w-3.5 text-amber-500" />
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-sm space-y-2">
+                          {typeof g3s === "string" ? (
+                            <p>{g3s}</p>
+                          ) : (
+                            <>
+                              {g3s.hook && <p><strong>开场钩子:</strong> {g3s.hook}</p>}
+                              {g3s.visualImpact && <p><strong>视觉冲击:</strong> {g3s.visualImpact}</p>}
+                              {g3s.emotionalTrigger && <p><strong>情感触发:</strong> {g3s.emotionalTrigger}</p>}
+                              {g3s.callToAction && <p><strong>行动号召:</strong> {g3s.callToAction}</p>}
+                              {g3s.score && <p><strong>开场评分:</strong> <span className="text-amber-600 font-bold">{g3s.score}/10</span></p>}
+                              {g3s.suggestion && <p className="text-muted-foreground italic border-l-2 border-amber-300 pl-3">{g3s.suggestion}</p>}
+                            </>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })()}
+
                   {/* Transcription */}
                   {d.transcription && (
                     <Card>
@@ -253,6 +349,8 @@ export default function KBVideos() {
                       </CardContent>
                     </Card>
                   )}
+                  <Separator />
+
                   <div className="flex gap-2 justify-end">
                     {d.status === "pending_review" && (
                       <>

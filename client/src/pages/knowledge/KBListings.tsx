@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -6,10 +6,21 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, PlusCircle, Link2, Upload, FileText, CheckCircle, Edit3, Trash2, Sparkles, Search, Star } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { Loader2, PlusCircle, Link2, Upload, FileText, CheckCircle, Edit3, Trash2, Sparkles, Search, Star, Tag } from "lucide-react";
 import { toast } from "sonner";
+import { TagEditor } from "@/components/TagEditor";
+import { ScoreSlider } from "@/components/ScoreSlider";
+
+const LISTING_TAG_SUGGESTIONS = [
+  "A9优化", "FABE结构", "COSMO场景", "痛点转化", "情感化文案",
+  "数据化表达", "场景化描述", "技术参数突出", "品牌故事",
+  "3C数码", "家居生活", "户外运动", "美妆个护", "母婴玩具",
+  "宠物用品", "服装鞋包", "厨房用品", "汽车配件",
+  "高转化率", "标题优秀", "五点优秀", "A+优秀", "关键词覆盖广",
+];
 
 export default function KBListings() {
   const utils = trpc.useUtils();
@@ -44,6 +55,14 @@ export default function KBListings() {
     onSuccess: () => { toast.success("已删除"); utils.kbListings.list.invalidate(); setDetailId(null); },
     onError: (e: any) => toast.error(e.message),
   });
+  const updateTagsMutation = trpc.kbListings.updateTags.useMutation({
+    onSuccess: () => { toast.success("标签已更新"); utils.kbListings.getById.invalidate({ id: detailId! }); utils.kbListings.list.invalidate(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const updateScoreMutation = trpc.kbListings.updateScore.useMutation({
+    onSuccess: () => { toast.success("评分已更新"); utils.kbListings.getById.invalidate({ id: detailId! }); utils.kbListings.list.invalidate(); },
+    onError: (e: any) => toast.error(e.message),
+  });
 
   const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
     crawling: { label: "爬取中", variant: "secondary" },
@@ -57,11 +76,20 @@ export default function KBListings() {
     try { return JSON.parse(item.userEditedAnalysis || item.aiAnalysis || "{}"); } catch { return {}; }
   };
 
-  const filtered = (items as any[] || []).filter((item: any) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (item.asin || "").toLowerCase().includes(q) || (item.title || "").toLowerCase().includes(q);
-  });
+  const getTags = (item: any): string[] => {
+    try {
+      const parsed = JSON.parse(item.tags || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  };
+
+  const filtered = useMemo(() => {
+    return (items as any[] || []).filter((item: any) => {
+      if (!searchQuery) return true;
+      const q = searchQuery.toLowerCase();
+      return (item.asin || "").toLowerCase().includes(q) || (item.title || "").toLowerCase().includes(q);
+    });
+  }, [items, searchQuery]);
 
   return (
     <div className="space-y-6">
@@ -110,12 +138,22 @@ export default function KBListings() {
                     </div>
                     {item.overallScore && (
                       <span className="flex items-center gap-1 text-sm">
-                        <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />{item.overallScore}/10
+                        <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />{item.overallScore}/100
                       </span>
                     )}
                   </div>
                   <h3 className="font-medium text-sm line-clamp-1 mb-1">{item.title || "加载中..."}</h3>
                   {item.bulletPoints && <p className="text-xs text-muted-foreground line-clamp-2">{item.bulletPoints.substring(0, 150)}...</p>}
+                  {getTags(item).length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {getTags(item).slice(0, 3).map((t: string, i: number) => (
+                        <Badge key={i} variant="secondary" className="text-xs py-0 px-1.5 h-5 font-normal">
+                          <Tag className="h-2.5 w-2.5 mr-0.5 opacity-50" />{t}
+                        </Badge>
+                      ))}
+                      {getTags(item).length > 3 && <Badge variant="secondary" className="text-xs py-0 px-1.5 h-5 font-normal">+{getTags(item).length - 3}</Badge>}
+                    </div>
+                  )}
                   {analysis.summary && <p className="text-xs text-muted-foreground mt-1 italic">{analysis.summary}</p>}
                 </CardContent>
               </Card>
@@ -189,6 +227,43 @@ export default function KBListings() {
                 </DialogHeader>
                 <div className="space-y-4">
                   <h3 className="font-medium">{d.title || "加载中..."}</h3>
+
+                  {/* Score Slider */}
+                  <Card>
+                    <CardContent className="pt-4 pb-3 px-4">
+                      <ScoreSlider
+                        value={d.overallScore || 50}
+                        onChange={() => {}}
+                        onSave={(val) => updateScoreMutation.mutate({ id: d.id, score: val })}
+                        min={1}
+                        max={100}
+                        label="文案综合评分"
+                        disabled={updateScoreMutation.isPending}
+                      />
+                    </CardContent>
+                  </Card>
+
+                  {/* Tags Editor */}
+                  <Card>
+                    <CardHeader className="pb-2 pt-3 px-4">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Tag className="h-4 w-4 text-blue-500" />
+                        标签管理
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="px-4 pb-3">
+                      <TagEditor
+                        tags={getTags(d)}
+                        onChange={(newTags) => {
+                          updateTagsMutation.mutate({ id: d.id, tags: JSON.stringify(newTags) });
+                        }}
+                        suggestions={LISTING_TAG_SUGGESTIONS}
+                        placeholder="添加标签（回车确认）..."
+                        disabled={updateTagsMutation.isPending}
+                      />
+                    </CardContent>
+                  </Card>
+
                   {/* Listing Content */}
                   <div className="grid gap-3">
                     {d.bulletPoints && (
@@ -224,6 +299,8 @@ export default function KBListings() {
                       </CardContent>
                     </Card>
                   )}
+                  <Separator />
+
                   <div className="flex gap-2 justify-end">
                     {d.status === "pending_review" && (
                       <>

@@ -237,6 +237,14 @@ export const kbImagesRouter = router({
       return { success: true };
     }),
 
+  // Update single image score
+  updateImageScore: protectedProcedure
+    .input(z.object({ imageId: z.number(), score: z.number().min(1).max(10) }))
+    .mutation(async ({ ctx, input }) => {
+      await kbDb.updateImage(input.imageId, { singleImageScore: input.score });
+      return { success: true };
+    }),
+
   deleteSet: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {

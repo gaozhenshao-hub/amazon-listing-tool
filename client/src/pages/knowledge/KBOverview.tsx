@@ -9,7 +9,9 @@ import {
   Loader2, Search, Lightbulb, FileText, Image, BookOpen, Video,
   ArrowRight, Sparkles, Database, ChevronRight, Zap, Brain,
   UserCheck, Archive, Bot, TrendingUp, ExternalLink, Code2, Copy,
+  Globe, Package, Layers,
 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 
@@ -66,6 +68,39 @@ export default function KBOverview() {
   };
 
   const totalCount = (stats as any)?.totalCount || 0;
+  const [asinPanorama, setAsinPanorama] = useState(false);
+  const [panoramaAsin, setPanoramaAsin] = useState("");
+
+  // Aggregate unique ASINs from all knowledge bases
+  const { data: allProducts } = trpc.kbProducts.list.useQuery();
+  const { data: allListings } = trpc.kbListings.list.useQuery();
+  const { data: allImageSets } = trpc.kbImages.listSets.useQuery();
+  const { data: allVideos } = trpc.kbVideos.list.useQuery();
+
+  const asinMap = (() => {
+    const map: Record<string, { product?: any; listing?: any; imageSet?: any; video?: any }> = {};
+    (allProducts as any[] || []).forEach((p: any) => {
+      if (p.asin) { if (!map[p.asin]) map[p.asin] = {}; map[p.asin].product = p; }
+    });
+    (allListings as any[] || []).forEach((l: any) => {
+      if (l.asin) { if (!map[l.asin]) map[l.asin] = {}; map[l.asin].listing = l; }
+    });
+    (allImageSets as any[] || []).forEach((s: any) => {
+      if (s.asin) { if (!map[s.asin]) map[s.asin] = {}; map[s.asin].imageSet = s; }
+    });
+    (allVideos as any[] || []).forEach((v: any) => {
+      if (v.asin) { if (!map[v.asin]) map[v.asin] = {}; map[v.asin].video = v; }
+    });
+    return map;
+  })();
+
+  const asinList = Object.entries(asinMap)
+    .filter(([asin]) => !panoramaAsin || asin.toLowerCase().includes(panoramaAsin.toLowerCase()))
+    .sort((a, b) => {
+      const countA = Object.values(a[1]).filter(Boolean).length;
+      const countB = Object.values(b[1]).filter(Boolean).length;
+      return countB - countA;
+    });
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text).then(() => toast.success("已复制到剪贴板"));
@@ -182,6 +217,23 @@ export default function KBOverview() {
                 )}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* ASIN Panoramic View Entry */}
+        <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-transparent cursor-pointer hover:shadow-md transition-all" onClick={() => setAsinPanorama(true)}>
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="p-3 rounded-xl bg-gradient-to-br from-primary to-primary/70 text-white shadow-sm">
+              <Globe className="h-6 w-6" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-base flex items-center gap-2">
+                ASIN全景视图
+                <Badge variant="secondary" className="text-xs">{Object.keys(asinMap).length} 个ASIN</Badge>
+              </h3>
+              <p className="text-sm text-muted-foreground mt-0.5">以ASIN为维度，查看每个产品在各子库中的知识沉淀情况，快速定位知识空白</p>
+            </div>
+            <ArrowRight className="h-5 w-5 text-muted-foreground" />
           </CardContent>
         </Card>
 
@@ -321,6 +373,98 @@ export default function KBOverview() {
             )}
           </CardContent>
         </Card>
+        {/* ASIN Panoramic View Dialog */}
+        <Dialog open={asinPanorama} onOpenChange={setAsinPanorama}>
+          <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Globe className="h-5 w-5 text-primary" />
+                ASIN全景视图
+                <Badge variant="secondary">{Object.keys(asinMap).length} 个ASIN</Badge>
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="搜索ASIN..." className="pl-9" value={panoramaAsin} onChange={(e) => setPanoramaAsin(e.target.value)} />
+              </div>
+
+              {asinList.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Package className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                  <p className="text-sm">暂无ASIN数据，请先在各子库中导入产品</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {asinList.slice(0, 50).map(([asin, data]) => {
+                    const moduleCount = Object.values(data).filter(Boolean).length;
+                    return (
+                      <Card key={asin} className="hover:shadow-sm transition-all">
+                        <CardContent className="p-3">
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2 min-w-[140px]">
+                              <code className="text-sm font-mono font-bold text-primary">{asin}</code>
+                              <Badge variant={moduleCount >= 3 ? "default" : moduleCount >= 2 ? "secondary" : "outline"} className="text-[10px]">
+                                {moduleCount}/4
+                              </Badge>
+                            </div>
+                            <div className="flex gap-2 flex-1">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className={`flex items-center gap-1 px-2 py-1 rounded text-xs cursor-pointer transition-colors ${data.product ? "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400" : "bg-muted text-muted-foreground/40"}`}
+                                    onClick={() => { if (data.product) { setAsinPanorama(false); navigate("/knowledge/products"); } }}>
+                                    <Lightbulb className="h-3 w-3" /> 创意
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent>{data.product ? `✅ 已收录: ${data.product.productTitle || "未命名"}` : "❌ 未收录"}</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className={`flex items-center gap-1 px-2 py-1 rounded text-xs cursor-pointer transition-colors ${data.listing ? "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400" : "bg-muted text-muted-foreground/40"}`}
+                                    onClick={() => { if (data.listing) { setAsinPanorama(false); navigate("/knowledge/listings"); } }}>
+                                    <FileText className="h-3 w-3" /> 文案
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent>{data.listing ? `✅ 已收录: ${data.listing.title || "未命名"}` : "❌ 未收录"}</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className={`flex items-center gap-1 px-2 py-1 rounded text-xs cursor-pointer transition-colors ${data.imageSet ? "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400" : "bg-muted text-muted-foreground/40"}`}
+                                    onClick={() => { if (data.imageSet) { setAsinPanorama(false); navigate("/knowledge/images"); } }}>
+                                    <Image className="h-3 w-3" /> 图片
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent>{data.imageSet ? `✅ 已收录: ${data.imageSet.imageCount || 0}张图片` : "❌ 未收录"}</TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className={`flex items-center gap-1 px-2 py-1 rounded text-xs cursor-pointer transition-colors ${data.video ? "bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-400" : "bg-muted text-muted-foreground/40"}`}
+                                    onClick={() => { if (data.video) { setAsinPanorama(false); navigate("/knowledge/videos"); } }}>
+                                    <Video className="h-3 w-3" /> 视频
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent>{data.video ? `✅ 已收录: ${data.video.title || "未命名"}` : "❌ 未收录"}</TooltipContent>
+                              </Tooltip>
+                            </div>
+                            {/* Coverage indicator */}
+                            <div className="flex gap-0.5">
+                              {[1,2,3,4].map(n => (
+                                <div key={n} className={`w-2 h-2 rounded-full ${n <= moduleCount ? "bg-primary" : "bg-muted"}`} />
+                              ))}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                  {asinList.length > 50 && (
+                    <p className="text-xs text-muted-foreground text-center py-2">显示前50个，共{asinList.length}个ASIN，请使用搜索缩小范围</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </TooltipProvider>
   );
