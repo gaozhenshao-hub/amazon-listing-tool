@@ -13,6 +13,7 @@ import {
   STEP5_TRANSLATION_PROMPT,
   STEP4_REOPTIMIZE_WITH_REFS_PROMPT,
   STEP5_APLUS_MODULE_OPTIMIZE_PROMPT,
+  STEP5_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT,
   STEP6_AI_PROMPT_GENERATION,
   STEP6_TRANSLATION_PROMPT,
 } from "../imageWorkflowPrompts";
@@ -636,7 +637,44 @@ export const imageWorkflowRouter = router({
       return result;
     }),
 
-  // ─── Step 6: Generate AI prompts ──────────────────────────────────
+  // ─── Step 5c: Optimize single A+ section with specific module style ──
+  optimizeSingleAplusModule: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      sectionIndex: z.number().min(0),
+      moduleType: z.string(),
+      moduleName: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      if (!session) throw new Error("No workflow session found");
+      if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
+
+      const currentSuggestions = session.step5UserEdit || session.step5AiResult;
+      let currentData: any;
+      try { currentData = JSON.parse(currentSuggestions); } catch { throw new Error("Invalid step5 data"); }
+
+      const currentSection = currentData?.aPlusContent?.sections?.[input.sectionIndex];
+      if (!currentSection) throw new Error(`A+ section at index ${input.sectionIndex} not found`);
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: STEP5_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT },
+          {
+            role: "user",
+            content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 当前该模块的建议内容 ---\n${JSON.stringify(currentSection)}\n\n--- 用户为该模块选择的A+样式 ---\n模块类型: ${input.moduleType}\n模块名称: ${input.moduleName}\n模块位置: A+模块 ${input.sectionIndex + 1}\n\n请根据用户选择的A+模块样式，重新优化该模块的建议内容，严格按照模块规格要求（尺寸、字符数限制）来输出内容。`,
+          },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const result = parseLLMJson(response);
+      return { en: result.en || result, cn: result.cn || null };
+    }),
+
+  // ─── Step 6: Generate AI prompts ──────────────────────────────
   generateStep6: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {

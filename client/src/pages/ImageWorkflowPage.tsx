@@ -2200,27 +2200,81 @@ function Step5FinalSuggestions({
   const [isLocked, setIsLocked] = useState(!!session?.step5Confirmed);
   const [showModuleSelector, setShowModuleSelector] = useState(false);
   const [selectedModules, setSelectedModules] = useState<string[]>([]);
+  // Per-section module style state: { [sectionIndex]: moduleTypeId }
+  const [sectionModuleStyles, setSectionModuleStyles] = useState<Record<number, string>>({});
+  const [optimizingSectionIdx, setOptimizingSectionIdx] = useState<number | null>(null);
+  const singleModuleOptimizeMutation = trpc.imageWorkflow.optimizeSingleAplusModule.useMutation();
 
-  // Amazon Premium A+ Module Types
+  // Amazon Premium A+ Module Types - comprehensive list matching backend prompt
   const APLUS_MODULES = [
-    { id: 'hero_banner', name: '英雄横幅模块', desc: '全屏背景图+文字覆盖，970x600px', category: '全屏展示' },
-    { id: 'comparison_table', name: '对比表格模块', desc: '产品对比表格，最多6列', category: '对比展示' },
-    { id: 'hotspot', name: '热点交互模块', desc: '可点击热点区域，展示产品细节', category: '交互展示' },
-    { id: 'carousel', name: '轮播图模块', desc: '多图轮播展示，最多8张', category: '交互展示' },
-    { id: 'video', name: '视频模块', desc: '产品视频展示，支持自动播放', category: '多媒体' },
-    { id: 'brand_story', name: '品牌故事模块', desc: '品牌叙事+图片组合', category: '品牌建设' },
-    { id: 'four_image_text', name: '四图文字模块', desc: '4张图片+文字描述，各300x300px', category: '图文组合' },
-    { id: 'single_image_sidebar', name: '单图侧边栏模块', desc: '左图右文或右图左文布局', category: '图文组合' },
-    { id: 'full_image', name: '全屏图片模块', desc: '全宽单图展示，970x300px', category: '全屏展示' },
-    { id: 'text_overlay', name: '文字覆盖模块', desc: '图片上叠加文字层', category: '图文组合' },
-    { id: 'qa_module', name: 'Q&A模块', desc: '问答式内容展示', category: '信息展示' },
-    { id: 'tech_specs', name: '技术规格模块', desc: '参数表格展示', category: '信息展示' },
-    { id: 'three_image_text', name: '三图文字模块', desc: '3张图片+文字，各300x300px', category: '图文组合' },
-    { id: 'brand_highlight', name: '品牌亮点模块', desc: '品牌Logo+核心价值主张', category: '品牌建设' },
-    { id: 'navigation', name: '导航模块', desc: '产品线内部导航链接', category: '导航' },
+    { id: 'premium_full_image', name: '高级完整图片', desc: '全屏背景+文字覆盖, 1464x600px', category: '全屏展示', specs: '标题800字符, 正文300字符' },
+    { id: 'premium_text', name: '高级文本', desc: '纯文本模块', category: '文本', specs: '标题80字符, 正文300字符' },
+    { id: 'premium_bg_image_text', name: '高级背景图像+文本', desc: '背景图+叠加文字, 1464x600px', category: '全屏展示', specs: '标题60字符, 副标题40字符, 正文300字符' },
+    { id: 'premium_four_image_text', name: '高级四图片+文本', desc: '4张小图+文字, 300x225px', category: '图文组合', specs: '标题30字符, 正文150字符' },
+    { id: 'premium_dual_image_text', name: '高级双图片+文本', desc: '左右双图, 650x350px', category: '图文组合', specs: '标题50字符, 副标题50字符, 正文300字符' },
+    { id: 'premium_single_image_text', name: '高级单图+文本', desc: '大图+长文, 800x600px', category: '图文组合', specs: '标题80字符, 副标题40字符, 正文500字符' },
+    { id: 'premium_full_video', name: '高级全视频', desc: '视频≤200MB,≤180秒, 960x540px', category: '多媒体', specs: '标题80字符, 正文300字符' },
+    { id: 'premium_video_text', name: '高级视频+文本', desc: '视频+文字, 800x600px', category: '多媒体', specs: '标题80字符, 副标题40字符, 正文500字符' },
+    { id: 'premium_comparison_1', name: '高级比较表1', desc: '4-7产品, 5-12特征, 200x225px', category: '对比展示', specs: '图片200x225px' },
+    { id: 'premium_comparison_2', name: '高级比较表2', desc: '2-3产品, 2-5特征, 300x225px', category: '对比展示', specs: '图片300x225px' },
+    { id: 'premium_comparison_3', name: '高级比较表3', desc: '2-4产品, 3-7特征, 488x700px', category: '对比展示', specs: '图片488x700px' },
+    { id: 'premium_hotspot_1', name: '高级热点1', desc: '2-6个可点击热点, 1464x600px', category: '交互展示', specs: '标题50字符, 正文200字符' },
+    { id: 'premium_hotspot_2', name: '高级热点2', desc: '2-6个热点, 1464x600px', category: '交互展示', specs: '模块标题80字符' },
+    { id: 'premium_nav_carousel', name: '高级导航轮播', desc: '2-5个面板, 1464x600px', category: '轮播展示', specs: '导航文本25字符' },
+    { id: 'premium_rule_carousel', name: '高级规则轮播', desc: '2-5个面板, 1464x600px', category: '轮播展示', specs: '模块标题100字符' },
+    { id: 'premium_simple_carousel', name: '高级简单图像轮播', desc: '2-6个面板, 1464x600px', category: '轮播展示', specs: '标题50字符' },
+    { id: 'premium_video_carousel', name: '高级视频图像轮播', desc: '2-6个面板, 800x600px', category: '轮播展示', specs: '标题80字符' },
+    { id: 'premium_qa', name: '高级问答', desc: '2-5个问答, 1464x600px', category: '信息展示', specs: '问题120字符, 回答250字符' },
+    { id: 'premium_tech_specs', name: '高级技术规格', desc: '3-15个规格, 300x300px', category: '信息展示', specs: '标题80字符' },
+    { id: 'brand_highlight', name: '品牌亮点', desc: '3-4个亮点, 135x135px', category: '品牌建设', specs: '标题30字符, 正文80字符' },
+    { id: 'standard_image_text', name: '标准图文', desc: '标准A+基础模块, 970x300px', category: '标准A+', specs: '标题160字符, 正文6000字符' },
+    { id: 'standard_comparison', name: '标准对比表', desc: '最多5个产品, 150x150px', category: '标准A+', specs: '标题80字符, 正文250字符' },
+    { id: 'standard_four_image', name: '标准四图', desc: '4张图+文字, 220x220px', category: '标准A+', specs: '标题60字符, 正文160字符' },
+    { id: 'standard_single_image', name: '标准单图', desc: '全宽单图, 970x600px', category: '标准A+', specs: '标题160字符, 正文6000字符' },
   ];
 
   const MODULE_CATEGORIES = Array.from(new Set(APLUS_MODULES.map(m => m.category)));
+
+  // Handle per-section module style optimize
+  const handleSingleModuleOptimize = async (sectionIdx: number) => {
+    const moduleId = sectionModuleStyles[sectionIdx];
+    if (!moduleId) {
+      toast.error("请先选择一个A+模块样式");
+      return;
+    }
+    const mod = APLUS_MODULES.find(m => m.id === moduleId);
+    if (!mod) return;
+    setOptimizingSectionIdx(sectionIdx);
+    try {
+      const result = await singleModuleOptimizeMutation.mutateAsync({
+        projectId,
+        sectionIndex: sectionIdx,
+        moduleType: moduleId,
+        moduleName: mod.name,
+      });
+      // Update only this section in enData and cnData
+      if (result.en) {
+        setEnData((prev: any) => {
+          const sections = [...(prev.aPlusContent?.sections || [])];
+          sections[sectionIdx] = { ...sections[sectionIdx], ...result.en, selectedModuleType: moduleId, selectedModuleName: mod.name };
+          return { ...prev, aPlusContent: { ...prev.aPlusContent, sections } };
+        });
+      }
+      if (result.cn) {
+        setCnData((prev: any) => {
+          if (!prev) return prev;
+          const sections = [...(prev.aPlusContent?.sections || [])];
+          sections[sectionIdx] = { ...sections[sectionIdx], ...result.cn };
+          return { ...prev, aPlusContent: { ...prev.aPlusContent, sections } };
+        });
+      }
+      toast.success(`A+模块 ${sectionIdx + 1} 已根据「${mod.name}」样式重新优化`);
+    } catch (err: any) {
+      toast.error(err.message || "优化失败");
+    } finally {
+      setOptimizingSectionIdx(null);
+    }
+  };
 
   useEffect(() => {
     setIsLocked(!!session?.step5Confirmed);
@@ -2715,9 +2769,12 @@ function Step5FinalSuggestions({
                 </CardContent>
               </Card>
 
-              {/* Draggable A+ sections */}
+              {/* Draggable A+ sections with per-section module style selector */}
               {enData.aPlusContent.sections?.map((section: any, idx: number) => {
                 const cnSection = cnData?.aPlusContent?.sections?.[idx];
+                const selectedStyle = sectionModuleStyles[idx] || section.selectedModuleType || '';
+                const selectedMod = APLUS_MODULES.find(m => m.id === selectedStyle);
+                const isOptimizing = optimizingSectionIdx === idx;
                 return (
                   <Card
                     key={idx}
@@ -2734,6 +2791,11 @@ function Step5FinalSuggestions({
                           <CardTitle className="text-sm flex items-center gap-2">
                             A+ 模块 {idx + 1}
                             {section.type && <Badge variant="outline" className="text-xs">{section.type}</Badge>}
+                            {section.selectedModuleName && (
+                              <Badge variant="secondary" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
+                                {section.selectedModuleName}
+                              </Badge>
+                            )}
                           </CardTitle>
                         </div>
                         {!isConfirmed && (
@@ -2747,42 +2809,153 @@ function Step5FinalSuggestions({
                           />
                         )}
                       </div>
+                      {/* Per-section A+ module style selector */}
+                      {!isConfirmed && (
+                        <div className="mt-3 p-3 bg-purple-50/50 rounded-lg border border-purple-100">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Layers className="w-3.5 h-3.5 text-purple-500" />
+                            <span className="text-xs font-medium text-purple-700">选择超级A+模块样式</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Select
+                              value={selectedStyle}
+                              onValueChange={(val) => setSectionModuleStyles(prev => ({ ...prev, [idx]: val }))}
+                            >
+                              <SelectTrigger className="h-8 text-xs flex-1 bg-white">
+                                <SelectValue placeholder="选择A+模块样式..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {MODULE_CATEGORIES.map(cat => (
+                                  <div key={cat}>
+                                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50">{cat}</div>
+                                    {APLUS_MODULES.filter(m => m.category === cat).map(mod => (
+                                      <SelectItem key={mod.id} value={mod.id}>
+                                        <div className="flex flex-col">
+                                          <span className="text-xs font-medium">{mod.name}</span>
+                                          <span className="text-[10px] text-muted-foreground">{mod.desc} | {mod.specs}</span>
+                                        </div>
+                                      </SelectItem>
+                                    ))}
+                                  </div>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              size="sm"
+                              variant="default"
+                              className="h-8 text-xs bg-purple-600 hover:bg-purple-700"
+                              disabled={!selectedStyle || isOptimizing}
+                              onClick={() => handleSingleModuleOptimize(idx)}
+                            >
+                              {isOptimizing ? (
+                                <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> 优化中...</>
+                              ) : (
+                                <><Sparkles className="w-3 h-3 mr-1" /> AI优化</>
+                              )}
+                            </Button>
+                          </div>
+                          {selectedMod && (
+                            <p className="text-[10px] text-purple-600 mt-1.5">
+                              ℹ️ {selectedMod.name}: {selectedMod.desc} — {selectedMod.specs}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-2 border-r pr-4">
-                          <Badge variant="outline" className="text-xs">English</Badge>
-                          <p className="text-sm font-medium">{section.title}</p>
-                          <p className="text-xs"><strong>Purpose:</strong> {section.purpose}</p>
-                          <p className="text-xs"><strong>Content:</strong> {section.content}</p>
-                          <FABEDisplay fabe={section.fabe} variant="en" />
-                          {section.expressionMethod && <p className="text-xs"><strong>Expression:</strong> {section.expressionMethod}</p>}
-                          {section.composition && <p className="text-xs"><strong>Composition:</strong> {section.composition}</p>}
-                          {section.dataVisualization && <p className="text-xs"><strong>Data Viz:</strong> {section.dataVisualization}</p>}
-                          {section.icons?.length > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                              {section.icons.map((icon: string, i: number) => <Badge key={i} variant="secondary" className="text-xs">{icon}</Badge>)}
+                    {isOptimizing ? (
+                      <CardContent>
+                        <div className="flex items-center justify-center py-8">
+                          <Loader2 className="w-6 h-6 animate-spin text-purple-500 mr-2" />
+                          <span className="text-sm text-muted-foreground">AI正在根据「{selectedMod?.name}」样式重新优化该模块...</span>
+                        </div>
+                      </CardContent>
+                    ) : (
+                      <CardContent>
+                        {/* Module specs display if optimized */}
+                        {section.specs && (
+                          <div className="mb-3 p-2 bg-purple-50 rounded border border-purple-100">
+                            <div className="flex flex-wrap gap-2 text-[10px]">
+                              {section.specs.desktopSize && <Badge variant="outline" className="text-[10px] bg-white">桌面: {section.specs.desktopSize}</Badge>}
+                              {section.specs.mobileSize && <Badge variant="outline" className="text-[10px] bg-white">移动: {section.specs.mobileSize}</Badge>}
+                              {section.specs.maxTitleChars && <Badge variant="outline" className="text-[10px] bg-white">标题≤{section.specs.maxTitleChars}字符</Badge>}
+                              {section.specs.maxBodyChars && <Badge variant="outline" className="text-[10px] bg-white">正文≤{section.specs.maxBodyChars}字符</Badge>}
                             </div>
-                          )}
+                          </div>
+                        )}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2 border-r pr-4">
+                            <Badge variant="outline" className="text-xs">English</Badge>
+                            <p className="text-sm font-medium">{section.title}</p>
+                            <p className="text-xs"><strong>Purpose:</strong> {section.purpose}</p>
+                            <p className="text-xs"><strong>Content:</strong> {section.content}</p>
+                            {section.imageDescription && <p className="text-xs"><strong>Image:</strong> {section.imageDescription}</p>}
+                            <FABEDisplay fabe={section.fabe} variant="en" />
+                            {section.expressionMethod && <p className="text-xs"><strong>Expression:</strong> {section.expressionMethod}</p>}
+                            {section.composition && <p className="text-xs"><strong>Composition:</strong> {section.composition}</p>}
+                            {section.dataVisualization && <p className="text-xs"><strong>Data Viz:</strong> {section.dataVisualization}</p>}
+                            {section.icons?.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {section.icons.map((icon: string, i: number) => <Badge key={i} variant="secondary" className="text-xs">{icon}</Badge>)}
+                              </div>
+                            )}
+                            {section.designTips?.length > 0 && (
+                              <div className="mt-2 p-2 bg-amber-50 rounded text-xs">
+                                <strong className="text-amber-700">设计提示:</strong>
+                                <ul className="list-disc list-inside mt-1 text-amber-600">
+                                  {section.designTips.map((tip: string, i: number) => <li key={i}>{tip}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                            {/* Module-specific content display */}
+                            {section.moduleSpecificContent && (
+                              <div className="mt-2 p-2 bg-blue-50 rounded text-xs space-y-1">
+                                <strong className="text-blue-700">模块专属内容:</strong>
+                                {section.moduleSpecificContent.comparisons && (
+                                  <div><strong>对比数据:</strong> {JSON.stringify(section.moduleSpecificContent.comparisons).slice(0, 200)}...</div>
+                                )}
+                                {section.moduleSpecificContent.panels && (
+                                  <div><strong>面板:</strong> {section.moduleSpecificContent.panels.length}个面板</div>
+                                )}
+                                {section.moduleSpecificContent.hotspots && (
+                                  <div><strong>热点:</strong> {section.moduleSpecificContent.hotspots.length}个热点</div>
+                                )}
+                                {section.moduleSpecificContent.qaItems && (
+                                  <div><strong>问答:</strong> {section.moduleSpecificContent.qaItems.length}个问答</div>
+                                )}
+                                {section.moduleSpecificContent.specs && (
+                                  <div><strong>规格:</strong> {section.moduleSpecificContent.specs.length}个规格项</div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div className="space-y-2">
+                            <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700">中文</Badge>
+                            {cnSection ? (
+                              <>
+                                <p className="text-sm font-medium text-orange-700">{cnSection.title}</p>
+                                <p className="text-xs"><strong>目的:</strong> {cnSection.purpose}</p>
+                                <p className="text-xs"><strong>内容:</strong> {cnSection.content}</p>
+                                {cnSection.imageDescription && <p className="text-xs"><strong>图片:</strong> {cnSection.imageDescription}</p>}
+                                <FABEDisplay fabe={cnSection.fabe} variant="cn" />
+                                {cnSection.expressionMethod && <p className="text-xs"><strong>表达方式:</strong> {cnSection.expressionMethod}</p>}
+                                {cnSection.composition && <p className="text-xs"><strong>构图:</strong> {cnSection.composition}</p>}
+                                {cnSection.dataVisualization && <p className="text-xs"><strong>数据可视化:</strong> {cnSection.dataVisualization}</p>}
+                                {cnSection.designTips?.length > 0 && (
+                                  <div className="mt-2 p-2 bg-amber-50 rounded text-xs">
+                                    <strong className="text-amber-700">设计提示:</strong>
+                                    <ul className="list-disc list-inside mt-1 text-amber-600">
+                                      {cnSection.designTips.map((tip: string, i: number) => <li key={i}>{tip}</li>)}
+                                    </ul>
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">中文翻译未生成</p>
+                            )}
+                          </div>
                         </div>
-                        <div className="space-y-2">
-                          <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700">中文</Badge>
-                          {cnSection ? (
-                            <>
-                              <p className="text-sm font-medium text-orange-700">{cnSection.title}</p>
-                              <p className="text-xs"><strong>目的:</strong> {cnSection.purpose}</p>
-                              <p className="text-xs"><strong>内容:</strong> {cnSection.content}</p>
-                              <FABEDisplay fabe={cnSection.fabe} variant="cn" />
-                              {cnSection.expressionMethod && <p className="text-xs"><strong>表达方式:</strong> {cnSection.expressionMethod}</p>}
-                              {cnSection.composition && <p className="text-xs"><strong>构图:</strong> {cnSection.composition}</p>}
-                              {cnSection.dataVisualization && <p className="text-xs"><strong>数据可视化:</strong> {cnSection.dataVisualization}</p>}
-                            </>
-                          ) : (
-                            <p className="text-xs text-muted-foreground">中文翻译未生成</p>
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
+                      </CardContent>
+                    )}
                   </Card>
                 );
               })}

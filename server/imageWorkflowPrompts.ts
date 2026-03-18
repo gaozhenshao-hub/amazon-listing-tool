@@ -445,6 +445,91 @@ export const STEP5_APLUS_MODULE_OPTIMIZE_PROMPT = `${EXPERT_ROLE}
   }
 }`;
 
+// ─── Step 5b: Single A+ Module Style Optimize ─────────────────
+export const STEP5_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT = `${EXPERT_ROLE}
+
+你的任务：用户已经为A+内容中的**某一个模块**选择了特定的亚马逊超级A+模块样式。请根据所选模块的规格要求，**仅重新优化该模块的建议内容**，保持其他模块不变。
+
+**亚马逊超级A+模块样式完整列表：**
+
+| ID | 名称 | 桌面尺寸 | 移动尺寸 | 标题限制 | 正文限制 | 特殊要求 |
+|---|---|---|---|---|---|---|
+| premium_full_image | 高级完整图片 | 1464x600px | 600x450px | 80字符 | 300字符 | 全屏背景+文字覆盖 |
+| premium_text | 高级文本 | - | - | 80字符 | 300字符 | 纯文本模块 |
+| premium_bg_image_text | 高级背景图像+文本 | 1464x600px | 600x450px | 60字符(标题)+40字符(副标题) | 300字符 | 背景图+叠加文字 |
+| premium_four_image_text | 高级四图片+文本 | 300x225px x4 | - | 30字符 | 150字符 | 4张小图+文字 |
+| premium_dual_image_text | 高级双图片+文本 | 650x350px x2 | - | 50字符(标题)+50字符(副标题) | 300字符 | 左右双图 |
+| premium_single_image_text | 高级单图+文本 | 800x600px | - | 80字符(标题)+40字符(副标题) | 500字符 | 大图+长文 |
+| premium_full_video | 高级全视频 | 960x540px | - | 80字符 | 300字符 | 视频≤200MB,≤180秒 |
+| premium_video_text | 高级视频+文本 | 800x600px | - | 80字符(标题)+40字符(副标题) | 500字符 | 视频+文字 |
+| premium_comparison_1 | 高级比较表1 | 200x225px | - | - | - | 4-7产品,5-12特征 |
+| premium_comparison_2 | 高级比较表2 | 300x225px | - | - | - | 2-3产品,2-5特征 |
+| premium_comparison_3 | 高级比较表3 | 488x700px | - | - | - | 2-4产品,3-7特征 |
+| premium_hotspot_1 | 高级热点1 | 1464x600px | - | 50字符 | 200字符 | 2-6个可点击热点 |
+| premium_hotspot_2 | 高级热点2 | 1464x600px | - | 80字符(模块标题) | - | 2-6个热点 |
+| premium_nav_carousel | 高级导航轮播 | 1464x600px | - | 25字符(导航文本) | - | 2-5个面板 |
+| premium_rule_carousel | 高级规则轮播 | 1464x600px | - | 100字符(模块标题) | - | 2-5个面板 |
+| premium_simple_carousel | 高级简单图像轮播 | 1464x600px | - | 50字符 | - | 2-6个面板 |
+| premium_video_carousel | 高级视频图像轮播 | 800x600px | - | 80字符 | - | 2-6个面板 |
+| premium_qa | 高级问答 | 1464x600px | - | 120字符(问题) | 250字符(回答) | 2-5个问答 |
+| premium_tech_specs | 高级技术规格 | 300x300px | - | 80字符 | - | 3-15个规格 |
+| brand_highlight | 品牌亮点 | 135x135px | - | 30字符 | 80字符 | 3-4个亮点 |
+| standard_image_text | 标准图文 | 970x300px | - | 160字符 | 6000字符 | 标准A+基础模块 |
+| standard_comparison | 标准对比表 | 150x150px | - | 80字符 | 250字符 | 最多5个产品 |
+| standard_four_image | 标准四图 | 220x220px x4 | - | 60字符 | 160字符 | 4张图+文字 |
+| standard_single_image | 标准单图 | 970x600px | - | 160字符 | 6000字符 | 全宽单图 |
+
+**优化要求：**
+1. 严格按照所选模块的尺寸和字符限制来优化内容
+2. 保持原有的卖点策略和品牌调性
+3. 针对模块特点优化内容布局和表达方式
+4. 如果是比较表模块，需要生成对比数据结构
+5. 如果是轮播模块，需要生成多面板内容
+6. 如果是热点模块，需要生成热点坐标和描述
+7. 输出中英文双版本
+
+请以JSON格式输出：
+{
+  "en": {
+    "moduleType": "所选模块类型ID",
+    "moduleName": "所选模块名称",
+    "specs": {
+      "desktopSize": "桌面尺寸",
+      "mobileSize": "移动尺寸",
+      "maxTitleChars": 80,
+      "maxBodyChars": 300
+    },
+    "title": "标题（严格控制字符数）",
+    "subtitle": "副标题",
+    "purpose": "模块目的",
+    "content": "正文内容（严格控制字符数）",
+    "imageDescription": "图片内容描述",
+    "composition": "构图方式",
+    "expressionMethod": "表达方式",
+    "colorScheme": { "primary": "", "secondary": "", "accent": "" },
+    "dataVisualization": "数据可视化建议",
+    "icons": ["图标建议"],
+    "fabe": {
+      "feature": "特征",
+      "advantage": "优势",
+      "benefit": "利益",
+      "evidence": "证据"
+    },
+    "moduleSpecificContent": {
+      "// 根据模块类型不同，此处内容不同": "",
+      "// 比较表: comparisons: [{product, features}]": "",
+      "// 轮播: panels: [{title, image, content}]": "",
+      "// 热点: hotspots: [{x, y, title, description}]": "",
+      "// 问答: qaItems: [{question, answer}]": "",
+      "// 技术规格: specs: [{label, value}]": ""
+    },
+    "designTips": ["设计提示"]
+  },
+  "cn": {
+    "// 同上结构的中文版": ""
+  }
+}`;
+
 // ─── Step 6: AI Prompt Generation (nanobanana) ──────────────────
 export const STEP6_AI_PROMPT_GENERATION = `${EXPERT_ROLE}
 
