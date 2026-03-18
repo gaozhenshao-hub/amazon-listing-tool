@@ -2,11 +2,24 @@ import { bigint, boolean, decimal, int, json, mysqlEnum, mysqlTable, text, times
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
+  openId: varchar("openId", { length: 64 }).unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
+  phone: varchar("phone", { length: 20 }),
+  password: varchar("password", { length: 256 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: mysqlEnum("role", [
+    "super_admin", "admin", "ops_manager", "ops_specialist",
+    "product_dev", "finance", "purchaser", "designer"
+  ]).default("ops_specialist").notNull(),
+  department: varchar("department", { length: 100 }),
+  jobTitle: varchar("jobTitle", { length: 100 }),
+  status: mysqlEnum("status", ["active", "disabled", "pending"]).default("active").notNull(),
+  mustChangePassword: int("mustChangePassword").default(1),
+  failedLoginAttempts: int("failedLoginAttempts").default(0),
+  lockedUntil: timestamp("lockedUntil"),
+  invitedBy: int("invitedBy"),
+  lastPasswordChangedAt: timestamp("lastPasswordChangedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -14,6 +27,106 @@ export const users = mysqlTable("users", {
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+
+// User role type for type-safe role checks
+export type UserRole = "super_admin" | "admin" | "ops_manager" | "ops_specialist" | "product_dev" | "finance" | "purchaser" | "designer";
+
+// Login logs table
+export const loginLogs = mysqlTable("login_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId"),
+  loginMethod: mysqlEnum("loginMethod", ["password", "oauth"]).notNull(),
+  loginIdentifier: varchar("loginIdentifier", { length: 320 }),
+  ipAddress: varchar("ipAddress", { length: 45 }),
+  userAgent: varchar("userAgent", { length: 512 }),
+  success: int("success").notNull(),
+  failReason: varchar("failReason", { length: 100 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type LoginLog = typeof loginLogs.$inferSelect;
+export type InsertLoginLog = typeof loginLogs.$inferInsert;
+
+// Usage statistics table (daily per-user aggregation)
+export const usageStats = mysqlTable("usage_stats", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId"),
+  statDate: varchar("statDate", { length: 10 }).notNull(),
+  aiCallCount: int("aiCallCount").default(0),
+  aiTokensUsed: bigint("aiTokensUsed", { mode: "number" }).default(0),
+  scraperCallCount: int("scraperCallCount").default(0),
+  storageUsedBytes: bigint("storageUsedBytes", { mode: "number" }).default(0),
+  apiCallCount: int("apiCallCount").default(0),
+  loginCount: int("loginCount").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type UsageStat = typeof usageStats.$inferSelect;
+export type InsertUsageStat = typeof usageStats.$inferInsert;
+
+// Knowledge base sync logs (P2P bidirectional sync)
+export const kbSyncLogs = mysqlTable("kb_sync_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  syncDirection: mysqlEnum("syncDirection", ["push", "pull"]).notNull(),
+  resourceType: mysqlEnum("resourceType", ["kb_product", "kb_listing", "kb_image_set", "kb_video", "kb_skill"]).notNull(),
+  resourceId: int("resourceId").notNull(),
+  remoteResourceId: int("remoteResourceId"),
+  syncStatus: mysqlEnum("syncStatus", ["pending", "synced", "conflict", "failed"]).default("pending").notNull(),
+  conflictDetail: text("conflictDetail"),
+  syncedAt: timestamp("syncedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type KbSyncLog = typeof kbSyncLogs.$inferSelect;
+export type InsertKbSyncLog = typeof kbSyncLogs.$inferInsert;
+
+// Project assignments (admin assigns projects to team members)
+export const projectAssignments = mysqlTable("project_assignments", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  projectType: mysqlEnum("projectType", ["dev_project", "listing_project"]).default("dev_project").notNull(),
+  assignedUserId: int("assignedUserId").notNull(),
+  assignedBy: int("assignedBy").notNull(),
+  permission: mysqlEnum("permission", ["read", "write"]).default("read").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ProjectAssignment = typeof projectAssignments.$inferSelect;
+export type InsertProjectAssignment = typeof projectAssignments.$inferInsert;
+
+// SOP access grants
+export const sopAccessGrants = mysqlTable("sop_access_grants", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  skillLevel: mysqlEnum("skillLevel", ["intermediate", "advanced"]).notNull(),
+  grantedBy: int("grantedBy").notNull(),
+  expiresAt: timestamp("expiresAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type SopAccessGrant = typeof sopAccessGrants.$inferSelect;
+export type InsertSopAccessGrant = typeof sopAccessGrants.$inferInsert;
+
+// Remote usage snapshots (for viewing peer system usage data)
+export const remoteUsageSnapshots = mysqlTable("remote_usage_snapshots", {
+  id: int("id").autoincrement().primaryKey(),
+  instanceId: varchar("instanceId", { length: 100 }).notNull(),
+  instanceName: varchar("instanceName", { length: 255 }),
+  snapshotDate: varchar("snapshotDate", { length: 10 }).notNull(),
+  totalUsers: int("totalUsers").default(0),
+  activeUsers: int("activeUsers").default(0),
+  aiCallCount: int("aiCallCount").default(0),
+  aiTokensUsed: bigint("aiTokensUsed", { mode: "number" }).default(0),
+  scraperCallCount: int("scraperCallCount").default(0),
+  storageUsedBytes: bigint("storageUsedBytes", { mode: "number" }).default(0),
+  apiCallCount: int("apiCallCount").default(0),
+  detailJson: text("detailJson"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type RemoteUsageSnapshot = typeof remoteUsageSnapshots.$inferSelect;
+export type InsertRemoteUsageSnapshot = typeof remoteUsageSnapshots.$inferInsert;
 
 // Projects table - each project represents one product listing task
 export const projects = mysqlTable("projects", {

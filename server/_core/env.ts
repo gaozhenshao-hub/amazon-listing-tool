@@ -7,4 +7,16 @@ export const ENV = {
   isProduction: process.env.NODE_ENV === "production",
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  // Deployment configuration
+  companyName: process.env.COMPANY_NAME ?? "跨海\uD83D\uDC4D",
+  companyLogo: process.env.COMPANY_LOGO ?? "",
+  erpType: process.env.ERP_TYPE ?? "lingxing",
+  instanceId: process.env.INSTANCE_ID ?? "instance-a",
+  // Peer sync configuration
+  peerSyncEnabled: process.env.PEER_SYNC_ENABLED === "true",
+  peerApiUrl: process.env.PEER_API_URL ?? "",
+  peerApiKey: process.env.PEER_API_KEY ?? "",
+  // Usage reporting
+  usageReportEnabled: process.env.USAGE_REPORT_ENABLED === "true",
+  usageReportUrl: process.env.USAGE_REPORT_URL ?? "",
 };

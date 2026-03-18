@@ -1352,3 +1352,48 @@
 - [x] 前端：策略分布概览面板（进度条+可点击筛选+图例展开）+ 词根卡片展开/收起
 - [x] 策略类别已支持人工调整（词海管理Tab中的下拉选择器，AI为预设值）
 - [x] 编写vitest测试覆盖策略分类逻辑（25个测试全部通过，含27种3D组合覆盖）
+
+## 用户管理与独立部署 — 阶段1：用户管理系统
+- [x] 扩展users表Schema（password、phone、department、jobTitle、status、role扩展等字段）
+- [x] 创建login_logs表
+- [x] 创建usage_stats表
+- [x] 创建kb_sync_logs表
+- [x] 创建project_assignments表
+- [x] 创建sop_access_grants表
+- [x] 创建remote_usage_snapshots表
+- [x] 实现密码登录接口（POST /api/auth/login）
+- [x] 实现密码修改接口（changePassword）
+- [x] 实现登录保护（5次失败锁定15分钟）
+- [x] 扩展JWT Payload（userId、role、loginMethod）
+- [x] 实现角色权限中间件（adminProcedure等）
+- [x] 登录页面UI（邮箱/手机号+密码 + Manus OAuth）
+- [x] 强制改密页面
+- [x] 用户管理页面（CRUD + 角色分配 + 密码重置）
+- [x] Excel批量导入用户功能
+- [x] 个人设置页面（改密码、个人信息）
+- [x] DashboardLayout角色菜单适配
+- [x] 数据迁移（现有OAuth用户设为super_admin）
+
+## 用户管理与独立部署 — 阶段2：知识库审核 + 项目分配
+- [ ] 知识库表添加审核字段（visibility、reviewedBy等）
+- [ ] 知识库查询改造（visibility过滤）
+- [ ] 审核流程接口（submit/approve/reject）
+- [ ] 审核中心页面
+- [ ] SOP分级可见性 + 授权机制
+- [ ] 项目分配管理页面
+
+## 用户管理与独立部署 — 阶段3：知识库双向同步 + 部署配置化
+- [ ] 知识库表添加同步字段（originInstanceId等）
+- [ ] 实现同步API接口（push/pull/changes）
+- [ ] 定时同步任务（每30分钟）
+- [ ] 同步管理页面
+- [ ] 部署配置化（环境变量控制公司信息、ERP类型等）
+- [ ] ERP适配层抽象接口
+
+## 用户管理与独立部署 — 阶段4：使用量统计
+- [ ] 使用量统计中间件（自动记录）
+- [ ] 使用量上报API
+- [ ] 使用量统计仪表盘（Recharts）
+- [ ] 远程系统使用量查看
+- [ ] 导出报表功能
+- [x] Vitest测试覆盖用户管理功能（17个测试，2069个总测试全部通过）

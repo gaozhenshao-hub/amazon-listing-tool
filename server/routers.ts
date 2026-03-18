@@ -37,6 +37,8 @@ import { kbVideosRouter } from "./routers/kbVideos";
 import { kbSearchRouter } from "./routers/kbSearch";
 // System Settings
 import { systemSettingsRouter } from "./routers/systemSettings";
+// User Management
+import { userAuthRouter, userManagementRouter } from "./routers/userManagement";
 
 export const appRouter = router({
   system: systemRouter,
@@ -84,6 +86,9 @@ export const appRouter = router({
   kbSearch: kbSearchRouter,
   // System Settings
   systemSettings: systemSettingsRouter,
+  // User Management
+  userAuth: userAuthRouter,
+  userManagement: userManagementRouter,
 });
 
 export type AppRouter = typeof appRouter;

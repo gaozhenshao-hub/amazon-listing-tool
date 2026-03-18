@@ -4,6 +4,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { getLoginUrl } from "@/const";
@@ -38,8 +39,11 @@ import {
   Menu,
   Home,
   Settings,
+  Users,
+  User,
   type LucideIcon,
 } from "lucide-react";
+import { ROLE_LABELS, ROLE_MODULE_ACCESS, ADMIN_ROLES } from "@shared/const";
 import { CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -53,7 +57,7 @@ import {
 import { toast } from "sonner";
 
 // ─── Module definitions ────────────────────────────────────────
-type ModuleId = "home" | "dev" | "listing" | "ops" | "service" | "knowledge";
+type ModuleId = "home" | "dev" | "listing" | "ops" | "service" | "knowledge" | "admin";
 
 interface MenuItem {
   icon: LucideIcon;
@@ -156,6 +160,17 @@ const modules: ModuleDef[] = [
       { icon: Video, label: "智能视频知识库", path: "/knowledge/videos" },
     ],
   },
+  {
+    id: "admin",
+    icon: Users,
+    label: "系统管理",
+    shortLabel: "管理",
+    prefix: "/admin",
+    enabled: true,
+    items: [
+      { icon: Users, label: "用户管理", path: "/admin/users" },
+    ],
+  },
 ];
 
 // ─── Helpers ───────────────────────────────────────────────────
@@ -166,10 +181,18 @@ function detectActiveModule(location: string): ModuleId {
   if (location.startsWith("/ops")) return "ops";
   if (location.startsWith("/service")) return "service";
   if (location.startsWith("/knowledge")) return "knowledge";
+  if (location.startsWith("/admin")) return "admin";
   // Legacy routes (before migration) - map to listing
   const legacyPaths = ["/analysis", "/comparison", "/review-history", "/review-aggregation", "/image-analysis", "/keywords", "/ad-structure", "/data-files", "/generate", "/preview", "/score"];
   if (legacyPaths.some(p => location.startsWith(p))) return "listing";
   return "home"; // default
+}
+
+// Filter modules by user role
+function getAccessibleModules(userRole: string | undefined): ModuleDef[] {
+  if (!userRole) return [];
+  const accessibleModuleIds = ROLE_MODULE_ACCESS[userRole] || [];
+  return modules.filter(mod => accessibleModuleIds.includes(mod.id));
 }
 
 const SIDEBAR_EXPANDED_KEY = "platform-sidebar-expanded";
@@ -203,7 +226,7 @@ export default function DashboardLayout({
           </div>
           <Button
             onClick={() => {
-              window.location.href = getLoginUrl();
+              window.location.href = "/login";
             }}
             size="lg"
             className="w-full shadow-md hover:shadow-lg transition-all"
@@ -240,7 +263,14 @@ function DashboardLayoutContent({
     [activeModuleId]
   );
 
+  // Filter modules based on user role
+  const accessibleModules = useMemo(
+    () => getAccessibleModules(user?.role),
+    [user?.role]
+  );
+
   const isHomePage = activeModuleId === "home";
+  const isAdmin = user?.role && (ADMIN_ROLES as readonly string[]).includes(user.role);
 
   useEffect(() => {
     localStorage.setItem(SIDEBAR_EXPANDED_KEY, String(sidebarExpanded));
@@ -301,8 +331,20 @@ function DashboardLayoutContent({
                 </span>
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={logout} className="text-destructive">
+            <DropdownMenuContent align="end" className="w-48">
+              <div className="px-2 py-1.5 text-sm">
+                <p className="font-medium">{user?.name || "-"}</p>
+                <p className="text-xs text-muted-foreground">
+                  {ROLE_LABELS[user?.role || ""] || user?.role || "-"}
+                </p>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setLocation("/profile")} className="cursor-pointer">
+                <User className="mr-2 h-4 w-4" />
+                个人设置
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={logout} className="text-destructive cursor-pointer">
                 <LogOut className="mr-2 h-4 w-4" />
                 退出登录
               </DropdownMenuItem>
@@ -340,7 +382,7 @@ function DashboardLayoutContent({
 
                 <div className="w-8 border-t border-border mb-1" />
 
-                {modules.map((mod) => (
+                {accessibleModules.map((mod) => (
                   <Tooltip key={mod.id}>
                     <TooltipTrigger asChild>
                       <button
@@ -435,7 +477,7 @@ function DashboardLayoutContent({
           {/* Separator */}
           <div className="w-8 border-t border-border my-1" />
 
-          {modules.map((mod) => (
+          {accessibleModules.map((mod) => (
             <Tooltip key={mod.id} delayDuration={200}>
               <TooltipTrigger asChild>
                 <button
@@ -497,11 +539,23 @@ function DashboardLayoutContent({
                 </Avatar>
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent side="right" align="end" className="w-48">
+            <DropdownMenuContent side="right" align="end" className="w-52">
               <div className="px-2 py-1.5 text-sm">
                 <p className="font-medium">{user?.name || "-"}</p>
                 <p className="text-xs text-muted-foreground">{user?.email || "-"}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {ROLE_LABELS[user?.role || ""] || user?.role || "-"}
+                </p>
               </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => setLocation("/profile")}
+                className="cursor-pointer"
+              >
+                <User className="mr-2 h-4 w-4" />
+                个人设置
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={logout}
                 className="cursor-pointer text-destructive focus:text-destructive"

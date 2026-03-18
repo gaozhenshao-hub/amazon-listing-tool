@@ -51,6 +51,11 @@ import PlatformHome from "./pages/PlatformHome";
 // ─── System Settings ────────────────────────────────────────────
 import SystemSettings from "./pages/SystemSettings";
 
+// ─── User Management ────────────────────────────────────────────
+import LoginPage from "./pages/LoginPage";
+import UserManagement from "./pages/UserManagement";
+import ProfilePage from "./pages/ProfilePage";
+
 function Router() {
   return (
     <DashboardLayout>
@@ -118,6 +123,10 @@ function Router() {
         {/* ─── System Settings ─── */}
         <Route path="/settings" component={SystemSettings} />
 
+        {/* ─── User Management ─── */}
+        <Route path="/admin/users" component={UserManagement} />
+        <Route path="/profile" component={ProfilePage} />
+
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>
@@ -131,7 +140,10 @@ function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
-          <Router />
+          <Switch>
+            <Route path="/login" component={LoginPage} />
+            <Route>{() => <Router />}</Route>
+          </Switch>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

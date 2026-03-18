@@ -1,4 +1,4 @@
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
@@ -14,6 +14,7 @@ import {
   InsertAdStructure, adStructures,
   InsertListingVersion, listingVersions,
   InsertReviewAggregation, reviewAggregations,
+  InsertLoginLog, loginLogs,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -31,13 +32,9 @@ export async function getDb() {
   return _db;
 }
 
-// ─── User Helpers ───────────────────────────────────────────────
+// ─── User Helpers ───────────────────────────────────────────────────────
 
 export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) {
-    throw new Error("User openId is required for upsert");
-  }
-
   const db = await getDb();
   if (!db) {
     console.warn("[Database] Cannot upsert user: database not available");
@@ -45,19 +42,18 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   }
 
   try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
+    const values: InsertUser = {};
+    if (user.openId) values.openId = user.openId;
     const updateSet: Record<string, unknown> = {};
 
-    const textFields = ["name", "email", "loginMethod"] as const;
+    const textFields = ["name", "email", "loginMethod", "phone", "department", "jobTitle"] as const;
     type TextField = (typeof textFields)[number];
 
     const assignNullable = (field: TextField) => {
       const value = user[field];
       if (value === undefined) return;
       const normalized = value ?? null;
-      values[field] = normalized;
+      (values as any)[field] = normalized;
       updateSet[field] = normalized;
     };
 
@@ -70,9 +66,21 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     if (user.role !== undefined) {
       values.role = user.role;
       updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
+    } else if (user.openId && user.openId === ENV.ownerOpenId) {
+      values.role = 'super_admin';
+      updateSet.role = 'super_admin';
+    }
+    if (user.password !== undefined) {
+      values.password = user.password;
+      updateSet.password = user.password;
+    }
+    if (user.status !== undefined) {
+      values.status = user.status;
+      updateSet.status = user.status;
+    }
+    if (user.mustChangePassword !== undefined) {
+      values.mustChangePassword = user.mustChangePassword;
+      updateSet.mustChangePassword = user.mustChangePassword;
     }
 
     if (!values.lastSignedIn) {
@@ -83,9 +91,14 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
+    if (user.openId) {
+      await db.insert(users).values(values).onDuplicateKeyUpdate({
+        set: updateSet,
+      });
+    } else {
+      // Password-based user without openId
+      await db.insert(users).values(values);
+    }
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
     throw error;
@@ -104,7 +117,70 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// ─── Project Helpers ────────────────────────────────────────────
+export async function getUserById(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserByEmailOrPhone(identifier: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(
+    or(eq(users.email, identifier), eq(users.phone, identifier))
+  ).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getAllUsers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: users.id,
+    openId: users.openId,
+    name: users.name,
+    email: users.email,
+    phone: users.phone,
+    role: users.role,
+    department: users.department,
+    jobTitle: users.jobTitle,
+    status: users.status,
+    mustChangePassword: users.mustChangePassword,
+    invitedBy: users.invitedBy,
+    createdAt: users.createdAt,
+    lastSignedIn: users.lastSignedIn,
+  }).from(users).orderBy(users.createdAt);
+}
+
+export async function updateUserById(userId: number, data: Partial<InsertUser>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users).set(data).where(eq(users.id, userId));
+}
+
+export async function updateLoginAttempts(userId: number, attempts: number, lockedUntil: Date | null) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({
+    failedLoginAttempts: attempts,
+    lockedUntil,
+  }).where(eq(users.id, userId));
+}
+
+export async function insertLoginLog(log: InsertLoginLog) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(loginLogs).values(log);
+}
+
+export async function getLoginLogs(limit = 100) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(loginLogs).orderBy(desc(loginLogs.createdAt)).limit(limit);
+}
+
+// ─── Project Helpers ────────────────────────────────────────────────────
 
 export async function createProject(data: InsertProject) {
   const db = await getDb();
