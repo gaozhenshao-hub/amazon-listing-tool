@@ -26,7 +26,7 @@ import ReviewAggregationPage from "./pages/ReviewAggregationPage";
 // ─── Module 1: Product Development ─────────────────────────────
 import DevDashboard from "./pages/dev/DevDashboard";
 import DevNewProject from "./pages/dev/DevNewProject";
-import DevProjectList from "./pages/dev/DevProjectList";
+import DevProjects from "./pages/dev/DevProjects";
 import DevProjectDetail from "./pages/dev/DevProjectDetail";
 import DevCompare from "./pages/dev/DevCompare";
 import DevSupplierLibrary from "./pages/dev/DevSupplierLibrary";
@@ -99,7 +99,7 @@ function Router() {
         {/* ─── Module 1: Product Development ─── */}
         <Route path="/dev" component={DevDashboard} />
         <Route path="/dev/new-project" component={DevNewProject} />
-        <Route path="/dev/projects" component={DevProjectList} />
+        <Route path="/dev/projects" component={DevProjects} />
         <Route path="/dev/project/:id" component={DevProjectDetail} />
         <Route path="/dev/compare" component={DevCompare} />
         <Route path="/dev/supplier-library" component={DevSupplierLibrary} />

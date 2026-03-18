@@ -43,7 +43,7 @@ describe("Platform - Routing", () => {
   it("App.tsx should have module 1 sub-routes", () => {
     const code = fs.readFileSync(path.join(basePath, "client/src/App.tsx"), "utf-8");
     expect(code).toContain("DevDashboard");
-    expect(code).toContain("DevProjectList");
+    expect(code).toContain("DevProjects");
     expect(code).toContain("DevNewProject");
     expect(code).toContain("DevProjectDetail");
   });

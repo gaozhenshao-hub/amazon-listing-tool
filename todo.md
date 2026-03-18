@@ -1615,3 +1615,11 @@
 ### Bug修复：项目分配列表不显示记录
 - [x] 诊断原因：前端传pageSize=200超过后端限制的100，导致zod验证失败
 - [x] 修复：将pageSize从200改为100
+
+### Bug修复：模块一项目列表页面不显示项目
+- [x] 诊断原因：路由/dev/projects指向了静态占位页DevProjectList.tsx，而非有数据查询的DevProjects.tsx
+- [x] 修复：App.tsx路由从DevProjectList改为DevProjects组件
+
+### 需求13：项目分配页面增加分页功能
+- [x] 后端：项目分配列表API已支持page/pageSize参数（已有）
+- [x] 前端：添加分页控件（首页/上一页/页码/下一页/末页），切换筛选时自动重置到第1页

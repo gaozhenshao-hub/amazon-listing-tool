@@ -33,6 +33,10 @@ import {
   Users as UsersIcon,
   ArrowRight,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ROLE_LABELS } from "@shared/const";
@@ -59,11 +63,13 @@ export default function ProjectAssignmentPage() {
   const [selectedPermission, setSelectedPermission] = useState<Permission>("read");
   const [filterType, setFilterType] = useState<ProjectType | "all">("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
 
   // Queries
   const assignmentsQuery = trpc.projectAssignment.listAll.useQuery({
-    page: 1,
-    pageSize: 100,
+    page: currentPage,
+    pageSize,
     projectType: filterType !== "all" ? filterType : undefined,
   });
 
@@ -127,6 +133,8 @@ export default function ProjectAssignmentPage() {
   };
 
   const assignments = assignmentsQuery.data?.items || [];
+  const totalItems = assignmentsQuery.data?.total || 0;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const filteredAssignments = useMemo(() => {
     if (!searchTerm) return assignments;
     const term = searchTerm.toLowerCase();
@@ -204,7 +212,7 @@ export default function ProjectAssignmentPage() {
             className="pl-9"
           />
         </div>
-        <Select value={filterType} onValueChange={(v) => setFilterType(v as any)}>
+        <Select value={filterType} onValueChange={(v) => { setFilterType(v as any); setCurrentPage(1); }}>
           <SelectTrigger className="w-[180px]">
             <SelectValue />
           </SelectTrigger>
@@ -215,7 +223,7 @@ export default function ProjectAssignmentPage() {
           </SelectContent>
         </Select>
         <Badge variant="outline" className="text-sm">
-          共 {filteredAssignments.length} 条分配
+          共 {totalItems} 条分配
         </Badge>
       </div>
 
@@ -304,6 +312,77 @@ export default function ProjectAssignmentPage() {
               </Card>
             );
           })}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            第 {currentPage} / {totalPages} 页，共 {totalItems} 条记录
+          </p>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              disabled={currentPage <= 1}
+              onClick={() => setCurrentPage(1)}
+            >
+              <ChevronsLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              disabled={currentPage <= 1}
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            {/* Page numbers */}
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              let pageNum: number;
+              if (totalPages <= 5) {
+                pageNum = i + 1;
+              } else if (currentPage <= 3) {
+                pageNum = i + 1;
+              } else if (currentPage >= totalPages - 2) {
+                pageNum = totalPages - 4 + i;
+              } else {
+                pageNum = currentPage - 2 + i;
+              }
+              return (
+                <Button
+                  key={pageNum}
+                  variant={currentPage === pageNum ? "default" : "outline"}
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setCurrentPage(pageNum)}
+                >
+                  {pageNum}
+                </Button>
+              );
+            })}
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              disabled={currentPage >= totalPages}
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              disabled={currentPage >= totalPages}
+              onClick={() => setCurrentPage(totalPages)}
+            >
+              <ChevronsRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       )}
 
