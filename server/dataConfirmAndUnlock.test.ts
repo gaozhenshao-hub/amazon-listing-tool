@@ -78,7 +78,7 @@ describe("Data Confirmation - Router Endpoints", () => {
 
   it("confirmData should verify project ownership", () => {
     const confirmSection = routerCode.slice(routerCode.indexOf("confirmData:"));
-    expect(confirmSection).toContain("getDevProjectById");
+    expect(confirmSection).toContain("resolveDevProjectAccess");
   });
 });
 

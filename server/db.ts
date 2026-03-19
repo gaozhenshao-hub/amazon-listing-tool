@@ -666,6 +666,17 @@ export async function getImageWorkflowSession(projectId: number, userId: number)
   return rows[0] || null;
 }
 
+// Get session by project only (no userId filter) - for admin/designer cross-project access
+export async function getImageWorkflowSessionByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(imageWorkflowSessions)
+    .where(eq(imageWorkflowSessions.projectId, projectId))
+    .orderBy(desc(imageWorkflowSessions.updatedAt))
+    .limit(1);
+  return rows[0] || null;
+}
+
 export async function createImageWorkflowSession(data: InsertImageWorkflowSession) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");

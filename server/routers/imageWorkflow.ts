@@ -186,6 +186,35 @@ function parseLLMJson(response: any): any {
   }
 }
 
+
+// Helper: resolve project access for imageWorkflow based on user role
+async function resolveProjectAccess(projectId: number, user: { id: number; role: string }) {
+  if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'designer') {
+    const project = await db.getProjectByIdAdmin(projectId);
+    if (!project) throw new Error("Project not found");
+    return project;
+  }
+  const project = await db.getProjectById(projectId, user.id);
+  if (!project) throw new Error("Project not found");
+  return project;
+}
+
+// Helper: resolve session access - designer/admin can view any project's session
+async function resolveSessionAccess(projectId: number, user: { id: number; role: string }) {
+  if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'designer') {
+    return db.getImageWorkflowSessionByProject(projectId);
+  }
+  return db.getImageWorkflowSession(projectId, user.id);
+}
+
+// Helper: ensure write access for imageWorkflow mutations
+function ensureWriteAccess(project: { userId: number }, user: { id: number; role: string }) {
+  if (user.role === 'super_admin' || user.role === 'admin') return;
+  if (user.role === 'designer' && project.userId !== user.id) {
+    throw new Error("Designer角色只能查看他人项目的图片建议，不能修改");
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 export const imageWorkflowRouter = router({
 
@@ -193,9 +222,9 @@ export const imageWorkflowRouter = router({
   getSession: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       return session;
     }),
 
@@ -203,10 +232,11 @@ export const imageWorkflowRouter = router({
   createSession: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
       // Delete existing session if any
-      const existing = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      const existing = await resolveSessionAccess(input.projectId, ctx.user);
       if (existing) {
         await db.deleteImageWorkflowSession(existing.id);
       }
@@ -221,10 +251,11 @@ export const imageWorkflowRouter = router({
   generateStep1: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
-      let session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      let session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) {
         session = await db.createImageWorkflowSession({
           projectId: input.projectId,
@@ -258,8 +289,9 @@ export const imageWorkflowRouter = router({
       userEdit: z.string(), // JSON string of edited selling points
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
 
       await db.updateImageWorkflowSession(session.id, {
         step1UserEdit: input.userEdit,
@@ -274,10 +306,11 @@ export const imageWorkflowRouter = router({
   generateStep2: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
       if (!session.step1Confirmed) throw new Error("Step 1 not confirmed yet");
 
@@ -308,8 +341,9 @@ export const imageWorkflowRouter = router({
       userEdit: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
 
       await db.updateImageWorkflowSession(session.id, {
         step2UserEdit: input.userEdit,
@@ -324,10 +358,11 @@ export const imageWorkflowRouter = router({
   generateStep3: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
       if (!session.step2Confirmed) throw new Error("Step 2 not confirmed yet");
 
@@ -364,8 +399,9 @@ export const imageWorkflowRouter = router({
       userEdit: z.string(), // JSON: selected style IDs and any modifications
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
 
       await db.updateImageWorkflowSession(session.id, {
         step3UserEdit: input.userEdit,
@@ -380,10 +416,11 @@ export const imageWorkflowRouter = router({
   generateStep4: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
       if (!session.step3Confirmed) throw new Error("Step 3 not confirmed yet");
 
@@ -423,8 +460,9 @@ export const imageWorkflowRouter = router({
       userEdit: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
 
       await db.updateImageWorkflowSession(session.id, {
         step4UserEdit: input.userEdit,
@@ -439,10 +477,11 @@ export const imageWorkflowRouter = router({
   generateStep5: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
       if (!session.step4Confirmed) throw new Error("Step 4 not confirmed yet");
 
@@ -504,8 +543,9 @@ export const imageWorkflowRouter = router({
       userEdit: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
 
       await db.updateImageWorkflowSession(session.id, {
         step5UserEdit: input.userEdit,
@@ -526,8 +566,9 @@ export const imageWorkflowRouter = router({
       fileName: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
 
       // Upload to S3
       const buffer = Buffer.from(input.imageData, "base64");
@@ -556,9 +597,10 @@ export const imageWorkflowRouter = router({
       effectRefUrl: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      ensureWriteAccess(project, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
 
       // Build context with reference images
@@ -608,9 +650,10 @@ export const imageWorkflowRouter = router({
       })),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      ensureWriteAccess(project, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
       if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
 
@@ -647,9 +690,10 @@ export const imageWorkflowRouter = router({
       moduleName: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      ensureWriteAccess(project, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
       if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
 
@@ -681,9 +725,10 @@ export const imageWorkflowRouter = router({
       projectId: z.number(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      ensureWriteAccess(project, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
 
       // Gather product context
@@ -712,9 +757,10 @@ export const imageWorkflowRouter = router({
   generateStep6: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      ensureWriteAccess(project, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
       if (!session.step5Confirmed) throw new Error("Step 5 not confirmed yet");
 
@@ -769,8 +815,9 @@ export const imageWorkflowRouter = router({
       userEdit: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
 
       await db.updateImageWorkflowSession(session.id, {
         step6UserEdit: input.userEdit,
@@ -788,8 +835,9 @@ export const imageWorkflowRouter = router({
       step: z.number().min(1).max(6),
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
 
       // Clear data for steps >= target step
       const clearData: any = { currentStep: input.step };
@@ -875,8 +923,9 @@ export const imageWorkflowRouter = router({
   exportPdf: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
       if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
 
       // Return the data for client-side PDF generation
@@ -901,8 +950,9 @@ export const imageWorkflowRouter = router({
       lockedFields: z.array(z.string()).optional(), // fields to keep unchanged
     }))
     .mutation(async ({ ctx, input }) => {
-      const session = await db.getImageWorkflowSession(input.projectId, ctx.user.id);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
       if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
 
       const imageTypeLabel = input.imageType === "mainImage" ? "主图 (Main Image)"
         : input.imageType === "secondaryImage" ? `辅图 ${(input.imageIndex || 0) + 2} (Secondary Image)`

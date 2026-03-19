@@ -1668,3 +1668,12 @@
 - [x] 后端：ensureWriteAccess写保护 - designer不能修改他人项目（18个mutation端点保护）
 - [x] 新增designerAccess.test.ts - 14个测试覆盖角色访问和写保护逻辑
 - [x] TSC编译0错误，85测试文件2212测试全部通过
+
+### Bug修复：designer查看他人项目数据为空（模块一+模块二）
+- [x] 排查模块二 imageWorkflow 20+处getImageWorkflowSession按userId过滤
+- [x] 排查模块一 devProject/devAnalysis/devBom/devManual/devProfile/devScoring 16处getDevProjectById按userId过滤
+- [x] 修复 imageWorkflow: 新增getImageWorkflowSessionByProject()不按userId过滤，新增resolveSessionAccess/resolveProjectAccess统一处理
+- [x] 修复 devProject: list/getById/stats开放给designer，uploadFile/confirmData/unconfirmData/updateFileRows加写保护
+- [x] 修复 devAnalysis(8处)/devBom(3处)/devManual(2处)/devProfile(2处)/devScoring(1处) - 统一使用resolveDevProjectAccess
+- [x] imageWorkflow 21个mutation端点全部加ensureWriteAccess写保护
+- [x] TSC编译0错误，85测试文件2212测试全部通过

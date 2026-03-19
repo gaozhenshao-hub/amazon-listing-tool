@@ -3,10 +3,31 @@ import { protectedProcedure, router } from "../_core/trpc";
 import * as devDb from "../devDb";
 import { storagePut } from "../storage";
 
+// Helper: resolve dev project access based on user role
+// designer, admin, super_admin can access any project
+async function resolveDevProjectAccess(projectId: number, user: { id: number; role: string }) {
+  if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'designer') {
+    const project = await devDb.getDevProjectByIdAdmin(projectId);
+    if (!project) throw new Error("Project not found");
+    return project;
+  }
+  const project = await devDb.getDevProjectById(projectId, user.id);
+  if (!project) throw new Error("Project not found");
+  return project;
+}
+
+// Helper: ensure write access - designer cannot modify other users' projects
+function ensureDevWriteAccess(project: { userId: number }, user: { id: number; role: string }) {
+  if (user.role === 'super_admin' || user.role === 'admin') return;
+  if (user.role === 'designer' && project.userId !== user.id) {
+    throw new Error("Designer角色只能查看他人项目，不能修改");
+  }
+}
+
 export const devProjectRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
-    // super_admin and admin can see all dev projects
-    if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
+    // super_admin, admin, and designer can see all dev projects
+    if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin' || ctx.user.role === 'designer') {
       return devDb.getAllDevProjects();
     }
     return devDb.getDevProjectsByUser(ctx.user.id);
@@ -15,9 +36,9 @@ export const devProjectRouter = router({
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      // super_admin and admin can access any project
+      // super_admin, admin, and designer can access any project
       let project;
-      if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
+      if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin' || ctx.user.role === 'designer') {
         project = await devDb.getDevProjectByIdAdmin(input.id);
       } else {
         project = await devDb.getDevProjectById(input.id, ctx.user.id);
@@ -65,7 +86,7 @@ export const devProjectRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
-      // Admin can update any project
+      // Admin can update any project; designer cannot update others' projects
       if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
         const project = await devDb.getDevProjectByIdAdmin(id);
         if (!project) throw new Error("Project not found");
@@ -77,7 +98,7 @@ export const devProjectRouter = router({
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      // Admin can delete any project
+      // Admin can delete any project; designer cannot delete others' projects
       if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
         const project = await devDb.getDevProjectByIdAdmin(input.id);
         if (!project) throw new Error("Project not found");
@@ -87,8 +108,8 @@ export const devProjectRouter = router({
     }),
 
   stats: protectedProcedure.query(async ({ ctx }) => {
-    // admin/super_admin see all project stats
-    if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
+    // admin/super_admin/designer see all project stats
+    if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin' || ctx.user.role === 'designer') {
       return devDb.getDevProjectStats(null as any);
     }
     return devDb.getDevProjectStats(ctx.user.id);
@@ -103,9 +124,9 @@ export const devProjectRouter = router({
       fileData: z.string(), // base64
     }))
     .mutation(async ({ ctx, input }) => {
-      // Verify project ownership
-      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
-      if (!project) throw new Error("Project not found");
+      // Verify project access and write permission
+      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
+      ensureDevWriteAccess(project, ctx.user);
 
       // Delete old files with same name in same project & type
       const deletedCount = await devDb.deleteOldFilesByName(
@@ -327,8 +348,8 @@ export const devProjectRouter = router({
       fileType: z.enum(["sales", "bullet_points", "reviews", "history_sales"]),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
-      if (!project) throw new Error("Project not found");
+      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
+      ensureDevWriteAccess(project, ctx.user);
       await devDb.confirmDevFilesByType(input.projectId, input.fileType);
       return { success: true };
     }),
@@ -339,8 +360,8 @@ export const devProjectRouter = router({
       fileType: z.enum(["sales", "bullet_points", "reviews", "history_sales"]),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
-      if (!project) throw new Error("Project not found");
+      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
+      ensureDevWriteAccess(project, ctx.user);
       await devDb.unconfirmDevFilesByType(input.projectId, input.fileType);
       return { success: true };
     }),
@@ -353,8 +374,8 @@ export const devProjectRouter = router({
       totalRows: z.number(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
-      if (!project) throw new Error("Project not found");
+      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
+      ensureDevWriteAccess(project, ctx.user);
       await devDb.updateDevFileRowsByType(input.projectId, input.fileType, input.totalRows);
       return { success: true };
     }),

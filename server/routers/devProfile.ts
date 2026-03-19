@@ -33,6 +33,19 @@ const SECTION_LABELS: Record<SectionKey, { cn: string; en: string }> = {
   productMap: { cn: "产品地图", en: "Product Map" },
 };
 
+
+// Helper: resolve dev project access based on user role
+async function resolveDevProjectAccess(projectId: number, user: { id: number; role: string }) {
+  if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'designer') {
+    const project = await devDb.getDevProjectByIdAdmin(projectId);
+    if (!project) throw new Error("Project not found");
+    return project;
+  }
+  const project = await devDb.getDevProjectById(projectId, user.id);
+  if (!project) throw new Error("Project not found");
+  return project;
+}
+
 export const devProfileRouter = router({
   get: protectedProcedure
     .input(z.object({ projectId: z.number() }))
@@ -131,7 +144,7 @@ export const devProfileRouter = router({
       section: z.enum(PROFILE_SECTIONS),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
 
       const products = await devDb.getDevProductsByProject(input.projectId);
@@ -183,7 +196,7 @@ export const devProfileRouter = router({
       existingData: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
 
       const products = await devDb.getDevProductsByProject(input.projectId);

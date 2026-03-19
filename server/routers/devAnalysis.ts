@@ -186,6 +186,19 @@ async function checkStageGating(projectId: number, stageType: StageType): Promis
   };
 }
 
+
+// Helper: resolve dev project access based on user role
+async function resolveDevProjectAccess(projectId: number, user: { id: number; role: string }) {
+  if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'designer') {
+    const project = await devDb.getDevProjectByIdAdmin(projectId);
+    if (!project) throw new Error("Project not found");
+    return project;
+  }
+  const project = await devDb.getDevProjectById(projectId, user.id);
+  if (!project) throw new Error("Project not found");
+  return project;
+}
+
 export const devAnalysisRouter = router({
   // ═══════════════════════════════════════════════════════════════
   // Stage-based Analysis Flow with Gating
@@ -222,7 +235,7 @@ export const devAnalysisRouter = router({
   runMarketOverview: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
 
       // Gate check
@@ -334,7 +347,7 @@ export const devAnalysisRouter = router({
       dim2Name: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
 
       // Gate check
@@ -479,7 +492,7 @@ export const devAnalysisRouter = router({
   runPriceAnalysis: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
 
       // Gate check
@@ -588,7 +601,7 @@ export const devAnalysisRouter = router({
   runBrandCompetition: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
 
       // Gate check
@@ -694,7 +707,7 @@ export const devAnalysisRouter = router({
   runReviewKano: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
 
       // Gate check
@@ -862,7 +875,7 @@ export const devAnalysisRouter = router({
   runDecisionDashboard: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
 
       // Gate check
@@ -1094,7 +1107,7 @@ export const devAnalysisRouter = router({
       reportType: z.enum(REPORT_TYPES),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
 
       const products = await devDb.getDevProductsByProject(input.projectId);
@@ -1536,7 +1549,7 @@ export const devAnalysisRouter = router({
       dim2CategoryId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await devDb.getDevProjectById(input.projectId, ctx.user.id);
+      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
 
       const db = await getDb();
