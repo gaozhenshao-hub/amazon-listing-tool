@@ -59,6 +59,7 @@ import SopAccessPage from "./pages/SopAccessPage";
 import ProjectAssignmentPage from "./pages/ProjectAssignmentPage";
 import SyncManagement from "./pages/SyncManagement";
 import RoleManagement from "./pages/RoleManagement";
+import { PermissionGuard } from "./components/PermissionGuard";
 
 function Router() {
   return (
@@ -68,20 +69,20 @@ function Router() {
         <Route path="/" component={PlatformHome} />
 
         {/* ─── Module 2: Listing (with /listing prefix) ─── */}
-        <Route path="/listing" component={Home} />
-        <Route path="/listing/analysis" component={AnalysisPage} />
-        <Route path="/listing/generate" component={GeneratePage} />
-        <Route path="/listing/preview" component={PreviewPage} />
-        <Route path="/listing/comparison" component={ComparisonPage} />
-        <Route path="/listing/review-history" component={ReviewHistoryPage} />
-        <Route path="/listing/data-files" component={DataFilesPage} />
-        <Route path="/listing/score" component={ScorePage} />
-        <Route path="/listing/image-suggestions" component={ImageSuggestionsPage} />
-        <Route path="/listing/image-workflow" component={ImageWorkflowPage} />
-        <Route path="/listing/keywords" component={KeywordPage} />
-        <Route path="/listing/ad-structure" component={AdStructurePage} />
-        <Route path="/listing/review-aggregation" component={ReviewAggregationPage} />
-        <Route path="/listing/project/:id" component={ProjectDetailPage} />
+        <Route path="/listing">{() => <PermissionGuard><Home /></PermissionGuard>}</Route>
+        <Route path="/listing/analysis">{() => <PermissionGuard><AnalysisPage /></PermissionGuard>}</Route>
+        <Route path="/listing/generate">{() => <PermissionGuard><GeneratePage /></PermissionGuard>}</Route>
+        <Route path="/listing/preview">{() => <PermissionGuard><PreviewPage /></PermissionGuard>}</Route>
+        <Route path="/listing/comparison">{() => <PermissionGuard><ComparisonPage /></PermissionGuard>}</Route>
+        <Route path="/listing/review-history">{() => <PermissionGuard><ReviewHistoryPage /></PermissionGuard>}</Route>
+        <Route path="/listing/data-files">{() => <PermissionGuard><DataFilesPage /></PermissionGuard>}</Route>
+        <Route path="/listing/score">{() => <PermissionGuard><ScorePage /></PermissionGuard>}</Route>
+        <Route path="/listing/image-suggestions">{() => <PermissionGuard><ImageSuggestionsPage /></PermissionGuard>}</Route>
+        <Route path="/listing/image-workflow">{() => <PermissionGuard><ImageWorkflowPage /></PermissionGuard>}</Route>
+        <Route path="/listing/keywords">{() => <PermissionGuard><KeywordPage /></PermissionGuard>}</Route>
+        <Route path="/listing/ad-structure">{() => <PermissionGuard><AdStructurePage /></PermissionGuard>}</Route>
+        <Route path="/listing/review-aggregation">{() => <PermissionGuard><ReviewAggregationPage /></PermissionGuard>}</Route>
+        <Route path="/listing/project/:id">{() => <PermissionGuard><ProjectDetailPage /></PermissionGuard>}</Route>
 
         {/* Legacy routes → redirect to /listing/* */}
         <Route path="/analysis">{() => <Redirect to="/listing/analysis" />}</Route>
@@ -97,42 +98,42 @@ function Router() {
         <Route path="/project/:id">{(params) => <Redirect to={`/listing/project/${params.id}`} />}</Route>
 
         {/* ─── Module 1: Product Development ─── */}
-        <Route path="/dev" component={DevDashboard} />
-        <Route path="/dev/new-project" component={DevNewProject} />
-        <Route path="/dev/projects" component={DevProjects} />
-        <Route path="/dev/project/:id" component={DevProjectDetail} />
-        <Route path="/dev/compare" component={DevCompare} />
-        <Route path="/dev/supplier-library" component={DevSupplierLibrary} />
-        <Route path="/dev/project/:id/analysis" component={DevAnalysisFlow} />
-        <Route path="/dev/project/:id/offsite" component={DevOffsiteAnalysis} />
+        <Route path="/dev">{() => <PermissionGuard><DevDashboard /></PermissionGuard>}</Route>
+        <Route path="/dev/new-project">{() => <PermissionGuard><DevNewProject /></PermissionGuard>}</Route>
+        <Route path="/dev/projects">{() => <PermissionGuard><DevProjects /></PermissionGuard>}</Route>
+        <Route path="/dev/project/:id">{() => <PermissionGuard><DevProjectDetail /></PermissionGuard>}</Route>
+        <Route path="/dev/compare">{() => <PermissionGuard><DevCompare /></PermissionGuard>}</Route>
+        <Route path="/dev/supplier-library">{() => <PermissionGuard><DevSupplierLibrary /></PermissionGuard>}</Route>
+        <Route path="/dev/project/:id/analysis">{() => <PermissionGuard><DevAnalysisFlow /></PermissionGuard>}</Route>
+        <Route path="/dev/project/:id/offsite">{() => <PermissionGuard><DevOffsiteAnalysis /></PermissionGuard>}</Route>
 
         {/* ─── Module 5: Knowledge Base ─── */}
-        <Route path="/knowledge" component={KBOverview} />
-        <Route path="/knowledge/products" component={KBProducts} />
-        <Route path="/knowledge/listings" component={KBListings} />
-        <Route path="/knowledge/images" component={KBImages} />
-        <Route path="/knowledge/skills" component={KBSkills} />
-        <Route path="/knowledge/videos" component={KBVideos} />
+        <Route path="/knowledge">{() => <PermissionGuard><KBOverview /></PermissionGuard>}</Route>
+        <Route path="/knowledge/products">{() => <PermissionGuard><KBProducts /></PermissionGuard>}</Route>
+        <Route path="/knowledge/listings">{() => <PermissionGuard><KBListings /></PermissionGuard>}</Route>
+        <Route path="/knowledge/images">{() => <PermissionGuard><KBImages /></PermissionGuard>}</Route>
+        <Route path="/knowledge/skills">{() => <PermissionGuard><KBSkills /></PermissionGuard>}</Route>
+        <Route path="/knowledge/videos">{() => <PermissionGuard><KBVideos /></PermissionGuard>}</Route>
 
         {/* ─── Module 3: Operations (placeholder) ─── */}
-        <Route path="/ops">{() => <ComingSoonPage moduleName="智能运营提效" />}</Route>
-        <Route path="/ops/:rest*">{() => <ComingSoonPage moduleName="智能运营提效" />}</Route>
+        <Route path="/ops">{() => <PermissionGuard><ComingSoonPage moduleName="智能运营提效" /></PermissionGuard>}</Route>
+        <Route path="/ops/:rest*">{() => <PermissionGuard><ComingSoonPage moduleName="智能运营提效" /></PermissionGuard>}</Route>
 
         {/* ─── Module 4: After-sales (placeholder) ─── */}
-        <Route path="/service">{() => <ComingSoonPage moduleName="智能售后管理" />}</Route>
-        <Route path="/service/:rest*">{() => <ComingSoonPage moduleName="智能售后管理" />}</Route>
+        <Route path="/service">{() => <PermissionGuard><ComingSoonPage moduleName="智能售后管理" /></PermissionGuard>}</Route>
+        <Route path="/service/:rest*">{() => <PermissionGuard><ComingSoonPage moduleName="智能售后管理" /></PermissionGuard>}</Route>
 
         {/* ─── System Settings ─── */}
         <Route path="/settings" component={SystemSettings} />
 
         {/* ─── User Management & Admin ─── */}
         <Route path="/admin">{() => <Redirect to="/admin/users" />}</Route>
-        <Route path="/admin/users" component={UserManagement} />
-        <Route path="/admin/review" component={ReviewCenter} />
-        <Route path="/admin/sop-access" component={SopAccessPage} />
-        <Route path="/admin/assignments" component={ProjectAssignmentPage} />
-        <Route path="/admin/sync" component={SyncManagement} />
-        <Route path="/admin/roles" component={RoleManagement} />
+        <Route path="/admin/users">{() => <PermissionGuard><UserManagement /></PermissionGuard>}</Route>
+        <Route path="/admin/review">{() => <PermissionGuard><ReviewCenter /></PermissionGuard>}</Route>
+        <Route path="/admin/sop-access">{() => <PermissionGuard><SopAccessPage /></PermissionGuard>}</Route>
+        <Route path="/admin/assignments">{() => <PermissionGuard><ProjectAssignmentPage /></PermissionGuard>}</Route>
+        <Route path="/admin/sync">{() => <PermissionGuard><SyncManagement /></PermissionGuard>}</Route>
+        <Route path="/admin/roles">{() => <PermissionGuard><RoleManagement /></PermissionGuard>}</Route>
         <Route path="/profile" component={ProfilePage} />
 
         <Route path="/404" component={NotFound} />
