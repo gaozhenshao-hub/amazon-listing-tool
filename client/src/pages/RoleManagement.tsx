@@ -15,9 +15,9 @@ import {
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
-  Shield, ShieldAlert, Edit3, Save, Loader2, ChevronDown, ChevronRight,
+  Shield, ShieldAlert, ShieldCheck, Edit3, Save, Loader2, ChevronDown, ChevronRight,
   Package, FileText, TrendingUp, Headphones, BookOpen, Users,
-  Eye, Pencil, Trash2,
+  Eye, Pencil, Trash2, XCircle,
   type LucideIcon,
 } from "lucide-react";
 
@@ -135,6 +135,32 @@ export default function RoleManagement() {
       else next.add(moduleId);
       return next;
     });
+  }, []);
+
+  const handleGrantAll = useCallback(() => {
+    if (!modules) return;
+    // Enable all modules
+    const allModuleIds = modules.map(m => m.id);
+    setEditModules(allModuleIds);
+    // Grant full permissions (read/edit/delete) for all modules and all sub-modules
+    setEditDetailedPerms(modules.map(mod => ({
+      moduleId: mod.id,
+      operations: ['read', 'edit', 'delete'],
+      subModules: (mod.subModules || []).map(sub => ({
+        subModuleId: sub.id,
+        operations: ['read', 'edit', 'delete'],
+      })),
+    })));
+    // Expand all modules to show the result
+    setExpandedModules(new Set(allModuleIds));
+    toast.success("已授予所有模块及子模块的全部权限");
+  }, [modules]);
+
+  const handleRevokeAll = useCallback(() => {
+    setEditModules([]);
+    setEditDetailedPerms([]);
+    setExpandedModules(new Set());
+    toast.info("已清除所有模块权限");
   }, []);
 
   const handleSave = () => {
@@ -379,7 +405,29 @@ export default function RoleManagement() {
               />
             </div>
             <div className="space-y-2">
-              <Label>模块权限（点击展开配置操作级别和子模块）</Label>
+              <div className="flex items-center justify-between">
+                <Label>模块权限（点击展开配置操作级别和子模块）</Label>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1 text-green-600 border-green-200 hover:bg-green-50 hover:text-green-700"
+                    onClick={handleGrantAll}
+                  >
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    一键全部授权
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1 text-red-500 border-red-200 hover:bg-red-50 hover:text-red-600"
+                    onClick={handleRevokeAll}
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                    清除全部
+                  </Button>
+                </div>
+              </div>
               <div className="space-y-2 border rounded-lg p-3">
                 {(modules || []).map(mod => {
                   const Icon = MODULE_ICONS[mod.id] || Package;
