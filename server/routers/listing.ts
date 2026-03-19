@@ -24,6 +24,30 @@ import { buildListingContext, checkDataReadiness, contextToPromptText } from "..
 
 const MAX_RETRIES = 2;
 
+// Helper: resolve project access based on user role
+// designer, admin, super_admin can access any project (designer: read-only for image suggestions)
+// regular users can only access their own projects
+async function resolveProjectAccess(projectId: number, user: { id: number; role: string }) {
+  if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'designer') {
+    const project = await db.getProjectByIdAdmin(projectId);
+    if (!project) throw new Error("Project not found");
+    return project;
+  }
+  const project = await db.getProjectById(projectId, user.id);
+  if (!project) throw new Error("Project not found");
+  return project;
+}
+
+// Helper: ensure the user has write access to the project
+// designer can only read, not write to other users' projects
+// admin/super_admin can write to any project
+function ensureWriteAccess(project: { userId: number }, user: { id: number; role: string }) {
+  if (user.role === 'super_admin' || user.role === 'admin') return;
+  if (user.role === 'designer' && project.userId !== user.id) {
+    throw new Error("Designer角色只能查看他人项目，不能修改");
+  }
+}
+
 // Helper: create a version snapshot of the current listing state
 async function saveListingVersion(
   listing: any,
@@ -797,7 +821,7 @@ export const listingRouter = router({
   listByProject: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
       return db.getListingsByProject(input.projectId);
     }),
@@ -806,7 +830,7 @@ export const listingRouter = router({
   getActive: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
       return db.getActiveListingByProject(input.projectId);
     }),
@@ -815,8 +839,9 @@ export const listingRouter = router({
   generateTitle: protectedProcedure
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
@@ -860,8 +885,9 @@ export const listingRouter = router({
   generateBulletPoints: protectedProcedure
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
@@ -905,8 +931,9 @@ export const listingRouter = router({
   generateDescription: protectedProcedure
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
@@ -942,8 +969,9 @@ export const listingRouter = router({
       emphasis: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
@@ -980,8 +1008,9 @@ export const listingRouter = router({
   generateImageAdvice: protectedProcedure
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
@@ -1048,8 +1077,9 @@ export const listingRouter = router({
       emphasis: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
       await db.updateProject(input.projectId, ctx.user.id, { status: "generating" });
 
@@ -1203,8 +1233,9 @@ export const listingRouter = router({
   translateToChinese: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
       const listing = await db.getActiveListingByProject(input.projectId);
       if (!listing) throw new Error("No active listing found. Please generate a listing first.");
@@ -1264,8 +1295,9 @@ export const listingRouter = router({
       value: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
       let listing = await db.getActiveListingByProject(input.projectId);
       if (!listing) {
         // Auto-create listing if not exists
@@ -1326,8 +1358,9 @@ export const listingRouter = router({
       }).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
@@ -1465,8 +1498,9 @@ export const listingRouter = router({
       bulletPoints: z.string().optional(), // JSON string of bullet points array
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
       const listing = await db.getActiveListingByProject(input.projectId);
       if (!listing) throw new Error("No active listing found. Please generate a listing first.");
@@ -1525,8 +1559,9 @@ export const listingRouter = router({
       emphasis: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
@@ -1581,8 +1616,9 @@ export const listingRouter = router({
       emphasis: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
@@ -1709,8 +1745,9 @@ export const listingRouter = router({
       lockedSteps: z.array(z.number()), // e.g. [1, 2, 3]
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
       let listing = await db.getActiveListingByProject(input.projectId);
       if (!listing) {
         listing = await db.createListing({
@@ -1733,8 +1770,9 @@ export const listingRouter = router({
       scores: z.string(), // JSON string of { [bulletIndex]: { checkListScores, aiSemanticRelations } }
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
       let listing = await db.getActiveListingByProject(input.projectId);
       if (!listing) {
         listing = await db.createListing({
@@ -1766,8 +1804,9 @@ export const listingRouter = router({
       projectId: z.number(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
       const version = await db.getListingVersionById(input.versionId);
       if (!version) throw new Error("Version not found");
@@ -1806,8 +1845,9 @@ export const listingRouter = router({
       keyword: z.string().min(1).max(200),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);
@@ -1879,8 +1919,9 @@ Please expand this keyword/theme into a complete selling point core with FABE di
     }))
     .mutation(async ({ ctx, input }) => {
       const { projectId, bullets } = input;
-      const project = await db.getProjectById(projectId, ctx.user!.id);
+      const project = await resolveProjectAccess(projectId, ctx.user!);
       if (!project) throw new Error("项目不存在");
+      ensureWriteAccess(project, ctx.user);
 
       // Format bullets as JSON array of strings (subtitle + fullText)
       const bulletStrings = bullets.map(b => `${b.subtitle} ${b.fullText}`);
@@ -1916,7 +1957,7 @@ Please expand this keyword/theme into a complete selling point core with FABE di
   checkDataReadiness: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
       return checkDataReadiness(input.projectId);
     }),
@@ -1928,8 +1969,9 @@ Please expand this keyword/theme into a complete selling point core with FABE di
       emphasis: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
 
       const analyses = await db.getCompetitorAnalysesByProject(input.projectId);
       const enrichedData = await loadEnrichedData(input.projectId);

@@ -4,8 +4,9 @@ import * as db from "../db";
 
 export const projectRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
-    // super_admin and admin can see all projects with owner info
-    if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
+    // super_admin, admin, and designer can see all projects with owner info
+    // designer needs read-only access to all projects for image suggestions
+    if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin' || ctx.user.role === 'designer') {
       return db.getAllProjects();
     }
     return db.getProjectsByUser(ctx.user.id);
@@ -14,8 +15,8 @@ export const projectRouter = router({
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      // super_admin and admin can access any project
-      if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
+      // super_admin, admin, and designer can access any project (designer: read-only for image suggestions)
+      if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin' || ctx.user.role === 'designer') {
         const project = await db.getProjectByIdAdmin(input.id);
         if (!project) throw new Error("Project not found");
         return project;

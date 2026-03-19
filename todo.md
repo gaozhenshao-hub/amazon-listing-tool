@@ -1658,3 +1658,13 @@
 - [x] 将PermissionGuard集成到App.tsx所有模块路由（dev/listing/knowledge/ops/service/admin）
 - [x] 无权限时显示友好的403页面（盾牌图标+模块名称+返回/首页按钮）
 - [x] TSC编译0错误，84测试文件2198测试全部通过
+
+### 需求17：designer角色可查看所有项目的图片建议
+- [x] 分析Listing项目列表查询逻辑（后端list procedure）
+- [x] 分析图片建议页面的数据查询逻辑
+- [x] 后端：project.list - designer角色返回所有项目（getAllProjects）
+- [x] 后端：project.getById - designer角色可访问任意项目详情
+- [x] 后端：listing.ts所有查询/变更接口 - resolveProjectAccess统一处理角色访问
+- [x] 后端：ensureWriteAccess写保护 - designer不能修改他人项目（18个mutation端点保护）
+- [x] 新增designerAccess.test.ts - 14个测试覆盖角色访问和写保护逻辑
+- [x] TSC编译0错误，85测试文件2212测试全部通过
