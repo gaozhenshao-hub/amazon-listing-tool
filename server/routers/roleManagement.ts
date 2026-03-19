@@ -5,12 +5,12 @@ import * as db from "../db";
 import { ADMIN_ROLES, ALL_ROLES, ROLE_LABELS, ROLE_MODULE_ACCESS, SUB_MODULES, type ModulePermission } from "@shared/const";
 
 const ALL_MODULES = [
-  { id: "dev", label: "智能产品开发", description: "产品开发AI分析、选品调研、竞品分析" },
-  { id: "listing", label: "智能Listing生成", description: "Listing文案生成、关键词管理、广告架构" },
+  { id: "dev", label: "智能产品开发", description: "仪表盘、项目管理、产品对比、供应商库" },
+  { id: "listing", label: "智能Listing生成", description: "竞品分析、关键词管理、广告架构、Listing生成、评分" },
   { id: "ops", label: "智能运营提效", description: "利润分析、库存预警、广告优化、销量预测" },
-  { id: "service", label: "智能售后管理", description: "AI客服回复、退货分析、邮件模板" },
-  { id: "knowledge", label: "智能知识库", description: "产品创意库、Listing文案库、图片知识库、SOP库" },
-  { id: "admin", label: "系统管理", description: "用户管理、审核中心、项目分配、同步监控" },
+  { id: "service", label: "智能售后管理", description: "AI客服回复、退货分析、邮件模板、客户画像" },
+  { id: "knowledge", label: "智能知识库", description: "产品创意库、Listing文案库、图片知识库、SOP库、视频库" },
+  { id: "admin", label: "系统管理", description: "用户管理、审核中心、项目分配、角色管理、同步监控" },
 ];
 
 export const roleManagementRouter = router({

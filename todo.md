@@ -1630,3 +1630,17 @@
 - [x] 删除ManusDialog.tsx（89行，无任何组件引用）
 - [x] 全面扫描确认无其他无用文件（hooks/contexts/shared/server均有引用）
 - [x] 验证：TSC编译0错误，84测试文件2198测试全部通过
+
+### Bug修复：角色管理子模块与实际侧边栏不一致
+- [x] 检查所有模块的实际侧边栏子模块（DashboardLayout.tsx）
+- [x] 对比角色管理中配置的子模块（shared/const.ts SUB_MODULES）
+- [x] 修复所有模块的子模块配置：
+  - dev: 3→5个（新增仪表盘、新建项目、项目列表、产品对比、供应商库）
+  - listing: 3→12个（新增项目管理、竞品分析、竞品对比、导入历史、评论聚合分析、广告架构、数据文件、Listing生成、结果预览、Listing评分、智能图片建议）
+  - ops: 4→5个（新增运营仪表盘）
+  - service: 2→5个（新增售后仪表盘、邮件模板、客户画像）
+  - knowledge: 5→6个（新增知识库总览，标签名更新为智能前缀）
+  - admin: 5→6个（新增SOP权限）
+- [x] 更新数据库中旧的子模块ID（listing_create→listing_generate、listing_optimize→listing_score）
+- [x] 更新ALL_MODULES描述信息与实际子模块一致
+- [x] TSC编译0错误，2198测试全部通过

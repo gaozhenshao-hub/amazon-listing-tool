@@ -1,0 +1,26 @@
+{
+  "query": "SELECT role, detailedPermissions FROM role_permissions WHERE detailedPermissions IS NOT NULL LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT role, detailedPermissions FROM role_permissions WHERE detailedPermissions IS NOT NULL LIMIT 10;",
+  "rows": [
+    {
+      "role": "ops_manager",
+      "detailedPermissions": "[{\"moduleId\":\"listing\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[{\"subModuleId\":\"listing_create\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"listing_optimize\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"listing_keywords\",\"operations\":[\"read\",\"edit\",\"delete\"]}]},{\"moduleId\":\"knowledge\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[{\"subModuleId\":\"kb_listings\",\"operations\":[\"read\",\"edit\"]},{\"subModuleId\":\"kb_images\",\"operations\":[\"read\",\"edit\"]},{\"subModuleId\":\"kb_videos\",\"operations\":[\"read\",\"edit\"]},{\"subModuleId\":\"kb_skills\",\"operations\":[\"read\",\"edit\"]}]},{\"moduleId\":\"ops\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[]},{\"moduleId\":\"service\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[]}]"
+    },
+    {
+      "role": "ops_specialist",
+      "detailedPermissions": "[{\"moduleId\":\"listing\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[]},{\"moduleId\":\"knowledge\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[{\"subModuleId\":\"kb_listings\",\"operations\":[\"read\",\"edit\"]},{\"subModuleId\":\"kb_images\",\"operations\":[\"read\",\"edit\"]},{\"subModuleId\":\"kb_videos\",\"operations\":[\"read\",\"edit\"]},{\"subModuleId\":\"kb_skills\",\"operations\":[\"read\"]}]},{\"moduleId\":\"ops\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[]},{\"moduleId\":\"service\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[]}]"
+    },
+    {
+      "role": "product_dev",
+      "detailedPermissions": "[{\"moduleId\":\"dev\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[]},{\"moduleId\":\"knowledge\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[{\"subModuleId\":\"kb_products\",\"operations\":[\"read\",\"edit\"]}]}]"
+    },
+    {
+      "role": "designer",
+      "detailedPermissions": "[{\"moduleId\":\"listing\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[{\"subModuleId\":\"listing_optimize\",\"operations\":[\"read\"]},{\"subModuleId\":\"listing_create\",\"operations\":[\"read\"]}]},{\"moduleId\":\"knowledge\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[{\"subModuleId\":\"kb_images\",\"operations\":[\"read\",\"edit\"]}]}]"
+    }
+  ],
+  "messages": [],
+  "stdout": "role\tdetailedPermissions\nops_manager\t[{\"moduleId\":\"listing\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[{\"subModuleId\":\"listing_create\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"listing_optimize\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"listing_keywords\",\"operations\":[\"read\",\"edit\",\"delete\"]}]},{\"moduleId\":\"knowledge\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[{\"subModuleId\":\"kb_listings\",\"operations\":[\"read\",\"edit\"]},{\"subModuleId\":\"kb_images\",\"operations\":[\"read\",\"edit\"]},{\"subModuleId\":\"kb_videos\",\"operations\":[\"read\",\"edit\"]},{\"subModuleId\":\"kb_skills\",\"operations\":[\"read\",\"edit\"]}]},{\"moduleId\":\"ops\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[]},{\"moduleId\":\"service\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[]}]\nops_specialist\t[{\"moduleId\":\"listing\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[]},{\"moduleId\":\"knowledge\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[{\"subModuleId\":\"kb_listings\",\"operations\":[\"read\",\"edit\"]},{\"subModuleId\":\"kb_images\",\"operations\":[\"read\",\"edit\"]},{\"subModuleId\":\"kb_videos\",\"operations\":[\"read\",\"edit\"]},{\"subModuleId\":\"kb_skills\",\"operations\":[\"read\"]}]},{\"moduleId\":\"ops\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[]},{\"moduleId\":\"service\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[]}]\nproduct_dev\t[{\"moduleId\":\"dev\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[]},{\"moduleId\":\"knowledge\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[{\"subModuleId\":\"kb_products\",\"operations\":[\"read\",\"edit\"]}]}]\ndesigner\t[{\"moduleId\":\"listing\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[{\"subModuleId\":\"listing_optimize\",\"operations\":[\"read\"]},{\"subModuleId\":\"listing_create\",\"operations\":[\"read\"]}]},{\"moduleId\":\"knowledge\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[{\"subModuleId\":\"kb_images\",\"operations\":[\"read\",\"edit\"]}]}]\n",
+  "stderr": "",
+  "execution_time_ms": 114
+}
