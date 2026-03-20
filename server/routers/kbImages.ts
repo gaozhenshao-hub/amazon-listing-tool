@@ -163,6 +163,168 @@ A+图: ${aplusImgs.length}张
   }
 }
 
+/**
+ * Re-crawl only specific image positions for an existing set.
+ * Deletes old images for those positions first, then scrapes and stores new ones.
+ */
+async function processPartialReCrawl(
+  setId: number, asin: string, userId: number,
+  positions: ("main" | "secondary" | "aplus" | "brand_story")[]
+) {
+  try {
+    const scraperConfig = await getScraperConfig();
+    const data = await scrapeAmazonProduct(asin, scraperConfig);
+    // Update product info
+    await kbDb.updateImageSet(setId, userId, {
+      productTitle: data.title, brand: data.brand, category: data.category,
+    });
+
+    const allImages = data.images || [];
+    // Filter to only the requested positions
+    const targetImages = allImages.filter(img => positions.includes(img.position as any));
+    console.log(`[KB Images] Re-crawl ${positions.join(",")} for ASIN ${asin}: found ${targetImages.length} images`);
+
+    for (let i = 0; i < targetImages.length; i++) {
+      const img = targetImages[i];
+      const prefix = img.position === "aplus" ? "kb-aplus" : img.position === "brand_story" ? "kb-brand-story" : "kb-images";
+      const storedUrl = await downloadAndStoreImage(img.url, asin, i, prefix);
+      await kbDb.createImage({
+        imageSetId: setId,
+        imageUrl: storedUrl,
+        imagePosition: img.position as any,
+        positionIndex: img.positionIndex,
+        aplusModuleType: img.aplusModuleType || null,
+        aplusModuleClass: img.aplusModuleClass || null,
+      });
+    }
+
+    // If no structured images found for requested positions, try legacy fallback for main/secondary
+    if (targetImages.length === 0 && data.imageUrls?.length > 0) {
+      const needsMain = positions.includes("main");
+      const needsSecondary = positions.includes("secondary");
+      if (needsMain || needsSecondary) {
+        console.log(`[KB Images] Falling back to legacy imageUrls for re-crawl`);
+        for (let i = 0; i < data.imageUrls.length; i++) {
+          const isMain = i === 0;
+          if (isMain && !needsMain) continue;
+          if (!isMain && !needsSecondary) continue;
+          const storedUrl = await downloadAndStoreImage(data.imageUrls[i], asin, i);
+          await kbDb.createImage({
+            imageSetId: setId,
+            imageUrl: storedUrl,
+            imagePosition: isMain ? "main" as const : "secondary" as const,
+            positionIndex: i,
+          });
+        }
+      }
+    }
+
+    // Set status to pending_review (user can then trigger re-analysis)
+    await kbDb.updateImageSet(setId, userId, { status: "pending_review" });
+  } catch (err: any) {
+    console.error(`[KB Images] Re-crawl failed for ${asin}:`, err.message);
+    await kbDb.updateImageSet(setId, userId, { status: "pending_review" });
+  }
+}
+
+/**
+ * Run AI analysis only (no scraping) on all images in a set.
+ * Reuses the same analysis logic from processImport.
+ */
+async function runAnalysisOnly(setId: number, asin: string, userId: number) {
+  try {
+    const images = await kbDb.listImagesBySet(setId);
+    // Per-image analysis
+    for (const img of images) {
+      try {
+        const posIdx = img.positionIndex ?? 0;
+        const posLabel = img.imagePosition === "main" ? "主图"
+          : img.imagePosition === "aplus" ? `A+内容图#${posIdx + 1}`
+          : img.imagePosition === "brand_story" ? `品牌故事图#${posIdx + 1}`
+          : `副图#${posIdx}`;
+
+        const response = await invokeLLM({
+          messages: [
+            { role: "system", content: `你是一位资深的亚马逊产品图片分析专家。请从以下12个维度分析这张产品图片：
+1. 构图与布局 2. 色彩搭配 3. 产品展示角度 4. 场景化程度 5. 文字/信息图层
+6. 品牌一致性 7. 目标受众匹配度 8. 情感传达 9. 技术质量 10. 差异化程度
+11. 转化驱动力 12. 合规性
+
+同时请为图片打上四维标签：
+- tagCategory: 产品类目标签
+- tagColorScheme: 色彩方案
+- tagImageType: 图片类型
+- tagDesignStyle: 设计风格
+
+返回JSON：
+{
+  "dimensions": { "composition": {"score":8,"comment":""}, "colorScheme": {"score":8,"comment":""}, "productAngle": {"score":8,"comment":""}, "sceneSetting": {"score":7,"comment":""}, "textOverlay": {"score":7,"comment":""}, "brandConsistency": {"score":8,"comment":""}, "audienceMatch": {"score":8,"comment":""}, "emotionalImpact": {"score":7,"comment":""}, "technicalQuality": {"score":8,"comment":""}, "differentiation": {"score":7,"comment":""}, "conversionPower": {"score":8,"comment":""}, "compliance": {"score":9,"comment":""} },
+  "tagCategory": "",
+  "tagColorScheme": "",
+  "tagImageType": "",
+  "tagDesignStyle": "",
+  "highlights": ["亮点1", "亮点2"],
+  "singleImageScore": 8,
+  "summary": ""
+}` },
+            { role: "user", content: [{ type: "image_url" as const, image_url: { url: img.imageUrl } }, { type: "text" as const, text: `这是ASIN ${asin}的${posLabel}` }] }
+          ],
+          response_format: { type: "json_object" as const },
+        });
+        const analysis = String(response.choices?.[0]?.message?.content || "{}");
+        const parsed = JSON.parse(analysis);
+        await kbDb.updateImage(img.id, {
+          aiDimensionAnalysis: analysis,
+          tagCategory: parsed.tagCategory || null,
+          tagColorScheme: parsed.tagColorScheme || null,
+          tagImageType: parsed.tagImageType || null,
+          tagDesignStyle: parsed.tagDesignStyle || null,
+          singleImageScore: parsed.singleImageScore || null,
+          highlights: JSON.stringify(parsed.highlights || []),
+        });
+      } catch (err: any) {
+        console.error(`[KB Images] Re-analysis failed for image ${img.id}:`, err.message);
+      }
+    }
+
+    // Overall analysis
+    const allDbImages = await kbDb.listImagesBySet(setId);
+    const productImgs = allDbImages.filter(i => i.imagePosition === "main" || i.imagePosition === "secondary");
+    const aplusImgs = allDbImages.filter(i => i.imagePosition === "aplus");
+    const brandImgs = allDbImages.filter(i => i.imagePosition === "brand_story");
+
+    const overallResponse = await invokeLLM({
+      messages: [
+        { role: "system", content: `你是亚马逊产品图片策略分析专家。请对这组产品图片进行整体评估，返回JSON：
+{
+  "overallStrategy": "整体图片策略评价",
+  "mainImageAssessment": "主图评估",
+  "secondaryImageFlow": "副图叙事流评估",
+  "aplusAssessment": "A+内容图片评估（如有）",
+  "brandStoryAssessment": "品牌故事图片评估（如有）",
+  "missingImageTypes": ["缺少的图片类型"],
+  "improvementSuggestions": ["改进建议"],
+  "overallScore": 75,
+  "summary": ""
+}` },
+        { role: "user", content: `ASIN: ${asin}
+产品图: ${productImgs.length}张 (${productImgs.map(i => `${i.imagePosition}#${i.positionIndex}: ${i.singleImageScore}/10`).join(", ")})
+A+图: ${aplusImgs.length}张
+品牌故事图: ${brandImgs.length}张` }
+      ],
+      response_format: { type: "json_object" as const },
+    });
+    const overallAnalysis = String(overallResponse.choices?.[0]?.message?.content || "{}");
+    const overallParsed = JSON.parse(overallAnalysis);
+    await kbDb.updateImageSet(setId, userId, {
+      overallAnalysis, overallScore: overallParsed.overallScore ?? 70, status: "pending_review",
+    });
+  } catch (err: any) {
+    console.error(`[KB Images] Re-analysis failed for set ${setId}:`, err.message);
+    await kbDb.updateImageSet(setId, userId, { status: "pending_review" });
+  }
+}
+
 export const kbImagesRouter = router({
   // List all image sets
   listSets: protectedProcedure.query(async ({ ctx }) => {
@@ -260,6 +422,86 @@ export const kbImagesRouter = router({
     .input(z.object({ imageId: z.number(), score: z.number().min(1).max(10) }))
     .mutation(async ({ ctx, input }) => {
       await kbDb.updateImage(input.imageId, { singleImageScore: input.score });
+      return { success: true };
+    }),
+
+  // Re-crawl specific image positions for an existing set
+  reCrawlByPosition: protectedProcedure
+    .input(z.object({
+      setId: z.number(),
+      positions: z.array(z.enum(["main", "secondary", "aplus", "brand_story"])).min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const set = await kbDb.getImageSet(input.setId, ctx.user.id);
+      if (!set) throw new Error("图片集不存在");
+      // Delete existing images for selected positions
+      await kbDb.deleteImagesByPosition(set.id, input.positions);
+      // Update status to crawling
+      await kbDb.updateImageSet(set.id, ctx.user.id, { status: "crawling" });
+      // Fire-and-forget: re-crawl only selected positions
+      processPartialReCrawl(set.id, set.asin, Number(ctx.user.id), input.positions);
+      return { success: true };
+    }),
+
+  // Upload images manually to a specific position
+  uploadImages: protectedProcedure
+    .input(z.object({
+      setId: z.number(),
+      images: z.array(z.object({
+        base64: z.string(),
+        filename: z.string(),
+        position: z.enum(["main", "secondary", "aplus", "brand_story"]),
+      })).min(1).max(20),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const set = await kbDb.getImageSet(input.setId, ctx.user.id);
+      if (!set) throw new Error("图片集不存在");
+      const existingImages = await kbDb.listImagesBySet(set.id);
+      const results: { imageUrl: string; position: string }[] = [];
+      for (let i = 0; i < input.images.length; i++) {
+        const img = input.images[i];
+        const buffer = Buffer.from(img.base64, "base64");
+        const ext = img.filename.match(/\.(jpg|jpeg|png|webp|gif)$/i)?.[1] || "jpg";
+        const prefix = img.position === "aplus" ? "kb-aplus" : img.position === "brand_story" ? "kb-brand-story" : "kb-images";
+        const key = `${prefix}/${set.asin}/${Date.now()}-upload-${i}.${ext}`;
+        const { url } = await storagePut(key, buffer, `image/${ext}`);
+        // Calculate positionIndex: max existing index for this position + 1
+        const samePositionImages = existingImages.filter(e => e.imagePosition === img.position);
+        const maxIdx = samePositionImages.length > 0 ? Math.max(...samePositionImages.map(e => e.positionIndex ?? 0)) : -1;
+        await kbDb.createImage({
+          imageSetId: set.id,
+          imageUrl: url,
+          imagePosition: img.position,
+          positionIndex: maxIdx + 1 + i,
+        });
+        results.push({ imageUrl: url, position: img.position });
+      }
+      // Reset status to pending_review so user can re-analyze
+      await kbDb.updateImageSet(set.id, ctx.user.id, { status: "pending_review" });
+      return { success: true, uploaded: results.length };
+    }),
+
+  // Delete a single image from a set
+  deleteImage: protectedProcedure
+    .input(z.object({ imageId: z.number(), setId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const set = await kbDb.getImageSet(input.setId, ctx.user.id);
+      if (!set) throw new Error("图片集不存在");
+      await kbDb.deleteImage(input.imageId);
+      return { success: true };
+    }),
+
+  // Re-run AI analysis on all images in a set
+  reAnalyze: protectedProcedure
+    .input(z.object({ setId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const set = await kbDb.getImageSet(input.setId, ctx.user.id);
+      if (!set) throw new Error("图片集不存在");
+      const images = await kbDb.listImagesBySet(set.id);
+      if (images.length === 0) throw new Error("没有图片可供分析");
+      await kbDb.updateImageSet(set.id, ctx.user.id, { status: "analyzing" });
+      // Fire-and-forget: run full AI analysis
+      runAnalysisOnly(set.id, set.asin, Number(ctx.user.id));
       return { success: true };
     }),
 

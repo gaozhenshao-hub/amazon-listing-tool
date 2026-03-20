@@ -1677,3 +1677,15 @@
 - [x] 修复 devAnalysis(8处)/devBom(3处)/devManual(2处)/devProfile(2处)/devScoring(1处) - 统一使用resolveDevProjectAccess
 - [x] imageWorkflow 21个mutation端点全部加ensureWriteAccess写保护
 - [x] TSC编译0错误，85测试文件2212测试全部通过
+
+### 需求18：知识库图片模块 - 重新爬取、手动上传图片、重新AI分析
+- [x] 排查现有图片爬取和分析的后端逻辑（kbImages路由和db层）
+- [x] 后端：reCrawlByPosition - 按模块（主图/副图/A+/品牌故事）选择性重新爬取，清除旧图片后重新爬取
+- [x] 后端：uploadImages - 手动上传图片到指定位置（base64上传到S3，最多20张）
+- [x] 后端：reAnalyze - 重新运行AI分析（单图12维度分析+整体策略分析）
+- [x] 后端：deleteImage - 删除单张图片
+- [x] 后端：deleteImagesByPosition db函数 + deleteImage db函数
+- [x] 前端：操作工具栏（重新爬取/上传图片/重新AI分析三个按钮）
+- [x] 前端：重新爬取面板 - 勾选模块（主图/副图/A+/品牌故事）显示现有数量
+- [x] 前端：上传图片面板 - 拖拽/点击上传，选择位置，预览缩略图可删除
+- [x] TSC编译0错误，86测试文件2221测试全部通过

@@ -10,7 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, PlusCircle, Link2, Upload, Image as ImageIcon, CheckCircle, Edit3, Trash2, Sparkles, Search, Grid3X3, LayoutGrid, Package, Eye, Tag, Send } from "lucide-react";
+import { Loader2, PlusCircle, Link2, Upload, Image as ImageIcon, CheckCircle, Edit3, Trash2, Sparkles, Search, Grid3X3, LayoutGrid, Package, Eye, Tag, Send, RefreshCw, UploadCloud, X, RotateCcw } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { TagEditor } from "@/components/TagEditor";
 import { ScoreSlider } from "@/components/ScoreSlider";
@@ -96,6 +97,50 @@ export default function KBImages() {
     onSuccess: () => { toast.success("评分已更新"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); },
     onError: (e: any) => toast.error(e.message),
   });
+
+  // ── New: Re-crawl, upload, re-analyze, delete image ──
+  const [showReCrawl, setShowReCrawl] = useState(false);
+  const [reCrawlPositions, setReCrawlPositions] = useState<string[]>([]);
+  const [showUpload, setShowUpload] = useState(false);
+  const [uploadPosition, setUploadPosition] = useState<string>("secondary");
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+
+  const reCrawlMutation = trpc.kbImages.reCrawlByPosition.useMutation({
+    onSuccess: () => { toast.success("已开始重新爬取，请稍后刷新"); setShowReCrawl(false); setReCrawlPositions([]); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listSets.invalidate(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const uploadImagesMutation = trpc.kbImages.uploadImages.useMutation({
+    onSuccess: () => { toast.success("图片上传成功"); setShowUpload(false); setUploadFiles([]); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listSets.invalidate(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const reAnalyzeMutation = trpc.kbImages.reAnalyze.useMutation({
+    onSuccess: () => { toast.success("已开始重新AI分析，请稍后刷新"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listSets.invalidate(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const deleteImageMutation = trpc.kbImages.deleteImage.useMutation({
+    onSuccess: () => { toast.success("图片已删除"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const handleUploadImages = async () => {
+    if (!detailSetId || uploadFiles.length === 0) return;
+    const images: { base64: string; filename: string; position: "main" | "secondary" | "aplus" | "brand_story" }[] = [];
+    for (const file of uploadFiles) {
+      const base64 = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          resolve(result.split(",")[1] || "");
+        };
+        reader.readAsDataURL(file);
+      });
+      images.push({ base64, filename: file.name, position: uploadPosition as any });
+    }
+    uploadImagesMutation.mutate({ setId: detailSetId, images });
+  };
 
   const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
     crawling: { label: "爬取中", variant: "secondary" },
@@ -409,6 +454,112 @@ export default function KBImages() {
                 </DialogHeader>
                 <div className="space-y-6">
                   {d.productTitle && <h3 className="font-medium text-lg">{d.productTitle}</h3>}
+
+                  {/* ── Action Toolbar ── */}
+                  {allowEdit && (d.status === "pending_review" || d.status === "confirmed") && (
+                    <div className="flex flex-wrap gap-2 p-3 bg-muted/50 rounded-lg border border-dashed">
+                      <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setShowReCrawl(!showReCrawl); setShowUpload(false); }}>
+                        <RefreshCw className="h-3.5 w-3.5" /> 重新爬取
+                      </Button>
+                      <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setShowUpload(!showUpload); setShowReCrawl(false); }}>
+                        <UploadCloud className="h-3.5 w-3.5" /> 上传图片
+                      </Button>
+                      <Button variant="outline" size="sm" className="gap-1.5 border-purple-200 text-purple-600 hover:bg-purple-50" onClick={() => reAnalyzeMutation.mutate({ setId: detailSetId! })} disabled={reAnalyzeMutation.isPending}>
+                        {reAnalyzeMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                        重新AI分析
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* ── Re-Crawl Panel ── */}
+                  {showReCrawl && (
+                    <Card className="border-blue-200 bg-blue-50/30">
+                      <CardContent className="p-4 space-y-3">
+                        <h4 className="text-sm font-semibold flex items-center gap-2">
+                          <RefreshCw className="h-4 w-4 text-blue-500" /> 选择重新爬取的模块
+                        </h4>
+                        <p className="text-xs text-muted-foreground">勾选需要重新爬取的图片模块，系统将清除该模块旧图片并重新从亚马逊爬取</p>
+                        <div className="flex flex-wrap gap-4">
+                          {[
+                            { key: "main", label: "主图", color: "blue", count: groupedImages.main.length },
+                            { key: "secondary", label: "副图", color: "emerald", count: groupedImages.secondary.length },
+                            { key: "aplus", label: "A+图片", color: "purple", count: groupedImages.aplus.length },
+                            { key: "brand_story", label: "品牌故事图", color: "amber", count: groupedImages.brand_story.length },
+                          ].map(item => (
+                            <label key={item.key} className="flex items-center gap-2 cursor-pointer">
+                              <Checkbox
+                                checked={reCrawlPositions.includes(item.key)}
+                                onCheckedChange={(checked) => {
+                                  setReCrawlPositions(prev => checked ? [...prev, item.key] : prev.filter(p => p !== item.key));
+                                }}
+                              />
+                              <span className="text-sm">{item.label}</span>
+                              <Badge variant="secondary" className="text-[10px]">现有{item.count}张</Badge>
+                            </label>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={() => reCrawlMutation.mutate({ setId: detailSetId!, positions: reCrawlPositions as any })} disabled={reCrawlMutation.isPending || reCrawlPositions.length === 0} className="gap-1.5">
+                            {reCrawlMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                            开始重新爬取
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => { setShowReCrawl(false); setReCrawlPositions([]); }}>取消</Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* ── Upload Panel ── */}
+                  {showUpload && (
+                    <Card className="border-green-200 bg-green-50/30">
+                      <CardContent className="p-4 space-y-3">
+                        <h4 className="text-sm font-semibold flex items-center gap-2">
+                          <UploadCloud className="h-4 w-4 text-green-500" /> 手动上传图片
+                        </h4>
+                        <div className="space-y-2">
+                          <Label className="text-xs">图片位置</Label>
+                          <Select value={uploadPosition} onValueChange={setUploadPosition}>
+                            <SelectTrigger className="h-8 text-xs w-48"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="main">主图</SelectItem>
+                              <SelectItem value="secondary">副图</SelectItem>
+                              <SelectItem value="aplus">A+图片</SelectItem>
+                              <SelectItem value="brand_story">品牌故事图</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div
+                          className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={(e) => { e.preventDefault(); const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("image/")); setUploadFiles(prev => [...prev, ...files]); }}
+                          onClick={() => { const input = document.createElement("input"); input.type = "file"; input.accept = "image/*"; input.multiple = true; input.onchange = (e) => { const files = Array.from((e.target as HTMLInputElement).files || []); setUploadFiles(prev => [...prev, ...files]); }; input.click(); }}
+                        >
+                          <UploadCloud className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
+                          <p className="text-sm text-muted-foreground">点击或拖拽图片到此处</p>
+                          <p className="text-xs text-muted-foreground/70 mt-1">支持 JPG、PNG、WebP 格式，最多20张</p>
+                        </div>
+                        {uploadFiles.length > 0 && (
+                          <div className="flex flex-wrap gap-2">
+                            {uploadFiles.map((file, i) => (
+                              <div key={i} className="relative group">
+                                <img src={URL.createObjectURL(file)} alt="" className="h-16 w-16 object-cover rounded border" />
+                                <button className="absolute -top-1.5 -right-1.5 bg-destructive text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => { e.stopPropagation(); setUploadFiles(prev => prev.filter((_, idx) => idx !== i)); }}>
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={handleUploadImages} disabled={uploadImagesMutation.isPending || uploadFiles.length === 0} className="gap-1.5">
+                            {uploadImagesMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UploadCloud className="h-3.5 w-3.5" />}
+                            上传 {uploadFiles.length} 张图片
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => { setShowUpload(false); setUploadFiles([]); }}>取消</Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
 
                   {/* ── Main Image Section ── */}
                   {groupedImages.main.length > 0 && (

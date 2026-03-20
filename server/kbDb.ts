@@ -5,7 +5,7 @@ async function db() {
   if (!d) throw new Error("Database not available");
   return d;
 }
-import { eq, and, desc, like, or, sql } from "drizzle-orm";
+import { eq, and, desc, like, or, sql, inArray } from "drizzle-orm";
 import {
   kbProductInnovations, InsertKbProductInnovation,
   kbListingCopywriting, InsertKbListingCopywriting,
@@ -106,6 +106,20 @@ export async function createImage(data: InsertKbImage) {
 export async function updateImage(id: number, data: Partial<InsertKbImage>) {
   const _d = await db();
   await _d.update(kbImages).set(data).where(eq(kbImages.id, id));
+}
+export async function deleteImagesByPosition(imageSetId: number, positions: string[]) {
+  const _d = await db();
+  if (positions.length === 0) return;
+  await _d.delete(kbImages).where(
+    and(
+      eq(kbImages.imageSetId, imageSetId),
+      inArray(kbImages.imagePosition, positions as any)
+    )
+  );
+}
+export async function deleteImage(id: number) {
+  const _d = await db();
+  await _d.delete(kbImages).where(eq(kbImages.id, id));
 }
 export async function listAllImages(userId: number, filters?: { tagCategory?: string; tagColorScheme?: string; tagImageType?: string; tagDesignStyle?: string; imagePosition?: string }) {
   const _d = await db();
