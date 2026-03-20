@@ -570,7 +570,7 @@ export default function KBImages() {
                       </h4>
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                         {groupedImages.main.map((img: any) => (
-                          <ImageCardEnhanced key={img.id} img={img} onSelectImage={setSelectedImageId} selectedImageId={selectedImageId} onUpdateTags={updateImageTagsMutation} onUpdateScore={updateImageScoreMutation} />
+                          <ImageCardEnhanced key={img.id} img={img} onSelectImage={setSelectedImageId} selectedImageId={selectedImageId} onUpdateTags={updateImageTagsMutation} onUpdateScore={updateImageScoreMutation} onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined} />
                         ))}
                       </div>
                     </div>
@@ -585,7 +585,7 @@ export default function KBImages() {
                       </h4>
                       <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
                         {groupedImages.secondary.sort((a: any, b: any) => (a.positionIndex || 0) - (b.positionIndex || 0)).map((img: any) => (
-                          <ImageCardEnhanced key={img.id} img={img} onSelectImage={setSelectedImageId} selectedImageId={selectedImageId} onUpdateTags={updateImageTagsMutation} onUpdateScore={updateImageScoreMutation} />
+                          <ImageCardEnhanced key={img.id} img={img} onSelectImage={setSelectedImageId} selectedImageId={selectedImageId} onUpdateTags={updateImageTagsMutation} onUpdateScore={updateImageScoreMutation} onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined} />
                         ))}
                       </div>
                     </div>
@@ -600,7 +600,7 @@ export default function KBImages() {
                       </h4>
                       <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
                         {groupedImages.aplus.sort((a: any, b: any) => (a.positionIndex || 0) - (b.positionIndex || 0)).map((img: any) => (
-                          <ImageCardEnhanced key={img.id} img={img} onSelectImage={setSelectedImageId} selectedImageId={selectedImageId} onUpdateTags={updateImageTagsMutation} onUpdateScore={updateImageScoreMutation} />
+                          <ImageCardEnhanced key={img.id} img={img} onSelectImage={setSelectedImageId} selectedImageId={selectedImageId} onUpdateTags={updateImageTagsMutation} onUpdateScore={updateImageScoreMutation} onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined} />
                         ))}
                       </div>
                     </div>
@@ -615,7 +615,7 @@ export default function KBImages() {
                       </h4>
                       <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
                         {groupedImages.brand_story.sort((a: any, b: any) => (a.positionIndex || 0) - (b.positionIndex || 0)).map((img: any) => (
-                          <ImageCardEnhanced key={img.id} img={img} onSelectImage={setSelectedImageId} selectedImageId={selectedImageId} onUpdateTags={updateImageTagsMutation} onUpdateScore={updateImageScoreMutation} />
+                          <ImageCardEnhanced key={img.id} img={img} onSelectImage={setSelectedImageId} selectedImageId={selectedImageId} onUpdateTags={updateImageTagsMutation} onUpdateScore={updateImageScoreMutation} onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined} />
                         ))}
                       </div>
                     </div>
@@ -735,12 +735,13 @@ function AsinThumbnailStrip({ setId }: { setId: number }) {
 }
 
 /** Enhanced single image card with expandable tag editing, score slider, and 12-dimension analysis */
-function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, onUpdateScore }: {
+function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, onUpdateScore, onDeleteImage }: {
   img: any;
   onSelectImage: (id: number | null) => void;
   selectedImageId: number | null;
   onUpdateTags: any;
   onUpdateScore: any;
+  onDeleteImage?: (imageId: number) => void;
 }) {
   const isExpanded = selectedImageId === img.id;
   let dimensions: any = {};
@@ -748,8 +749,17 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
 
   return (
     <div className={`rounded-lg overflow-hidden bg-muted border transition-all ${isExpanded ? "ring-2 ring-primary col-span-full" : ""}`}>
-      <div className="relative cursor-pointer" onClick={() => onSelectImage(isExpanded ? null : img.id)}>
+      <div className="relative cursor-pointer group/card" onClick={() => onSelectImage(isExpanded ? null : img.id)}>
         <img src={img.imageUrl} alt="" className={`w-full ${isExpanded ? "max-h-80 object-contain bg-black/5" : "aspect-square object-cover"}`} loading="lazy" />
+        {onDeleteImage && (
+          <button
+            className="absolute top-1.5 right-1.5 z-10 bg-destructive/90 hover:bg-destructive text-white rounded-full p-1 opacity-0 group-hover/card:opacity-100 transition-opacity shadow-sm"
+            onClick={(e) => { e.stopPropagation(); if (confirm("确定删除这张图片？")) onDeleteImage(img.id); }}
+            title="删除图片"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
           <div className="flex flex-wrap gap-1">
             {img.tagCategory && <Badge variant="secondary" className="text-[9px] bg-white/20 text-white border-0">{img.tagCategory}</Badge>}
@@ -765,7 +775,7 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
           </Badge>
         )}
         {img.aplusModuleType && img.aplusModuleType !== "unknown" && (
-          <Badge className={`absolute top-1.5 right-1.5 text-[9px] border-0 backdrop-blur-sm ${
+          <Badge className={`absolute top-8 right-1.5 text-[9px] border-0 backdrop-blur-sm ${
             img.aplusModuleType === "comparison_table" ? "bg-blue-500/80 text-white" :
             img.aplusModuleType === "image_carousel" ? "bg-green-500/80 text-white" :
             img.aplusModuleType === "full_width_image" ? "bg-purple-500/80 text-white" :
