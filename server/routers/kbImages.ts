@@ -491,6 +491,19 @@ export const kbImagesRouter = router({
       return { success: true };
     }),
 
+  // Reorder images within a group
+  reorderImages: protectedProcedure
+    .input(z.object({
+      setId: z.number(),
+      imageOrders: z.array(z.object({ id: z.number(), positionIndex: z.number() })),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const set = await kbDb.getImageSet(input.setId, ctx.user.id);
+      if (!set) throw new Error("图片集不存在");
+      await kbDb.reorderImages(input.imageOrders);
+      return { success: true };
+    }),
+
   // Re-run AI analysis on all images in a set
   reAnalyze: protectedProcedure
     .input(z.object({ setId: z.number() }))

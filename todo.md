@@ -1695,3 +1695,13 @@
 - [x] 点击删除按钮弹出确认提示后调用deleteImage API
 - [x] 权限控制：仅allowEdit时显示删除按钮，避免aplusModuleType徽章位置冲突
 - [x] TSC编译0错误，86测试文件2221测试全部通过
+
+### 需求20：图片分组内拖拽排序
+- [x] 排查positionIndex字段和现有排序逻辑
+- [x] 安装@dnd-kit/core + @dnd-kit/sortable + @dnd-kit/utilities
+- [x] 后端：reorderImages API + kbDb.reorderImages函数
+- [x] 前端：SortableImageGrid + SortableImageCard组件，4个分组均支持拖拽
+- [x] 拖拽完成后自动调用reorderImages保存新顺序
+- [x] 权限控制：仅allowEdit时启用拖拽，分组标题显示“拖拽排序”提示
+- [x] DragOverlay拖拽预览（缩略图+阴影）
+- [x] TSC编译0错误，86测试文件2221测试全部通过

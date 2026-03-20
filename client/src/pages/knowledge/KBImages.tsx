@@ -13,6 +13,9 @@ import { Separator } from "@/components/ui/separator";
 import { Loader2, PlusCircle, Link2, Upload, Image as ImageIcon, CheckCircle, Edit3, Trash2, Sparkles, Search, Grid3X3, LayoutGrid, Package, Eye, Tag, Send, RefreshCw, UploadCloud, X, RotateCcw } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
+import { SortableContext, useSortable, rectSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { TagEditor } from "@/components/TagEditor";
 import { ScoreSlider } from "@/components/ScoreSlider";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -122,6 +125,11 @@ export default function KBImages() {
 
   const deleteImageMutation = trpc.kbImages.deleteImage.useMutation({
     onSuccess: () => { toast.success("图片已删除"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const reorderImagesMutation = trpc.kbImages.reorderImages.useMutation({
+    onSuccess: () => { toast.success("排序已保存"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -567,12 +575,18 @@ export default function KBImages() {
                       <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
                         <div className="w-1 h-4 bg-blue-500 rounded-full" />
                         主图 <Badge variant="secondary" className="text-[10px]">{groupedImages.main.length}张</Badge>
+                        {allowEdit && groupedImages.main.length > 1 && <span className="text-[10px] text-muted-foreground ml-auto">拖拽排序</span>}
                       </h4>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                        {groupedImages.main.map((img: any) => (
-                          <ImageCardEnhanced key={img.id} img={img} onSelectImage={setSelectedImageId} selectedImageId={selectedImageId} onUpdateTags={updateImageTagsMutation} onUpdateScore={updateImageScoreMutation} onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined} />
-                        ))}
-                      </div>
+                      <SortableImageGrid
+                        images={groupedImages.main}
+                        gridCols="grid-cols-2 md:grid-cols-3"
+                        onSelectImage={setSelectedImageId}
+                        selectedImageId={selectedImageId}
+                        onUpdateTags={updateImageTagsMutation}
+                        onUpdateScore={updateImageScoreMutation}
+                        onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
+                        onReorder={allowEdit ? (newOrder) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders: newOrder }) : undefined}
+                      />
                     </div>
                   )}
 
@@ -582,12 +596,18 @@ export default function KBImages() {
                       <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
                         <div className="w-1 h-4 bg-emerald-500 rounded-full" />
                         副图 <Badge variant="secondary" className="text-[10px]">{groupedImages.secondary.length}张</Badge>
+                        {allowEdit && groupedImages.secondary.length > 1 && <span className="text-[10px] text-muted-foreground ml-auto">拖拽排序</span>}
                       </h4>
-                      <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
-                        {groupedImages.secondary.sort((a: any, b: any) => (a.positionIndex || 0) - (b.positionIndex || 0)).map((img: any) => (
-                          <ImageCardEnhanced key={img.id} img={img} onSelectImage={setSelectedImageId} selectedImageId={selectedImageId} onUpdateTags={updateImageTagsMutation} onUpdateScore={updateImageScoreMutation} onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined} />
-                        ))}
-                      </div>
+                      <SortableImageGrid
+                        images={groupedImages.secondary}
+                        gridCols="grid-cols-3 md:grid-cols-4"
+                        onSelectImage={setSelectedImageId}
+                        selectedImageId={selectedImageId}
+                        onUpdateTags={updateImageTagsMutation}
+                        onUpdateScore={updateImageScoreMutation}
+                        onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
+                        onReorder={allowEdit ? (newOrder) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders: newOrder }) : undefined}
+                      />
                     </div>
                   )}
 
@@ -597,12 +617,18 @@ export default function KBImages() {
                       <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
                         <div className="w-1 h-4 bg-purple-500 rounded-full" />
                         A+ 图片 <Badge variant="secondary" className="text-[10px]">{groupedImages.aplus.length}张</Badge>
+                        {allowEdit && groupedImages.aplus.length > 1 && <span className="text-[10px] text-muted-foreground ml-auto">拖拽排序</span>}
                       </h4>
-                      <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
-                        {groupedImages.aplus.sort((a: any, b: any) => (a.positionIndex || 0) - (b.positionIndex || 0)).map((img: any) => (
-                          <ImageCardEnhanced key={img.id} img={img} onSelectImage={setSelectedImageId} selectedImageId={selectedImageId} onUpdateTags={updateImageTagsMutation} onUpdateScore={updateImageScoreMutation} onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined} />
-                        ))}
-                      </div>
+                      <SortableImageGrid
+                        images={groupedImages.aplus}
+                        gridCols="grid-cols-3 md:grid-cols-4"
+                        onSelectImage={setSelectedImageId}
+                        selectedImageId={selectedImageId}
+                        onUpdateTags={updateImageTagsMutation}
+                        onUpdateScore={updateImageScoreMutation}
+                        onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
+                        onReorder={allowEdit ? (newOrder) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders: newOrder }) : undefined}
+                      />
                     </div>
                   )}
 
@@ -612,12 +638,18 @@ export default function KBImages() {
                       <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
                         <div className="w-1 h-4 bg-amber-500 rounded-full" />
                         品牌故事 <Badge variant="secondary" className="text-[10px]">{groupedImages.brand_story.length}张</Badge>
+                        {allowEdit && groupedImages.brand_story.length > 1 && <span className="text-[10px] text-muted-foreground ml-auto">拖拽排序</span>}
                       </h4>
-                      <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
-                        {groupedImages.brand_story.sort((a: any, b: any) => (a.positionIndex || 0) - (b.positionIndex || 0)).map((img: any) => (
-                          <ImageCardEnhanced key={img.id} img={img} onSelectImage={setSelectedImageId} selectedImageId={selectedImageId} onUpdateTags={updateImageTagsMutation} onUpdateScore={updateImageScoreMutation} onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined} />
-                        ))}
-                      </div>
+                      <SortableImageGrid
+                        images={groupedImages.brand_story}
+                        gridCols="grid-cols-3 md:grid-cols-4"
+                        onSelectImage={setSelectedImageId}
+                        selectedImageId={selectedImageId}
+                        onUpdateTags={updateImageTagsMutation}
+                        onUpdateScore={updateImageScoreMutation}
+                        onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
+                        onReorder={allowEdit ? (newOrder) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders: newOrder }) : undefined}
+                      />
                     </div>
                   )}
 
@@ -889,5 +921,99 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
         </div>
       )}
     </div>
+  );
+}
+
+/** Sortable wrapper for ImageCardEnhanced using @dnd-kit */
+function SortableImageCard({ img, onSelectImage, selectedImageId, onUpdateTags, onUpdateScore, onDeleteImage }: {
+  img: any;
+  onSelectImage: (id: number | null) => void;
+  selectedImageId: number | null;
+  onUpdateTags: any;
+  onUpdateScore: any;
+  onDeleteImage?: (imageId: number) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: img.id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    zIndex: isDragging ? 50 : undefined,
+  };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <ImageCardEnhanced img={img} onSelectImage={onSelectImage} selectedImageId={selectedImageId} onUpdateTags={onUpdateTags} onUpdateScore={onUpdateScore} onDeleteImage={onDeleteImage} />
+    </div>
+  );
+}
+
+/** Sortable grid for a group of images */
+function SortableImageGrid({ images, gridCols, onSelectImage, selectedImageId, onUpdateTags, onUpdateScore, onDeleteImage, onReorder }: {
+  images: any[];
+  gridCols: string;
+  onSelectImage: (id: number | null) => void;
+  selectedImageId: number | null;
+  onUpdateTags: any;
+  onUpdateScore: any;
+  onDeleteImage?: (imageId: number) => void;
+  onReorder?: (newOrder: { id: number; positionIndex: number }[]) => void;
+}) {
+  const [items, setItems] = useState<any[]>([]);
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  );
+
+  useEffect(() => {
+    setItems([...images].sort((a, b) => (a.positionIndex || 0) - (b.positionIndex || 0)));
+  }, [images]);
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as number);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveId(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = items.findIndex((i) => i.id === active.id);
+    const newIndex = items.findIndex((i) => i.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const newItems = arrayMove(items, oldIndex, newIndex);
+    setItems(newItems);
+    if (onReorder) {
+      onReorder(newItems.map((item, idx) => ({ id: item.id, positionIndex: idx + 1 })));
+    }
+  };
+
+  const activeItem = activeId ? items.find((i) => i.id === activeId) : null;
+
+  if (!onReorder) {
+    return (
+      <div className={`grid ${gridCols} gap-3`}>
+        {items.map((img) => (
+          <ImageCardEnhanced key={img.id} img={img} onSelectImage={onSelectImage} selectedImageId={selectedImageId} onUpdateTags={onUpdateTags} onUpdateScore={onUpdateScore} onDeleteImage={onDeleteImage} />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
+        <div className={`grid ${gridCols} gap-3`}>
+          {items.map((img) => (
+            <SortableImageCard key={img.id} img={img} onSelectImage={onSelectImage} selectedImageId={selectedImageId} onUpdateTags={onUpdateTags} onUpdateScore={onUpdateScore} onDeleteImage={onDeleteImage} />
+          ))}
+        </div>
+      </SortableContext>
+      <DragOverlay>
+        {activeItem ? (
+          <div className="rounded-lg overflow-hidden shadow-2xl ring-2 ring-primary opacity-90">
+            <img src={activeItem.imageUrl} alt="" className="w-32 h-32 object-cover" />
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
 }

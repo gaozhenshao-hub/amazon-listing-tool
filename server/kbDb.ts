@@ -121,6 +121,12 @@ export async function deleteImage(id: number) {
   const _d = await db();
   await _d.delete(kbImages).where(eq(kbImages.id, id));
 }
+export async function reorderImages(imageOrders: { id: number; positionIndex: number }[]) {
+  const _d = await db();
+  for (const item of imageOrders) {
+    await _d.update(kbImages).set({ positionIndex: item.positionIndex }).where(eq(kbImages.id, item.id));
+  }
+}
 export async function listAllImages(userId: number, filters?: { tagCategory?: string; tagColorScheme?: string; tagImageType?: string; tagDesignStyle?: string; imagePosition?: string }) {
   const _d = await db();
   const conditions = [
