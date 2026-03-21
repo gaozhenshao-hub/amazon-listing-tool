@@ -52,6 +52,7 @@ export const ROUTE_PERMISSION_MAP: Record<string, { moduleId: string; subModuleI
   "/knowledge/images": { moduleId: "knowledge", subModuleId: "kb_images" },
   "/knowledge/skills": { moduleId: "knowledge", subModuleId: "kb_skills" },
   "/knowledge/videos": { moduleId: "knowledge", subModuleId: "kb_videos" },
+  "/knowledge/intel": { moduleId: "knowledge", subModuleId: "kb_intel" },
 
   // === Module 6: 系统管理 (admin) ===
   "/admin/users": { moduleId: "admin", subModuleId: "admin_users" },

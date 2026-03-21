@@ -9,7 +9,8 @@ import {
   Loader2, Search, Lightbulb, FileText, Image, BookOpen, Video,
   ArrowRight, Sparkles, Database, ChevronRight, Zap, Brain,
   UserCheck, Archive, Bot, TrendingUp, ExternalLink, Code2, Copy,
-  Globe, Package, Layers,
+  Globe, Package, Layers, ThumbsUp, ThumbsDown, AlertTriangle,
+  MessageSquare, Rss, BarChart3,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useLocation } from "wouter";
@@ -51,6 +52,182 @@ const apiInterfaces = [
   { name: "kbSkills.list", method: "tRPC query", input: "无", output: "Array<SOP文档记录>", desc: "获取运营SOP库全部记录" },
   { name: "kbVideos.list", method: "tRPC query", input: "无", output: "Array<视频分析记录>", desc: "获取视频知识库全部记录" },
 ];
+
+// ─── AI Feedback Dashboard Sub-Component ────────────────
+
+function AiFeedbackDashboard() {
+  const [, navigate] = useLocation();
+  const { data: overviewStats, isLoading: statsLoading } = trpc.kbFeedback.getOverviewStats.useQuery();
+  const { data: topReferenced } = trpc.kbFeedback.getTopReferenced.useQuery({ limit: 5 });
+
+  const feedbackDist = overviewStats?.feedbackDistribution || { helpful: 0, irrelevant: 0, wrong: 0 };
+  const totalFeedback = (feedbackDist.helpful || 0) + (feedbackDist.irrelevant || 0) + (feedbackDist.wrong || 0);
+  const helpfulPct = totalFeedback > 0 ? Math.round(((feedbackDist.helpful || 0) / totalFeedback) * 100) : 0;
+
+  const typeColorMap: Record<string, string> = {
+    skill: "bg-blue-500",
+    listing: "bg-emerald-500",
+    product: "bg-amber-500",
+    image: "bg-purple-500",
+    video: "bg-rose-500",
+  };
+  const typeLabelMap: Record<string, string> = {
+    skill: "运营SOP",
+    listing: "Listing文案",
+    product: "产品创意",
+    image: "图片知识",
+    video: "视频知识",
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      {/* Quick Entry Cards */}
+      <Card
+        className="cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20"
+        onClick={() => navigate("/knowledge/bot")}
+      >
+        <CardContent className="p-5">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2.5 rounded-xl bg-primary text-white shadow-sm">
+              <Bot className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-base">AI知识助手</h3>
+              <p className="text-xs text-muted-foreground">对话式检索知识库</p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <MessageSquare className="h-3 w-3" />
+                {statsLoading ? "..." : overviewStats?.totalConversations || 0} 次对话
+              </span>
+              <span className="flex items-center gap-1">
+                <Database className="h-3 w-3" />
+                {statsLoading ? "..." : overviewStats?.totalCallLogs || 0} 次检索
+              </span>
+            </div>
+            <Button variant="ghost" size="sm" className="text-xs h-7 gap-1 p-0 text-primary hover:text-primary">
+              开始对话 <ArrowRight className="h-3 w-3" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card
+        className="cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all bg-gradient-to-br from-orange-50 to-orange-100/50 dark:from-orange-950/20 dark:to-orange-900/10 border-orange-200/50 dark:border-orange-800/30"
+        onClick={() => navigate("/knowledge/intel")}
+      >
+        <CardContent className="p-5">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2.5 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 text-white shadow-sm">
+              <Rss className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-base">情报推荐中心</h3>
+              <p className="text-xs text-muted-foreground">外部情报采集与AI评估</p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <Rss className="h-3 w-3" />
+                {statsLoading ? "..." : overviewStats?.totalIntelSources || 0} 个情报源
+              </span>
+              <span className="flex items-center gap-1">
+                <FileText className="h-3 w-3" />
+                {statsLoading ? "..." : overviewStats?.totalIntelItems || 0} 条情报
+              </span>
+            </div>
+            <Button variant="ghost" size="sm" className="text-xs h-7 gap-1 p-0 text-orange-600 hover:text-orange-600">
+              查看情报 <ArrowRight className="h-3 w-3" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Feedback Stats Card */}
+      <Card>
+        <CardContent className="p-5">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2.5 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 text-white shadow-sm">
+              <BarChart3 className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-base">反馈统计</h3>
+              <p className="text-xs text-muted-foreground">知识库质量闭环</p>
+            </div>
+          </div>
+
+          {totalFeedback > 0 ? (
+            <div className="space-y-2">
+              {/* Feedback bar */}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden flex">
+                  {(feedbackDist.helpful || 0) > 0 && (
+                    <div
+                      className="h-full bg-emerald-500 transition-all"
+                      style={{ width: `${((feedbackDist.helpful || 0) / totalFeedback) * 100}%` }}
+                    />
+                  )}
+                  {(feedbackDist.irrelevant || 0) > 0 && (
+                    <div
+                      className="h-full bg-amber-500 transition-all"
+                      style={{ width: `${((feedbackDist.irrelevant || 0) / totalFeedback) * 100}%` }}
+                    />
+                  )}
+                  {(feedbackDist.wrong || 0) > 0 && (
+                    <div
+                      className="h-full bg-red-500 transition-all"
+                      style={{ width: `${((feedbackDist.wrong || 0) / totalFeedback) * 100}%` }}
+                    />
+                  )}
+                </div>
+                <span className="text-xs font-medium text-emerald-600">{helpfulPct}%</span>
+              </div>
+              <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                <span className="flex items-center gap-1">
+                  <ThumbsUp className="h-3 w-3 text-emerald-500" />
+                  有用 {feedbackDist.helpful || 0}
+                </span>
+                <span className="flex items-center gap-1">
+                  <ThumbsDown className="h-3 w-3 text-amber-500" />
+                  不相关 {feedbackDist.irrelevant || 0}
+                </span>
+                <span className="flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3 text-red-500" />
+                  错误 {feedbackDist.wrong || 0}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">暂无反馈数据，使用AI助手后可对引用内容进行评价</p>
+          )}
+
+          {/* Top Referenced */}
+          {topReferenced && (topReferenced as any[]).length > 0 && (
+            <div className="mt-3 pt-3 border-t">
+              <p className="text-[10px] font-medium text-muted-foreground mb-1.5">热门引用 TOP 5</p>
+              <div className="space-y-1">
+                {(topReferenced as any[]).slice(0, 5).map((item: any, idx: number) => (
+                  <div key={idx} className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground w-4">{idx + 1}.</span>
+                    <div className={`w-1.5 h-1.5 rounded-full ${typeColorMap[item.kbItemType] || "bg-gray-400"}`} />
+                    <span className="truncate flex-1">{item.title}</span>
+                    <Badge variant="outline" className="text-[9px] h-4 px-1">
+                      {typeLabelMap[item.kbItemType] || item.kbItemType}
+                    </Badge>
+                    <span className="text-muted-foreground text-[10px]">{item.callCount}次</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 export default function KBOverview() {
   const [, navigate] = useLocation();
@@ -284,6 +461,9 @@ export default function KBOverview() {
             );
           })}
         </div>
+
+        {/* ═══ AI 助手 & 情报快捷入口 + 反馈统计 ═══ */}
+        <AiFeedbackDashboard />
 
         {/* ═══ Enhanced Cross-Module Calling Capability ═══ */}
         <Card>

@@ -95,6 +95,7 @@ export const SUB_MODULES: Record<string, { id: string; label: string }[]> = {
     { id: 'kb_images', label: '智能图片知识库' },
     { id: 'kb_skills', label: '智能运营SOP库' },
     { id: 'kb_videos', label: '智能视频知识库' },
+    { id: 'kb_intel', label: '情报推荐中心' },
   ],
   admin: [
     { id: 'admin_users', label: '用户管理' },

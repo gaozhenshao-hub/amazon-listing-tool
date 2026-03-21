@@ -47,6 +47,7 @@ import {
   Shield,
   RefreshCw,
   Bot,
+  Rss,
   type LucideIcon,
 } from "lucide-react";
 import { ROLE_LABELS, ROLE_MODULE_ACCESS, ADMIN_ROLES } from "@shared/const";
@@ -164,6 +165,7 @@ const modules: ModuleDef[] = [
       { icon: Image, label: "智能图片知识库", path: "/knowledge/images" },
       { icon: BookOpen, label: "智能运营SOP库", path: "/knowledge/skills" },
       { icon: Video, label: "智能视频知识库", path: "/knowledge/videos" },
+      { icon: Rss, label: "情报推荐中心", path: "/knowledge/intel" },
     ],
   },
   {

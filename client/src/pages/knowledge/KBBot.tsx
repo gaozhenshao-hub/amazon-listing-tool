@@ -45,6 +45,8 @@ import {
   Lightbulb,
   Video,
   X,
+  AlertTriangle,
+  CheckCircle2,
 } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { toast } from "sonner";
@@ -247,7 +249,179 @@ function SearchPathViz({ searchPath }: { searchPath: SearchPathStep[] }) {
   );
 }
 
-// ─── Main Component ──────────────────────────────
+// ─── Message Feedback Component ──────────────────────────────
+
+function MessageFeedback({
+  messageId,
+  references,
+}: {
+  messageId: number;
+  references: KbReference[];
+}) {
+  const [feedbackGiven, setFeedbackGiven] = useState<Record<string, string>>({});
+  const [showCommentFor, setShowCommentFor] = useState<string | null>(null);
+  const [comment, setComment] = useState("");
+
+  const feedbackMutation = trpc.kbFeedback.submitFeedback.useMutation({
+    onSuccess: () => {
+      toast.success("反馈已提交，感谢您的评价！");
+      setShowCommentFor(null);
+      setComment("");
+    },
+    onError: () => {
+      toast.error("反馈提交失败，请稍后重试");
+    },
+  });
+
+  const handleFeedback = (ref: KbReference, rating: "helpful" | "irrelevant" | "wrong") => {
+    const key = `${ref.type}-${ref.id}`;
+    setFeedbackGiven((prev) => ({ ...prev, [key]: rating }));
+
+    if (rating === "wrong") {
+      setShowCommentFor(key);
+      return;
+    }
+
+    feedbackMutation.mutate({
+      conversationMessageId: messageId,
+      kbItemId: ref.id,
+      kbItemType: ref.type,
+      rating,
+    });
+  };
+
+  const submitWithComment = (ref: KbReference) => {
+    feedbackMutation.mutate({
+      conversationMessageId: messageId,
+      kbItemId: ref.id,
+      kbItemType: ref.type,
+      rating: "wrong",
+      comment: comment || undefined,
+    });
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-border/40">
+      <p className="text-[10px] text-muted-foreground mb-2">这个回答对您有帮助吗？</p>
+      <div className="flex flex-wrap gap-1.5">
+        {references.map((ref) => {
+          const key = `${ref.type}-${ref.id}`;
+          const given = feedbackGiven[key];
+
+          return (
+            <div key={key} className="flex items-center gap-1">
+              <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">
+                {ref.title?.slice(0, 12) || `#${ref.id}`}
+              </span>
+              {given ? (
+                <Badge
+                  variant="outline"
+                  className={cn(
+                    "text-[10px] h-5 px-1.5",
+                    given === "helpful" && "text-emerald-600 border-emerald-300",
+                    given === "irrelevant" && "text-amber-600 border-amber-300",
+                    given === "wrong" && "text-red-600 border-red-300"
+                  )}
+                >
+                  {given === "helpful" && <CheckCircle2 className="w-3 h-3 mr-0.5" />}
+                  {given === "irrelevant" && <ThumbsDown className="w-3 h-3 mr-0.5" />}
+                  {given === "wrong" && <AlertTriangle className="w-3 h-3 mr-0.5" />}
+                  {given === "helpful" ? "有用" : given === "irrelevant" ? "不相关" : "错误"}
+                </Badge>
+              ) : (
+                <div className="flex items-center gap-0.5">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => handleFeedback(ref, "helpful")}
+                          className="h-5 w-5 rounded hover:bg-emerald-50 dark:hover:bg-emerald-950/30 flex items-center justify-center transition-colors"
+                          disabled={feedbackMutation.isPending}
+                        >
+                          <ThumbsUp className="w-3 h-3 text-muted-foreground hover:text-emerald-600" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">有用</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => handleFeedback(ref, "irrelevant")}
+                          className="h-5 w-5 rounded hover:bg-amber-50 dark:hover:bg-amber-950/30 flex items-center justify-center transition-colors"
+                          disabled={feedbackMutation.isPending}
+                        >
+                          <ThumbsDown className="w-3 h-3 text-muted-foreground hover:text-amber-600" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">不相关</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => handleFeedback(ref, "wrong")}
+                          className="h-5 w-5 rounded hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center justify-center transition-colors"
+                          disabled={feedbackMutation.isPending}
+                        >
+                          <AlertTriangle className="w-3 h-3 text-muted-foreground hover:text-red-600" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">内容错误</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+              )}
+
+              {/* Comment input for "wrong" feedback */}
+              {showCommentFor === key && (
+                <div className="flex items-center gap-1 ml-1">
+                  <Input
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    placeholder="请说明错误原因..."
+                    className="h-5 text-[10px] w-32 px-1.5"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") submitWithComment(ref);
+                      if (e.key === "Escape") {
+                        setShowCommentFor(null);
+                        setComment("");
+                      }
+                    }}
+                  />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-5 w-5"
+                    onClick={() => submitWithComment(ref)}
+                    disabled={feedbackMutation.isPending}
+                  >
+                    <Send className="w-2.5 h-2.5" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-5 w-5"
+                    onClick={() => {
+                      setShowCommentFor(null);
+                      setComment("");
+                    }}
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Component ──────────────────────────────────────────
 
 export default function KBBot() {
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
@@ -679,6 +853,14 @@ export default function KBBot() {
                           {/* Search Path */}
                           {message.searchPath && message.searchPath.length > 0 && (
                             <SearchPathViz searchPath={message.searchPath} />
+                          )}
+
+                          {/* Feedback Buttons */}
+                          {message.references && message.references.length > 0 && (
+                            <MessageFeedback
+                              messageId={message.id}
+                              references={message.references}
+                            />
                           )}
                         </div>
                       ) : (

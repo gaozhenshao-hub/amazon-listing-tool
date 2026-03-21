@@ -41,6 +41,7 @@ import KBImages from "./pages/knowledge/KBImages";
 import KBSkills from "./pages/knowledge/KBSkills";
 import KBVideos from "./pages/knowledge/KBVideos";
 import KBBot from "./pages/knowledge/KBBot";
+import KBIntel from "./pages/knowledge/KBIntel";
 
 // ─── Module 3/4: Placeholder ────────────────────────────────────
 import ComingSoonPage from "./pages/ComingSoonPage";
@@ -116,6 +117,7 @@ function Router() {
         <Route path="/knowledge/images">{() => <PermissionGuard><KBImages /></PermissionGuard>}</Route>
         <Route path="/knowledge/skills">{() => <PermissionGuard><KBSkills /></PermissionGuard>}</Route>
         <Route path="/knowledge/videos">{() => <PermissionGuard><KBVideos /></PermissionGuard>}</Route>
+        <Route path="/knowledge/intel">{() => <PermissionGuard><KBIntel /></PermissionGuard>}</Route>
 
         {/* ─── Module 3: Operations (placeholder) ─── */}
         <Route path="/ops">{() => <PermissionGuard><ComingSoonPage moduleName="智能运营提效" /></PermissionGuard>}</Route>
