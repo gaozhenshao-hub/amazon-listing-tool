@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { TagEditor } from "@/components/TagEditor";
 import { ScoreSlider } from "@/components/ScoreSlider";
 import { usePermissions } from "@/hooks/usePermissions";
+import { KBScopeToggle, type KBScope } from "@/components/KBScopeToggle";
 
 const PRODUCT_TAG_SUGGESTIONS = [
   "创新设计", "差异化", "高评分", "爆款", "新品", "高转化",
@@ -28,7 +29,8 @@ export default function KBProducts() {
   const { canEdit, canDelete } = usePermissions();
   const allowEdit = canEdit('knowledge', 'kb_products');
   const allowDelete = canDelete('knowledge', 'kb_products');
-  const { data: items, isLoading } = trpc.kbProducts.list.useQuery();
+  const [scope, setScope] = useState<KBScope>("mine");
+  const { data: items, isLoading } = trpc.kbProducts.list.useQuery({ scope });
   const [showImport, setShowImport] = useState(false);
   const [asinInput, setAsinInput] = useState("");
   const [linkInput, setLinkInput] = useState("");
@@ -114,8 +116,9 @@ export default function KBProducts() {
         </Button>
       </div>
 
-      {/* Search */}
-      <div className="flex gap-3">
+      {/* Scope Toggle + Search */}
+      <div className="flex gap-3 items-center">
+        <KBScopeToggle value={scope} onChange={setScope} />
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="搜索ASIN、产品名称、品牌..." className="pl-9" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />

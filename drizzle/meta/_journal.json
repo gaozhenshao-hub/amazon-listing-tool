@@ -260,6 +260,13 @@
       "when": 1773847181992,
       "tag": "0036_legal_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "5",
+      "when": 1774081432748,
+      "tag": "0037_sturdy_leo",
+      "breakpoints": true
     }
   ]
 }

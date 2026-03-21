@@ -1705,3 +1705,36 @@
 - [x] 权限控制：仅allowEdit时启用拖拽，分组标题显示“拖拽排序”提示
 - [x] DragOverlay拖拽预览（缩略图+阴影）
 - [x] TSC编译0错误，86测试文件2221测试全部通过
+
+### 需求21：知识库模块统一优化（按架构方案v2）
+
+#### 第一阶段：基础设施
+- [x] 数据库：新增kb_intel_sources表（情报源配置）
+- [x] 数据库：新增kb_intel_items表（采集到的情报条目）
+- [x] 数据库：新增kb_call_logs表（知识库调用日志）
+- [x] 数据库：新增kb_feedback表（用户反馈）
+- [x] 数据库：新增kb_bot_conversations表（AI机器人对话）
+- [x] 数据库：新增kb_bot_messages表（对话消息）
+- [x] 后端：kbContextEngine.ts 三层加载核心服务（L1索引/L2摘要/L3详情）
+- [x] 后端：5个知识库子模块list查询增加scope参数（mine/shared/all）+ kbSearch scope支持
+- [x] 前端：5个知识库列表页增加KBScopeToggle组件（“我的”/“全部共享”切换）
+
+#### 第二阶段：AI机器人
+- [ ] 后端：kbBot router（chat/listConversations/getHistory/deleteConversation）
+- [ ] 后端：kbBot.chat集成kbContextEngine三层加载
+- [ ] 前端：AI机器人对话界面（使用AIChatBox组件改造）
+- [ ] 前端：引用来源卡片（可展开/跳转原文/反馈按钮）
+- [ ] 前端：检索路径可视化（L1→L2→L3扫描/匹配/token统计）
+
+#### 第三阶段：外部情报采集
+- [ ] 后端：kbIntel router（情报源CRUD + 触发爬取 + 条目管理）
+- [ ] 后端：AI质量评估（5维度打分：相关性/实操性/时效性/深度/独特性）
+- [ ] 后端：AI格式化为标准SOP结构的Prompt
+- [ ] 后端：adoptItem流程（AI格式化→用户编辑→录入知识库）
+- [ ] 前端：情报推荐中心页面（情报源管理 + 推荐列表 + 审核/采纳/忽略）
+- [ ] 前端：AI格式化预览+编辑+确认录入界面
+
+#### 第四阶段：反馈闭环
+- [ ] 后端：kbCallLog router（submitFeedback/getStats/getTopReferenced）
+- [ ] 前端：AI回答中的👍/👎反馈按钮
+- [ ] 前端：知识库概览页“调用统计”面板（引用排行/频率趋势/反馈分布）

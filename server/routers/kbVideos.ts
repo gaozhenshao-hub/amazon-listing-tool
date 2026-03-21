@@ -5,8 +5,10 @@ import { invokeLLM } from "../_core/llm";
 import { transcribeAudio } from "../_core/voiceTranscription";
 
 export const kbVideosRouter = router({
-  list: protectedProcedure.query(async ({ ctx }) => {
-    return kbDb.listVideos(ctx.user.id);
+  list: protectedProcedure
+    .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional() }).optional())
+    .query(async ({ ctx, input }) => {
+    return kbDb.listVideos(ctx.user.id, input?.scope ?? "mine");
   }),
 
   getById: protectedProcedure

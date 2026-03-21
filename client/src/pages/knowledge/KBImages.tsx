@@ -19,6 +19,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { TagEditor } from "@/components/TagEditor";
 import { ScoreSlider } from "@/components/ScoreSlider";
 import { usePermissions } from "@/hooks/usePermissions";
+import { KBScopeToggle, type KBScope } from "@/components/KBScopeToggle";
 
 type ViewMode = "asin" | "waterfall" | "grid";
 
@@ -55,11 +56,13 @@ export default function KBImages() {
   const [filterStyle, setFilterStyle] = useState("all");
   const [filterPosition, setFilterPosition] = useState("all");
   const [selectedImageId, setSelectedImageId] = useState<number | null>(null);
+  const [scope, setScope] = useState<KBScope>("mine");
 
   // Use listSets for the ASIN-grouped view (default)
-  const { data: sets, isLoading } = trpc.kbImages.listSets.useQuery();
+  const { data: sets, isLoading } = trpc.kbImages.listSets.useQuery({ scope });
   // Use listAllImages for image-level browsing (waterfall/grid)
   const { data: allImages, isLoading: imagesLoading } = trpc.kbImages.listAllImages.useQuery({
+    scope,
     tagCategory: filterCategory !== "all" ? filterCategory : undefined,
     tagColorScheme: filterColorScheme !== "all" ? filterColorScheme : undefined,
     tagImageType: filterImageType !== "all" ? filterImageType : undefined,
@@ -209,8 +212,9 @@ export default function KBImages() {
         <Button onClick={() => setShowImport(true)} className="gap-2"><PlusCircle className="h-4 w-4" /> 导入图片</Button>
       </div>
 
-      {/* Filters */}
+      {/* Scope Toggle + Filters */}
       <div className="flex flex-wrap gap-3 items-center">
+        <KBScopeToggle value={scope} onChange={setScope} />
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="搜索ASIN、产品名、品牌..." className="pl-9" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />

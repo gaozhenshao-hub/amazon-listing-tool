@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { TagEditor } from "@/components/TagEditor";
 import { ScoreSlider } from "@/components/ScoreSlider";
 import { usePermissions } from "@/hooks/usePermissions";
+import { KBScopeToggle, type KBScope } from "@/components/KBScopeToggle";
 
 const VIDEO_TAG_SUGGESTIONS = [
   "产品展示", "使用教程", "开箱视频", "对比测评", "场景演示",
@@ -28,7 +29,8 @@ export default function KBVideos() {
   const { canEdit, canDelete } = usePermissions();
   const allowEdit = canEdit('knowledge', 'kb_videos');
   const allowDelete = canDelete('knowledge', 'kb_videos');
-  const { data: items, isLoading } = trpc.kbVideos.list.useQuery();
+  const [scope, setScope] = useState<KBScope>("mine");
+  const { data: items, isLoading } = trpc.kbVideos.list.useQuery({ scope });
   const [showImport, setShowImport] = useState(false);
   const [urlInput, setUrlInput] = useState("");
   const [asinInput, setAsinInput] = useState("");
@@ -118,7 +120,8 @@ export default function KBVideos() {
         <Button onClick={() => setShowImport(true)} className="gap-2"><PlusCircle className="h-4 w-4" /> 导入视频</Button>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex gap-3 items-center">
+        <KBScopeToggle value={scope} onChange={setScope} />
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="搜索标题、ASIN、标签..." className="pl-9" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />

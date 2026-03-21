@@ -6,8 +6,10 @@ import { getScraperConfig } from "./systemSettings";
 import { invokeLLM } from "../_core/llm";
 
 export const kbListingsRouter = router({
-  list: protectedProcedure.query(async ({ ctx }) => {
-    return kbDb.listListingCopywriting(ctx.user.id);
+  list: protectedProcedure
+    .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional() }).optional())
+    .query(async ({ ctx, input }) => {
+    return kbDb.listListingCopywriting(ctx.user.id, input?.scope ?? "mine");
   }),
 
   getById: protectedProcedure

@@ -16,15 +16,32 @@ import {
 } from "../drizzle/schema";
 
 // ═══════════════════════════════════════════════════
+// ─── Scope Helper ────────────────────────────────
+// ═══════════════════════════════════════════════════
+type Scope = "mine" | "shared" | "all";
+
+function scopeCondition(table: any, userId: number, scope: Scope) {
+  if (scope === "mine") return eq(table.userId, userId);
+  if (scope === "shared") return eq(table.status, "confirmed");
+  // "all" — admin: show everything
+  return sql`1=1`;
+}
+
+// ═══════════════════════════════════════════════════
 // ─── Product Innovations ──────────────────────────
 // ═══════════════════════════════════════════════════
-export async function listProductInnovations(userId: number) {
+export async function listProductInnovations(userId: number, scope: Scope = "mine") {
   const _d = await db();
-  return _d.select().from(kbProductInnovations).where(eq(kbProductInnovations.userId, userId)).orderBy(desc(kbProductInnovations.updatedAt));
+  return _d.select().from(kbProductInnovations).where(scopeCondition(kbProductInnovations, userId, scope)).orderBy(desc(kbProductInnovations.updatedAt));
 }
 export async function getProductInnovation(id: number, userId: number) {
   const _d = await db();
   const rows = await _d.select().from(kbProductInnovations).where(and(eq(kbProductInnovations.id, id), eq(kbProductInnovations.userId, userId)));
+  return rows[0] ?? null;
+}
+export async function getProductInnovationById(id: number) {
+  const _d = await db();
+  const rows = await _d.select().from(kbProductInnovations).where(eq(kbProductInnovations.id, id));
   return rows[0] ?? null;
 }
 export async function createProductInnovation(data: InsertKbProductInnovation) {
@@ -44,13 +61,18 @@ export async function deleteProductInnovation(id: number, userId: number) {
 // ═══════════════════════════════════════════════════
 // ─── Listing Copywriting ──────────────────────────
 // ═══════════════════════════════════════════════════
-export async function listListingCopywriting(userId: number) {
+export async function listListingCopywriting(userId: number, scope: Scope = "mine") {
   const _d = await db();
-  return _d.select().from(kbListingCopywriting).where(eq(kbListingCopywriting.userId, userId)).orderBy(desc(kbListingCopywriting.updatedAt));
+  return _d.select().from(kbListingCopywriting).where(scopeCondition(kbListingCopywriting, userId, scope)).orderBy(desc(kbListingCopywriting.updatedAt));
 }
 export async function getListingCopywriting(id: number, userId: number) {
   const _d = await db();
   const rows = await _d.select().from(kbListingCopywriting).where(and(eq(kbListingCopywriting.id, id), eq(kbListingCopywriting.userId, userId)));
+  return rows[0] ?? null;
+}
+export async function getListingCopywritingById(id: number) {
+  const _d = await db();
+  const rows = await _d.select().from(kbListingCopywriting).where(eq(kbListingCopywriting.id, id));
   return rows[0] ?? null;
 }
 export async function createListingCopywriting(data: InsertKbListingCopywriting) {
@@ -70,13 +92,18 @@ export async function deleteListingCopywriting(id: number, userId: number) {
 // ═══════════════════════════════════════════════════
 // ─── Image Sets & Images ──────────────────────────
 // ═══════════════════════════════════════════════════
-export async function listImageSets(userId: number) {
+export async function listImageSets(userId: number, scope: Scope = "mine") {
   const _d = await db();
-  return _d.select().from(kbImageSets).where(eq(kbImageSets.userId, userId)).orderBy(desc(kbImageSets.updatedAt));
+  return _d.select().from(kbImageSets).where(scopeCondition(kbImageSets, userId, scope)).orderBy(desc(kbImageSets.updatedAt));
 }
 export async function getImageSet(id: number, userId: number) {
   const _d = await db();
   const rows = await _d.select().from(kbImageSets).where(and(eq(kbImageSets.id, id), eq(kbImageSets.userId, userId)));
+  return rows[0] ?? null;
+}
+export async function getImageSetById(id: number) {
+  const _d = await db();
+  const rows = await _d.select().from(kbImageSets).where(eq(kbImageSets.id, id));
   return rows[0] ?? null;
 }
 export async function createImageSet(data: InsertKbImageSet) {
@@ -127,29 +154,39 @@ export async function reorderImages(imageOrders: { id: number; positionIndex: nu
     await _d.update(kbImages).set({ positionIndex: item.positionIndex }).where(eq(kbImages.id, item.id));
   }
 }
-export async function listAllImages(userId: number, filters?: { tagCategory?: string; tagColorScheme?: string; tagImageType?: string; tagDesignStyle?: string; imagePosition?: string }) {
+export async function listAllImages(userId: number, scope: Scope = "mine", filters?: { tagCategory?: string; tagColorScheme?: string; tagImageType?: string; tagDesignStyle?: string; imagePosition?: string }) {
   const _d = await db();
-  const conditions = [
-    sql`${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE userId = ${userId})`,
-  ];
+  const conditions: any[] = [];
+  if (scope === "mine") {
+    conditions.push(sql`${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE userId = ${userId})`);
+  } else if (scope === "shared") {
+    conditions.push(sql`${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE status = 'confirmed')`);
+  }
+  // "all" — no filter on ownership
   if (filters?.tagCategory) conditions.push(eq(kbImages.tagCategory, filters.tagCategory));
   if (filters?.tagColorScheme) conditions.push(eq(kbImages.tagColorScheme, filters.tagColorScheme));
   if (filters?.tagImageType) conditions.push(eq(kbImages.tagImageType, filters.tagImageType));
   if (filters?.tagDesignStyle) conditions.push(eq(kbImages.tagDesignStyle, filters.tagDesignStyle));
   if (filters?.imagePosition) conditions.push(eq(kbImages.imagePosition, filters.imagePosition as any));
-  return _d.select().from(kbImages).where(and(...conditions)).orderBy(desc(kbImages.createdAt));
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  return _d.select().from(kbImages).where(where).orderBy(desc(kbImages.createdAt));
 }
 
 // ═══════════════════════════════════════════════════
 // ─── Operation Skills (SOP) ───────────────────────
 // ═══════════════════════════════════════════════════
-export async function listOperationSkills(userId: number) {
+export async function listOperationSkills(userId: number, scope: Scope = "mine") {
   const _d = await db();
-  return _d.select().from(kbOperationSkills).where(eq(kbOperationSkills.userId, userId)).orderBy(desc(kbOperationSkills.updatedAt));
+  return _d.select().from(kbOperationSkills).where(scopeCondition(kbOperationSkills, userId, scope)).orderBy(desc(kbOperationSkills.updatedAt));
 }
 export async function getOperationSkill(id: number, userId: number) {
   const _d = await db();
   const rows = await _d.select().from(kbOperationSkills).where(and(eq(kbOperationSkills.id, id), eq(kbOperationSkills.userId, userId)));
+  return rows[0] ?? null;
+}
+export async function getOperationSkillById(id: number) {
+  const _d = await db();
+  const rows = await _d.select().from(kbOperationSkills).where(eq(kbOperationSkills.id, id));
   return rows[0] ?? null;
 }
 export async function createOperationSkill(data: InsertKbOperationSkill) {
@@ -169,13 +206,18 @@ export async function deleteOperationSkill(id: number, userId: number) {
 // ═══════════════════════════════════════════════════
 // ─── Videos ───────────────────────────────────────
 // ═══════════════════════════════════════════════════
-export async function listVideos(userId: number) {
+export async function listVideos(userId: number, scope: Scope = "mine") {
   const _d = await db();
-  return _d.select().from(kbVideos).where(eq(kbVideos.userId, userId)).orderBy(desc(kbVideos.updatedAt));
+  return _d.select().from(kbVideos).where(scopeCondition(kbVideos, userId, scope)).orderBy(desc(kbVideos.updatedAt));
 }
 export async function getVideo(id: number, userId: number) {
   const _d = await db();
   const rows = await _d.select().from(kbVideos).where(and(eq(kbVideos.id, id), eq(kbVideos.userId, userId)));
+  return rows[0] ?? null;
+}
+export async function getVideoById(id: number) {
+  const _d = await db();
+  const rows = await _d.select().from(kbVideos).where(eq(kbVideos.id, id));
   return rows[0] ?? null;
 }
 export async function createVideo(data: InsertKbVideo) {
@@ -193,42 +235,48 @@ export async function deleteVideo(id: number, userId: number) {
 }
 
 // ═══════════════════════════════════════════════════
-// ─── Cross-module Search ──────────────────────────
+// ─── Cross-module Search (scope-aware) ───────────
 // ═══════════════════════════════════════════════════
-export async function searchKnowledgeBase(userId: number, query: string) {
+export async function searchKnowledgeBase(userId: number, query: string, scope: Scope = "mine") {
   const _d = await db();
   const q = `%${query}%`;
+
+  function buildWhere(table: any, searchFields: any[]) {
+    const sc = scopeCondition(table, userId, scope);
+    return and(sc, or(...searchFields));
+  }
+
   const [products, listings, imageSets, skills, videos] = await Promise.all([
-    _d.select({ id: kbProductInnovations.id, type: sql<string>`'product'`, title: kbProductInnovations.productTitle, asin: kbProductInnovations.asin, status: kbProductInnovations.status, updatedAt: kbProductInnovations.updatedAt })
+    _d.select({ id: kbProductInnovations.id, type: sql<string>`'product'`, title: kbProductInnovations.productTitle, asin: kbProductInnovations.asin, status: kbProductInnovations.status, userId: kbProductInnovations.userId, updatedAt: kbProductInnovations.updatedAt })
       .from(kbProductInnovations)
-      .where(and(eq(kbProductInnovations.userId, userId), or(like(kbProductInnovations.productTitle, q), like(kbProductInnovations.asin, q), like(kbProductInnovations.category, q)))),
-    _d.select({ id: kbListingCopywriting.id, type: sql<string>`'listing'`, title: kbListingCopywriting.productTitle, asin: kbListingCopywriting.asin, status: kbListingCopywriting.status, updatedAt: kbListingCopywriting.updatedAt })
+      .where(buildWhere(kbProductInnovations, [like(kbProductInnovations.productTitle, q), like(kbProductInnovations.asin, q), like(kbProductInnovations.category, q)])),
+    _d.select({ id: kbListingCopywriting.id, type: sql<string>`'listing'`, title: kbListingCopywriting.productTitle, asin: kbListingCopywriting.asin, status: kbListingCopywriting.status, userId: kbListingCopywriting.userId, updatedAt: kbListingCopywriting.updatedAt })
       .from(kbListingCopywriting)
-      .where(and(eq(kbListingCopywriting.userId, userId), or(like(kbListingCopywriting.productTitle, q), like(kbListingCopywriting.asin, q), like(kbListingCopywriting.category, q)))),
-    _d.select({ id: kbImageSets.id, type: sql<string>`'image'`, title: kbImageSets.productTitle, asin: kbImageSets.asin, status: kbImageSets.status, updatedAt: kbImageSets.updatedAt })
+      .where(buildWhere(kbListingCopywriting, [like(kbListingCopywriting.productTitle, q), like(kbListingCopywriting.asin, q), like(kbListingCopywriting.category, q)])),
+    _d.select({ id: kbImageSets.id, type: sql<string>`'image'`, title: kbImageSets.productTitle, asin: kbImageSets.asin, status: kbImageSets.status, userId: kbImageSets.userId, updatedAt: kbImageSets.updatedAt })
       .from(kbImageSets)
-      .where(and(eq(kbImageSets.userId, userId), or(like(kbImageSets.productTitle, q), like(kbImageSets.asin, q), like(kbImageSets.category, q)))),
-    _d.select({ id: kbOperationSkills.id, type: sql<string>`'skill'`, title: kbOperationSkills.title, asin: sql<string>`''`, status: kbOperationSkills.status, updatedAt: kbOperationSkills.updatedAt })
+      .where(buildWhere(kbImageSets, [like(kbImageSets.productTitle, q), like(kbImageSets.asin, q), like(kbImageSets.category, q)])),
+    _d.select({ id: kbOperationSkills.id, type: sql<string>`'skill'`, title: kbOperationSkills.title, asin: sql<string>`''`, status: kbOperationSkills.status, userId: kbOperationSkills.userId, updatedAt: kbOperationSkills.updatedAt })
       .from(kbOperationSkills)
-      .where(and(eq(kbOperationSkills.userId, userId), or(like(kbOperationSkills.title, q), like(kbOperationSkills.extractedContent, q)))),
-    _d.select({ id: kbVideos.id, type: sql<string>`'video'`, title: kbVideos.videoTitle, asin: sql`COALESCE(${kbVideos.asin}, '')`, status: kbVideos.status, updatedAt: kbVideos.updatedAt })
+      .where(buildWhere(kbOperationSkills, [like(kbOperationSkills.title, q), like(kbOperationSkills.extractedContent, q)])),
+    _d.select({ id: kbVideos.id, type: sql<string>`'video'`, title: kbVideos.videoTitle, asin: sql`COALESCE(${kbVideos.asin}, '')`, status: kbVideos.status, userId: kbVideos.userId, updatedAt: kbVideos.updatedAt })
       .from(kbVideos)
-      .where(and(eq(kbVideos.userId, userId), or(like(kbVideos.videoTitle, q), like(kbVideos.asin, q)))),
+      .where(buildWhere(kbVideos, [like(kbVideos.videoTitle, q), like(kbVideos.asin, q)])),
   ]);
   return [...products, ...listings, ...imageSets, ...skills, ...videos].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 }
 
 // ═══════════════════════════════════════════════════
-// ─── Stats ────────────────────────────────────────
+// ─── Stats (scope-aware) ─────────────────────────
 // ═══════════════════════════════════════════════════
-export async function getKbStats(userId: number) {
+export async function getKbStats(userId: number, scope: Scope = "mine") {
   const _d = await db();
   const [products, listings, imageSets, skills, videos] = await Promise.all([
-    _d.select({ count: sql<number>`count(*)` }).from(kbProductInnovations).where(eq(kbProductInnovations.userId, userId)),
-    _d.select({ count: sql<number>`count(*)` }).from(kbListingCopywriting).where(eq(kbListingCopywriting.userId, userId)),
-    _d.select({ count: sql<number>`count(*)` }).from(kbImageSets).where(eq(kbImageSets.userId, userId)),
-    _d.select({ count: sql<number>`count(*)` }).from(kbOperationSkills).where(eq(kbOperationSkills.userId, userId)),
-    _d.select({ count: sql<number>`count(*)` }).from(kbVideos).where(eq(kbVideos.userId, userId)),
+    _d.select({ count: sql<number>`count(*)` }).from(kbProductInnovations).where(scopeCondition(kbProductInnovations, userId, scope)),
+    _d.select({ count: sql<number>`count(*)` }).from(kbListingCopywriting).where(scopeCondition(kbListingCopywriting, userId, scope)),
+    _d.select({ count: sql<number>`count(*)` }).from(kbImageSets).where(scopeCondition(kbImageSets, userId, scope)),
+    _d.select({ count: sql<number>`count(*)` }).from(kbOperationSkills).where(scopeCondition(kbOperationSkills, userId, scope)),
+    _d.select({ count: sql<number>`count(*)` }).from(kbVideos).where(scopeCondition(kbVideos, userId, scope)),
   ]);
   return {
     productCount: products[0]?.count ?? 0,

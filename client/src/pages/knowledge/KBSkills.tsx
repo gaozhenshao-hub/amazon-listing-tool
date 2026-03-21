@@ -15,6 +15,7 @@ import { Loader2, PlusCircle, Link2, Upload, BookOpen, CheckCircle, Edit3, Trash
 import { toast } from "sonner";
 import { TagEditor } from "@/components/TagEditor";
 import { usePermissions } from "@/hooks/usePermissions";
+import { KBScopeToggle, type KBScope } from "@/components/KBScopeToggle";
 
 const SOP_TAG_SUGGESTIONS = [
   "广告投放", "库存管理", "Listing优化", "财务分析", "选品方法",
@@ -60,7 +61,8 @@ export default function KBSkills() {
   const allowEdit = canEdit('knowledge', 'kb_skills');
   const allowDelete = canDelete('knowledge', 'kb_skills');
   const utils = trpc.useUtils();
-  const { data: items, isLoading } = trpc.kbSkills.list.useQuery();
+  const [scope, setScope] = useState<KBScope>("mine");
+  const { data: items, isLoading } = trpc.kbSkills.list.useQuery({ scope });
   const [showImport, setShowImport] = useState(false);
   const [urlInput, setUrlInput] = useState("");
   const [manualTitle, setManualTitle] = useState("");
@@ -215,6 +217,7 @@ export default function KBSkills() {
       </div>
 
       <div className="flex flex-wrap gap-3 items-center">
+        <KBScopeToggle value={scope} onChange={setScope} />
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="搜索标题、标签、内容..." className="pl-9" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />

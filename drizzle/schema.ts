@@ -677,9 +677,119 @@ export const kbVideos = mysqlTable("kb_videos", {
 export type KbVideo = typeof kbVideos.$inferSelect;
 export type InsertKbVideo = typeof kbVideos.$inferInsert;
 
-// ═══════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════
+// ─── 知识库优化模块：外部情报采集 + AI机器人 + 调用反馈 ─────────
+// ═════════════════════════════════════════════════════════════════
+
+// 外部情报源配置
+export const kbIntelSources = mysqlTable("kb_intel_sources", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 200 }).notNull(),
+  sourceType: mysqlEnum("sourceType", ["amazon_news", "wearesellers", "media", "custom_url", "rss"]).notNull(),
+  url: varchar("url", { length: 1000 }).notNull(),
+  crawlFrequency: mysqlEnum("crawlFrequency", ["daily", "weekly", "manual"]).default("manual").notNull(),
+  qualityThreshold: decimal("qualityThreshold", { precision: 3, scale: 1 }).default("6.0"),
+  isActive: boolean("isActive").default(true).notNull(),
+  lastCrawledAt: bigint("lastCrawledAt", { mode: "number" }),
+  totalCrawled: int("totalCrawled").default(0),
+  totalAdopted: int("totalAdopted").default(0),
+  createdAt: bigint("createdAt", { mode: "number" }).notNull(),
+  updatedAt: bigint("updatedAt", { mode: "number" }).notNull(),
+});
+
+export type KbIntelSource = typeof kbIntelSources.$inferSelect;
+export type InsertKbIntelSource = typeof kbIntelSources.$inferInsert;
+
+// 采集到的情报条目
+export const kbIntelItems = mysqlTable("kb_intel_items", {
+  id: int("id").autoincrement().primaryKey(),
+  sourceId: int("sourceId").notNull(),
+  title: varchar("title", { length: 500 }).notNull(),
+  author: varchar("author", { length: 200 }),
+  originalUrl: varchar("originalUrl", { length: 1000 }).notNull(),
+  publishedAt: bigint("publishedAt", { mode: "number" }),
+  rawContent: text("rawContent").notNull(),
+  aiSummary: text("aiSummary"),
+  aiQualityScore: decimal("aiQualityScore", { precision: 3, scale: 1 }),
+  aiScoreDetails: json("aiScoreDetails"),
+  aiSuggestedType: mysqlEnum("aiSuggestedType", ["sop", "listing", "product", "image", "video"]),
+  aiFormattedContent: text("aiFormattedContent"),
+  status: mysqlEnum("status", ["pending", "recommended", "adopted", "ignored", "expired", "bookmarked"]).default("pending").notNull(),
+  adoptedKbType: varchar("adoptedKbType", { length: 50 }),
+  adoptedKbItemId: int("adoptedKbItemId"),
+  reviewedBy: int("reviewedBy"),
+  reviewedAt: bigint("reviewedAt", { mode: "number" }),
+  createdAt: bigint("createdAt", { mode: "number" }).notNull(),
+});
+
+export type KbIntelItem = typeof kbIntelItems.$inferSelect;
+export type InsertKbIntelItem = typeof kbIntelItems.$inferInsert;
+
+// 知识库调用日志
+export const kbCallLogs = mysqlTable("kb_call_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  callerModule: varchar("callerModule", { length: 100 }).notNull(),
+  callerAction: varchar("callerAction", { length: 100 }).notNull(),
+  kbItemId: int("kbItemId").notNull(),
+  kbItemType: varchar("kbItemType", { length: 50 }).notNull(),
+  loadLevel: mysqlEnum("loadLevel", ["L1", "L2", "L3"]).notNull(),
+  relevanceScore: decimal("relevanceScore", { precision: 3, scale: 2 }),
+  createdAt: bigint("createdAt", { mode: "number" }).notNull(),
+});
+
+export type KbCallLog = typeof kbCallLogs.$inferSelect;
+export type InsertKbCallLog = typeof kbCallLogs.$inferInsert;
+
+// 用户反馈
+export const kbFeedback = mysqlTable("kb_feedback", {
+  id: int("id").autoincrement().primaryKey(),
+  callLogId: int("callLogId"),
+  conversationMessageId: int("conversationMessageId"),
+  userId: int("userId").notNull(),
+  kbItemId: int("kbItemId").notNull(),
+  kbItemType: varchar("kbItemType", { length: 50 }).notNull(),
+  rating: mysqlEnum("rating", ["helpful", "irrelevant", "wrong"]).notNull(),
+  comment: text("comment"),
+  createdAt: bigint("createdAt", { mode: "number" }).notNull(),
+});
+
+export type KbFeedback = typeof kbFeedback.$inferSelect;
+export type InsertKbFeedback = typeof kbFeedback.$inferInsert;
+
+// AI机器人对话
+export const kbBotConversations = mysqlTable("kb_bot_conversations", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  title: varchar("title", { length: 255 }),
+  lastMessageAt: bigint("lastMessageAt", { mode: "number" }),
+  messageCount: int("messageCount").default(0),
+  createdAt: bigint("createdAt", { mode: "number" }).notNull(),
+  updatedAt: bigint("updatedAt", { mode: "number" }).notNull(),
+});
+
+export type KbBotConversation = typeof kbBotConversations.$inferSelect;
+export type InsertKbBotConversation = typeof kbBotConversations.$inferInsert;
+
+// 对话消息
+export const kbBotMessages = mysqlTable("kb_bot_messages", {
+  id: int("id").autoincrement().primaryKey(),
+  conversationId: int("conversationId").notNull(),
+  role: mysqlEnum("role", ["user", "assistant"]).notNull(),
+  content: text("content").notNull(),
+  references: json("references"),
+  searchPath: json("searchPath"),
+  tokensUsed: int("tokensUsed"),
+  createdAt: bigint("createdAt", { mode: "number" }).notNull(),
+});
+
+export type KbBotMessage = typeof kbBotMessages.$inferSelect;
+export type InsertKbBotMessage = typeof kbBotMessages.$inferInsert;
+
+// ═════════════════════════════════════════════════════════════════
 // ─── Module 1: 智能产品开发分析 (Product Development AI Analysis) ──
-// ═══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════
 
 // 产品开发项目
 export const devProjects = mysqlTable("dev_projects", {

@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { TagEditor } from "@/components/TagEditor";
 import { ScoreSlider } from "@/components/ScoreSlider";
 import { usePermissions } from "@/hooks/usePermissions";
+import { KBScopeToggle, type KBScope } from "@/components/KBScopeToggle";
 
 const LISTING_TAG_SUGGESTIONS = [
   "A9优化", "FABE结构", "COSMO场景", "痛点转化", "情感化文案",
@@ -28,7 +29,8 @@ export default function KBListings() {
   const { canEdit, canDelete } = usePermissions();
   const allowEdit = canEdit('knowledge', 'kb_listings');
   const allowDelete = canDelete('knowledge', 'kb_listings');
-  const { data: items, isLoading } = trpc.kbListings.list.useQuery();
+  const [scope, setScope] = useState<KBScope>("mine");
+  const { data: items, isLoading } = trpc.kbListings.list.useQuery({ scope });
   const [showImport, setShowImport] = useState(false);
   const [asinInput, setAsinInput] = useState("");
   const [linkInput, setLinkInput] = useState("");
@@ -112,7 +114,8 @@ export default function KBListings() {
         <Button onClick={() => setShowImport(true)} className="gap-2"><PlusCircle className="h-4 w-4" /> 导入文案</Button>
       </div>
 
-      <div className="flex gap-3">
+      <div className="flex gap-3 items-center">
+        <KBScopeToggle value={scope} onChange={setScope} />
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="搜索ASIN、标题..." className="pl-9" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />

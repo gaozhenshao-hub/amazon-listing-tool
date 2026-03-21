@@ -327,8 +327,10 @@ A+图: ${aplusImgs.length}张
 
 export const kbImagesRouter = router({
   // List all image sets
-  listSets: protectedProcedure.query(async ({ ctx }) => {
-    return kbDb.listImageSets(ctx.user.id);
+  listSets: protectedProcedure
+    .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional() }).optional())
+    .query(async ({ ctx, input }) => {
+    return kbDb.listImageSets(ctx.user.id, input?.scope ?? "mine");
   }),
 
   // Get image set with all images
@@ -344,6 +346,7 @@ export const kbImagesRouter = router({
   // List all images with 4-dimension filters (waterfall view)
   listAllImages: protectedProcedure
     .input(z.object({
+      scope: z.enum(["mine", "shared", "all"]).optional(),
       tagCategory: z.string().optional(),
       tagColorScheme: z.string().optional(),
       tagImageType: z.string().optional(),
@@ -351,7 +354,7 @@ export const kbImagesRouter = router({
       imagePosition: z.string().optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
-      return kbDb.listAllImages(ctx.user.id, input);
+      return kbDb.listAllImages(ctx.user.id, input?.scope ?? "mine", input);
     }),
 
   // Import by ASIN - crawl images and analyze

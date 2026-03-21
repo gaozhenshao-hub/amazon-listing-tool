@@ -427,7 +427,7 @@ export const imageWorkflowRouter = router({
       // Try to load knowledge base images for reference
       let kbImageInfo = "";
       try {
-        const kbImages = await kbDb.listAllImages(ctx.user.id, {});
+        const kbImages = await kbDb.listAllImages(ctx.user.id, "mine", {});
         if (kbImages.length > 0) {
           kbImageInfo = "\n--- 知识库图片参考 ---\n";
           kbImageInfo += kbImages.slice(0, 20).map((img: any) =>
@@ -894,13 +894,13 @@ export const imageWorkflowRouter = router({
       imagePosition: z.string().optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
-      return kbDb.listAllImages(ctx.user.id, input);
+      return kbDb.listAllImages(ctx.user.id, "mine", input);
     }),
 
   // Get distinct tag values for filter dropdowns
   getKbImageFilterOptions: protectedProcedure
     .query(async ({ ctx }) => {
-      const allImages = await kbDb.listAllImages(ctx.user.id);
+      const allImages = await kbDb.listAllImages(ctx.user.id, "mine");
       const categories = new Set<string>();
       const colorSchemes = new Set<string>();
       const imageTypes = new Set<string>();
