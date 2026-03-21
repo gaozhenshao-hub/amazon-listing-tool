@@ -40,6 +40,7 @@ import KBListings from "./pages/knowledge/KBListings";
 import KBImages from "./pages/knowledge/KBImages";
 import KBSkills from "./pages/knowledge/KBSkills";
 import KBVideos from "./pages/knowledge/KBVideos";
+import KBBot from "./pages/knowledge/KBBot";
 
 // ─── Module 3/4: Placeholder ────────────────────────────────────
 import ComingSoonPage from "./pages/ComingSoonPage";
@@ -109,6 +110,7 @@ function Router() {
 
         {/* ─── Module 5: Knowledge Base ─── */}
         <Route path="/knowledge">{() => <PermissionGuard><KBOverview /></PermissionGuard>}</Route>
+        <Route path="/knowledge/bot">{() => <PermissionGuard><KBBot /></PermissionGuard>}</Route>
         <Route path="/knowledge/products">{() => <PermissionGuard><KBProducts /></PermissionGuard>}</Route>
         <Route path="/knowledge/listings">{() => <PermissionGuard><KBListings /></PermissionGuard>}</Route>
         <Route path="/knowledge/images">{() => <PermissionGuard><KBImages /></PermissionGuard>}</Route>

@@ -46,6 +46,7 @@ import {
   FolderKanban,
   Shield,
   RefreshCw,
+  Bot,
   type LucideIcon,
 } from "lucide-react";
 import { ROLE_LABELS, ROLE_MODULE_ACCESS, ADMIN_ROLES } from "@shared/const";
@@ -157,6 +158,7 @@ const modules: ModuleDef[] = [
     enabled: true,
     items: [
       { icon: LayoutDashboard, label: "知识库总览", path: "/knowledge" },
+      { icon: Bot, label: "AI知识助手", path: "/knowledge/bot" },
       { icon: Lightbulb, label: "智能产品创意库", path: "/knowledge/products" },
       { icon: FileText, label: "智能Listing文案库", path: "/knowledge/listings" },
       { icon: Image, label: "智能图片知识库", path: "/knowledge/images" },

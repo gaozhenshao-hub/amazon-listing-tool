@@ -1720,11 +1720,12 @@
 - [x] 前端：5个知识库列表页增加KBScopeToggle组件（“我的”/“全部共享”切换）
 
 #### 第二阶段：AI机器人
-- [ ] 后端：kbBot router（chat/listConversations/getHistory/deleteConversation）
-- [ ] 后端：kbBot.chat集成kbContextEngine三层加载
-- [ ] 前端：AI机器人对话界面（使用AIChatBox组件改造）
-- [ ] 前端：引用来源卡片（可展开/跳转原文/反馈按钮）
-- [ ] 前端：检索路径可视化（L1→L2→L3扫描/匹配/token统计）
+- [x] 后端：kbBot router（chat/listConversations/getHistory/deleteConversation/clearAll/updateTitle）
+- [x] 后端：kbBot.chat集成kbContextEngine三层加载（L1索引→AI筛选→L2摘要→AI筛选→L3详情→AI生成回答）
+- [x] 前端：AI机器人对话界面（左侧对话列表+右侧聊天窗口+建议提示词）
+- [x] 前端：引用来源卡片（可展开查看原文/点击跳转详情页/类型图标+颜色区分）
+- [x] 前端：检索路径可视化（L1→L2→L3扫描/匹配/token统计，可展开折叠）
+- [x] 后端测试：32个测试用例全部通过（路由注册/输入验证/smartRoute/formatForPrompt/类型结构）
 
 #### 第三阶段：外部情报采集
 - [ ] 后端：kbIntel router（情报源CRUD + 触发爬取 + 条目管理）

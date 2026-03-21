@@ -46,6 +46,7 @@ export const ROUTE_PERMISSION_MAP: Record<string, { moduleId: string; subModuleI
 
   // === Module 5: 智能知识库 (knowledge) ===
   "/knowledge": { moduleId: "knowledge", subModuleId: "kb_overview" },
+  "/knowledge/bot": { moduleId: "knowledge", subModuleId: "kb_bot" },
   "/knowledge/products": { moduleId: "knowledge", subModuleId: "kb_products" },
   "/knowledge/listings": { moduleId: "knowledge", subModuleId: "kb_listings" },
   "/knowledge/images": { moduleId: "knowledge", subModuleId: "kb_images" },

@@ -89,6 +89,7 @@ export const SUB_MODULES: Record<string, { id: string; label: string }[]> = {
   ],
   knowledge: [
     { id: 'kb_overview', label: '知识库总览' },
+    { id: 'kb_bot', label: 'AI知识助手' },
     { id: 'kb_products', label: '智能产品创意库' },
     { id: 'kb_listings', label: '智能Listing文案库' },
     { id: 'kb_images', label: '智能图片知识库' },

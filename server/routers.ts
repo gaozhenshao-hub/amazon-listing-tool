@@ -38,6 +38,7 @@ import { kbSearchRouter } from "./routers/kbSearch";
 import { systemSettingsRouter } from "./routers/systemSettings";
 // KB Review & Access Control
 import { kbReviewRouter } from "./routers/kbReview";
+import { kbBotRouter } from "./routers/kbBot";
 import { sopAccessRouter } from "./routers/sopAccess";
 import { projectAssignmentRouter } from "./routers/projectAssignment";
 // User Management
@@ -92,6 +93,7 @@ export const appRouter = router({
   kbSkills: kbSkillsRouter,
   kbVideos: kbVideosRouter,
   kbSearch: kbSearchRouter,
+  kbBot: kbBotRouter,
   // System Settings
   systemSettings: systemSettingsRouter,
   // KB Review & Access Control
