@@ -47,7 +47,16 @@ import {
   ChevronDown,
   ChevronUp,
   Edit,
+  Clock,
+  Play,
+  Pause,
+  RefreshCw,
+  Settings,
+  History,
+  Zap,
+  AlertTriangle,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 
 // ─── Types ──────────────────────────────────────
@@ -82,7 +91,7 @@ const KB_TYPE_LABELS: Record<string, string> = {
 // ─── Component ──────────────────────────────────
 export default function KBIntel() {
 
-  const [activeTab, setActiveTab] = useState<"items" | "sources" | "stats">("items");
+  const [activeTab, setActiveTab] = useState<"items" | "sources" | "stats" | "logs" | "scheduler">("items");
   const [statusFilter, setStatusFilter] = useState<ItemStatus | "all">("recommended");
   const [selectedSourceId, setSelectedSourceId] = useState<number | undefined>();
   const [page, setPage] = useState(1);
@@ -198,6 +207,8 @@ export default function KBIntel() {
         {([
           { key: "items", label: "推荐列表", icon: <FileText className="w-4 h-4" /> },
           { key: "sources", label: "情报源管理", icon: <Globe className="w-4 h-4" /> },
+          { key: "logs", label: "采集日志", icon: <History className="w-4 h-4" /> },
+          { key: "scheduler", label: "定时任务", icon: <Clock className="w-4 h-4" /> },
           { key: "stats", label: "采集统计", icon: <BarChart3 className="w-4 h-4" /> },
         ] as const).map(tab => (
           <button
@@ -351,6 +362,8 @@ export default function KBIntel() {
                         最后采集: {new Date(source.lastCrawledAt).toLocaleString()}
                       </p>
                     )}
+                    {/* Auto-collect config inline */}
+                    <AutoCollectSourceConfig source={source} />
                   </CardContent>
                 </Card>
               ))}
@@ -404,6 +417,12 @@ export default function KBIntel() {
           )}
         </div>
       )}
+
+      {/* ════════ Logs Tab ════════ */}
+      {activeTab === "logs" && <CollectLogsPanel />}
+
+      {/* ════════ Scheduler Tab ════════ */}
+      {activeTab === "scheduler" && <SchedulerPanel />}
 
       {/* ════════ Add Source Dialog ════════ */}
       <Dialog open={showAddSource} onOpenChange={setShowAddSource}>
@@ -856,5 +875,459 @@ function SopPreview({ data }: { data: Record<string, unknown> }) {
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+
+// ─── Auto-Collect Source Config (inline in source card) ──
+const INTERVAL_LABELS: Record<string, string> = {
+  every_6h: "每6小时",
+  every_12h: "每12小时",
+  daily: "每天",
+  weekly: "每周",
+  custom: "自定义Cron",
+};
+
+function AutoCollectSourceConfig({ source }: { source: Record<string, unknown> }) {
+  const utils = trpc.useUtils();
+  const updateAutoCollect = trpc.kbIntel.updateAutoCollect.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.nextAutoCollectAt ? "定时采集已启用" : "定时采集已关闭");
+      utils.kbIntel.listSources.invalidate();
+      utils.kbIntel.getSchedulerStatus.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const triggerCollect = trpc.kbIntel.triggerAutoCollect.useMutation({
+    onSuccess: (data) => {
+      toast.success(`采集完成`, {
+        description: `发现 ${data.totalFound} 条，新增 ${data.totalNew} 条，推荐 ${data.totalRecommended} 条`,
+      });
+      utils.kbIntel.listItems.invalidate();
+      utils.kbIntel.listSources.invalidate();
+      utils.kbIntel.getStats.invalidate();
+      utils.kbIntel.getCollectLogs.invalidate();
+    },
+    onError: (err) => toast.error("采集失败: " + err.message),
+  });
+
+  const [showConfig, setShowConfig] = useState(false);
+  const [interval, setInterval] = useState<string>((source.autoCollectInterval as string) || "daily");
+  const [cron, setCron] = useState<string>((source.autoCollectCron as string) || "");
+  const [autoEval, setAutoEval] = useState<boolean>((source.autoEvaluateEnabled as boolean) ?? true);
+  const [maxItems, setMaxItems] = useState<number>((source.autoCollectMaxItems as number) || 10);
+
+  const isEnabled = source.autoCollectEnabled as boolean;
+  const nextRun = source.nextAutoCollectAt as number | null;
+  const lastRun = source.lastAutoCollectAt as number | null;
+  const failures = (source.consecutiveFailures as number) || 0;
+
+  return (
+    <div className="mt-3 pt-3 border-t space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className="text-xs font-medium">定时自动采集</span>
+          {failures > 0 && (
+            <Badge variant="destructive" className="text-[10px] px-1 py-0">
+              <AlertTriangle className="w-2.5 h-2.5 mr-0.5" /> 失败{failures}次
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={isEnabled}
+            onCheckedChange={(checked) => {
+              updateAutoCollect.mutate({
+                sourceId: source.id as number,
+                autoCollectEnabled: checked,
+                autoCollectInterval: interval as "every_6h" | "every_12h" | "daily" | "weekly" | "custom",
+                autoCollectCron: cron || undefined,
+                autoEvaluateEnabled: autoEval,
+                autoCollectMaxItems: maxItems,
+              });
+            }}
+          />
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 w-6 p-0"
+            onClick={() => setShowConfig(!showConfig)}
+          >
+            <Settings className="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-xs"
+            onClick={() => triggerCollect.mutate({ sourceId: source.id as number })}
+            disabled={triggerCollect.isPending}
+          >
+            {triggerCollect.isPending ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <><Play className="w-3 h-3 mr-0.5" /> 立即采集</>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {/* Status line */}
+      {isEnabled && (
+        <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+          <span>频率: {INTERVAL_LABELS[interval] || interval}</span>
+          {lastRun && <span>上次: {new Date(lastRun).toLocaleString()}</span>}
+          {nextRun && <span>下次: {new Date(nextRun).toLocaleString()}</span>}
+        </div>
+      )}
+
+      {/* Config panel */}
+      {showConfig && (
+        <div className="p-3 bg-muted/30 rounded-lg space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-medium">采集频率</label>
+              <Select value={interval} onValueChange={setInterval}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(INTERVAL_LABELS).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs font-medium">每次最多采集</label>
+              <Input
+                type="number"
+                min={1}
+                max={50}
+                value={maxItems}
+                onChange={e => setMaxItems(Number(e.target.value))}
+                className="h-8 text-xs"
+              />
+            </div>
+          </div>
+          {interval === "custom" && (
+            <div>
+              <label className="text-xs font-medium">Cron表达式</label>
+              <Input
+                placeholder="0 9 * * * (每天9点)"
+                value={cron}
+                onChange={e => setCron(e.target.value)}
+                className="h-8 text-xs font-mono"
+              />
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Switch checked={autoEval} onCheckedChange={setAutoEval} />
+              <span className="text-xs">采集后自动AI评估</span>
+            </div>
+            <Button
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => {
+                updateAutoCollect.mutate({
+                  sourceId: source.id as number,
+                  autoCollectEnabled: isEnabled,
+                  autoCollectInterval: interval as "every_6h" | "every_12h" | "daily" | "weekly" | "custom",
+                  autoCollectCron: cron || undefined,
+                  autoEvaluateEnabled: autoEval,
+                  autoCollectMaxItems: maxItems,
+                });
+                setShowConfig(false);
+              }}
+              disabled={updateAutoCollect.isPending}
+            >
+              {updateAutoCollect.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+              保存配置
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Collect Logs Panel ────────────────────────────
+function CollectLogsPanel() {
+  const [logPage, setLogPage] = useState(1);
+  const [sourceFilter, setSourceFilter] = useState<number | undefined>();
+  const sourcesQuery = trpc.kbIntel.listSources.useQuery();
+  const logsQuery = trpc.kbIntel.getCollectLogs.useQuery({
+    sourceId: sourceFilter,
+    page: logPage,
+    pageSize: 20,
+  });
+
+  const STATUS_COLORS: Record<string, string> = {
+    running: "bg-blue-100 text-blue-700",
+    success: "bg-green-100 text-green-700",
+    partial: "bg-amber-100 text-amber-700",
+    failed: "bg-red-100 text-red-700",
+  };
+  const STATUS_LABELS: Record<string, string> = {
+    running: "运行中",
+    success: "成功",
+    partial: "部分成功",
+    failed: "失败",
+  };
+  const TRIGGER_LABELS: Record<string, string> = {
+    manual: "手动",
+    auto: "定时",
+    test: "测试",
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <History className="w-5 h-5" /> 采集日志
+        </h2>
+        <div className="flex items-center gap-2">
+          {sourcesQuery.data && sourcesQuery.data.length > 0 && (
+            <Select
+              value={sourceFilter?.toString() || "all"}
+              onValueChange={v => { setSourceFilter(v === "all" ? undefined : Number(v)); setLogPage(1); }}
+            >
+              <SelectTrigger className="w-48 h-8 text-xs">
+                <SelectValue placeholder="全部来源" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部来源</SelectItem>
+                {sourcesQuery.data.map(s => (
+                  <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Button size="sm" variant="outline" onClick={() => logsQuery.refetch()}>
+            <RefreshCw className="w-3.5 h-3.5 mr-1" /> 刷新
+          </Button>
+        </div>
+      </div>
+
+      {logsQuery.isLoading ? (
+        <div className="flex items-center justify-center py-16 text-muted-foreground">
+          <Loader2 className="w-5 h-5 animate-spin mr-2" /> 加载中...
+        </div>
+      ) : !logsQuery.data?.logs.length ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+            <History className="w-12 h-12 mb-4 opacity-30" />
+            <p className="text-lg font-medium">暂无采集日志</p>
+            <p className="text-sm mt-1">启用定时采集或手动触发采集后，日志将在此显示</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {logsQuery.data.logs.map((log: Record<string, unknown>) => (
+            <Card key={log.id as number} className="hover:shadow-sm transition-shadow">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Badge className={`${STATUS_COLORS[log.status as string] || "bg-gray-100"} text-[10px] px-1.5`}>
+                      {STATUS_LABELS[log.status as string] || String(log.status)}
+                    </Badge>
+                    <Badge variant="outline" className="text-[10px] px-1.5">
+                      {TRIGGER_LABELS[log.triggerType as string] || String(log.triggerType)}
+                    </Badge>
+                    <span className="text-sm font-medium">{String(log.sourceName || "未知来源")}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {log.startedAt ? new Date(log.startedAt as number).toLocaleString() : ""}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                  <span>发现: <strong className="text-foreground">{String(log.totalFound || 0)}</strong></span>
+                  <span>新增: <strong className="text-green-600">{String(log.totalNew || 0)}</strong></span>
+                  <span>重复: <strong>{String(log.totalDuplicate || 0)}</strong></span>
+                  <span>已评估: <strong className="text-blue-600">{String(log.totalEvaluated || 0)}</strong></span>
+                  <span>推荐: <strong className="text-orange-600">{String(log.totalRecommended || 0)}</strong></span>
+                  {log.durationMs ? <span>耗时: {((log.durationMs as number) / 1000).toFixed(1)}s</span> : null}
+                </div>
+                {log.errorMessage ? (
+                  <p className="text-xs text-destructive mt-2 bg-destructive/5 p-2 rounded">
+                    {String(log.errorMessage)}
+                  </p>
+                ) : null}
+              </CardContent>
+            </Card>
+          ))}
+          {(logsQuery.data.total as number) > 20 && (
+            <div className="flex items-center justify-center gap-2 pt-4">
+              <Button size="sm" variant="outline" disabled={logPage === 1} onClick={() => setLogPage(p => p - 1)}>上一页</Button>
+              <span className="text-sm text-muted-foreground">第 {logPage} 页 / 共 {Math.ceil((logsQuery.data.total as number) / 20)} 页</span>
+              <Button size="sm" variant="outline" disabled={logPage * 20 >= (logsQuery.data.total as number)} onClick={() => setLogPage(p => p + 1)}>下一页</Button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Scheduler Panel ───────────────────────────────
+function SchedulerPanel() {
+  const schedulerQuery = trpc.kbIntel.getSchedulerStatus.useQuery(undefined, {
+    refetchInterval: 30000, // Refresh every 30s
+  });
+  const utils = trpc.useUtils();
+  const updateAutoCollect = trpc.kbIntel.updateAutoCollect.useMutation({
+    onSuccess: () => {
+      utils.kbIntel.getSchedulerStatus.invalidate();
+      utils.kbIntel.listSources.invalidate();
+    },
+  });
+
+  const data = schedulerQuery.data;
+
+  return (
+    <div className="space-y-6">
+      {/* Scheduler Status */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Zap className="w-5 h-5 text-amber-500" /> 调度器状态
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              {data?.isActive ? (
+                <Badge className="bg-green-100 text-green-700 text-xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1 animate-pulse" /> 运行中
+                </Badge>
+              ) : (
+                <Badge className="bg-gray-100 text-gray-500 text-xs">已停止</Badge>
+              )}
+              <Button size="sm" variant="outline" onClick={() => schedulerQuery.refetch()}>
+                <RefreshCw className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div>
+              <p className="text-2xl font-bold">{data?.scheduledSources.length || 0}</p>
+              <p className="text-xs text-muted-foreground">已调度情报源</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{data?.activeCollections.length || 0}</p>
+              <p className="text-xs text-muted-foreground">正在采集</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-amber-600">
+                {data?.scheduledSources.filter((s: Record<string, unknown>) => {
+                  const next = s.nextRunAt as number | null;
+                  return next && next <= Date.now() + 3600000;
+                }).length || 0}
+              </p>
+              <p className="text-xs text-muted-foreground">1小时内待执行</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Scheduled Sources */}
+      {data?.scheduledSources && data.scheduledSources.length > 0 ? (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">定时采集任务列表</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {data.scheduledSources.map((source: Record<string, unknown>) => {
+                const nextRun = source.nextRunAt as number | null;
+                const lastRun = source.lastRunAt as number | null;
+                const failures = (source.consecutiveFailures as number) || 0;
+                const isCollecting = data.activeCollections.includes(source.id as number);
+
+                return (
+                  <div key={source.id as number} className="flex items-center justify-between py-3 border-b last:border-0">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-2 h-2 rounded-full ${isCollecting ? "bg-blue-500 animate-pulse" : failures > 3 ? "bg-red-500" : "bg-green-500"}`} />
+                      <div>
+                        <p className="text-sm font-medium">{String(source.name)}</p>
+                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-0.5">
+                          <span>{INTERVAL_LABELS[source.interval as string] || String(source.interval)}</span>
+                          <span>|</span>
+                          <span>最多{String(source.maxItems)}条/次</span>
+                          {source.autoEvaluateEnabled ? (
+                            <Badge variant="outline" className="text-[10px] px-1 py-0">自动评估</Badge>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right text-xs">
+                        {lastRun && (
+                          <p className="text-muted-foreground">上次: {new Date(lastRun).toLocaleString()}</p>
+                        )}
+                        {nextRun && (
+                          <p className={nextRun <= Date.now() ? "text-amber-600 font-medium" : "text-muted-foreground"}>
+                            下次: {new Date(nextRun).toLocaleString()}
+                          </p>
+                        )}
+                      </div>
+                      {failures > 0 && (
+                        <Badge variant="destructive" className="text-[10px]">
+                          失败{failures}次
+                        </Badge>
+                      )}
+                      {isCollecting && (
+                        <Badge className="bg-blue-100 text-blue-700 text-[10px]">
+                          <Loader2 className="w-2.5 h-2.5 animate-spin mr-0.5" /> 采集中
+                        </Badge>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs text-destructive"
+                        onClick={() => {
+                          updateAutoCollect.mutate({
+                            sourceId: source.id as number,
+                            autoCollectEnabled: false,
+                          });
+                          toast.info("已停止定时采集");
+                        }}
+                      >
+                        <Pause className="w-3 h-3 mr-0.5" /> 停止
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+            <Clock className="w-12 h-12 mb-4 opacity-30" />
+            <p className="text-lg font-medium">暂无定时采集任务</p>
+            <p className="text-sm mt-1">在"情报源管理"中为情报源开启定时采集功能</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Tips */}
+      <Card className="bg-blue-50/50 border-blue-200">
+        <CardContent className="p-4">
+          <h3 className="text-sm font-medium flex items-center gap-2 mb-2">
+            <Zap className="w-4 h-4 text-blue-500" /> 定时采集说明
+          </h3>
+          <ul className="text-xs text-muted-foreground space-y-1">
+            <li>调度器每60秒检查一次是否有需要执行的采集任务</li>
+            <li>支持6小时/12小时/每天/每周/自定义Cron五种频率</li>
+            <li>采集后可自动进行AI质量评估，达到阈值的自动标记为"推荐"</li>
+            <li>连续失败5次的情报源将自动暂停，需手动重新启用</li>
+            <li>发现推荐内容时会自动推送通知</li>
+          </ul>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

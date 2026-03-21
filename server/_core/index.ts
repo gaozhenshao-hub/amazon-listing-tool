@@ -9,6 +9,7 @@ import { syncRouter } from "../syncRoutes";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { startUsageTracking } from "../usageTracking";
+import { intelScheduler } from "../intelAutoCollect";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -65,6 +66,8 @@ async function startServer() {
     console.log(`Server running on http://localhost:${port}/`);
     // Start usage tracking background flush
     startUsageTracking();
+    // Start intel auto-collect scheduler
+    intelScheduler.start();
   });
 }
 

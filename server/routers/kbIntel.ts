@@ -11,11 +11,13 @@ import { getDb } from "../db";
 import {
   kbIntelSources,
   kbIntelItems,
+  kbIntelCollectLogs,
   kbOperationSkills,
   kbListingCopywriting,
   kbProductInnovations,
 } from "../../drizzle/schema";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { collectFromSource, updateSourceSchedule, calculateNextRunTime, intelScheduler } from "../intelAutoCollect";
 
 // ─── DB Helper ──────────────────────────────────
 async function db() {
@@ -602,6 +604,141 @@ export const kbIntelRouter = router({
         totalAdopted: s.totalAdopted || 0,
         isActive: s.isActive,
         lastCrawledAt: s.lastCrawledAt,
+      })),
+    };
+  }),
+
+  // ══ 定时采集配置 ══════════════════════════════
+  updateAutoCollect: protectedProcedure
+    .input(z.object({
+      sourceId: z.number(),
+      autoCollectEnabled: z.boolean(),
+      autoCollectInterval: z.enum(["every_6h", "every_12h", "daily", "weekly", "custom"]).optional(),
+      autoCollectCron: z.string().max(100).optional(),
+      autoEvaluateEnabled: z.boolean().optional(),
+      autoCollectMaxItems: z.number().min(1).max(50).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const _d = await db();
+      const [source] = await _d.select().from(kbIntelSources)
+        .where(and(eq(kbIntelSources.id, input.sourceId), eq(kbIntelSources.userId, ctx.user!.id)));
+      if (!source) throw new Error("情报源不存在");
+
+      const updateData: Record<string, unknown> = {
+        autoCollectEnabled: input.autoCollectEnabled,
+        updatedAt: Date.now(),
+      };
+      if (input.autoCollectInterval !== undefined) updateData.autoCollectInterval = input.autoCollectInterval;
+      if (input.autoCollectCron !== undefined) updateData.autoCollectCron = input.autoCollectCron;
+      if (input.autoEvaluateEnabled !== undefined) updateData.autoEvaluateEnabled = input.autoEvaluateEnabled;
+      if (input.autoCollectMaxItems !== undefined) updateData.autoCollectMaxItems = input.autoCollectMaxItems;
+
+      // Calculate next run time if enabling
+      if (input.autoCollectEnabled) {
+        updateData.nextAutoCollectAt = calculateNextRunTime(
+          input.autoCollectInterval || source.autoCollectInterval || "daily",
+          input.autoCollectCron || source.autoCollectCron || null
+        );
+        updateData.consecutiveFailures = 0; // Reset failures when re-enabling
+      } else {
+        updateData.nextAutoCollectAt = null;
+      }
+
+      await _d.update(kbIntelSources).set(updateData)
+        .where(eq(kbIntelSources.id, input.sourceId));
+
+      return { success: true, nextAutoCollectAt: updateData.nextAutoCollectAt as number | null };
+    }),
+
+  // ══ 手动触发自动采集 ══════════════════════════
+  triggerAutoCollect: protectedProcedure
+    .input(z.object({ sourceId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const _d = await db();
+      const [source] = await _d.select().from(kbIntelSources)
+        .where(and(eq(kbIntelSources.id, input.sourceId), eq(kbIntelSources.userId, ctx.user!.id)));
+      if (!source) throw new Error("情报源不存在");
+
+      const result = await collectFromSource(
+        {
+          id: source.id,
+          userId: source.userId,
+          name: source.name,
+          url: source.url,
+          sourceType: source.sourceType,
+          qualityThreshold: source.qualityThreshold,
+          autoEvaluateEnabled: source.autoEvaluateEnabled,
+          autoCollectMaxItems: source.autoCollectMaxItems,
+        },
+        "manual"
+      );
+
+      return result;
+    }),
+
+  // ══ 采集日志 ══════════════════════════════════
+  getCollectLogs: protectedProcedure
+    .input(z.object({
+      sourceId: z.number().optional(),
+      page: z.number().min(1).default(1),
+      pageSize: z.number().min(1).max(50).default(20),
+    }))
+    .query(async ({ ctx, input }) => {
+      const _d = await db();
+      // Get user's source IDs
+      const userSources = await _d.select({ id: kbIntelSources.id })
+        .from(kbIntelSources)
+        .where(eq(kbIntelSources.userId, ctx.user!.id));
+      const sourceIds = userSources.map(s => s.id);
+      if (sourceIds.length === 0) return { logs: [], total: 0 };
+
+      const conditions = [inArray(kbIntelCollectLogs.sourceId, sourceIds)];
+      if (input.sourceId) conditions.push(eq(kbIntelCollectLogs.sourceId, input.sourceId));
+
+      const where = and(...conditions);
+      const [countResult] = await _d.select({ count: sql<number>`count(*)` })
+        .from(kbIntelCollectLogs).where(where);
+
+      const logs = await _d.select({
+        log: kbIntelCollectLogs,
+        sourceName: kbIntelSources.name,
+      })
+        .from(kbIntelCollectLogs)
+        .leftJoin(kbIntelSources, eq(kbIntelCollectLogs.sourceId, kbIntelSources.id))
+        .where(where)
+        .orderBy(desc(kbIntelCollectLogs.startedAt))
+        .limit(input.pageSize)
+        .offset((input.page - 1) * input.pageSize);
+
+      return {
+        logs: logs.map(r => ({ ...r.log, sourceName: r.sourceName })),
+        total: countResult?.count ?? 0,
+      };
+    }),
+
+  // ══ 调度器状态 ════════════════════════════════
+  getSchedulerStatus: protectedProcedure.query(async ({ ctx }) => {
+    const _d = await db();
+    // Get all auto-collect enabled sources for this user
+    const sources = await _d.select().from(kbIntelSources)
+      .where(and(
+        eq(kbIntelSources.userId, ctx.user!.id),
+        eq(kbIntelSources.autoCollectEnabled, true)
+      ));
+
+    return {
+      isActive: intelScheduler.isActive(),
+      activeCollections: intelScheduler.getActiveCollections(),
+      scheduledSources: sources.map(s => ({
+        id: s.id,
+        name: s.name,
+        interval: s.autoCollectInterval,
+        cron: s.autoCollectCron,
+        nextRunAt: s.nextAutoCollectAt,
+        lastRunAt: s.lastAutoCollectAt,
+        consecutiveFailures: s.consecutiveFailures || 0,
+        autoEvaluateEnabled: s.autoEvaluateEnabled,
+        maxItems: s.autoCollectMaxItems,
       })),
     };
   }),

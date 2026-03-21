@@ -105,20 +105,20 @@ export const kbFeedbackRouter = router({
               }
               case "listing": {
                 const [row] = await _d
-                  .select({ title: kbListingCopywriting.title })
+                  .select({ title: kbListingCopywriting.productTitle })
                   .from(kbListingCopywriting)
                   .where(eq(kbListingCopywriting.id, item.kbItemId))
                   .limit(1);
-                if (row) title = row.title;
+                if (row?.title) title = row.title;
                 break;
               }
               case "product": {
                 const [row] = await _d
-                  .select({ title: kbProductInnovations.productName })
+                  .select({ title: kbProductInnovations.productTitle })
                   .from(kbProductInnovations)
                   .where(eq(kbProductInnovations.id, item.kbItemId))
                   .limit(1);
-                if (row) title = row.title;
+                if (row?.title) title = row.title;
                 break;
               }
               case "image": {

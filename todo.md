@@ -1741,3 +1741,13 @@
 - [x] 前端：AI回答中的反馈按钮（有用/不相关/错误三种评价，错误支持输入评论）
 - [x] 前端：知识库概览页AI助手+情报快捷入口卡片 + 反馈统计面板（反馈分布条/热门引用TOP5）
 - [x] 后端测试：22个测试用例全部通过（输入验证/分布计算/类型映射/统计结构/路由注册）
+
+#### 情报源定时自动采集
+- [x] 后端：扩展kb_intel_sources表添加定时采集字段（8个新字段：autoCollectEnabled/Interval/Cron/MaxItems/autoEvaluateEnabled/lastAutoCollectAt/nextAutoCollectAt/consecutiveFailures）
+- [x] 后端：定时任务调度器（IntelScheduler类，服务启动时自动加载，60秒检查一次，支持动态增删改调度）
+- [x] 后端：自动采集worker（轮询→URL爬取→去重→自动AI评估→质量阈值筛选→推送通知，连续失败5次自动暂停）
+- [x] 后端：采集日志表（kb_intel_collect_logs）记录每次采集结果（发现/新增/重复/评估/推荐/耗时/错误）
+- [x] 后端：kbIntel路由扩展（updateAutoCollect/triggerAutoCollect/getCollectLogs/getSchedulerStatus 4个新端点）
+- [x] 前端：情报源卡片内联定时采集配置（Switch开关/频率选择/最大条目/自动评估/立即采集按钮）
+- [x] 前端：采集日志Tab（状态Badge/触发类型/统计数据/分页/来源筛选） + 定时任务Tab（调度器状态/任务列表/说明卡片）
+- [x] 后端测试：37个测试用例全部通过（间隔计算/失败跟踪/日志状态/质量阈值/通知格式/输入验证）

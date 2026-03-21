@@ -694,12 +694,43 @@ export const kbIntelSources = mysqlTable("kb_intel_sources", {
   lastCrawledAt: bigint("lastCrawledAt", { mode: "number" }),
   totalCrawled: int("totalCrawled").default(0),
   totalAdopted: int("totalAdopted").default(0),
+  // 定时自动采集字段
+  autoCollectEnabled: boolean("autoCollectEnabled").default(false).notNull(),
+  autoCollectCron: varchar("autoCollectCron", { length: 100 }), // cron表达式，如 "0 9 * * *"
+  autoCollectInterval: mysqlEnum("autoCollectInterval", ["every_6h", "every_12h", "daily", "weekly", "custom"]).default("daily"),
+  lastAutoCollectAt: bigint("lastAutoCollectAt", { mode: "number" }),
+  nextAutoCollectAt: bigint("nextAutoCollectAt", { mode: "number" }),
+  autoEvaluateEnabled: boolean("autoEvaluateEnabled").default(true).notNull(), // 采集后自动AI评估
+  autoCollectMaxItems: int("autoCollectMaxItems").default(10), // 每次最多采集条目数
+  consecutiveFailures: int("consecutiveFailures").default(0), // 连续失败次数
   createdAt: bigint("createdAt", { mode: "number" }).notNull(),
   updatedAt: bigint("updatedAt", { mode: "number" }).notNull(),
 });
 
 export type KbIntelSource = typeof kbIntelSources.$inferSelect;
 export type InsertKbIntelSource = typeof kbIntelSources.$inferInsert;
+
+// 采集日志表
+export const kbIntelCollectLogs = mysqlTable("kb_intel_collect_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  sourceId: int("sourceId").notNull(),
+  userId: int("userId").notNull(),
+  triggerType: mysqlEnum("triggerType", ["manual", "auto", "test"]).notNull(),
+  status: mysqlEnum("status", ["running", "success", "partial", "failed"]).default("running").notNull(),
+  totalFound: int("totalFound").default(0),
+  totalNew: int("totalNew").default(0),
+  totalDuplicate: int("totalDuplicate").default(0),
+  totalEvaluated: int("totalEvaluated").default(0),
+  totalRecommended: int("totalRecommended").default(0),
+  errorMessage: text("errorMessage"),
+  details: json("details"), // 详细采集结果
+  startedAt: bigint("startedAt", { mode: "number" }).notNull(),
+  completedAt: bigint("completedAt", { mode: "number" }),
+  durationMs: int("durationMs"),
+});
+
+export type KbIntelCollectLog = typeof kbIntelCollectLogs.$inferSelect;
+export type InsertKbIntelCollectLog = typeof kbIntelCollectLogs.$inferInsert;
 
 // 采集到的情报条目
 export const kbIntelItems = mysqlTable("kb_intel_items", {
