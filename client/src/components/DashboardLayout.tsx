@@ -50,6 +50,7 @@ import {
   Bot,
   ShoppingBag,
   Rss,
+  Truck,
   type LucideIcon,
 } from "lucide-react";
 import { ROLE_LABELS, ROLE_MODULE_ACCESS, ADMIN_ROLES } from "@shared/const";
@@ -137,6 +138,7 @@ const modules: ModuleDef[] = [
       { icon: Target, label: "广告优化", path: "/ops/ads" },
       { icon: Eye, label: "竞品监控", path: "/ops/competitor" },
       { icon: Bot, label: "爬虫引擎", path: "/ops/crawler" },
+      { icon: Truck, label: "物流批次管理", path: "/ops/shipping" },
     ],
   },
   {

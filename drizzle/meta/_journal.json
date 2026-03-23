@@ -316,6 +316,13 @@
       "when": 1774269772740,
       "tag": "0044_flowery_zarda",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "5",
+      "when": 1774275722472,
+      "tag": "0045_daily_living_tribunal",
+      "breakpoints": true
     }
   ]
 }

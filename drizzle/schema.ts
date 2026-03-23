@@ -2072,3 +2072,198 @@ export const teamTasks = mysqlTable("team_tasks", {
 });
 export type TeamTask = typeof teamTasks.$inferSelect;
 export type InsertTeamTask = typeof teamTasks.$inferInsert;
+
+
+// ─── Shipping Batches (物流批次管理) ───
+export const shippingBatches = mysqlTable("shipping_batches", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: varchar("user_id", { length: 255 }).notNull(),
+  batchName: varchar("batch_name", { length: 500 }).notNull(),
+  batchNumber: int("batch_number").notNull(),
+
+  // 店铺和仓库
+  storeName: varchar("store_name", { length: 255 }),
+  sourceWarehouse: varchar("source_warehouse", { length: 255 }),
+  transitWarehouse: varchar("transit_warehouse", { length: 255 }),
+  destinationWarehouse: varchar("destination_warehouse", { length: 255 }),
+  shippingMethod: varchar("shipping_method", { length: 100 }),
+
+  // 流程状态（1-9）
+  currentStep: int("current_step").default(1).notNull(),
+  status: mysqlEnum("batch_status", ["active", "completed", "cancelled", "paused"]).default("active").notNull(),
+
+  // 物流信息
+  trackingNumber: varchar("tracking_number", { length: 255 }),
+  vehiclePlate: varchar("vehicle_plate", { length: 100 }),
+  carrierName: varchar("carrier_name", { length: 255 }),
+  internationalTrackingNumber: varchar("international_tracking_number", { length: 255 }),
+  internationalCarrier: varchar("international_carrier", { length: 255 }),
+
+  // 库存追踪（每步实时更新）
+  plannedQuantity: int("planned_quantity").default(0).notNull(),
+  orderedQuantity: int("ordered_quantity").default(0).notNull(),
+  shippedQuantity: int("shipped_quantity").default(0).notNull(),
+  warehouseReceivedQuantity: int("warehouse_received_quantity").default(0).notNull(),
+  internationalShippedQuantity: int("international_shipped_quantity").default(0).notNull(),
+  amazonReceivedQuantity: int("amazon_received_quantity").default(0).notNull(),
+  amazonStockedQuantity: int("amazon_stocked_quantity").default(0).notNull(),
+
+  // 亚马逊库存（步骤9实时同步）
+  amazonTotalInventory: int("amazon_total_inventory").default(0).notNull(),
+  amazonAvailableInventory: int("amazon_available_inventory").default(0).notNull(),
+  amazonReservedInventory: int("amazon_reserved_inventory").default(0).notNull(),
+  amazonInboundInventory: int("amazon_inbound_inventory").default(0).notNull(),
+  amazonUnfulfillableInventory: int("amazon_unfulfillable_inventory").default(0).notNull(),
+
+  // 财务数据
+  currency: varchar("currency", { length: 10 }).default("USD").notNull(),
+  totalProductCost: decimal("total_product_cost", { precision: 12, scale: 2 }).default("0"),
+  totalShippingCost: decimal("total_shipping_cost", { precision: 12, scale: 2 }).default("0"),
+  totalOtherCost: decimal("total_other_cost", { precision: 12, scale: 2 }).default("0"),
+  amazonCommissionRate: decimal("amazon_commission_rate", { precision: 5, scale: 2 }),
+
+  // 负责人
+  batchOwner: varchar("batch_owner", { length: 255 }),
+  logisticsOwner: varchar("logistics_owner", { length: 255 }),
+
+  // 领星ERP关联
+  lingxingDeliveryOrderId: varchar("lingxing_delivery_order_id", { length: 255 }),
+  lingxingPurchaseOrderId: varchar("lingxing_purchase_order_id", { length: 255 }),
+  lingxingPurchasePlanId: varchar("lingxing_purchase_plan_id", { length: 255 }),
+
+  // 时间
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+});
+export type ShippingBatch = typeof shippingBatches.$inferSelect;
+export type InsertShippingBatch = typeof shippingBatches.$inferInsert;
+
+// ─── Batch Step Configs (批次步骤配置/自定义时间) ───
+export const batchStepConfigs = mysqlTable("batch_step_configs", {
+  id: int("id").autoincrement().primaryKey(),
+  batchId: int("batch_id").notNull(),
+  stepNumber: int("step_number").notNull(),
+  stepName: varchar("step_name", { length: 100 }).notNull(),
+  expectedDays: int("expected_days").default(0).notNull(),
+  actualStartAt: bigint("actual_start_at", { mode: "number" }),
+  actualEndAt: bigint("actual_end_at", { mode: "number" }),
+  actualDays: int("actual_days"),
+  notes: text("notes"),
+  status: mysqlEnum("step_status", ["pending", "active", "completed", "skipped"]).default("pending").notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+});
+export type BatchStepConfig = typeof batchStepConfigs.$inferSelect;
+export type InsertBatchStepConfig = typeof batchStepConfigs.$inferInsert;
+
+// ─── Batch Products (批次产品明细) ───
+export const batchProducts = mysqlTable("batch_products", {
+  id: int("id").autoincrement().primaryKey(),
+  batchId: int("batch_id").notNull(),
+  sku: varchar("sku", { length: 255 }).notNull(),
+  asin: varchar("asin", { length: 50 }),
+  productName: varchar("product_name", { length: 500 }),
+  quantity: int("quantity").default(0).notNull(),
+  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }).default("0"),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).default("0"),
+  weight: decimal("weight", { precision: 8, scale: 2 }),
+  volume: decimal("volume", { precision: 10, scale: 4 }),
+  fnsku: varchar("fnsku", { length: 50 }),
+  lingxingProductId: varchar("lingxing_product_id", { length: 255 }),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+});
+export type BatchProduct = typeof batchProducts.$inferSelect;
+export type InsertBatchProduct = typeof batchProducts.$inferInsert;
+
+// ─── Batch Logs (批次操作日志) ───
+export const batchLogs = mysqlTable("batch_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  batchId: int("batch_id").notNull(),
+  userId: varchar("user_id", { length: 255 }),
+  userName: varchar("user_name", { length: 255 }),
+  action: varchar("action", { length: 100 }).notNull(),
+  fromStep: int("from_step"),
+  toStep: int("to_step"),
+  details: text("details"),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+});
+export type BatchLog = typeof batchLogs.$inferSelect;
+export type InsertBatchLog = typeof batchLogs.$inferInsert;
+
+// ─── Step Time History (步骤时间历史/AI学习) ───
+export const stepTimeHistory = mysqlTable("step_time_history", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: varchar("user_id", { length: 255 }).notNull(),
+  batchId: int("batch_id").notNull(),
+  stepNumber: int("step_number").notNull(),
+  shippingMethod: varchar("shipping_method", { length: 100 }),
+  carrierName: varchar("carrier_name", { length: 255 }),
+  route: varchar("route", { length: 255 }),
+  expectedDays: int("expected_days"),
+  actualDays: int("actual_days"),
+  monthOfYear: int("month_of_year"),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+});
+export type StepTimeHistoryRow = typeof stepTimeHistory.$inferSelect;
+export type InsertStepTimeHistory = typeof stepTimeHistory.$inferInsert;
+
+// ─── Replenishment Predictions (补货预测) ───
+export const replenishmentPredictions = mysqlTable("replenishment_predictions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: varchar("user_id", { length: 255 }).notNull(),
+  sku: varchar("sku", { length: 255 }).notNull(),
+  asin: varchar("asin", { length: 50 }),
+  storeName: varchar("store_name", { length: 255 }),
+
+  // 当前状态
+  currentAvailableInventory: int("current_available_inventory").default(0).notNull(),
+  dailySalesAvg: decimal("daily_sales_avg", { precision: 10, scale: 2 }).default("0"),
+  daysOfStockRemaining: int("days_of_stock_remaining").default(0).notNull(),
+
+  // 预测结果
+  fullCycleDays: int("full_cycle_days").default(0).notNull(),
+  recommendedQuantity: int("recommended_quantity").default(0).notNull(),
+  recommendedOrderDate: bigint("recommended_order_date", { mode: "number" }),
+  recommendedShippingMethod: varchar("recommended_shipping_method", { length: 100 }),
+  estimatedArrivalDate: bigint("estimated_arrival_date", { mode: "number" }),
+  confidence: decimal("confidence", { precision: 3, scale: 2 }).default("0"),
+
+  // AI建议详情
+  aiSuggestion: json("ai_suggestion"),
+  riskFactors: json("risk_factors"),
+  alternativePlans: json("alternative_plans"),
+
+  // 提醒状态
+  alertLevel: varchar("alert_level", { length: 20 }),
+  alertSentAt: bigint("alert_sent_at", { mode: "number" }),
+  userConfirmed: int("user_confirmed").default(0).notNull(),
+
+  // 时间
+  predictedAt: bigint("predicted_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+});
+export type ReplenishmentPrediction = typeof replenishmentPredictions.$inferSelect;
+export type InsertReplenishmentPrediction = typeof replenishmentPredictions.$inferInsert;
+
+// ─── Step Time Templates (步骤时间模板) ───
+export const stepTimeTemplates = mysqlTable("step_time_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: varchar("user_id", { length: 255 }).notNull(),
+  templateName: varchar("template_name", { length: 200 }).notNull(),
+  shippingMethod: varchar("shipping_method", { length: 100 }).notNull(),
+  step1Days: int("step1_days").default(3).notNull(),
+  step2Days: int("step2_days").default(14).notNull(),
+  step3Days: int("step3_days").default(3).notNull(),
+  step4Days: int("step4_days").default(1).notNull(),
+  step5Days: int("step5_days").default(3).notNull(),
+  step6Days: int("step6_days").default(2).notNull(),
+  step7Days: int("step7_days").default(30).notNull(),
+  step8Days: int("step8_days").default(7).notNull(),
+  step9Days: int("step9_days").default(3).notNull(),
+  isDefault: int("is_default").default(0).notNull(),
+  aiSuggested: int("ai_suggested").default(0).notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+});
+export type StepTimeTemplate = typeof stepTimeTemplates.$inferSelect;
+export type InsertStepTimeTemplate = typeof stepTimeTemplates.$inferInsert;

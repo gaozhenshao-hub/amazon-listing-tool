@@ -386,6 +386,25 @@ class LingxingAdapter {
       "/erp/sc/data/orders/list": () => mockOrderList(body),
       // 财务
       "/erp/sc/data/finance/profitAndLoss": () => mockProfitAndLoss(body),
+      // 采购模块
+      "/erp/sc/data/purchase/plan/list": () => mockPurchasePlanList(body),
+      "/erp/sc/data/purchase/list": () => mockPurchaseOrderList(body),
+      // FBA发货单
+      "/erp/sc/data/fba/deliveryOrder/list": () => mockDeliveryOrderList(body),
+      "/erp/sc/data/fba/deliveryOrder/detail": () => mockDeliveryOrderDetail(body),
+      // 头程物流
+      "/erp/sc/data/logistics/headway/channel/list": () => mockLogisticsChannelList(),
+      "/erp/sc/data/logistics/headway/provider/list": () => mockLogisticsProviderList(),
+      // 收货单
+      "/erp/sc/routing/wms/receipt/list": () => mockReceiptList(body),
+      // 仓库库存明细
+      "/erp/sc/routing/storage/warehouseInventory": () => mockWarehouseInventory(body),
+      // FBA库存v2
+      "/erp/sc/routing/storage/fbaInventoryV2": () => mockFbaInventoryV2(body),
+      // AWD库存
+      "/erp/sc/routing/storage/awdInventory": () => mockAwdInventory(body),
+      // 补货建议 - 未来销量预测
+      "/erp/sc/data/replenish/salesForecast": () => mockSalesForecast(body),
     };
 
     const mockFn = mockMap[path];
@@ -667,6 +686,207 @@ function mockProfitAndLoss(body: Record<string, any>) {
     profit_margin: 27.0,
     period: body.start_date ? `${body.start_date} ~ ${body.end_date}` : "2026-03",
   };
+}
+
+// ============== Logistics & Shipping Mock Data ==============
+
+function mockPurchasePlanList(body: Record<string, any>) {
+  const plans = [];
+  for (let i = 1; i <= 5; i++) {
+    plans.push({
+      plan_id: 1000 + i,
+      plan_no: `PP-2026-${String(i).padStart(3, '0')}`,
+      status: i <= 2 ? 'pending' : i <= 4 ? 'ordered' : 'completed',
+      total_quantity: Math.floor(Math.random() * 3000) + 500,
+      total_amount: +(Math.random() * 50000 + 5000).toFixed(2),
+      supplier_name: `Supplier ${String.fromCharCode(64 + i)}`,
+      created_at: Date.now() - i * 86400000 * 3,
+      items: Array.from({ length: Math.floor(Math.random() * 5) + 1 }, (_, j) => ({
+        sku: `SKU-${1000 + i}-${j + 1}`,
+        product_name: `Product ${i}-${j + 1}`,
+        quantity: Math.floor(Math.random() * 500) + 100,
+        unit_price: +(Math.random() * 20 + 2).toFixed(2),
+      })),
+    });
+  }
+  return plans;
+}
+
+function mockPurchaseOrderList(body: Record<string, any>) {
+  const orders = [];
+  for (let i = 1; i <= 5; i++) {
+    orders.push({
+      order_id: 2000 + i,
+      order_no: `PO-2026-${String(i).padStart(3, '0')}`,
+      plan_id: 1000 + i,
+      status: ['pending', 'confirmed', 'producing', 'shipped', 'completed'][i - 1],
+      supplier_name: `Supplier ${String.fromCharCode(64 + i)}`,
+      total_quantity: Math.floor(Math.random() * 3000) + 500,
+      total_amount: +(Math.random() * 50000 + 5000).toFixed(2),
+      expected_date: new Date(Date.now() + i * 86400000 * 7).toISOString().split('T')[0],
+      created_at: Date.now() - i * 86400000 * 5,
+    });
+  }
+  return orders;
+}
+
+function mockDeliveryOrderList(body: Record<string, any>) {
+  const orders = [];
+  const statuses = ['draft', 'pending', 'shipped', 'in_transit', 'received', 'stocked'];
+  for (let i = 1; i <= 8; i++) {
+    orders.push({
+      delivery_order_id: 3000 + i,
+      delivery_order_no: `DO-2026-${String(i).padStart(3, '0')}`,
+      status: statuses[i % statuses.length],
+      store_name: i % 2 === 0 ? 'Ace Select US' : 'UK Store',
+      warehouse_name: i % 3 === 0 ? '义乌仓' : '深圳仓',
+      destination: i % 2 === 0 ? 'FBA-US' : 'FBA-UK',
+      shipping_method: ['sea', 'air', 'express', 'rail'][i % 4],
+      tracking_number: i >= 3 ? `TRK${100000 + i}` : null,
+      total_quantity: Math.floor(Math.random() * 2000) + 200,
+      total_boxes: Math.floor(Math.random() * 50) + 5,
+      total_weight: +(Math.random() * 500 + 50).toFixed(1),
+      created_at: Date.now() - i * 86400000 * 2,
+      shipped_at: i >= 3 ? Date.now() - (i - 2) * 86400000 : null,
+    });
+  }
+  return orders;
+}
+
+function mockDeliveryOrderDetail(body: Record<string, any>) {
+  return {
+    delivery_order_id: body.delivery_order_id || 3001,
+    delivery_order_no: 'DO-2026-001',
+    status: 'shipped',
+    store_name: 'Ace Select US',
+    items: Array.from({ length: 5 }, (_, i) => ({
+      sku: `SKU-${3001}-${i + 1}`,
+      asin: `B0${String(Math.random()).slice(2, 10)}`,
+      product_name: `Product Detail ${i + 1}`,
+      quantity: Math.floor(Math.random() * 300) + 50,
+      boxes: Math.floor(Math.random() * 10) + 1,
+      weight: +(Math.random() * 20 + 2).toFixed(1),
+    })),
+  };
+}
+
+function mockLogisticsChannelList() {
+  return [
+    { channel_id: 1, channel_name: '海运-美西', type: 'sea', carrier: 'COSCO', transit_days: 30 },
+    { channel_id: 2, channel_name: '空运-美西', type: 'air', carrier: 'FedEx', transit_days: 7 },
+    { channel_id: 3, channel_name: '快递-美西', type: 'express', carrier: 'DHL', transit_days: 5 },
+    { channel_id: 4, channel_name: '铁路-欧洲', type: 'rail', carrier: '中欧班列', transit_days: 20 },
+    { channel_id: 5, channel_name: '海运-英国', type: 'sea', carrier: 'Maersk', transit_days: 35 },
+    { channel_id: 6, channel_name: '空运-日本', type: 'air', carrier: 'ANA Cargo', transit_days: 3 },
+  ];
+}
+
+function mockLogisticsProviderList() {
+  return [
+    { provider_id: 1, provider_name: 'COSCO Shipping', type: 'sea', contact: '400-820-8888' },
+    { provider_id: 2, provider_name: 'FedEx International', type: 'air', contact: '400-886-1888' },
+    { provider_id: 3, provider_name: 'DHL Express', type: 'express', contact: '400-810-8000' },
+    { provider_id: 4, provider_name: 'Maersk Line', type: 'sea', contact: '400-820-1234' },
+    { provider_id: 5, provider_name: '中欧班列物流', type: 'rail', contact: '400-100-5678' },
+  ];
+}
+
+function mockReceiptList(body: Record<string, any>) {
+  const receipts = [];
+  for (let i = 1; i <= 5; i++) {
+    receipts.push({
+      receipt_id: 4000 + i,
+      receipt_no: `REC-2026-${String(i).padStart(3, '0')}`,
+      status: ['pending', 'receiving', 'completed', 'completed', 'completed'][i - 1],
+      warehouse_name: i % 2 === 0 ? '义乌仓' : '深圳仓',
+      total_quantity: Math.floor(Math.random() * 2000) + 200,
+      received_quantity: Math.floor(Math.random() * 1800) + 200,
+      qualified_quantity: Math.floor(Math.random() * 1700) + 200,
+      created_at: Date.now() - i * 86400000,
+    });
+  }
+  return receipts;
+}
+
+function mockWarehouseInventory(body: Record<string, any>) {
+  const items = [];
+  for (let i = 1; i <= 10; i++) {
+    items.push({
+      sku: `SKU-WH-${String(i).padStart(3, '0')}`,
+      product_name: `Warehouse Product ${i}`,
+      warehouse_name: i % 3 === 0 ? '义乌仓' : i % 3 === 1 ? '深圳仓' : '广州仓',
+      quantity: Math.floor(Math.random() * 1000) + 50,
+      available_quantity: Math.floor(Math.random() * 800) + 50,
+      reserved_quantity: Math.floor(Math.random() * 200),
+      location: `A${Math.floor(Math.random() * 10) + 1}-${Math.floor(Math.random() * 20) + 1}`,
+    });
+  }
+  return items;
+}
+
+function mockFbaInventoryV2(body: Record<string, any>) {
+  const items = [];
+  for (let i = 1; i <= 15; i++) {
+    const available = Math.floor(Math.random() * 2000) + 100;
+    const reserved = Math.floor(Math.random() * 200);
+    const inbound = Math.floor(Math.random() * 500);
+    const unfulfillable = Math.floor(Math.random() * 50);
+    items.push({
+      sku: `SKU-FBA-${String(i).padStart(3, '0')}`,
+      asin: `B0${String(Math.random()).slice(2, 10)}`,
+      fnsku: `X0${String(Math.random()).slice(2, 10)}`,
+      product_name: `FBA Product ${i}`,
+      store_name: i % 2 === 0 ? 'Ace Select US' : 'UK Store',
+      marketplace: i % 2 === 0 ? 'US' : 'UK',
+      fulfillable_quantity: available,
+      reserved_quantity: reserved,
+      inbound_working_quantity: Math.floor(inbound * 0.3),
+      inbound_shipped_quantity: Math.floor(inbound * 0.5),
+      inbound_receiving_quantity: Math.floor(inbound * 0.2),
+      unfulfillable_quantity: unfulfillable,
+      total_quantity: available + reserved + inbound + unfulfillable,
+      days_of_supply: Math.floor(Math.random() * 90) + 10,
+      daily_sales_avg: +(Math.random() * 30 + 2).toFixed(1),
+    });
+  }
+  return items;
+}
+
+function mockAwdInventory(body: Record<string, any>) {
+  const items = [];
+  for (let i = 1; i <= 5; i++) {
+    items.push({
+      sku: `SKU-AWD-${String(i).padStart(3, '0')}`,
+      asin: `B0${String(Math.random()).slice(2, 10)}`,
+      product_name: `AWD Product ${i}`,
+      warehouse: `AWD-US-${i}`,
+      total_quantity: Math.floor(Math.random() * 3000) + 500,
+      available_quantity: Math.floor(Math.random() * 2500) + 500,
+      inbound_quantity: Math.floor(Math.random() * 500),
+    });
+  }
+  return items;
+}
+
+function mockSalesForecast(body: Record<string, any>) {
+  const forecasts = [];
+  for (let i = 1; i <= 10; i++) {
+    const dailySales = +(Math.random() * 30 + 5).toFixed(1);
+    forecasts.push({
+      sku: body.sku || `SKU-${String(i).padStart(3, '0')}`,
+      asin: body.asin || `B0${String(Math.random()).slice(2, 10)}`,
+      store_name: 'Ace Select US',
+      daily_sales_7d: +(dailySales * (0.9 + Math.random() * 0.2)).toFixed(1),
+      daily_sales_30d: +dailySales.toFixed(1),
+      forecast_7d: Math.floor(dailySales * 7 * (0.95 + Math.random() * 0.1)),
+      forecast_14d: Math.floor(dailySales * 14 * (0.9 + Math.random() * 0.2)),
+      forecast_30d: Math.floor(dailySales * 30 * (0.85 + Math.random() * 0.3)),
+      forecast_60d: Math.floor(dailySales * 60 * (0.8 + Math.random() * 0.4)),
+      trend: ['up', 'stable', 'down'][Math.floor(Math.random() * 3)],
+      seasonality_factor: +(0.8 + Math.random() * 0.4).toFixed(2),
+    });
+  }
+  return forecasts;
 }
 
 // ============== Singleton Instance ==============
