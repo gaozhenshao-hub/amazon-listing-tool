@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell,
   ComposedChart, Line,
@@ -20,6 +21,7 @@ import {
 type AnalysisType = "cost_optimization" | "anomaly_detection" | "trend_forecast";
 
 export default function OpsProfit() {
+  const [, setLocation] = useLocation();
   
   const [dateRange, setDateRange] = useState("30");
   const [showAiDialog, setShowAiDialog] = useState(false);
@@ -292,9 +294,13 @@ export default function OpsProfit() {
                       <tr><td colSpan={6} className="text-center py-12 text-gray-400">暂无产品利润数据</td></tr>
                     ) : (
                       products.map((p: any, i: number) => (
-                        <tr key={i} className="border-b hover:bg-gray-50/50">
+                        <tr key={i} className="border-b hover:bg-gray-50/50 cursor-pointer transition-colors" onClick={() => {
+                          // Try to find matching product profile by ASIN/SKU and navigate
+                          if (p.asin) setLocation(`/ops/products?highlight=${p.asin}`);
+                          else toast.info("请先在产品总览中创建该产品的档案");
+                        }} title="点击查看产品详情">
                           <td className="p-3 text-gray-400">{i + 1}</td>
-                          <td className="p-3 font-mono text-xs">{p.seller_sku}</td>
+                          <td className="p-3 font-mono text-xs text-blue-600 hover:underline">{p.seller_sku}</td>
                           <td className="p-3 max-w-[200px] truncate">{p.product_name || "-"}</td>
                           <td className="p-3 text-right">${(p.revenue || 0).toLocaleString()}</td>
                           <td className={`p-3 text-right font-medium ${(p.profit || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>

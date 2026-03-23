@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -179,8 +179,12 @@ export default function SystemSettings() {
         <p className="text-muted-foreground mt-1">管理爬虫代理、请求策略和系统配置</p>
       </div>
 
-      <Tabs defaultValue="proxy" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+      <Tabs defaultValue="lingxing" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="lingxing" className="flex items-center gap-2">
+            <Globe className="h-4 w-4" />
+            领星API
+          </TabsTrigger>
           <TabsTrigger value="proxy" className="flex items-center gap-2">
             <Shield className="h-4 w-4" />
             代理配置
@@ -194,6 +198,11 @@ export default function SystemSettings() {
             连接测试
           </TabsTrigger>
         </TabsList>
+
+        {/* ═══════════════════ Lingxing API Config Tab ═══════════════════ */}
+        <TabsContent value="lingxing" className="space-y-6">
+          <LingxingApiSettings />
+        </TabsContent>
 
         {/* ═══════════════════ Proxy Configuration Tab ═══════════════════ */}
         <TabsContent value="proxy" className="space-y-6">
@@ -625,3 +634,218 @@ export default function SystemSettings() {
     </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Lingxing API Settings Component
+// ═══════════════════════════════════════════════════════════════════════
+
+function LingxingApiSettings() {
+  const { data, isLoading, refetch } = trpc.systemSettings.getLingxingConfig.useQuery();
+  const updateMut = trpc.systemSettings.updateLingxingConfig.useMutation({
+    onSuccess: (res) => {
+      refetch();
+      toast.success(res.isMock ? "配置已保存（Mock模式）" : "配置已保存并应用");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const testMut = trpc.systemSettings.testLingxingConnection.useMutation();
+
+  const [form, setForm] = useState({
+    appId: "",
+    appSecret: "",
+    apiHost: "https://openapi.lingxing.com",
+    useMock: true,
+  });
+  const [initialized, setInitialized] = useState(false);
+
+  // Initialize form from data
+  React.useEffect(() => {
+    if (data && !initialized) {
+      setForm({
+        appId: data.dbConfig?.lingxing_app_id || "",
+        appSecret: data.dbConfig?.lingxing_app_secret || "",
+        apiHost: data.dbConfig?.lingxing_api_host || data.currentConfig.apiHost || "https://openapi.lingxing.com",
+        useMock: data.currentConfig.useMock,
+      });
+      setInitialized(true);
+    }
+  }, [data, initialized]);
+
+  const handleSave = () => {
+    updateMut.mutate({
+      appId: form.appId,
+      appSecret: form.appSecret,
+      apiHost: form.apiHost,
+      useMock: form.useMock,
+    });
+  };
+
+  const handleTest = () => {
+    testMut.mutate();
+  };
+
+  if (isLoading) {
+    return <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-20 bg-muted animate-pulse rounded-lg" />)}</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Status Banner */}
+      <Card className={data?.currentConfig.useMock ? "border-amber-200 bg-amber-50/50" : "border-emerald-200 bg-emerald-50/50"}>
+        <CardContent className="pt-5 pb-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg ${data?.currentConfig.useMock ? "bg-amber-100" : "bg-emerald-100"}`}>
+                <Server className={`h-5 w-5 ${data?.currentConfig.useMock ? "text-amber-600" : "text-emerald-600"}`} />
+              </div>
+              <div>
+                <p className="font-medium">
+                  {data?.currentConfig.useMock ? "当前为 Mock 数据模式" : "已连接领星ERP API"}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {data?.currentConfig.useMock
+                    ? "系统正在使用模拟数据，配置API凭证后可切换为实时数据"
+                    : `API Host: ${data?.currentConfig.apiHost}`}
+                </p>
+              </div>
+            </div>
+            {data?.envHasCredentials && (
+              <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">
+                环境变量已配置
+              </Badge>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* API Credentials */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Globe className="h-4 w-4 text-blue-500" />
+            领星ERP开放API凭证
+          </CardTitle>
+          <CardDescription>
+            在领星ERP后台获取开放API的App ID和App Secret。
+            <a href="https://openapi.lingxing.com" target="_blank" rel="noopener" className="text-blue-600 hover:underline ml-1">
+              领星开放API文档 <ExternalLink className="inline h-3 w-3" />
+            </a>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>App ID</Label>
+              <Input
+                placeholder="输入领星App ID"
+                value={form.appId}
+                onChange={e => setForm(f => ({ ...f, appId: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label>App Secret</Label>
+              <Input
+                type="password"
+                placeholder="输入领星App Secret"
+                value={form.appSecret}
+                onChange={e => setForm(f => ({ ...f, appSecret: e.target.value }))}
+              />
+            </div>
+          </div>
+          <div>
+            <Label>API Host</Label>
+            <Input
+              placeholder="https://openapi.lingxing.com"
+              value={form.apiHost}
+              onChange={e => setForm(f => ({ ...f, apiHost: e.target.value }))}
+            />
+            <p className="text-xs text-muted-foreground mt-1">默认为 https://openapi.lingxing.com，一般无需修改</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Mock Mode Toggle */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <TestTube2 className="h-4 w-4 text-amber-500" />
+            数据模式
+          </CardTitle>
+          <CardDescription>开启Mock模式后系统将使用模拟数据，无需真实API凭证</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between p-4 rounded-lg border">
+            <div>
+              <p className="font-medium">Mock数据模式</p>
+              <p className="text-sm text-muted-foreground">
+                {form.useMock ? "当前使用模拟数据" : "当前使用真实API数据"}
+              </p>
+            </div>
+            <Button
+              variant={form.useMock ? "outline" : "default"}
+              size="sm"
+              onClick={() => setForm(f => ({ ...f, useMock: !f.useMock }))}
+            >
+              {form.useMock ? "切换为实时数据" : "切换为Mock模式"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Action Buttons */}
+      <div className="flex items-center gap-3">
+        <Button onClick={handleSave} disabled={updateMut.isPending} className="gap-2">
+          {updateMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+          保存配置
+        </Button>
+        <Button variant="outline" onClick={handleTest} disabled={testMut.isPending} className="gap-2">
+          {testMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <TestTube2 className="h-4 w-4" />}
+          测试连接
+        </Button>
+      </div>
+
+      {/* Test Result */}
+      {testMut.data && (
+        <Card className={testMut.data.success ? "border-emerald-200" : "border-red-200"}>
+          <CardContent className="pt-5 pb-4">
+            <div className="flex items-center gap-3">
+              {testMut.data.success ? (
+                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+              ) : (
+                <XCircle className="h-5 w-5 text-red-600" />
+              )}
+              <div>
+                <p className={`font-medium ${testMut.data.success ? "text-emerald-700" : "text-red-700"}`}>
+                  {testMut.data.message}
+                </p>
+                {testMut.data.latency && (
+                  <p className="text-sm text-muted-foreground">响应时间: {testMut.data.latency}ms</p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Help Info */}
+      <Card>
+        <CardContent className="pt-5">
+          <div className="space-y-3">
+            <p className="text-sm font-medium flex items-center gap-2">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              配置说明
+            </p>
+            <ul className="text-xs text-muted-foreground space-y-1 ml-6 list-disc">
+              <li>领星ERP开放API需要在领星后台开通，并将服务器IP加入白名单</li>
+              <li>App ID和App Secret可在领星后台「开放API」菜单中获取</li>
+              <li>配置保存后会立即生效，无需重启服务</li>
+              <li>如果API连接失败，系统会自动降级为Mock数据模式</li>
+              <li>Mock模式下所有数据为模拟数据，仅供功能演示和测试使用</li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+

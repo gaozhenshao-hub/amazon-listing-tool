@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/table";
 import {
   Plus, Trash2, Lock, Unlock, Loader2, Brain, ChevronDown, ChevronUp,
-  Star, ArrowRight, Search, BarChart3, Sparkles, Download,
+  Star, ArrowRight, Search, BarChart3, Sparkles, Download, CheckCircle, Filter,
 } from "lucide-react";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -105,6 +105,10 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
   const [editingScore, setEditingScore] = useState<Record<string, { score: number; note: string }>>({});
   const [editingSuggestion, setEditingSuggestion] = useState<Record<number, string>>({});
   const [aiScoringCategory, setAiScoringCategory] = useState<number | null>(null);
+  const [selectedSuggestions, setSelectedSuggestions] = useState<Set<number>>(new Set());
+  const [showSyncDialog, setShowSyncDialog] = useState(false);
+  const [syncMode, setSyncMode] = useState<"locked_low_score" | "selected" | "all_locked">("locked_low_score");
+  const [scoreThreshold, setScoreThreshold] = useState(3);
 
   // ─── Computed ───
   const groupedItems = useMemo(() => {
@@ -303,10 +307,8 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                     {aiSuggest.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Sparkles className="h-3 w-3 mr-1" />}
                     AI优化建议
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => {
-                    if (!activeCompId) return;
-                    syncToPlan.mutate({ comparisonId: activeCompId, productProfileId: productId, planId: 0, suggestionIds: [] });
-                  }} disabled={syncToPlan.isPending}>
+                  <Button size="sm" variant="outline" onClick={() => setShowSyncDialog(true)}
+                    disabled={syncToPlan.isPending}>
                     <ArrowRight className="h-3 w-3 mr-1" />
                     同步到运营计划
                   </Button>
@@ -483,26 +485,50 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                   <CardTitle className="text-base flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-purple-600" />
                     AI优化建议
+                    <Badge variant="secondary" className="text-xs">
+                      {suggestions.filter((s: any) => s.isLocked).length}/{suggestions.length} 已锁定
+                    </Badge>
                   </CardTitle>
-                  <Button size="sm" variant="outline" onClick={() => {
-                    if (!activeCompId) return;
-                    syncToPlan.mutate({ comparisonId: activeCompId, productProfileId: productId, planId: 0, suggestionIds: [] });
-                  }} disabled={syncToPlan.isPending}>
-                    <ArrowRight className="h-3 w-3 mr-1" />
-                    一键同步到运营计划
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {selectedSuggestions.size > 0 && (
+                      <Badge variant="outline" className="text-xs">
+                        已选 {selectedSuggestions.size} 项
+                      </Badge>
+                    )}
+                    <Button size="sm" variant="outline" onClick={() => setShowSyncDialog(true)}
+                      disabled={syncToPlan.isPending || suggestions.filter((s: any) => s.isLocked).length === 0}>
+                      {syncToPlan.isPending ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <ArrowRight className="h-3 w-3 mr-1" />}
+                      一键同步到运营计划
+                    </Button>
+                  </div>
                 </div>
+                {suggestions.filter((s: any) => !s.isLocked).length > 0 && (
+                  <p className="text-xs text-amber-600 mt-1">提示：请先锁定需要同步的建议项，仅已锁定的建议可同步到运营计划</p>
+                )}
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
                   {suggestions.map((sug: any) => {
                     const isEditing = editingSuggestion[sug.id] !== undefined;
                     const editText = editingSuggestion[sug.id] ?? sug.suggestion;
+                    const isSelected = selectedSuggestions.has(sug.id);
 
                     return (
-                      <div key={sug.id} className={`border rounded-lg p-4 ${sug.isLocked ? "bg-amber-50/50 border-amber-200" : ""}`}>
+                      <div key={sug.id} className={`border rounded-lg p-4 transition-colors ${sug.isLocked ? "bg-amber-50/50 border-amber-200" : ""} ${isSelected ? "ring-2 ring-primary/50" : ""}`}>
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {
+                                setSelectedSuggestions(prev => {
+                                  const next = new Set(prev);
+                                  if (next.has(sug.id)) next.delete(sug.id); else next.add(sug.id);
+                                  return next;
+                                });
+                              }}
+                              className="h-4 w-4 rounded border-gray-300"
+                            />
                             <Badge variant="secondary">{sug.categoryName}</Badge>
                             <Badge variant="secondary" className={
                               sug.priority === "high" ? "bg-red-50 text-red-700" :
@@ -573,6 +599,18 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                         )}
                         {sug.expectedEffect && (
                           <p className="text-xs text-emerald-700 mt-2">预期效果：{sug.expectedEffect}</p>
+                        )}
+                        {sug.linkedPlanActionId && (
+                          <div className="mt-2 flex items-center gap-1 text-xs text-blue-600">
+                            <CheckCircle className="h-3 w-3" />
+                            已同步到运营计划
+                          </div>
+                        )}
+                        {sug.ownScore && Number(sug.ownScore) <= 3 && !sug.linkedPlanActionId && sug.isLocked && (
+                          <div className="mt-2 flex items-center gap-1 text-xs text-orange-600">
+                            <Star className="h-3 w-3" />
+                            低分项·建议同步优化
+                          </div>
                         )}
                       </div>
                     );
@@ -658,6 +696,117 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
               })}
             >
               添加
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sync to Plan Dialog */}
+      <Dialog open={showSyncDialog} onOpenChange={setShowSyncDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowRight className="h-5 w-5 text-primary" />
+              同步优化建议到运营计划
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-3">
+              <Label>同步模式</Label>
+              <Select value={syncMode} onValueChange={(v: any) => setSyncMode(v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="locked_low_score">
+                    <div className="flex items-center gap-2">
+                      <Filter className="h-3 w-3" />
+                      仅同步已锁定的低分项
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="all_locked">
+                    <div className="flex items-center gap-2">
+                      <Lock className="h-3 w-3" />
+                      同步所有已锁定建议
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="selected">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-3 w-3" />
+                      仅同步已勾选的建议 ({selectedSuggestions.size} 项)
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {syncMode === "locked_low_score" && (
+              <div className="space-y-2">
+                <Label>分数阈值（≤该分数视为低分）</Label>
+                <div className="flex items-center gap-3">
+                  {[1, 2, 3, 4].map(n => (
+                    <Button
+                      key={n}
+                      size="sm"
+                      variant={scoreThreshold === n ? "default" : "outline"}
+                      onClick={() => setScoreThreshold(n)}
+                      className="w-10 h-10"
+                    >
+                      {n}
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  将同步所有已锁定且得分 ≤ {scoreThreshold} 的建议项到运营计划
+                </p>
+              </div>
+            )}
+
+            {/* Preview */}
+            <div className="border rounded-lg p-3 bg-muted/30 max-h-48 overflow-y-auto">
+              <p className="text-xs font-medium mb-2">预览将同步的建议：</p>
+              {(() => {
+                if (!suggestions) return <p className="text-xs text-muted-foreground">无可同步的建议</p>;
+                let filtered: any[] = [];
+                if (syncMode === "locked_low_score") {
+                  filtered = suggestions.filter((s: any) => s.isLocked && !s.linkedPlanActionId && s.ownScore && Number(s.ownScore) <= scoreThreshold);
+                } else if (syncMode === "all_locked") {
+                  filtered = suggestions.filter((s: any) => s.isLocked && !s.linkedPlanActionId);
+                } else {
+                  filtered = suggestions.filter((s: any) => selectedSuggestions.has(s.id) && !s.linkedPlanActionId);
+                }
+                if (filtered.length === 0) return <p className="text-xs text-muted-foreground">无符合条件的建议（可能已全部同步）</p>;
+                return filtered.map((s: any) => (
+                  <div key={s.id} className="flex items-center gap-2 py-1 text-xs">
+                    <Badge variant="secondary" className="text-[10px] px-1">{s.categoryName}</Badge>
+                    <span className="truncate">{(s.suggestion || "").substring(0, 60)}</span>
+                    {s.ownScore && <Badge variant="outline" className="text-[10px] ml-auto">{s.ownScore}分</Badge>}
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSyncDialog(false)}>取消</Button>
+            <Button
+              disabled={syncToPlan.isPending}
+              onClick={() => {
+                if (!activeCompId) return;
+                const ids = syncMode === "selected" ? Array.from(selectedSuggestions) : [];
+                syncToPlan.mutate({
+                  comparisonId: activeCompId,
+                  productProfileId: productId,
+                  planId: 0,
+                  suggestionIds: ids,
+                  mode: syncMode,
+                  scoreThreshold,
+                });
+                setShowSyncDialog(false);
+                setSelectedSuggestions(new Set());
+              }}
+            >
+              {syncToPlan.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <ArrowRight className="h-4 w-4 mr-1" />}
+              确认同步
             </Button>
           </DialogFooter>
         </DialogContent>

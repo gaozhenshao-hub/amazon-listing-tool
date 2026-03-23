@@ -3,6 +3,12 @@ import { protectedProcedure, router } from "../_core/trpc";
 import * as db from "../db";
 
 export const notificationRouter = router({
+  // Manually trigger todo reminder check
+  checkTodoReminders: protectedProcedure.mutation(async () => {
+    const { checkTodoReminders } = await import("../todoReminder");
+    return checkTodoReminders();
+  }),
+
   // Get notifications for current user
   list: protectedProcedure
     .input(z.object({ limit: z.number().min(1).max(100).default(50) }).optional())

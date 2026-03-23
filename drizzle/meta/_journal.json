@@ -302,6 +302,13 @@
       "when": 1774254580289,
       "tag": "0042_tan_freak",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "5",
+      "when": 1774258463044,
+      "tag": "0043_greedy_lord_hawal",
+      "breakpoints": true
     }
   ]
 }

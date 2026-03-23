@@ -1502,7 +1502,7 @@ export const notifications = mysqlTable("notifications", {
   userId: int("userId").notNull(), // recipient
   type: mysqlEnum("type", [
     "review_submitted", "review_approved", "review_rejected",
-    "project_assigned", "system_alert"
+    "project_assigned", "system_alert", "todo_due_soon", "todo_overdue"
   ]).notNull(),
   title: varchar("title", { length: 200 }).notNull(),
   content: text("content"),

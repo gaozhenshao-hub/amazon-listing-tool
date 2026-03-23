@@ -1229,13 +1229,42 @@ export const productOpsRouter = router({
     planId: z.number(),
     productProfileId: z.number(),
     suggestionIds: z.array(z.number()),
+    mode: z.enum(["selected", "locked_low_score", "all_locked"]).optional().default("selected"),
+    scoreThreshold: z.number().optional().default(3),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    const suggestions = await db!.select().from(conversionSuggestions)
-      .where(and(
-        eq(conversionSuggestions.comparisonId, input.comparisonId),
-        inArray(conversionSuggestions.id, input.suggestionIds)
-      ));
+    let suggestions;
+
+    if (input.mode === "locked_low_score") {
+      // Sync all locked suggestions where own score <= threshold
+      suggestions = await db!.select().from(conversionSuggestions)
+        .where(and(
+          eq(conversionSuggestions.comparisonId, input.comparisonId),
+          eq(conversionSuggestions.isLocked, 1),
+          sql`CAST(${conversionSuggestions.ownScore} AS DECIMAL) <= ${input.scoreThreshold}`
+        ));
+    } else if (input.mode === "all_locked") {
+      // Sync all locked suggestions
+      suggestions = await db!.select().from(conversionSuggestions)
+        .where(and(
+          eq(conversionSuggestions.comparisonId, input.comparisonId),
+          eq(conversionSuggestions.isLocked, 1)
+        ));
+    } else if (input.suggestionIds.length > 0) {
+      // Sync specific selected suggestions
+      suggestions = await db!.select().from(conversionSuggestions)
+        .where(and(
+          eq(conversionSuggestions.comparisonId, input.comparisonId),
+          inArray(conversionSuggestions.id, input.suggestionIds)
+        ));
+    } else {
+      // Fallback: sync all locked suggestions (backward compat)
+      suggestions = await db!.select().from(conversionSuggestions)
+        .where(and(
+          eq(conversionSuggestions.comparisonId, input.comparisonId),
+          eq(conversionSuggestions.isLocked, 1)
+        ));
+    }
 
     let created = 0;
     for (const sug of suggestions) {

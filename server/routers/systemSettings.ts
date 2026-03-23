@@ -133,6 +133,136 @@ export async function getScraperConfig(): Promise<{
 // ═══════════════════════════════════════════════════════════════════════
 
 export const systemSettingsRouter = router({
+  // ═══════════════════ Lingxing API Config ═══════════════════
+
+  /** Get lingxing API configuration (masked) */
+  getLingxingConfig: protectedProcedure.query(async () => {
+    const { getLingxingAdapter } = await import("../lingxingAdapter");
+    const adapter = getLingxingAdapter();
+    const config = adapter.getConfig();
+
+    // Also get DB-stored config values
+    const db = await getDb();
+    let dbConfig: Record<string, string | null> = {};
+    if (db) {
+      const rows = await db.select().from(systemSettings).where(
+        eq(systemSettings.category, "lingxing")
+      );
+      for (const row of rows) {
+        if (row.settingKey === "lingxing_app_secret" && row.settingValue) {
+          dbConfig[row.settingKey] = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
+        } else {
+          dbConfig[row.settingKey] = row.settingValue;
+        }
+      }
+    }
+
+    return {
+      currentConfig: config,
+      dbConfig,
+      envHasCredentials: !!(process.env.LINGXING_APP_ID && process.env.LINGXING_APP_SECRET),
+    };
+  }),
+
+  /** Update lingxing API configuration */
+  updateLingxingConfig: protectedProcedure
+    .input(z.object({
+      appId: z.string().optional(),
+      appSecret: z.string().optional(),
+      apiHost: z.string().optional(),
+      useMock: z.boolean().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const userId = ctx.user.id;
+      const settingsToSave: Record<string, string | null> = {};
+
+      if (input.appId !== undefined) settingsToSave["lingxing_app_id"] = input.appId;
+      if (input.appSecret !== undefined && input.appSecret !== "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022") {
+        settingsToSave["lingxing_app_secret"] = input.appSecret;
+      }
+      if (input.apiHost !== undefined) settingsToSave["lingxing_api_host"] = input.apiHost;
+      if (input.useMock !== undefined) settingsToSave["lingxing_use_mock"] = input.useMock ? "true" : "false";
+
+      // Save to DB
+      for (const [key, value] of Object.entries(settingsToSave)) {
+        const existing = await db.select().from(systemSettings).where(
+          eq(systemSettings.settingKey, key)
+        );
+        if (existing.length > 0) {
+          await db.update(systemSettings)
+            .set({ settingValue: value, updatedBy: userId, category: "lingxing" })
+            .where(eq(systemSettings.settingKey, key));
+        } else {
+          await db.insert(systemSettings).values({
+            settingKey: key,
+            settingValue: value,
+            category: "lingxing",
+            updatedBy: userId,
+          });
+        }
+      }
+
+      // Update the running adapter instance
+      const { getLingxingAdapter } = await import("../lingxingAdapter");
+      const adapter = getLingxingAdapter();
+
+      // Read actual values from DB for the adapter update
+      const rows = await db.select().from(systemSettings).where(
+        eq(systemSettings.category, "lingxing")
+      );
+      const dbMap: Record<string, string | null> = {};
+      for (const row of rows) {
+        dbMap[row.settingKey] = row.settingValue;
+      }
+
+      adapter.updateConfig({
+        appId: dbMap["lingxing_app_id"] || undefined,
+        appSecret: dbMap["lingxing_app_secret"] || undefined,
+        apiHost: dbMap["lingxing_api_host"] || undefined,
+        useMock: dbMap["lingxing_use_mock"] === "true",
+      });
+
+      return { success: true, isMock: adapter.isMockMode() };
+    }),
+
+  /** Test lingxing API connection */
+  testLingxingConnection: protectedProcedure.mutation(async () => {
+    const { getLingxingAdapter } = await import("../lingxingAdapter");
+    const adapter = getLingxingAdapter();
+
+    if (adapter.isMockMode()) {
+      return {
+        success: false,
+        message: "\u5f53\u524d\u4e3aMock\u6a21\u5f0f\uff0c\u8bf7\u5148\u5173\u95edMock\u6a21\u5f0f\u5e76\u914d\u7f6eAPI\u51ed\u8bc1",
+        latency: null,
+      };
+    }
+
+    try {
+      const startTime = Date.now();
+      const res = await adapter.request({ path: "/erp/sc/data/seller/lists", skipCache: true });
+      const latency = Date.now() - startTime;
+
+      return {
+        success: true,
+        message: `\u8fde\u63a5\u6210\u529f\uff01\u83b7\u53d6\u5230 ${(res.data || []).length} \u4e2a\u5356\u5bb6\u8d26\u53f7`,
+        latency,
+        sellerCount: (res.data || []).length,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: `\u8fde\u63a5\u5931\u8d25: ${err.message || "\u672a\u77e5\u9519\u8bef"}`,
+        latency: null,
+      };
+    }
+  }),
+
+  // ═══════════════════ Proxy Config ═══════════════════
+
   /** Get all proxy-related settings */
   getProxyConfig: protectedProcedure.query(async () => {
     const db = await getDb();

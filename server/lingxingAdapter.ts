@@ -232,6 +232,26 @@ class LingxingAdapter {
     return this.callLogs.slice(-limit);
   }
 
+  /** Reload config from DB settings (called when user updates settings page) */
+  updateConfig(newConfig: Partial<LingxingConfig>) {
+    if (newConfig.appId !== undefined) this.config.appId = newConfig.appId;
+    if (newConfig.appSecret !== undefined) this.config.appSecret = newConfig.appSecret;
+    if (newConfig.apiHost !== undefined) this.config.apiHost = newConfig.apiHost;
+    if (newConfig.useMock !== undefined) this.useMock = newConfig.useMock;
+    // Reset token manager with new config
+    this.tokenManager = new TokenManager(this.config);
+    this.cache.clear();
+  }
+
+  getConfig() {
+    return {
+      appId: this.config.appId ? this.config.appId.replace(/(.{4}).*(.{4})/, '$1****$2') : '',
+      appSecret: this.config.appSecret ? '••••••••' : '',
+      apiHost: this.config.apiHost,
+      useMock: this.useMock,
+    };
+  }
+
   /**
    * Make an API request to Lingxing
    */

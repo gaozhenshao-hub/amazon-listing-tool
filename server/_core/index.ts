@@ -68,6 +68,8 @@ async function startServer() {
     startUsageTracking();
     // Start intel auto-collect scheduler
     intelScheduler.start();
+    // Start todo reminder scheduler (check every hour)
+    import("../todoReminder").then(m => m.startTodoReminderScheduler()).catch(err => console.error("[TodoReminder] Failed to start:", err));
   });
 }
 

@@ -1888,12 +1888,13 @@ function Step4References({
 // ═══════════════════════════════════════════════════════════════════
 // ─── Step 5: Final Suggestions (reuse existing display) ──────────
 // ═══════════════════════════════════════════════════════════════════
-function ColorSwatch({ color, label }: { color: string; label: string }) {
-  const hex = color?.match(/#[0-9A-Fa-f]{3,8}/)?.[0] || "#ccc";
+function ColorSwatch({ color, label }: { color: any; label: string }) {
+  const colorStr = typeof color === 'object' && color !== null ? JSON.stringify(color) : String(color || '');
+  const hex = colorStr?.match(/#[0-9A-Fa-f]{3,8}/)?.[0] || "#ccc";
   return (
     <div className="flex items-center gap-1.5">
       <div className="w-4 h-4 rounded-full border border-gray-300 shrink-0" style={{ backgroundColor: hex }} />
-      <span className="text-xs">{label}: {color}</span>
+      <span className="text-xs">{label}: {colorStr}</span>
     </div>
   );
 }
@@ -1917,7 +1918,7 @@ function FABEDisplay({ fabe, variant = "en" }: { fabe: any; variant?: "en" | "cn
         fabe[key] ? (
           <div key={key} className="flex gap-1 text-xs">
             <span className={`font-medium ${textColor} shrink-0`}>{label}:</span>
-            <span className="text-muted-foreground">{fabe[key]}</span>
+            <span className="text-muted-foreground">{typeof fabe[key] === 'object' ? JSON.stringify(fabe[key]) : fabe[key]}</span>
           </div>
         ) : null
       ))}
@@ -2738,19 +2739,19 @@ function Step5FinalSuggestions({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2 border-r pr-4">
                     <Badge variant="outline" className="text-xs">English</Badge>
-                    <p className="text-xs"><strong>Font:</strong> {enData.designGuidelines.fontRecommendation}</p>
-                    <p className="text-xs"><strong>Color Palette:</strong> {enData.designGuidelines.overallColorPalette}</p>
-                    <p className="text-xs"><strong>Brand Tone:</strong> {enData.designGuidelines.brandTone}</p>
-                    <p className="text-xs"><strong>Mobile:</strong> {enData.designGuidelines.mobileOptimization}</p>
+                    <p className="text-xs"><strong>Font:</strong> {typeof enData.designGuidelines.fontRecommendation === 'object' ? JSON.stringify(enData.designGuidelines.fontRecommendation) : enData.designGuidelines.fontRecommendation}</p>
+                    <p className="text-xs"><strong>Color Palette:</strong> {typeof enData.designGuidelines.overallColorPalette === 'object' ? JSON.stringify(enData.designGuidelines.overallColorPalette) : enData.designGuidelines.overallColorPalette}</p>
+                    <p className="text-xs"><strong>Brand Tone:</strong> {typeof enData.designGuidelines.brandTone === 'object' ? JSON.stringify(enData.designGuidelines.brandTone) : enData.designGuidelines.brandTone}</p>
+                    <p className="text-xs"><strong>Mobile:</strong> {typeof enData.designGuidelines.mobileOptimization === 'object' ? JSON.stringify(enData.designGuidelines.mobileOptimization) : enData.designGuidelines.mobileOptimization}</p>
                   </div>
                   <div className="space-y-2">
                     <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700">中文</Badge>
                     {cnData?.designGuidelines ? (
                       <>
-                        <p className="text-xs"><strong>字体:</strong> {cnData.designGuidelines.fontRecommendation}</p>
-                        <p className="text-xs"><strong>配色:</strong> {cnData.designGuidelines.overallColorPalette}</p>
-                        <p className="text-xs"><strong>品牌调性:</strong> {cnData.designGuidelines.brandTone}</p>
-                        <p className="text-xs"><strong>手机端:</strong> {cnData.designGuidelines.mobileOptimization}</p>
+                        <p className="text-xs"><strong>字体:</strong> {typeof cnData.designGuidelines.fontRecommendation === 'object' ? JSON.stringify(cnData.designGuidelines.fontRecommendation) : cnData.designGuidelines.fontRecommendation}</p>
+                        <p className="text-xs"><strong>配色:</strong> {typeof cnData.designGuidelines.overallColorPalette === 'object' ? JSON.stringify(cnData.designGuidelines.overallColorPalette) : cnData.designGuidelines.overallColorPalette}</p>
+                        <p className="text-xs"><strong>品牌调性:</strong> {typeof cnData.designGuidelines.brandTone === 'object' ? JSON.stringify(cnData.designGuidelines.brandTone) : cnData.designGuidelines.brandTone}</p>
+                        <p className="text-xs"><strong>手机端:</strong> {typeof cnData.designGuidelines.mobileOptimization === 'object' ? JSON.stringify(cnData.designGuidelines.mobileOptimization) : cnData.designGuidelines.mobileOptimization}</p>
                       </>
                     ) : (
                       <p className="text-xs text-muted-foreground">中文翻译未生成</p>
@@ -3334,7 +3335,8 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
 
   if (en) {
     if (en.designGuidelines) {
-      s.push(`<h3>设计指南 / Design Guidelines</h3><div class="grid"><div class="en"><p><strong>Font:</strong> ${en.designGuidelines.fontRecommendation || ''}</p><p><strong>Color:</strong> ${en.designGuidelines.overallColorPalette || ''}</p><p><strong>Tone:</strong> ${en.designGuidelines.brandTone || ''}</p></div><div class="cn"><p><strong>字体:</strong> ${cn?.designGuidelines?.fontRecommendation || ''}</p><p><strong>配色:</strong> ${cn?.designGuidelines?.overallColorPalette || ''}</p><p><strong>调性:</strong> ${cn?.designGuidelines?.brandTone || ''}</p></div></div>`);
+      const stringify = (v: any) => typeof v === 'object' && v !== null ? JSON.stringify(v) : (v || '');
+      s.push(`<h3>设计指南 / Design Guidelines</h3><div class="grid"><div class="en"><p><strong>Font:</strong> ${stringify(en.designGuidelines.fontRecommendation)}</p><p><strong>Color:</strong> ${stringify(en.designGuidelines.overallColorPalette)}</p><p><strong>Tone:</strong> ${stringify(en.designGuidelines.brandTone)}</p></div><div class="cn"><p><strong>字体:</strong> ${stringify(cn?.designGuidelines?.fontRecommendation)}</p><p><strong>配色:</strong> ${stringify(cn?.designGuidelines?.overallColorPalette)}</p><p><strong>调性:</strong> ${stringify(cn?.designGuidelines?.brandTone)}</p></div></div>`);
     }
     if (en.mainImage) {
       s.push(`<h3>主图 / Main Image</h3><div class="grid"><div class="en"><p><strong>${en.mainImage.title || ''}</strong></p><p>${en.mainImage.concept || ''}</p><p><strong>Composition:</strong> ${en.mainImage.composition || ''}</p><p><strong>Shooting:</strong> ${en.mainImage.shootingNotes || ''}</p></div><div class="cn"><p><strong>${cn?.mainImage?.title || ''}</strong></p><p>${cn?.mainImage?.concept || ''}</p><p><strong>构图:</strong> ${cn?.mainImage?.composition || ''}</p><p><strong>拍摄:</strong> ${cn?.mainImage?.shootingNotes || ''}</p></div></div>`);

@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
   BarChart, Bar, Cell,
@@ -15,9 +16,11 @@ import {
 } from "lucide-react";
 
 export default function OpsDashboard() {
+  const [, setLocation] = useLocation();
   
   const { data, isLoading, refetch } = trpc.operations.getDashboardOverview.useQuery();
   const { data: statusData } = trpc.operations.getLingxingStatus.useQuery();
+  const { data: products } = trpc.productOps.listProducts.useQuery();
 
   if (isLoading) {
     return (
@@ -215,6 +218,69 @@ export default function OpsDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Product Ranking - Clickable to Product Detail */}
+      {products && products.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base">产品运营排行</CardTitle>
+                <CardDescription>点击产品查看详细运营数据</CardDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setLocation("/ops/products")}>
+                查看全部 <ArrowUpRight className="w-3 h-3 ml-1" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-gray-50/50">
+                    <th className="text-left p-3 font-medium text-gray-600">#</th>
+                    <th className="text-left p-3 font-medium text-gray-600">ASIN</th>
+                    <th className="text-left p-3 font-medium text-gray-600">产品名称</th>
+                    <th className="text-left p-3 font-medium text-gray-600">品牌</th>
+                    <th className="text-center p-3 font-medium text-gray-600">状态</th>
+                    <th className="text-center p-3 font-medium text-gray-600">待办</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {products.slice(0, 8).map((p: any, i: number) => (
+                    <tr
+                      key={p.id}
+                      className="border-b hover:bg-blue-50/50 cursor-pointer transition-colors"
+                      onClick={() => setLocation(`/ops/products/${p.id}`)}
+                      title="点击进入产品详情页"
+                    >
+                      <td className="p-3 text-gray-400">{i + 1}</td>
+                      <td className="p-3 font-mono text-xs text-blue-600 hover:underline">{p.parentAsin}</td>
+                      <td className="p-3 max-w-[200px] truncate">{p.title}</td>
+                      <td className="p-3 text-gray-600">{p.brand || "-"}</td>
+                      <td className="p-3 text-center">
+                        <Badge variant="secondary" className={`text-[10px] ${
+                          p.status === "active" ? "bg-emerald-100 text-emerald-700" :
+                          p.status === "inactive" ? "bg-gray-100 text-gray-600" : "bg-red-100 text-red-700"
+                        }`}>
+                          {p.status === "active" ? "在售" : p.status === "inactive" ? "暂停" : "停售"}
+                        </Badge>
+                      </td>
+                      <td className="p-3 text-center">
+                        {p.pendingTodoCount > 0 ? (
+                          <Badge variant="destructive" className="text-[10px]">{p.pendingTodoCount}</Badge>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

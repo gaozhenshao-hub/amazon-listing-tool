@@ -76,7 +76,7 @@ export default function OpsProductTeam({ productId, parentAsin }: Props) {
   });
 
   const [showCreate, setShowCreate] = useState(false);
-  const [viewMode, setViewMode] = useState<"board" | "list" | "stats">("board");
+  const [viewMode, setViewMode] = useState<"board" | "list" | "stats" | "gantt">("board");
   const [filterAssignee, setFilterAssignee] = useState<string>("all");
   const [filterType, setFilterType] = useState<string>("all");
   const [editingTask, setEditingTask] = useState<any>(null);
@@ -152,13 +152,13 @@ export default function OpsProductTeam({ productId, parentAsin }: Props) {
             团队协作看板
           </h3>
           <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
-            {(["board", "list", "stats"] as const).map(mode => (
+            {(["board", "list", "gantt", "stats"] as const).map(mode => (
               <button
                 key={mode}
                 onClick={() => setViewMode(mode)}
                 className={`px-3 py-1 rounded text-sm transition-colors ${viewMode === mode ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}
               >
-                {mode === "board" ? "看板" : mode === "list" ? "列表" : "统计"}
+                {mode === "board" ? "看板" : mode === "list" ? "列表" : mode === "gantt" ? "甘特图" : "统计"}
               </button>
             ))}
           </div>
@@ -339,6 +339,11 @@ export default function OpsProductTeam({ productId, parentAsin }: Props) {
         </Card>
       )}
 
+      {/* Gantt View */}
+      {viewMode === "gantt" && (
+        <GanttChartView tasks={tasks as any[] || []} onMoveTask={handleMoveTask} />
+      )}
+
       {/* Stats View */}
       {viewMode === "stats" && (
         <div className="grid grid-cols-2 gap-4">
@@ -494,6 +499,235 @@ export default function OpsProductTeam({ productId, parentAsin }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Gantt Chart View Component
+// ═══════════════════════════════════════════════════════════════════════
+
+const STATUS_COLORS: Record<string, string> = {
+  todo: "#94a3b8",
+  in_progress: "#3b82f6",
+  review: "#f59e0b",
+  done: "#10b981",
+};
+
+const STATUS_BG: Record<string, string> = {
+  todo: "bg-gray-200",
+  in_progress: "bg-blue-400",
+  review: "bg-amber-400",
+  done: "bg-emerald-400",
+};
+
+function GanttChartView({ tasks, onMoveTask }: { tasks: any[]; onMoveTask: (taskId: number, newStatus: string) => void }) {
+  const [timeScale, setTimeScale] = useState<"day" | "week" | "month">("week");
+
+  // Calculate date range
+  const { startDate, totalDays, dayWidth, columns } = useMemo(() => {
+    const now = new Date();
+    let minDate = new Date(now);
+    let maxDate = new Date(now);
+    maxDate.setDate(maxDate.getDate() + 30); // At least 30 days
+
+    for (const t of tasks) {
+      const created = t.createdAt ? new Date(t.createdAt) : now;
+      const due = t.dueDate ? new Date(t.dueDate) : null;
+      if (created < minDate) minDate = new Date(created);
+      if (due && due > maxDate) maxDate = new Date(due);
+    }
+
+    // Pad start/end
+    minDate.setDate(minDate.getDate() - 3);
+    maxDate.setDate(maxDate.getDate() + 7);
+
+    const total = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+    const dw = timeScale === "day" ? 40 : timeScale === "week" ? 20 : 8;
+
+    // Generate column headers
+    const cols: { label: string; subLabel?: string; date: Date; isToday: boolean; isWeekend: boolean }[] = [];
+    const todayStr = now.toISOString().split("T")[0];
+    for (let i = 0; i <= total; i++) {
+      const d = new Date(minDate);
+      d.setDate(d.getDate() + i);
+      const dateStr = d.toISOString().split("T")[0];
+      const dayOfWeek = d.getDay();
+      cols.push({
+        label: timeScale === "month" && d.getDate() === 1 ? `${d.getMonth() + 1}月` :
+               timeScale === "week" && dayOfWeek === 1 ? `${d.getMonth() + 1}/${d.getDate()}` :
+               timeScale === "day" ? `${d.getDate()}` : "",
+        subLabel: timeScale === "day" ? ["日", "一", "二", "三", "四", "五", "六"][dayOfWeek] : undefined,
+        date: d,
+        isToday: dateStr === todayStr,
+        isWeekend: dayOfWeek === 0 || dayOfWeek === 6,
+      });
+    }
+
+    return { startDate: minDate, endDate: maxDate, totalDays: total, dayWidth: dw, columns: cols };
+  }, [tasks, timeScale]);
+
+  // Sort tasks by due date, then by status
+  const sortedTasks = useMemo(() => {
+    const statusOrder: Record<string, number> = { in_progress: 0, todo: 1, review: 2, done: 3 };
+    return [...tasks].sort((a, b) => {
+      const sa = statusOrder[a.status] ?? 9;
+      const sb = statusOrder[b.status] ?? 9;
+      if (sa !== sb) return sa - sb;
+      const da = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+      const db = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+      return da - db;
+    });
+  }, [tasks]);
+
+  const getBarPosition = (task: any) => {
+    const created = task.createdAt ? new Date(task.createdAt) : new Date();
+    const due = task.dueDate ? new Date(task.dueDate) : new Date(created.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const startOffset = Math.max(0, Math.ceil((created.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+    const duration = Math.max(1, Math.ceil((due.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)));
+    return { left: startOffset * dayWidth, width: Math.max(duration * dayWidth, dayWidth) };
+  };
+
+  const todayOffset = useMemo(() => {
+    const now = new Date();
+    return Math.ceil((now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) * dayWidth;
+  }, [startDate, dayWidth]);
+
+  if (tasks.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center text-muted-foreground">
+          <Calendar className="h-10 w-10 mx-auto mb-3 opacity-40" />
+          <p>暂无任务，创建任务后可查看甘特图</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Controls */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 text-xs">
+            {Object.entries(STATUS_COLORS).map(([status, color]) => (
+              <div key={status} className="flex items-center gap-1 mr-3">
+                <div className="w-3 h-3 rounded" style={{ backgroundColor: color }} />
+                <span>{BOARD_COLUMNS.find(c => c.status === status)?.label || status}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+          {(["day", "week", "month"] as const).map(scale => (
+            <button
+              key={scale}
+              onClick={() => setTimeScale(scale)}
+              className={`px-2 py-0.5 rounded text-xs transition-colors ${timeScale === scale ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              {scale === "day" ? "日" : scale === "week" ? "周" : "月"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Gantt Chart */}
+      <Card>
+        <CardContent className="p-0 overflow-x-auto">
+          <div className="flex" style={{ minWidth: `${240 + totalDays * dayWidth}px` }}>
+            {/* Task Names Column */}
+            <div className="w-60 flex-shrink-0 border-r bg-muted/30">
+              <div className="h-12 border-b flex items-center px-3">
+                <span className="text-xs font-medium text-muted-foreground">任务名称</span>
+              </div>
+              {sortedTasks.map((task: any) => (
+                <div key={task.id} className="h-10 border-b flex items-center px-3 gap-2 hover:bg-muted/50">
+                  <div className={`w-2 h-2 rounded-full ${STATUS_BG[task.status] || "bg-gray-300"}`} />
+                  <span className="text-xs truncate flex-1" title={task.title}>{task.title}</span>
+                  {task.assignee && (
+                    <span className="text-[10px] text-muted-foreground bg-muted rounded px-1">{task.assignee}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Timeline Area */}
+            <div className="flex-1 relative overflow-hidden">
+              {/* Column Headers */}
+              <div className="h-12 border-b flex relative">
+                {columns.map((col, i) => (
+                  <div
+                    key={i}
+                    className={`flex-shrink-0 border-r flex flex-col items-center justify-center ${col.isToday ? "bg-blue-50" : col.isWeekend ? "bg-muted/30" : ""}`}
+                    style={{ width: dayWidth }}
+                  >
+                    {col.label && <span className="text-[10px] font-medium">{col.label}</span>}
+                    {col.subLabel && <span className="text-[9px] text-muted-foreground">{col.subLabel}</span>}
+                  </div>
+                ))}
+              </div>
+
+              {/* Task Bars */}
+              {sortedTasks.map((task: any) => {
+                const { left, width } = getBarPosition(task);
+                const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== "done";
+                return (
+                  <div key={task.id} className="h-10 border-b relative">
+                    {/* Background grid */}
+                    <div className="absolute inset-0 flex">
+                      {columns.map((col, i) => (
+                        <div
+                          key={i}
+                          className={`flex-shrink-0 border-r ${col.isToday ? "bg-blue-50/50" : col.isWeekend ? "bg-muted/20" : ""}`}
+                          style={{ width: dayWidth }}
+                        />
+                      ))}
+                    </div>
+                    {/* Bar */}
+                    <div
+                      className={`absolute top-1.5 h-7 rounded-md flex items-center px-2 text-[10px] text-white font-medium shadow-sm cursor-pointer transition-opacity hover:opacity-90 ${isOverdue ? "ring-2 ring-red-400" : ""}`}
+                      style={{
+                        left: `${left}px`,
+                        width: `${width}px`,
+                        backgroundColor: STATUS_COLORS[task.status] || "#94a3b8",
+                        minWidth: "20px",
+                      }}
+                      title={`${task.title}\n状态: ${BOARD_COLUMNS.find(c => c.status === task.status)?.label || task.status}\n${task.dueDate ? `截止: ${new Date(task.dueDate).toLocaleDateString()}` : "无截止日期"}`}
+                    >
+                      <span className="truncate">
+                        {width > 80 ? task.title : ""}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Today Line */}
+              <div
+                className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
+                style={{ left: `${todayOffset}px` }}
+              >
+                <div className="absolute -top-0 -left-2 bg-red-500 text-white text-[9px] px-1 rounded">今天</div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Task Summary */}
+      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+        <span>共 {tasks.length} 个任务</span>
+        <span>进行中: {tasks.filter((t: any) => t.status === "in_progress").length}</span>
+        <span>已过期: {tasks.filter((t: any) => t.dueDate && new Date(t.dueDate) < new Date() && t.status !== "done").length}</span>
+        <span>本周到期: {tasks.filter((t: any) => {
+          if (!t.dueDate) return false;
+          const due = new Date(t.dueDate);
+          const now = new Date();
+          const weekEnd = new Date(now);
+          weekEnd.setDate(weekEnd.getDate() + (7 - weekEnd.getDay()));
+          return due >= now && due <= weekEnd && t.status !== "done";
+        }).length}</span>
+      </div>
     </div>
   );
 }
