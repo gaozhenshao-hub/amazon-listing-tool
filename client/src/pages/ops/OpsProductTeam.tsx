@@ -16,7 +16,7 @@ import {
 import {
   Plus, Trash2, Loader2, Users, GripVertical, Calendar, User,
   CheckCircle2, Clock, AlertCircle, ArrowRight, BarChart3,
-  ChevronDown, ChevronUp, Edit2, MessageSquare,
+  ChevronDown, ChevronUp, Edit2, MessageSquare, Bell, BellOff,
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -63,7 +63,7 @@ export default function OpsProductTeam({ productId, parentAsin }: Props) {
   );
 
   const createTask = trpc.productOps.createTeamTask.useMutation({
-    onSuccess: () => { refetch(); setShowCreate(false); toast.success("任务已创建"); },
+    onSuccess: () => { refetch(); setShowCreate(false); setCreateForm(f => ({ ...f, title: "", description: "", assignee: "", taskType: "other", priority: "medium", dueDate: "", reminderDays: [1], reminderEnabled: true })); toast.success("任务已创建"); },
   });
   const updateTask = trpc.productOps.updateTeamTask.useMutation({
     onSuccess: () => { refetch(); },
@@ -84,6 +84,7 @@ export default function OpsProductTeam({ productId, parentAsin }: Props) {
   const [createForm, setCreateForm] = useState({
     title: "", description: "", assignee: "", taskType: "other" as string,
     priority: "medium" as string, dueDate: "",
+    reminderDays: [1] as number[], reminderEnabled: true,
   });
 
   // ─── Computed ───
@@ -482,6 +483,74 @@ export default function OpsProductTeam({ productId, parentAsin }: Props) {
               </div>
             </div>
           </div>
+          {/* Reminder Settings */}
+          <div className="border rounded-lg p-3 bg-muted/30">
+            <div className="flex items-center justify-between mb-2">
+              <Label className="flex items-center gap-1.5 text-sm font-medium">
+                {createForm.reminderEnabled ? <Bell className="h-3.5 w-3.5 text-blue-500" /> : <BellOff className="h-3.5 w-3.5 text-gray-400" />}
+                到期提醒
+              </Label>
+              <button
+                type="button"
+                onClick={() => setCreateForm(f => ({ ...f, reminderEnabled: !f.reminderEnabled }))}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                  createForm.reminderEnabled ? "bg-blue-500" : "bg-gray-300"
+                }`}
+              >
+                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                  createForm.reminderEnabled ? "translate-x-4.5" : "translate-x-0.5"
+                }`} />
+              </button>
+            </div>
+            {createForm.reminderEnabled && createForm.dueDate && (
+              <div className="space-y-1.5">
+                <p className="text-xs text-muted-foreground">选择提前提醒时间（可多选）</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: "当天", value: 0 },
+                    { label: "1天前", value: 1 },
+                    { label: "2天前", value: 2 },
+                    { label: "3天前", value: 3 },
+                    { label: "5天前", value: 5 },
+                    { label: "1周前", value: 7 },
+                    { label: "2周前", value: 14 },
+                    { label: "1月前", value: 30 },
+                  ].map(opt => {
+                    const isSelected = createForm.reminderDays.includes(opt.value);
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => {
+                          setCreateForm(f => ({
+                            ...f,
+                            reminderDays: isSelected
+                              ? f.reminderDays.filter(d => d !== opt.value)
+                              : [...f.reminderDays, opt.value].sort((a, b) => a - b),
+                          }));
+                        }}
+                        className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${
+                          isSelected
+                            ? "bg-blue-500 text-white border-blue-500"
+                            : "bg-white text-gray-600 border-gray-300 hover:border-blue-400"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {createForm.reminderDays.length > 0 && (
+                  <p className="text-xs text-blue-600">
+                    将在截止日期前 {createForm.reminderDays.map(d => d === 0 ? "当天" : `${d}天`).join("、")} 发送提醒
+                  </p>
+                )}
+              </div>
+            )}
+            {createForm.reminderEnabled && !createForm.dueDate && (
+              <p className="text-xs text-amber-600">请先设置截止日期才能启用提醒</p>
+            )}
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)}>取消</Button>
             <Button disabled={!createForm.title || createTask.isPending} onClick={() => createTask.mutate({
@@ -492,6 +561,8 @@ export default function OpsProductTeam({ productId, parentAsin }: Props) {
               category: createForm.taskType,
               priority: createForm.priority as "urgent" | "high" | "medium" | "low",
               dueDate: createForm.dueDate || undefined,
+              reminderDays: createForm.dueDate && createForm.reminderEnabled ? JSON.stringify(createForm.reminderDays) : undefined,
+              reminderEnabled: createForm.reminderEnabled ? 1 : 0,
             })}>
               {createTask.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
               创建任务

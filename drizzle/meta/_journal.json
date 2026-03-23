@@ -309,6 +309,13 @@
       "when": 1774258463044,
       "tag": "0043_greedy_lord_hawal",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "5",
+      "when": 1774269772740,
+      "tag": "0044_flowery_zarda",
+      "breakpoints": true
     }
   ]
 }

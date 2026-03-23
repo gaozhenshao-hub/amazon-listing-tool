@@ -1768,6 +1768,9 @@ export const productTodos = mysqlTable("product_todos", {
   assignee: varchar("assignee", { length: 100 }),
   sortOrder: int("sort_order").default(0),
   completedAt: timestamp("completed_at"),
+  reminderDays: varchar("reminder_days", { length: 100 }), // JSON array e.g. [1,3,7] = remind 1,3,7 days before due
+  reminderEnabled: int("reminder_enabled").default(1), // 1=enabled, 0=disabled
+  lastReminderSentAt: timestamp("last_reminder_sent_at"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -2061,6 +2064,9 @@ export const teamTasks = mysqlTable("team_tasks", {
   linkedPlanActionId: int("linked_plan_action_id"), // links to ops_plan_actions
   tags: text("tags"), // JSON array of tags
   sortOrder: int("sort_order").default(0),
+  reminderDays: varchar("reminder_days", { length: 100 }), // JSON array e.g. [1,3,7]
+  reminderEnabled: int("reminder_enabled").default(1),
+  lastReminderSentAt: timestamp("last_reminder_sent_at"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

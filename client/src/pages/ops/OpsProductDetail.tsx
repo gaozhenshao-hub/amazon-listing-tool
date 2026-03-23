@@ -24,7 +24,7 @@ import {
   ArrowLeft, Plus, Trash2, CheckCircle2, Clock, AlertTriangle,
   TrendingUp, TrendingDown, Package, DollarSign, Target, Eye,
   Search, BarChart3, Edit2, MessageSquare, Flag, Milestone,
-  AlertCircle, FileText, Loader2,
+  AlertCircle, FileText, Loader2, Bell, BellOff,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -63,7 +63,7 @@ export default function OpsProductDetail() {
 
   // ─── Mutations ───
   const createTodo = trpc.productOps.createTodo.useMutation({
-    onSuccess: () => { refetchTodos(); setShowAddTodo(false); setTodoForm({ title: "", priority: "medium", dueDate: "", assignee: "" }); },
+    onSuccess: () => { refetchTodos(); setShowAddTodo(false); setTodoForm({ title: "", priority: "medium", dueDate: "", assignee: "", reminderDays: [1], reminderEnabled: true }); },
   });
   const updateTodo = trpc.productOps.updateTodo.useMutation({ onSuccess: () => refetchTodos() });
   const deleteTodo = trpc.productOps.deleteTodo.useMutation({ onSuccess: () => refetchTodos() });
@@ -83,7 +83,7 @@ export default function OpsProductDetail() {
   const [showAddTodo, setShowAddTodo] = useState(false);
   const [showAddKeyword, setShowAddKeyword] = useState(false);
   const [showAddVariant, setShowAddVariant] = useState(false);
-  const [todoForm, setTodoForm] = useState({ title: "", priority: "medium", dueDate: "", assignee: "" });
+  const [todoForm, setTodoForm] = useState({ title: "", priority: "medium", dueDate: "", assignee: "", reminderDays: [1] as number[], reminderEnabled: true });
   const [logContent, setLogContent] = useState("");
   const [logType, setLogType] = useState<string>("note");
   const [kwForm, setKwForm] = useState({ keyword: "", keywordCn: "", targetAsin: "", matchType: "exact" });
@@ -535,6 +535,11 @@ export default function OpsProductDetail() {
                               <Clock className="h-3 w-3" />{todo.dueDate}
                             </span>
                           )}
+                          {todo.reminderEnabled === 1 && todo.reminderDays && (
+                            <span className="text-xs text-blue-500 flex items-center gap-0.5" title={`提醒: 截止前 ${(() => { try { return JSON.parse(todo.reminderDays).map((d: number) => d === 0 ? "当天" : `${d}天`).join("、"); } catch { return todo.reminderDays; } })()}`}>
+                              <Bell className="h-3 w-3" />
+                            </span>
+                          )}
                         </div>
                       </div>
                       <Button
@@ -693,6 +698,74 @@ export default function OpsProductDetail() {
               <Label>负责人</Label>
               <Input value={todoForm.assignee} onChange={e => setTodoForm(f => ({ ...f, assignee: e.target.value }))} placeholder="负责人" />
             </div>
+            {/* Reminder Settings */}
+            <div className="border rounded-lg p-3 bg-muted/30">
+              <div className="flex items-center justify-between mb-2">
+                <Label className="flex items-center gap-1.5 text-sm font-medium">
+                  {todoForm.reminderEnabled ? <Bell className="h-3.5 w-3.5 text-blue-500" /> : <BellOff className="h-3.5 w-3.5 text-gray-400" />}
+                  到期提醒
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => setTodoForm(f => ({ ...f, reminderEnabled: !f.reminderEnabled }))}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                    todoForm.reminderEnabled ? "bg-blue-500" : "bg-gray-300"
+                  }`}
+                >
+                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                    todoForm.reminderEnabled ? "translate-x-4.5" : "translate-x-0.5"
+                  }`} />
+                </button>
+              </div>
+              {todoForm.reminderEnabled && todoForm.dueDate && (
+                <div className="space-y-1.5">
+                  <p className="text-xs text-muted-foreground">选择提前提醒时间（可多选）</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { label: "当天", value: 0 },
+                      { label: "1天前", value: 1 },
+                      { label: "2天前", value: 2 },
+                      { label: "3天前", value: 3 },
+                      { label: "5天前", value: 5 },
+                      { label: "1周前", value: 7 },
+                      { label: "2周前", value: 14 },
+                      { label: "1月前", value: 30 },
+                    ].map(opt => {
+                      const isSelected = todoForm.reminderDays.includes(opt.value);
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => {
+                            setTodoForm(f => ({
+                              ...f,
+                              reminderDays: isSelected
+                                ? f.reminderDays.filter(d => d !== opt.value)
+                                : [...f.reminderDays, opt.value].sort((a, b) => a - b),
+                            }));
+                          }}
+                          className={`px-2 py-0.5 text-xs rounded-full border transition-colors ${
+                            isSelected
+                              ? "bg-blue-500 text-white border-blue-500"
+                              : "bg-white text-gray-600 border-gray-300 hover:border-blue-400"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {todoForm.reminderDays.length > 0 && (
+                    <p className="text-xs text-blue-600">
+                      将在截止日期前 {todoForm.reminderDays.map(d => d === 0 ? "当天" : `${d}天`).join("、")} 发送提醒
+                    </p>
+                  )}
+                </div>
+              )}
+              {todoForm.reminderEnabled && !todoForm.dueDate && (
+                <p className="text-xs text-amber-600">请先设置截止日期才能启用提醒</p>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddTodo(false)}>取消</Button>
@@ -704,6 +777,8 @@ export default function OpsProductDetail() {
                 priority: todoForm.priority as "high" | "medium" | "low",
                 dueDate: todoForm.dueDate || undefined,
                 assignee: todoForm.assignee || undefined,
+                reminderDays: todoForm.dueDate && todoForm.reminderEnabled ? JSON.stringify(todoForm.reminderDays) : undefined,
+                reminderEnabled: todoForm.reminderEnabled ? 1 : 0,
               })}
             >
               添加

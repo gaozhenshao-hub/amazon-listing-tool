@@ -209,6 +209,8 @@ export const productOpsRouter = router({
       priority: z.enum(["high", "medium", "low"]).optional().default("medium"),
       dueDate: z.string().optional(),
       assignee: z.string().optional(),
+      reminderDays: z.string().optional(), // JSON array e.g. "[1,3,7]"
+      reminderEnabled: z.number().optional().default(1),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -220,6 +222,8 @@ export const productOpsRouter = router({
         priority: input.priority,
         dueDate: input.dueDate,
         assignee: input.assignee,
+        reminderDays: input.reminderDays,
+        reminderEnabled: input.reminderEnabled,
       });
       return { id: result.insertId };
     }),
@@ -234,6 +238,8 @@ export const productOpsRouter = router({
       dueDate: z.string().nullable().optional(),
       assignee: z.string().nullable().optional(),
       sortOrder: z.number().optional(),
+      reminderDays: z.string().nullable().optional(), // JSON array
+      reminderEnabled: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -1416,6 +1422,8 @@ export const productOpsRouter = router({
       linkedTodoId: z.number().optional(),
       linkedPlanActionId: z.number().optional(),
       tags: z.string().optional(),
+      reminderDays: z.string().optional(),
+      reminderEnabled: z.number().optional().default(1),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -1441,6 +1449,8 @@ export const productOpsRouter = router({
       actualHours: z.string().nullable().optional(),
       sortOrder: z.number().optional(),
       tags: z.string().nullable().optional(),
+      reminderDays: z.string().nullable().optional(),
+      reminderEnabled: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
