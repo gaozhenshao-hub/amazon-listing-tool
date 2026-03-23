@@ -306,17 +306,22 @@ export default function KBIntel() {
       {/* ════════ Sources Tab ════════ */}
       {activeTab === "sources" && (
         <div className="space-y-4">
-          <div className="flex justify-end">
+          <div className="flex justify-between items-center">
+            <h3 className="text-sm font-medium text-muted-foreground">已添加 {sourcesQuery.data?.length || 0} 个情报源</h3>
             <Button onClick={() => setShowAddSource(true)}>
               <Plus className="w-4 h-4 mr-1" /> 添加情报源
             </Button>
           </div>
+
+          {/* Preset Sources Quick Add */}
+          <PresetSourcesPanel />
+
           {!sourcesQuery.data?.length ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-16 text-muted-foreground">
                 <Globe className="w-12 h-12 mb-4 opacity-30" />
                 <p className="text-lg font-medium">暂无情报源</p>
-                <p className="text-sm mt-1">添加外部信息源，AI将自动评估内容质量</p>
+                <p className="text-sm mt-1">添加外部信息源，或使用上方“推荐情报源”一键添加</p>
               </CardContent>
             </Card>
           ) : (
@@ -1322,12 +1327,129 @@ function SchedulerPanel() {
           <ul className="text-xs text-muted-foreground space-y-1">
             <li>调度器每60秒检查一次是否有需要执行的采集任务</li>
             <li>支持6小时/12小时/每天/每周/自定义Cron五种频率</li>
-            <li>采集后可自动进行AI质量评估，达到阈值的自动标记为"推荐"</li>
+            <li>采集后可自动进行AI质量评估，达到阈值的自动标记为“推荐”</li>
             <li>连续失败5次的情报源将自动暂停，需手动重新启用</li>
             <li>发现推荐内容时会自动推送通知</li>
           </ul>
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// ─── Preset Sources Panel ───────────────────────
+function PresetSourcesPanel() {
+  const [expanded, setExpanded] = useState(false);
+  const presetsQuery = trpc.kbIntel.getPresetSources.useQuery();
+  const utils = trpc.useUtils();
+  const addPresetMut = trpc.kbIntel.addPresetSource.useMutation({
+    onSuccess: (data) => {
+      toast.success(`已添加: ${data.name}`);
+      utils.kbIntel.getPresetSources.invalidate();
+      utils.kbIntel.listSources.invalidate();
+      utils.kbIntel.getStats.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const addBatchMut = trpc.kbIntel.addPresetSourceBatch.useMutation({
+    onSuccess: (data) => {
+      const added = data.results.filter(r => r.status === "added").length;
+      const exists = data.results.filter(r => r.status === "exists").length;
+      toast.success(`批量添加完成`, { description: `${added} 个新增, ${exists} 个已存在` });
+      utils.kbIntel.getPresetSources.invalidate();
+      utils.kbIntel.listSources.invalidate();
+      utils.kbIntel.getStats.invalidate();
+    },
+  });
+
+  const presets = presetsQuery.data || [];
+  const notAdded = presets.filter(p => !p.alreadyAdded);
+
+  const SOURCE_TYPE_ICONS: Record<string, string> = {
+    wearesellers: "💬",
+    media: "📰",
+    amazon_news: "📦",
+    rss: "📡",
+    custom_url: "🌐",
+  };
+
+  return (
+    <Card className="border-dashed border-orange-200 bg-orange-50/30">
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-orange-500" />
+            <span className="text-sm font-medium">推荐情报源</span>
+            <Badge variant="outline" className="text-xs">{presets.length} 个源</Badge>
+            {notAdded.length > 0 && (
+              <Badge className="text-xs bg-orange-100 text-orange-700 hover:bg-orange-200">
+                {notAdded.length} 个未添加
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {notAdded.length > 1 && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs"
+                disabled={addBatchMut.isPending}
+                onClick={() => {
+                  const indices = presets
+                    .map((p, i) => (!p.alreadyAdded ? i : -1))
+                    .filter(i => i >= 0);
+                  addBatchMut.mutate({ presetIndices: indices });
+                }}
+              >
+                {addBatchMut.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Plus className="w-3 h-3 mr-1" />}
+                一键全部添加
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={() => setExpanded(!expanded)}>
+              {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </Button>
+          </div>
+        </div>
+
+        {expanded && (
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+            {presets.map((preset, idx) => (
+              <div
+                key={idx}
+                className={`flex items-start gap-3 p-3 rounded-lg border transition-colors ${
+                  preset.alreadyAdded
+                    ? "bg-green-50/50 border-green-200 opacity-70"
+                    : "bg-white border-gray-200 hover:border-orange-300"
+                }`}
+              >
+                <span className="text-xl mt-0.5">{SOURCE_TYPE_ICONS[preset.sourceType] || "🌐"}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{preset.name}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{preset.description}</p>
+                  <Badge variant="outline" className="text-xs mt-1">{preset.category}</Badge>
+                </div>
+                <div className="shrink-0">
+                  {preset.alreadyAdded ? (
+                    <Badge className="bg-green-100 text-green-700 text-xs">
+                      <CheckCircle className="w-3 h-3 mr-0.5" /> 已添加
+                    </Badge>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-xs h-7"
+                      disabled={addPresetMut.isPending}
+                      onClick={() => addPresetMut.mutate({ presetIndex: idx })}
+                    >
+                      {addPresetMut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

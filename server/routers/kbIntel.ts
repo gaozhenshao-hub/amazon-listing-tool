@@ -17,7 +17,7 @@ import {
   kbProductInnovations,
 } from "../../drizzle/schema";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
-import { collectFromSource, updateSourceSchedule, calculateNextRunTime, intelScheduler } from "../intelAutoCollect";
+import { collectFromSource, updateSourceSchedule, calculateNextRunTime, intelScheduler, PRESET_SOURCES } from "../intelAutoCollect";
 
 // ─── DB Helper ──────────────────────────────────
 async function db() {
@@ -717,6 +717,109 @@ export const kbIntelRouter = router({
     }),
 
   // ══ 调度器状态 ════════════════════════════════
+  // ─── Preset Sources ─────────────────────────────
+  getPresetSources: protectedProcedure.query(async ({ ctx }) => {
+    const _d = await db();
+    // Get user's existing sources to mark which presets are already added
+    const existingSources = await _d.select({ url: kbIntelSources.url })
+      .from(kbIntelSources)
+      .where(eq(kbIntelSources.userId, ctx.user!.id));
+    const existingUrls = new Set(existingSources.map(s => s.url));
+
+    return PRESET_SOURCES.map(p => ({
+      ...p,
+      alreadyAdded: existingUrls.has(p.url),
+    }));
+  }),
+
+  addPresetSource: protectedProcedure
+    .input(z.object({ presetIndex: z.number().min(0) }))
+    .mutation(async ({ ctx, input }) => {
+      const preset = PRESET_SOURCES[input.presetIndex];
+      if (!preset) throw new Error("无效的预设源索引");
+
+      const _d = await db();
+      // Check if already exists
+      const [existing] = await _d.select({ id: kbIntelSources.id })
+        .from(kbIntelSources)
+        .where(and(
+          eq(kbIntelSources.userId, ctx.user!.id),
+          eq(kbIntelSources.url, preset.url)
+        ))
+        .limit(1);
+      if (existing) throw new Error("该情报源已添加");
+
+      const [result] = await _d.insert(kbIntelSources).values({
+        userId: ctx.user!.id,
+        name: preset.name,
+        sourceType: preset.sourceType,
+        url: preset.url,
+        crawlFrequency: "daily",
+        qualityThreshold: "6.0",
+        isActive: true,
+        autoCollectEnabled: true,
+        autoCollectInterval: "daily",
+        autoCollectMaxItems: 10,
+        autoEvaluateEnabled: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      // Schedule the next auto-collect
+      await updateSourceSchedule(result.insertId);
+
+      return { id: result.insertId, name: preset.name };
+    }),
+
+  addPresetSourceBatch: protectedProcedure
+    .input(z.object({ presetIndices: z.array(z.number().min(0)) }))
+    .mutation(async ({ ctx, input }) => {
+      const _d = await db();
+      const results: Array<{ name: string; status: "added" | "exists" | "error" }> = [];
+
+      for (const idx of input.presetIndices) {
+        const preset = PRESET_SOURCES[idx];
+        if (!preset) { results.push({ name: `索引${idx}`, status: "error" }); continue; }
+
+        const [existing] = await _d.select({ id: kbIntelSources.id })
+          .from(kbIntelSources)
+          .where(and(
+            eq(kbIntelSources.userId, ctx.user!.id),
+            eq(kbIntelSources.url, preset.url)
+          ))
+          .limit(1);
+
+        if (existing) {
+          results.push({ name: preset.name, status: "exists" });
+          continue;
+        }
+
+        try {
+          const [result] = await _d.insert(kbIntelSources).values({
+            userId: ctx.user!.id,
+            name: preset.name,
+            sourceType: preset.sourceType,
+            url: preset.url,
+            crawlFrequency: "daily",
+            qualityThreshold: "6.0",
+            isActive: true,
+            autoCollectEnabled: true,
+            autoCollectInterval: "daily",
+            autoCollectMaxItems: 10,
+            autoEvaluateEnabled: true,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+          await updateSourceSchedule(result.insertId);
+          results.push({ name: preset.name, status: "added" });
+        } catch {
+          results.push({ name: preset.name, status: "error" });
+        }
+      }
+
+      return { results };
+    }),
+
   getSchedulerStatus: protectedProcedure.query(async ({ ctx }) => {
     const _d = await db();
     // Get all auto-collect enabled sources for this user

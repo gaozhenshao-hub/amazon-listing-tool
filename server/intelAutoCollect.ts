@@ -360,6 +360,159 @@ function parseWeareSellersDetail(html: string): {
   return { title, content: content.slice(0, 8000), author, category, answers };
 }
 
+// ─── CifNews (雨果网) Parser ──────────────────────
+function parseCifNewsListPage(html: string): Array<{
+  title: string;
+  url: string;
+  author: string;
+  date: string;
+  description: string;
+}> {
+  const items: Array<{
+    title: string; url: string; author: string; date: string; description: string;
+  }> = [];
+
+  // Match cif-article blocks with title links (handle both href-before-class and class-before-href)
+  const articleRegex = /(?:class="cif-article__tit[^"]*"[^>]*href="(https?:\/\/www\.cifnews\.com\/article\/\d+)"|href="(https?:\/\/www\.cifnews\.com\/article\/\d+)"[^>]*class="cif-article__tit[^"]*")[^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+  while ((match = articleRegex.exec(html)) !== null) {
+    const url = match[1] || match[2]; // Either group can match depending on attribute order
+    const title = match[3].replace(/<[^>]+>/g, "").trim();
+    if (!title || title.length < 5) continue;
+
+    // Look for description and author in the surrounding context
+    const afterTitle = html.slice(match.index, match.index + 2000);
+    const descMatch = afterTitle.match(/class="cif-article__desc"[^>]*>([\s\S]*?)<\/div>/i);
+    const description = descMatch ? descMatch[1].replace(/<[^>]+>/g, "").trim() : "";
+    const authorMatch = afterTitle.match(/class="username[^"]*"[^>]*>([^<]+)/i);
+    const author = authorMatch ? authorMatch[1].trim() : "";
+    const dateMatch = afterTitle.match(/class="usertime[^"]*"[^>]*>([^<]+)/i);
+    const date = dateMatch ? dateMatch[1].trim() : "";
+
+    items.push({ title, url, author, date, description });
+  }
+  return items;
+}
+
+function parseCifNewsDetail(html: string): {
+  title: string;
+  content: string;
+  author: string;
+  date: string;
+} {
+  // Extract title from h1
+  const titleMatch = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "").trim() : "";
+
+  // Extract article content
+  const contentMatch = html.match(/class="[^"]*article[_-]?content[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
+    || html.match(/class="[^"]*cif-detail__content[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+  let content = "";
+  if (contentMatch) {
+    content = contentMatch[1]
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  // Extract author
+  const authorMatch = html.match(/class="[^"]*author[_-]?name[^"]*"[^>]*>([^<]+)/i)
+    || html.match(/class="username[^"]*"[^>]*>([^<]+)/i);
+  const author = authorMatch ? authorMatch[1].trim() : "";
+
+  // Extract date
+  const dateMatch = html.match(/class="[^"]*publish[_-]?time[^"]*"[^>]*>([^<]+)/i)
+    || html.match(/class="usertime[^"]*"[^>]*>([^<]+)/i);
+  const date = dateMatch ? dateMatch[1].trim() : "";
+
+  // If no structured content, fallback to body text
+  if (!content || content.length < 50) {
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    if (bodyMatch) {
+      content = bodyMatch[1]
+        .replace(/<script[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[\s\S]*?<\/style>/gi, "")
+        .replace(/<nav[\s\S]*?<\/nav>/gi, "")
+        .replace(/<header[\s\S]*?<\/header>/gi, "")
+        .replace(/<footer[\s\S]*?<\/footer>/gi, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 8000);
+    }
+  }
+
+  return { title, content: content.slice(0, 8000), author, date };
+}
+
+// ─── Amazon Seller Blog Parser ──────────────────────
+function parseAmazonSellerBlog(html: string): Array<{
+  title: string;
+  url: string;
+}> {
+  const items: Array<{ title: string; url: string }> = [];
+  // Match blog article links from sell.amazon.com
+  const linkRegex = /<a[^>]+href="(https?:\/\/sell\.amazon\.com\/blog\/[a-z0-9-]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+  while ((match = linkRegex.exec(html)) !== null) {
+    const url = match[1];
+    const title = match[2].replace(/<[^>]+>/g, "").trim();
+    if (!title || title.length < 5) continue;
+    // Skip category/tag pages
+    if (url.match(/\/blog\/(categories|tags|announcements|getting-started)$/)) continue;
+    items.push({ title, url });
+  }
+  return items;
+}
+
+// ─── Preset Source Templates ─────────────────────────
+export const PRESET_SOURCES = [
+  {
+    name: "知无不言跨境电商社区",
+    sourceType: "wearesellers" as const,
+    url: "https://www.wearesellers.com/is_notify-1",
+    description: "国内最大的亚马逊卖家交流社区，涵盖运营技巧、选品策略、政策解读等",
+    category: "论坛社区",
+  },
+  {
+    name: "雨果网-亚马逊频道",
+    sourceType: "media" as const,
+    url: "https://www.cifnews.com/amazon",
+    description: "雨果跨境亚马逊频道，提供行业新闻、运营干货、政策变动等资讯",
+    category: "跨境媒体",
+  },
+  {
+    name: "雨果网-选品频道",
+    sourceType: "media" as const,
+    url: "https://www.cifnews.com/selection",
+    description: "雨果跨境选品频道，提供热门品类分析、选品趋势和市场洞察",
+    category: "跨境媒体",
+  },
+  {
+    name: "Amazon Seller Blog",
+    sourceType: "amazon_news" as const,
+    url: "https://sell.amazon.com/blog",
+    description: "亚马逊官方卖家博客，发布平台政策更新、功能上线和最佳实践",
+    category: "官方资讯",
+  },
+  {
+    name: "知无不言-PPC广告专区",
+    sourceType: "wearesellers" as const,
+    url: "https://www.wearesellers.com/category-ppc",
+    description: "知无不言PPC广告讨论区，聚焦亚马逊广告投放策略和优化技巧",
+    category: "论坛社区",
+  },
+  {
+    name: "知无不言-Listing优化专区",
+    sourceType: "wearesellers" as const,
+    url: "https://www.wearesellers.com/category-listing",
+    description: "知无不言Listing优化讨论区，聚焦标题、关键词、图片和A+内容优化",
+    category: "论坛社区",
+  },
+];
+
 // ─── Discover new URLs from a source ───────────────
 async function discoverNewUrls(
   source: { id: number; url: string; sourceType: string; autoCollectMaxItems: number | null }
@@ -376,6 +529,36 @@ async function discoverNewUrls(
     for (const item of items.slice(0, maxItems * 2)) {
       if (!(await isUrlDuplicate(source.id, item.url))) {
         newItems.push({ title: item.title, url: item.url });
+        if (newItems.length >= maxItems) break;
+      }
+    }
+    return newItems;
+  }
+
+  // ── 跨境电商媒体（雨果网等）专用解析 ──────────────
+  if (source.sourceType === "media") {
+    const result = await fetchWithRetry(source.url, 2);
+    if (!result.ok) return [];
+    const articles = parseCifNewsListPage(result.rawHtml || result.content);
+    const newItems: Array<{ title: string; url: string }> = [];
+    for (const article of articles.slice(0, maxItems * 2)) {
+      if (!(await isUrlDuplicate(source.id, article.url))) {
+        newItems.push({ title: article.title, url: article.url });
+        if (newItems.length >= maxItems) break;
+      }
+    }
+    return newItems;
+  }
+
+  // ── 亚马逊官方资讯 ──────────────────────────
+  if (source.sourceType === "amazon_news") {
+    const result = await fetchWithRetry(source.url, 2);
+    if (!result.ok) return [];
+    const articles = parseAmazonSellerBlog(result.rawHtml || result.content);
+    const newItems: Array<{ title: string; url: string }> = [];
+    for (const article of articles.slice(0, maxItems * 2)) {
+      if (!(await isUrlDuplicate(source.id, article.url))) {
+        newItems.push({ title: article.title, url: article.url });
         if (newItems.length >= maxItems) break;
       }
     }
@@ -547,10 +730,14 @@ export async function collectFromSource(
           continue;
         }
 
-        // Use specialized parser for wearesellers detail pages
+        // Use specialized parser for detail pages
         let content: string;
         let title: string;
-        if (source.sourceType === "wearesellers" && item.url.includes("/question/")) {
+        if (source.sourceType === "media" && item.url.includes("cifnews.com/article/")) {
+          const parsed = parseCifNewsDetail(fetchResult.rawHtml || fetchResult.content);
+          title = parsed.title || item.title;
+          content = `[作者: ${parsed.author}] [日期: ${parsed.date}]\n\n${parsed.content}`;
+        } else if (source.sourceType === "wearesellers" && item.url.includes("/question/")) {
           const parsed = parseWeareSellersDetail(fetchResult.rawHtml || fetchResult.content);
           title = parsed.title || item.title;
           // Combine question content with top answers for richer context

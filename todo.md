@@ -1756,3 +1756,12 @@
 - [x] 分析知无不言网站页面结构和内容格式（aw-item列表+markitup-box内容+回答需登录）
 - [x] 优化爬虫适配知无不言网站（多行正则+aw-question-tags分类+title标签提取+curl回退+rawHtml传递）
 - [x] 91个测试文件2354个测试全部通过（含20个知无不言解析器测试）
+
+#### 更多行业情报源类型支持
+- [x] 调研主流跨境电商信息源页面结构（雨果网cifnews可爬取、AMZ123为SPA不可爬、RSSHub被限流）
+- [x] 后端：添加雨果网专用解析器（parseCifNewsListPage+parseCifNewsDetail，支持两种HTML属性顺序）
+- [x] 后端：添加Amazon Seller Blog解析器（parseAmazonSellerBlog，过滤分类/标签页）
+- [x] 后端：6个预设情报源模板（知无不言×3+雨果网×2+Amazon Blog×1）
+- [x] 后端：getPresetSources/addPresetSource/addPresetSourceBatch 3个新端点
+- [x] 前端：PresetSourcesPanel组件（可展开卡片+一键全部添加+已添加状态标记）
+- [x] 92个测试文件2394个测试全部通过（含40个多源解析器测试）
