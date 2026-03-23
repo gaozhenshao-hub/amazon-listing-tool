@@ -1824,3 +1824,245 @@ export const keywordSnapshots = mysqlTable("keyword_snapshots", {
 
 export type KeywordSnapshot = typeof keywordSnapshots.$inferSelect;
 export type InsertKeywordSnapshot = typeof keywordSnapshots.$inferInsert;
+
+
+// ==================== 运营计划模块 ====================
+
+// Operations plans (per product profile, per quarter/period)
+export const opsPlans = mysqlTable("ops_plans", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  productProfileId: int("product_profile_id").notNull(),
+  planName: varchar("plan_name", { length: 200 }).notNull(),
+  planPeriod: varchar("plan_period", { length: 50 }), // e.g. "2026Q1"
+  projectManager: varchar("project_manager", { length: 100 }),
+  projectMembers: text("project_members"), // JSON array of member names
+  gamePlanner: varchar("game_planner", { length: 100 }), // 游戏策划师 (formerly 项目教练)
+  // 基期现状数据
+  baselineDailySales: decimal("baseline_daily_sales", { precision: 12, scale: 2 }),
+  baselineDailyOrders: decimal("baseline_daily_orders", { precision: 10, scale: 2 }),
+  baselineAdConvRate: decimal("baseline_ad_conv_rate", { precision: 6, scale: 2 }),
+  baselineIndustrySearchConvRate: decimal("baseline_industry_search_conv_rate", { precision: 6, scale: 2 }),
+  baselineSearchConvRate: decimal("baseline_search_conv_rate", { precision: 6, scale: 2 }),
+  baselineCategorySearchConvRate: decimal("baseline_category_search_conv_rate", { precision: 6, scale: 2 }),
+  baselineAvgPrice: decimal("baseline_avg_price", { precision: 10, scale: 2 }),
+  baselineRatingCount: int("baseline_rating_count"),
+  baselineRatingScore: decimal("baseline_rating_score", { precision: 3, scale: 1 }),
+  // 当期现状数据
+  currentDailySales: decimal("current_daily_sales", { precision: 12, scale: 2 }),
+  currentDailyOrders: decimal("current_daily_orders", { precision: 10, scale: 2 }),
+  currentAdConvRate: decimal("current_ad_conv_rate", { precision: 6, scale: 2 }),
+  currentIndustrySearchConvRate: decimal("current_industry_search_conv_rate", { precision: 6, scale: 2 }),
+  currentSearchConvRate: decimal("current_search_conv_rate", { precision: 6, scale: 2 }),
+  currentCategorySearchConvRate: decimal("current_category_search_conv_rate", { precision: 6, scale: 2 }),
+  currentAvgPrice: decimal("current_avg_price", { precision: 10, scale: 2 }),
+  currentRatingCount: int("current_rating_count"),
+  currentRatingScore: decimal("current_rating_score", { precision: 3, scale: 1 }),
+  // 季度目标
+  targetSearchConvRate: decimal("target_search_conv_rate", { precision: 6, scale: 2 }),
+  targetOrderConvRate: decimal("target_order_conv_rate", { precision: 6, scale: 2 }),
+  targetAdConvRate: decimal("target_ad_conv_rate", { precision: 6, scale: 2 }),
+  targetKeywordAdvantage: decimal("target_keyword_advantage", { precision: 6, scale: 2 }),
+  // 状态
+  status: mysqlEnum("plan_status", ["draft", "active", "completed", "archived"]).default("draft").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OpsPlan = typeof opsPlans.$inferSelect;
+export type InsertOpsPlan = typeof opsPlans.$inferInsert;
+
+// Plan improvement actions (each row = one improvement action, linked to todos)
+export const opsPlanActions = mysqlTable("ops_plan_actions", {
+  id: int("id").autoincrement().primaryKey(),
+  planId: int("plan_id").notNull(),
+  userId: int("user_id").notNull(),
+  dimension: varchar("dimension", { length: 200 }).notNull(), // 提升维度
+  currentStatus: text("current_status"), // 父体现状
+  targetAction: text("target_action"), // 提升目标/动作
+  priority: mysqlEnum("action_priority", ["high", "medium", "low"]).default("medium").notNull(),
+  plannedDate: varchar("planned_date", { length: 10 }), // YYYY-MM-DD
+  assignee: varchar("assignee", { length: 100 }),
+  status: mysqlEnum("action_status", ["not_started", "in_progress", "completed", "delayed"]).default("not_started").notNull(),
+  linkedTodoId: int("linked_todo_id"), // Links to product_todos
+  sortOrder: int("sort_order").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OpsPlanAction = typeof opsPlanActions.$inferSelect;
+export type InsertOpsPlanAction = typeof opsPlanActions.$inferInsert;
+
+// Plan execution summaries (periodic reviews)
+export const opsPlanSummaries = mysqlTable("ops_plan_summaries", {
+  id: int("id").autoincrement().primaryKey(),
+  planId: int("plan_id").notNull(),
+  userId: int("user_id").notNull(),
+  period: varchar("period", { length: 50 }), // e.g. "2026-01 W2"
+  achievementSummary: text("achievement_summary"), // 达成情况总结 (项目经理)
+  plannerFeedback: text("planner_feedback"), // 游戏策划师反馈
+  rating: mysqlEnum("summary_rating", ["excellent", "good", "needs_improvement"]),
+  // 实际达成数据
+  actualIndustryConvRate: decimal("actual_industry_conv_rate", { precision: 6, scale: 2 }),
+  actualSearchConvRate: decimal("actual_search_conv_rate", { precision: 6, scale: 2 }),
+  actualOrderConvRate: decimal("actual_order_conv_rate", { precision: 6, scale: 2 }),
+  actualAdConvRate: decimal("actual_ad_conv_rate", { precision: 6, scale: 2 }),
+  actualSales: decimal("actual_sales", { precision: 12, scale: 2 }),
+  actualProfit: decimal("actual_profit", { precision: 12, scale: 2 }),
+  actualProfitRate: decimal("actual_profit_rate", { precision: 6, scale: 2 }),
+  actualRanking: int("actual_ranking"),
+  actualRating: decimal("actual_rating", { precision: 3, scale: 1 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OpsPlanSummary = typeof opsPlanSummaries.$inferSelect;
+export type InsertOpsPlanSummary = typeof opsPlanSummaries.$inferInsert;
+
+// ==================== 转化率对比模块 ====================
+
+// Conversion comparison tasks (one per comparison session)
+export const conversionComparisons = mysqlTable("conversion_comparisons", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  productProfileId: int("product_profile_id").notNull(),
+  comparisonName: varchar("comparison_name", { length: 200 }).notNull(),
+  ownAsin: varchar("own_asin", { length: 20 }).notNull(),
+  competitorAsins: text("competitor_asins"), // JSON array of competitor ASINs
+  status: mysqlEnum("comparison_status", ["draft", "crawling", "scoring", "completed"]).default("draft").notNull(),
+  overallOwnScore: decimal("overall_own_score", { precision: 5, scale: 2 }),
+  crawlData: json("crawl_data"), // Raw crawled data per ASIN
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ConversionComparison = typeof conversionComparisons.$inferSelect;
+export type InsertConversionComparison = typeof conversionComparisons.$inferInsert;
+
+// Conversion check items (fixed 132 items + user custom items)
+export const conversionCheckItems = mysqlTable("conversion_check_items", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id"), // NULL = system default, non-null = user custom
+  categoryIndex: int("category_index").notNull(), // 1-20 大维度序号
+  categoryName: varchar("category_name", { length: 100 }).notNull(), // e.g. "标题", "五点"
+  subDimension: varchar("sub_dimension", { length: 200 }), // 细分维度
+  standard: text("standard"), // 标准/说明
+  sortOrder: int("sort_order").default(0),
+  isCustom: int("is_custom").default(0), // 0=固定模板, 1=用户自定义
+  isActive: int("is_active").default(1),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type ConversionCheckItem = typeof conversionCheckItems.$inferSelect;
+export type InsertConversionCheckItem = typeof conversionCheckItems.$inferInsert;
+
+// Conversion scores (per comparison × per ASIN × per check item)
+export const conversionScores = mysqlTable("conversion_scores", {
+  id: int("id").autoincrement().primaryKey(),
+  comparisonId: int("comparison_id").notNull(),
+  checkItemId: int("check_item_id").notNull(),
+  asin: varchar("asin", { length: 20 }).notNull(),
+  score: int("score"), // 1-5
+  aiScore: int("ai_score"), // AI original score before manual edit
+  reason: text("reason"), // 评分理由
+  aiReason: text("ai_reason"), // AI original reason
+  rawData: text("raw_data"), // 爬虫抓取的原始数据
+  isLocked: int("is_locked").default(0), // 0=unlocked, 1=locked by user
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ConversionScore = typeof conversionScores.$inferSelect;
+export type InsertConversionScore = typeof conversionScores.$inferInsert;
+
+// Conversion optimization suggestions (AI-generated, editable & lockable)
+export const conversionSuggestions = mysqlTable("conversion_suggestions", {
+  id: int("id").autoincrement().primaryKey(),
+  comparisonId: int("comparison_id").notNull(),
+  userId: int("user_id").notNull(),
+  categoryName: varchar("category_name", { length: 100 }).notNull(),
+  ownScore: decimal("own_score", { precision: 5, scale: 2 }),
+  bestCompetitorScore: decimal("best_competitor_score", { precision: 5, scale: 2 }),
+  gapAnalysis: text("gap_analysis"), // 差距分析
+  suggestion: text("suggestion"), // 优化建议
+  priority: mysqlEnum("suggestion_priority", ["high", "medium", "low"]).default("medium").notNull(),
+  expectedEffect: text("expected_effect"), // 预期效果
+  isLocked: int("is_locked").default(0),
+  linkedPlanActionId: int("linked_plan_action_id"), // Links to ops_plan_actions
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ConversionSuggestion = typeof conversionSuggestions.$inferSelect;
+export type InsertConversionSuggestion = typeof conversionSuggestions.$inferInsert;
+
+
+// ─── Execution Reviews (执行复盘) ───
+export const executionReviews = mysqlTable("execution_reviews", {
+  id: int("id").autoincrement().primaryKey(),
+  productProfileId: int("product_profile_id").notNull(),
+  userId: int("user_id").notNull(),
+  planId: int("plan_id"), // linked ops_plan
+  period: varchar("period", { length: 50 }).notNull(), // e.g. "2026-Q1-W4"
+  periodType: mysqlEnum("period_type", ["weekly", "monthly", "quarterly"]).default("monthly").notNull(),
+  // Baseline metrics
+  baselineSales: decimal("baseline_sales", { precision: 12, scale: 2 }),
+  baselineProfit: decimal("baseline_profit", { precision: 12, scale: 2 }),
+  baselineProfitRate: decimal("baseline_profit_rate", { precision: 5, scale: 2 }),
+  baselineOrderConvRate: decimal("baseline_order_conv_rate", { precision: 5, scale: 2 }),
+  baselineSearchConvRate: decimal("baseline_search_conv_rate", { precision: 5, scale: 2 }),
+  baselineAdConvRate: decimal("baseline_ad_conv_rate", { precision: 5, scale: 2 }),
+  baselineRanking: int("baseline_ranking"),
+  baselineRating: decimal("baseline_rating", { precision: 3, scale: 2 }),
+  // Actual metrics
+  actualSales: decimal("actual_sales", { precision: 12, scale: 2 }),
+  actualProfit: decimal("actual_profit", { precision: 12, scale: 2 }),
+  actualProfitRate: decimal("actual_profit_rate", { precision: 5, scale: 2 }),
+  actualOrderConvRate: decimal("actual_order_conv_rate", { precision: 5, scale: 2 }),
+  actualSearchConvRate: decimal("actual_search_conv_rate", { precision: 5, scale: 2 }),
+  actualAdConvRate: decimal("actual_ad_conv_rate", { precision: 5, scale: 2 }),
+  actualRanking: int("actual_ranking"),
+  actualRating: decimal("actual_rating", { precision: 3, scale: 2 }),
+  // Target metrics
+  targetSales: decimal("target_sales", { precision: 12, scale: 2 }),
+  targetProfit: decimal("target_profit", { precision: 12, scale: 2 }),
+  targetOrderConvRate: decimal("target_order_conv_rate", { precision: 5, scale: 2 }),
+  targetSearchConvRate: decimal("target_search_conv_rate", { precision: 5, scale: 2 }),
+  targetAdConvRate: decimal("target_ad_conv_rate", { precision: 5, scale: 2 }),
+  // Review content
+  achievementSummary: text("achievement_summary"), // 达成情况总结
+  keyActions: text("key_actions"), // 关键执行动作
+  lessonsLearned: text("lessons_learned"), // 经验教训
+  nextPeriodPlan: text("next_period_plan"), // 下期计划
+  // Game strategist feedback (游戏策划师)
+  strategistFeedback: text("strategist_feedback"), // 游戏策划师反馈
+  strategistRating: mysqlEnum("strategist_rating", ["S", "A", "B", "C", "D"]),
+  // AI analysis
+  aiAnalysis: text("ai_analysis"), // AI复盘分析
+  aiAnalysisLocked: int("ai_analysis_locked").default(0),
+  status: mysqlEnum("review_status", ["draft", "submitted", "reviewed"]).default("draft").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ExecutionReview = typeof executionReviews.$inferSelect;
+export type InsertExecutionReview = typeof executionReviews.$inferInsert;
+
+// ─── Team Tasks (团队协作看板) ───
+export const teamTasks = mysqlTable("team_tasks", {
+  id: int("id").autoincrement().primaryKey(),
+  productProfileId: int("product_profile_id").notNull(),
+  userId: int("user_id").notNull(), // creator
+  title: varchar("title", { length: 200 }).notNull(),
+  description: text("description"),
+  status: mysqlEnum("task_status", ["backlog", "todo", "in_progress", "review", "done"]).default("todo").notNull(),
+  priority: mysqlEnum("task_priority_team", ["urgent", "high", "medium", "low"]).default("medium").notNull(),
+  category: varchar("category", { length: 100 }), // e.g. Listing优化, 广告调整, 图片更新
+  assigneeId: int("assignee_id"), // assigned team member
+  assigneeName: varchar("assignee_name", { length: 100 }),
+  startDate: varchar("start_date", { length: 20 }),
+  dueDate: varchar("due_date", { length: 20 }),
+  completedAt: timestamp("completed_at"),
+  estimatedHours: decimal("estimated_hours", { precision: 5, scale: 1 }),
+  actualHours: decimal("actual_hours", { precision: 5, scale: 1 }),
+  linkedTodoId: int("linked_todo_id"), // links to product_todos
+  linkedPlanActionId: int("linked_plan_action_id"), // links to ops_plan_actions
+  tags: text("tags"), // JSON array of tags
+  sortOrder: int("sort_order").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type TeamTask = typeof teamTasks.$inferSelect;
+export type InsertTeamTask = typeof teamTasks.$inferInsert;

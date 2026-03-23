@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `ops_plan_summaries` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`plan_id` int NOT NULL,\n\t`user_id` int NOT NULL,\n\t`period` varchar(50),\n\t`achievement_summary` text,\n\t`planner_feedback` text,\n\t`summary_rating` enum('excellent','good','needs_improvement'),\n\t`actual_industry_conv_rate` decimal(6,2),\n\t`actual_search_conv_rate` decimal(6,2),\n\t`actual_order_conv_rate` decimal(6,2),\n\t`actual_ad_conv_rate` decimal(6,2),\n\t`actual_sales` decimal(12,2),\n\t`actual_profit` decimal(12,2),\n\t`actual_profit_rate` decimal(6,2),\n\t`actual_ranking` int,\n\t`actual_rating` decimal(3,1),\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `ops_plan_summaries_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute CREATE TABLE `ops_plan_summaries` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`plan_id` int NOT NULL,\n\t`user_id` int NOT NULL,\n\t`period` varchar(50),\n\t`achievement_summary` text,\n\t`planner_feedback` text,\n\t`summary_rating` enum('excellent','good','needs_improvement'),\n\t`actual_industry_conv_rate` decimal(6,2),\n\t`actual_search_conv_rate` decimal(6,2),\n\t`actual_order_conv_rate` decimal(6,2),\n\t`actual_ad_conv_rate` decimal(6,2),\n\t`actual_sales` decimal(12,2),\n\t`actual_profit` decimal(12,2),\n\t`actual_profit_rate` decimal(6,2),\n\t`actual_ranking` int,\n\t`actual_rating` decimal(3,1),\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `ops_plan_summaries_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 140
+}

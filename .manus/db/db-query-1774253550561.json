@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `conversion_comparisons` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`user_id` int NOT NULL,\n\t`product_profile_id` int NOT NULL,\n\t`comparison_name` varchar(200) NOT NULL,\n\t`own_asin` varchar(20) NOT NULL,\n\t`competitor_asins` text,\n\t`comparison_status` enum('draft','crawling','scoring','completed') NOT NULL DEFAULT 'draft',\n\t`overall_own_score` decimal(5,2),\n\t`crawl_data` json,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `conversion_comparisons_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute CREATE TABLE `conversion_comparisons` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`user_id` int NOT NULL,\n\t`product_profile_id` int NOT NULL,\n\t`comparison_name` varchar(200) NOT NULL,\n\t`own_asin` varchar(20) NOT NULL,\n\t`competitor_asins` text,\n\t`comparison_status` enum('draft','crawling','scoring','completed') NOT NULL DEFAULT 'draft',\n\t`overall_own_score` decimal(5,2),\n\t`crawl_data` json,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `conversion_comparisons_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 133
+}

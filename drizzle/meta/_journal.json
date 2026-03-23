@@ -288,6 +288,20 @@
       "when": 1774251539418,
       "tag": "0040_heavy_wallop",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "5",
+      "when": 1774253514446,
+      "tag": "0041_parched_chronomancer",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "5",
+      "when": 1774254580289,
+      "tag": "0042_tan_freak",
+      "breakpoints": true
     }
   ]
 }

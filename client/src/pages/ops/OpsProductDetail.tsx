@@ -1,7 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import OpsProductPlan from "./OpsProductPlan";
+import OpsProductConversion from "./OpsProductConversion";
+import OpsProductReview from "./OpsProductReview";
+import OpsProductTeam from "./OpsProductTeam";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -147,6 +151,17 @@ export default function OpsProductDetail() {
         </Badge>
       </div>
 
+      {/* Tab Navigation */}
+      <Tabs defaultValue="dashboard" className="w-full">
+        <TabsList className="grid w-full grid-cols-5">
+          <TabsTrigger value="dashboard">数据看板</TabsTrigger>
+          <TabsTrigger value="plan">运营计划</TabsTrigger>
+          <TabsTrigger value="conversion">转化率对比</TabsTrigger>
+          <TabsTrigger value="review">执行复盘</TabsTrigger>
+          <TabsTrigger value="team">团队协作</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="dashboard" className="mt-4">
       {/* Main Layout: Left (data) + Right (todos & logs) */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* ─── Left: Data Area (3 cols) ─── */}
@@ -626,6 +641,25 @@ export default function OpsProductDetail() {
           </Card>
         </div>
       </div>
+
+      </TabsContent>
+
+        <TabsContent value="plan" className="mt-4">
+          <OpsProductPlan productId={productId} parentAsin={product.parentAsin} productTitle={product.title} />
+        </TabsContent>
+
+        <TabsContent value="conversion" className="mt-4">
+          <OpsProductConversion productId={productId} parentAsin={product.parentAsin} />
+        </TabsContent>
+
+        <TabsContent value="review" className="mt-4">
+          <OpsProductReview productId={productId} parentAsin={product.parentAsin} />
+        </TabsContent>
+
+        <TabsContent value="team" className="mt-4">
+          <OpsProductTeam productId={productId} parentAsin={product.parentAsin} />
+        </TabsContent>
+      </Tabs>
 
       {/* ─── Dialogs ─── */}
 
