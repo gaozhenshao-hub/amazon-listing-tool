@@ -19,4 +19,8 @@ export const ENV = {
   // Usage reporting
   usageReportEnabled: process.env.USAGE_REPORT_ENABLED === "true",
   usageReportUrl: process.env.USAGE_REPORT_URL ?? "",
+  // Lingxing ERP API
+  lingxingAppId: process.env.LINGXING_APP_ID ?? "",
+  lingxingAppSecret: process.env.LINGXING_APP_SECRET ?? "",
+  lingxingApiHost: process.env.LINGXING_API_HOST ?? "https://openapi.lingxing.com",
 };

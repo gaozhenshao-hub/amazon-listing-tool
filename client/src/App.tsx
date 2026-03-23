@@ -43,7 +43,14 @@ import KBVideos from "./pages/knowledge/KBVideos";
 import KBBot from "./pages/knowledge/KBBot";
 import KBIntel from "./pages/knowledge/KBIntel";
 
-// ─── Module 3/4: Placeholder ────────────────────────────────────
+// ─── Module 3: Operations AI Tools ─────────────────────────────
+import OpsDashboard from "./pages/ops/OpsDashboard";
+import OpsInventory from "./pages/ops/OpsInventory";
+import OpsProfit from "./pages/ops/OpsProfit";
+import OpsAds from "./pages/ops/OpsAds";
+import OpsCompetitor from "./pages/ops/OpsCompetitor";
+
+// ─── Module 4: Placeholder ──────────────────────────────────────
 import ComingSoonPage from "./pages/ComingSoonPage";
 
 // ─── Platform Home ──────────────────────────────────────────────
@@ -119,9 +126,12 @@ function Router() {
         <Route path="/knowledge/videos">{() => <PermissionGuard><KBVideos /></PermissionGuard>}</Route>
         <Route path="/knowledge/intel">{() => <PermissionGuard><KBIntel /></PermissionGuard>}</Route>
 
-        {/* ─── Module 3: Operations (placeholder) ─── */}
-        <Route path="/ops">{() => <PermissionGuard><ComingSoonPage moduleName="智能运营提效" /></PermissionGuard>}</Route>
-        <Route path="/ops/:rest*">{() => <PermissionGuard><ComingSoonPage moduleName="智能运营提效" /></PermissionGuard>}</Route>
+        {/* ─── Module 3: Operations AI Tools ─── */}
+        <Route path="/ops">{() => <PermissionGuard><OpsDashboard /></PermissionGuard>}</Route>
+        <Route path="/ops/profit">{() => <PermissionGuard><OpsProfit /></PermissionGuard>}</Route>
+        <Route path="/ops/inventory">{() => <PermissionGuard><OpsInventory /></PermissionGuard>}</Route>
+        <Route path="/ops/ads">{() => <PermissionGuard><OpsAds /></PermissionGuard>}</Route>
+        <Route path="/ops/competitor">{() => <PermissionGuard><OpsCompetitor /></PermissionGuard>}</Route>
 
         {/* ─── Module 4: After-sales (placeholder) ─── */}
         <Route path="/service">{() => <PermissionGuard><ComingSoonPage moduleName="智能售后管理" /></PermissionGuard>}</Route>

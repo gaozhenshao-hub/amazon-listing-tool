@@ -29,6 +29,7 @@ import {
   Package,
   TrendingUp,
   Headphones,
+  Eye,
   BookOpen,
   PlusCircle,
   FolderOpen,
@@ -126,13 +127,13 @@ const modules: ModuleDef[] = [
     label: "智能运营提效",
     shortLabel: "运营提效",
     prefix: "/ops",
-    enabled: false,
+    enabled: true,
     items: [
       { icon: LayoutDashboard, label: "运营仪表盘", path: "/ops" },
       { icon: BarChart3, label: "利润分析", path: "/ops/profit" },
       { icon: Package, label: "库存预警", path: "/ops/inventory" },
       { icon: Target, label: "广告优化", path: "/ops/ads" },
-      { icon: TrendingUp, label: "销量预测", path: "/ops/forecast" },
+      { icon: Eye, label: "竞品监控", path: "/ops/competitor" },
     ],
   },
   {

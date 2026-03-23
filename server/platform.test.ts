@@ -58,11 +58,16 @@ describe("Platform - Routing", () => {
     expect(code).toContain("KBVideos");
   });
 
-  it("App.tsx should have ComingSoonPage for module 3 and 4", () => {
+  it("App.tsx should have ComingSoonPage for module 4 and ops routes for module 3", () => {
     const code = fs.readFileSync(path.join(basePath, "client/src/App.tsx"), "utf-8");
     expect(code).toContain("ComingSoonPage");
-    expect(code).toContain("智能运营提效");
     expect(code).toContain("智能售后管理");
+    // Module 3 (ops) is now fully implemented with real routes
+    expect(code).toContain("OpsDashboard");
+    expect(code).toContain("OpsProfit");
+    expect(code).toContain("OpsInventory");
+    expect(code).toContain("OpsAds");
+    expect(code).toContain("OpsCompetitor");
   });
 
   it("App.tsx should have a platform home page", () => {

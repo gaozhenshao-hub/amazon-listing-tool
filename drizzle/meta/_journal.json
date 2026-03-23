@@ -274,6 +274,13 @@
       "when": 1774085913122,
       "tag": "0038_icy_meltdown",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "5",
+      "when": 1774240255658,
+      "tag": "0039_useful_ricochet",
+      "breakpoints": true
     }
   ]
 }

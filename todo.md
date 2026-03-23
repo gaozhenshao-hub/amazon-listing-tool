@@ -1765,3 +1765,69 @@
 - [x] 后端：getPresetSources/addPresetSource/addPresetSourceBatch 3个新端点
 - [x] 前端：PresetSourcesPanel组件（可展开卡片+一键全部添加+已添加状态标记）
 - [x] 92个测试文件2394个测试全部通过（含40个多源解析器测试）
+
+### 模块三：领星ERP数据对接
+
+#### Phase 1: 领星API Adapter Layer
+- [x] 访问领星API文档，分析鉴权机制和MD5签名算法
+- [x] 存储领星API密钥（LINGXING_APP_ID/LINGXING_APP_SECRET）
+- [x] 数据库表：lingxing_config + lingxing_api_logs
+- [x] 实现Token管理器（获取/自动刷新/过期重试）
+- [x] 实现MD5签名生成器
+- [x] 实现统一请求层（QPS控制/重试/超时/响应解析）
+- [x] 实现Mock数据模式（未接入真实API前支持前端开发）
+- [x] 数据缓存层（汇率/店铺列表等高频查询）
+
+#### Phase 2: 库存预警模块
+- [x] 数据库表：inventory_config + inventory_snapshots + sales_forecasts + replenishment_orders
+- [x] 后端：FBA库存/本地仓数据获取
+- [x] 后端：可售天数计算+补货参数配置
+- [x] 后端：补货预警规则引擎
+- [x] 前端：库存看板页面（/ops/inventory）
+- [x] 前端：补货参数配置界面
+- [x] 前端：库存预警列表+补货建议单
+
+#### Phase 3: 利润分析模块
+- [x] 数据库表：profit_snapshots + profit_analysis_results + profit_alert_rules
+- [x] 后端：利润报表数据获取+汇率数据
+- [x] 后端：成本明细解析+利润计算
+- [x] 后端：AI异常费用预警+利润优化建议
+- [x] 前端：利润看板页面（/ops/profit）
+- [x] 前端：利润瀑布图（Recharts）
+- [x] 前端：AI分析结果可编辑确认界面
+
+#### Phase 4: 广告智能优化模块
+- [x] 数据库表：ad_analysis_tasks + ad_automation_rules + search_term_actions
+- [x] 后端：广告数据获取（SP/SB/SD）
+- [x] 后端：搜索词报告获取+解析
+- [x] 后端：AI搜索词分析+关键词策略建议
+- [x] 后端：自动化规则引擎CRUD
+- [x] 前端：广告看板页面（/ops/ads）
+- [x] 前端：搜索词分析页+AI建议确认页
+- [x] 前端：自动化规则管理页
+
+#### Phase 5: 竞品监控模块
+- [x] 数据库表：competitor_monitors + competitor_snapshots + competitor_reports
+- [x] 后端：竞品ASIN管理CRUD
+- [x] 后端：竞品数据录入/CSV导入
+- [x] 后端：AI竞品分析报告生成
+- [x] 前端：竞品监控页面（/ops/competitor）
+- [x] 前端：竞品数据录入/导入界面
+- [x] 前端：AI报告可编辑确认界面
+
+#### Phase 6: AI增强
+- [x] AI智能销量预测（保守/正常/乐观三场景）- 集成在利润分析AI中
+- [x] AI异常费用检测 - 集成在利润分析AI中
+- [x] 广告自动化规则执行引擎 - 规则CRUD已实现，执行引擎待接入真实API
+- [x] 补货建议单AI生成 - 集成在库存预警AI中
+
+#### 运营模块前端路由注册
+- [x] 前端：运营仪表盘页面（/ops）
+- [x] 前端：库存预警页面（/ops/inventory）
+- [x] 前端：利润分析页面（/ops/profit）
+- [x] 前端：广告优化页面（/ops/ads）
+- [x] 前端：竞品监控页面（/ops/competitor）
+- [x] App.tsx路由注册和DashboardLayout导航更新
+- [x] 后端operations路由注册到主路由
+- [x] 单元测试（17条通过）
+- [x] TypeScript编译零错误

@@ -1514,3 +1514,201 @@ export const notifications = mysqlTable("notifications", {
 });
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = typeof notifications.$inferInsert;
+
+// ============== Module 3: Operations (领星ERP Data) ==============
+
+// Lingxing API config & token cache
+export const lingxingConfig = mysqlTable("lingxing_config", {
+  id: int("id").autoincrement().primaryKey(),
+  configKey: varchar("config_key", { length: 100 }).notNull().unique(),
+  configValue: text("config_value"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+// Lingxing API call logs
+export const lingxingApiLogs = mysqlTable("lingxing_api_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  endpoint: varchar("endpoint", { length: 200 }).notNull(),
+  method: varchar("method", { length: 10 }).notNull(),
+  statusCode: varchar("status_code", { length: 20 }),
+  duration: int("duration"), // ms
+  isMock: int("is_mock").default(0),
+  errorMsg: text("error_msg"),
+  userId: int("user_id"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+// Inventory configuration (per-SKU replenishment params)
+export const inventoryConfig = mysqlTable("inventory_config", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  sellerSku: varchar("seller_sku", { length: 100 }).notNull(),
+  marketplace: varchar("marketplace", { length: 10 }).default("US"),
+  // Replenishment params
+  leadTimeDays: int("lead_time_days").default(30),
+  safetyStockDays: int("safety_stock_days").default(14),
+  reviewCycleDays: int("review_cycle_days").default(7),
+  moq: int("moq").default(100), // Minimum order quantity
+  packSize: int("pack_size").default(1),
+  // Alert thresholds
+  alertDaysLow: int("alert_days_low").default(14),
+  alertDaysCritical: int("alert_days_critical").default(7),
+  alertDaysOverstock: int("alert_days_overstock").default(90),
+  // Custom settings
+  isActive: int("is_active").default(1),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+// Inventory snapshots (daily FBA inventory snapshots for trend analysis)
+export const inventorySnapshots = mysqlTable("inventory_snapshots", {
+  id: int("id").autoincrement().primaryKey(),
+  sellerSku: varchar("seller_sku", { length: 100 }).notNull(),
+  marketplace: varchar("marketplace", { length: 10 }).default("US"),
+  snapshotDate: varchar("snapshot_date", { length: 10 }).notNull(), // YYYY-MM-DD
+  fulfillableQty: int("fulfillable_qty").default(0),
+  inboundQty: int("inbound_qty").default(0),
+  reservedQty: int("reserved_qty").default(0),
+  unsellableQty: int("unsellable_qty").default(0),
+  avgDailySales: decimal("avg_daily_sales", { precision: 10, scale: 2 }),
+  daysOfSupply: int("days_of_supply"),
+  storageFee: decimal("storage_fee", { precision: 10, scale: 2 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+// Profit snapshots (daily profit data)
+export const profitSnapshots = mysqlTable("profit_snapshots", {
+  id: int("id").autoincrement().primaryKey(),
+  sellerSku: varchar("seller_sku", { length: 100 }),
+  marketplace: varchar("marketplace", { length: 10 }).default("US"),
+  snapshotDate: varchar("snapshot_date", { length: 10 }).notNull(),
+  revenue: decimal("revenue", { precision: 12, scale: 2 }),
+  productCost: decimal("product_cost", { precision: 12, scale: 2 }),
+  adSpend: decimal("ad_spend", { precision: 12, scale: 2 }),
+  fbaFee: decimal("fba_fee", { precision: 12, scale: 2 }),
+  referralFee: decimal("referral_fee", { precision: 12, scale: 2 }),
+  otherFee: decimal("other_fee", { precision: 12, scale: 2 }),
+  profit: decimal("profit", { precision: 12, scale: 2 }),
+  profitMargin: decimal("profit_margin", { precision: 5, scale: 1 }),
+  orderCount: int("order_count"),
+  unitCount: int("unit_count"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+// Profit alert rules
+export const profitAlertRules = mysqlTable("profit_alert_rules", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  ruleName: varchar("rule_name", { length: 200 }).notNull(),
+  ruleType: mysqlEnum("rule_type", ["margin_drop", "cost_spike", "revenue_drop", "ad_spend_high", "custom"]).notNull(),
+  condition: json("condition_json"), // { metric, operator, threshold, period }
+  isActive: int("is_active").default(1),
+  lastTriggeredAt: timestamp("last_triggered_at"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+// Ad analysis tasks (AI-powered ad analysis)
+export const adAnalysisTasks = mysqlTable("ad_analysis_tasks", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  taskName: varchar("task_name", { length: 200 }).notNull(),
+  taskType: mysqlEnum("task_type", ["search_term_analysis", "keyword_optimization", "campaign_review", "budget_optimization"]).notNull(),
+  status: mysqlEnum("status", ["pending", "running", "completed", "failed"]).default("pending").notNull(),
+  inputParams: json("input_params"), // { campaign_ids, date_range, etc. }
+  aiResult: json("ai_result"), // structured AI analysis result
+  userEdits: json("user_edits"), // user modifications to AI result
+  confirmedAt: timestamp("confirmed_at"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+// Ad automation rules
+export const adAutomationRules = mysqlTable("ad_automation_rules", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  ruleName: varchar("rule_name", { length: 200 }).notNull(),
+  ruleType: mysqlEnum("rule_type", [
+    "negate_keyword", "add_keyword", "adjust_bid", "pause_campaign",
+    "enable_campaign", "adjust_budget", "custom"
+  ]).notNull(),
+  condition: json("condition_json"), // { metric, operator, threshold, lookback_days }
+  action: json("action_json"), // { action_type, params }
+  scope: json("scope_json"), // { campaign_ids, ad_group_ids }
+  isActive: int("is_active").default(1),
+  lastRunAt: timestamp("last_run_at"),
+  runCount: int("run_count").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+// Search term actions (AI-suggested actions for search terms)
+export const searchTermActions = mysqlTable("search_term_actions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  analysisTaskId: int("analysis_task_id"),
+  searchTerm: varchar("search_term", { length: 500 }).notNull(),
+  keywordText: varchar("keyword_text", { length: 500 }),
+  matchType: varchar("match_type", { length: 20 }),
+  suggestedAction: mysqlEnum("suggested_action", [
+    "add_exact", "add_phrase", "negate_exact", "negate_phrase",
+    "increase_bid", "decrease_bid", "keep", "monitor"
+  ]).notNull(),
+  aiReason: text("ai_reason"),
+  metrics: json("metrics_json"), // { impressions, clicks, spend, sales, acos, cvr }
+  userDecision: mysqlEnum("user_decision", ["accepted", "rejected", "modified", "pending"]).default("pending"),
+  userNotes: text("user_notes"),
+  executedAt: timestamp("executed_at"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+// Competitor monitors
+export const competitorMonitors = mysqlTable("competitor_monitors", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  competitorAsin: varchar("competitor_asin", { length: 20 }).notNull(),
+  ownAsin: varchar("own_asin", { length: 20 }),
+  marketplace: varchar("marketplace", { length: 10 }).default("US"),
+  competitorTitle: varchar("competitor_title", { length: 500 }),
+  competitorBrand: varchar("competitor_brand", { length: 200 }),
+  category: varchar("category", { length: 200 }),
+  monitorFrequency: mysqlEnum("monitor_frequency", ["daily", "weekly", "manual"]).default("daily"),
+  isActive: int("is_active").default(1),
+  lastCheckedAt: timestamp("last_checked_at"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+// Competitor snapshots (price, rank, review changes)
+export const competitorSnapshots = mysqlTable("competitor_snapshots", {
+  id: int("id").autoincrement().primaryKey(),
+  monitorId: int("monitor_id").notNull(),
+  snapshotDate: varchar("snapshot_date", { length: 10 }).notNull(),
+  price: decimal("price", { precision: 10, scale: 2 }),
+  bsrRank: int("bsr_rank"),
+  bsrCategory: varchar("bsr_category", { length: 200 }),
+  reviewCount: int("review_count"),
+  rating: decimal("rating", { precision: 3, scale: 1 }),
+  mainImageUrl: text("main_image_url"),
+  bulletPoints: json("bullet_points"),
+  isInStock: int("is_in_stock").default(1),
+  couponInfo: varchar("coupon_info", { length: 200 }),
+  dealInfo: varchar("deal_info", { length: 200 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+// Competitor AI reports
+export const competitorReports = mysqlTable("competitor_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  reportName: varchar("report_name", { length: 200 }).notNull(),
+  monitorIds: json("monitor_ids"), // array of monitor IDs included
+  reportType: mysqlEnum("report_type", ["comparison", "trend", "opportunity", "threat"]).default("comparison"),
+  aiAnalysis: json("ai_analysis"), // structured AI report
+  userEdits: json("user_edits"),
+  status: mysqlEnum("status", ["draft", "confirmed", "archived"]).default("draft"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
