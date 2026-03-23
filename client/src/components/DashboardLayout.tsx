@@ -136,6 +136,7 @@ const modules: ModuleDef[] = [
       { icon: Package, label: "库存预警", path: "/ops/inventory" },
       { icon: Target, label: "广告优化", path: "/ops/ads" },
       { icon: Eye, label: "竞品监控", path: "/ops/competitor" },
+      { icon: Bot, label: "爬虫引擎", path: "/ops/crawler" },
     ],
   },
   {
