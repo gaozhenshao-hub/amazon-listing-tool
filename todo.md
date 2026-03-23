@@ -1831,3 +1831,30 @@
 - [x] 后端operations路由注册到主路由
 - [x] 单元测试（17条通过）
 - [x] TypeScript编译零错误
+
+### 产品运营总览页面
+- [x] 数据库表：product_profiles（产品主表，父ASIN+预算目标）
+- [x] 数据库表：product_variants（子ASIN变体）
+- [x] 数据库表：product_todos（待办任务）
+- [x] 数据库表：product_logs（跟进日志）
+- [x] 数据库表：keyword_monitors（关键词监控）
+- [x] 数据库表：keyword_snapshots（关键词排名快照）
+- [x] 后端：productOps路由（22个tRPC过程）
+- [x] 后端：产品CRUD + 变体管理
+- [x] 后端：待办任务CRUD + 状态管理
+- [x] 后端：跟进日志CRUD
+- [x] 后端：关键词监控CRUD + 排名快照
+- [x] 后端：利润/库存/广告数据汇总（领星API聚合）
+- [x] 后端：竞品监控数据关联查询
+- [x] 前端：产品列表页（/ops/products）- 卡片布局+搜索+统计
+- [x] 前端：产品详情页（/ops/products/:id）- 三栏布局
+- [x] 前端：利润总览表（预计/实况预测/现时三列）
+- [x] 前端：库存概览（FBA可售/在途/日均销量/可售天数）
+- [x] 前端：广告概览（花费/销售额/ACoS/ROAS+活动列表）
+- [x] 前端：右侧待办任务（可勾选完成+优先级+截止日期）
+- [x] 前端：右侧跟进日志（时间线+多类型+添加表单）
+- [x] 前端：底部竞品监控（关联competitor_monitors数据）
+- [x] 前端：底部关键词监控（排名变化+添加/删除）
+- [x] App.tsx路由注册 + DashboardLayout导航更新
+- [x] 单元测试（4条通过）
+- [x] TypeScript编译零错误

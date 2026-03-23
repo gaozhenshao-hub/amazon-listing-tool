@@ -281,6 +281,13 @@
       "when": 1774240255658,
       "tag": "0039_useful_ricochet",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "5",
+      "when": 1774251539418,
+      "tag": "0040_heavy_wallop",
+      "breakpoints": true
     }
   ]
 }

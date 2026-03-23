@@ -1712,3 +1712,115 @@ export const competitorReports = mysqlTable("competitor_reports", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
+
+
+// ─── Product Operations Overview ───
+
+// Product profiles (parent ASIN level)
+export const productProfiles = mysqlTable("product_profiles", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  parentAsin: varchar("parent_asin", { length: 20 }).notNull(),
+  title: varchar("title", { length: 500 }).notNull(),
+  brand: varchar("brand", { length: 200 }),
+  category: varchar("category", { length: 300 }),
+  marketplace: varchar("marketplace", { length: 10 }).default("US"),
+  imageUrl: text("image_url"),
+  status: mysqlEnum("status", ["active", "inactive", "discontinued"]).default("active").notNull(),
+  budgetRevenue: decimal("budget_revenue", { precision: 12, scale: 2 }),
+  budgetProfit: decimal("budget_profit", { precision: 12, scale: 2 }),
+  budgetAcos: decimal("budget_acos", { precision: 5, scale: 1 }),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ProductProfile = typeof productProfiles.$inferSelect;
+export type InsertProductProfile = typeof productProfiles.$inferInsert;
+
+// Product variants (child ASIN level)
+export const productVariants = mysqlTable("product_variants", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("product_id").notNull(),
+  childAsin: varchar("child_asin", { length: 20 }).notNull(),
+  sku: varchar("sku", { length: 100 }),
+  title: varchar("title", { length: 500 }),
+  price: decimal("price", { precision: 10, scale: 2 }),
+  variationAttributes: json("variation_attributes"),
+  status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ProductVariant = typeof productVariants.$inferSelect;
+export type InsertProductVariant = typeof productVariants.$inferInsert;
+
+// Product todos (task management per product)
+export const productTodos = mysqlTable("product_todos", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("product_id").notNull(),
+  userId: int("user_id").notNull(),
+  title: varchar("title", { length: 500 }).notNull(),
+  description: text("description"),
+  priority: mysqlEnum("priority", ["high", "medium", "low"]).default("medium").notNull(),
+  status: mysqlEnum("status", ["pending", "in_progress", "completed"]).default("pending").notNull(),
+  dueDate: varchar("due_date", { length: 10 }),
+  assignee: varchar("assignee", { length: 100 }),
+  sortOrder: int("sort_order").default(0),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ProductTodo = typeof productTodos.$inferSelect;
+export type InsertProductTodo = typeof productTodos.$inferInsert;
+
+// Product logs (follow-up journal per product)
+export const productLogs = mysqlTable("product_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("product_id").notNull(),
+  userId: int("user_id").notNull(),
+  content: text("content").notNull(),
+  logType: mysqlEnum("log_type", ["operation", "note", "issue", "decision", "milestone"]).default("note").notNull(),
+  createdBy: varchar("created_by", { length: 100 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ProductLog = typeof productLogs.$inferSelect;
+export type InsertProductLog = typeof productLogs.$inferInsert;
+
+// Keyword monitors (track keyword rankings for a product)
+export const keywordMonitors = mysqlTable("keyword_monitors", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("product_id").notNull(),
+  userId: int("user_id").notNull(),
+  keyword: varchar("keyword", { length: 500 }).notNull(),
+  keywordCn: varchar("keyword_cn", { length: 500 }),
+  targetAsin: varchar("target_asin", { length: 20 }),
+  marketplace: varchar("marketplace", { length: 10 }).default("US"),
+  matchType: mysqlEnum("match_type", ["exact", "phrase", "broad"]).default("exact"),
+  monitorFrequency: mysqlEnum("monitor_frequency", ["daily", "weekly", "manual"]).default("daily"),
+  isActive: int("is_active").default(1),
+  lastCheckedAt: timestamp("last_checked_at"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type KeywordMonitor = typeof keywordMonitors.$inferSelect;
+export type InsertKeywordMonitor = typeof keywordMonitors.$inferInsert;
+
+// Keyword ranking snapshots (historical ranking data from crawler)
+export const keywordSnapshots = mysqlTable("keyword_snapshots", {
+  id: int("id").autoincrement().primaryKey(),
+  keywordMonitorId: int("keyword_monitor_id").notNull(),
+  snapshotDate: varchar("snapshot_date", { length: 10 }).notNull(),
+  organicRank: int("organic_rank"),
+  adRank: int("ad_rank"),
+  searchVolume: int("search_volume"),
+  pageNumber: int("page_number"),
+  totalResults: int("total_results"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type KeywordSnapshot = typeof keywordSnapshots.$inferSelect;
+export type InsertKeywordSnapshot = typeof keywordSnapshots.$inferInsert;

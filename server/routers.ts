@@ -53,6 +53,7 @@ import { roleManagementRouter } from "./routers/roleManagement";
 import { notificationRouter } from "./routers/notification";
 // Module 3: Operations AI Tools (Lingxing ERP)
 import { operationsRouter } from "./routers/operations";
+import { productOpsRouter } from "./routers/productOps";
 
 export const appRouter = router({
   system: systemRouter,
@@ -116,6 +117,7 @@ export const appRouter = router({
   notification: notificationRouter,
   // Module 3: Operations AI Tools (Lingxing ERP)
   operations: operationsRouter,
+  productOps: productOpsRouter,
 });
 
 export type AppRouter = typeof appRouter;

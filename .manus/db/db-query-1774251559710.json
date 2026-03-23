@@ -1,0 +1,22 @@
+{
+  "query": "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('product_profiles', 'product_variants', 'product_todos', 'product_logs', 'keyword_monitors', 'keyword_snapshots');",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('product_profiles', 'product_variants', 'product_todos', 'product_logs', 'keyword_monitors', 'keyword_snapshots');",
+  "rows": [
+    {
+      "TABLE_NAME": "product_profiles"
+    },
+    {
+      "TABLE_NAME": "product_logs"
+    },
+    {
+      "TABLE_NAME": "keyword_snapshots"
+    },
+    {
+      "TABLE_NAME": "keyword_monitors"
+    }
+  ],
+  "messages": [],
+  "stdout": "TABLE_NAME\nproduct_profiles\nproduct_logs\nkeyword_snapshots\nkeyword_monitors\n",
+  "stderr": "",
+  "execution_time_ms": 64
+}

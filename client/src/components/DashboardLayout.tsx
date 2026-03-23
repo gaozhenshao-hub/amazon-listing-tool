@@ -48,6 +48,7 @@ import {
   Shield,
   RefreshCw,
   Bot,
+  ShoppingBag,
   Rss,
   type LucideIcon,
 } from "lucide-react";
@@ -130,6 +131,7 @@ const modules: ModuleDef[] = [
     enabled: true,
     items: [
       { icon: LayoutDashboard, label: "运营仪表盘", path: "/ops" },
+      { icon: ShoppingBag, label: "产品总览", path: "/ops/products" },
       { icon: BarChart3, label: "利润分析", path: "/ops/profit" },
       { icon: Package, label: "库存预警", path: "/ops/inventory" },
       { icon: Target, label: "广告优化", path: "/ops/ads" },

@@ -49,6 +49,8 @@ import OpsInventory from "./pages/ops/OpsInventory";
 import OpsProfit from "./pages/ops/OpsProfit";
 import OpsAds from "./pages/ops/OpsAds";
 import OpsCompetitor from "./pages/ops/OpsCompetitor";
+import OpsProducts from "./pages/ops/OpsProducts";
+import OpsProductDetail from "./pages/ops/OpsProductDetail";
 
 // ─── Module 4: Placeholder ──────────────────────────────────────
 import ComingSoonPage from "./pages/ComingSoonPage";
@@ -128,6 +130,8 @@ function Router() {
 
         {/* ─── Module 3: Operations AI Tools ─── */}
         <Route path="/ops">{() => <PermissionGuard><OpsDashboard /></PermissionGuard>}</Route>
+        <Route path="/ops/products">{() => <PermissionGuard><OpsProducts /></PermissionGuard>}</Route>
+        <Route path="/ops/products/:id">{() => <PermissionGuard><OpsProductDetail /></PermissionGuard>}</Route>
         <Route path="/ops/profit">{() => <PermissionGuard><OpsProfit /></PermissionGuard>}</Route>
         <Route path="/ops/inventory">{() => <PermissionGuard><OpsInventory /></PermissionGuard>}</Route>
         <Route path="/ops/ads">{() => <PermissionGuard><OpsAds /></PermissionGuard>}</Route>
