@@ -17,6 +17,7 @@ import {
   kbIntelCollectLogs,
 } from "../drizzle/schema";
 import { eq, and, lte, isNotNull, sql } from "drizzle-orm";
+import { execSync } from "child_process";
 
 // ─── Interval Constants ────────────────────────────
 const INTERVAL_MAP: Record<string, number> = {
@@ -68,17 +69,31 @@ export function calculateNextRunTime(
 function randomUA(): string {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
+// ─── Helper: Fetch URL with curl fallback ───────────
 
-// ─── Helper: Fetch URL content with retry ──────────
+function fetchWithCurl(url: string): { ok: boolean; html: string } {
+  try {
+    const html = execSync(
+      `curl -sL --max-time 30 -H "User-Agent: ${randomUA()}" -H "Accept: text/html,application/xhtml+xml" -H "Accept-Language: zh-CN,zh;q=0.9,en;q=0.8" "${url.replace(/"/g, '\\"')}"`,
+      { maxBuffer: 20 * 1024 * 1024, encoding: "utf-8", timeout: 35000 }
+    );
+    return { ok: html.length > 100, html };
+  } catch {
+    return { ok: false, html: "" };
+  }
+}
+
+// ─── Helper: Fetch URL content with retry (fetch + curl fallback) ────────────
 async function fetchWithRetry(
   url: string,
   maxRetries: number = 3
-): Promise<{ ok: boolean; content: string; title: string }> {
+): Promise<{ ok: boolean; content: string; title: string; rawHtml?: string }> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
+    let html = "";
     try {
+      // Try native fetch first
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 30000);
-
       const response = await fetch(url, {
         headers: {
           "User-Agent": randomUA(),
@@ -89,16 +104,22 @@ async function fetchWithRetry(
         redirect: "follow",
       });
       clearTimeout(timeout);
-
-      if (!response.ok) {
-        if (attempt < maxRetries - 1) {
-          await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
-          continue;
-        }
-        return { ok: false, content: "", title: "" };
+      if (response.ok) {
+        html = await response.text();
       }
+    } catch {
+      // fetch failed, try curl fallback
+    }
 
-      const html = await response.text();
+    // If fetch failed or returned empty, try curl
+    if (!html || html.length < 100) {
+      const curlResult = fetchWithCurl(url);
+      if (curlResult.ok) {
+        html = curlResult.html;
+      }
+    }
+
+    if (html && html.length >= 100) {
       // Extract title
       const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
       const title = titleMatch ? titleMatch[1].trim().replace(/\s+/g, " ") : "";
@@ -113,18 +134,15 @@ async function fetchWithRetry(
         .trim()
         .slice(0, 10000);
 
-      return { ok: true, content, title };
-    } catch (err) {
-      if (attempt < maxRetries - 1) {
-        await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
-        continue;
-      }
-      return { ok: false, content: "", title: String(err) };
+      return { ok: true, content, title, rawHtml: html };
+    }
+
+    if (attempt < maxRetries - 1) {
+      await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
     }
   }
   return { ok: false, content: "", title: "" };
 }
-
 // ─── Helper: Check if URL already exists ───────────
 async function isUrlDuplicate(sourceId: number, url: string): Promise<boolean> {
   const _d = await getDb();
@@ -209,6 +227,139 @@ function parseRssItems(xml: string): Array<{ title: string; url: string; pubDate
   return items;
 }
 
+// ─── WeAreSellers Parser ──────────────────────────
+function parseWeareSellersListPage(html: string): Array<{
+  title: string;
+  url: string;
+  questionId: string;
+  category: string;
+  author: string;
+  views: number;
+  replies: number;
+  followers: number;
+}> {
+  const items: Array<{
+    title: string; url: string; questionId: string;
+    category: string; author: string; views: number; replies: number; followers: number;
+  }> = [];
+
+  // Match each .aw-item block (real HTML has whitespace/newlines between class and data-question_id)
+  const itemRegex = /class="aw-item\s*"\s+data-question_id="(\d+)"[^>]*>([\s\S]*?)(?=class="aw-item\s*"\s+data-question_id|$)/gi;
+  let match;
+  while ((match = itemRegex.exec(html)) !== null) {
+    const questionId = match[1];
+    const block = match[2];
+
+    // Extract title - try h4 > a first, then any a[href*=question]
+    const titleMatch = block.match(/<h4[^>]*>[\s\S]*?<a[^>]+href="([^"]*question\/\d+)"[^>]*>([\s\S]*?)<\/a>/i)
+      || block.match(/<a\s+href="([^"]*question\/\d+)"[^>]*>([\s\S]*?)<\/a>/i);
+    if (!titleMatch) continue;
+    const url = titleMatch[1].startsWith("http") ? titleMatch[1] : `https://www.wearesellers.com${titleMatch[1]}`;
+    const title = titleMatch[2].replace(/<[^>]+>/g, "").trim();
+    if (!title || title.length < 5) continue;
+
+    // Extract category from .aw-question-tags a or .topic-tag a
+    const catMatch = block.match(/class="aw-question-tags"[^>]*>([^<]+)<\/a>/i)
+      || block.match(/class="topic-tag"[^>]*>\s*<a[^>]*>([^<]+)<\/a>/i);
+    const category = catMatch ? catMatch[1].trim() : "";
+
+    // Extract author
+    const authorMatch = block.match(/class="aw-user-name[^"]*"[^>]*data-id="([^"]*)"/i);
+    const author = authorMatch ? authorMatch[1].trim() : "匿名用户";
+
+    // Extract meta: views, replies, followers
+    const metaText = block.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+    const viewsMatch = metaText.match(/(\d+)\s*次浏览/);
+    const repliesMatch = metaText.match(/(\d+)\s*个回复/);
+    const followersMatch = metaText.match(/(\d+)\s*人关注/);
+
+    items.push({
+      title,
+      url,
+      questionId,
+      category,
+      author,
+      views: viewsMatch ? parseInt(viewsMatch[1]) : 0,
+      replies: repliesMatch ? parseInt(repliesMatch[1]) : 0,
+      followers: followersMatch ? parseInt(followersMatch[1]) : 0,
+    });
+  }
+  return items;
+}
+
+// ─── WeAreSellers Detail Page Parser ──────────────
+function parseWeareSellersDetail(html: string): {
+  title: string;
+  content: string;
+  author: string;
+  category: string;
+  answers: Array<{ author: string; content: string; votes: number }>;
+} {
+  // Extract title - try specific class first, then <title> tag (most reliable on real pages)
+  const titleMatch = html.match(/<h1[^>]*class="[^"]*aw-question-detail-title[^"]*"[^>]*>([\s\S]*?)<\/h1>/i)
+    || html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  let title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "").trim() : "";
+  // Clean up title from <title> tag (remove " - 知无不言跨境电商社区" suffix)
+  title = title.replace(/\s*-\s*知无不言.*$/, "").trim();
+
+  // Extract question content
+  const contentMatch = html.match(/class="[^"]*aw-question-detail-txt[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
+    || html.match(/class="[^"]*markitup-box[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+  let content = contentMatch
+    ? contentMatch[1].replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+    : "";
+
+  // Extract author - on real pages, author may be in user-name link or anonymous
+  const authorMatch = html.match(/class="[^"]*aw-question-detail-author[^"]*"[\s\S]*?data-id="([^"]*)"/i)
+    || html.match(/class="aw-user-name[^"]*"[^>]*data-id="([^"]*)"/i);
+  const author = authorMatch ? authorMatch[1].trim() : "匿名用户";
+
+  // Extract category from .aw-question-tags or .topic-tag
+  const catMatch = html.match(/class="aw-question-tags"[^>]*>([^<]+)<\/a>/i)
+    || html.match(/class="topic-tag"[^>]*>\s*<a[^>]*>([^<]+)<\/a>/i);
+  const category = catMatch ? catMatch[1].trim() : "";
+
+  // Extract answers (best answers and regular answers)
+  const answers: Array<{ author: string; content: string; votes: number }> = [];
+  const answerRegex = /class="[^"]*aw-item[^"]*"[^>]*data-answer-id[^>]*>([\s\S]*?)(?=class="[^"]*aw-item[^"]*"[^>]*data-answer-id|<div\s+id="aw-comment-box|$)/gi;
+  let ansMatch;
+  while ((ansMatch = answerRegex.exec(html)) !== null) {
+    const ansBlock = ansMatch[1];
+    const ansAuthorMatch = ansBlock.match(/class="aw-user-name[^"]*"[^>]*data-id="([^"]*)"/i);
+    const ansContentMatch = ansBlock.match(/class="[^"]*markitup-box[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+    const votesMatch = ansBlock.match(/class="[^"]*aw-agree-count[^"]*"[^>]*>(\d+)/i);
+    if (ansContentMatch) {
+      const ansContent = ansContentMatch[1].replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      if (ansContent.length > 20) {
+        answers.push({
+          author: ansAuthorMatch ? ansAuthorMatch[1].trim() : "匿名用户",
+          content: ansContent.slice(0, 3000),
+          votes: votesMatch ? parseInt(votesMatch[1]) : 0,
+        });
+      }
+    }
+  }
+
+  // If no structured content found, try to extract from body
+  if (!content || content.length < 30) {
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    if (bodyMatch) {
+      content = bodyMatch[1]
+        .replace(/<script[\s\S]*?<\/script>/gi, "")
+        .replace(/<style[\s\S]*?<\/style>/gi, "")
+        .replace(/<nav[\s\S]*?<\/nav>/gi, "")
+        .replace(/<header[\s\S]*?<\/header>/gi, "")
+        .replace(/<footer[\s\S]*?<\/footer>/gi, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 8000);
+    }
+  }
+
+  return { title, content: content.slice(0, 8000), author, category, answers };
+}
+
 // ─── Discover new URLs from a source ───────────────
 async function discoverNewUrls(
   source: { id: number; url: string; sourceType: string; autoCollectMaxItems: number | null }
@@ -231,7 +382,46 @@ async function discoverNewUrls(
     return newItems;
   }
 
-  // For non-RSS sources, try to find article links on the page
+  // ── WeAreSellers专用解析 ──────────────────────────
+  if (source.sourceType === "wearesellers") {
+    // Fetch the list page (try multiple sort types for broader coverage)
+    const sortUrls = [
+      source.url, // default URL
+      "https://www.wearesellers.com/type-explore__sort_type-new__day-0__is_recommend-0__page-1",
+    ];
+    const allPosts: Array<{ title: string; url: string; views: number; replies: number }> = [];
+    const seenUrls = new Set<string>();
+
+    for (const sortUrl of sortUrls) {
+      const result = await fetchWithRetry(sortUrl, 2);
+      if (!result.ok) continue;
+      // Use rawHtml for list parsing (we need the HTML structure, not stripped text)
+      const posts = parseWeareSellersListPage(result.rawHtml || result.content);
+      for (const post of posts) {
+        if (seenUrls.has(post.url)) continue;
+        seenUrls.add(post.url);
+        allPosts.push(post);
+      }
+      if (allPosts.length >= maxItems * 3) break;
+    }
+
+    // Sort by engagement (views + replies * 10 + followers * 5) to prioritize popular content
+    allPosts.sort((a, b) => (b.views + b.replies * 10) - (a.views + a.replies * 10));
+
+    // Filter out duplicates against existing items
+    const newItems: Array<{ title: string; url: string }> = [];
+    for (const post of allPosts) {
+      if (!(await isUrlDuplicate(source.id, post.url))) {
+        // Filter out system/admin posts
+        if (post.title.includes("发布帖子赢众多好礼") || post.title.includes("社区指南")) continue;
+        newItems.push({ title: post.title, url: post.url });
+        if (newItems.length >= maxItems) break;
+      }
+    }
+    return newItems;
+  }
+
+  // For non-RSS, non-wearesellers sources, try to find article links on the page
   const result = await fetchWithRetry(source.url, 2);
   if (!result.ok) return [];
 
@@ -357,8 +547,23 @@ export async function collectFromSource(
           continue;
         }
 
-        const content = fetchResult.content;
-        const title = fetchResult.title || item.title;
+        // Use specialized parser for wearesellers detail pages
+        let content: string;
+        let title: string;
+        if (source.sourceType === "wearesellers" && item.url.includes("/question/")) {
+          const parsed = parseWeareSellersDetail(fetchResult.rawHtml || fetchResult.content);
+          title = parsed.title || item.title;
+          // Combine question content with top answers for richer context
+          const answerTexts = parsed.answers
+            .sort((a, b) => b.votes - a.votes)
+            .slice(0, 5)
+            .map((a, i) => `\n\n--- 回答${i + 1} (${a.author}, ${a.votes}赞) ---\n${a.content}`)
+            .join("");
+          content = `[分类: ${parsed.category}] [作者: ${parsed.author}]\n\n${parsed.content}${answerTexts}`;
+        } else {
+          content = fetchResult.content;
+          title = fetchResult.title || item.title;
+        }
 
         if (content.length < 50) {
           details.push({ title, url: item.url, status: "content_too_short" });
