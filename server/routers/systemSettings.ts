@@ -345,6 +345,66 @@ export const systemSettingsRouter = router({
     return adapter.testProxyOnly();
   }),
 
+  /** Temp: Test multiple API paths to find correct ones */
+  testLingxingPaths: protectedProcedure.mutation(async () => {
+    const { getLingxingAdapter } = await import("../lingxingAdapter");
+    const adapter = getLingxingAdapter();
+    
+    const pathsToTest = [
+      // Known working
+      { name: '卖家列表(已知OK)', path: '/erp/sc/data/seller/lists', body: {} },
+      // Profit - various possible paths
+      { name: '利润(旧代码)', path: '/erp/sc/data/profit/list', body: { start_date: '2025-03-01', end_date: '2025-03-20' } },
+      { name: '利润-MSKU(bd)', path: '/erp/sc/routing/data/profit/bd/profitMsku', body: { start_date: '2025-03-01', end_date: '2025-03-20', date_type: 2 } },
+      { name: '利润-MSKU(v2)', path: '/data/profit/bd/profitMsku', body: { start_date: '2025-03-01', end_date: '2025-03-20', date_type: 2 } },
+      { name: '利润-MSKU(v3)', path: '/erp/sc/data/profit/bd/profitMsku', body: { start_date: '2025-03-01', end_date: '2025-03-20', date_type: 2 } },
+      { name: '利润-ASIN(旧)', path: '/erp/sc/data/profit/profitAsin', body: { start_date: '2025-03-01', end_date: '2025-03-20' } },
+      // FBA Inventory
+      { name: 'FBA库存(旧代码)', path: '/erp/sc/routing/storage/fbaInventory', body: {} },
+      { name: 'FBA库存(v2)', path: '/erp/sc/routing/storage/fbaStock', body: {} },
+      { name: 'FBA库存(data)', path: '/erp/sc/data/fba_report/fbaStock', body: {} },
+      { name: 'FBA库存(inventoryAge)', path: '/erp/sc/data/fba_report/inventoryAge', body: {} },
+      // Ad campaigns
+      { name: '广告活动(旧代码)', path: '/erp/sc/data/ad_manage/campaign/list', body: {} },
+      { name: 'SP广告活动', path: '/erp/sc/routing/ad/spCampaigns', body: {} },
+      { name: 'SP广告活动(data)', path: '/erp/sc/data/ad/spCampaigns', body: {} },
+      // Search terms
+      { name: '搜索词(旧代码)', path: '/erp/sc/data/ad_manage/searchTerm/list', body: {} },
+      { name: 'SP搜索词', path: '/erp/sc/routing/ad/queryWordReports', body: { start_date: '2025-03-01', end_date: '2025-03-20' } },
+      // Products
+      { name: '产品列表(旧代码)', path: '/erp/sc/data/msku/list', body: {} },
+      { name: '产品列表(product)', path: '/erp/sc/data/product/list', body: {} },
+      // Exchange rate
+      { name: '汇率', path: '/erp/sc/data/exchange_rate', body: {} },
+    ];
+    
+    const results: Array<{name: string; path: string; code: string; msg: string; hasData: boolean; dataPreview?: string}> = [];
+    
+    for (const test of pathsToTest) {
+      try {
+        const res = await adapter.request({ path: test.path, body: test.body, skipCache: true });
+        results.push({
+          name: test.name,
+          path: test.path,
+          code: String(res.code),
+          msg: res.msg || '',
+          hasData: res.data !== undefined && res.data !== null,
+          dataPreview: res.data ? JSON.stringify(res.data).substring(0, 100) : undefined,
+        });
+      } catch (e: any) {
+        results.push({
+          name: test.name,
+          path: test.path,
+          code: 'ERROR',
+          msg: e.message,
+          hasData: false,
+        });
+      }
+    }
+    
+    return results;
+  }),
+
   /** Get recent API call logs */
   getLingxingApiLogs: protectedProcedure
     .input(z.object({ limit: z.number().optional() }).optional())

@@ -22,26 +22,39 @@ export const operationsRouter = router({
     // Fetch key data from Lingxing (or mock)
     const [sellerRes, profitRes, inventoryRes, adRes] = await Promise.all([
       adapter.request({ path: "/erp/sc/data/seller/lists" }),
-      adapter.request({ path: "/erp/sc/data/profit/list", body: { start_date: getDateNDaysAgo(30), end_date: getToday() } }),
-      adapter.request({ path: "/erp/sc/routing/storage/fbaInventory", body: { sid: 1 } }),
-      adapter.request({ path: "/erp/sc/data/ad_manage/campaign/list", body: {} }),
+      adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { startDate: getDateNDaysAgo(30), endDate: getToday() } }),
+      adapter.request({ path: "/erp/sc/routing/fba/fbaStock/fbaList", body: { sid: "1" } }),
+      adapter.request({ path: "/pb/openapi/newad/spCampaigns", body: { sid: 1 }, headers: { "X-API-VERSION": "2" } }),
     ]);
 
     // Calculate summary metrics
-    const profitData = profitRes.data || [];
-    const inventoryData = inventoryRes.data || [];
-    const adData = adRes.data || [];
+    // Normalize data: profit API returns {records:[...]}, FBA returns {total, list:[]}
+    const rawProfit = profitRes.data || [];
+    const profitData = Array.isArray(rawProfit) ? rawProfit : (rawProfit as any).records || (rawProfit as any).list || [];
+    const rawInventory = inventoryRes.data || [];
+    const inventoryData = Array.isArray(rawInventory) ? rawInventory : (rawInventory as any).list || [];
+    const rawAd = adRes.data || [];
+    const adData = Array.isArray(rawAd) ? rawAd : (rawAd as any).records || (rawAd as any).list || [];
 
-    const totalRevenue = profitData.reduce((s: number, d: any) => s + (d.revenue || 0), 0);
-    const totalProfit = profitData.reduce((s: number, d: any) => s + (d.profit || 0), 0);
-    const totalOrders = profitData.reduce((s: number, d: any) => s + (d.order_count || 0), 0);
+    // Real Lingxing profit fields:
+    // revenue: totalFbaAndFbmAmount, profit: grossProfit, margin: grossRate
+    // orders: totalSalesQuantity, adSpend: totalAdsCost
+    // fees: platformFee(-), totalFbaDeliveryFee(-), totalStorageFee(-)
+    // cost: cgPriceAbsTotal, cgTransportCostsTotal
+    const totalRevenue = profitData.reduce((s: number, d: any) => s + (d.totalFbaAndFbmAmount || d.revenue || 0), 0);
+    const totalProfit = profitData.reduce((s: number, d: any) => s + (d.grossProfit || d.totalProfit || d.profit || 0), 0);
+    const totalOrders = profitData.reduce((s: number, d: any) => s + (d.totalSalesQuantity || d.order_count || 0), 0);
     const avgMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
 
-    const lowStockCount = inventoryData.filter((i: any) => (i.days_of_supply || 0) < 14).length;
-    const overstockCount = inventoryData.filter((i: any) => (i.days_of_supply || 0) > 90).length;
+    const lowStockCount = inventoryData.filter((i: any) => (i.days_of_supply || i.sellable_days || 0) < 14).length;
+    const overstockCount = inventoryData.filter((i: any) => (i.days_of_supply || i.sellable_days || 0) > 90).length;
 
-    const totalAdSpend = adData.reduce((s: number, d: any) => s + (d.spend || 0), 0);
-    const totalAdSales = adData.reduce((s: number, d: any) => s + (d.sales || 0), 0);
+    // Also extract ad cost from profit data if ad API is not authorized
+    const profitAdSpend = profitData.reduce((s: number, d: any) => s + Math.abs(d.totalAdsCost || d.adsSpCost || 0), 0);
+    const totalAdSpend = adData.length > 0 
+      ? adData.reduce((s: number, d: any) => s + (d.spend || d.cost || 0), 0)
+      : profitAdSpend;
+    const totalAdSales = adData.reduce((s: number, d: any) => s + (d.sales || d.attributed_sales || 0), 0);
     const avgAcos = totalAdSales > 0 ? (totalAdSpend / totalAdSales * 100) : 0;
 
     return {
@@ -59,11 +72,11 @@ export const operationsRouter = router({
         sellerCount: (sellerRes.data || []).length,
       },
       profitTrend: profitData.slice(-30).map((d: any) => ({
-        date: d.date,
-        revenue: d.revenue,
-        profit: d.profit,
-        margin: d.profit_margin,
-        orders: d.order_count,
+        date: d.postedDateLocale || d.reportDateMonth || d.date || d.statDate || '',
+        revenue: d.totalFbaAndFbmAmount || d.revenue || 0,
+        profit: d.grossProfit || d.totalProfit || d.profit || 0,
+        margin: (d.grossRate || d.profitRate || 0) * 100,
+        orders: d.totalSalesQuantity || d.order_count || 0,
       })),
       topAlerts: [
         ...inventoryData
@@ -116,12 +129,15 @@ export const operationsRouter = router({
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
       const res = await adapter.request({
-        path: "/erp/sc/routing/storage/fbaInventory",
-        body: { sid: input.sid },
+        path: "/erp/sc/routing/fba/fbaStock/fbaList",
+        body: { sid: String(input.sid) },
       });
 
-      let items = (res.data || []).map((item: any) => {
-        const daysOfSupply = item.days_of_supply || 0;
+      // Normalize: FBA API returns {total, list:[...]}
+      const rawData = res.data || [];
+      const dataList = Array.isArray(rawData) ? rawData : (rawData as any).list || [];
+      let items = dataList.map((item: any) => {
+        const daysOfSupply = item.days_of_supply || item.sellable_days || 0;
         let alertLevel: "critical" | "low" | "normal" | "overstock" = "normal";
         if (daysOfSupply <= 7) alertLevel = "critical";
         else if (daysOfSupply <= 14) alertLevel = "low";
@@ -158,10 +174,13 @@ export const operationsRouter = router({
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
       const res = await adapter.request({
-        path: "/erp/sc/routing/storage/replenish/getReplenishmentData",
-        body: { sid: input.sid },
+        path: "/erp/sc/routing/restocking/analysis/getSummaryList",
+        body: { data_type: 1 },
       });
-      return { items: res.data || [], isMock: adapter.isMockMode() };
+      // Normalize: may return {list:[...]} or array
+      const rawItems = res.data || [];
+      const items = Array.isArray(rawItems) ? rawItems : (rawItems as any).list || (rawItems as any).records || [];
+      return { items, isMock: adapter.isMockMode() };
     }),
 
   getInventoryConfig: protectedProcedure
@@ -291,52 +310,62 @@ ${JSON.stringify(input.skuData, null, 2)}
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
       const res = await adapter.request({
-        path: "/erp/sc/data/profit/list",
+        path: "/bd/profit/report/open/report/msku/list",
         body: {
-          start_date: input.startDate || getDateNDaysAgo(30),
-          end_date: input.endDate || getToday(),
+          startDate: input.startDate || getDateNDaysAgo(30),
+          endDate: input.endDate || getToday(),
         },
       });
 
-      const data = res.data || [];
+      // Normalize: profit API returns {records:[...]} or array
+      const rawData = res.data || [];
+      const data = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
 
       // Calculate waterfall breakdown (last period totals)
+      // Real API fields: totalFbaAndFbmAmount(revenue), productCost, fbaFee/fbaShippingFee, 
+      // platformCommission(referral), adCost, otherFee, totalProfit
+      // Real Lingxing fields: fees are NEGATIVE numbers, costs are NEGATIVE
+      // grossProfit = revenue + all fees + all costs (already calculated by Lingxing)
       const totals = data.reduce((acc: any, d: any) => ({
-        revenue: acc.revenue + (d.revenue || 0),
-        productCost: acc.productCost + (d.product_cost || 0),
-        fbaFee: acc.fbaFee + (d.fba_fee || 0),
-        referralFee: acc.referralFee + (d.referral_fee || 0),
-        adSpend: acc.adSpend + (d.ad_spend || 0),
-        otherFee: acc.otherFee + (d.other_fee || 0),
-        profit: acc.profit + (d.profit || 0),
-      }), { revenue: 0, productCost: 0, fbaFee: 0, referralFee: 0, adSpend: 0, otherFee: 0, profit: 0 });
+        revenue: acc.revenue + (d.totalFbaAndFbmAmount || d.platformIncome || d.revenue || 0),
+        productCost: acc.productCost + Math.abs(d.cgPriceTotal || d.cgPriceAbsTotal || d.productCost || d.product_cost || 0),
+        fbaFee: acc.fbaFee + Math.abs(d.totalFbaDeliveryFee || d.fbaDeliveryFee || d.fbaShippingFee || d.fba_fee || 0),
+        referralFee: acc.referralFee + Math.abs(d.platformFee || d.platformCommission || d.referral_fee || 0),
+        adSpend: acc.adSpend + Math.abs(d.totalAdsCost || d.adsSpCost || d.adCost || d.ad_spend || 0),
+        storageFee: acc.storageFee + Math.abs(d.totalStorageFee || d.fbaStorageFee || 0),
+        shippingCost: acc.shippingCost + Math.abs(d.cgTransportCostsTotal || 0),
+        otherFee: acc.otherFee + Math.abs(d.totalPlatformOtherFee || d.otherFee || d.other_fee || 0),
+        profit: acc.profit + (d.grossProfit || d.totalProfit || d.profit || 0),
+      }), { revenue: 0, productCost: 0, fbaFee: 0, referralFee: 0, adSpend: 0, storageFee: 0, shippingCost: 0, otherFee: 0, profit: 0 });
 
       // Waterfall chart data
       const waterfall = [
         { name: "销售收入", value: Math.round(totals.revenue * 100) / 100, type: "positive" },
-        { name: "产品成本", value: -Math.round(totals.productCost * 100) / 100, type: "negative" },
-        { name: "FBA费用", value: -Math.round(totals.fbaFee * 100) / 100, type: "negative" },
-        { name: "佣金", value: -Math.round(totals.referralFee * 100) / 100, type: "negative" },
+        { name: "采购成本", value: -Math.round(totals.productCost * 100) / 100, type: "negative" },
+        { name: "头程运费", value: -Math.round(totals.shippingCost * 100) / 100, type: "negative" },
+        { name: "FBA配送费", value: -Math.round(totals.fbaFee * 100) / 100, type: "negative" },
+        { name: "平台佣金", value: -Math.round(totals.referralFee * 100) / 100, type: "negative" },
+        { name: "仓储费", value: -Math.round(totals.storageFee * 100) / 100, type: "negative" },
         { name: "广告支出", value: -Math.round(totals.adSpend * 100) / 100, type: "negative" },
         { name: "其他费用", value: -Math.round(totals.otherFee * 100) / 100, type: "negative" },
-        { name: "净利润", value: Math.round(totals.profit * 100) / 100, type: "total" },
+        { name: "毛利润", value: Math.round(totals.profit * 100) / 100, type: "total" },
       ];
 
       return {
         trend: data.map((d: any) => ({
-          date: d.date,
-          revenue: d.revenue,
-          profit: d.profit,
-          margin: d.profit_margin,
-          orders: d.order_count,
-          adSpend: d.ad_spend,
+          date: d.postedDateLocale || d.reportDateMonth || d.statDate || d.date || '',
+          revenue: d.totalFbaAndFbmAmount || d.platformIncome || d.revenue || 0,
+          profit: d.grossProfit || d.totalProfit || d.profit || 0,
+          margin: (d.grossRate || d.profitRate || 0) * 100,
+          orders: d.totalSalesQuantity || d.order_count || 0,
+          adSpend: Math.abs(d.totalAdsCost || d.adsSpCost || d.adCost || 0),
         })),
         waterfall,
         totals: {
           revenue: Math.round(totals.revenue * 100) / 100,
           profit: Math.round(totals.profit * 100) / 100,
           margin: totals.revenue > 0 ? Math.round(totals.profit / totals.revenue * 1000) / 10 : 0,
-          orders: data.reduce((s: number, d: any) => s + (d.order_count || 0), 0),
+          orders: data.reduce((s: number, d: any) => s + (d.totalSalesQuantity || d.order_count || 0), 0),
         },
         isMock: adapter.isMockMode(),
       };
@@ -350,13 +379,16 @@ ${JSON.stringify(input.skuData, null, 2)}
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
       const res = await adapter.request({
-        path: "/erp/sc/data/profit/productList",
+        path: "/bd/profit/report/open/report/asin/list",
         body: {
-          start_date: input.startDate || getDateNDaysAgo(30),
-          end_date: input.endDate || getToday(),
+          startDate: input.startDate || getDateNDaysAgo(30),
+          endDate: input.endDate || getToday(),
         },
       });
-      return { items: res.data || [], isMock: adapter.isMockMode() };
+      // Normalize: profit API returns {records:[...]} or array
+      const rawItems = res.data || [];
+      const items = Array.isArray(rawItems) ? rawItems : (rawItems as any).records || (rawItems as any).list || [];
+      return { items, isMock: adapter.isMockMode() };
     }),
 
   aiProfitAnalysis: protectedProcedure
@@ -444,12 +476,11 @@ ${JSON.stringify(input.skuData, null, 2)}
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
       const res = await adapter.request({
-        path: "/erp/sc/data/ad_manage/campaign/list",
+        path: "/pb/openapi/newad/spCampaigns",
         body: {
           sid: input.sid,
-          start_date: input.startDate || getDateNDaysAgo(30),
-          end_date: input.endDate || getToday(),
         },
+        headers: { "X-API-VERSION": "2" },
       });
       return { campaigns: res.data || [], isMock: adapter.isMockMode() };
     }),
@@ -464,13 +495,13 @@ ${JSON.stringify(input.skuData, null, 2)}
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
       const res = await adapter.request({
-        path: "/erp/sc/data/ad_manage/searchTerm/list",
+        path: "/pb/openapi/newad/queryWordReports",
         body: {
           sid: input.sid,
-          campaign_id: input.campaignId,
-          start_date: input.startDate || getDateNDaysAgo(30),
-          end_date: input.endDate || getToday(),
+          report_date: input.startDate || getDateNDaysAgo(1),
+          target_type: "keyword",
         },
+        headers: { "X-API-VERSION": "2" },
       });
       return { searchTerms: res.data || [], isMock: adapter.isMockMode() };
     }),

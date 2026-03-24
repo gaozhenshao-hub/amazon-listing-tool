@@ -87,6 +87,7 @@ export interface LingxingRequestOptions {
   method?: "GET" | "POST";
   body?: Record<string, any>;
   query?: Record<string, any>;
+  headers?: Record<string, string>;
   timeout?: number;
   skipCache?: boolean;
   cacheKey?: string;
@@ -690,11 +691,17 @@ class LingxingAdapter {
 
       let json: LingxingResponse<T>;
 
+      // Merge custom headers (e.g., X-API-VERSION for ad APIs)
+      const requestHeaders: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      };
+
       if (proxyUrl && !proxyUrl.startsWith('socks')) {
         // Use native CONNECT tunnel for HTTP/HTTPS proxies (correct exit IP)
         const res = await fetchViaProxy(url, proxyUrl, {
           method,
-          headers: { "Content-Type": "application/json" },
+          headers: requestHeaders,
           body: bodyStr,
           timeout,
         });
@@ -710,7 +717,7 @@ class LingxingAdapter {
         // Direct fetch or SOCKS5 proxy (uses agent)
         const fetchOptions: any = {
           method,
-          headers: { "Content-Type": "application/json" },
+          headers: requestHeaders,
           signal: AbortSignal.timeout(timeout),
         };
         if (proxyUrl) {
@@ -901,42 +908,42 @@ class LingxingAdapter {
       // 基础数据 - 汇率
       "/erp/sc/data/exchange_rate": () => mockExchangeRates(),
       // FBA库存
+      "/erp/sc/routing/fba/fbaStock/fbaList": () => mockFbaInventory(body),
       "/erp/sc/data/fba_report/inventoryAge": () => mockFbaInventory(body),
-      "/erp/sc/routing/storage/fbaInventory": () => mockFbaInventory(body),
       // 本地仓库存
       "/erp/sc/routing/storage/getLocalInventory": () => mockLocalInventory(body),
       // 补货建议
-      "/erp/sc/routing/storage/replenish/getReplenishmentData": () => mockReplenishmentData(body),
+      "/erp/sc/routing/restocking/analysis/getSummaryList": () => mockReplenishmentData(body),
       // 利润报表
-      "/erp/sc/data/profit/list": () => mockProfitList(body),
-      "/erp/sc/data/profit/detail": () => mockProfitDetail(body),
+      "/bd/profit/report/open/report/msku/list": () => mockProfitList(body),
+      "/bd/profit/report/open/report/asin/list": () => mockProfitDetail(body),
       // 广告数据
-      "/erp/sc/data/ad_manage/campaign/list": () => mockAdCampaigns(body),
-      "/erp/sc/data/ad_manage/group/list": () => mockAdGroups(body),
-      "/erp/sc/data/ad_manage/keyword/list": () => mockAdKeywords(body),
-      "/erp/sc/data/ad_manage/searchTerm/list": () => mockSearchTerms(body),
+      "/pb/openapi/newad/spCampaigns": () => mockAdCampaigns(body),
+      "/pb/openapi/newad/spAdGroups": () => mockAdGroups(body),
+      "/pb/openapi/newad/spKeywords": () => mockAdKeywords(body),
+      "/pb/openapi/newad/queryWordReports": () => mockSearchTerms(body),
       // 产品列表
-      "/erp/sc/data/msku/list": () => mockMskuList(body),
-      "/erp/sc/data/product/list": () => mockProductList(body),
+      "/erp/sc/routing/data/local_inventory/productList": () => mockMskuList(body),
+      "/erp/sc/data/mws/listing": () => mockProductList(body),
       // 订单
-      "/erp/sc/data/orders/list": () => mockOrderList(body),
+      "/erp/sc/data/mws/orders": () => mockOrderList(body),
       // 财务
       "/erp/sc/data/finance/profitAndLoss": () => mockProfitAndLoss(body),
       // 采购模块
-      "/erp/sc/data/purchase/plan/list": () => mockPurchasePlanList(body),
-      "/erp/sc/data/purchase/list": () => mockPurchaseOrderList(body),
+      "/erp/sc/routing/data/local_inventory/purchasePlanList": () => mockPurchasePlanList(body),
+      "/erp/sc/routing/data/local_inventory/purchaseOrderList": () => mockPurchaseOrderList(body),
       // FBA发货单
-      "/erp/sc/data/fba/deliveryOrder/list": () => mockDeliveryOrderList(body),
-      "/erp/sc/data/fba/deliveryOrder/detail": () => mockDeliveryOrderDetail(body),
+      "/erp/sc/routing/storage/shipment/getInboundShipmentList": () => mockDeliveryOrderList(body),
+      "/erp/sc/data/fba_report/shipmentList": () => mockDeliveryOrderDetail(body),
       // 头程物流
-      "/erp/sc/data/logistics/headway/channel/list": () => mockLogisticsChannelList(),
-      "/erp/sc/data/logistics/headway/provider/list": () => mockLogisticsProviderList(),
+      "/erp/sc/data/local_inventory/channelList": () => mockLogisticsChannelList(),
+      "/erp/sc/routing/tms/FirstVessel/addProviders": () => mockLogisticsProviderList(),
       // 收货单
       "/erp/sc/routing/wms/receipt/list": () => mockReceiptList(body),
       // 仓库库存明细
       "/erp/sc/routing/storage/warehouseInventory": () => mockWarehouseInventory(body),
       // FBA库存v2
-      "/erp/sc/routing/storage/fbaInventoryV2": () => mockFbaInventoryV2(body),
+      "/basicOpen/openapi/storage/fbaWarehouseDetail": () => mockFbaInventoryV2(body),
       // AWD库存
       "/erp/sc/routing/storage/awdInventory": () => mockAwdInventory(body),
       // 补货建议 - 未来销量预测

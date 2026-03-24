@@ -393,29 +393,32 @@ export const productOpsRouter = router({
 
       const adapter = getLingxingAdapter();
       const profitRes = await adapter.request({
-        path: "/erp/sc/data/profit/list",
-        body: { start_date: getDateNDaysAgo(30), end_date: getToday(), parent_asin: product.parentAsin },
+        path: "/bd/profit/report/open/report/msku/list",
+        body: { startDate: getDateNDaysAgo(30), endDate: getToday() },
       });
 
-      const profitData = profitRes.data || [];
-      const items = Array.isArray(profitData) ? profitData : (profitData as Record<string, unknown>).list ? ((profitData as Record<string, unknown>).list as unknown[]) : [profitData];
+      // Normalize: profit API returns {records:[...]} or array
+      const rawProfit = profitRes.data || [];
+      const items = Array.isArray(rawProfit) ? rawProfit : (rawProfit as any).records || (rawProfit as any).list || [];
 
       // Calculate aggregated profit summary
+      // Real API fields: totalFbaAndFbmAmount, productCost, adCost, fbaShippingFee, platformCommission, otherFee, totalProfit
       let totalRevenue = 0, totalProductCost = 0, totalAdSpend = 0;
       let totalFbaFee = 0, totalReferralFee = 0, totalOtherFee = 0, totalProfit = 0;
       let totalOrders = 0, totalUnits = 0;
 
       for (const item of items) {
         const i = item as Record<string, number>;
-        totalRevenue += i.revenue || i.product_amount || 0;
-        totalProductCost += i.product_cost || i.purchase_cost || 0;
-        totalAdSpend += i.ad_spend || i.ads_cost || 0;
-        totalFbaFee += i.fba_fee || i.fba_fees || 0;
-        totalReferralFee += i.referral_fee || i.amazon_commission || 0;
-        totalOtherFee += i.other_fee || i.storage_fee || 0;
-        totalProfit += i.profit || 0;
-        totalOrders += i.order_count || i.orders || 0;
-        totalUnits += i.unit_count || i.units || 0;
+        // Real Lingxing fields: fees are negative, use Math.abs
+        totalRevenue += i.totalFbaAndFbmAmount || i.platformIncome || i.revenue || 0;
+        totalProductCost += Math.abs(i.cgPriceTotal || i.cgPriceAbsTotal || i.productCost || 0);
+        totalAdSpend += Math.abs(i.totalAdsCost || i.adsSpCost || i.adCost || 0);
+        totalFbaFee += Math.abs(i.totalFbaDeliveryFee || i.fbaDeliveryFee || i.fba_fee || 0);
+        totalReferralFee += Math.abs(i.platformFee || i.platformCommission || i.referral_fee || 0);
+        totalOtherFee += Math.abs(i.totalStorageFee || i.fbaStorageFee || i.otherFee || 0);
+        totalProfit += i.grossProfit || i.totalProfit || i.profit || 0;
+        totalOrders += i.totalSalesQuantity || i.order_count || i.orders || 0;
+        totalUnits += i.totalFbaAndFbmQuantity || i.unit_count || i.units || 0;
       }
 
       const amazonFees = totalReferralFee + totalFbaFee;
@@ -441,7 +444,7 @@ export const productOpsRouter = router({
           netRevenue: round2(netRevenue),
           fixedCosts: round2(fixedCosts),
           productCost: round2(totalProductCost),
-          shippingCost: 0,
+          shippingCost: round2(items.reduce((s: number, item: any) => s + Math.abs((item as any).cgTransportCostsTotal || 0), 0)),
           tariff: 0,
           profit: round2(totalProfit),
           profitMargin: round2(profitMargin),
@@ -471,11 +474,13 @@ export const productOpsRouter = router({
 
       const adapter = getLingxingAdapter();
       const invRes = await adapter.request({
-        path: "/erp/sc/routing/storage/fbaInventory",
-        body: { sid: 1 },
+        path: "/erp/sc/routing/fba/fbaStock/fbaList",
+        body: { sid: "1" },
       });
 
-      const invList = Array.isArray(invRes.data) ? invRes.data : [];
+      // Normalize: FBA API returns {total, list:[...]} or array
+      const rawInv = invRes.data || [];
+      const invList = Array.isArray(rawInv) ? rawInv : (rawInv as any).list || [];
 
       // Build inventory summary per variant
       const variantInventory = variants.map(v => {
@@ -526,11 +531,14 @@ export const productOpsRouter = router({
 
       const adapter = getLingxingAdapter();
       const adRes = await adapter.request({
-        path: "/erp/sc/data/ad_manage/campaign/list",
-        body: {},
+        path: "/pb/openapi/newad/spCampaigns",
+        body: { sid: 1 },
+        headers: { "X-API-VERSION": "2" },
       });
 
-      const campaigns = Array.isArray(adRes.data) ? adRes.data : [];
+      // Normalize: ad API may return array or {records/list}
+      const rawAd = adRes.data || [];
+      const campaigns = Array.isArray(rawAd) ? rawAd : (rawAd as any).records || (rawAd as any).list || [];
 
       let totalSpend = 0, totalSales = 0, totalClicks = 0, totalImpressions = 0, totalOrders = 0;
       const campaignList: Array<{

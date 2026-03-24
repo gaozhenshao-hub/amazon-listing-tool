@@ -2037,3 +2037,23 @@
   - 根因2：领星API真实响应格式 {code:0, message:"success"}，代码预期 {code:"200", msg:"OK"}
   - 修复：添加normalizeLingxingResponse()函数统一转换响应格式
   - 验证：代理测试成功(IP:154.40.32.64)，API连接成功(获取28个卖家账号)，全2565测试通过
+
+## Bug修复：领星API接口路径错误导致400"服务不存在"
+- [x] 核对领星官方API文档，找出所有接口的正确路径
+- [x] 修正代码中错误的API路径
+  - 利润报表: /bd/profit/report/open/report/msku/list
+  - FBA库存: /erp/sc/routing/fba/fbaStock/fbaList
+  - SP广告: /pb/openapi/newad/spCampaigns
+  - 搜索词: /pb/openapi/newad/spSearchTerms
+  - 补货建议: /erp/sc/routing/restocking/analysis/getSummaryList
+  - 发货单: /erp/sc/routing/storage/shipment/getShipmentList
+  - 物流渠道: /erp/sc/routing/storage/logisticsChannel/getList
+- [x] 修正利润字段映射（grossProfit, platformFee, totalFbaDeliveryFee, totalStorageFee, cgPriceAbsTotal等）
+- [x] 验证: 利润报表✅ FBA库存✅ 广告需授权
+- [x] 成本瀑布图真实数据展示正常
+
+## 任务：领星API文档完整整理为项目文件
+- [x] 从领星API文档网站抓取所有模块的接口信息（489个接口文档）
+- [x] 将完整API文档整理为项目文件（shared/lingxing-api-docs/）
+- [x] 包含所有模块：授权、基础数据、销售、FBA、补货建议、产品、采购、仓库、物涁、新广告、财务、统计等
+- [x] 生成README.md索引文件

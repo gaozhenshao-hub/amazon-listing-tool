@@ -890,25 +890,25 @@ export const shippingBatchRouter = router({
 
   getLingxingDeliveryOrders: protectedProcedure.query(async () => {
     const lingxing = (await import("../lingxingAdapter")).getLingxingAdapter();
-    const res = await lingxing.request({ path: '/erp/sc/routing/shipment/deliveryOrderList', body: {} });
+    const res = await lingxing.request({ path: '/erp/sc/routing/storage/shipment/getInboundShipmentList', body: {} });
     return Array.isArray(res.data) ? res.data : [];
   }),
 
   getLingxingLogisticsChannels: protectedProcedure.query(async () => {
     const lingxing = (await import("../lingxingAdapter")).getLingxingAdapter();
-    const res = await lingxing.request({ path: '/erp/sc/routing/logistic/channelList', body: {} });
+    const res = await lingxing.request({ path: '/erp/sc/data/local_inventory/channelList', body: {} });
     return Array.isArray(res.data) ? res.data : [];
   }),
 
   getLingxingFbaInventory: protectedProcedure.query(async () => {
     const lingxing = (await import("../lingxingAdapter")).getLingxingAdapter();
-    const res = await lingxing.request({ path: '/erp/sc/routing/storage/fbaInventoryV2', body: {} });
+    const res = await lingxing.request({ path: '/basicOpen/openapi/storage/fbaWarehouseDetail', body: {} });
     return Array.isArray(res.data) ? res.data : [];
   }),
 
   getLingxingPurchaseOrders: protectedProcedure.query(async () => {
     const lingxing = (await import("../lingxingAdapter")).getLingxingAdapter();
-    const res = await lingxing.request({ path: '/erp/sc/routing/purchase/orderList', body: {} });
+    const res = await lingxing.request({ path: '/erp/sc/routing/data/local_inventory/purchaseOrderList', body: {} });
     return Array.isArray(res.data) ? res.data : [];
   }),
 });
