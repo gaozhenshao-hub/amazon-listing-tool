@@ -47,6 +47,41 @@ export interface LingxingResponse<T = any> {
   total?: number;
 }
 
+/**
+ * Normalize Lingxing API response to internal format.
+ * The real Lingxing API returns:
+ *   { code: 0, message: "success", data: [...] }  (code is number, field is "message")
+ * But our internal format uses:
+ *   { code: "200", msg: "OK", data: [...] }  (code is string, field is "msg")
+ * 
+ * This function bridges the gap so all downstream code works consistently.
+ */
+function normalizeLingxingResponse<T = any>(raw: any): LingxingResponse<T> {
+  // If already in our internal format (e.g., from mock data)
+  if (typeof raw.code === 'string') {
+    return raw as LingxingResponse<T>;
+  }
+  
+  // Real Lingxing API format: code is number, message field
+  const rawCode = raw.code;
+  const rawMsg = raw.message || raw.msg || '';
+  
+  // Map Lingxing success code (0) to our internal "200"
+  let normalizedCode: string;
+  if (rawCode === 0) {
+    normalizedCode = '200';
+  } else {
+    normalizedCode = String(rawCode);
+  }
+  
+  return {
+    code: normalizedCode,
+    msg: rawMsg,
+    data: raw.data,
+    total: raw.total,
+  };
+}
+
 export interface LingxingRequestOptions {
   path: string;
   method?: "GET" | "POST";
@@ -109,7 +144,7 @@ class TokenManager {
         body: bodyStr,
         timeout: 15_000,
       });
-      json = await res.json();
+      json = normalizeLingxingResponse(await res.json());
     } else {
       const res = await fetch(url, {
         method: "POST",
@@ -117,7 +152,7 @@ class TokenManager {
         body: bodyStr,
         signal: AbortSignal.timeout(15_000),
       });
-      json = await res.json() as any;
+      json = normalizeLingxingResponse(await res.json());
     }
 
     if (json.code !== "200" || !json.data?.access_token) {
@@ -357,6 +392,10 @@ async function createProxyAgent(proxyUrl: string): Promise<any> {
  * Make a proxied fetch request using Node.js native CONNECT tunnel.
  * This ensures the exit IP is the proxy server's IP, not a random IP
  * from the proxy provider's pool (which happens with https-proxy-agent).
+ * 
+ * Uses Node.js native https.request over the CONNECT socket so that
+ * HTTP response parsing (chunked encoding, gzip, etc.) is handled
+ * automatically by Node.js instead of manual string parsing.
  */
 async function fetchViaProxy(
   targetUrl: string,
@@ -364,6 +403,7 @@ async function fetchViaProxy(
   options: { method?: string; headers?: Record<string, string>; body?: string; timeout?: number } = {},
 ): Promise<{ status: number; ok: boolean; json: () => Promise<any>; text: () => Promise<string> }> {
   const http = await import("http");
+  const https = await import("https");
   const tls = await import("tls");
   const proxy = parseProxyUrl(proxyUrl);
   const target = new URL(targetUrl);
@@ -390,78 +430,105 @@ async function fetchViaProxy(
       reject(new Error(`Proxy CONNECT timeout after ${timeoutMs}ms`));
     }, timeoutMs);
 
-    connectReq.on('connect', (res, socket) => {
-      if (res.statusCode !== 200) {
+    connectReq.on('connect', (connectRes, socket) => {
+      if (connectRes.statusCode !== 200) {
         clearTimeout(timer);
         socket.destroy();
-        reject(new Error(`Proxy CONNECT failed: HTTP ${res.statusCode}`));
+        reject(new Error(`Proxy CONNECT failed: HTTP ${connectRes.statusCode}`));
         return;
       }
 
-      const doRequest = (writeSocket: any) => {
-        const method = options.method || 'GET';
-        const path = target.pathname + target.search;
-        const reqHeaders: string[] = [
-          `${method} ${path} HTTP/1.1`,
-          `Host: ${target.hostname}`,
-          'Connection: close',
-        ];
-        if (options.headers) {
-          for (const [k, v] of Object.entries(options.headers)) {
-            reqHeaders.push(`${k}: ${v}`);
-          }
-        }
-        if (options.body) {
-          reqHeaders.push(`Content-Length: ${Buffer.byteLength(options.body)}`);
-        }
-        reqHeaders.push('', '');
-        writeSocket.write(reqHeaders.join('\r\n'));
-        if (options.body) {
-          writeSocket.write(options.body);
-        }
-
-        let rawData = '';
-        writeSocket.on('data', (chunk: Buffer) => { rawData += chunk.toString(); });
-        writeSocket.on('end', () => {
-          clearTimeout(timer);
-          // Parse HTTP response
-          const headerEnd = rawData.indexOf('\r\n\r\n');
-          const headerPart = headerEnd >= 0 ? rawData.substring(0, headerEnd) : '';
-          const bodyPart = headerEnd >= 0 ? rawData.substring(headerEnd + 4) : rawData;
-          const statusLine = headerPart.split('\r\n')[0] || '';
-          const statusMatch = statusLine.match(/HTTP\/\d\.\d (\d+)/);
-          const status = statusMatch ? parseInt(statusMatch[1]) : 0;
-
-          // Handle chunked transfer encoding
-          const isChunked = headerPart.toLowerCase().includes('transfer-encoding: chunked');
-          let finalBody = bodyPart;
-          if (isChunked) {
-            finalBody = decodeChunked(bodyPart);
-          }
-
-          resolve({
-            status,
-            ok: status >= 200 && status < 300,
-            json: async () => JSON.parse(finalBody.trim()),
-            text: async () => finalBody.trim(),
-          });
-        });
-        writeSocket.on('error', (e: Error) => {
-          clearTimeout(timer);
-          reject(e);
-        });
+      // Build request headers
+      const reqHeaders: Record<string, string> = {
+        Host: target.hostname,
+        ...(options.headers || {}),
       };
+      if (options.body) {
+        reqHeaders['Content-Length'] = String(Buffer.byteLength(options.body));
+      }
 
       if (isHttps) {
-        const tlsSocket = tls.connect({ socket, servername: target.hostname }, () => {
-          doRequest(tlsSocket);
+        // For HTTPS: TLS-upgrade the CONNECT socket, then use http.request over it
+        const tlsSocket = tls.connect({
+          socket: socket as any,
+          servername: target.hostname,
+        }, () => {
+          const req = http.request({
+            hostname: target.hostname,
+            port: String(targetPort),
+            path: target.pathname + target.search,
+            method: options.method || 'GET',
+            headers: reqHeaders,
+            createConnection: () => tlsSocket as any,
+            timeout: timeoutMs,
+          }, (res) => {
+            clearTimeout(timer);
+            const chunks: Buffer[] = [];
+            res.on('data', (chunk: Buffer) => chunks.push(chunk));
+            res.on('end', () => {
+              const bodyStr = Buffer.concat(chunks).toString('utf-8');
+              const status = res.statusCode || 0;
+              resolve({
+                status,
+                ok: status >= 200 && status < 300,
+                json: async () => JSON.parse(bodyStr),
+                text: async () => bodyStr,
+              });
+            });
+            res.on('error', (e) => reject(e));
+          });
+
+          req.on('error', (e) => {
+            clearTimeout(timer);
+            reject(e);
+          });
+
+          if (options.body) {
+            req.write(options.body);
+          }
+          req.end();
         });
+
         tlsSocket.on('error', (e) => {
           clearTimeout(timer);
           reject(e);
         });
       } else {
-        doRequest(socket);
+        // For HTTP: use http.request with the CONNECT tunnel socket
+        const req = http.request({
+          hostname: target.hostname,
+          port: parseInt(String(targetPort)),
+          path: target.pathname + target.search,
+          method: options.method || 'GET',
+          headers: reqHeaders,
+          createConnection: () => socket as any,
+          timeout: timeoutMs,
+        }, (res) => {
+          clearTimeout(timer);
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => {
+            const bodyStr = Buffer.concat(chunks).toString('utf-8');
+            const status = res.statusCode || 0;
+            resolve({
+              status,
+              ok: status >= 200 && status < 300,
+              json: async () => JSON.parse(bodyStr),
+              text: async () => bodyStr,
+            });
+          });
+          res.on('error', (e) => reject(e));
+        });
+
+        req.on('error', (e) => {
+          clearTimeout(timer);
+          reject(e);
+        });
+
+        if (options.body) {
+          req.write(options.body);
+        }
+        req.end();
       }
     });
 
@@ -472,23 +539,6 @@ async function fetchViaProxy(
 
     connectReq.end();
   });
-}
-
-/** Decode chunked transfer encoding */
-function decodeChunked(data: string): string {
-  let result = '';
-  let remaining = data;
-  while (remaining.length > 0) {
-    const lineEnd = remaining.indexOf('\r\n');
-    if (lineEnd < 0) break;
-    const sizeStr = remaining.substring(0, lineEnd).trim();
-    const chunkSize = parseInt(sizeStr, 16);
-    if (isNaN(chunkSize) || chunkSize === 0) break;
-    const chunkStart = lineEnd + 2;
-    result += remaining.substring(chunkStart, chunkStart + chunkSize);
-    remaining = remaining.substring(chunkStart + chunkSize + 2);
-  }
-  return result || data; // fallback to raw data if parsing fails
 }
 
 // ============== Main Adapter ==============
@@ -648,7 +698,14 @@ class LingxingAdapter {
           body: bodyStr,
           timeout,
         });
-        json = await res.json();
+        const rawText = await res.text();
+        console.log(`[LingxingAdapter] Proxy response for ${path}: status=${res.status}, bodyLen=${rawText.length}, preview=${rawText.substring(0, 200)}`);
+        try {
+          json = normalizeLingxingResponse(JSON.parse(rawText));
+        } catch (parseErr: any) {
+          console.error(`[LingxingAdapter] JSON parse error for ${path}: ${parseErr.message}, raw=${rawText.substring(0, 500)}`);
+          throw new Error(`JSON parse error: ${parseErr.message}`);
+        }
       } else {
         // Direct fetch or SOCKS5 proxy (uses agent)
         const fetchOptions: any = {
@@ -662,7 +719,7 @@ class LingxingAdapter {
         }
         if (bodyStr) fetchOptions.body = bodyStr;
         const res = await fetch(url, fetchOptions);
-        json = await res.json() as LingxingResponse<T>;
+        json = normalizeLingxingResponse(await res.json());
       }
       const duration = Date.now() - startTime;
 

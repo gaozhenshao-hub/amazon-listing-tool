@@ -2030,3 +2030,10 @@
   - 改造范围：TokenManager.fetchToken、request方法、testProxyOnly、testConnection全部改用fetchViaProxy
   - SOCKS5代理保留原有socks-proxy-agent方式
   - 全部2565个测试通过
+
+## Bug修复：CONNECT隧道响应解析 + 领星API响应格式不匹配
+- [x] 修复fetchViaProxy响应解析和领星API响应格式不匹配问题
+  - 根因1：手动解析HTTP响应（chunked编码）不可靠 → 改用Node.js http.request通过TLS socket自动处理
+  - 根因2：领星API真实响应格式 {code:0, message:"success"}，代码预期 {code:"200", msg:"OK"}
+  - 修复：添加normalizeLingxingResponse()函数统一转换响应格式
+  - 验证：代理测试成功(IP:154.40.32.64)，API连接成功(获取28个卖家账号)，全2565测试通过
