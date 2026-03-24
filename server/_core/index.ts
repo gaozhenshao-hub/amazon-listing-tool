@@ -70,6 +70,8 @@ async function startServer() {
     intelScheduler.start();
     // Start todo reminder scheduler (check every hour)
     import("../todoReminder").then(m => m.startTodoReminderScheduler()).catch(err => console.error("[TodoReminder] Failed to start:", err));
+    // Initialize Lingxing API adapter from DB settings (proxy config, credentials)
+    import("../lingxingAdapter").then(m => m.initLingxingAdapterFromDb()).catch(err => console.error("[LingxingAdapter] Failed to init:", err));
   });
 }
 

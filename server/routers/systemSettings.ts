@@ -6,7 +6,7 @@ import { systemSettings } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 
 // ═══════════════════════════════════════════════════════════════════════
-// Proxy configuration helpers
+// Scraper Proxy configuration helpers (existing - for crawler)
 // ═══════════════════════════════════════════════════════════════════════
 
 export const PROXY_SETTING_KEYS = {
@@ -85,6 +85,20 @@ export const PROVIDER_PRESETS: Record<string, { name: string; host: string; port
 };
 
 // ═══════════════════════════════════════════════════════════════════════
+// Lingxing API Proxy setting keys (separate from scraper proxy)
+// ═══════════════════════════════════════════════════════════════════════
+
+export const LX_PROXY_KEYS = {
+  ENABLED: "lx_proxy_enabled",
+  PROTOCOL: "lx_proxy_protocol",    // http | https | socks5
+  HOST: "lx_proxy_host",
+  PORT: "lx_proxy_port",
+  USERNAME: "lx_proxy_username",
+  PASSWORD: "lx_proxy_password",
+  URL: "lx_proxy_url",              // Full proxy URL (takes priority)
+} as const;
+
+// ═══════════════════════════════════════════════════════════════════════
 // Exported helper: get proxy config for scraper
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -129,6 +143,28 @@ export async function getScraperConfig(): Promise<{
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Helper: upsert a system setting
+// ═══════════════════════════════════════════════════════════════════════
+
+async function upsertSetting(db: any, key: string, value: string | null, category: string, userId: any) {
+  const existing = await db.select().from(systemSettings).where(
+    eq(systemSettings.settingKey, key)
+  );
+  if (existing.length > 0) {
+    await db.update(systemSettings)
+      .set({ settingValue: value, updatedBy: userId, category })
+      .where(eq(systemSettings.settingKey, key));
+  } else {
+    await db.insert(systemSettings).values({
+      settingKey: key,
+      settingValue: value,
+      category,
+      updatedBy: userId,
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Router
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -150,7 +186,7 @@ export const systemSettingsRouter = router({
       );
       for (const row of rows) {
         if (row.settingKey === "lingxing_app_secret" && row.settingValue) {
-          dbConfig[row.settingKey] = "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022";
+          dbConfig[row.settingKey] = "••••••••";
         } else {
           dbConfig[row.settingKey] = row.settingValue;
         }
@@ -180,7 +216,7 @@ export const systemSettingsRouter = router({
       const settingsToSave: Record<string, string | null> = {};
 
       if (input.appId !== undefined) settingsToSave["lingxing_app_id"] = input.appId;
-      if (input.appSecret !== undefined && input.appSecret !== "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022") {
+      if (input.appSecret !== undefined && input.appSecret !== "••••••••") {
         settingsToSave["lingxing_app_secret"] = input.appSecret;
       }
       if (input.apiHost !== undefined) settingsToSave["lingxing_api_host"] = input.apiHost;
@@ -188,21 +224,7 @@ export const systemSettingsRouter = router({
 
       // Save to DB
       for (const [key, value] of Object.entries(settingsToSave)) {
-        const existing = await db.select().from(systemSettings).where(
-          eq(systemSettings.settingKey, key)
-        );
-        if (existing.length > 0) {
-          await db.update(systemSettings)
-            .set({ settingValue: value, updatedBy: userId, category: "lingxing" })
-            .where(eq(systemSettings.settingKey, key));
-        } else {
-          await db.insert(systemSettings).values({
-            settingKey: key,
-            settingValue: value,
-            category: "lingxing",
-            updatedBy: userId,
-          });
-        }
+        await upsertSetting(db, key, value, "lingxing", userId);
       }
 
       // Update the running adapter instance
@@ -228,7 +250,7 @@ export const systemSettingsRouter = router({
       return { success: true, isMock: adapter.isMockMode() };
     }),
 
-  /** Test lingxing API connection */
+  /** Test lingxing API connection (supports proxy) */
   testLingxingConnection: protectedProcedure.mutation(async () => {
     const { getLingxingAdapter } = await import("../lingxingAdapter");
     const adapter = getLingxingAdapter();
@@ -236,32 +258,103 @@ export const systemSettingsRouter = router({
     if (adapter.isMockMode()) {
       return {
         success: false,
-        message: "\u5f53\u524d\u4e3aMock\u6a21\u5f0f\uff0c\u8bf7\u5148\u5173\u95edMock\u6a21\u5f0f\u5e76\u914d\u7f6eAPI\u51ed\u8bc1",
+        message: "当前为Mock模式，请先关闭Mock模式并配置API凭证",
         latency: null,
+        usedProxy: false,
       };
     }
 
-    try {
-      const startTime = Date.now();
-      const res = await adapter.request({ path: "/erp/sc/data/seller/lists", skipCache: true });
-      const latency = Date.now() - startTime;
-
-      return {
-        success: true,
-        message: `\u8fde\u63a5\u6210\u529f\uff01\u83b7\u53d6\u5230 ${(res.data || []).length} \u4e2a\u5356\u5bb6\u8d26\u53f7`,
-        latency,
-        sellerCount: (res.data || []).length,
-      };
-    } catch (err: any) {
-      return {
-        success: false,
-        message: `\u8fde\u63a5\u5931\u8d25: ${err.message || "\u672a\u77e5\u9519\u8bef"}`,
-        latency: null,
-      };
-    }
+    return adapter.testConnection();
   }),
 
-  // ═══════════════════ Proxy Config ═══════════════════
+  // ═══════════════════ Lingxing API Proxy Config ═══════════════════
+
+  /** Get lingxing API proxy configuration */
+  getLingxingProxyConfig: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return { config: {} as Record<string, string | null> };
+
+    const rows = await db.select().from(systemSettings).where(
+      eq(systemSettings.category, "lingxing_proxy")
+    );
+    const config: Record<string, string | null> = {};
+    for (const row of rows) {
+      // Mask password
+      if (row.settingKey === LX_PROXY_KEYS.PASSWORD && row.settingValue) {
+        config[row.settingKey] = "••••••••";
+      } else {
+        config[row.settingKey] = row.settingValue;
+      }
+    }
+
+    // Also get current adapter proxy status
+    const { getLingxingAdapter } = await import("../lingxingAdapter");
+    const adapter = getLingxingAdapter();
+
+    return {
+      config,
+      proxyEnabled: adapter.isProxyEnabled(),
+      adapterMock: adapter.isMockMode(),
+    };
+  }),
+
+  /** Update lingxing API proxy configuration */
+  updateLingxingProxyConfig: protectedProcedure
+    .input(z.object({
+      settings: z.record(z.string(), z.string().nullable()),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
+
+      const userId = ctx.user.id;
+      for (const [key, value] of Object.entries(input.settings)) {
+        // Don't overwrite password with masked value
+        if (key === LX_PROXY_KEYS.PASSWORD && value === "••••••••") continue;
+        await upsertSetting(db, key, value, "lingxing_proxy", userId);
+      }
+
+      // Reload proxy config into the adapter
+      const allRows = await db.select().from(systemSettings).where(
+        eq(systemSettings.category, "lingxing_proxy")
+      );
+      const pxMap: Record<string, string | null> = {};
+      for (const row of allRows) {
+        pxMap[row.settingKey] = row.settingValue;
+      }
+
+      const { getLingxingAdapter } = await import("../lingxingAdapter");
+      const adapter = getLingxingAdapter();
+      adapter.updateProxyConfig({
+        enabled: pxMap[LX_PROXY_KEYS.ENABLED] === "true",
+        protocol: pxMap[LX_PROXY_KEYS.PROTOCOL] || "http",
+        host: pxMap[LX_PROXY_KEYS.HOST] || "",
+        port: pxMap[LX_PROXY_KEYS.PORT] || "",
+        username: pxMap[LX_PROXY_KEYS.USERNAME] || undefined,
+        password: pxMap[LX_PROXY_KEYS.PASSWORD] || undefined,
+        directUrl: pxMap[LX_PROXY_KEYS.URL] || undefined,
+      });
+
+      return { success: true, proxyEnabled: adapter.isProxyEnabled() };
+    }),
+
+  /** Test lingxing API proxy connection only (check IP) */
+  testLingxingProxy: protectedProcedure.mutation(async () => {
+    const { getLingxingAdapter } = await import("../lingxingAdapter");
+    const adapter = getLingxingAdapter();
+    return adapter.testProxyOnly();
+  }),
+
+  /** Get recent API call logs */
+  getLingxingApiLogs: protectedProcedure
+    .input(z.object({ limit: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      const { getLingxingAdapter } = await import("../lingxingAdapter");
+      const adapter = getLingxingAdapter();
+      return adapter.getRecentLogs(input?.limit || 50);
+    }),
+
+  // ═══════════════════ Scraper Proxy Config ═══════════════════
 
   /** Get all proxy-related settings */
   getProxyConfig: protectedProcedure.query(async () => {
@@ -292,24 +385,8 @@ export const systemSettingsRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
       const userId = ctx.user.id;
       for (const [key, value] of Object.entries(input.settings)) {
-        // Upsert: try insert, on conflict update
-        const existing = await db.select().from(systemSettings).where(
-          eq(systemSettings.settingKey, key)
-        );
-        if (existing.length > 0) {
-          // Don't overwrite password with masked value
-          if (key === PROXY_SETTING_KEYS.PROXY_PASSWORD && value === "••••••••") continue;
-          await db.update(systemSettings)
-            .set({ settingValue: value, updatedBy: userId, category: "proxy" })
-            .where(eq(systemSettings.settingKey, key));
-        } else {
-          await db.insert(systemSettings).values({
-            settingKey: key,
-            settingValue: value,
-            category: "proxy",
-            updatedBy: userId,
-          });
-        }
+        if (key === PROXY_SETTING_KEYS.PROXY_PASSWORD && value === "••••••••") continue;
+        await upsertSetting(db, key, value, "proxy", userId);
       }
       return { success: true };
     }),
@@ -328,27 +405,12 @@ export const systemSettingsRouter = router({
         [PROXY_SETTING_KEYS.PROXY_HOST]: preset.host,
         [PROXY_SETTING_KEYS.PROXY_PORT]: preset.port,
         [PROXY_SETTING_KEYS.PROXY_PROTOCOL]: preset.protocol,
-        // Clear direct URL when using preset
         [PROXY_SETTING_KEYS.PROXY_URL]: "",
       };
 
       const userId = ctx.user.id;
       for (const [key, value] of Object.entries(settings)) {
-        const existing = await db2.select().from(systemSettings).where(
-          eq(systemSettings.settingKey, key)
-        );
-        if (existing.length > 0) {
-          await db2.update(systemSettings)
-            .set({ settingValue: value, updatedBy: userId, category: "proxy" })
-            .where(eq(systemSettings.settingKey, key));
-        } else {
-          await db2.insert(systemSettings).values({
-            settingKey: key,
-            settingValue: value,
-            category: "proxy",
-            updatedBy: userId,
-          });
-        }
+        await upsertSetting(db2, key, value, "proxy", userId);
       }
 
       return { success: true, preset };
@@ -363,9 +425,6 @@ export const systemSettingsRouter = router({
 
     try {
       const startTime = Date.now();
-
-      // Use node-fetch or native fetch with proxy
-      // We'll test by making a simple request to httpbin
       const { HttpsProxyAgent } = await import("https-proxy-agent");
       const agent = new HttpsProxyAgent(config.proxyUrl);
 
@@ -410,9 +469,7 @@ export const systemSettingsRouter = router({
 
     try {
       const startTime = Date.now();
-      // Import scraper and try a lightweight fetch
       const { scrapeAmazonProduct } = await import("../scraper");
-      // Use a well-known ASIN for testing
       const data = await scrapeAmazonProduct("B09V3KXJPB", config);
       const latency = Date.now() - startTime;
 

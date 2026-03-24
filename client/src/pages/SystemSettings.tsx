@@ -20,6 +20,10 @@ import {
   Settings2,
   ChevronRight,
   ExternalLink,
+  Network,
+  Activity,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import {
   Select,
@@ -49,6 +53,17 @@ const KEYS = {
   SCRAPER_TIMEOUT: "scraper_timeout",
   SCRAPER_MIN_DELAY: "scraper_min_delay",
   SCRAPER_MAX_DELAY: "scraper_max_delay",
+};
+
+// Lingxing proxy keys
+const LX_KEYS = {
+  ENABLED: "lx_proxy_enabled",
+  PROTOCOL: "lx_proxy_protocol",
+  HOST: "lx_proxy_host",
+  PORT: "lx_proxy_port",
+  USERNAME: "lx_proxy_username",
+  PASSWORD: "lx_proxy_password",
+  URL: "lx_proxy_url",
 };
 
 // Provider info for display
@@ -176,7 +191,7 @@ export default function SystemSettings() {
           <Settings2 className="h-6 w-6 text-primary" />
           系统设置
         </h1>
-        <p className="text-muted-foreground mt-1">管理爬虫代理、请求策略和系统配置</p>
+        <p className="text-muted-foreground mt-1">管理领星API连接、代理配置和爬虫策略</p>
       </div>
 
       <Tabs defaultValue="lingxing" className="space-y-6">
@@ -187,7 +202,7 @@ export default function SystemSettings() {
           </TabsTrigger>
           <TabsTrigger value="proxy" className="flex items-center gap-2">
             <Shield className="h-4 w-4" />
-            代理配置
+            爬虫代理
           </TabsTrigger>
           <TabsTrigger value="scraper" className="flex items-center gap-2">
             <Zap className="h-4 w-4" />
@@ -213,7 +228,7 @@ export default function SystemSettings() {
                 <div>
                   <CardTitle className="text-lg flex items-center gap-2">
                     <Globe className="h-5 w-5 text-blue-500" />
-                    代理服务
+                    爬虫代理服务
                   </CardTitle>
                   <CardDescription>启用代理后，所有亚马逊爬取请求将通过代理服务器转发</CardDescription>
                 </div>
@@ -288,43 +303,26 @@ export default function SystemSettings() {
           {/* Connection Details */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Server className="h-5 w-5 text-orange-500" />
-                连接信息
-              </CardTitle>
-              <CardDescription>
-                {selectedProvider === "custom"
-                  ? "填写完整的代理URL，或分别填写主机、端口和认证信息"
-                  : "预设供应商已自动填充主机和端口，请填写您的账号密码"}
-              </CardDescription>
+              <CardTitle className="text-lg">连接信息</CardTitle>
+              <CardDescription>配置代理服务器的连接参数</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Direct URL (for custom) */}
-              {selectedProvider === "custom" && (
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">代理URL（完整格式）</Label>
-                  <Input
-                    placeholder="http://username:password@proxy-host:port"
-                    value={form[KEYS.PROXY_URL] || ""}
-                    onChange={(e) => updateField(KEYS.PROXY_URL, e.target.value)}
-                    className="font-mono text-sm"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    填写完整URL后将忽略下方的分项配置
-                  </p>
-                </div>
-              )}
+              {/* Direct URL */}
+              <div>
+                <Label>完整代理URL（可选，优先使用）</Label>
+                <Input
+                  placeholder="例如: http://user:pass@proxy.example.com:8080"
+                  value={form[KEYS.PROXY_URL] || ""}
+                  onChange={e => updateField(KEYS.PROXY_URL, e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground mt-1">如果填写了完整URL，下方的分项配置将被忽略</p>
+              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">协议</Label>
-                  <Select
-                    value={form[KEYS.PROXY_PROTOCOL] || "http"}
-                    onValueChange={(v) => updateField(KEYS.PROXY_PROTOCOL, v)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label>协议</Label>
+                  <Select value={form[KEYS.PROXY_PROTOCOL] || "http"} onValueChange={v => updateField(KEYS.PROXY_PROTOCOL, v)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="http">HTTP</SelectItem>
                       <SelectItem value="https">HTTPS</SelectItem>
@@ -332,43 +330,24 @@ export default function SystemSettings() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">主机地址</Label>
-                  <Input
-                    placeholder="proxy.example.com"
-                    value={form[KEYS.PROXY_HOST] || ""}
-                    onChange={(e) => updateField(KEYS.PROXY_HOST, e.target.value)}
-                    className="font-mono text-sm"
-                  />
+                <div>
+                  <Label>主机</Label>
+                  <Input placeholder="proxy.example.com" value={form[KEYS.PROXY_HOST] || ""} onChange={e => updateField(KEYS.PROXY_HOST, e.target.value)} />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">端口</Label>
-                  <Input
-                    placeholder="8080"
-                    value={form[KEYS.PROXY_PORT] || ""}
-                    onChange={(e) => updateField(KEYS.PROXY_PORT, e.target.value)}
-                    className="font-mono text-sm"
-                  />
+                <div>
+                  <Label>端口</Label>
+                  <Input placeholder="8080" value={form[KEYS.PROXY_PORT] || ""} onChange={e => updateField(KEYS.PROXY_PORT, e.target.value)} />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">用户名</Label>
-                  <Input
-                    placeholder="your-username"
-                    value={form[KEYS.PROXY_USERNAME] || ""}
-                    onChange={(e) => updateField(KEYS.PROXY_USERNAME, e.target.value)}
-                  />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>用户名</Label>
+                  <Input placeholder="代理用户名" value={form[KEYS.PROXY_USERNAME] || ""} onChange={e => updateField(KEYS.PROXY_USERNAME, e.target.value)} />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">密码</Label>
-                  <Input
-                    type="password"
-                    placeholder="your-password"
-                    value={form[KEYS.PROXY_PASSWORD] || ""}
-                    onChange={(e) => updateField(KEYS.PROXY_PASSWORD, e.target.value)}
-                  />
+                <div>
+                  <Label>密码</Label>
+                  <Input type="password" placeholder="代理密码" value={form[KEYS.PROXY_PASSWORD] || ""} onChange={e => updateField(KEYS.PROXY_PASSWORD, e.target.value)} />
                 </div>
               </div>
 
@@ -393,121 +372,55 @@ export default function SystemSettings() {
                 <Zap className="h-5 w-5 text-amber-500" />
                 爬虫请求策略
               </CardTitle>
-              <CardDescription>调整爬虫的重试次数、超时时间和请求间隔，优化爬取成功率</CardDescription>
+              <CardDescription>调整爬虫的重试次数、超时时间和请求间隔，平衡速度与稳定性</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium flex items-center gap-2">
-                    <RefreshCw className="h-4 w-4 text-muted-foreground" />
-                    最大重试次数
-                  </Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="10"
-                    value={form[KEYS.SCRAPER_MAX_RETRIES] || "3"}
-                    onChange={(e) => updateField(KEYS.SCRAPER_MAX_RETRIES, e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">请求失败后的最大重试次数（1-10），每次重试使用不同UA和更长延迟</p>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>最大重试次数</Label>
+                  <Input type="number" value={form[KEYS.SCRAPER_MAX_RETRIES] || "3"} onChange={e => updateField(KEYS.SCRAPER_MAX_RETRIES, e.target.value)} />
                 </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    请求超时（毫秒）
-                  </Label>
-                  <Input
-                    type="number"
-                    min="5000"
-                    max="120000"
-                    step="1000"
-                    value={form[KEYS.SCRAPER_TIMEOUT] || "30000"}
-                    onChange={(e) => updateField(KEYS.SCRAPER_TIMEOUT, e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">单次请求的超时时间（5000-120000ms），代理模式建议30000+</p>
+                <div>
+                  <Label>请求超时 (ms)</Label>
+                  <Input type="number" value={form[KEYS.SCRAPER_TIMEOUT] || "30000"} onChange={e => updateField(KEYS.SCRAPER_TIMEOUT, e.target.value)} />
                 </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">最小请求间隔（毫秒）</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="30000"
-                    step="500"
-                    value={form[KEYS.SCRAPER_MIN_DELAY] || "1000"}
-                    onChange={(e) => updateField(KEYS.SCRAPER_MIN_DELAY, e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">批量爬取时两次请求之间的最小等待时间</p>
+                <div>
+                  <Label>最小请求间隔 (ms)</Label>
+                  <Input type="number" value={form[KEYS.SCRAPER_MIN_DELAY] || "1000"} onChange={e => updateField(KEYS.SCRAPER_MIN_DELAY, e.target.value)} />
                 </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">最大请求间隔（毫秒）</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="60000"
-                    step="500"
-                    value={form[KEYS.SCRAPER_MAX_DELAY] || "3000"}
-                    onChange={(e) => updateField(KEYS.SCRAPER_MAX_DELAY, e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">实际延迟在最小和最大之间随机取值，模拟真实用户行为</p>
+                <div>
+                  <Label>最大请求间隔 (ms)</Label>
+                  <Input type="number" value={form[KEYS.SCRAPER_MAX_DELAY] || "3000"} onChange={e => updateField(KEYS.SCRAPER_MAX_DELAY, e.target.value)} />
                 </div>
               </div>
 
               {/* Quick presets */}
-              <div className="border-t pt-4">
-                <Label className="text-sm font-medium mb-3 block">快速预设</Label>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      updateField(KEYS.SCRAPER_MAX_RETRIES, "2");
-                      updateField(KEYS.SCRAPER_TIMEOUT, "15000");
-                      updateField(KEYS.SCRAPER_MIN_DELAY, "500");
-                      updateField(KEYS.SCRAPER_MAX_DELAY, "1500");
-                    }}
-                  >
-                    ⚡ 高速模式
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      updateField(KEYS.SCRAPER_MAX_RETRIES, "3");
-                      updateField(KEYS.SCRAPER_TIMEOUT, "30000");
-                      updateField(KEYS.SCRAPER_MIN_DELAY, "1000");
-                      updateField(KEYS.SCRAPER_MAX_DELAY, "3000");
-                    }}
-                  >
-                    ⚖️ 均衡模式
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      updateField(KEYS.SCRAPER_MAX_RETRIES, "5");
-                      updateField(KEYS.SCRAPER_TIMEOUT, "60000");
-                      updateField(KEYS.SCRAPER_MIN_DELAY, "2000");
-                      updateField(KEYS.SCRAPER_MAX_DELAY, "5000");
-                    }}
-                  >
-                    🛡️ 稳定模式
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      updateField(KEYS.SCRAPER_MAX_RETRIES, "8");
-                      updateField(KEYS.SCRAPER_TIMEOUT, "90000");
-                      updateField(KEYS.SCRAPER_MIN_DELAY, "3000");
-                      updateField(KEYS.SCRAPER_MAX_DELAY, "8000");
-                    }}
-                  >
-                    🐢 保守模式
-                  </Button>
-                </div>
+              <div className="flex items-center gap-2 pt-2">
+                <span className="text-sm text-muted-foreground">快速预设:</span>
+                <Button variant="outline" size="sm" onClick={() => {
+                  updateField(KEYS.SCRAPER_MAX_RETRIES, "3");
+                  updateField(KEYS.SCRAPER_TIMEOUT, "30000");
+                  updateField(KEYS.SCRAPER_MIN_DELAY, "1000");
+                  updateField(KEYS.SCRAPER_MAX_DELAY, "3000");
+                }}>
+                  标准模式
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => {
+                  updateField(KEYS.SCRAPER_MAX_RETRIES, "5");
+                  updateField(KEYS.SCRAPER_TIMEOUT, "60000");
+                  updateField(KEYS.SCRAPER_MIN_DELAY, "2000");
+                  updateField(KEYS.SCRAPER_MAX_DELAY, "5000");
+                }}>
+                  稳定模式
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => {
+                  updateField(KEYS.SCRAPER_MAX_RETRIES, "8");
+                  updateField(KEYS.SCRAPER_TIMEOUT, "90000");
+                  updateField(KEYS.SCRAPER_MIN_DELAY, "3000");
+                  updateField(KEYS.SCRAPER_MAX_DELAY, "8000");
+                }}>
+                  保守模式
+                </Button>
               </div>
 
               <div className="flex justify-end pt-2">
@@ -540,7 +453,7 @@ export default function SystemSettings() {
                   <div className="flex items-center gap-2">
                     <Globe className="h-5 w-5 text-blue-500" />
                     <div>
-                      <p className="font-medium text-sm">代理连接测试</p>
+                      <p className="font-medium text-sm">爬虫代理测试</p>
                       <p className="text-xs text-muted-foreground">通过代理访问httpbin.org验证连通性</p>
                     </div>
                   </div>
@@ -553,7 +466,7 @@ export default function SystemSettings() {
                     {testProxyMutation.isPending ? (
                       <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> 测试中...</>
                     ) : (
-                      <><TestTube2 className="h-4 w-4 mr-2" /> 测试代理连接</>
+                      <><TestTube2 className="h-4 w-4 mr-2" /> 测试爬虫代理</>
                     )}
                   </Button>
                 </div>
@@ -636,19 +549,35 @@ export default function SystemSettings() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Lingxing API Settings Component
+// Lingxing API Settings Component (with integrated proxy config)
 // ═══════════════════════════════════════════════════════════════════════
 
 function LingxingApiSettings() {
+  // Lingxing config
   const { data, isLoading, refetch } = trpc.systemSettings.getLingxingConfig.useQuery();
   const updateMut = trpc.systemSettings.updateLingxingConfig.useMutation({
     onSuccess: (res) => {
       refetch();
+      refetchProxy();
       toast.success(res.isMock ? "配置已保存（Mock模式）" : "配置已保存并应用");
     },
     onError: (e) => toast.error(e.message),
   });
   const testMut = trpc.systemSettings.testLingxingConnection.useMutation();
+
+  // Lingxing proxy config
+  const { data: proxyData, isLoading: proxyLoading, refetch: refetchProxy } = trpc.systemSettings.getLingxingProxyConfig.useQuery();
+  const updateProxyMut = trpc.systemSettings.updateLingxingProxyConfig.useMutation({
+    onSuccess: (res) => {
+      refetchProxy();
+      toast.success(res.proxyEnabled ? "代理配置已保存并启用" : "代理配置已保存");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const testProxyMut = trpc.systemSettings.testLingxingProxy.useMutation();
+
+  // API logs
+  const { data: logsData, refetch: refetchLogs } = trpc.systemSettings.getLingxingApiLogs.useQuery({ limit: 20 });
 
   const [form, setForm] = useState({
     appId: "",
@@ -656,7 +585,19 @@ function LingxingApiSettings() {
     apiHost: "https://openapi.lingxing.com",
     useMock: true,
   });
+
+  const [proxyForm, setProxyForm] = useState({
+    [LX_KEYS.ENABLED]: "false",
+    [LX_KEYS.PROTOCOL]: "http",
+    [LX_KEYS.HOST]: "",
+    [LX_KEYS.PORT]: "",
+    [LX_KEYS.USERNAME]: "",
+    [LX_KEYS.PASSWORD]: "",
+    [LX_KEYS.URL]: "",
+  });
+
   const [initialized, setInitialized] = useState(false);
+  const [proxyInitialized, setProxyInitialized] = useState(false);
 
   // Initialize form from data
   React.useEffect(() => {
@@ -671,6 +612,23 @@ function LingxingApiSettings() {
     }
   }, [data, initialized]);
 
+  // Initialize proxy form
+  React.useEffect(() => {
+    if (proxyData && !proxyInitialized) {
+      const c = proxyData.config;
+      setProxyForm({
+        [LX_KEYS.ENABLED]: c[LX_KEYS.ENABLED] || "false",
+        [LX_KEYS.PROTOCOL]: c[LX_KEYS.PROTOCOL] || "http",
+        [LX_KEYS.HOST]: c[LX_KEYS.HOST] || "",
+        [LX_KEYS.PORT]: c[LX_KEYS.PORT] || "",
+        [LX_KEYS.USERNAME]: c[LX_KEYS.USERNAME] || "",
+        [LX_KEYS.PASSWORD]: c[LX_KEYS.PASSWORD] || "",
+        [LX_KEYS.URL]: c[LX_KEYS.URL] || "",
+      });
+      setProxyInitialized(true);
+    }
+  }, [proxyData, proxyInitialized]);
+
   const handleSave = () => {
     updateMut.mutate({
       appId: form.appId,
@@ -684,19 +642,29 @@ function LingxingApiSettings() {
     testMut.mutate();
   };
 
-  if (isLoading) {
+  const handleSaveProxy = () => {
+    updateProxyMut.mutate({ settings: proxyForm });
+  };
+
+  const handleTestProxy = () => {
+    testProxyMut.mutate();
+  };
+
+  const proxyEnabled = proxyForm[LX_KEYS.ENABLED] === "true";
+
+  if (isLoading || proxyLoading) {
     return <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-20 bg-muted animate-pulse rounded-lg" />)}</div>;
   }
 
   return (
     <div className="space-y-6">
       {/* Status Banner */}
-      <Card className={data?.currentConfig.useMock ? "border-amber-200 bg-amber-50/50" : "border-emerald-200 bg-emerald-50/50"}>
+      <Card className={data?.currentConfig.useMock ? "border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/30" : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/30"}>
         <CardContent className="pt-5 pb-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${data?.currentConfig.useMock ? "bg-amber-100" : "bg-emerald-100"}`}>
-                <Server className={`h-5 w-5 ${data?.currentConfig.useMock ? "text-amber-600" : "text-emerald-600"}`} />
+              <div className={`p-2 rounded-lg ${data?.currentConfig.useMock ? "bg-amber-100 dark:bg-amber-900" : "bg-emerald-100 dark:bg-emerald-900"}`}>
+                <Server className={`h-5 w-5 ${data?.currentConfig.useMock ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400"}`} />
               </div>
               <div>
                 <p className="font-medium">
@@ -704,16 +672,24 @@ function LingxingApiSettings() {
                 </p>
                 <p className="text-sm text-muted-foreground">
                   {data?.currentConfig.useMock
-                    ? "系统正在使用模拟数据，配置API凭证后可切换为实时数据"
+                    ? "系统正在使用模拟数据，配置API凭证并关闭Mock后可切换为实时数据"
                     : `API Host: ${data?.currentConfig.apiHost}`}
                 </p>
               </div>
             </div>
-            {data?.envHasCredentials && (
-              <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">
-                环境变量已配置
-              </Badge>
-            )}
+            <div className="flex items-center gap-2">
+              {proxyData?.proxyEnabled && (
+                <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:bg-blue-950">
+                  <Network className="h-3 w-3 mr-1" />
+                  代理已启用
+                </Badge>
+              )}
+              {data?.envHasCredentials && (
+                <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50 dark:border-blue-700 dark:text-blue-300 dark:bg-blue-950">
+                  环境变量已配置
+                </Badge>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -727,7 +703,7 @@ function LingxingApiSettings() {
           </CardTitle>
           <CardDescription>
             在领星ERP后台获取开放API的App ID和App Secret。
-            <a href="https://openapi.lingxing.com" target="_blank" rel="noopener" className="text-blue-600 hover:underline ml-1">
+            <a href="https://apidoc.lingxing.com" target="_blank" rel="noopener" className="text-blue-600 hover:underline ml-1">
               领星开放API文档 <ExternalLink className="inline h-3 w-3" />
             </a>
           </CardDescription>
@@ -792,36 +768,274 @@ function LingxingApiSettings() {
         </CardContent>
       </Card>
 
+      {/* ═══════════════════ Lingxing API Proxy Config ═══════════════════ */}
+      <Card className="border-blue-200 dark:border-blue-800">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Network className="h-4 w-4 text-blue-500" />
+            领星API代理配置
+            {proxyEnabled && (
+              <Badge variant="default" className="ml-2 text-xs bg-blue-500">
+                <Wifi className="h-3 w-3 mr-1" /> 已启用
+              </Badge>
+            )}
+          </CardTitle>
+          <CardDescription>
+            配置HTTP/SOCKS5代理，让所有领星API请求通过固定IP的代理服务器转发，解决IP白名单不稳定的问题。
+            此代理仅用于领星API调用，与爬虫代理独立配置。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Enable Toggle */}
+          <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
+            <div className="flex items-center gap-3">
+              {proxyEnabled ? (
+                <Wifi className="h-5 w-5 text-blue-500" />
+              ) : (
+                <WifiOff className="h-5 w-5 text-muted-foreground" />
+              )}
+              <div>
+                <p className="font-medium text-sm">API代理转发</p>
+                <p className="text-xs text-muted-foreground">
+                  {proxyEnabled
+                    ? "所有领星API请求将通过代理服务器转发"
+                    : "领星API请求将直接从服务器发出"}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant={proxyEnabled ? "default" : "outline"}
+              size="sm"
+              onClick={() => {
+                const newVal = proxyEnabled ? "false" : "true";
+                setProxyForm(f => ({ ...f, [LX_KEYS.ENABLED]: newVal }));
+              }}
+            >
+              {proxyEnabled ? (
+                <><CheckCircle2 className="h-4 w-4 mr-1" /> 已启用</>
+              ) : (
+                <><XCircle className="h-4 w-4 mr-1" /> 未启用</>
+              )}
+            </Button>
+          </div>
+
+          {/* Proxy URL (direct) */}
+          <div>
+            <Label>完整代理URL（可选，优先使用）</Label>
+            <Input
+              placeholder="例如: http://user:pass@your-proxy.com:8080 或 socks5://user:pass@proxy:1080"
+              value={proxyForm[LX_KEYS.URL] || ""}
+              onChange={e => setProxyForm(f => ({ ...f, [LX_KEYS.URL]: e.target.value }))}
+              disabled={!proxyEnabled}
+            />
+            <p className="text-xs text-muted-foreground mt-1">如果填写了完整URL，下方的分项配置将被忽略</p>
+          </div>
+
+          {/* Component fields */}
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <Label>协议</Label>
+              <Select
+                value={proxyForm[LX_KEYS.PROTOCOL] || "http"}
+                onValueChange={v => setProxyForm(f => ({ ...f, [LX_KEYS.PROTOCOL]: v }))}
+                disabled={!proxyEnabled}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="http">HTTP</SelectItem>
+                  <SelectItem value="https">HTTPS</SelectItem>
+                  <SelectItem value="socks5">SOCKS5</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>主机地址</Label>
+              <Input
+                placeholder="proxy.example.com"
+                value={proxyForm[LX_KEYS.HOST] || ""}
+                onChange={e => setProxyForm(f => ({ ...f, [LX_KEYS.HOST]: e.target.value }))}
+                disabled={!proxyEnabled}
+              />
+            </div>
+            <div>
+              <Label>端口</Label>
+              <Input
+                placeholder="8080"
+                value={proxyForm[LX_KEYS.PORT] || ""}
+                onChange={e => setProxyForm(f => ({ ...f, [LX_KEYS.PORT]: e.target.value }))}
+                disabled={!proxyEnabled}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>用户名（可选）</Label>
+              <Input
+                placeholder="代理用户名"
+                value={proxyForm[LX_KEYS.USERNAME] || ""}
+                onChange={e => setProxyForm(f => ({ ...f, [LX_KEYS.USERNAME]: e.target.value }))}
+                disabled={!proxyEnabled}
+              />
+            </div>
+            <div>
+              <Label>密码（可选）</Label>
+              <Input
+                type="password"
+                placeholder="代理密码"
+                value={proxyForm[LX_KEYS.PASSWORD] || ""}
+                onChange={e => setProxyForm(f => ({ ...f, [LX_KEYS.PASSWORD]: e.target.value }))}
+                disabled={!proxyEnabled}
+              />
+            </div>
+          </div>
+
+          {/* Proxy actions */}
+          <div className="flex items-center gap-3 pt-2">
+            <Button onClick={handleSaveProxy} disabled={updateProxyMut.isPending} size="sm">
+              {updateProxyMut.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
+              保存代理配置
+            </Button>
+            <Button variant="outline" onClick={handleTestProxy} disabled={testProxyMut.isPending || !proxyEnabled} size="sm">
+              {testProxyMut.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Network className="h-4 w-4 mr-1" />}
+              测试代理连接
+            </Button>
+          </div>
+
+          {/* Proxy test result */}
+          {testProxyMut.data && (
+            <div className={`p-3 rounded-lg border ${testProxyMut.data.success ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/30" : "border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-950/30"}`}>
+              <div className="flex items-center gap-2">
+                {testProxyMut.data.success ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                ) : (
+                  <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+                )}
+                <span className="text-sm">{testProxyMut.data.message}</span>
+                {testProxyMut.data.latency != null && (
+                  <span className="text-xs text-muted-foreground ml-auto">延迟: {testProxyMut.data.latency}ms</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Help */}
+          <div className="p-3 rounded-lg bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900">
+            <p className="text-xs text-blue-700 dark:text-blue-300 font-medium mb-1">使用说明</p>
+            <ul className="text-xs text-blue-600/80 dark:text-blue-400/80 space-y-0.5 ml-4 list-disc">
+              <li>在领星ERP后台将代理服务器的出口IP加入API白名单</li>
+              <li>支持HTTP/HTTPS/SOCKS5三种代理协议</li>
+              <li>代理配置保存后立即生效，Token会自动重新获取</li>
+              <li>建议使用固定IP的代理服务器，避免IP频繁变化导致白名单失效</li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Action Buttons */}
       <div className="flex items-center gap-3">
         <Button onClick={handleSave} disabled={updateMut.isPending} className="gap-2">
           {updateMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-          保存配置
+          保存API配置
         </Button>
         <Button variant="outline" onClick={handleTest} disabled={testMut.isPending} className="gap-2">
           {testMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <TestTube2 className="h-4 w-4" />}
-          测试连接
+          测试API连接
+        </Button>
+        <Button variant="ghost" onClick={() => refetchLogs()} size="sm" className="gap-1 ml-auto">
+          <Activity className="h-4 w-4" />
+          刷新日志
         </Button>
       </div>
 
       {/* Test Result */}
       {testMut.data && (
-        <Card className={testMut.data.success ? "border-emerald-200" : "border-red-200"}>
+        <Card className={testMut.data.success ? "border-emerald-200 dark:border-emerald-800" : "border-red-200 dark:border-red-800"}>
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center gap-3">
               {testMut.data.success ? (
-                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
               ) : (
-                <XCircle className="h-5 w-5 text-red-600" />
+                <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
               )}
-              <div>
-                <p className={`font-medium ${testMut.data.success ? "text-emerald-700" : "text-red-700"}`}>
+              <div className="flex-1">
+                <p className={`font-medium ${testMut.data.success ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
                   {testMut.data.message}
                 </p>
-                {testMut.data.latency && (
-                  <p className="text-sm text-muted-foreground">响应时间: {testMut.data.latency}ms</p>
-                )}
+                <div className="flex items-center gap-3 mt-1">
+                  {testMut.data.latency && (
+                    <span className="text-sm text-muted-foreground">响应时间: {testMut.data.latency}ms</span>
+                  )}
+                  {"usedProxy" in testMut.data && testMut.data.usedProxy && (
+                    <Badge variant="outline" className="text-xs">
+                      <Network className="h-3 w-3 mr-1" /> 通过代理
+                    </Badge>
+                  )}
+                </div>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* API Call Logs */}
+      {logsData && logsData.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Activity className="h-4 w-4 text-muted-foreground" />
+              最近API调用日志
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="max-h-60 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-background">
+                  <tr className="border-b">
+                    <th className="text-left py-1.5 px-2 font-medium">时间</th>
+                    <th className="text-left py-1.5 px-2 font-medium">接口</th>
+                    <th className="text-left py-1.5 px-2 font-medium">状态</th>
+                    <th className="text-left py-1.5 px-2 font-medium">耗时</th>
+                    <th className="text-left py-1.5 px-2 font-medium">模式</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logsData.slice().reverse().map((log, i) => (
+                    <tr key={i} className="border-b border-border/50 hover:bg-muted/30">
+                      <td className="py-1.5 px-2 text-muted-foreground">
+                        {new Date(log.timestamp).toLocaleTimeString()}
+                      </td>
+                      <td className="py-1.5 px-2 font-mono truncate max-w-[200px]" title={log.endpoint}>
+                        {log.endpoint.split("/").slice(-2).join("/")}
+                      </td>
+                      <td className="py-1.5 px-2">
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                          log.statusCode === "200" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300" :
+                          log.statusCode === "ERROR" ? "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300" :
+                          "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"
+                        }`}>
+                          {log.statusCode}
+                        </span>
+                      </td>
+                      <td className="py-1.5 px-2 text-muted-foreground">{log.duration}ms</td>
+                      <td className="py-1.5 px-2">
+                        <div className="flex items-center gap-1">
+                          {log.isMock ? (
+                            <Badge variant="outline" className="text-[10px] px-1 py-0">Mock</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] px-1 py-0 border-emerald-300 text-emerald-700 dark:border-emerald-700 dark:text-emerald-300">Real</Badge>
+                          )}
+                          {log.usedProxy && (
+                            <Badge variant="outline" className="text-[10px] px-1 py-0 border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-300">
+                              <Network className="h-2.5 w-2.5 mr-0.5" />P
+                            </Badge>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </CardContent>
         </Card>
@@ -837,6 +1051,7 @@ function LingxingApiSettings() {
             </p>
             <ul className="text-xs text-muted-foreground space-y-1 ml-6 list-disc">
               <li>领星ERP开放API需要在领星后台开通，并将服务器IP加入白名单</li>
+              <li><strong>推荐方案：</strong>配置固定IP代理，将代理出口IP加入领星白名单，彻底解决IP不稳定问题</li>
               <li>App ID和App Secret可在领星后台「开放API」菜单中获取</li>
               <li>配置保存后会立即生效，无需重启服务</li>
               <li>如果API连接失败，系统会自动降级为Mock数据模式</li>
@@ -848,4 +1063,3 @@ function LingxingApiSettings() {
     </div>
   );
 }
-

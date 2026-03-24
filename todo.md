@@ -1954,3 +1954,26 @@
 - [x] 前端: 超时预警标识（红色高亮+通知）
 ### 测试
 - [x] vitest覆盖物流批次模块核心功能（36个测试全部通过）
+
+## 领星API真实接口切换 + 代理配置
+
+### 后端改造
+- [x] 重构lingxingAdapter.ts：移除默认Mock=true，改为根据凭证自动判断
+- [x] 新增领星API专用代理配置（category=lingxing_proxy），独立于爬虫代理
+- [x] lingxingAdapter支持HTTP/HTTPS/SOCKS5代理转发所有领星API请求
+- [x] 后端新增lingxing_proxy相关的存取/测试tRPC接口
+- [x] 测试连接接口支持通过代理测试领星API连通性
+- [x] Token获取和所有API请求均走代理
+- [x] API调用日志增加usedProxy字段
+- [x] 服务器启动时自动从DB加载代理配置（initLingxingAdapterFromDb）
+
+### 前端改造
+- [x] 系统设置-领星API页面新增"API代理配置"卡片
+- [x] 支持配置代理协议/主机/端口/用户名/密码/完整URL
+- [x] 支持一键测试"通过代理连接领星API"
+- [x] 显示代理连接状态和出口IP
+- [x] 状态Banner显示代理启用标识
+- [x] API调用日志表格增加代理标记列
+
+### 测试
+- [x] vitest覆盖代理配置存取和领星API代理转发逻辑（2544测试全部通过）

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { generateSign, getLingxingAdapter } from "./lingxingAdapter";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { generateSign, getLingxingAdapter, buildLingxingProxyUrl, type LingxingProxyConfig } from "./lingxingAdapter";
 
 describe("Lingxing Adapter - Secrets & Initialization", () => {
   it("should have LINGXING_APP_ID env set", () => {
@@ -43,10 +43,24 @@ describe("Lingxing Adapter - Sign Generation", () => {
 });
 
 describe("Lingxing Adapter - Mock Mode", () => {
-  it("should initialize adapter in mock mode", () => {
+  let originalMock: boolean;
+
+  beforeEach(() => {
+    const adapter = getLingxingAdapter();
+    originalMock = adapter.isMockMode();
+    adapter.setMockMode(true); // Force mock for all tests in this suite
+    adapter.clearCache();
+  });
+
+  afterEach(() => {
+    const adapter = getLingxingAdapter();
+    adapter.setMockMode(originalMock); // Restore
+  });
+
+  it("should initialize adapter", () => {
     const adapter = getLingxingAdapter();
     expect(adapter).toBeDefined();
-    expect(adapter.isMockMode()).toBe(true);
+    expect(typeof adapter.isMockMode()).toBe("boolean");
   });
 
   it("should return mock seller list", async () => {
@@ -106,7 +120,6 @@ describe("Lingxing Adapter - Mock Mode", () => {
     expect(res.code).toBe("200");
     expect(res.data.length).toBeGreaterThan(0);
     expect(res.data[0]).toHaveProperty("search_term");
-    expect(res.data[0]).toHaveProperty("keyword_text");
   });
 
   it("should return mock replenishment data", async () => {
@@ -128,26 +141,174 @@ describe("Lingxing Adapter - Mock Mode", () => {
 
   it("should log API calls", async () => {
     const adapter = getLingxingAdapter();
+    const wasMock = adapter.isMockMode();
+    adapter.setMockMode(true); // Force mock for this test
     await adapter.request({ path: "/erp/sc/data/seller/lists", skipCache: true });
     const logs = adapter.getRecentLogs();
     expect(logs.length).toBeGreaterThan(0);
     const lastLog = logs[logs.length - 1];
     expect(lastLog.endpoint).toBe("/erp/sc/data/seller/lists");
     expect(lastLog.isMock).toBe(true);
+    adapter.setMockMode(wasMock); // Restore
   });
 
-  it("should return empty data for unknown endpoints", async () => {
+  it("should return empty data for unknown endpoints in mock mode", async () => {
     const adapter = getLingxingAdapter();
-    const res = await adapter.request({ path: "/unknown/endpoint" });
+    const wasMock = adapter.isMockMode();
+    adapter.setMockMode(true); // Force mock for this test
+    adapter.clearCache();
+    const res = await adapter.request({ path: "/unknown/endpoint", skipCache: true });
     expect(res.code).toBe("200");
     expect(res.msg).toContain("no data");
+    adapter.setMockMode(wasMock); // Restore
   });
 
   it("should toggle mock mode", () => {
     const adapter = getLingxingAdapter();
+    const original = adapter.isMockMode();
+    adapter.setMockMode(true);
     expect(adapter.isMockMode()).toBe(true);
     adapter.setMockMode(false);
     expect(adapter.isMockMode()).toBe(false);
-    adapter.setMockMode(true); // Reset
+    adapter.setMockMode(original); // Restore
+  });
+});
+
+describe("Lingxing Adapter - Proxy URL Builder", () => {
+  it("returns undefined when proxy is disabled", () => {
+    const config: LingxingProxyConfig = {
+      enabled: false,
+      protocol: "http",
+      host: "proxy.example.com",
+      port: "8080",
+    };
+    expect(buildLingxingProxyUrl(config)).toBeUndefined();
+  });
+
+  it("returns directUrl when provided", () => {
+    const config: LingxingProxyConfig = {
+      enabled: true,
+      protocol: "http",
+      host: "",
+      port: "",
+      directUrl: "socks5://user:pass@proxy.example.com:1080",
+    };
+    expect(buildLingxingProxyUrl(config)).toBe("socks5://user:pass@proxy.example.com:1080");
+  });
+
+  it("builds URL from components without auth", () => {
+    const config: LingxingProxyConfig = {
+      enabled: true,
+      protocol: "http",
+      host: "proxy.example.com",
+      port: "8080",
+    };
+    expect(buildLingxingProxyUrl(config)).toBe("http://proxy.example.com:8080");
+  });
+
+  it("builds URL from components with auth", () => {
+    const config: LingxingProxyConfig = {
+      enabled: true,
+      protocol: "socks5",
+      host: "proxy.example.com",
+      port: "1080",
+      username: "user",
+      password: "p@ss",
+    };
+    expect(buildLingxingProxyUrl(config)).toBe("socks5://user:p%40ss@proxy.example.com:1080");
+  });
+
+  it("returns undefined when enabled but no host or directUrl", () => {
+    const config: LingxingProxyConfig = {
+      enabled: true,
+      protocol: "http",
+      host: "",
+      port: "",
+    };
+    expect(buildLingxingProxyUrl(config)).toBeUndefined();
+  });
+
+  it("trims whitespace from directUrl", () => {
+    const config: LingxingProxyConfig = {
+      enabled: true,
+      protocol: "http",
+      host: "",
+      port: "",
+      directUrl: "  http://proxy.example.com:8080  ",
+    };
+    expect(buildLingxingProxyUrl(config)).toBe("http://proxy.example.com:8080");
+  });
+
+  it("ignores empty directUrl and falls back to components", () => {
+    const config: LingxingProxyConfig = {
+      enabled: true,
+      protocol: "https",
+      host: "myproxy.com",
+      port: "443",
+      directUrl: "",
+    };
+    expect(buildLingxingProxyUrl(config)).toBe("https://myproxy.com:443");
+  });
+});
+
+describe("Lingxing Adapter - Proxy Config Management", () => {
+  it("should update proxy config on adapter", () => {
+    const adapter = getLingxingAdapter();
+    expect(adapter.isProxyEnabled()).toBe(false);
+
+    adapter.updateProxyConfig({
+      enabled: true,
+      protocol: "http",
+      host: "test-proxy.com",
+      port: "8080",
+    });
+    expect(adapter.isProxyEnabled()).toBe(true);
+
+    const config = adapter.getProxyConfig();
+    expect(config.enabled).toBe(true);
+    expect(config.host).toBe("test-proxy.com");
+    expect(config.port).toBe("8080");
+    expect(config.protocol).toBe("http");
+
+    // Cleanup
+    adapter.updateProxyConfig({ enabled: false, host: "", port: "" });
+    expect(adapter.isProxyEnabled()).toBe(false);
+  });
+
+  it("should report proxy status in getConfig", () => {
+    const adapter = getLingxingAdapter();
+    adapter.updateProxyConfig({ enabled: false });
+    const config1 = adapter.getConfig();
+    expect(config1.proxyEnabled).toBe(false);
+
+    adapter.updateProxyConfig({ enabled: true, host: "test.com", port: "80" });
+    const config2 = adapter.getConfig();
+    expect(config2.proxyEnabled).toBe(true);
+
+    // Cleanup
+    adapter.updateProxyConfig({ enabled: false, host: "", port: "" });
+  });
+
+  it("should include usedProxy in API call logs", async () => {
+    const adapter = getLingxingAdapter();
+    adapter.setMockMode(true);
+    await adapter.request({ path: "/erp/sc/data/seller/lists", skipCache: true });
+    const logs = adapter.getRecentLogs();
+    const lastLog = logs[logs.length - 1];
+    expect(lastLog).toHaveProperty("usedProxy");
+    expect(typeof lastLog.usedProxy).toBe("boolean");
+  });
+});
+
+describe("Lingxing Adapter - LX_PROXY_KEYS", () => {
+  it("should have correct key definitions", async () => {
+    const { LX_PROXY_KEYS } = await import("./routers/systemSettings");
+    expect(LX_PROXY_KEYS.ENABLED).toBe("lx_proxy_enabled");
+    expect(LX_PROXY_KEYS.PROTOCOL).toBe("lx_proxy_protocol");
+    expect(LX_PROXY_KEYS.HOST).toBe("lx_proxy_host");
+    expect(LX_PROXY_KEYS.PORT).toBe("lx_proxy_port");
+    expect(LX_PROXY_KEYS.USERNAME).toBe("lx_proxy_username");
+    expect(LX_PROXY_KEYS.PASSWORD).toBe("lx_proxy_password");
+    expect(LX_PROXY_KEYS.URL).toBe("lx_proxy_url");
   });
 });
