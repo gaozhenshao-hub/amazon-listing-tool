@@ -602,10 +602,16 @@ function LingxingApiSettings() {
   // Initialize form from data
   React.useEffect(() => {
     if (data && !initialized) {
+      // Priority: dbConfig > currentConfig > defaults
+      // If dbConfig has values, use them; otherwise fall back to currentConfig (from env vars)
+      const dbAppId = data.dbConfig?.lingxing_app_id;
+      const dbAppSecret = data.dbConfig?.lingxing_app_secret;
+      const dbApiHost = data.dbConfig?.lingxing_api_host;
+
       setForm({
-        appId: data.dbConfig?.lingxing_app_id || "",
-        appSecret: data.dbConfig?.lingxing_app_secret || "",
-        apiHost: data.dbConfig?.lingxing_api_host || data.currentConfig.apiHost || "https://openapi.lingxing.com",
+        appId: dbAppId || (data.envHasCredentials ? data.currentConfig.appId || "" : ""),
+        appSecret: dbAppSecret || (data.envHasCredentials ? "••••••••" : ""),
+        apiHost: dbApiHost || data.currentConfig.apiHost || "https://openapi.lingxing.com",
         useMock: data.currentConfig.useMock,
       });
       setInitialized(true);
@@ -709,9 +715,16 @@ function LingxingApiSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {data?.envHasCredentials && !data?.dbConfig?.lingxing_app_id && (
+            <div className="p-3 rounded-lg bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                <strong>提示：</strong>当前正在使用环境变量中预配置的API凭证。如需修改，请在下方输入新的凭证并保存。
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>App ID</Label>
+              <Label>App ID  应用 ID</Label>
               <Input
                 placeholder="输入领星App ID"
                 value={form.appId}
@@ -719,17 +732,20 @@ function LingxingApiSettings() {
               />
             </div>
             <div>
-              <Label>App Secret</Label>
+              <Label>App Secret  应用秘钥</Label>
               <Input
                 type="password"
                 placeholder="输入领星App Secret"
                 value={form.appSecret}
                 onChange={e => setForm(f => ({ ...f, appSecret: e.target.value }))}
               />
+              {form.appSecret === "••••••••" && (
+                <p className="text-xs text-muted-foreground mt-1">已配置（显示为掩码），如需修改请清空后重新输入</p>
+              )}
             </div>
           </div>
           <div>
-            <Label>API Host</Label>
+            <Label>API Host  API主机</Label>
             <Input
               placeholder="https://openapi.lingxing.com"
               value={form.apiHost}

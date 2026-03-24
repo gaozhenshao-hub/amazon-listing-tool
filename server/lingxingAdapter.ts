@@ -339,7 +339,7 @@ class LingxingAdapter {
 
   getConfig() {
     return {
-      appId: this.config.appId ? this.config.appId.replace(/(.{4}).*(.{4})/, '$1****$2') : '',
+      appId: this.config.appId || '',
       appSecret: this.config.appSecret ? '••••••••' : '',
       apiHost: this.config.apiHost,
       useMock: this.useMock,

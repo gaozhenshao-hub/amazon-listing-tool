@@ -1977,3 +1977,9 @@
 
 ### 测试
 - [x] vitest覆盖代理配置存取和领星API代理转发逻辑（2544测试全部通过）
+
+## Bug修复：领星API凭证保存失败
+- [x] 修复系统设置页面切换Tab后领星API凭证无法保存的问题
+  - 根因：表单初始化仅从 dbConfig 取值，但 dbConfig 为空时未回退到 currentConfig
+  - 修复：getConfig() 返回完整 appId，表单初始化优先级 dbConfig > currentConfig > 默认值
+  - 增加环境变量提示 Banner 和密码掩码说明
