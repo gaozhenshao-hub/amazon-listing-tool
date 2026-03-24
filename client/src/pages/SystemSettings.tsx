@@ -195,10 +195,14 @@ export default function SystemSettings() {
       </div>
 
       <Tabs defaultValue="lingxing" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="lingxing" className="flex items-center gap-2">
             <Globe className="h-4 w-4" />
             领星API
+          </TabsTrigger>
+          <TabsTrigger value="nextsls" className="flex items-center gap-2">
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
+            物流API
           </TabsTrigger>
           <TabsTrigger value="proxy" className="flex items-center gap-2">
             <Shield className="h-4 w-4" />
@@ -217,6 +221,11 @@ export default function SystemSettings() {
         {/* ═══════════════════ Lingxing API Config Tab ═══════════════════ */}
         <TabsContent value="lingxing" className="space-y-6">
           <LingxingApiSettings />
+        </TabsContent>
+
+        {/* ═══════════════════ NextSLS Logistics API Tab ═══════════════════ */}
+        <TabsContent value="nextsls" className="space-y-6">
+          <NextSlsSettings />
         </TabsContent>
 
         {/* ═══════════════════ Proxy Configuration Tab ═══════════════════ */}
@@ -1072,6 +1081,287 @@ function LingxingApiSettings() {
               <li>配置保存后会立即生效，无需重启服务</li>
               <li>如果API连接失败，系统会自动降级为Mock数据模式</li>
               <li>Mock模式下所有数据为模拟数据，仅供功能演示和测试使用</li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// NextSLS Logistics API Settings Component
+// ═══════════════════════════════════════════════════════════════════════
+
+function NextSlsSettings() {
+  const { data, isLoading, refetch } = trpc.logistics.getConfig.useQuery();
+  const saveMut = trpc.logistics.saveConfig.useMutation({
+    onSuccess: () => { toast.success("物流API配置已保存"); refetch(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const testMut = trpc.logistics.testConnection.useMutation();
+  const { data: logsData, refetch: refetchLogs } = trpc.logistics.getApiLogs.useQuery({ limit: 15 });
+
+  const [form, setForm] = useState({
+    baseUrl: "",
+    token: "",
+    enabled: false,
+  });
+  const [initialized, setInitialized] = useState(false);
+
+  React.useEffect(() => {
+    if (data && !initialized) {
+      setForm({
+        baseUrl: data.baseUrl || "https://zjyxgj.nextsls.com",
+        token: data.token || "",
+        enabled: data.enabled,
+      });
+      setInitialized(true);
+    }
+  }, [data, initialized]);
+
+  const handleSave = () => {
+    saveMut.mutate({
+      baseUrl: form.baseUrl || undefined,
+      token: form.token || undefined,
+      enabled: form.enabled,
+    });
+  };
+
+  const handleTest = () => {
+    testMut.mutate();
+  };
+
+  if (isLoading) {
+    return <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-20 bg-muted animate-pulse rounded-lg" />)}</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Status Banner */}
+      <Card className={data?.isReady
+        ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-800 dark:bg-emerald-950/30"
+        : "border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/30"
+      }>
+        <CardContent className="pt-5 pb-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg ${data?.isReady ? "bg-emerald-100 dark:bg-emerald-900" : "bg-amber-100 dark:bg-amber-900"}`}>
+                <svg className={`h-5 w-5 ${data?.isReady ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                </svg>
+              </div>
+              <div>
+                <p className="font-medium">
+                  {data?.isReady ? "已连接知己云星管家物流API" : "物流API未配置"}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {data?.isReady
+                    ? "物流时效数据将自动反哺库存预警模块，提升补货预测准确性"
+                    : "配置API凭证后可获取真实物流时效数据，优化库存预警精度"}
+                </p>
+              </div>
+            </div>
+            {data?.isReady && (
+              <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:bg-emerald-950">
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                已就绪
+              </Badge>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Data Flow Diagram */}
+      <Card className="border-blue-100 dark:border-blue-900">
+        <CardContent className="pt-5 pb-4">
+          <p className="text-sm font-medium mb-3 flex items-center gap-2">
+            <Activity className="h-4 w-4 text-blue-500" />
+            数据流向：物流时效 → 库存预警
+          </p>
+          <div className="flex items-center gap-2 text-xs flex-wrap">
+            <span className="px-2.5 py-1.5 rounded-lg bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 font-medium">
+              NextSLS运单轨迹
+            </span>
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="px-2.5 py-1.5 rounded-lg bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 font-medium">
+              物流时效统计
+            </span>
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="px-2.5 py-1.5 rounded-lg bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 font-medium">
+              补货引擎·头程天数
+            </span>
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="px-2.5 py-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-900 text-emerald-700 dark:text-emerald-300 font-medium">
+              库存预警·断货/补货建议
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* API Credentials */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Globe className="h-4 w-4 text-blue-500" />
+            知己云星管家 API 凭证
+          </CardTitle>
+          <CardDescription>
+            配置NextSLS物流API的网站地址和Token。
+            <a href="https://zjyxgj.nextsls.com/api/v5/docs" target="_blank" rel="noopener" className="text-blue-600 hover:underline ml-1">
+              API文档 <ExternalLink className="inline h-3 w-3" />
+            </a>
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label>API 网站地址</Label>
+            <Input
+              placeholder="https://zjyxgj.nextsls.com"
+              value={form.baseUrl}
+              onChange={e => setForm(f => ({ ...f, baseUrl: e.target.value }))}
+            />
+            <p className="text-xs text-muted-foreground mt-1">物流公司提供的API网站地址</p>
+          </div>
+          <div>
+            <Label>API Token</Label>
+            <Input
+              type="password"
+              placeholder="输入物流API Token"
+              value={form.token}
+              onChange={e => setForm(f => ({ ...f, token: e.target.value }))}
+            />
+            {form.token === "••••••••" && (
+              <p className="text-xs text-muted-foreground mt-1">已配置（显示为掩码），如需修改请清空后重新输入</p>
+            )}
+          </div>
+
+          {/* Enable Toggle */}
+          <div className="flex items-center justify-between p-4 rounded-lg border">
+            <div>
+              <p className="font-medium text-sm">启用物流API</p>
+              <p className="text-xs text-muted-foreground">
+                {form.enabled ? "物流时效数据将自动同步并反哺库存预警" : "启用后将自动获取物流时效数据"}
+              </p>
+            </div>
+            <Button
+              variant={form.enabled ? "default" : "outline"}
+              size="sm"
+              onClick={() => setForm(f => ({ ...f, enabled: !f.enabled }))}
+            >
+              {form.enabled ? (
+                <><CheckCircle2 className="h-4 w-4 mr-1" /> 已启用</>
+              ) : (
+                <><XCircle className="h-4 w-4 mr-1" /> 未启用</>
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Action Buttons */}
+      <div className="flex items-center gap-3">
+        <Button onClick={handleSave} disabled={saveMut.isPending} className="gap-2">
+          {saveMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+          保存配置
+        </Button>
+        <Button variant="outline" onClick={handleTest} disabled={testMut.isPending} className="gap-2">
+          {testMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <TestTube2 className="h-4 w-4" />}
+          测试连接
+        </Button>
+        {logsData && logsData.length > 0 && (
+          <Button variant="ghost" onClick={() => refetchLogs()} size="sm" className="gap-1 ml-auto">
+            <Activity className="h-4 w-4" />
+            刷新日志
+          </Button>
+        )}
+      </div>
+
+      {/* Test Result */}
+      {testMut.data && (
+        <Card className={testMut.data.success ? "border-emerald-200 dark:border-emerald-800" : "border-red-200 dark:border-red-800"}>
+          <CardContent className="pt-5 pb-4">
+            <div className="flex items-center gap-3">
+              {testMut.data.success ? (
+                <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <XCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+              )}
+              <div className="flex-1">
+                <p className={`font-medium ${testMut.data.success ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
+                  {testMut.data.message}
+                </p>
+                {(testMut.data as any).latency && (
+                  <span className="text-sm text-muted-foreground">响应时间: {(testMut.data as any).latency}ms</span>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* API Call Logs */}
+      {logsData && logsData.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Activity className="h-4 w-4 text-muted-foreground" />
+              最近API调用日志
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="max-h-48 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-background">
+                  <tr className="border-b">
+                    <th className="text-left py-1.5 px-2 font-medium">时间</th>
+                    <th className="text-left py-1.5 px-2 font-medium">接口</th>
+                    <th className="text-left py-1.5 px-2 font-medium">状态</th>
+                    <th className="text-left py-1.5 px-2 font-medium">耗时</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logsData.slice().reverse().map((log: any, i: number) => (
+                    <tr key={i} className="border-b border-border/50 hover:bg-muted/30">
+                      <td className="py-1.5 px-2 text-muted-foreground">
+                        {new Date(log.timestamp).toLocaleTimeString()}
+                      </td>
+                      <td className="py-1.5 px-2 font-mono truncate max-w-[200px]" title={log.endpoint}>
+                        {log.endpoint}
+                      </td>
+                      <td className="py-1.5 px-2">
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                          log.success ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300" :
+                          "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300"
+                        }`}>
+                          {log.success ? "OK" : "FAIL"}
+                        </span>
+                      </td>
+                      <td className="py-1.5 px-2 text-muted-foreground">{log.duration}ms</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Help Info */}
+      <Card>
+        <CardContent className="pt-5">
+          <div className="space-y-3">
+            <p className="text-sm font-medium flex items-center gap-2">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              功能说明
+            </p>
+            <ul className="text-xs text-muted-foreground space-y-1 ml-6 list-disc">
+              <li><strong>物流时效统计：</strong>自动从NextSLS历史运单中提取各节点时间，按渠道/目的国计算平均头程天数</li>
+              <li><strong>库存预警联动：</strong>补货建议中的"头程运输天数"将优先使用NextSLS真实时效数据，替代默认估算值</li>
+              <li><strong>断货预警优化：</strong>基于真实物流轨迹动态计算在途货物的预计到货时间</li>
+              <li><strong>运单状态同步：</strong>物流批次管理页面可自动同步NextSLS运单状态和轨迹</li>
+              <li>配置保存后立即生效，无需重启服务</li>
             </ul>
           </div>
         </CardContent>

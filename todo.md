@@ -1983,3 +1983,35 @@
   - 根因：表单初始化仅从 dbConfig 取值，但 dbConfig 为空时未回退到 currentConfig
   - 修复：getConfig() 返回完整 appId，表单初始化优先级 dbConfig > currentConfig > 默认值
   - 增加环境变量提示 Banner 和密码掩码说明
+
+## NextSLS物流API集成 — 反哺库存预警
+
+### 后端——NextSLS适配器层
+- [x] 创建NextSLS API适配器层（server/nextsls/adapter.ts）
+- [x] 实现Bearer Token鉴权和请求封装
+- [x] 实现16个API接口封装（运单创建/列表/详情/追踪/标签/账户/运费/地址库/偏远验证等）
+- [x] API调用日志记录
+- [x] DB配置加载初始化（initNextSlsAdapterFromDb）
+- [x] 系统设置中增加NextSLS API凭证配置存取接口
+- [x] tRPC路由开发（logistics router）
+
+### 后端——物流时效统计服务
+- [x] 创建物流时效统计服务（从NextSLS历史运单计算平均头程天数）
+- [x] 按渠道/目的国统计平均运输时效
+- [x] 缓存时效数据，定期刷新
+
+### 后端——库存预警模块改造
+- [x] 补货建议：头程运输天数从固定值改为NextSLS真实时效数据
+- [x] 断货预警：基于真实物流轨迹动态计算预计到货时间
+- [x] 物流批次管理：自动同步NextSLS运单状态和轨迹
+
+### 前端
+- [x] 系统设置增加NextSLS API配置Tab
+- [x] 物流时效分析页面（按渠道/目的国显示平均天数）
+- [x] 侧边栏新增“物流时效分析”导航项
+- [x] 补货引擎步骤映射可视化
+
+### 测试
+- [x] NextSLS适配器单元测试（20个用例）
+- [x] 物流时效统计服务测试
+- [x] 全部2563个测试通过

@@ -54,6 +54,7 @@ import OpsProductDetail from "./pages/ops/OpsProductDetail";
 import OpsCrawlerManager from "./pages/ops/OpsCrawlerManager";
 import OpsShippingBatch from "./pages/ops/OpsShippingBatch";
 import OpsShippingBatchDetail from "./pages/ops/OpsShippingBatchDetail";
+import OpsLogistics from "./pages/ops/OpsLogistics";
 
 // ─── Module 4: Placeholder ──────────────────────────────────────
 import ComingSoonPage from "./pages/ComingSoonPage";
@@ -142,6 +143,7 @@ function Router() {
         <Route path="/ops/crawler">{() => <PermissionGuard><OpsCrawlerManager /></PermissionGuard>}</Route>
         <Route path="/ops/shipping">{() => <PermissionGuard><OpsShippingBatch /></PermissionGuard>}</Route>
         <Route path="/ops/shipping/:id">{() => <PermissionGuard><OpsShippingBatchDetail /></PermissionGuard>}</Route>
+        <Route path="/ops/logistics">{() => <PermissionGuard><OpsLogistics /></PermissionGuard>}</Route>
 
         {/* ─── Module 4: After-sales (placeholder) ─── */}
         <Route path="/service">{() => <PermissionGuard><ComingSoonPage moduleName="智能售后管理" /></PermissionGuard>}</Route>

@@ -13,6 +13,8 @@ import { shippingBatches, batchStepConfigs, stepTimeHistory, replenishmentPredic
 import { eq, and, sql, desc, gte, isNotNull } from "drizzle-orm";
 import { getLingxingAdapter } from "./lingxingAdapter";
 import { invokeLLM } from "./_core/llm";
+import { getMappedStepDaysForRoute, type MappedStepDays } from "./nextsls/transitTimeService";
+import { nextSlsAdapter } from "./nextsls/adapter";
 
 // ============== Types ==============
 
@@ -57,6 +59,8 @@ interface ReplenishmentResult {
   aiSuggestion: any;
   riskFactors: string[];
   alternativePlans: any[];
+  /** 时效数据来源: nextsls=真实物流数据, historical=历史批次, default=默认值 */
+  transitDataSource?: 'nextsls' | 'historical' | 'default';
 }
 
 // ============== Step Names ==============
@@ -161,32 +165,82 @@ async function getWeightedStepDuration(
 
 /**
  * Calculate full supply chain cycle time for a given shipping method
+ * 改造：优先使用NextSLS真实物流时效数据，其次使用历史批次加权平均，最后回退到默认值
  */
 async function calculateFullCycleDays(
   userId: string,
   shippingMethod: string = 'sea',
-): Promise<{ totalDays: number; stepBreakdown: StepDuration[] }> {
+  destinationCountry: string = 'US',
+): Promise<{ totalDays: number; stepBreakdown: StepDuration[]; dataSource: 'nextsls' | 'historical' | 'default' }> {
   const defaults = DEFAULT_STEP_DAYS[shippingMethod] || DEFAULT_STEP_DAYS.sea;
   const stepBreakdown: StepDuration[] = [];
   let totalDays = 0;
+  let dataSource: 'nextsls' | 'historical' | 'default' = 'default';
+
+  // ① 尝试从NextSLS真实物流数据获取映射步骤天数
+  let nextSlsMapped: MappedStepDays | null = null;
+  if (nextSlsAdapter.isReady()) {
+    try {
+      nextSlsMapped = await getMappedStepDaysForRoute(undefined, destinationCountry);
+      if (nextSlsMapped) {
+        dataSource = 'nextsls';
+      }
+    } catch (err) {
+      console.warn('[ReplenishmentEngine] NextSLS transit time fetch failed, falling back:', err);
+    }
+  }
+
+  // 步骤天数映射表（NextSLS mapped step key -> step number）
+  const nextSlsStepMap: Record<number, keyof MappedStepDays> = {
+    1: 'step1_preparing',
+    2: 'step2_purchasing',
+    3: 'step3_readyToShip',
+    4: 'step4_shipped',
+    5: 'step5_domesticTransit',
+    6: 'step6_arrivedWarehouse',
+    7: 'step7_internationalTransit',
+    8: 'step8_receiving',
+    9: 'step9_arrivedAmazon',
+  };
 
   for (let step = 1; step <= 9; step++) {
     const defaultDays = defaults[step] || 3;
-    const weightedAvg = await getWeightedStepDuration(userId, step, shippingMethod);
     
-    const effectiveDays = weightedAvg ?? defaultDays;
+    // 优先级：NextSLS真实数据 > 历史批次加权 > 默认值
+    let effectiveDays = defaultDays;
+    let actualDays: number | null = null;
+
+    // ① NextSLS真实数据（仅对物流相关步骤 4-8 使用）
+    if (nextSlsMapped && step >= 4 && step <= 8) {
+      const mappedKey = nextSlsStepMap[step];
+      const nextSlsDays = nextSlsMapped[mappedKey] as number;
+      if (nextSlsDays > 0) {
+        effectiveDays = nextSlsDays;
+        actualDays = nextSlsDays;
+      }
+    }
+
+    // ② 如果NextSLS没有数据，回退到历史批次加权平均
+    if (actualDays === null) {
+      const weightedAvg = await getWeightedStepDuration(userId, step, shippingMethod);
+      if (weightedAvg !== null) {
+        effectiveDays = weightedAvg;
+        actualDays = weightedAvg;
+        if (dataSource === 'default') dataSource = 'historical';
+      }
+    }
     
     stepBreakdown.push({
       stepNumber: step,
       expectedDays: defaultDays,
-      actualDays: weightedAvg,
+      actualDays,
       weightedAvgDays: effectiveDays,
     });
     
     totalDays += effectiveDays;
   }
 
-  return { totalDays, stepBreakdown };
+  return { totalDays, stepBreakdown, dataSource };
 }
 
 /**
@@ -375,10 +429,11 @@ async function predictForSku(
   const effectiveInventory = input.currentAvailableInventory + input.inTransitDomestic + input.inTransitInternational;
   const daysOfStockRemaining = dailySalesAvg > 0 ? Math.floor(effectiveInventory / dailySalesAvg) : 999;
   
-  // Calculate full cycle days
-  const { totalDays: fullCycleDays, stepBreakdown } = await calculateFullCycleDays(
+  // Calculate full cycle days (now with NextSLS real transit data support)
+  const { totalDays: fullCycleDays, stepBreakdown, dataSource } = await calculateFullCycleDays(
     userId,
     input.shippingMethod || 'sea',
+    'US', // TODO: derive from store/marketplace
   );
   
   // Determine alert level
@@ -447,6 +502,7 @@ async function predictForSku(
     aiSuggestion,
     riskFactors,
     alternativePlans,
+    transitDataSource: dataSource,
   };
 }
 

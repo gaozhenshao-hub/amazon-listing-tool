@@ -72,6 +72,8 @@ async function startServer() {
     import("../todoReminder").then(m => m.startTodoReminderScheduler()).catch(err => console.error("[TodoReminder] Failed to start:", err));
     // Initialize Lingxing API adapter from DB settings (proxy config, credentials)
     import("../lingxingAdapter").then(m => m.initLingxingAdapterFromDb()).catch(err => console.error("[LingxingAdapter] Failed to init:", err));
+    // Initialize NextSLS logistics API adapter from DB settings
+    import("../nextsls/adapter").then(m => m.initNextSlsAdapterFromDb()).catch(err => console.error("[NextSLS] Failed to init:", err));
   });
 }
 
