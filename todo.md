@@ -2015,3 +2015,10 @@
 - [x] NextSLS适配器单元测试（20个用例）
 - [x] 物流时效统计服务测试
 - [x] 全部2563个测试通过
+
+## Bug修复：领星API签名错误 2001006
+- [x] 修复领星API签名算法（api sign not correct）
+  - 根因：领星使用CryptoJS的非标准AES密钥处理（不补0-pad到16字节），Node.js原生crypto无法复现
+  - 修复：引入crypto-js npm包替代Node.js原生crypto的AES加密
+  - 签名算法完全匹配领星官方测试页面的输出结果
+  - 全部2565个测试通过（含官方参考数据验证用例）

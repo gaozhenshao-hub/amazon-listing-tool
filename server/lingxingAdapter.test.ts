@@ -22,23 +22,44 @@ describe("Lingxing Adapter - Secrets & Initialization", () => {
   });
 });
 
-describe("Lingxing Adapter - Sign Generation", () => {
-  it("should generate correct MD5 sign", () => {
-    const sign = generateSign("test_app_key", 1700000000, "test_secret");
-    expect(sign).toHaveLength(32);
-    expect(sign).toMatch(/^[a-f0-9]{32}$/);
+describe("Lingxing Adapter - Sign Generation (7-step official algorithm)", () => {
+  it("should generate AES-encrypted Base64 sign", () => {
+    const sign = generateSign("testAppId123", "test_access_token", 1700000000);
+    // AES result is Base64 encoded, not hex MD5
+    expect(sign.length).toBeGreaterThan(0);
+    // Base64 characters: A-Z, a-z, 0-9, +, /, =
+    expect(sign).toMatch(/^[A-Za-z0-9+/=]+$/);
   });
 
   it("should produce different signs for different timestamps", () => {
-    const sign1 = generateSign("key", 1700000000, "secret");
-    const sign2 = generateSign("key", 1700000001, "secret");
+    const sign1 = generateSign("key", "token", 1700000000);
+    const sign2 = generateSign("key", "token", 1700000001);
     expect(sign1).not.toBe(sign2);
   });
 
   it("should produce deterministic signs", () => {
-    const sign1 = generateSign("key", 1700000000, "secret");
-    const sign2 = generateSign("key", 1700000000, "secret");
+    const sign1 = generateSign("key", "token", 1700000000);
+    const sign2 = generateSign("key", "token", 1700000000);
     expect(sign1).toBe(sign2);
+  });
+
+  it("should match official CryptoJS reference output", () => {
+    // Test data from Lingxing official sign test page
+    const sign = generateSign(
+      "testAppId123",
+      "32573a1b-xxxx-xxxx-xxxx-a85fc12de26a",
+      1680593889,
+      { start_date: "2023-03-01 00:00:00", end_date: "2023-03-28 10:44:55", date_type: 2 }
+    );
+    expect(sign).toBe("KzFqrZ+mU4ZbhRrFCqoTcMzWZcZxD0icnAgd/aa/c8rfX+Br+gNdhQfcrARMvBo1");
+  });
+
+  it("should handle body params with objects/arrays", () => {
+    const sign = generateSign("appId", "token", 1700000000, {
+      ids: [1, 2, 3],
+      filter: { status: "active" }
+    });
+    expect(sign).toMatch(/^[A-Za-z0-9+/=]+$/);
   });
 });
 

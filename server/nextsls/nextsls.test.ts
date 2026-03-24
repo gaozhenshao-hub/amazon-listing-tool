@@ -233,7 +233,7 @@ describe("Transit Time Service", () => {
       } else {
         expect(result).toBeNull();
       }
-    });
+    }, 15000); // Increased timeout since it may attempt network calls
   });
 
   describe("getTransitTimeOverview", () => {

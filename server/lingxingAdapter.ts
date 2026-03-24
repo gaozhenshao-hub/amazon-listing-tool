@@ -12,6 +12,7 @@
  */
 
 import { createHash } from "crypto";
+import CryptoJS from "crypto-js";
 import { ENV } from "./_core/env";
 
 // ============== Types ==============
@@ -134,9 +135,69 @@ class TokenManager {
 
 // ============== Signature Generator ==============
 
-export function generateSign(appKey: string, timestamp: number, appSecret: string): string {
-  const signStr = `${appKey}${timestamp}${appSecret}`;
-  return createHash("md5").update(signStr).digest("hex");
+/**
+ * Generate Lingxing API sign following the official 7-step algorithm:
+ * 1. Parse business params JSON
+ * 2. Add fixed params (access_token, app_key, timestamp)
+ * 3. Sort all params by key ASCII order
+ * 4. Concatenate as key1=value1&key2=value2 (skip empty values, keep null)
+ * 5. MD5 hash (32-bit uppercase)
+ * 6. AES/ECB/PKCS5Padding encrypt with AppId as key
+ * 7. URL encode the result
+ */
+export function generateSign(
+  appId: string,
+  accessToken: string,
+  timestamp: number,
+  bodyParams: Record<string, any> = {},
+): string {
+  // Step 1: Flatten business params (objects/arrays → JSON.stringify, others → String)
+  const allParams: Record<string, string> = {};
+  for (const [key, value] of Object.entries(bodyParams)) {
+    if (value === undefined || value === '') continue; // skip empty
+    if (typeof value === 'object' && value !== null) {
+      allParams[key] = JSON.stringify(value);
+    } else {
+      allParams[key] = String(value);
+    }
+  }
+
+  // Step 2: Add fixed params & remove sign/api_code
+  allParams['access_token'] = accessToken;
+  allParams['app_key'] = appId;
+  allParams['timestamp'] = String(timestamp);
+  delete allParams['sign'];
+  delete allParams['api_code'];
+
+  // Step 3: Sort by key ASCII
+  const sortedKeys = Object.keys(allParams).sort();
+
+  // Step 4: Concatenate key=value pairs (trim values)
+  const parts: string[] = [];
+  for (const k of sortedKeys) {
+    const v = allParams[k];
+    if (v !== '' && v !== undefined) {
+      parts.push(`${k}=${String(v).trim()}`);
+    }
+  }
+  const paramStr = parts.join('&');
+
+  // Step 5: MD5 uppercase
+  const md5Hash = createHash('md5').update(paramStr, 'utf8').digest('hex').toUpperCase();
+
+  // Step 6: AES/ECB/PKCS5Padding with AppId as key
+  // IMPORTANT: Must use crypto-js (not Node.js crypto) to match Lingxing's browser-based
+  // CryptoJS behavior. CryptoJS handles non-standard key lengths (e.g., 12 bytes)
+  // differently from Node.js crypto which requires exactly 16/24/32 bytes.
+  const key = CryptoJS.enc.Utf8.parse(appId);
+  const encrypted = CryptoJS.AES.encrypt(md5Hash, key, {
+    mode: CryptoJS.mode.ECB,
+    padding: CryptoJS.pad.Pkcs7,
+  });
+
+  // Step 7: Return the base64 AES result
+  // Note: URL encoding is handled by URLSearchParams when building the query string
+  return encrypted.toString();
 }
 
 // ============== Cache Layer ==============
@@ -385,7 +446,7 @@ class LingxingAdapter {
     try {
       const accessToken = await this.tokenManager.getToken();
       const timestamp = Math.floor(Date.now() / 1000);
-      const sign = generateSign(this.config.appId, timestamp, this.config.appSecret);
+      const sign = generateSign(this.config.appId, accessToken, timestamp, body);
 
       const queryParams = new URLSearchParams({
         access_token: accessToken,
