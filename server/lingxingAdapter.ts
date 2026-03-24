@@ -66,7 +66,7 @@ class TokenManager {
 
   constructor(
     private config: LingxingConfig,
-    private getAgent: () => Promise<any>,
+    private getProxyUrl: () => string | null,
   ) {}
 
   async getToken(): Promise<string> {
@@ -93,29 +93,32 @@ class TokenManager {
 
   private async fetchToken(): Promise<LingxingToken> {
     const url = `${this.config.apiHost}/api/auth-server/oauth/access-token`;
-    const body = new URLSearchParams({
+    const bodyStr = new URLSearchParams({
       appId: this.config.appId,
       appSecret: this.config.appSecret,
-    });
+    }).toString();
 
-    const agent = await this.getAgent();
-    const fetchOptions: any = {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
-      signal: AbortSignal.timeout(15_000),
-    };
-    if (agent) {
-      fetchOptions.agent = agent;
+    const proxyUrl = this.getProxyUrl();
+    let json: LingxingResponse<{ access_token: string; refresh_token: string; expires_in: number }>;
+
+    if (proxyUrl) {
+      // Use native CONNECT tunnel for correct proxy IP
+      const res = await fetchViaProxy(url, proxyUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: bodyStr,
+        timeout: 15_000,
+      });
+      json = await res.json();
+    } else {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: bodyStr,
+        signal: AbortSignal.timeout(15_000),
+      });
+      json = await res.json() as any;
     }
-
-    const res = await fetch(url, fetchOptions);
-
-    const json = await res.json() as LingxingResponse<{
-      access_token: string;
-      refresh_token: string;
-      expires_in: number;
-    }>;
 
     if (json.code !== "200" || !json.data?.access_token) {
       throw new Error(`Lingxing token fetch failed: ${json.msg} (code: ${json.code})`);
@@ -307,16 +310,185 @@ export function buildLingxingProxyUrl(proxy: LingxingProxyConfig): string | unde
 }
 
 /**
+ * Parse a proxy URL into components
+ */
+function parseProxyUrl(proxyUrl: string): {
+  protocol: string;
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+} {
+  const url = new URL(proxyUrl);
+  return {
+    protocol: url.protocol.replace(':', ''),
+    host: url.hostname,
+    port: parseInt(url.port) || (url.protocol === 'https:' ? 443 : 80),
+    username: url.username ? decodeURIComponent(url.username) : undefined,
+    password: url.password ? decodeURIComponent(url.password) : undefined,
+  };
+}
+
+/**
  * Create an HTTP agent from proxy URL (supports http/https/socks5)
+ * For HTTP/HTTPS proxies, uses Node.js native CONNECT tunnel to ensure
+ * the exit IP matches the proxy server IP (fixes https-proxy-agent bug).
  */
 async function createProxyAgent(proxyUrl: string): Promise<any> {
   if (proxyUrl.startsWith("socks")) {
     const { SocksProxyAgent } = await import("socks-proxy-agent");
     return new SocksProxyAgent(proxyUrl);
   } else {
-    const { HttpsProxyAgent } = await import("https-proxy-agent");
-    return new HttpsProxyAgent(proxyUrl);
+    // Use tunnel-agent for correct CONNECT tunnel behavior
+    const tunnel = await import("tunnel");
+    const parsed = parseProxyUrl(proxyUrl);
+    const proxyOpts: any = {
+      host: parsed.host,
+      port: parsed.port,
+    };
+    if (parsed.username && parsed.password) {
+      proxyOpts.proxyAuth = `${parsed.username}:${parsed.password}`;
+    }
+    return tunnel.httpsOverHttp({ proxy: proxyOpts });
   }
+}
+
+/**
+ * Make a proxied fetch request using Node.js native CONNECT tunnel.
+ * This ensures the exit IP is the proxy server's IP, not a random IP
+ * from the proxy provider's pool (which happens with https-proxy-agent).
+ */
+async function fetchViaProxy(
+  targetUrl: string,
+  proxyUrl: string,
+  options: { method?: string; headers?: Record<string, string>; body?: string; timeout?: number } = {},
+): Promise<{ status: number; ok: boolean; json: () => Promise<any>; text: () => Promise<string> }> {
+  const http = await import("http");
+  const tls = await import("tls");
+  const proxy = parseProxyUrl(proxyUrl);
+  const target = new URL(targetUrl);
+  const isHttps = target.protocol === 'https:';
+  const targetPort = target.port || (isHttps ? '443' : '80');
+  const timeoutMs = options.timeout || 30_000;
+
+  return new Promise((resolve, reject) => {
+    const connectHeaders: Record<string, string> = {};
+    if (proxy.username && proxy.password) {
+      connectHeaders['Proxy-Authorization'] = 'Basic ' + Buffer.from(`${proxy.username}:${proxy.password}`).toString('base64');
+    }
+
+    const connectReq = http.request({
+      host: proxy.host,
+      port: proxy.port,
+      method: 'CONNECT',
+      path: `${target.hostname}:${targetPort}`,
+      headers: connectHeaders,
+    });
+
+    const timer = setTimeout(() => {
+      connectReq.destroy();
+      reject(new Error(`Proxy CONNECT timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    connectReq.on('connect', (res, socket) => {
+      if (res.statusCode !== 200) {
+        clearTimeout(timer);
+        socket.destroy();
+        reject(new Error(`Proxy CONNECT failed: HTTP ${res.statusCode}`));
+        return;
+      }
+
+      const doRequest = (writeSocket: any) => {
+        const method = options.method || 'GET';
+        const path = target.pathname + target.search;
+        const reqHeaders: string[] = [
+          `${method} ${path} HTTP/1.1`,
+          `Host: ${target.hostname}`,
+          'Connection: close',
+        ];
+        if (options.headers) {
+          for (const [k, v] of Object.entries(options.headers)) {
+            reqHeaders.push(`${k}: ${v}`);
+          }
+        }
+        if (options.body) {
+          reqHeaders.push(`Content-Length: ${Buffer.byteLength(options.body)}`);
+        }
+        reqHeaders.push('', '');
+        writeSocket.write(reqHeaders.join('\r\n'));
+        if (options.body) {
+          writeSocket.write(options.body);
+        }
+
+        let rawData = '';
+        writeSocket.on('data', (chunk: Buffer) => { rawData += chunk.toString(); });
+        writeSocket.on('end', () => {
+          clearTimeout(timer);
+          // Parse HTTP response
+          const headerEnd = rawData.indexOf('\r\n\r\n');
+          const headerPart = headerEnd >= 0 ? rawData.substring(0, headerEnd) : '';
+          const bodyPart = headerEnd >= 0 ? rawData.substring(headerEnd + 4) : rawData;
+          const statusLine = headerPart.split('\r\n')[0] || '';
+          const statusMatch = statusLine.match(/HTTP\/\d\.\d (\d+)/);
+          const status = statusMatch ? parseInt(statusMatch[1]) : 0;
+
+          // Handle chunked transfer encoding
+          const isChunked = headerPart.toLowerCase().includes('transfer-encoding: chunked');
+          let finalBody = bodyPart;
+          if (isChunked) {
+            finalBody = decodeChunked(bodyPart);
+          }
+
+          resolve({
+            status,
+            ok: status >= 200 && status < 300,
+            json: async () => JSON.parse(finalBody.trim()),
+            text: async () => finalBody.trim(),
+          });
+        });
+        writeSocket.on('error', (e: Error) => {
+          clearTimeout(timer);
+          reject(e);
+        });
+      };
+
+      if (isHttps) {
+        const tlsSocket = tls.connect({ socket, servername: target.hostname }, () => {
+          doRequest(tlsSocket);
+        });
+        tlsSocket.on('error', (e) => {
+          clearTimeout(timer);
+          reject(e);
+        });
+      } else {
+        doRequest(socket);
+      }
+    });
+
+    connectReq.on('error', (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+
+    connectReq.end();
+  });
+}
+
+/** Decode chunked transfer encoding */
+function decodeChunked(data: string): string {
+  let result = '';
+  let remaining = data;
+  while (remaining.length > 0) {
+    const lineEnd = remaining.indexOf('\r\n');
+    if (lineEnd < 0) break;
+    const sizeStr = remaining.substring(0, lineEnd).trim();
+    const chunkSize = parseInt(sizeStr, 16);
+    if (isNaN(chunkSize) || chunkSize === 0) break;
+    const chunkStart = lineEnd + 2;
+    result += remaining.substring(chunkStart, chunkStart + chunkSize);
+    remaining = remaining.substring(chunkStart + chunkSize + 2);
+  }
+  return result || data; // fallback to raw data if parsing fails
 }
 
 // ============== Main Adapter ==============
@@ -336,7 +508,7 @@ class LingxingAdapter {
   };
 
   constructor(private config: LingxingConfig) {
-    this.tokenManager = new TokenManager(config, () => this.getProxyAgent());
+    this.tokenManager = new TokenManager(config, () => this.getActiveProxyUrl());
     this.useMock = config.useMock ?? false;
   }
 
@@ -379,7 +551,13 @@ class LingxingAdapter {
     return this.proxyConfig.enabled && !!(this.proxyConfig.host || this.proxyConfig.directUrl);
   }
 
-  /** Get proxy agent for fetch calls */
+  /** Get active proxy URL (synchronous, for TokenManager) */
+  private getActiveProxyUrl(): string | null {
+    if (!this.isProxyEnabled()) return null;
+    return buildLingxingProxyUrl(this.proxyConfig) || null;
+  }
+
+  /** Get proxy agent for fetch calls (legacy, used for SOCKS5 only) */
   private async getProxyAgent(): Promise<any> {
     if (!this.isProxyEnabled()) return null;
     const proxyUrl = buildLingxingProxyUrl(this.proxyConfig);
@@ -394,7 +572,7 @@ class LingxingAdapter {
     if (newConfig.apiHost !== undefined) this.config.apiHost = newConfig.apiHost;
     if (newConfig.useMock !== undefined) this.useMock = newConfig.useMock;
     // Reset token manager with new config
-    this.tokenManager = new TokenManager(this.config, () => this.getProxyAgent());
+    this.tokenManager = new TokenManager(this.config, () => this.getActiveProxyUrl());
     this.cache.clear();
   }
 
@@ -457,24 +635,35 @@ class LingxingAdapter {
       });
 
       const url = `${this.config.apiHost}${path}?${queryParams.toString()}`;
+      const bodyStr = (method === "POST" && Object.keys(body).length > 0) ? JSON.stringify(body) : undefined;
+      const proxyUrl = this.getActiveProxyUrl();
 
-      const agent = await this.getProxyAgent();
-      const fetchOptions: any = {
-        method,
-        headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(timeout),
-      };
+      let json: LingxingResponse<T>;
 
-      if (agent) {
-        fetchOptions.agent = agent;
+      if (proxyUrl && !proxyUrl.startsWith('socks')) {
+        // Use native CONNECT tunnel for HTTP/HTTPS proxies (correct exit IP)
+        const res = await fetchViaProxy(url, proxyUrl, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: bodyStr,
+          timeout,
+        });
+        json = await res.json();
+      } else {
+        // Direct fetch or SOCKS5 proxy (uses agent)
+        const fetchOptions: any = {
+          method,
+          headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(timeout),
+        };
+        if (proxyUrl) {
+          const agent = await this.getProxyAgent();
+          if (agent) fetchOptions.agent = agent;
+        }
+        if (bodyStr) fetchOptions.body = bodyStr;
+        const res = await fetch(url, fetchOptions);
+        json = await res.json() as LingxingResponse<T>;
       }
-
-      if (method === "POST" && Object.keys(body).length > 0) {
-        fetchOptions.body = JSON.stringify(body);
-      }
-
-      const res = await fetch(url, fetchOptions);
-      const json = await res.json() as LingxingResponse<T>;
       const duration = Date.now() - startTime;
 
       this.logCall(path, method, json.code, duration, false, usingProxy);
@@ -543,14 +732,11 @@ class LingxingAdapter {
         if (!proxyUrl) {
           return { success: false, message: "代理配置不完整", latency: null, usedProxy: true };
         }
-        const agent = await createProxyAgent(proxyUrl);
-        const ipRes = await fetch("https://httpbin.org/ip", {
-          agent: agent as any,
-          signal: AbortSignal.timeout(10_000),
-        } as any);
+        // Use native CONNECT tunnel for accurate IP detection
+        const ipRes = await fetchViaProxy("https://httpbin.org/ip", proxyUrl, { timeout: 10_000 });
         if (ipRes.ok) {
           const ipData = await ipRes.json() as { origin?: string };
-          console.log(`[LingxingAdapter] Proxy IP: ${ipData.origin}`);
+          console.log(`[LingxingAdapter] Proxy IP (CONNECT tunnel): ${ipData.origin}`);
         }
       } catch (err: any) {
         return {
@@ -602,6 +788,7 @@ class LingxingAdapter {
 
   /**
    * Test proxy only (check IP and connectivity)
+   * Uses native CONNECT tunnel to ensure correct exit IP detection.
    */
   async testProxyOnly(): Promise<{
     success: boolean;
@@ -620,11 +807,8 @@ class LingxingAdapter {
 
     try {
       const startTime = Date.now();
-      const agent = await createProxyAgent(proxyUrl);
-      const res = await fetch("https://httpbin.org/ip", {
-        agent: agent as any,
-        signal: AbortSignal.timeout(10_000),
-      } as any);
+      // Use native CONNECT tunnel for accurate IP detection
+      const res = await fetchViaProxy("https://httpbin.org/ip", proxyUrl, { timeout: 10_000 });
       const latency = Date.now() - startTime;
 
       if (res.ok) {

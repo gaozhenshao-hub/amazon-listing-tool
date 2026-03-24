@@ -2022,3 +2022,11 @@
   - 修复：引入crypto-js npm包替代Node.js原生crypto的AES加密
   - 签名算法完全匹配领星官方测试页面的输出结果
   - 全部2565个测试通过（含官方参考数据验证用例）
+
+## Bug修复：代理出口IP不固定
+- [x] 修复代理出口IP不固定的问题
+  - 根因：https-proxy-agent库在CONNECT隧道模式下出口IP不稳定（与代理服务器IP不一致）
+  - 修复：用Node.js原生http.request CONNECT隧道替代https-proxy-agent
+  - 改造范围：TokenManager.fetchToken、request方法、testProxyOnly、testConnection全部改用fetchViaProxy
+  - SOCKS5代理保留原有socks-proxy-agent方式
+  - 全部2565个测试通过
