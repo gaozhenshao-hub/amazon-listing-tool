@@ -2151,3 +2151,11 @@
 - [x] 前端：Lovart标签页展示品牌DNA、一致性策略、工作流总览
 - [x] 前端：每张图片可展开查看提示词、迭代话术、精修步骤、质量检查项
 - [x] 前端：支持中英文切换和一键复制
+
+## Lovart提示词锁定与编辑功能
+- [x] 后端：新增confirmStep6Lovart和unlockStep6Lovart procedures
+- [x] 数据库：新增step6LovartConfirmed字段
+- [x] 前端：Lovart标签页添加确认锁定/解锁编辑/复制全部按钮
+- [x] 前端：锁定后提示词变为只读灰色背景，隐藏重新生成按钮
+- [x] 前端：解锁后恢复编辑状态，可修改提示词并自动保存
+- [x] 后端：resetToStep中清除step6LovartConfirmed

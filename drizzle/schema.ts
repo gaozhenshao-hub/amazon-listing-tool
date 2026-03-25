@@ -1357,6 +1357,7 @@ export const imageWorkflowSessions = mysqlTable("image_workflow_sessions", {
   step6LovartResult: text("step6LovartResult"),      // Lovart prompts JSON (Chinese - primary)
   step6LovartResultEn: text("step6LovartResultEn"),  // Lovart prompts JSON (English translation)
   step6LovartUserEdit: text("step6LovartUserEdit"),  // User edited Lovart prompts JSON
+  step6LovartConfirmed: int("step6LovartConfirmed").default(0).notNull(),
   // PDF export
   pdfUrl: text("pdfUrl"),                      // S3 URL for exported PDF
 

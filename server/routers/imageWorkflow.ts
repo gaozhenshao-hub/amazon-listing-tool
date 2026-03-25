@@ -904,6 +904,42 @@ export const imageWorkflowRouter = router({
       return { success: true };
     }),
 
+  // ─── Confirm Step 6 Lovart ─────────────────────────────────
+  confirmStep6Lovart: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      userEdit: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
+
+      const updateData: any = { step6LovartConfirmed: 1 };
+      if (input.userEdit) {
+        updateData.step6LovartUserEdit = input.userEdit;
+      }
+
+      await db.updateImageWorkflowSession(session.id, updateData);
+      return { success: true };
+    }),
+
+  // ─── Unlock Step 6 Lovart ─────────────────────────────────
+  unlockStep6Lovart: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
+
+      await db.updateImageWorkflowSession(session.id, {
+        step6LovartConfirmed: 0,
+      });
+      return { success: true };
+    }),
+
   // ─── Reset to a specific step ─────────────────────────────────
   resetToStep: protectedProcedure
     .input(z.object({
@@ -956,6 +992,7 @@ export const imageWorkflowRouter = router({
         clearData.step6LovartResult = null;
         clearData.step6LovartResultEn = null;
         clearData.step6LovartUserEdit = null;
+        clearData.step6LovartConfirmed = 0;
       }
       clearData.status = "in_progress";
 

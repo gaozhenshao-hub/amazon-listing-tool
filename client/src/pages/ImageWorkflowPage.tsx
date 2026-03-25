@@ -3404,11 +3404,18 @@ function Step6LovartTab({
 }) {
   const generateLovartMutation = trpc.imageWorkflow.generateStep6Lovart.useMutation();
   const saveLovartEditMutation = trpc.imageWorkflow.saveStep6LovartEdit.useMutation();
+  const confirmLovartMutation = trpc.imageWorkflow.confirmStep6Lovart.useMutation();
+  const unlockLovartMutation = trpc.imageWorkflow.unlockStep6Lovart.useMutation();
   const [lovartCnData, setLovartCnData] = useState<any>(null);
   const [lovartEnData, setLovartEnData] = useState<any>(null);
   const [lovartLang, setLovartLang] = useState<"cn" | "en">("cn");
   const [copiedIdx, setCopiedIdx] = useState<string | null>(null);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const [isLovartLocked, setIsLovartLocked] = useState(!!session?.step6LovartConfirmed);
+
+  useEffect(() => {
+    setIsLovartLocked(!!session?.step6LovartConfirmed);
+  }, [session?.step6LovartConfirmed]);
 
   useEffect(() => {
     if (session?.step6LovartResult) {
@@ -3439,6 +3446,7 @@ function Step6LovartTab({
   };
 
   const handleEditLovartPrompt = (idx: number, value: string) => {
+    if (isLovartLocked) return;
     setLovartCnData((prev: any) => {
       if (!prev?.imagePrompts) return prev;
       const prompts = [...prev.imagePrompts];
@@ -3446,6 +3454,44 @@ function Step6LovartTab({
       const updated = { ...prev, imagePrompts: prompts };
       saveLovartEditMutation.mutate({ projectId, userEdit: JSON.stringify(updated) });
       return updated;
+    });
+  };
+
+  const handleConfirmLovart = async () => {
+    if (!lovartCnData) return;
+    try {
+      await confirmLovartMutation.mutateAsync({
+        projectId,
+        userEdit: JSON.stringify(lovartCnData),
+      });
+      setIsLovartLocked(true);
+      toast.success("Lovart提示词已锁定确认");
+    } catch (err: any) {
+      toast.error(err.message || "确认失败");
+    }
+  };
+
+  const handleUnlockLovart = async () => {
+    try {
+      await unlockLovartMutation.mutateAsync({ projectId });
+      setIsLovartLocked(false);
+      toast.success("已解锁，可重新编辑");
+    } catch (err: any) {
+      toast.error(err.message || "解锁失败");
+    }
+  };
+
+  const handleCopyAllLovart = () => {
+    if (!lovartCnData?.imagePrompts) return;
+    const parts: string[] = [];
+    if (lovartCnData.brandDNA?.template) {
+      parts.push(`=== 品牌DNA ===\n${lovartCnData.brandDNA.template}`);
+    }
+    lovartCnData.imagePrompts.forEach((p: any, i: number) => {
+      parts.push(`\n--- ${p.imageLabel || `Image ${i + 1}`} ---\n${p.lovartPrompt || ''}`);
+    });
+    navigator.clipboard.writeText(parts.join('\n')).then(() => {
+      toast.success("全部Lovart提示词已复制");
     });
   };
 
@@ -3491,9 +3537,31 @@ function Step6LovartTab({
       {/* Toolbar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleGenerateLovart} disabled={generateLovartMutation.isPending}>
-            <RotateCcw className="w-3 h-3 mr-1" /> 重新生成
+          {!isLovartLocked && (
+            <Button variant="outline" size="sm" onClick={handleGenerateLovart} disabled={generateLovartMutation.isPending}>
+              <RotateCcw className="w-3 h-3 mr-1" /> 重新生成
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={handleCopyAllLovart}>
+            <Copy className="w-3 h-3 mr-1" /> 复制全部
           </Button>
+          {!isLovartLocked && lovartCnData && (
+            <Button size="sm" onClick={handleConfirmLovart} disabled={confirmLovartMutation.isPending} className="bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700">
+              {confirmLovartMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Check className="w-3 h-3 mr-1" />}
+              确认锁定
+            </Button>
+          )}
+          {isLovartLocked && (
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                <Lock className="w-3 h-3 mr-1" /> 已锁定
+              </Badge>
+              <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlockLovart} disabled={unlockLovartMutation.isPending}>
+                {unlockLovartMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
+                解锁编辑
+              </Button>
+            </div>
+          )}
         </div>
         {lovartEnData && (
           <div className="inline-flex rounded-lg border p-0.5 bg-muted">
@@ -3666,14 +3734,14 @@ function Step6LovartTab({
                 <label className="text-xs font-medium text-pink-700 flex items-center gap-1 mb-1">
                   <Paintbrush className="w-3 h-3" /> Lovart ChatCanvas 提示词
                 </label>
-                {lovartLang === 'cn' ? (
+                {lovartLang === 'cn' && !isLovartLocked ? (
                   <Textarea
                     value={lovartCnData?.imagePrompts?.[idx]?.lovartPrompt || ''}
                     onChange={(e) => handleEditLovartPrompt(idx, e.target.value)}
                     className="min-h-[200px] text-sm bg-pink-50/30 border-pink-200 leading-relaxed"
                   />
                 ) : (
-                  <div className="p-4 bg-pink-50/30 rounded-lg border border-pink-200 text-sm whitespace-pre-wrap leading-relaxed">
+                  <div className={`p-4 rounded-lg border text-sm whitespace-pre-wrap leading-relaxed ${isLovartLocked ? 'bg-gray-50/50 border-gray-200' : 'bg-pink-50/30 border-pink-200'}`}>
                     {prompt.lovartPrompt}
                   </div>
                 )}
