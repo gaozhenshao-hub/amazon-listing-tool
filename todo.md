@@ -2057,3 +2057,20 @@
 - [x] 将完整API文档整理为项目文件（shared/lingxing-api-docs/）
 - [x] 包含所有模块：授权、基础数据、销售、FBA、补货建议、产品、采购、仓库、物涁、新广告、财务、统计等
 - [x] 生成README.md索引文件
+
+## Bug修复：利润分析SKU排行表数据不显示
+- [x] 诊断SKU排行表字段映射问题（SKU名称显示"-"，收入和利润都是$0）
+- [x] 修正SKU排行表的字段映射（msku, itemName, totalFbaAndFbmAmount, grossProfit等）
+- [x] 修正库存数据的字段映射（msku, product_name, fulfillable_quantity, sellable_days等）
+- [x] 修正广告数据的字段映射（合并spCampaigns列表+spCampaignReports报表）
+- [x] 修复仪表盘运营预警undefined字段（sellable_days, msku）
+- [x] 修复仪表盘广告ACoS卡片（改用spCampaignReports报表API）
+- [x] 修复仪表盘利润汇总（使用summaryEnabled=true获取准确汇总）
+- [x] 修复仪表盘趋势图（按天分组汇总，正确显示30天趋势）
+- [x] 修复getAllSellerSids缓存和重试（避免API限流导致sid=1）
+- [x] 修复广告API遍历所有sid获取campaign名称
+- [x] 验证所有数据与领星ERP一致
+
+## 领星API文档精简索引
+- [x] 创建领星API精简版索引文件放回项目（server/LINGXING-API-REFERENCE.md + lingxing-api-reference.json）
+- [x] 索引包含：接口路径、请求参数、响应字段、使用说明

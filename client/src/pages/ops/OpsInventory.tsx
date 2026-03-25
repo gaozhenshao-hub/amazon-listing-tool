@@ -319,7 +319,7 @@ export default function OpsInventory() {
                             <td className="p-3 max-w-[200px] truncate">{item.product_name || "-"}</td>
                             <td className="p-3 text-right font-medium">{(item.fulfillable_qty || 0).toLocaleString()}</td>
                             <td className="p-3 text-right text-blue-600">{(item.inbound_quantity || 0).toLocaleString()}</td>
-                            <td className="p-3 text-right">{(item.avg_daily_sales || 0).toFixed(1)}</td>
+                            <td className="p-3 text-right">{Number(item.avg_daily_sales || 0).toFixed(1)}</td>
                             <td className="p-3 text-right font-bold">{item.days_of_supply || 0}</td>
                             <td className="p-3 text-center">
                               <Badge variant={alertStyle.badge} className={`text-[10px] ${alertStyle.text}`}>{alertStyle.label}</Badge>

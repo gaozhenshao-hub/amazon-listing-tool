@@ -12,6 +12,48 @@ import {
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, lte } from "drizzle-orm";
 
+// Helper: Get all seller SIDs from Lingxing (with cache + retry)
+let _sellerCache: { sids: string[], sellers: any[], ts: number } | null = null;
+const SELLER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function getAllSellerSids(): Promise<{sids: string[], sellers: any[]}> {
+  // Return cached result if still valid
+  if (_sellerCache && Date.now() - _sellerCache.ts < SELLER_CACHE_TTL && _sellerCache.sids.length > 0) {
+    console.log(`[SellerSids] Using cache: ${_sellerCache.sids.length} sellers`);
+    return { sids: _sellerCache.sids, sellers: _sellerCache.sellers };
+  }
+  
+  const adapter = getLingxingAdapter();
+  // Retry up to 3 times with delay to handle rate limiting
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await adapter.request({ path: "/erp/sc/data/seller/lists" });
+      const sellers = Array.isArray(res.data) ? res.data : (res.data as any)?.list || [];
+      const sids = sellers.map((s: any) => String(s.sid));
+      if (sids.length > 0) {
+        _sellerCache = { sids, sellers, ts: Date.now() };
+        console.log(`[SellerSids] Found ${sids.length} sellers: ${sids.join(',')}`);
+        return { sids, sellers };
+      }
+      // Got 0 sellers (likely rate limited), retry after delay
+      console.warn(`[SellerSids] Attempt ${attempt}: Got 0 sellers, retrying in ${attempt * 2}s...`);
+      await new Promise(r => setTimeout(r, attempt * 2000));
+    } catch (err: any) {
+      console.error(`[SellerSids] Attempt ${attempt} failed: ${err.message}`);
+      if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 2000));
+    }
+  }
+  
+  // If all retries failed but we have stale cache, use it
+  if (_sellerCache && _sellerCache.sids.length > 0) {
+    console.warn(`[SellerSids] All retries failed, using stale cache: ${_sellerCache.sids.length} sellers`);
+    return { sids: _sellerCache.sids, sellers: _sellerCache.sellers };
+  }
+  
+  console.error(`[SellerSids] All retries failed, no cache available`);
+  return { sids: [], sellers: [] };
+}
+
 // ============== Operations Dashboard ==============
 export const operationsRouter = router({
   // --- Dashboard Overview ---
@@ -19,22 +61,36 @@ export const operationsRouter = router({
     const adapter = getLingxingAdapter();
     const isMock = adapter.isMockMode();
 
-    // Fetch key data from Lingxing (or mock)
-    const [sellerRes, profitRes, inventoryRes, adRes] = await Promise.all([
-      adapter.request({ path: "/erp/sc/data/seller/lists" }),
-      adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { startDate: getDateNDaysAgo(30), endDate: getToday() } }),
-      adapter.request({ path: "/erp/sc/routing/fba/fbaStock/fbaList", body: { sid: "1" } }),
-      adapter.request({ path: "/pb/openapi/newad/spCampaigns", body: { sid: 1 }, headers: { "X-API-VERSION": "2" } }),
+    // First get all seller SIDs
+    const { sids, sellers } = await getAllSellerSids();
+    const allSidsStr = sids.join(',');
+    const firstSid = sids.length > 0 ? Number(sids[0]) : 1;
+    
+    // Fetch key data from Lingxing using real SIDs
+    // Two profit requests: summary for cards, daily for trend chart
+    const [profitSummaryRes, profitDailyRes, inventoryRes, adReportRes] = await Promise.all([
+      adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { startDate: getDateNDaysAgo(30), endDate: getToday(), length: 500, summaryEnabled: true } }),
+      adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { startDate: getDateNDaysAgo(30), endDate: getToday(), length: 500 } }),
+      adapter.request({ path: "/erp/sc/routing/fba/fbaStock/fbaList", body: { sid: allSidsStr, length: 200 } }),
+      adapter.request({ path: "/pb/openapi/newad/spCampaignReports", body: { sid: firstSid, report_date: getDateNDaysAgo(1), show_detail: 0, offset: 0, length: 200 }, headers: { "X-API-VERSION": "2" } }).catch(() => ({ data: [] })),
     ]);
+    const sellerRes = { data: sellers };
 
     // Calculate summary metrics
     // Normalize data: profit API returns {records:[...]}, FBA returns {total, list:[]}
-    const rawProfit = profitRes.data || [];
-    const profitData = Array.isArray(rawProfit) ? rawProfit : (rawProfit as any).records || (rawProfit as any).list || [];
+    // Summary data (aggregated by MSKU) for cards
+    const rawProfitSummary = profitSummaryRes.data || [];
+    const profitSummaryData = Array.isArray(rawProfitSummary) ? rawProfitSummary : (rawProfitSummary as any).records || (rawProfitSummary as any).list || [];
+    // Daily data (per day per MSKU) for trend chart
+    const rawProfitDaily = profitDailyRes.data || [];
+    const profitDailyData = Array.isArray(rawProfitDaily) ? rawProfitDaily : (rawProfitDaily as any).records || (rawProfitDaily as any).list || [];
+    // Use summary data for card calculations
+    const profitData = profitSummaryData;
     const rawInventory = inventoryRes.data || [];
     const inventoryData = Array.isArray(rawInventory) ? rawInventory : (rawInventory as any).list || [];
-    const rawAd = adRes.data || [];
+    const rawAd = adReportRes.data || [];
     const adData = Array.isArray(rawAd) ? rawAd : (rawAd as any).records || (rawAd as any).list || [];
+    console.log(`[Dashboard] Profit records: ${profitData.length}, Inventory records: ${inventoryData.length}, Ad report records: ${adData.length}`);
 
     // Real Lingxing profit fields:
     // revenue: totalFbaAndFbmAmount, profit: grossProfit, margin: grossRate
@@ -46,16 +102,24 @@ export const operationsRouter = router({
     const totalOrders = profitData.reduce((s: number, d: any) => s + (d.totalSalesQuantity || d.order_count || 0), 0);
     const avgMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
 
-    const lowStockCount = inventoryData.filter((i: any) => (i.days_of_supply || i.sellable_days || 0) < 14).length;
-    const overstockCount = inventoryData.filter((i: any) => (i.days_of_supply || i.sellable_days || 0) > 90).length;
+    // FBA inventory fields: sellable_days (可售天数), fulfillable_quantity (可售库存), msku, product_name
+    const lowStockCount = inventoryData.filter((i: any) => {
+      const days = Number(i.sellable_days) || Number(i.days_of_supply) || 0;
+      return days < 14;
+    }).length;
+    const overstockCount = inventoryData.filter((i: any) => {
+      const days = Number(i.sellable_days) || Number(i.days_of_supply) || 0;
+      return days > 90;
+    }).length;
 
-    // Also extract ad cost from profit data if ad API is not authorized
+    // Ad data from campaign reports API (cost, sales fields)
+    const totalAdSpend = adData.reduce((s: number, d: any) => s + (Number(d.cost) || 0), 0);
+    const totalAdSales = adData.reduce((s: number, d: any) => s + (Number(d.sales) || 0), 0);
+    // Fallback: extract ad cost from profit data if ad report is empty
     const profitAdSpend = profitData.reduce((s: number, d: any) => s + Math.abs(d.totalAdsCost || d.adsSpCost || 0), 0);
-    const totalAdSpend = adData.length > 0 
-      ? adData.reduce((s: number, d: any) => s + (d.spend || d.cost || 0), 0)
-      : profitAdSpend;
-    const totalAdSales = adData.reduce((s: number, d: any) => s + (d.sales || d.attributed_sales || 0), 0);
-    const avgAcos = totalAdSales > 0 ? (totalAdSpend / totalAdSales * 100) : 0;
+    const finalAdSpend = totalAdSpend > 0 ? totalAdSpend : profitAdSpend;
+    const avgAcos = totalAdSales > 0 ? (finalAdSpend / totalAdSales * 100) : 0;
+    console.log(`[Dashboard] Ad spend: $${finalAdSpend.toFixed(2)}, Ad sales: $${totalAdSales.toFixed(2)}, ACoS: ${avgAcos.toFixed(1)}%`);
 
     return {
       isMock,
@@ -67,34 +131,65 @@ export const operationsRouter = router({
         skuCount: inventoryData.length,
         lowStockCount,
         overstockCount,
-        adSpend30d: Math.round(totalAdSpend * 100) / 100,
+        adSpend30d: Math.round(finalAdSpend * 100) / 100,
         avgAcos: Math.round(avgAcos * 10) / 10,
         sellerCount: (sellerRes.data || []).length,
       },
-      profitTrend: profitData.slice(-30).map((d: any) => ({
-        date: d.postedDateLocale || d.reportDateMonth || d.date || d.statDate || '',
-        revenue: d.totalFbaAndFbmAmount || d.revenue || 0,
-        profit: d.grossProfit || d.totalProfit || d.profit || 0,
-        margin: (d.grossRate || d.profitRate || 0) * 100,
-        orders: d.totalSalesQuantity || d.order_count || 0,
-      })),
+      // Build trend from daily data: group by date and sum
+      profitTrend: (() => {
+        const dateMap: Record<string, { revenue: number; profit: number; orders: number }> = {};
+        for (const d of profitDailyData) {
+          const date = d.postedDateLocale || d.reportDateMonth || d.date || d.statDate || '';
+          if (!date) continue;
+          if (!dateMap[date]) dateMap[date] = { revenue: 0, profit: 0, orders: 0 };
+          dateMap[date].revenue += d.totalFbaAndFbmAmount || d.revenue || 0;
+          dateMap[date].profit += d.grossProfit || d.totalProfit || d.profit || 0;
+          dateMap[date].orders += d.totalSalesQuantity || d.order_count || 0;
+        }
+        return Object.entries(dateMap)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .slice(-30)
+          .map(([date, v]) => ({
+            date,
+            revenue: Math.round(v.revenue * 100) / 100,
+            profit: Math.round(v.profit * 100) / 100,
+            margin: v.revenue > 0 ? Math.round(v.profit / v.revenue * 10000) / 100 : 0,
+            orders: v.orders,
+          }));
+      })(),
       topAlerts: [
         ...inventoryData
-          .filter((i: any) => (i.days_of_supply || 0) < 7)
+          .filter((i: any) => {
+            const days = Number(i.sellable_days) || Number(i.days_of_supply) || 0;
+            return days < 7;
+          })
           .slice(0, 3)
-          .map((i: any) => ({
-            type: "inventory_critical" as const,
-            message: `${i.seller_sku}: 仅剩${i.days_of_supply}天库存，需紧急补货`,
-            severity: "critical" as const,
-          })),
+          .map((i: any) => {
+            const sku = i.msku || i.seller_sku || i.local_sku || 'Unknown';
+            const days = Number(i.sellable_days) || Number(i.days_of_supply) || 0;
+            return {
+              type: "inventory_critical" as const,
+              message: `${sku}: 仅剩${days}天库存，需紧急补货`,
+              severity: "critical" as const,
+            };
+          }),
         ...adData
-          .filter((a: any) => (a.acos || 0) > 50)
+          .filter((a: any) => {
+            const cost = Number(a.cost) || 0;
+            const sales = Number(a.sales) || 0;
+            return sales > 0 && cost > 0 && (cost / sales) > 0.5;
+          })
           .slice(0, 2)
-          .map((a: any) => ({
-            type: "ad_acos_high" as const,
-            message: `广告活动"${a.campaign_name}": ACoS ${a.acos}%，超出阈值`,
-            severity: "warning" as const,
-          })),
+          .map((a: any) => {
+            const cost = Number(a.cost) || 0;
+            const sales = Number(a.sales) || 0;
+            const acos = (cost / sales * 100).toFixed(1);
+            return {
+              type: "ad_acos_high" as const,
+              message: `广告活动 Campaign ${a.campaign_id}: ACoS ${acos}%，超出阈值`,
+              severity: "warning" as const,
+            };
+          }),
       ],
     };
   }),
@@ -120,7 +215,7 @@ export const operationsRouter = router({
   // ============== Inventory Module ==============
   getInventoryList: protectedProcedure
     .input(z.object({
-      sid: z.number().optional().default(1),
+      sid: z.number().optional(),
       marketplace: z.string().optional().default("US"),
       sortBy: z.enum(["days_of_supply", "fulfillable_qty", "avg_daily_sales"]).optional().default("days_of_supply"),
       sortOrder: z.enum(["asc", "desc"]).optional().default("asc"),
@@ -128,22 +223,61 @@ export const operationsRouter = router({
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
+      // Get real SIDs if not provided
+      let sidStr: string;
+      if (input.sid) {
+        sidStr = String(input.sid);
+      } else {
+        const { sids } = await getAllSellerSids();
+        sidStr = sids.join(',');
+      }
+      console.log(`[InventoryList] Querying FBA inventory with sid=${sidStr}`);
       const res = await adapter.request({
         path: "/erp/sc/routing/fba/fbaStock/fbaList",
-        body: { sid: String(input.sid) },
+        body: { sid: sidStr, length: 200 },
       });
 
       // Normalize: FBA API returns {total, list:[...]}
       const rawData = res.data || [];
       const dataList = Array.isArray(rawData) ? rawData : (rawData as any).list || [];
+      console.log(`[InventoryList] Got ${dataList.length} items, total=${(rawData as any)?.total || 'N/A'}`);
+      if (dataList.length > 0) {
+        console.log(`[InventoryList] First item keys: ${Object.keys(dataList[0]).join(', ')}`);
+        console.log(`[InventoryList] First item sample: ${JSON.stringify(dataList[0]).substring(0, 500)}`);
+      }
       let items = dataList.map((item: any) => {
-        const daysOfSupply = item.days_of_supply || item.sellable_days || 0;
+        // Map real Lingxing FBA fields to our standard fields
+        const fulfillableQty = item.afn_fulfillable_quantity || item.total_fulfillable_quantity || 0;
+        const inboundQty = (item.afn_inbound_shipped_quantity || 0) + (item.afn_inbound_working_quantity || 0) + (item.afn_inbound_receiving_quantity || 0);
+        const daysOfSupply = item.historical_days_of_supply || item.days_of_supply || item.sellable_days || 0;
+        const avgDailySales = item.sell_through || item.avg_daily_sales || 0;
+        
         let alertLevel: "critical" | "low" | "normal" | "overstock" = "normal";
-        if (daysOfSupply <= 7) alertLevel = "critical";
+        if (fulfillableQty === 0 && inboundQty === 0) alertLevel = "critical";
+        else if (daysOfSupply <= 7 && daysOfSupply > 0) alertLevel = "critical";
         else if (daysOfSupply <= 14) alertLevel = "low";
         else if (daysOfSupply > 90) alertLevel = "overstock";
+        // If no supply data but has stock, mark as normal
+        else if (fulfillableQty > 0) alertLevel = "normal";
 
-        return { ...item, alertLevel };
+        return {
+          ...item,
+          // Standardized field names for frontend
+          seller_sku: item.msku || item.sku || '',
+          product_name: item.product_name || item.localName || '',
+          asin: item.asin || '',
+          fnsku: item.fnsku || '',
+          fulfillable_qty: fulfillableQty,
+          inbound_qty: inboundQty,
+          inbound_quantity: inboundQty,
+          reserved_qty: (item.reserved_customerorders || 0) + (item.reserved_fc_transfers || 0) + (item.reserved_fc_processing || 0),
+          unsellable_qty: item.afn_unsellable_quantity || 0,
+          days_of_supply: daysOfSupply,
+          avg_daily_sales: avgDailySales,
+          store_name: item.wname || item.name || '',
+          product_image: item.product_image || item.smallImageUrl || '',
+          alertLevel,
+        };
       });
 
       // Filter
@@ -170,16 +304,24 @@ export const operationsRouter = router({
     }),
 
   getReplenishmentSuggestions: protectedProcedure
-    .input(z.object({ sid: z.number().optional().default(1) }))
+    .input(z.object({ sid: z.number().optional() }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
+      // Get real SIDs
+      const { sids } = await getAllSellerSids();
+      const sidList = input.sid ? [input.sid] : sids.map(Number);
+      console.log(`[Replenishment] Querying with sid_list=${JSON.stringify(sidList)}`);
       const res = await adapter.request({
         path: "/erp/sc/routing/restocking/analysis/getSummaryList",
-        body: { data_type: 1 },
+        body: { data_type: 1, sid_list: sidList, length: 50 },
       });
       // Normalize: may return {list:[...]} or array
       const rawItems = res.data || [];
       const items = Array.isArray(rawItems) ? rawItems : (rawItems as any).list || (rawItems as any).records || [];
+      console.log(`[Replenishment] Got ${items.length} items`);
+      if (items.length > 0) {
+        console.log(`[Replenishment] First item keys: ${Object.keys(items[0]).join(', ')}`);
+      }
       return { items, isMock: adapter.isMockMode() };
     }),
 
@@ -309,34 +451,89 @@ ${JSON.stringify(input.skuData, null, 2)}
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
-      const res = await adapter.request({
-        path: "/bd/profit/report/open/report/msku/list",
-        body: {
-          startDate: input.startDate || getDateNDaysAgo(30),
-          endDate: input.endDate || getToday(),
-        },
-      });
-
-      // Normalize: profit API returns {records:[...]} or array
-      const rawData = res.data || [];
-      const data = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
-
-      // Calculate waterfall breakdown (last period totals)
-      // Real API fields: totalFbaAndFbmAmount(revenue), productCost, fbaFee/fbaShippingFee, 
-      // platformCommission(referral), adCost, otherFee, totalProfit
-      // Real Lingxing fields: fees are NEGATIVE numbers, costs are NEGATIVE
-      // grossProfit = revenue + all fees + all costs (already calculated by Lingxing)
-      const totals = data.reduce((acc: any, d: any) => ({
-        revenue: acc.revenue + (d.totalFbaAndFbmAmount || d.platformIncome || d.revenue || 0),
-        productCost: acc.productCost + Math.abs(d.cgPriceTotal || d.cgPriceAbsTotal || d.productCost || d.product_cost || 0),
-        fbaFee: acc.fbaFee + Math.abs(d.totalFbaDeliveryFee || d.fbaDeliveryFee || d.fbaShippingFee || d.fba_fee || 0),
-        referralFee: acc.referralFee + Math.abs(d.platformFee || d.platformCommission || d.referral_fee || 0),
-        adSpend: acc.adSpend + Math.abs(d.totalAdsCost || d.adsSpCost || d.adCost || d.ad_spend || 0),
-        storageFee: acc.storageFee + Math.abs(d.totalStorageFee || d.fbaStorageFee || 0),
-        shippingCost: acc.shippingCost + Math.abs(d.cgTransportCostsTotal || 0),
-        otherFee: acc.otherFee + Math.abs(d.totalPlatformOtherFee || d.otherFee || d.other_fee || 0),
-        profit: acc.profit + (d.grossProfit || d.totalProfit || d.profit || 0),
-      }), { revenue: 0, productCost: 0, fbaFee: 0, referralFee: 0, adSpend: 0, storageFee: 0, shippingCost: 0, otherFee: 0, profit: 0 });
+      const startDate = input.startDate || getDateNDaysAgo(30);
+      const endDate = input.endDate || getToday();
+      
+      // Fetch ALL records with pagination (each page up to 200)
+      let allData: any[] = [];
+      let offset = 0;
+      const pageSize = 200;
+      let hasMore = true;
+      
+      while (hasMore) {
+        const res = await adapter.request({
+          path: "/bd/profit/report/open/report/msku/list",
+          body: {
+            startDate,
+            endDate,
+            length: pageSize,
+            offset,
+          },
+        });
+        
+        const rawData = res.data || [];
+        const records = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
+        const total = (rawData as any).total || 0;
+        
+        allData = allData.concat(records);
+        offset += pageSize;
+        hasMore = records.length >= pageSize && allData.length < total;
+        
+        // Safety limit: max 5 pages (1000 records)
+        if (offset >= 1000) break;
+      }
+      
+      console.log(`[ProfitOverview] Fetched ${allData.length} total records across ${Math.ceil(offset / pageSize)} pages`);
+      
+      // Group by date for trend chart
+      const dateMap = new Map<string, any>();
+      for (const d of allData) {
+        const date = d.postedDateLocale || d.reportDateMonth || d.statDate || d.date || '';
+        if (!date) continue;
+        
+        if (!dateMap.has(date)) {
+          dateMap.set(date, {
+            date,
+            revenue: 0, profit: 0, orders: 0, adSpend: 0,
+            productCost: 0, fbaFee: 0, referralFee: 0, storageFee: 0,
+            shippingCost: 0, otherFee: 0,
+          });
+        }
+        const agg = dateMap.get(date)!;
+        agg.revenue += (d.totalFbaAndFbmAmount || 0);
+        agg.profit += (d.grossProfit || 0);
+        agg.orders += (d.totalFbaAndFbmQuantity || d.totalSalesQuantity || 0);
+        agg.adSpend += Math.abs(d.totalAdsCost || 0);
+        agg.productCost += Math.abs(d.cgPriceTotal || d.cgPriceAbsTotal || 0);
+        agg.fbaFee += Math.abs(d.totalFbaDeliveryFee || d.fbaDeliveryFee || 0);
+        agg.referralFee += Math.abs(d.platformFee || 0);
+        agg.storageFee += Math.abs(d.totalStorageFee || d.fbaStorageFee || 0);
+        agg.shippingCost += Math.abs(d.cgTransportCostsTotal || 0);
+        agg.otherFee += Math.abs(d.totalPlatformOtherFee || 0);
+      }
+      
+      // Sort trend by date
+      const trendData = Array.from(dateMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+      
+      // Calculate totals from all records
+      const totals = {
+        revenue: 0, productCost: 0, fbaFee: 0, referralFee: 0,
+        adSpend: 0, storageFee: 0, shippingCost: 0, otherFee: 0, profit: 0, orders: 0,
+      };
+      for (const d of trendData) {
+        totals.revenue += d.revenue;
+        totals.profit += d.profit;
+        totals.orders += d.orders;
+        totals.productCost += d.productCost;
+        totals.fbaFee += d.fbaFee;
+        totals.referralFee += d.referralFee;
+        totals.adSpend += d.adSpend;
+        totals.storageFee += d.storageFee;
+        totals.shippingCost += d.shippingCost;
+        totals.otherFee += d.otherFee;
+      }
+      
+      console.log(`[ProfitOverview] Trend dates: ${trendData.length}, Total revenue: $${totals.revenue.toFixed(2)}, profit: $${totals.profit.toFixed(2)}, orders: ${totals.orders}`);
 
       // Waterfall chart data
       const waterfall = [
@@ -352,20 +549,20 @@ ${JSON.stringify(input.skuData, null, 2)}
       ];
 
       return {
-        trend: data.map((d: any) => ({
-          date: d.postedDateLocale || d.reportDateMonth || d.statDate || d.date || '',
-          revenue: d.totalFbaAndFbmAmount || d.platformIncome || d.revenue || 0,
-          profit: d.grossProfit || d.totalProfit || d.profit || 0,
-          margin: (d.grossRate || d.profitRate || 0) * 100,
-          orders: d.totalSalesQuantity || d.order_count || 0,
-          adSpend: Math.abs(d.totalAdsCost || d.adsSpCost || d.adCost || 0),
+        trend: trendData.map((d: any) => ({
+          date: d.date,
+          revenue: Math.round(d.revenue * 100) / 100,
+          profit: Math.round(d.profit * 100) / 100,
+          margin: d.revenue > 0 ? Math.round(d.profit / d.revenue * 1000) / 10 : 0,
+          orders: d.orders,
+          adSpend: Math.round(d.adSpend * 100) / 100,
         })),
         waterfall,
         totals: {
           revenue: Math.round(totals.revenue * 100) / 100,
           profit: Math.round(totals.profit * 100) / 100,
           margin: totals.revenue > 0 ? Math.round(totals.profit / totals.revenue * 1000) / 10 : 0,
-          orders: data.reduce((s: number, d: any) => s + (d.totalSalesQuantity || d.order_count || 0), 0),
+          orders: totals.orders,
         },
         isMock: adapter.isMockMode(),
       };
@@ -378,16 +575,61 @@ ${JSON.stringify(input.skuData, null, 2)}
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
+      // Use MSKU-level profit report for SKU ranking
       const res = await adapter.request({
-        path: "/bd/profit/report/open/report/asin/list",
+        path: "/bd/profit/report/open/report/msku/list",
         body: {
           startDate: input.startDate || getDateNDaysAgo(30),
           endDate: input.endDate || getToday(),
+          length: 200,
+          offset: 0,
+          summaryEnabled: true,  // Aggregate by MSKU to avoid duplicate rows per day
         },
       });
       // Normalize: profit API returns {records:[...]} or array
       const rawItems = res.data || [];
-      const items = Array.isArray(rawItems) ? rawItems : (rawItems as any).records || (rawItems as any).list || [];
+      console.log(`[ProfitByProduct] rawItems type=${typeof rawItems}, isArray=${Array.isArray(rawItems)}, keys=${typeof rawItems === 'object' ? Object.keys(rawItems).join(',') : 'N/A'}`);
+      const rawList = Array.isArray(rawItems) ? rawItems : (rawItems as any).records || (rawItems as any).list || [];
+      
+      // Debug: log first 3 records' key identity fields
+      if (rawList.length > 0) {
+        console.log(`[ProfitByProduct] Total records: ${rawList.length}`);
+        // Log ALL keys of first record
+        const firstKeys = Object.keys(rawList[0]);
+        console.log(`[ProfitByProduct] Record[0] has ${firstKeys.length} keys: ${firstKeys.slice(-30).join(', ')}`);
+        // Log the identity fields specifically
+        const r = rawList[0];
+        console.log(`[ProfitByProduct] Record[0] identity values: msku="${r.msku}", localSku="${r.localSku}", asin="${r.asin}", itemName="${r.itemName}", localName="${r.localName}", storeName="${r.storeName}", totalFbaAndFbmAmount=${r.totalFbaAndFbmAmount}, grossProfit=${r.grossProfit}`);
+        // Log the last record (which should have sales data)
+        const last = rawList[rawList.length - 1];
+        console.log(`[ProfitByProduct] Record[last] identity values: msku="${last.msku}", localSku="${last.localSku}", asin="${last.asin}", itemName="${last.itemName}", totalFbaAndFbmAmount=${last.totalFbaAndFbmAmount}`);
+      } else {
+        console.log(`[ProfitByProduct] rawList is empty, rawItems preview: ${JSON.stringify(rawItems).slice(0, 300)}`);
+      }
+      
+      // Map Lingxing API fields to frontend expected fields
+      const items = rawList.map((d: any) => {
+        const revenue = Number(d.totalFbaAndFbmAmount) || Number(d.totalSalesAmount) || Number(d.platformIncome) || 0;
+        const profit = Number(d.grossProfit) || 0;
+        const margin = revenue > 0 ? Math.round(profit / revenue * 1000) / 10 : 0;
+        return {
+          seller_sku: d.localSku || d.msku || d.localName || '-',
+          asin: d.asin || d.parentAsin || '',
+          product_name: d.itemName || d.localName || d.msku || d.asin || '-',
+          image: d.smallImageUrl || '',
+          revenue: Math.round(revenue * 100) / 100,
+          profit: Math.round(profit * 100) / 100,
+          profit_margin: margin,
+          orders: Number(d.totalSalesQuantity) || Number(d.totalFbaAndFbmQuantity) || 0,
+          adSpend: Math.abs(Number(d.totalAdsCost) || 0),
+          fbaFee: Math.abs(Number(d.totalFbaDeliveryFee) || 0),
+          referralFee: Math.abs(Number(d.platformFee) || 0),
+          productCost: Math.abs(Number(d.cgPriceAbsTotal) || Number(d.cgPriceTotal) || 0),
+          storeName: d.storeName || '',
+          brandName: d.brandName || '',
+        };
+      }).sort((a: any, b: any) => b.revenue - a.revenue);
+      
       return { items, isMock: adapter.isMockMode() };
     }),
 
@@ -469,41 +711,176 @@ ${JSON.stringify(input.skuData, null, 2)}
   // ============== Ads Module ==============
   getAdCampaigns: protectedProcedure
     .input(z.object({
-      sid: z.number().optional().default(1),
+      sid: z.number().optional(),
       startDate: z.string().optional(),
       endDate: z.string().optional(),
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
-      const res = await adapter.request({
-        path: "/pb/openapi/newad/spCampaigns",
-        body: {
-          sid: input.sid,
-        },
-        headers: { "X-API-VERSION": "2" },
-      });
-      return { campaigns: res.data || [], isMock: adapter.isMockMode() };
+      // Get real SID if not provided
+      let realSid = input.sid;
+      if (!realSid) {
+        const { sids } = await getAllSellerSids();
+        realSid = sids.length > 0 ? Number(sids[0]) : 1;
+      }
+      // Get all sids to query campaigns across all stores
+      const { sids: allSids } = await getAllSellerSids();
+      const sidsToQuery = input.sid ? [input.sid] : allSids.map(Number).slice(0, 5); // Limit to first 5 stores
+      console.log(`[AdCampaigns] Querying ad campaigns across sids: ${sidsToQuery.join(',')}`);
+      
+      // 1. Get campaign list from all stores (names, status, budget)
+      const campaignNameMap: Record<string, any> = {};
+      const allCampaignList: any[] = [];
+      for (const sid of sidsToQuery) {
+        try {
+          const campaignListRes = await adapter.request({
+            path: "/pb/openapi/newad/spCampaigns",
+            body: { sid },
+            headers: { "X-API-VERSION": "2" },
+          });
+          const rawCampaigns = campaignListRes.data || [];
+          const campaigns = Array.isArray(rawCampaigns) ? rawCampaigns : (rawCampaigns as any).records || (rawCampaigns as any).list || [];
+          console.log(`[AdCampaigns] sid=${sid}: Got ${campaigns.length} campaigns`);
+          for (const c of campaigns) {
+            campaignNameMap[String(c.campaign_id)] = {
+              name: c.name || '',
+              daily_budget: c.daily_budget || 0,
+              state: c.state || 'unknown',
+              serving_status: c.serving_status || '',
+              targeting_type: c.targeting_type || '',
+              campaign_type: c.campaign_type || '',
+              start_date: c.start_date || '',
+              sid,
+            };
+            allCampaignList.push({ ...c, sid });
+          }
+        } catch (err: any) {
+          console.warn(`[AdCampaigns] sid=${sid}: Failed to get campaigns: ${err.message}`);
+        }
+      }
+      console.log(`[AdCampaigns] Total campaigns from list API: ${allCampaignList.length}`);
+      
+      // 2. Get campaign report data from all stores
+      const reportDate = input.startDate || getDateNDaysAgo(1);
+      console.log(`[AdCampaigns] Querying campaign reports for date=${reportDate}`);
+      const reportMap: Record<string, any> = {};
+      for (const sid of sidsToQuery) {
+        try {
+          const reportRes = await adapter.request({
+            path: "/pb/openapi/newad/spCampaignReports",
+            body: {
+              sid,
+              report_date: reportDate,
+              show_detail: 0,
+              offset: 0,
+              length: 200,
+            },
+            headers: { "X-API-VERSION": "2" },
+          });
+          const rawReport = reportRes.data || [];
+          const reportData = Array.isArray(rawReport) ? rawReport : (rawReport as any).records || (rawReport as any).list || [];
+          console.log(`[AdCampaigns] sid=${sid}: Got ${reportData.length} campaign reports`);
+          for (const r of reportData) {
+            const cid = String(r.campaign_id);
+            if (reportMap[cid]) {
+              // Aggregate if same campaign appears in multiple queries
+              reportMap[cid].impressions += Number(r.impressions) || 0;
+              reportMap[cid].clicks += Number(r.clicks) || 0;
+              reportMap[cid].cost += Number(r.cost) || 0;
+              reportMap[cid].sales += Number(r.sales) || 0;
+              reportMap[cid].orders += Number(r.orders) || 0;
+            } else {
+              reportMap[cid] = {
+                impressions: Number(r.impressions) || 0,
+                clicks: Number(r.clicks) || 0,
+                cost: Number(r.cost) || 0,
+                sales: Number(r.sales) || 0,
+                orders: Number(r.orders) || 0,
+                units: Number(r.units) || 0,
+              };
+            }
+          }
+        } catch (err: any) {
+          console.warn(`[AdCampaigns] sid=${sid}: Failed to get reports: ${err.message}`);
+        }
+      }
+      
+      // 3. Merge: start from all unique campaign IDs
+      const allCampaignIds = Array.from(new Set([
+        ...allCampaignList.map((c: any) => String(c.campaign_id)),
+        ...Object.keys(reportMap),
+      ]));
+      
+      const campaigns: any[] = [];
+      for (const cid of allCampaignIds) {
+        const info = campaignNameMap[cid] || {};
+        const report = reportMap[cid] || {};
+        const spend = report.cost || 0;
+        const sales = report.sales || 0;
+        const clicks = report.clicks || 0;
+        const impressions = report.impressions || 0;
+        const acos = sales > 0 ? Math.round(spend / sales * 10000) / 100 : 0;
+        const roas = spend > 0 ? Math.round(sales / spend * 100) / 100 : 0;
+        const ctr = impressions > 0 ? Math.round(clicks / impressions * 10000) / 100 : 0;
+        const cpc = clicks > 0 ? Math.round(spend / clicks * 100) / 100 : 0;
+        
+        campaigns.push({
+          campaign_id: cid,
+          campaign_name: info.name || `Campaign ${cid}`,
+          campaign_type: info.campaign_type || 'sponsoredProducts',
+          targeting_type: info.targeting_type || '',
+          daily_budget: info.daily_budget || 0,
+          state: info.state || 'unknown',
+          serving_status: info.serving_status || '',
+          impressions,
+          clicks,
+          spend,
+          sales,
+          orders: report.orders || 0,
+          acos,
+          roas,
+          ctr,
+          cpc,
+        });
+      }
+      
+      // Sort by spend descending
+      campaigns.sort((a, b) => b.spend - a.spend);
+      
+      console.log(`[AdCampaigns] Final merged campaigns: ${campaigns.length}`);
+      return { campaigns, isMock: adapter.isMockMode() };
     }),
 
   getSearchTerms: protectedProcedure
     .input(z.object({
-      sid: z.number().optional().default(1),
+      sid: z.number().optional(),
       campaignId: z.number().optional(),
       startDate: z.string().optional(),
       endDate: z.string().optional(),
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
+      // Get real SID if not provided
+      let realSid = input.sid;
+      if (!realSid) {
+        const { sids } = await getAllSellerSids();
+        realSid = sids.length > 0 ? Number(sids[0]) : 1;
+      }
+      console.log(`[SearchTerms] Querying search terms with sid=${realSid}`);
       const res = await adapter.request({
         path: "/pb/openapi/newad/queryWordReports",
         body: {
-          sid: input.sid,
+          sid: realSid,
           report_date: input.startDate || getDateNDaysAgo(1),
           target_type: "keyword",
         },
         headers: { "X-API-VERSION": "2" },
       });
-      return { searchTerms: res.data || [], isMock: adapter.isMockMode() };
+      
+      const rawData = res.data || [];
+      const searchTerms = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
+      console.log(`[SearchTerms] Got ${searchTerms.length} search terms`);
+      return { searchTerms, isMock: adapter.isMockMode() };
     }),
 
   aiSearchTermAnalysis: protectedProcedure
