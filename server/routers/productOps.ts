@@ -1523,6 +1523,114 @@ export const productOpsRouter = router({
       return { total: tasks.length, byStatus, byAssignee, byCategory, overdue };
     }),
 
+  // ─── Sync Products from Lingxing ERP ───
+  syncFromLingxing: protectedProcedure.mutation(async ({ ctx }) => {
+    const adapter = getLingxingAdapter();
+    const db = await getDb();
+    
+    // Get all seller stores first
+    let sellers: any[] = [];
+    try {
+      const sellerRes = await adapter.request({ path: "/erp/sc/data/seller/lists" });
+      sellers = Array.isArray(sellerRes.data) ? sellerRes.data : (sellerRes.data as any)?.list || [];
+    } catch (err: any) {
+      console.error(`[SyncProducts] Failed to get sellers: ${err.message}`);
+    }
+    
+    // Get existing products for this user to avoid duplicates
+    const existing = await db!.select({ parentAsin: productProfiles.parentAsin, marketplace: productProfiles.marketplace })
+      .from(productProfiles)
+      .where(eq(productProfiles.userId, ctx.user.id));
+    const existingSet = new Set(existing.map(e => `${e.parentAsin}_${e.marketplace}`));
+    
+    let synced = 0;
+    let skipped = 0;
+    const marketplaceMap: Record<number, string> = {
+      1: 'US', 2: 'CA', 3: 'MX', 4: 'UK', 5: 'DE', 6: 'FR', 7: 'IT', 8: 'ES', 9: 'JP', 10: 'AU', 11: 'IN', 12: 'AE', 13: 'SA', 14: 'SG', 15: 'NL', 16: 'SE', 17: 'PL', 18: 'BE', 19: 'BR',
+    };
+    
+    // Query listing data from each store
+    for (const seller of sellers.slice(0, 10)) {
+      const sid = seller.sid;
+      const marketplace = marketplaceMap[seller.mid] || 'US';
+      try {
+        const res = await adapter.request({
+          path: "/erp/sc/data/mws/listing",
+          body: { sid: Number(sid), offset: 0, length: 200 },
+        });
+        const listings = Array.isArray(res.data) ? res.data : (res.data as any)?.list || [];
+        
+        // Group by parent ASIN (asin1 or asin)
+        const parentMap = new Map<string, any>();
+        for (const item of listings) {
+          const asin = item.asin1 || item.asin || item.parent_asin;
+          if (!asin) continue;
+          if (!parentMap.has(asin)) {
+            parentMap.set(asin, {
+              parentAsin: asin,
+              title: item.item_name || item.product_name || item.title || asin,
+              brand: item.brand || '',
+              category: item.item_type || item.product_type || '',
+              marketplace,
+              imageUrl: item.main_image || item.smallImageUrl || '',
+              status: (item.status === 'Active' || item.status === 'active') ? 'active' : 'inactive',
+              variants: [],
+            });
+          }
+          // Add as variant if child ASIN is different
+          const childAsin = item.asin || item.child_asin;
+          if (childAsin && childAsin !== asin) {
+            parentMap.get(asin)!.variants.push({
+              childAsin,
+              sku: item.msku || item.seller_sku || '',
+              title: item.item_name || item.title || '',
+              price: item.price ? String(item.price) : undefined,
+            });
+          }
+        }
+        
+        // Insert new products
+        for (const [asin, product] of Array.from(parentMap.entries())) {
+          const key = `${asin}_${marketplace}`;
+          if (existingSet.has(key)) {
+            skipped++;
+            continue;
+          }
+          existingSet.add(key);
+          
+          const [result] = await db!.insert(productProfiles).values({
+            userId: ctx.user.id,
+            parentAsin: product.parentAsin,
+            title: product.title.substring(0, 500),
+            brand: product.brand || undefined,
+            category: product.category || undefined,
+            marketplace: product.marketplace,
+            imageUrl: product.imageUrl || undefined,
+            status: product.status as any,
+          });
+          
+          // Insert variants
+          if (product.variants.length > 0) {
+            await db!.insert(productVariants).values(
+              product.variants.map((v: any) => ({
+                productId: result.insertId,
+                childAsin: v.childAsin,
+                sku: v.sku,
+                title: v.title,
+                price: v.price,
+              }))
+            );
+          }
+          synced++;
+        }
+      } catch (err: any) {
+        console.warn(`[SyncProducts] sid=${sid}: ${err.message}`);
+      }
+    }
+    
+    return { synced, skipped, total: synced + skipped };
+  }),
+
 });
 
 // ═══════════════════════════════════════════════════════

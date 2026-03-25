@@ -2313,3 +2313,26 @@ export const asinStatusCache = mysqlTable("asin_status_cache", {
   updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
 });
 export type AsinStatusCache = typeof asinStatusCache.$inferSelect;
+
+// ============== ASIN Custom Tags ==============
+export const asinTagDefinitions = mysqlTable("asin_tag_definitions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  name: varchar("name", { length: 50 }).notNull(),
+  color: varchar("color", { length: 20 }).default("#6366f1").notNull(), // hex color
+  isSystem: int("is_system").default(0).notNull(), // 1=system tag (e.g. discontinued), 0=user-created
+  hideFromInventory: int("hide_from_inventory").default(0).notNull(), // 1=hide tagged ASINs from inventory
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export type AsinTagDefinition = typeof asinTagDefinitions.$inferSelect;
+
+export const asinTagAssignments = mysqlTable("asin_tag_assignments", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  tagId: int("tag_id").notNull(),
+  asin: varchar("asin", { length: 20 }).notNull(),
+  msku: varchar("msku", { length: 100 }),
+  sid: varchar("sid", { length: 20 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export type AsinTagAssignment = typeof asinTagAssignments.$inferSelect;

@@ -15,7 +15,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Plus, Search, Package, ShoppingBag, AlertCircle, CheckCircle2, Trash2,
+  Plus, Search, Package, ShoppingBag, AlertCircle, CheckCircle2, Trash2, RefreshCw, Loader2, Download,
 } from "lucide-react";
 
 export default function OpsProducts() {
@@ -28,6 +28,13 @@ export default function OpsProducts() {
   const deleteMut = trpc.productOps.deleteProduct.useMutation({
     onSuccess: () => { refetch(); toast.success("产品已删除"); },
     onError: (e) => toast.error(e.message),
+  });
+  const syncMut = trpc.productOps.syncFromLingxing.useMutation({
+    onSuccess: (data) => {
+      refetch();
+      toast.success(`同步完成：新增${data.synced}个产品，跳过${data.skipped}个已存在`);
+    },
+    onError: (e) => toast.error("同步失败", { description: e.message }),
   });
 
   const [showCreate, setShowCreate] = useState(false);
@@ -64,9 +71,20 @@ export default function OpsProducts() {
           <h1 className="text-2xl font-bold">产品运营总览</h1>
           <p className="text-muted-foreground mt-1">以父ASIN为维度管理产品，查看库存、利润、广告和竞品数据</p>
         </div>
-        <Button onClick={() => setShowCreate(true)} className="gap-2">
-          <Plus className="h-4 w-4" /> 添加产品
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => syncMut.mutate()}
+            disabled={syncMut.isPending}
+            className="gap-2"
+          >
+            {syncMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {syncMut.isPending ? "同步中..." : "从领星同步"}
+          </Button>
+          <Button onClick={() => setShowCreate(true)} className="gap-2">
+            <Plus className="h-4 w-4" /> 添加产品
+          </Button>
+        </div>
       </div>
 
       {/* Search */}

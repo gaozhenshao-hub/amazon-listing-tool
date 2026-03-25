@@ -18,8 +18,13 @@ import {
   Package, AlertTriangle, ArrowUpDown, Sparkles, RefreshCw, Filter,
   TrendingDown, TrendingUp, AlertCircle, CheckCircle2, Loader2,
   Truck, Ship, Plane, ArrowRight, Clock, Brain, ShieldAlert,
-  ChevronRight, ExternalLink, Boxes, Warehouse,
+  ChevronRight, ExternalLink, Boxes, Warehouse, Tag, Plus, X, Pencil, Trash2, Eye, EyeOff,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from "@/components/ui/popover";
 
 const ALERT_COLORS = {
   critical: { bg: "bg-red-50", text: "text-red-700", border: "border-red-200", badge: "destructive" as const, label: "紧急", fill: "#ef4444" },
@@ -46,15 +51,56 @@ export default function OpsInventory() {
   const [showAiDialog, setShowAiDialog] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [showPredictionDetail, setShowPredictionDetail] = useState<any>(null);
-  const [hideDiscontinued, setHideDiscontinued] = useState(true);
+  const [showTagManager, setShowTagManager] = useState(false);
+  const [newTagName, setNewTagName] = useState("");
+  const [newTagColor, setNewTagColor] = useState("#6366f1");
+  const [newTagHide, setNewTagHide] = useState(true);
+  const [editingTag, setEditingTag] = useState<any>(null);
+  const [tagFilterMode, setTagFilterMode] = useState<"hide" | "show_all">("hide");
   const { marketplace } = useMarketplace();
 
-  // Fetch ASIN statuses to filter discontinued products
-  const { data: asinStatuses } = trpc.operations.getAsinStatuses.useQuery();
-  const syncAsinStatuses = trpc.operations.syncAsinStatuses.useMutation({
-    onSuccess: (data: any) => toast.success(`已同步${data.synced}个ASIN状态`),
-    onError: (err: any) => toast.error("同步失败", { description: err.message }),
+  // Tag system
+  const { data: tagDefs, refetch: refetchTags } = trpc.operations.listTagDefinitions.useQuery();
+  const { data: tagAssignments, refetch: refetchAssignments } = trpc.operations.listTagAssignments.useQuery();
+  const createTag = trpc.operations.createTagDefinition.useMutation({
+    onSuccess: () => { refetchTags(); setNewTagName(""); toast.success("标签创建成功"); },
   });
+  const updateTag = trpc.operations.updateTagDefinition.useMutation({
+    onSuccess: () => { refetchTags(); setEditingTag(null); toast.success("标签已更新"); },
+  });
+  const deleteTag = trpc.operations.deleteTagDefinition.useMutation({
+    onSuccess: () => { refetchTags(); refetchAssignments(); toast.success("标签已删除"); },
+  });
+  const assignTag = trpc.operations.assignTag.useMutation({
+    onSuccess: () => { refetchAssignments(); toast.success("标签已添加"); },
+  });
+  const removeTagMut = trpc.operations.removeTag.useMutation({
+    onSuccess: () => { refetchAssignments(); toast.success("标签已移除"); },
+  });
+
+  // Build tag lookup: asin -> [{tagId, tagName, tagColor, hideFromInventory}]
+  const asinTagMap = useMemo(() => {
+    const map = new Map<string, Array<{tagId: number; name: string; color: string; hide: boolean}>>();
+    if (!tagDefs || !tagAssignments) return map;
+    const defMap = new Map(tagDefs.map((d: any) => [d.id, d]));
+    for (const a of tagAssignments) {
+      const def = defMap.get(a.tagId) as any;
+      if (!def) continue;
+      const arr = map.get(a.asin) || [];
+      arr.push({ tagId: def.id, name: def.name, color: def.color, hide: !!def.hideFromInventory });
+      map.set(a.asin, arr);
+    }
+    return map;
+  }, [tagDefs, tagAssignments]);
+
+  // Hidden ASINs = those with any tag that has hideFromInventory=1
+  const hiddenAsins = useMemo(() => {
+    const set = new Set<string>();
+    asinTagMap.forEach((tags, asin) => {
+      if (tags.some(t => t.hide)) set.add(asin);
+    });
+    return set;
+  }, [asinTagMap]);
 
   const { data, isLoading, refetch } = trpc.operations.getInventoryList.useQuery({
     alertFilter,
@@ -92,12 +138,8 @@ export default function OpsInventory() {
   });
 
   const allItems = data?.items || [];
-  // Filter out discontinued ASINs if toggle is on
-  const discontinuedAsins = new Set(
-    (asinStatuses || []).filter((s: any) => s.status === 'discontinued' || s.status === 'inactive').map((s: any) => s.asin)
-  );
-  const items = hideDiscontinued
-    ? allItems.filter((item: any) => !discontinuedAsins.has(item.asin))
+  const items = tagFilterMode === "hide"
+    ? allItems.filter((item: any) => !hiddenAsins.has(item.asin))
     : allItems;
   const stats = data?.stats;
   const pipeline = pipelineQuery.data;
@@ -301,28 +343,26 @@ export default function OpsInventory() {
               </Button>
             </div>
             <div className="flex items-center gap-2">
-              <label className="flex items-center gap-1.5 cursor-pointer text-sm">
-                <input
-                  type="checkbox"
-                  checked={hideDiscontinued}
-                  onChange={(e) => setHideDiscontinued(e.target.checked)}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-gray-600">隐藏停售</span>
-              </label>
               <Button
-                variant="ghost"
+                variant={tagFilterMode === "hide" ? "default" : "outline"}
                 size="sm"
-                className="h-8 px-2 text-xs"
-                onClick={() => syncAsinStatuses.mutate()}
-                disabled={syncAsinStatuses.isPending}
+                className="h-8 text-xs gap-1"
+                onClick={() => setTagFilterMode(prev => prev === "hide" ? "show_all" : "hide")}
               >
-                {syncAsinStatuses.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
-                同步状态
+                {tagFilterMode === "hide" ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                {tagFilterMode === "hide" ? `已隐藏${hiddenAsins.size}个` : "显示全部"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1"
+                onClick={() => setShowTagManager(true)}
+              >
+                <Tag className="w-3 h-3" /> 标签管理
               </Button>
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <span className="text-sm text-gray-500">共 {items.length}{hideDiscontinued && discontinuedAsins.size > 0 ? `/${allItems.length}` : ''} 个SKU</span>
+              <span className="text-sm text-gray-500">共 {items.length}{hiddenAsins.size > 0 && tagFilterMode === "hide" ? `/${allItems.length}` : ''} 个SKU</span>
               <Button size="sm" onClick={handleAiReplenish} disabled={aiReplenish.isPending}>
                 {aiReplenish.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}
                 AI补货建议
@@ -353,21 +393,52 @@ export default function OpsInventory() {
                     ) : (
                       items.map((item: any, idx: number) => {
                         const alertStyle = ALERT_COLORS[item.alertLevel as keyof typeof ALERT_COLORS] || ALERT_COLORS.normal;
-                        const isDiscontinued = discontinuedAsins.has(item.asin);
+                        const isHidden = hiddenAsins.has(item.asin);
+                        const itemTags = asinTagMap.get(item.asin) || [];
                         return (
-                          <tr key={idx} className={`border-b hover:bg-gray-50/50 ${isDiscontinued ? 'opacity-50 bg-gray-50' : alertStyle.bg}`}>
+                          <tr key={idx} className={`border-b hover:bg-gray-50/50 ${isHidden ? 'opacity-50 bg-gray-50' : alertStyle.bg}`}>
                             <td className="p-3 font-mono text-xs">{item.seller_sku}</td>
                             <td className="p-3 font-mono text-xs text-gray-500">
                               {item.asin || "-"}
-                              {isDiscontinued && <span className="ml-1 text-[10px] text-red-400 font-medium">停售</span>}
                             </td>
                             <td className="p-3 max-w-[180px] truncate">{item.product_name || "-"}</td>
                             <td className="p-3 text-right font-medium">{(item.fulfillable_qty || 0).toLocaleString()}</td>
                             <td className="p-3 text-right text-blue-600">{(item.inbound_quantity || 0).toLocaleString()}</td>
                             <td className="p-3 text-right">{Number(item.avg_daily_sales || 0).toFixed(1)}</td>
                             <td className="p-3 text-right font-bold">{item.days_of_supply || 0}</td>
-                            <td className="p-3 text-center">
-                              <Badge variant={alertStyle.badge} className={`text-[10px] ${alertStyle.text}`}>{alertStyle.label}</Badge>
+                            <td className="p-3">
+                              <div className="flex items-center gap-1 justify-center flex-wrap">
+                                <Badge variant={alertStyle.badge} className={`text-[10px] ${alertStyle.text}`}>{alertStyle.label}</Badge>
+                                {itemTags.map(t => (
+                                  <span key={t.tagId} className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full text-white font-medium" style={{ backgroundColor: t.color }}>
+                                    {t.name}
+                                    <button onClick={(e) => { e.stopPropagation(); removeTagMut.mutate({ tagId: t.tagId, asin: item.asin }); }} className="ml-0.5 hover:opacity-70"><X className="w-2.5 h-2.5" /></button>
+                                  </span>
+                                ))}
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <button className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 hover:bg-gray-300 text-gray-500">
+                                      <Plus className="w-2.5 h-2.5" />
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-40 p-2" align="end">
+                                    <div className="space-y-1">
+                                      {(tagDefs || []).filter((d: any) => !itemTags.some(t => t.tagId === d.id)).map((d: any) => (
+                                        <button
+                                          key={d.id}
+                                          className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-gray-100 flex items-center gap-2"
+                                          onClick={() => assignTag.mutate({ tagId: d.id, asin: item.asin, msku: item.seller_sku })}
+                                        >
+                                          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: d.color }} />
+                                          {d.name}
+                                          {d.hideFromInventory ? <EyeOff className="w-3 h-3 text-gray-400 ml-auto" /> : null}
+                                        </button>
+                                      ))}
+                                      {(tagDefs || []).length === 0 && <p className="text-xs text-gray-400 text-center py-2">暂无标签，请先创建</p>}
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -535,6 +606,123 @@ export default function OpsInventory() {
               onNavigate={navigate}
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Tag Manager Dialog */}
+      <Dialog open={showTagManager} onOpenChange={setShowTagManager}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Tag className="w-5 h-5" /> 标签管理</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Create new tag */}
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <Label className="text-xs">标签名称</Label>
+                <Input
+                  placeholder="如：停售、清仓、新品..."
+                  value={newTagName}
+                  onChange={e => setNewTagName(e.target.value)}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">颜色</Label>
+                <input
+                  type="color"
+                  value={newTagColor}
+                  onChange={e => setNewTagColor(e.target.value)}
+                  className="w-8 h-8 rounded border cursor-pointer"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  checked={newTagHide}
+                  onChange={e => setNewTagHide(e.target.checked)}
+                  id="newTagHide"
+                  className="rounded"
+                />
+                <Label htmlFor="newTagHide" className="text-xs whitespace-nowrap">隐藏</Label>
+              </div>
+              <Button
+                size="sm"
+                className="h-8"
+                disabled={!newTagName.trim() || createTag.isPending}
+                onClick={() => createTag.mutate({ name: newTagName.trim(), color: newTagColor, hideFromInventory: newTagHide ? 1 : 0 })}
+              >
+                <Plus className="w-3 h-3 mr-1" /> 创建
+              </Button>
+            </div>
+
+            {/* Existing tags */}
+            <div className="space-y-2">
+              {(tagDefs || []).length === 0 && (
+                <p className="text-sm text-gray-400 text-center py-4">暂无标签，请创建第一个标签</p>
+              )}
+              {(tagDefs || []).map((tag: any) => (
+                <div key={tag.id} className="flex items-center gap-2 p-2 rounded border bg-gray-50/50">
+                  {editingTag?.id === tag.id ? (
+                    <>
+                      <Input
+                        value={editingTag.name}
+                        onChange={e => setEditingTag({ ...editingTag, name: e.target.value })}
+                        className="h-7 text-sm flex-1"
+                      />
+                      <input
+                        type="color"
+                        value={editingTag.color}
+                        onChange={e => setEditingTag({ ...editingTag, color: e.target.value })}
+                        className="w-7 h-7 rounded border cursor-pointer"
+                      />
+                      <label className="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={!!editingTag.hideFromInventory}
+                          onChange={e => setEditingTag({ ...editingTag, hideFromInventory: e.target.checked ? 1 : 0 })}
+                          className="rounded"
+                        />
+                        <span className="text-xs">隐藏</span>
+                      </label>
+                      <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => updateTag.mutate(editingTag)}>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setEditingTag(null)}>
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: tag.color }} />
+                      <span className="text-sm font-medium flex-1">{tag.name}</span>
+                      {tag.hideFromInventory ? (
+                        <Badge variant="outline" className="text-[10px] gap-0.5"><EyeOff className="w-2.5 h-2.5" /> 隐藏</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] gap-0.5 text-gray-400"><Eye className="w-2.5 h-2.5" /> 显示</Badge>
+                      )}
+                      <span className="text-xs text-gray-400">
+                        {(tagAssignments || []).filter((a: any) => a.tagId === tag.id).length}个ASIN
+                      </span>
+                      <Button size="sm" variant="ghost" className="h-7 px-1.5" onClick={() => setEditingTag({ ...tag })}>
+                        <Pencil className="w-3 h-3" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-1.5 text-red-500 hover:text-red-700"
+                        onClick={() => { if (confirm(`确定删除标签"${tag.name}"？关联的ASIN标记也会被移除。`)) deleteTag.mutate({ id: tag.id }); }}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <p className="text-xs text-gray-400">提示：勾选"隐藏"的标签，打上该标签的ASIN将从库存列表中默认隐藏。适用于停售、清仓等不需要日常关注的产品。</p>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
