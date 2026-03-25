@@ -1572,6 +1572,10 @@ export const productOpsRouter = router({
           const asin = item.asin1 || item.asin || item.parent_asin;
           if (!asin) continue;
           if (!parentMap.has(asin)) {
+            // Enhanced status mapping: support number/string/various field names
+            const rawStatus = item.status ?? item.listing_status ?? item.item_status ?? item.product_status ?? '';
+            const statusStr = String(rawStatus).toLowerCase().trim();
+            const isActive = statusStr === 'active' || statusStr === '1' || statusStr === 'true' || statusStr === 'enabled' || statusStr === 'in stock' || statusStr === 'buyable';
             parentMap.set(asin, {
               parentAsin: asin,
               title: item.item_name || item.product_name || item.title || asin,
@@ -1579,7 +1583,7 @@ export const productOpsRouter = router({
               category: item.item_type || item.product_type || '',
               marketplace,
               imageUrl: item.main_image || item.smallImageUrl || '',
-              status: (item.status === 'Active' || item.status === 'active') ? 'active' : 'inactive',
+              status: isActive ? 'active' : 'inactive',
               storeName: seller.name || seller.wname || seller.account_name || '',
               variants: [],
             });
@@ -1596,10 +1600,26 @@ export const productOpsRouter = router({
           }
         }
         
-        // Insert new products
+        // Insert new products or update existing ones
+        let updated = 0;
         for (const [asin, product] of Array.from(parentMap.entries())) {
           const key = `${asin}_${marketplace}`;
           if (existingSet.has(key)) {
+            // Update existing product status, title, image, storeName
+            await db!.update(productProfiles)
+              .set({
+                status: product.status as any,
+                title: product.title.substring(0, 500),
+                imageUrl: product.imageUrl || undefined,
+                storeName: product.storeName || undefined,
+                brand: product.brand || undefined,
+              })
+              .where(and(
+                eq(productProfiles.userId, ctx.user.id),
+                eq(productProfiles.parentAsin, asin),
+                eq(productProfiles.marketplace, marketplace)
+              ));
+            updated++;
             skipped++;
             continue;
           }
@@ -1636,7 +1656,7 @@ export const productOpsRouter = router({
       }
     }
     
-    return { synced, skipped, total: synced + skipped };
+    return { synced, skipped, updated: skipped, total: synced + skipped };
   }),
 
   // ─── 批量分配运营负责人 ───
@@ -1672,6 +1692,218 @@ export const productOpsRouter = router({
       ));
     return results.map(r => r.operator).filter(Boolean) as string[];
   }),
+
+  // ─── 产品数据看板（库存/利润/广告汇总从领星抓取） ───
+  getProductDashboard: protectedProcedure
+    .input(z.object({
+      marketplace: z.string().optional(),
+      period: z.enum(["day", "week", "month"]).default("month"),
+    }))
+    .query(async ({ ctx, input }) => {
+      const adapter = getLingxingAdapter();
+      const db = await getDb();
+      
+      // Get user's products
+      const whereClause = input.marketplace
+        ? and(eq(productProfiles.userId, ctx.user.id), eq(productProfiles.marketplace, input.marketplace))
+        : eq(productProfiles.userId, ctx.user.id);
+      const products = await db!.select().from(productProfiles).where(whereClause);
+      
+      const totalProducts = products.length;
+      const activeProducts = products.filter(p => p.status === 'active').length;
+      const inactiveProducts = products.filter(p => p.status === 'inactive').length;
+      
+      // Calculate date range based on period
+      const now = new Date();
+      let startDate: string;
+      let prevStartDate: string;
+      let prevEndDate: string;
+      if (input.period === 'day') {
+        startDate = new Date(now.getTime() - 86400000).toISOString().split('T')[0];
+        prevStartDate = new Date(now.getTime() - 172800000).toISOString().split('T')[0];
+        prevEndDate = startDate;
+      } else if (input.period === 'week') {
+        startDate = new Date(now.getTime() - 7 * 86400000).toISOString().split('T')[0];
+        prevStartDate = new Date(now.getTime() - 14 * 86400000).toISOString().split('T')[0];
+        prevEndDate = startDate;
+      } else {
+        startDate = new Date(now.getTime() - 30 * 86400000).toISOString().split('T')[0];
+        prevStartDate = new Date(now.getTime() - 60 * 86400000).toISOString().split('T')[0];
+        prevEndDate = startDate;
+      }
+      const endDate = now.toISOString().split('T')[0];
+      
+      // Fetch profit data from Lingxing
+      let profitData = { revenue: 0, cost: 0, profit: 0, profitMargin: 0, adSpend: 0, fbaFee: 0, orderCount: 0, unitCount: 0 };
+      let prevProfitData = { revenue: 0, cost: 0, profit: 0, profitMargin: 0, adSpend: 0, fbaFee: 0, orderCount: 0, unitCount: 0 };
+      try {
+        const profitRes = await adapter.request({
+          path: "/bd/profit/report/open/report/msku/list",
+          body: { start_date: startDate, end_date: endDate },
+        });
+        const profitList = Array.isArray(profitRes.data) ? profitRes.data : [];
+        for (const item of profitList) {
+          profitData.revenue += Number(item.revenue || 0);
+          profitData.cost += Number(item.product_cost || 0);
+          profitData.adSpend += Number(item.ad_spend || 0);
+          profitData.fbaFee += Number(item.fba_fee || 0);
+          profitData.orderCount += Number(item.order_count || 0);
+          profitData.unitCount += Number(item.unit_count || 0);
+        }
+        profitData.profit = profitData.revenue - profitData.cost - profitData.adSpend - profitData.fbaFee;
+        profitData.profitMargin = profitData.revenue > 0 ? (profitData.profit / profitData.revenue) * 100 : 0;
+        
+        // Previous period
+        const prevProfitRes = await adapter.request({
+          path: "/bd/profit/report/open/report/msku/list",
+          body: { start_date: prevStartDate, end_date: prevEndDate },
+        });
+        const prevProfitList = Array.isArray(prevProfitRes.data) ? prevProfitRes.data : [];
+        for (const item of prevProfitList) {
+          prevProfitData.revenue += Number(item.revenue || 0);
+          prevProfitData.cost += Number(item.product_cost || 0);
+          prevProfitData.adSpend += Number(item.ad_spend || 0);
+          prevProfitData.fbaFee += Number(item.fba_fee || 0);
+          prevProfitData.orderCount += Number(item.order_count || 0);
+          prevProfitData.unitCount += Number(item.unit_count || 0);
+        }
+        prevProfitData.profit = prevProfitData.revenue - prevProfitData.cost - prevProfitData.adSpend - prevProfitData.fbaFee;
+        prevProfitData.profitMargin = prevProfitData.revenue > 0 ? (prevProfitData.profit / prevProfitData.revenue) * 100 : 0;
+      } catch (err: any) {
+        console.warn(`[Dashboard] Profit fetch error: ${err.message}`);
+      }
+      
+      // Fetch inventory data from Lingxing
+      let inventoryData = { totalStock: 0, inboundQty: 0, reservedQty: 0, totalValue: 0 };
+      try {
+        const invRes = await adapter.request({
+          path: "/erp/sc/routing/fba/fbaStock/fbaList",
+          body: { offset: 0, length: 500 },
+        });
+        const invList = Array.isArray(invRes.data) ? invRes.data : (invRes.data as any)?.list || [];
+        for (const item of invList) {
+          inventoryData.totalStock += Number(item.afn_fulfillable_quantity || item.fulfillable_quantity || 0);
+          inventoryData.inboundQty += Number(item.afn_inbound_working_quantity || item.inbound_quantity || 0);
+          inventoryData.reservedQty += Number(item.afn_reserved_quantity || item.reserved_quantity || 0);
+          const price = Number(item.your_price || item.price || 0);
+          const qty = Number(item.afn_fulfillable_quantity || item.fulfillable_quantity || 0);
+          inventoryData.totalValue += price * qty;
+        }
+      } catch (err: any) {
+        console.warn(`[Dashboard] Inventory fetch error: ${err.message}`);
+      }
+      
+      // Fetch ad data from Lingxing
+      let adData = { totalSpend: 0, totalSales: 0, impressions: 0, clicks: 0, acos: 0, roas: 0, activeCampaigns: 0 };
+      try {
+        const adRes = await adapter.request({
+          path: "/pb/openapi/newad/spCampaigns",
+          body: { start_date: startDate, end_date: endDate },
+        });
+        const adList = Array.isArray(adRes.data) ? adRes.data : (adRes.data as any)?.list || [];
+        for (const item of adList) {
+          adData.totalSpend += Number(item.spend || item.cost || 0);
+          adData.totalSales += Number(item.sales || item.attributed_sales || 0);
+          adData.impressions += Number(item.impressions || 0);
+          adData.clicks += Number(item.clicks || 0);
+          if (item.status === 'enabled' || item.status === 'active') adData.activeCampaigns++;
+        }
+        adData.acos = adData.totalSales > 0 ? (adData.totalSpend / adData.totalSales) * 100 : 0;
+        adData.roas = adData.totalSpend > 0 ? adData.totalSales / adData.totalSpend : 0;
+      } catch (err: any) {
+        console.warn(`[Dashboard] Ad fetch error: ${err.message}`);
+      }
+      
+      // Calculate change percentages
+      const calcChange = (curr: number, prev: number) => prev > 0 ? ((curr - prev) / prev) * 100 : 0;
+      
+      return {
+        products: { total: totalProducts, active: activeProducts, inactive: inactiveProducts },
+        profit: {
+          current: profitData,
+          previous: prevProfitData,
+          changes: {
+            revenue: calcChange(profitData.revenue, prevProfitData.revenue),
+            profit: calcChange(profitData.profit, prevProfitData.profit),
+            adSpend: calcChange(profitData.adSpend, prevProfitData.adSpend),
+            orderCount: calcChange(profitData.orderCount, prevProfitData.orderCount),
+          },
+        },
+        inventory: inventoryData,
+        advertising: adData,
+        period: input.period,
+        dateRange: { start: startDate, end: endDate },
+        prevDateRange: { start: prevStartDate, end: prevEndDate },
+      };
+    }),
+
+  // ─── 运营计划周期对比数据 ───
+  getOpsPlanComparison: protectedProcedure
+    .input(z.object({
+      productId: z.number(),
+      period: z.enum(["week", "biweek", "month"]).default("week"),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      const adapter = getLingxingAdapter();
+      
+      // Get the product
+      const [product] = await db!.select().from(productProfiles)
+        .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
+      if (!product) throw new TRPCError({ code: 'NOT_FOUND', message: '产品不存在' });
+      
+      // Calculate date ranges
+      const now = new Date();
+      const periodDays = input.period === 'week' ? 7 : input.period === 'biweek' ? 14 : 30;
+      const currentStart = new Date(now.getTime() - periodDays * 86400000).toISOString().split('T')[0];
+      const currentEnd = now.toISOString().split('T')[0];
+      const prevStart = new Date(now.getTime() - 2 * periodDays * 86400000).toISOString().split('T')[0];
+      const prevEnd = currentStart;
+      
+      // Fetch ASIN-level profit data from Lingxing for both periods
+      const fetchPeriodData = async (start: string, end: string) => {
+        let data = { revenue: 0, profit: 0, adSpend: 0, orders: 0, units: 0, sessions: 0, convRate: 0 };
+        try {
+          const res = await adapter.request({
+            path: "/bd/profit/report/open/report/asin/list",
+            body: { start_date: start, end_date: end, asin: product.parentAsin },
+          });
+          const list = Array.isArray(res.data) ? res.data : [];
+          for (const item of list) {
+            data.revenue += Number(item.revenue || 0);
+            data.profit += Number(item.profit || 0);
+            data.adSpend += Number(item.ad_spend || 0);
+            data.orders += Number(item.order_count || 0);
+            data.units += Number(item.units_sold || 0);
+          }
+        } catch (err: any) {
+          console.warn(`[OpsPlanComparison] Error: ${err.message}`);
+        }
+        return data;
+      };
+      
+      const [currentData, prevData] = await Promise.all([
+        fetchPeriodData(currentStart, currentEnd),
+        fetchPeriodData(prevStart, prevEnd),
+      ]);
+      
+      const calcChange = (curr: number, prev: number) => prev > 0 ? ((curr - prev) / prev) * 100 : (curr > 0 ? 100 : 0);
+      
+      return {
+        product: { id: product.id, parentAsin: product.parentAsin, title: product.title },
+        period: input.period,
+        periodDays,
+        current: { ...currentData, dateRange: { start: currentStart, end: currentEnd } },
+        previous: { ...prevData, dateRange: { start: prevStart, end: prevEnd } },
+        changes: {
+          revenue: calcChange(currentData.revenue, prevData.revenue),
+          profit: calcChange(currentData.profit, prevData.profit),
+          adSpend: calcChange(currentData.adSpend, prevData.adSpend),
+          orders: calcChange(currentData.orders, prevData.orders),
+          units: calcChange(currentData.units, prevData.units),
+        },
+      };
+    }),
 
 });
 
