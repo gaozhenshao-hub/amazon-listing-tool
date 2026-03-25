@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +16,24 @@ export default function LoginPage() {
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+
+  // 处理OAuth登录被拒绝的错误信息
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const errorMsg = params.get("message");
+    const errorType = params.get("error");
+    if (errorMsg) {
+      toast.error(decodeURIComponent(errorMsg), { duration: 8000 });
+      // 清理URL参数
+      window.history.replaceState({}, "", "/login");
+    } else if (errorType === "no_account") {
+      toast.error("您的账号尚未被管理员创建，请联系管理员添加账号后再登录", { duration: 8000 });
+      window.history.replaceState({}, "", "/login");
+    } else if (errorType === "disabled") {
+      toast.error("您的账号已被禁用，请联系管理员", { duration: 8000 });
+      window.history.replaceState({}, "", "/login");
+    }
+  }, []);
 
   const loginMutation = trpc.userAuth.login.useMutation({
     onSuccess: (data) => {

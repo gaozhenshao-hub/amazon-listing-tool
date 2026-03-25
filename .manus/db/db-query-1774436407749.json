@@ -1,0 +1,197 @@
+{
+  "query": "SELECT id, openId, name, email, phone, loginMethod, role, status, DATE_FORMAT(createdAt, '%Y-%m-%d %H:%i:%s') as created FROM users ORDER BY createdAt DESC LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT id, openId, name, email, phone, loginMethod, role, status, DATE_FORMAT(createdAt, '%Y-%m-%d %H:%i:%s') as created FROM users ORDER BY createdAt DESC LIMIT 20;",
+  "rows": [
+    {
+      "id": "4201516",
+      "openId": "D4qg5HbDmTzSMTq6M9mnTs",
+      "name": "2835872291",
+      "email": "2835872291@qq.com",
+      "phone": "",
+      "loginMethod": "email",
+      "role": "ops_specialist",
+      "status": "disabled",
+      "created": "2026-03-25 09:13:19"
+    },
+    {
+      "id": "4142171",
+      "openId": "Ce5ZPxsvPmGQ3QCabnTQW3",
+      "name": "970032132",
+      "email": "970032132@qq.com",
+      "phone": "",
+      "loginMethod": "email",
+      "role": "ops_specialist",
+      "status": "disabled",
+      "created": "2026-03-23 08:53:39"
+    },
+    {
+      "id": "3783362",
+      "openId": "NULL",
+      "name": "胡波帆（Elvi） ",
+      "email": "757608764@qq.com",
+      "phone": "15203944893",
+      "loginMethod": "NULL",
+      "role": "product_dev",
+      "status": "active",
+      "created": "2026-03-19 09:34:27"
+    },
+    {
+      "id": "3783347",
+      "openId": "NULL",
+      "name": "常文龙（Rick） ",
+      "email": "1432454731@qq.com",
+      "phone": "17700623169",
+      "loginMethod": "NULL",
+      "role": "product_dev",
+      "status": "active",
+      "created": "2026-03-19 09:33:27"
+    },
+    {
+      "id": "3783335",
+      "openId": "NULL",
+      "name": "王俊财(Jace) ",
+      "email": "2835872291@qq.com",
+      "phone": "15713808524",
+      "loginMethod": "NULL",
+      "role": "product_dev",
+      "status": "active",
+      "created": "2026-03-19 09:32:49"
+    },
+    {
+      "id": "3783327",
+      "openId": "NULL",
+      "name": "郁洋(Carl) ",
+      "email": "970032132@qq.com",
+      "phone": "18339967596",
+      "loginMethod": "NULL",
+      "role": "product_dev",
+      "status": "active",
+      "created": "2026-03-19 09:32:13"
+    },
+    {
+      "id": "3783311",
+      "openId": "NULL",
+      "name": "许鑫瑶（Cindy） ",
+      "email": "2926794856@qq.com",
+      "phone": "13598731261",
+      "loginMethod": "NULL",
+      "role": "product_dev",
+      "status": "active",
+      "created": "2026-03-19 09:30:53"
+    },
+    {
+      "id": "3783296",
+      "openId": "NULL",
+      "name": "泥雯倩（Vickie） ",
+      "email": "2103587501@qq.com",
+      "phone": " 18303792023",
+      "loginMethod": "NULL",
+      "role": "product_dev",
+      "status": "active",
+      "created": "2026-03-19 09:29:40"
+    },
+    {
+      "id": "3783274",
+      "openId": "NULL",
+      "name": "陈静静（kathy） ",
+      "email": "2268251998@qq.com",
+      "phone": "15893613864",
+      "loginMethod": "NULL",
+      "role": "designer",
+      "status": "active",
+      "created": "2026-03-19 09:27:03"
+    },
+    {
+      "id": "3783265",
+      "openId": "NULL",
+      "name": "巩雪（snowy) ",
+      "email": "1832664001@qq.com",
+      "phone": "13007677836 ",
+      "loginMethod": "NULL",
+      "role": "designer",
+      "status": "active",
+      "created": "2026-03-19 09:25:38"
+    },
+    {
+      "id": "270035",
+      "openId": "9r6mswx3BfXJ37SWDqTjrh",
+      "name": "谢金涛(OMEN)",
+      "email": "duoluoxi1233@gmail.com",
+      "phone": "",
+      "loginMethod": "google",
+      "role": "ops_specialist",
+      "status": "active",
+      "created": "2026-03-09 08:58:28"
+    },
+    {
+      "id": "270028",
+      "openId": "bdvbhibC2WEtrhGTsVGeyo",
+      "name": "郭国远（Alan）",
+      "email": "guo97125@gmail.com",
+      "phone": "",
+      "loginMethod": "google",
+      "role": "ops_manager",
+      "status": "active",
+      "created": "2026-03-09 08:57:42"
+    },
+    {
+      "id": "270025",
+      "openId": "5rV3w53jMYskjbK5dh8dvN",
+      "name": "邹梓昂（Zane）",
+      "email": "percivalresoxygen@gmail.com",
+      "phone": "",
+      "loginMethod": "google",
+      "role": "ops_specialist",
+      "status": "active",
+      "created": "2026-03-09 08:57:30"
+    },
+    {
+      "id": "270022",
+      "openId": "dnnXfyR7r8x8t9NT5gz53H",
+      "name": "赵寒（haley）",
+      "email": "zhaore714@gmail.com",
+      "phone": "",
+      "loginMethod": "google",
+      "role": "ops_manager",
+      "status": "active",
+      "created": "2026-03-09 08:57:15"
+    },
+    {
+      "id": "270010",
+      "openId": "aLRWX4QkHMcFM4pWsAAUSQ",
+      "name": "董静静(zoy)",
+      "email": "tgbedc9876.sd@gmail.com",
+      "phone": "",
+      "loginMethod": "google",
+      "role": "ops_specialist",
+      "status": "active",
+      "created": "2026-03-09 08:53:21"
+    },
+    {
+      "id": "20",
+      "openId": "kXYnpeS2NEkhousynr34xL",
+      "name": "kevin",
+      "email": "gentlefuxinhua123@gmail.com",
+      "phone": "",
+      "loginMethod": "google",
+      "role": "admin",
+      "status": "active",
+      "created": "2026-02-27 08:58:48"
+    },
+    {
+      "id": "1",
+      "openId": "Wa6rR9UkJ9dcayimuriZr8",
+      "name": "gaozhen shao",
+      "email": "gaozhenshao@gmail.com",
+      "phone": "18736015393",
+      "loginMethod": "google",
+      "role": "super_admin",
+      "status": "active",
+      "created": "2026-02-27 08:53:23"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\topenId\tname\temail\tphone\tloginMethod\trole\tstatus\tcreated\n4201516\tD4qg5HbDmTzSMTq6M9mnTs\t2835872291\t2835872291@qq.com\t\temail\tops_specialist\tdisabled\t2026-03-25 09:13:19\n4142171\tCe5ZPxsvPmGQ3QCabnTQW3\t970032132\t970032132@qq.com\t\temail\tops_specialist\tdisabled\t2026-03-23 08:53:39\n3783362\tNULL\t胡波帆（Elvi） \t757608764@qq.com\t15203944893\tNULL\tproduct_dev\tactive\t2026-03-19 09:34:27\n3783347\tNULL\t常文龙（Rick） \t1432454731@qq.com\t17700623169\tNULL\tproduct_dev\tactive\t2026-03-19 09:33:27\n3783335\tNULL\t王俊财(Jace) \t2835872291@qq.com\t15713808524\tNULL\tproduct_dev\tactive\t2026-03-19 09:32:49\n3783327\tNULL\t郁洋(Carl) \t970032132@qq.com\t18339967596\tNULL\tproduct_dev\tactive\t2026-03-19 09:32:13\n3783311\tNULL\t许鑫瑶（Cindy） \t2926794856@qq.com\t13598731261\tNULL\tproduct_dev\tactive\t2026-03-19 09:30:53\n3783296\tNULL\t泥雯倩（Vickie） \t2103587501@qq.com\t 18303792023\tNULL\tproduct_dev\tactive\t2026-03-19 09:29:40\n3783274\tNULL\t陈静静（kathy） \t2268251998@qq.com\t15893613864\tNULL\tdesigner\tactive\t2026-03-19 09:27:03\n3783265\tNULL\t巩雪（snowy) \t1832664001@qq.com\t13007677836 \tNULL\tdesigner\tactive\t2026-03-19 09:25:38\n270035\t9r6mswx3BfXJ37SWDqTjrh\t谢金涛(OMEN)\tduoluoxi1233@gmail.com\t\tgoogle\tops_specialist\tactive\t2026-03-09 08:58:28\n270028\tbdvbhibC2WEtrhGTsVGeyo\t郭国远（Alan）\tguo97125@gmail.com\t\tgoogle\tops_manager\tactive\t2026-03-09 08:57:42\n270025\t5rV3w53jMYskjbK5dh8dvN\t邹梓昂（Zane）\tpercivalresoxygen@gmail.com\t\tgoogle\tops_specialist\tactive\t2026-03-09 08:57:30\n270022\tdnnXfyR7r8x8t9NT5gz53H\t赵寒（haley）\tzhaore714@gmail.com\t\tgoogle\tops_manager\tactive\t2026-03-09 08:57:15\n270010\taLRWX4QkHMcFM4pWsAAUSQ\t董静静(zoy)\ttgbedc9876.sd@gmail.com\t\tgoogle\tops_specialist\tactive\t2026-03-09 08:53:21\n20\tkXYnpeS2NEkhousynr34xL\tkevin\tgentlefuxinhua123@gmail.com\t\tgoogle\tadmin\tactive\t2026-02-27 08:58:48\n1\tWa6rR9UkJ9dcayimuriZr8\tgaozhen shao\tgaozhenshao@gmail.com\t18736015393\tgoogle\tsuper_admin\tactive\t2026-02-27 08:53:23\n",
+  "stderr": "",
+  "execution_time_ms": 415
+}
