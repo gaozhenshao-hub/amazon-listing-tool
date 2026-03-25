@@ -67,11 +67,12 @@ describe("ASIN Logistics API - Schema & Logic", () => {
     expect(procedures).toHaveProperty("getBatchesByAsin");
   });
 
-  it("SHIPPING_STEPS has 9 steps", async () => {
+  it("SHIPPING_STEPS has 10 steps", async () => {
     const { SHIPPING_STEPS } = await import("./routers/shippingBatch");
-    expect(SHIPPING_STEPS).toHaveLength(9);
+    expect(SHIPPING_STEPS).toHaveLength(10);
     expect(SHIPPING_STEPS[0].name).toBe("准备中");
     expect(SHIPPING_STEPS[8].name).toBe("已到亚马逊仓");
+    expect(SHIPPING_STEPS[9].name).toBe("上架可售");
   });
 
   it("getAsinBatches returns empty array when no batches exist", async () => {

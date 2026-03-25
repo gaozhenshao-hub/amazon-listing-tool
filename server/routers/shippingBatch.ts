@@ -7,7 +7,7 @@ import {
 } from "../../drizzle/schema";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 
-// ─── 9步流程定义 ───
+// ─── 10步流程定义 ───
 export const SHIPPING_STEPS = [
   { number: 1, name: "准备中", key: "preparing", requiredFields: [] },
   { number: 2, name: "采购中", key: "purchasing", requiredFields: [] },
@@ -18,15 +18,16 @@ export const SHIPPING_STEPS = [
   { number: 7, name: "国际物流运输中", key: "internationalTransit", requiredFields: ["internationalTrackingNumber"] },
   { number: 8, name: "接收中", key: "receiving", requiredFields: [] },
   { number: 9, name: "已到亚马逊仓", key: "arrivedAmazon", requiredFields: [] },
+  { number: 10, name: "上架可售", key: "availableForSale", requiredFields: [] },
 ] as const;
 
 // Default step days by shipping method
 const DEFAULT_STEP_DAYS: Record<string, number[]> = {
-  "海运": [3, 14, 3, 1, 3, 2, 35, 7, 3],
-  "空运": [3, 14, 2, 1, 1, 1, 7, 5, 2],
-  "快递": [3, 14, 1, 1, 1, 1, 5, 3, 1],
-  "铁路": [3, 14, 3, 1, 2, 2, 25, 7, 3],
-  "default": [3, 14, 3, 1, 3, 2, 30, 7, 3],
+  "海运": [3, 14, 3, 1, 3, 2, 35, 7, 3, 1],
+  "空运": [3, 14, 2, 1, 1, 1, 7, 5, 2, 1],
+  "快递": [3, 14, 1, 1, 1, 1, 5, 3, 1, 1],
+  "铁路": [3, 14, 3, 1, 2, 2, 25, 7, 3, 1],
+  "default": [3, 14, 3, 1, 3, 2, 30, 7, 3, 1],
 };
 
 export const shippingBatchRouter = router({
@@ -219,7 +220,7 @@ export const shippingBatchRouter = router({
 
       // Determine step days
       let stepDays: number[];
-      if (input.customStepDays && input.customStepDays.length === 9) {
+      if (input.customStepDays && input.customStepDays.length === 10) {
         stepDays = input.customStepDays;
       } else if (input.templateId) {
         const [template] = await db.select().from(stepTimeTemplates)
@@ -235,7 +236,7 @@ export const shippingBatchRouter = router({
       }
 
       // Create step configs
-      for (let i = 0; i < 9; i++) {
+      for (let i = 0; i < 10; i++) {
         await db.insert(batchStepConfigs).values({
           batchId,
           stepNumber: i + 1,
@@ -510,7 +511,7 @@ export const shippingBatchRouter = router({
       // Complete last step
       await db.update(batchStepConfigs)
         .set({ status: "completed", actualEndAt: now, updatedAt: now })
-        .where(and(eq(batchStepConfigs.batchId, input.batchId), eq(batchStepConfigs.stepNumber, 9)));
+        .where(and(eq(batchStepConfigs.batchId, input.batchId), eq(batchStepConfigs.stepNumber, 10)));
 
       await db.update(shippingBatches)
         .set({ status: "completed", updatedAt: now })
@@ -717,7 +718,7 @@ export const shippingBatchRouter = router({
         const qtyFields = [
           b.plannedQuantity, b.orderedQuantity, b.shippedQuantity, b.shippedQuantity,
           b.shippedQuantity, b.warehouseReceivedQuantity, b.internationalShippedQuantity,
-          b.amazonReceivedQuantity, b.amazonStockedQuantity
+          b.amazonReceivedQuantity, b.amazonStockedQuantity, b.amazonStockedQuantity
         ];
         return sum + (qtyFields[step.number - 1] || 0);
       }, 0);
@@ -1088,9 +1089,9 @@ export const shippingBatchRouter = router({
       // 计算流水线统计
       const pipeline = {
         planned: 0, purchasing: 0, domesticTransit: 0, warehouse: 0,
-        internationalTransit: 0, receiving: 0, amazonStocked: 0,
+        internationalTransit: 0, receiving: 0, amazonStocked: 0, availableForSale: 0,
         totalInTransit: 0, totalAll: 0, batchCount: batches.length,
-        stepDistribution: Array(10).fill(0),
+        stepDistribution: Array(11).fill(0),
       };
       for (const batch of batches) {
         const prod = matchedProducts.find(p => p.batchId === batch.id);
@@ -1105,10 +1106,11 @@ export const shippingBatchRouter = router({
           case 7: pipeline.internationalTransit += qty; break;
           case 8: pipeline.receiving += qty; break;
           case 9: pipeline.amazonStocked += qty; break;
+          case 10: pipeline.availableForSale += qty; break;
         }
       }
       pipeline.totalInTransit = pipeline.domesticTransit + pipeline.internationalTransit + pipeline.receiving;
-      pipeline.totalAll = pipeline.planned + pipeline.purchasing + pipeline.domesticTransit + pipeline.warehouse + pipeline.internationalTransit + pipeline.receiving + pipeline.amazonStocked;
+      pipeline.totalAll = pipeline.planned + pipeline.purchasing + pipeline.domesticTransit + pipeline.warehouse + pipeline.internationalTransit + pipeline.receiving + pipeline.amazonStocked + pipeline.availableForSale;
       return pipeline;
     }),
 
@@ -1138,14 +1140,17 @@ export const shippingBatchRouter = router({
       const fbaId = shipment.shipment_id || shipment.delivery_id;
       if (!fbaId) continue;
       
-      // 映射领星状态到9步流程
+      // 映射领星状态到10步流程
       let currentStep = 1;
       const status = (shipment.status || '').toUpperCase();
       if (status === 'WORKING' || status === 'PLANNED') currentStep = 1;
       else if (status === 'PURCHASING') currentStep = 2;
-      else if (status === 'SHIPPED' || status === 'IN_TRANSIT') currentStep = 7;
+      else if (status === 'READY_TO_SHIP') currentStep = 3;
+      else if (status === 'SHIPPED') currentStep = 4;
+      else if (status === 'IN_TRANSIT') currentStep = 7;
       else if (status === 'RECEIVING') currentStep = 8;
-      else if (status === 'CLOSED' || status === 'RECEIVED') currentStep = 9;
+      else if (status === 'RECEIVED') currentStep = 9;
+      else if (status === 'CLOSED' || status === 'CHECKED_IN') currentStep = 10;
       
       if (existingFbaIds.has(fbaId)) {
         // 更新已有批次的状态
@@ -1163,7 +1168,7 @@ export const shippingBatchRouter = router({
           userId,
           batchName: `领星-${fbaId}`,
           batchNumber: Date.now() % 100000,
-          status: currentStep >= 9 ? 'completed' : 'active',
+          status: currentStep >= 10 ? 'completed' : 'active',
           currentStep,
           shippingMethod: '海运',
           storeName: shipment.destination || '',

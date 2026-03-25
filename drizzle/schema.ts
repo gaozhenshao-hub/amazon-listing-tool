@@ -2267,6 +2267,7 @@ export const stepTimeTemplates = mysqlTable("step_time_templates", {
   step7Days: int("step7_days").default(30).notNull(),
   step8Days: int("step8_days").default(7).notNull(),
   step9Days: int("step9_days").default(3).notNull(),
+  step10Days: int("step10_days").default(1).notNull(),
   isDefault: int("is_default").default(0).notNull(),
   aiSuggested: int("ai_suggested").default(0).notNull(),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),

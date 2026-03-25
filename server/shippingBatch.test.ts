@@ -254,14 +254,16 @@ describe("Route Registration", () => {
   const layoutPath = path.resolve(__dirname, "../client/src/components/DashboardLayout.tsx");
   const layoutCode = fs.readFileSync(layoutPath, "utf-8");
 
-  it("should register shipping batch routes in App.tsx", () => {
-    expect(appCode).toContain("OpsShippingBatch");
+  it("should register shipping batch detail route in App.tsx", () => {
+    // Batch list is now merged into OpsInventory pipeline tab
+    // Only the detail route remains as a standalone page
     expect(appCode).toContain("OpsShippingBatchDetail");
-    expect(appCode).toContain("/ops/shipping");
+    expect(appCode).toContain("/ops/shipping/:id");
   });
 
-  it("should have shipping batch nav item in sidebar", () => {
-    expect(layoutCode).toContain("物流批次");
-    expect(layoutCode).toContain("/ops/shipping");
+  it("should have inventory nav item in sidebar (batch management merged into pipeline)", () => {
+    // Batch management is now part of the inventory pipeline view
+    expect(layoutCode).toContain("库存预警");
+    expect(layoutCode).toContain("/ops/inventory");
   });
 });

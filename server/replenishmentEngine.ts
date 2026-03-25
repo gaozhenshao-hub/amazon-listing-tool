@@ -76,14 +76,15 @@ const STEP_NAMES = [
   '国际物流运输中',
   '接收中',
   '已到亚马逊仓',
+  '上架可售',
 ];
 
 // Default step durations by shipping method (days)
 const DEFAULT_STEP_DAYS: Record<string, number[]> = {
-  sea:     [0, 3, 14, 3, 1, 3, 2, 30, 7, 3], // total ~66 days
-  air:     [0, 3, 14, 2, 1, 2, 1, 7, 3, 2],  // total ~35 days
-  express: [0, 2, 7, 1, 1, 1, 1, 5, 2, 1],   // total ~21 days
-  rail:    [0, 3, 14, 3, 1, 3, 2, 20, 5, 3],  // total ~54 days
+  sea:     [0, 3, 14, 3, 1, 3, 2, 30, 7, 3, 1], // total ~67 days
+  air:     [0, 3, 14, 2, 1, 2, 1, 7, 3, 2, 1],  // total ~36 days
+  express: [0, 2, 7, 1, 1, 1, 1, 5, 2, 1, 1],   // total ~22 days
+  rail:    [0, 3, 14, 3, 1, 3, 2, 20, 5, 3, 1],  // total ~55 days
 };
 
 // ============== Core Engine ==============
@@ -716,10 +717,11 @@ export async function getInventoryPipelineSummary(userId: string) {
     internationalTransit: 0, // Step 7
     receiving: 0,      // Step 8
     amazonStocked: 0,  // Step 9
+    availableForSale: 0, // Step 10
     totalInTransit: 0,
     totalAll: 0,
     batchCount: batches.length,
-    stepDistribution: Array(10).fill(0), // count of batches per step
+    stepDistribution: Array(11).fill(0), // count of batches per step (0-10)
   };
   
   for (const batch of batches) {
@@ -750,11 +752,14 @@ export async function getInventoryPipelineSummary(userId: string) {
       case 9:
         pipeline.amazonStocked += batch.amazonStockedQuantity || 0;
         break;
+      case 10:
+        pipeline.availableForSale += batch.amazonStockedQuantity || 0;
+        break;
     }
   }
   
   pipeline.totalInTransit = pipeline.domesticTransit + pipeline.internationalTransit + pipeline.receiving;
-  pipeline.totalAll = pipeline.planned + pipeline.purchasing + pipeline.domesticTransit + pipeline.warehouse + pipeline.internationalTransit + pipeline.receiving + pipeline.amazonStocked;
+  pipeline.totalAll = pipeline.planned + pipeline.purchasing + pipeline.domesticTransit + pipeline.warehouse + pipeline.internationalTransit + pipeline.receiving + pipeline.amazonStocked + pipeline.availableForSale;
   
   return pipeline;
 }

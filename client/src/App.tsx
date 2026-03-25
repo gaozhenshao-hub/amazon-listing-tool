@@ -52,7 +52,6 @@ import OpsCompetitor from "./pages/ops/OpsCompetitor";
 import OpsProducts from "./pages/ops/OpsProducts";
 import OpsProductDetail from "./pages/ops/OpsProductDetail";
 import OpsCrawlerManager from "./pages/ops/OpsCrawlerManager";
-import OpsShippingBatch from "./pages/ops/OpsShippingBatch";
 import OpsShippingBatchDetail from "./pages/ops/OpsShippingBatchDetail";
 import OpsLogistics from "./pages/ops/OpsLogistics";
 
@@ -141,7 +140,6 @@ function Router() {
         <Route path="/ops/ads">{() => <PermissionGuard><OpsAds /></PermissionGuard>}</Route>
         <Route path="/ops/competitor">{() => <PermissionGuard><OpsCompetitor /></PermissionGuard>}</Route>
         <Route path="/ops/crawler">{() => <PermissionGuard><OpsCrawlerManager /></PermissionGuard>}</Route>
-        <Route path="/ops/shipping">{() => <PermissionGuard><OpsShippingBatch /></PermissionGuard>}</Route>
         <Route path="/ops/shipping/:id">{() => <PermissionGuard><OpsShippingBatchDetail /></PermissionGuard>}</Route>
         <Route path="/ops/logistics">{() => <PermissionGuard><OpsLogistics /></PermissionGuard>}</Route>
 

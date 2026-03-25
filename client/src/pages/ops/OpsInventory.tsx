@@ -6,7 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
@@ -19,7 +22,8 @@ import {
   TrendingDown, TrendingUp, AlertCircle, CheckCircle2, Loader2,
   Truck, Ship, Plane, ArrowRight, Clock, Brain, ShieldAlert,
   ChevronRight, ExternalLink, Boxes, Warehouse, Tag, Plus, X, Pencil, Trash2, Eye, EyeOff,
-  Search, FileText, MessageSquare, Send, History,
+  Search, FileText, MessageSquare, Send, History, Play, Pause, XCircle, MoreHorizontal,
+  TrainFront, Zap, ShoppingCart, Layers,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -784,13 +788,208 @@ export default function OpsInventory() {
   );
 }
 
-// ═══════ Inventory Pipeline View ═══════
+// ═══════ Inventory Pipeline View (Merged with Batch Management) ═══════
+
+const SHIPPING_METHODS = [
+  { value: "海运", icon: Ship, color: "text-blue-500" },
+  { value: "空运", icon: Plane, color: "text-sky-500" },
+  { value: "快递", icon: Zap, color: "text-amber-500" },
+  { value: "铁路", icon: TrainFront, color: "text-green-500" },
+];
+
+const BATCH_STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
+  active: { label: "进行中", color: "bg-blue-500/10 text-blue-600 border-blue-200", icon: Play },
+  completed: { label: "已完成", color: "bg-green-500/10 text-green-600 border-green-200", icon: CheckCircle2 },
+  paused: { label: "已暂停", color: "bg-amber-500/10 text-amber-600 border-amber-200", icon: Pause },
+  cancelled: { label: "已取消", color: "bg-red-500/10 text-red-600 border-red-200", icon: XCircle },
+};
+
+const PIPELINE_STEP_MAP: Record<number, { label: string; color: string }> = {
+  1: { label: "准备中", color: "bg-gray-100 text-gray-700" },
+  2: { label: "采购中", color: "bg-blue-100 text-blue-700" },
+  3: { label: "准备寄出", color: "bg-cyan-100 text-cyan-700" },
+  4: { label: "已寄出", color: "bg-indigo-100 text-indigo-700" },
+  5: { label: "国内运输中", color: "bg-violet-100 text-violet-700" },
+  6: { label: "已到仓", color: "bg-purple-100 text-purple-700" },
+  7: { label: "国际运输", color: "bg-orange-100 text-orange-700" },
+  8: { label: "接收中", color: "bg-amber-100 text-amber-700" },
+  9: { label: "已到亚马逊仓", color: "bg-green-100 text-green-700" },
+  10: { label: "上架可售", color: "bg-emerald-100 text-emerald-700" },
+};
+
+// ─── 10步进度条组件 ───
+function ShippingStepProgress({ currentStep, status }: { currentStep: number; status: string }) {
+  const STEPS = [
+    { number: 1, name: "准备中" }, { number: 2, name: "采购中" },
+    { number: 3, name: "准备寄出" }, { number: 4, name: "已寄出" },
+    { number: 5, name: "国内运输" }, { number: 6, name: "已到仓" },
+    { number: 7, name: "国际运输" }, { number: 8, name: "接收中" },
+    { number: 9, name: "到亚马逊仓" }, { number: 10, name: "上架可售" },
+  ];
+  return (
+    <div className="flex items-center gap-0.5 w-full">
+      {STEPS.map((step) => {
+        const isCompleted = step.number < currentStep;
+        const isCurrent = step.number === currentStep;
+        const isDisabled = status === "cancelled" || status === "paused";
+        let bgColor = "bg-muted";
+        if (isDisabled) bgColor = "bg-muted/50";
+        else if (isCompleted) bgColor = "bg-green-500";
+        else if (isCurrent) bgColor = "bg-blue-500";
+        return (
+          <div key={step.number} className="flex-1 group relative">
+            <div
+              className={`h-1.5 rounded-full transition-all ${bgColor} ${isCurrent ? "ring-2 ring-blue-300 ring-offset-1" : ""}`}
+              title={`${step.name}${isCurrent ? " (当前)" : isCompleted ? " (已完成)" : ""}`}
+            />
+            {isCurrent && (
+              <div className="absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[9px] font-medium text-blue-600 bg-blue-50 px-1 py-0.5 rounded">
+                {step.name}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── 创建批次对话框 ───
+function CreateBatchDialog({ onSuccess }: { onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({
+    batchName: "", storeName: "", sourceWarehouse: "", transitWarehouse: "",
+    destinationWarehouse: "", shippingMethod: "海运", batchOwner: "", logisticsOwner: "", currency: "USD",
+  });
+  const [products, setProducts] = useState<{ sku: string; productName: string; quantity: number; unitCost: number }[]>([]);
+  const [newProduct, setNewProduct] = useState({ sku: "", productName: "", quantity: 0, unitCost: 0 });
+
+  const createMutation = trpc.shippingBatch.create.useMutation({
+    onSuccess: () => {
+      toast.success("批次创建成功");
+      setOpen(false);
+      setForm({ batchName: "", storeName: "", sourceWarehouse: "", transitWarehouse: "", destinationWarehouse: "", shippingMethod: "海运", batchOwner: "", logisticsOwner: "", currency: "USD" });
+      setProducts([]);
+      onSuccess();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm"><Plus className="h-4 w-4 mr-1" />创建批次</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>创建物流批次</DialogTitle>
+          <DialogDescription>填写批次基本信息和产品明细</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-medium text-muted-foreground">批次名称 *</label>
+              <Input value={form.batchName} onChange={e => setForm(f => ({ ...f, batchName: e.target.value }))} placeholder="如: Ace US #718 义乌仓-海运 2026.02" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-muted-foreground">对应店铺</label>
+              <Input value={form.storeName} onChange={e => setForm(f => ({ ...f, storeName: e.target.value }))} placeholder="如: Ace Select US" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-muted-foreground">发货仓库</label>
+              <Input value={form.sourceWarehouse} onChange={e => setForm(f => ({ ...f, sourceWarehouse: e.target.value }))} placeholder="如: 义乌仓" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-muted-foreground">目的仓库</label>
+              <Input value={form.destinationWarehouse} onChange={e => setForm(f => ({ ...f, destinationWarehouse: e.target.value }))} placeholder="如: Amazon FBA PHX7" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-muted-foreground">运输方式</label>
+              <Select value={form.shippingMethod} onValueChange={v => setForm(f => ({ ...f, shippingMethod: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {SHIPPING_METHODS.map(m => (
+                    <SelectItem key={m.value} value={m.value}>{m.value}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-muted-foreground">负责人</label>
+              <Input value={form.batchOwner} onChange={e => setForm(f => ({ ...f, batchOwner: e.target.value }))} placeholder="负责人姓名" />
+            </div>
+          </div>
+          {/* Products */}
+          <div>
+            <h4 className="text-sm font-medium mb-2">产品明细</h4>
+            <div className="flex gap-2 mb-2">
+              <Input placeholder="SKU" value={newProduct.sku} onChange={e => setNewProduct(p => ({ ...p, sku: e.target.value }))} className="flex-1" />
+              <Input placeholder="产品名称" value={newProduct.productName} onChange={e => setNewProduct(p => ({ ...p, productName: e.target.value }))} className="flex-1" />
+              <Input placeholder="数量" type="number" value={newProduct.quantity || ""} onChange={e => setNewProduct(p => ({ ...p, quantity: Number(e.target.value) }))} className="w-24" />
+              <Input placeholder="单价" type="number" value={newProduct.unitCost || ""} onChange={e => setNewProduct(p => ({ ...p, unitCost: Number(e.target.value) }))} className="w-24" />
+              <Button variant="outline" size="sm" onClick={() => {
+                if (!newProduct.sku) { toast.error("请输入SKU"); return; }
+                setProducts(prev => [...prev, { ...newProduct }]);
+                setNewProduct({ sku: "", productName: "", quantity: 0, unitCost: 0 });
+              }}>添加</Button>
+            </div>
+            {products.length > 0 && (
+              <div className="border rounded-lg overflow-hidden text-sm">
+                <table className="w-full">
+                  <thead className="bg-muted/50">
+                    <tr><th className="text-left p-2">SKU</th><th className="text-left p-2">名称</th><th className="text-right p-2">数量</th><th className="text-right p-2">单价</th><th className="p-2"></th></tr>
+                  </thead>
+                  <tbody>
+                    {products.map((p, i) => (
+                      <tr key={i} className="border-t">
+                        <td className="p-2 font-mono text-xs">{p.sku}</td>
+                        <td className="p-2">{p.productName}</td>
+                        <td className="p-2 text-right">{p.quantity}</td>
+                        <td className="p-2 text-right">${p.unitCost}</td>
+                        <td className="p-2"><Button variant="ghost" size="sm" onClick={() => setProducts(prev => prev.filter((_, j) => j !== i))}><Trash2 className="h-3 w-3 text-red-500" /></Button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>取消</Button>
+          <Button onClick={() => {
+            if (!form.batchName) { toast.error("请输入批次名称"); return; }
+            createMutation.mutate({ ...form, products: products.length > 0 ? products : undefined });
+          }} disabled={createMutation.isPending}>
+            {createMutation.isPending ? "创建中..." : "创建批次"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function InventoryPipelineView({ pipeline, onNavigate }: { pipeline: any; onNavigate: (path: string) => void }) {
   const [asinSearch, setAsinSearch] = useState("");
   const [selectedAsin, setSelectedAsin] = useState<string | null>(null);
   const [logContent, setLogContent] = useState("");
   const [showTrackingDialog, setShowTrackingDialog] = useState<string | null>(null);
+  const [batchStatusFilter, setBatchStatusFilter] = useState<string>("all");
+  const [batchMethodFilter, setBatchMethodFilter] = useState<string>("all");
+  const [batchSearchText, setBatchSearchText] = useState("");
+  const [batchPage, setBatchPage] = useState(1);
+  const [viewMode, setViewMode] = useState<"pipeline" | "batches" | "asin">("pipeline");
+
+  const utils = trpc.useUtils();
+
+  // Batch list query
+  const batchListQuery = trpc.shippingBatch.list.useQuery({
+    status: batchStatusFilter as any,
+    shippingMethod: batchMethodFilter === "all" ? undefined : batchMethodFilter,
+    search: batchSearchText || undefined,
+    page: batchPage,
+    pageSize: 15,
+  });
 
   // Query ASIN batches when selected
   const asinBatchesQuery = trpc.shippingBatch.getAsinBatches.useQuery(
@@ -825,8 +1024,20 @@ function InventoryPipelineView({ pipeline, onNavigate }: { pipeline: any; onNavi
       toast.success(data.message || "同步完成");
       asinBatchesQuery.refetch();
       asinPipelineQuery.refetch();
+      batchListQuery.refetch();
+      utils.shippingBatch.getInventoryPipelineSummary.invalidate();
     },
     onError: (err: any) => toast.error("同步失败", { description: err.message }),
+  });
+
+  // Batch status mutations
+  const updateStatusMutation = trpc.shippingBatch.updateStatus.useMutation({
+    onSuccess: () => { batchListQuery.refetch(); toast.success("状态更新成功"); },
+    onError: (err) => toast.error(err.message),
+  });
+  const deleteMutation = trpc.shippingBatch.delete.useMutation({
+    onSuccess: () => { batchListQuery.refetch(); toast.success("批次已删除"); },
+    onError: (err) => toast.error(err.message),
   });
 
   // NextSLS tracking query
@@ -838,7 +1049,7 @@ function InventoryPipelineView({ pipeline, onNavigate }: { pipeline: any; onNavi
   // Get inventory data for ASIN info
   const inventoryQuery = trpc.operations.getInventoryList.useQuery(
     { marketplace: "US" },
-    { enabled: !!selectedAsin }
+    { enabled: viewMode === "asin" }
   );
 
   const asinInfo = selectedAsin && inventoryQuery.data
@@ -857,27 +1068,23 @@ function InventoryPipelineView({ pipeline, onNavigate }: { pipeline: any; onNavi
     ? allAsins.filter((a: string) => a.toUpperCase().includes(asinSearch.toUpperCase())).slice(0, 10)
     : [];
 
+  // 10步流水线定义
   const steps = activePipeline ? [
     { name: "准备中", icon: Clock, qty: activePipeline.planned, color: "bg-gray-100 text-gray-600", count: activePipeline.stepDistribution?.[1] || 0 },
-    { name: "采购中", icon: Package, qty: activePipeline.purchasing, color: "bg-blue-100 text-blue-600", count: activePipeline.stepDistribution?.[2] || 0 },
-    { name: "国内运输", icon: Truck, qty: activePipeline.domesticTransit, color: "bg-indigo-100 text-indigo-600", count: (activePipeline.stepDistribution?.[3] || 0) + (activePipeline.stepDistribution?.[4] || 0) + (activePipeline.stepDistribution?.[5] || 0) },
+    { name: "采购中", icon: Package, qty: activePipeline.purchasing, color: "bg-blue-100 text-blue-600", count: (activePipeline.stepDistribution?.[2] || 0) + (activePipeline.stepDistribution?.[3] || 0) },
+    { name: "国内运输", icon: Truck, qty: activePipeline.domesticTransit, color: "bg-indigo-100 text-indigo-600", count: (activePipeline.stepDistribution?.[4] || 0) + (activePipeline.stepDistribution?.[5] || 0) },
     { name: "已到仓", icon: Warehouse, qty: activePipeline.warehouse, color: "bg-purple-100 text-purple-600", count: activePipeline.stepDistribution?.[6] || 0 },
     { name: "国际运输", icon: Ship, qty: activePipeline.internationalTransit, color: "bg-orange-100 text-orange-600", count: activePipeline.stepDistribution?.[7] || 0 },
     { name: "接收中", icon: Plane, qty: activePipeline.receiving, color: "bg-amber-100 text-amber-600", count: activePipeline.stepDistribution?.[8] || 0 },
-    { name: "亚马逊仓", icon: Boxes, qty: activePipeline.amazonStocked, color: "bg-green-100 text-green-600", count: activePipeline.stepDistribution?.[9] || 0 },
+    { name: "到亚马逊仓", icon: Boxes, qty: activePipeline.amazonStocked, color: "bg-green-100 text-green-600", count: activePipeline.stepDistribution?.[9] || 0 },
+    { name: "上架可售", icon: ShoppingCart, qty: activePipeline.availableForSale || 0, color: "bg-emerald-100 text-emerald-600", count: activePipeline.stepDistribution?.[10] || 0 },
   ] : [];
 
-  const STATUS_MAP: Record<number, { label: string; color: string }> = {
-    1: { label: "准备中", color: "bg-gray-100 text-gray-700" },
-    2: { label: "采购中", color: "bg-blue-100 text-blue-700" },
-    3: { label: "国内运输", color: "bg-indigo-100 text-indigo-700" },
-    4: { label: "国内运输", color: "bg-indigo-100 text-indigo-700" },
-    5: { label: "国内运输", color: "bg-indigo-100 text-indigo-700" },
-    6: { label: "已到仓", color: "bg-purple-100 text-purple-700" },
-    7: { label: "国际运输", color: "bg-orange-100 text-orange-700" },
-    8: { label: "接收中", color: "bg-amber-100 text-amber-700" },
-    9: { label: "亚马逊仓", color: "bg-green-100 text-green-700" },
-    10: { label: "已完成", color: "bg-emerald-100 text-emerald-700" },
+  const batchData = batchListQuery.data;
+  const getMethodIcon = (method: string | null) => {
+    const m = SHIPPING_METHODS.find(sm => sm.value === method);
+    if (!m) return <Truck className="h-4 w-4 text-muted-foreground" />;
+    return <m.icon className={`h-4 w-4 ${m.color}`} />;
   };
 
   return (
@@ -889,41 +1096,42 @@ function InventoryPipelineView({ pipeline, onNavigate }: { pipeline: any; onNavi
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Ship className="w-4 h-4" />
-                  全链路库存流水线
+                  <Layers className="w-4 h-4" />
+                  全链路库存流水线（10步）
                   {selectedAsin && (
-                    <Badge variant="secondary" className="ml-2 text-xs">
-                      {selectedAsin}
-                    </Badge>
+                    <Badge variant="secondary" className="ml-2 text-xs">{selectedAsin}</Badge>
                   )}
                 </CardTitle>
                 <CardDescription>
                   活跃批次: {activePipeline.batchCount} · 在途总量: {activePipeline.totalInTransit.toLocaleString()} · 全链路总量: {activePipeline.totalAll.toLocaleString()}
                 </CardDescription>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => syncLingxingMut.mutate()}
-                disabled={syncLingxingMut.isPending}
-              >
-                {syncLingxingMut.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
-                同步领星批次
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => syncLingxingMut.mutate()}
+                  disabled={syncLingxingMut.isPending}
+                >
+                  {syncLingxingMut.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+                  同步领星批次
+                </Button>
+                <CreateBatchDialog onSuccess={() => { batchListQuery.refetch(); utils.shippingBatch.getInventoryPipelineSummary.invalidate(); }} />
+              </div>
             </div>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-1 overflow-x-auto py-4">
               {steps.map((step, idx) => (
                 <div key={idx} className="flex items-center">
-                  <div className={`flex flex-col items-center min-w-[100px] p-3 rounded-lg ${step.color} transition-all hover:scale-105`}>
-                    <step.icon className="w-5 h-5 mb-1" />
-                    <span className="text-xs font-medium">{step.name}</span>
-                    <span className="text-lg font-bold mt-1">{step.qty.toLocaleString()}</span>
+                  <div className={`flex flex-col items-center min-w-[90px] p-2.5 rounded-lg ${step.color} transition-all hover:scale-105 cursor-default`}>
+                    <step.icon className="w-4 h-4 mb-1" />
+                    <span className="text-[11px] font-medium">{step.name}</span>
+                    <span className="text-lg font-bold mt-0.5">{step.qty.toLocaleString()}</span>
                     <span className="text-[10px] opacity-70">{step.count}个批次</span>
                   </div>
                   {idx < steps.length - 1 && (
-                    <ArrowRight className="w-4 h-4 text-gray-300 mx-1 shrink-0" />
+                    <ArrowRight className="w-3 h-3 text-gray-300 mx-0.5 shrink-0" />
                   )}
                 </div>
               ))}
@@ -934,302 +1142,415 @@ function InventoryPipelineView({ pipeline, onNavigate }: { pipeline: any; onNavi
 
       {/* Summary Stats */}
       {activePipeline && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <Card className="bg-blue-50 border-transparent">
             <CardContent className="py-3 px-4">
               <p className="text-xs text-blue-600">国内在途</p>
-              <p className="text-2xl font-bold text-blue-700">{activePipeline.domesticTransit.toLocaleString()}</p>
+              <p className="text-xl font-bold text-blue-700">{activePipeline.domesticTransit.toLocaleString()}</p>
             </CardContent>
           </Card>
           <Card className="bg-orange-50 border-transparent">
             <CardContent className="py-3 px-4">
               <p className="text-xs text-orange-600">国际在途</p>
-              <p className="text-2xl font-bold text-orange-700">{activePipeline.internationalTransit.toLocaleString()}</p>
+              <p className="text-xl font-bold text-orange-700">{activePipeline.internationalTransit.toLocaleString()}</p>
             </CardContent>
           </Card>
           <Card className="bg-amber-50 border-transparent">
             <CardContent className="py-3 px-4">
               <p className="text-xs text-amber-600">接收中</p>
-              <p className="text-2xl font-bold text-amber-700">{activePipeline.receiving.toLocaleString()}</p>
+              <p className="text-xl font-bold text-amber-700">{activePipeline.receiving.toLocaleString()}</p>
             </CardContent>
           </Card>
           <Card className="bg-green-50 border-transparent">
             <CardContent className="py-3 px-4">
               <p className="text-xs text-green-600">已到亚马逊仓</p>
-              <p className="text-2xl font-bold text-green-700">{activePipeline.amazonStocked.toLocaleString()}</p>
+              <p className="text-xl font-bold text-green-700">{activePipeline.amazonStocked.toLocaleString()}</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-emerald-50 border-transparent">
+            <CardContent className="py-3 px-4">
+              <p className="text-xs text-emerald-600">上架可售</p>
+              <p className="text-xl font-bold text-emerald-700">{(activePipeline.availableForSale || 0).toLocaleString()}</p>
             </CardContent>
           </Card>
         </div>
       )}
 
-      {/* ASIN Dimension Section */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Search className="w-4 h-4" />
-            ASIN物流追踪
-          </CardTitle>
-          <CardDescription>输入ASIN查看该产品的物流批次信息和操作日志</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* ASIN Search */}
-          <div className="relative">
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <Input
-                  placeholder="输入ASIN搜索..."
-                  value={asinSearch}
-                  onChange={(e) => setAsinSearch(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && asinSearch.trim()) {
-                      setSelectedAsin(asinSearch.trim().toUpperCase());
-                    }
-                  }}
-                  className="pl-9"
-                />
-              </div>
-              <Button
-                onClick={() => {
-                  if (asinSearch.trim()) {
-                    setSelectedAsin(asinSearch.trim().toUpperCase());
-                  }
-                }}
-                disabled={!asinSearch.trim()}
-              >
-                查询
-              </Button>
-              {selectedAsin && (
-                <Button variant="outline" onClick={() => { setSelectedAsin(null); setAsinSearch(""); }}>
-                  清除
-                </Button>
-              )}
-            </div>
-            {/* Search suggestions dropdown */}
-            {filteredAsins.length > 0 && !selectedAsin && (
-              <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
-                {filteredAsins.map((asin: string) => (
-                  <button
-                    key={asin}
-                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
-                    onClick={() => { setSelectedAsin(asin); setAsinSearch(asin); }}
-                  >
-                    <Package className="w-3 h-3 text-gray-400" />
-                    {asin}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Selected ASIN Content */}
-          {selectedAsin && (
-            <div className="space-y-4">
-              {/* ASIN Basic Info */}
-              <Card className="bg-gray-50 border-gray-200">
-                <CardContent className="py-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="font-semibold text-lg">{selectedAsin}</h3>
-                      {asinInfo ? (
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-2 mt-3 text-sm">
-                          <div><span className="text-gray-500">SKU:</span> <span className="font-medium">{asinInfo.msku || "-"}</span></div>
-                          <div><span className="text-gray-500">标题:</span> <span className="font-medium truncate max-w-[200px] inline-block align-bottom">{asinInfo.title || "-"}</span></div>
-                          <div><span className="text-gray-500">店铺:</span> <span className="font-medium">{asinInfo.storeName || "-"}</span></div>
-                          <div><span className="text-gray-500">运营:</span> <span className="font-medium">{asinInfo.operator || "-"}</span></div>
-                          <div><span className="text-gray-500">可售库存:</span> <span className="font-medium">{asinInfo.fulfillableQty?.toLocaleString() || "0"}</span></div>
-                          <div><span className="text-gray-500">日均销量:</span> <span className="font-medium">{asinInfo.avgDailySales?.toFixed(1) || "0"}</span></div>
-                          <div><span className="text-gray-500">可售天数:</span> <span className="font-medium">{asinInfo.daysOfSupply || "0"}</span></div>
-                          <div><span className="text-gray-500">FBA在途:</span> <span className="font-medium">{asinInfo.inboundQty?.toLocaleString() || "0"}</span></div>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-gray-500 mt-1">未找到该ASIN的库存信息</p>
-                      )}
-                    </div>
-                    <Badge variant="outline" className="shrink-0">
-                      {asinBatches.length} 个关联批次
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Batch Info + Logs side by side */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {/* Left: Batch List */}
-                <div className="lg:col-span-2">
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <Truck className="w-4 h-4" />
-                        关联物流批次
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {asinBatchesQuery.isLoading ? (
-                        <div className="space-y-2">
-                          <Skeleton className="h-12 w-full" />
-                          <Skeleton className="h-12 w-full" />
-                        </div>
-                      ) : asinBatches.length === 0 ? (
-                        <div className="py-8 text-center text-gray-400">
-                          <Boxes className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                          <p className="text-sm">该ASIN暂无关联物流批次</p>
-                          <Button variant="outline" size="sm" className="mt-2" onClick={() => onNavigate("/ops/shipping")}>
-                            前往创建批次
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="border-b text-gray-500">
-                                <th className="text-left py-2 px-2 font-medium">批次名称</th>
-                                <th className="text-left py-2 px-2 font-medium">状态</th>
-                                <th className="text-right py-2 px-2 font-medium">数量</th>
-                                <th className="text-left py-2 px-2 font-medium">物流方式</th>
-                                <th className="text-left py-2 px-2 font-medium">FBA号</th>
-                                <th className="text-left py-2 px-2 font-medium">创建时间</th>
-                                <th className="text-left py-2 px-2 font-medium">操作</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {asinBatches.map((batch: any) => {
-                                const st = STATUS_MAP[batch.currentStep] || { label: `步骤${batch.currentStep}`, color: "bg-gray-100 text-gray-700" };
-                                return (
-                                  <tr key={batch.id} className="border-b last:border-0 hover:bg-gray-50">
-                                    <td className="py-2 px-2 font-medium">{batch.batchName}</td>
-                                    <td className="py-2 px-2">
-                                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${st.color}`}>
-                                        {st.label}
-                                      </span>
-                                    </td>
-                                    <td className="py-2 px-2 text-right">{batch.quantity?.toLocaleString() || "-"}</td>
-                                    <td className="py-2 px-2">{batch.shippingMethod || "-"}</td>
-                                    <td className="py-2 px-2">
-                                      {batch.fbaShipmentId ? (
-                                        <span className="text-xs font-mono text-blue-600">{batch.fbaShipmentId}</span>
-                                      ) : (
-                                        <span className="text-gray-400">-</span>
-                                      )}
-                                    </td>
-                                    <td className="py-2 px-2 text-gray-500">
-                                      {batch.createdAt ? new Date(batch.createdAt).toLocaleDateString() : "-"}
-                                    </td>
-                                    <td className="py-2 px-2">
-                                      <div className="flex items-center gap-1">
-                                        {batch.fbaShipmentId && (
-                                          <Button variant="ghost" size="sm" onClick={() => setShowTrackingDialog(batch.fbaShipmentId)}>
-                                            <Truck className="w-3 h-3 mr-1" />
-                                            追踪
-                                          </Button>
-                                        )}
-                                        <Button variant="ghost" size="sm" onClick={() => onNavigate(`/ops/shipping/${batch.id}`)}>
-                                          <ExternalLink className="w-3 h-3 mr-1" />
-                                          详情
-                                        </Button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Right: Logs Panel */}
-                <div className="lg:col-span-1">
-                  <Card className="h-full flex flex-col">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm flex items-center gap-2">
-                        <History className="w-4 h-4" />
-                        操作日志
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="flex-1 flex flex-col">
-                      {/* Add log */}
-                      <div className="flex gap-2 mb-3">
-                        <Input
-                          placeholder="添加备注日志..."
-                          value={logContent}
-                          onChange={(e) => setLogContent(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && logContent.trim() && selectedAsin) {
-                              addLogMut.mutate({ asin: selectedAsin, content: logContent.trim() });
-                            }
-                          }}
-                          className="text-sm"
-                        />
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            if (logContent.trim() && selectedAsin) {
-                              addLogMut.mutate({ asin: selectedAsin, content: logContent.trim() });
-                            }
-                          }}
-                          disabled={!logContent.trim() || addLogMut.isPending}
-                        >
-                          <Send className="w-3 h-3" />
-                        </Button>
-                      </div>
-
-                      {/* Log list */}
-                      <ScrollArea className="flex-1 max-h-[320px]">
-                        {asinLogsQuery.isLoading ? (
-                          <div className="space-y-2">
-                            <Skeleton className="h-8 w-full" />
-                            <Skeleton className="h-8 w-full" />
-                          </div>
-                        ) : asinLogs.length === 0 ? (
-                          <div className="py-6 text-center text-gray-400">
-                            <MessageSquare className="w-6 h-6 mx-auto mb-2 opacity-30" />
-                            <p className="text-xs">暂无日志记录</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {asinLogs.map((log: any) => (
-                              <div key={log.id} className="border-l-2 border-gray-200 pl-3 py-1">
-                                <p className="text-sm">{log.content}</p>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                  <span className="text-[10px] text-gray-400">
-                                    {new Date(log.createdAt).toLocaleString()}
-                                  </span>
-                                  {log.batchName && (
-                                    <Badge variant="outline" className="text-[10px] py-0 px-1">
-                                      {log.batchName}
-                                    </Badge>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </ScrollArea>
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {!selectedAsin && (
-            <div className="py-8 text-center text-gray-400">
-              <Search className="w-8 h-8 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">输入ASIN查看物流批次详情和操作日志</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="text-center">
-        <Button variant="outline" onClick={() => onNavigate("/ops/shipping")}>
-          <ExternalLink className="w-4 h-4 mr-1" />
-          查看所有物流批次详情
+      {/* View Mode Tabs */}
+      <div className="flex items-center gap-2 border-b pb-2">
+        <Button
+          variant={viewMode === "pipeline" ? "default" : "ghost"}
+          size="sm"
+          onClick={() => setViewMode("pipeline")}
+        >
+          <Layers className="w-3 h-3 mr-1" />
+          批次列表
+        </Button>
+        <Button
+          variant={viewMode === "asin" ? "default" : "ghost"}
+          size="sm"
+          onClick={() => setViewMode("asin")}
+        >
+          <Search className="w-3 h-3 mr-1" />
+          ASIN追踪
         </Button>
       </div>
+
+      {/* ========== View: Batch List (merged from OpsShippingBatch) ========== */}
+      {viewMode === "pipeline" && (
+        <div className="space-y-4">
+          {/* Status Summary */}
+          {batchData && (
+            <div className="grid grid-cols-4 gap-3">
+              {(["active", "completed", "paused", "cancelled"] as const).map(status => {
+                const config = BATCH_STATUS_CONFIG[status];
+                const count = batchData.statusCounts[status];
+                return (
+                  <Card
+                    key={status}
+                    className={`cursor-pointer transition-all hover:shadow-md ${batchStatusFilter === status ? "ring-2 ring-primary" : ""}`}
+                    onClick={() => setBatchStatusFilter(batchStatusFilter === status ? "all" : status)}
+                  >
+                    <CardContent className="p-3 flex items-center gap-3">
+                      <div className={`p-2 rounded-lg ${config.color}`}>
+                        <config.icon className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <div className="text-xl font-bold">{count}</div>
+                        <div className="text-xs text-muted-foreground">{config.label}</div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Filters */}
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="搜索批次名称、物流单号..."
+                value={batchSearchText}
+                onChange={e => setBatchSearchText(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <Select value={batchMethodFilter} onValueChange={setBatchMethodFilter}>
+              <SelectTrigger className="w-32">
+                <Filter className="h-4 w-4 mr-1" />
+                <SelectValue placeholder="运输方式" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部方式</SelectItem>
+                {SHIPPING_METHODS.map(m => (
+                  <SelectItem key={m.value} value={m.value}>{m.value}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Batch List */}
+          {batchListQuery.isLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map(i => (
+                <Card key={i} className="animate-pulse"><CardContent className="p-5 h-24" /></Card>
+              ))}
+            </div>
+          ) : batchData && batchData.items.length > 0 ? (
+            <div className="space-y-2">
+              {batchData.items.map((batch: any) => {
+                const statusCfg = BATCH_STATUS_CONFIG[batch.status] || BATCH_STATUS_CONFIG.active;
+                return (
+                  <Card
+                    key={batch.id}
+                    className="hover:shadow-md transition-all cursor-pointer group"
+                    onClick={() => onNavigate(`/ops/shipping/${batch.id}`)}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center gap-3">
+                          {getMethodIcon(batch.shippingMethod)}
+                          <div>
+                            <div className="font-semibold flex items-center gap-2">
+                              <span className="text-muted-foreground text-xs">#{batch.batchNumber}</span>
+                              {batch.batchName}
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-3">
+                              {batch.storeName && <span>{batch.storeName}</span>}
+                              {batch.sourceWarehouse && <span>{batch.sourceWarehouse} → {batch.destinationWarehouse || "FBA"}</span>}
+                              <span>{new Date(batch.createdAt).toLocaleDateString()}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className={statusCfg.color}>
+                            <statusCfg.icon className="h-3 w-3 mr-1" />
+                            {statusCfg.label}
+                          </Badge>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
+                              <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100">
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" onClick={e => e.stopPropagation()}>
+                              {batch.status === "active" && (
+                                <DropdownMenuItem onClick={() => updateStatusMutation.mutate({ batchId: batch.id, status: "paused" })}>
+                                  <Pause className="h-4 w-4 mr-2" /> 暂停
+                                </DropdownMenuItem>
+                              )}
+                              {batch.status === "paused" && (
+                                <DropdownMenuItem onClick={() => updateStatusMutation.mutate({ batchId: batch.id, status: "active" })}>
+                                  <Play className="h-4 w-4 mr-2" /> 恢复
+                                </DropdownMenuItem>
+                              )}
+                              {batch.status !== "cancelled" && (
+                                <DropdownMenuItem onClick={() => updateStatusMutation.mutate({ batchId: batch.id, status: "cancelled" })} className="text-red-600">
+                                  <XCircle className="h-4 w-4 mr-2" /> 取消
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem onClick={() => { if (confirm("确定删除此批次？")) deleteMutation.mutate({ id: batch.id }); }} className="text-red-600">
+                                <Trash2 className="h-4 w-4 mr-2" /> 删除
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
+                      </div>
+                      {/* Progress Bar */}
+                      <div className="mt-1 mb-2">
+                        <ShippingStepProgress currentStep={batch.currentStep} status={batch.status} />
+                      </div>
+                      {/* Quantity Flow */}
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1"><Package className="h-3 w-3" />计划: {batch.plannedQuantity}</span>
+                        {batch.shippedQuantity > 0 && <span>发货: {batch.shippedQuantity}</span>}
+                        {batch.amazonReceivedQuantity > 0 && <span>亚马逊接收: {batch.amazonReceivedQuantity}</span>}
+                        {batch.amazonStockedQuantity > 0 && <span className="text-green-600 font-medium">上架: {batch.amazonStockedQuantity}</span>}
+                        {batch.fbaShipmentId && (
+                          <span className="ml-auto font-mono text-blue-600 text-[10px]">
+                            FBA: {batch.fbaShipmentId}
+                          </span>
+                        )}
+                        <ChevronRight className="h-4 w-4 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+              {/* Pagination */}
+              {batchData.total > 15 && (
+                <div className="flex items-center justify-center gap-2 pt-2">
+                  <Button variant="outline" size="sm" disabled={batchPage <= 1} onClick={() => setBatchPage(p => p - 1)}>上一页</Button>
+                  <span className="text-sm text-muted-foreground">第 {batchPage} 页 / 共 {Math.ceil(batchData.total / 15)} 页</span>
+                  <Button variant="outline" size="sm" disabled={batchPage >= Math.ceil(batchData.total / 15)} onClick={() => setBatchPage(p => p + 1)}>下一页</Button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="p-10 text-center">
+                <Truck className="h-10 w-10 mx-auto text-muted-foreground/30 mb-3" />
+                <h3 className="text-base font-medium mb-1">暂无物流批次</h3>
+                <p className="text-sm text-muted-foreground mb-3">点击“同步领星批次”自动拉取，或手动创建批次</p>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* ========== View: ASIN Tracking ========== */}
+      {viewMode === "asin" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Search className="w-4 h-4" />
+              ASIN物流追踪
+            </CardTitle>
+            <CardDescription>输入ASIN查看该产品的物流批次信息和操作日志</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* ASIN Search */}
+            <div className="relative">
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Input
+                    placeholder="输入ASIN搜索..."
+                    value={asinSearch}
+                    onChange={(e) => setAsinSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && asinSearch.trim()) {
+                        setSelectedAsin(asinSearch.trim().toUpperCase());
+                      }
+                    }}
+                    className="pl-9"
+                  />
+                </div>
+                <Button onClick={() => { if (asinSearch.trim()) setSelectedAsin(asinSearch.trim().toUpperCase()); }} disabled={!asinSearch.trim()}>查询</Button>
+                {selectedAsin && (
+                  <Button variant="outline" onClick={() => { setSelectedAsin(null); setAsinSearch(""); }}>清除</Button>
+                )}
+              </div>
+              {filteredAsins.length > 0 && !selectedAsin && (
+                <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                  {filteredAsins.map((asin: string) => (
+                    <button key={asin} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2" onClick={() => { setSelectedAsin(asin); setAsinSearch(asin); }}>
+                      <Package className="w-3 h-3 text-gray-400" />{asin}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Selected ASIN Content */}
+            {selectedAsin && (
+              <div className="space-y-4">
+                <Card className="bg-gray-50 border-gray-200">
+                  <CardContent className="py-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h3 className="font-semibold text-lg">{selectedAsin}</h3>
+                        {asinInfo ? (
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-2 mt-3 text-sm">
+                            <div><span className="text-gray-500">SKU:</span> <span className="font-medium">{asinInfo.msku || "-"}</span></div>
+                            <div><span className="text-gray-500">标题:</span> <span className="font-medium truncate max-w-[200px] inline-block align-bottom">{asinInfo.title || "-"}</span></div>
+                            <div><span className="text-gray-500">店铺:</span> <span className="font-medium">{asinInfo.storeName || "-"}</span></div>
+                            <div><span className="text-gray-500">运营:</span> <span className="font-medium">{asinInfo.operator || "-"}</span></div>
+                            <div><span className="text-gray-500">可售库存:</span> <span className="font-medium">{asinInfo.fulfillableQty?.toLocaleString() || "0"}</span></div>
+                            <div><span className="text-gray-500">日均销量:</span> <span className="font-medium">{asinInfo.avgDailySales?.toFixed(1) || "0"}</span></div>
+                            <div><span className="text-gray-500">可售天数:</span> <span className="font-medium">{asinInfo.daysOfSupply || "0"}</span></div>
+                            <div><span className="text-gray-500">FBA在途:</span> <span className="font-medium">{asinInfo.inboundQty?.toLocaleString() || "0"}</span></div>
+                          </div>
+                        ) : (
+                          <p className="text-sm text-gray-500 mt-1">未找到该ASIN的库存信息</p>
+                        )}
+                      </div>
+                      <Badge variant="outline" className="shrink-0">{asinBatches.length} 个关联批次</Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div className="lg:col-span-2">
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <Truck className="w-4 h-4" />关联物流批次
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {asinBatchesQuery.isLoading ? (
+                          <div className="space-y-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
+                        ) : asinBatches.length === 0 ? (
+                          <div className="py-8 text-center text-gray-400">
+                            <Boxes className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                            <p className="text-sm">该ASIN暂无关联物流批次</p>
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="border-b text-gray-500">
+                                  <th className="text-left py-2 px-2 font-medium">批次名称</th>
+                                  <th className="text-left py-2 px-2 font-medium">状态</th>
+                                  <th className="text-right py-2 px-2 font-medium">数量</th>
+                                  <th className="text-left py-2 px-2 font-medium">物流方式</th>
+                                  <th className="text-left py-2 px-2 font-medium">创建时间</th>
+                                  <th className="text-left py-2 px-2 font-medium">操作</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {asinBatches.map((batch: any) => {
+                                  const st = PIPELINE_STEP_MAP[batch.currentStep] || { label: `步骤${batch.currentStep}`, color: "bg-gray-100 text-gray-700" };
+                                  return (
+                                    <tr key={batch.id} className="border-b last:border-0 hover:bg-gray-50">
+                                      <td className="py-2 px-2 font-medium">{batch.batchName}</td>
+                                      <td className="py-2 px-2">
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${st.color}`}>{st.label}</span>
+                                      </td>
+                                      <td className="py-2 px-2 text-right">{batch.quantity?.toLocaleString() || "-"}</td>
+                                      <td className="py-2 px-2">{batch.shippingMethod || "-"}</td>
+                                      <td className="py-2 px-2 text-gray-500">{batch.createdAt ? new Date(batch.createdAt).toLocaleDateString() : "-"}</td>
+                                      <td className="py-2 px-2">
+                                        <Button variant="ghost" size="sm" onClick={() => onNavigate(`/ops/shipping/${batch.id}`)}>
+                                          <ExternalLink className="w-3 h-3 mr-1" />详情
+                                        </Button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <div className="lg:col-span-1">
+                    <Card className="h-full flex flex-col">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm flex items-center gap-2">
+                          <History className="w-4 h-4" />操作日志
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="flex-1 flex flex-col">
+                        <div className="flex gap-2 mb-3">
+                          <Input
+                            placeholder="添加备注日志..."
+                            value={logContent}
+                            onChange={(e) => setLogContent(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && logContent.trim() && selectedAsin) {
+                                addLogMut.mutate({ asin: selectedAsin, content: logContent.trim() });
+                              }
+                            }}
+                            className="text-sm"
+                          />
+                          <Button size="sm" onClick={() => { if (logContent.trim() && selectedAsin) addLogMut.mutate({ asin: selectedAsin, content: logContent.trim() }); }} disabled={!logContent.trim() || addLogMut.isPending}>
+                            <Send className="w-3 h-3" />
+                          </Button>
+                        </div>
+                        <ScrollArea className="flex-1 max-h-[320px]">
+                          {asinLogsQuery.isLoading ? (
+                            <div className="space-y-2"><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-full" /></div>
+                          ) : asinLogs.length === 0 ? (
+                            <div className="py-6 text-center text-gray-400">
+                              <MessageSquare className="w-6 h-6 mx-auto mb-2 opacity-30" />
+                              <p className="text-xs">暂无日志记录</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {asinLogs.map((log: any) => (
+                                <div key={log.id} className="border-l-2 border-gray-200 pl-3 py-1">
+                                  <p className="text-sm">{log.content}</p>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    <span className="text-[10px] text-gray-400">{new Date(log.createdAt).toLocaleString()}</span>
+                                    {log.batchName && <Badge variant="outline" className="text-[10px] py-0 px-1">{log.batchName}</Badge>}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </ScrollArea>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {!selectedAsin && (
+              <div className="py-8 text-center text-gray-400">
+                <Search className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">输入ASIN查看物流批次详情和操作日志</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* NextSLS 物流追踪 Dialog */}
       <Dialog open={!!showTrackingDialog} onOpenChange={(open) => !open && setShowTrackingDialog(null)}>
@@ -1248,7 +1569,6 @@ function InventoryPipelineView({ pipeline, onNavigate }: { pipeline: any; onNavi
               </div>
             ) : trackingQuery.data?.tracking ? (
               <div className="space-y-3">
-                {/* 物流概要 */}
                 <div className="bg-gray-50 rounded-lg p-3">
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <div><span className="text-gray-500">物流商:</span> <span className="font-medium">{(trackingQuery.data.tracking as any).carrierCode || '-'}</span></div>
@@ -1257,7 +1577,6 @@ function InventoryPipelineView({ pipeline, onNavigate }: { pipeline: any; onNavi
                     <div><span className="text-gray-500">更新时间:</span> <span className="font-medium">{(trackingQuery.data.tracking as any).traces?.[0]?.time ? new Date((trackingQuery.data.tracking as any).traces[0].time).toLocaleString() : '-'}</span></div>
                   </div>
                 </div>
-                {/* 路由时间线 */}
                 {(trackingQuery.data.tracking as any).traces && (trackingQuery.data.tracking as any).traces.length > 0 ? (
                   <div className="space-y-0">
                     <h4 className="text-sm font-medium mb-2">物流路由</h4>
