@@ -238,16 +238,16 @@ export default function OpsProductDetail() {
                     <tbody>
                       {[
                         { label: "产品收入", budget: profitData.budget.revenue, actual: profitData.actual.revenue, current: profitData.current.revenue },
-                        { label: "Amazon开支", budget: null, actual: profitData.actual.amazonFees, current: 0, indent: false },
-                        { label: "Amazon佣金", budget: null, actual: profitData.actual.referralFee, current: 0, indent: true },
-                        { label: "FBA Fees", budget: null, actual: profitData.actual.fbaFee, current: 0, indent: true },
-                        { label: "Ads Cost", budget: null, actual: profitData.actual.adSpend, current: 0, indent: true },
-                        { label: "仓租", budget: null, actual: profitData.actual.storageFee, current: 0, indent: true },
-                        { label: "实收", budget: null, actual: profitData.actual.netRevenue, current: 0, bold: true },
-                        { label: "总固定成本", budget: null, actual: profitData.actual.fixedCosts, current: 0 },
-                        { label: "采购成本", budget: null, actual: profitData.actual.productCost, current: 0, indent: true },
-                        { label: "Amazon运费", budget: null, actual: profitData.actual.shippingCost, current: 0, indent: true },
-                        { label: "关税", budget: null, actual: profitData.actual.tariff, current: 0, indent: true },
+                        { label: "Amazon开支", budget: null, actual: profitData.actual.amazonFees, current: profitData.current.amazonFees, indent: false },
+                        { label: "Amazon佣金", budget: null, actual: profitData.actual.referralFee, current: profitData.current.referralFee, indent: true },
+                        { label: "FBA Fees", budget: null, actual: profitData.actual.fbaFee, current: profitData.current.fbaFee, indent: true },
+                        { label: "Ads Cost", budget: null, actual: profitData.actual.adSpend, current: profitData.current.adSpend, indent: true },
+                        { label: "仓租", budget: null, actual: profitData.actual.storageFee, current: profitData.current.storageFee, indent: true },
+                        { label: "实收", budget: null, actual: profitData.actual.netRevenue, current: profitData.current.netRevenue, bold: true },
+                        { label: "总固定成本", budget: null, actual: profitData.actual.fixedCosts, current: profitData.current.fixedCosts },
+                        { label: "采购成本", budget: null, actual: profitData.actual.productCost, current: profitData.current.productCost, indent: true },
+                        { label: "Amazon运费", budget: null, actual: profitData.actual.shippingCost, current: profitData.current.shippingCost, indent: true },
+                        { label: "关税", budget: null, actual: profitData.actual.tariff, current: profitData.current.tariff, indent: true },
                         { label: "利润", budget: profitData.budget.profit, actual: profitData.actual.profit, current: profitData.current.profit, bold: true, highlight: true },
                       ].map((row, idx) => (
                         <tr key={idx} className={`border-b last:border-0 ${row.highlight ? "bg-emerald-50/50" : ""}`}>

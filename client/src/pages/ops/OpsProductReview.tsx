@@ -49,6 +49,13 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
   const aiAnalysis = trpc.productOps.aiReviewAnalysis.useMutation({
     onSuccess: () => { refetch(); toast.success("AI复盘分析完成"); },
   });
+  const syncReview = trpc.productOps.syncReviewFromLingxing.useMutation({
+    onSuccess: (data) => {
+      refetch();
+      toast.success(`复盘数据已从领星同步 (基线: ${data.dateRanges.baseline.start}~${data.dateRanges.baseline.end}, 实际: ${data.dateRanges.actual.start}~${data.dateRanges.actual.end})`);
+    },
+    onError: (err) => { toast.error(`同步失败: ${err.message}`); },
+  });
 
   const [showCreate, setShowCreate] = useState(false);
   const [selectedReviewId, setSelectedReviewId] = useState<number | null>(null);
@@ -160,6 +167,19 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {selectedReview && (
+            <Button size="sm" variant="outline" className="gap-1"
+              disabled={syncReview.isPending}
+              onClick={() => syncReview.mutate({
+                reviewId: selectedReview.id,
+                productId,
+                periodType: (selectedReview.periodType || 'monthly') as any,
+                syncTarget: 'both',
+              })}>
+              {syncReview.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <TrendingUp className="h-3 w-3" />}
+              同步领星数据
+            </Button>
+          )}
           {reviews && reviews.length >= 2 && (
             <Button size="sm" variant="outline" onClick={() => setShowCompare(!showCompare)}>
               <BarChart3 className="h-3 w-3 mr-1" />

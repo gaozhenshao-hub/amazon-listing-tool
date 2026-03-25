@@ -83,6 +83,18 @@ export default function OpsProductPlan({ productId, parentAsin, productTitle }: 
   const [showAddSummary, setShowAddSummary] = useState(false);
   const [showEditBaseline, setShowEditBaseline] = useState(false);
   const [showEditTargets, setShowEditTargets] = useState(false);
+  const [currentPeriod, setCurrentPeriod] = useState<"week" | "biweek" | "month">("month");
+
+  // Sync current data from Lingxing
+  const syncCurrentData = trpc.productOps.syncPlanCurrentData.useMutation({
+    onSuccess: (data) => {
+      refetchPlans();
+      toast.success(`当期数据已同步 (近${data.period === 'week' ? '7' : data.period === 'biweek' ? '14' : '30'}天)`);
+    },
+    onError: (err) => {
+      toast.error(`同步失败: ${err.message}`);
+    },
+  });
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     baseline: true, current: true, targets: true, actions: true, summaries: false,
   });
@@ -280,8 +292,32 @@ export default function OpsProductPlan({ productId, parentAsin, productTitle }: 
                   <CardTitle className="text-base flex items-center gap-2">
                     <TrendingUp className="h-4 w-4 text-emerald-600" />
                     当期数据
+                    <Select
+                      value={currentPeriod}
+                      onValueChange={(v) => { setCurrentPeriod(v as any); }}
+                    >
+                      <SelectTrigger className="w-[100px] h-7 text-xs" onClick={(e) => e.stopPropagation()}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="week">近7天</SelectItem>
+                        <SelectItem value="biweek">近14天</SelectItem>
+                        <SelectItem value="month">近30天</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </CardTitle>
                   <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
+                      disabled={syncCurrentData.isPending}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (activePlanId) {
+                          syncCurrentData.mutate({ planId: activePlanId, productId, period: currentPeriod });
+                        }
+                      }}>
+                      {syncCurrentData.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <TrendingUp className="h-3 w-3" />}
+                      同步领星数据
+                    </Button>
                     <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); setShowEditBaseline(true); loadCurrentForm(); }}>
                       <Edit2 className="h-3 w-3" />
                     </Button>
@@ -302,6 +338,11 @@ export default function OpsProductPlan({ productId, parentAsin, productTitle }: 
                     <DataCell label="Rating数量" value={String(activePlan.currentRatingCount || "")} compare={String(activePlan.baselineRatingCount || "")} />
                     <DataCell label="Rating评分" value={activePlan.currentRatingScore} compare={activePlan.baselineRatingScore} />
                   </div>
+                  {activePlan.currentDailySales && Number(activePlan.currentDailySales) > 0 && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      ℹ️ 数据周期: 近{currentPeriod === 'week' ? '7' : currentPeriod === 'biweek' ? '14' : '30'}天 | 与基期数据对比，绿色表示提升，红色表示下降
+                    </p>
+                  )}
                 </CardContent>
               )}
             </Card>
