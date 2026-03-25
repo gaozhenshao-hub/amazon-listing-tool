@@ -9,7 +9,7 @@ import {
   adAnalysisTasks, adAutomationRules, searchTermActions,
   competitorMonitors, competitorSnapshots, competitorReports,
   lingxingApiLogs, userSettings, asinStatusCache, asinPermissions,
-  asinTagDefinitions, asinTagAssignments, productProfiles
+  asinTagDefinitions, asinTagAssignments, productProfiles, productVariants
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, lte } from "drizzle-orm";
 
@@ -334,20 +334,47 @@ export const operationsRouter = router({
         return input.sortOrder === "asc" ? valA - valB : valB - valA;
       });
 
-      // Enrich with operator info from product_profiles
+      // Enrich with operator and store info from product_profiles
       try {
         const db = await getDb();
+        // Get all product profiles for this user
         const profiles = await db!.select({
           parentAsin: productProfiles.parentAsin,
           operator: productProfiles.operator,
           storeName: productProfiles.storeName,
         }).from(productProfiles).where(eq(productProfiles.userId, ctx.user.id));
         const profileMap = new Map(profiles.map(p => [p.parentAsin, p]));
+        
+        // Build childAsin → parentAsin mapping via product_profiles + product_variants join
+        const variantProfiles = await db!.select({
+          childAsin: productVariants.childAsin,
+          parentAsin: productProfiles.parentAsin,
+          operator: productProfiles.operator,
+          storeName: productProfiles.storeName,
+        }).from(productVariants)
+          .innerJoin(productProfiles, eq(productVariants.productId, productProfiles.id))
+          .where(eq(productProfiles.userId, ctx.user.id));
+        
+        const childProfileMap = new Map(variantProfiles.map(vp => [vp.childAsin, vp]));
+        
         items = items.map((item: any) => {
-          const profile = profileMap.get(item.asin);
+          // Try direct parentAsin match first
+          let profile = profileMap.get(item.asin);
+          // If not found, try childAsin mapping
+          if (!profile) {
+            const childProfile = childProfileMap.get(item.asin);
+            if (childProfile) {
+              profile = profileMap.get(childProfile.parentAsin) || {
+                parentAsin: childProfile.parentAsin,
+                operator: childProfile.operator,
+                storeName: childProfile.storeName,
+              };
+            }
+          }
           return {
             ...item,
-            operator: profile?.operator || '',
+            operator: profile?.operator || item.operator || '',
+            store_name: item.store_name || profile?.storeName || '',
           };
         });
       } catch (err) {

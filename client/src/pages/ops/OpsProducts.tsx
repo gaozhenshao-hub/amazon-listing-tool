@@ -54,6 +54,8 @@ export default function OpsProducts() {
   const [showCreate, setShowCreate] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [marketplaceFilter, setMarketplaceFilter] = useState("ALL");
+  const [operatorFilter, setOperatorFilter] = useState("ALL");
+  const [storeFilter, setStoreFilter] = useState("ALL");
   const [form, setForm] = useState({
     parentAsin: "", title: "", brand: "", category: "", marketplace: "US",
     budgetRevenue: "", budgetProfit: "", budgetAcos: "", notes: "",
@@ -70,6 +72,14 @@ export default function OpsProducts() {
     if (marketplaceFilter !== "ALL") {
       list = list.filter(p => p.marketplace === marketplaceFilter);
     }
+    // Filter by operator
+    if (operatorFilter !== "ALL") {
+      list = list.filter(p => (p.operator || "") === operatorFilter);
+    }
+    // Filter by store
+    if (storeFilter !== "ALL") {
+      list = list.filter(p => (p.storeName || "") === storeFilter);
+    }
     // Filter by search
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
@@ -82,11 +92,23 @@ export default function OpsProducts() {
       );
     }
     return list;
-  }, [products, marketplaceFilter, searchTerm]);
+  }, [products, marketplaceFilter, operatorFilter, storeFilter, searchTerm]);
 
   // Unique marketplaces from data
   const availableMarketplaces = useMemo(() => {
     const set = new Set((products || []).map(p => p.marketplace || "US"));
+    return Array.from(set).sort();
+  }, [products]);
+
+  // Unique operators from data
+  const availableOperators = useMemo(() => {
+    const set = new Set((products || []).map(p => p.operator || "").filter(Boolean));
+    return Array.from(set).sort();
+  }, [products]);
+
+  // Unique stores from data
+  const availableStores = useMemo(() => {
+    const set = new Set((products || []).map(p => p.storeName || "").filter(Boolean));
     return Array.from(set).sort();
   }, [products]);
 
@@ -147,6 +169,38 @@ export default function OpsProducts() {
             </SelectContent>
           </Select>
         </div>
+        {availableStores.length > 0 && (
+          <div className="flex items-center gap-1">
+            <Store className="h-4 w-4 text-muted-foreground" />
+            <Select value={storeFilter} onValueChange={setStoreFilter}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="店铺筛选" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">全部店铺</SelectItem>
+                {availableStores.map(s => (
+                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        {availableOperators.length > 0 && (
+          <div className="flex items-center gap-1">
+            <User className="h-4 w-4 text-muted-foreground" />
+            <Select value={operatorFilter} onValueChange={setOperatorFilter}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="运营筛选" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">全部运营</SelectItem>
+                {availableOperators.map(o => (
+                  <SelectItem key={o} value={o}>{o}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {/* Summary Cards */}

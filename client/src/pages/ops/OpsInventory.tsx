@@ -60,6 +60,8 @@ export default function OpsInventory() {
   const [newTagHide, setNewTagHide] = useState(true);
   const [editingTag, setEditingTag] = useState<any>(null);
   const [tagFilterMode, setTagFilterMode] = useState<"hide" | "show_all">("hide");
+  const [operatorFilter, setOperatorFilter] = useState("all");
+  const [storeFilter, setStoreFilter] = useState("all");
   const { marketplace } = useMarketplace();
 
   // Tag system
@@ -141,10 +143,29 @@ export default function OpsInventory() {
   });
 
   const allItems = data?.items || [];
-  const items = tagFilterMode === "hide"
-    ? allItems.filter((item: any) => !hiddenAsins.has(item.asin))
-    : allItems;
+  const items = useMemo(() => {
+    let list = tagFilterMode === "hide"
+      ? allItems.filter((item: any) => !hiddenAsins.has(item.asin))
+      : allItems;
+    if (operatorFilter !== "all") {
+      list = list.filter((item: any) => (item.operator || "") === operatorFilter);
+    }
+    if (storeFilter !== "all") {
+      list = list.filter((item: any) => (item.store_name || "") === storeFilter);
+    }
+    return list;
+  }, [allItems, tagFilterMode, hiddenAsins, operatorFilter, storeFilter]);
   const stats = data?.stats;
+
+  // Available operators and stores for filters
+  const availableOperators = useMemo((): string[] => {
+    const arr: string[] = allItems.map((i: any) => String(i.operator || "")).filter(Boolean);
+    return Array.from(new Set(arr)).sort();
+  }, [allItems]);
+  const availableStores = useMemo((): string[] => {
+    const arr: string[] = allItems.map((i: any) => String(i.store_name || "")).filter(Boolean);
+    return Array.from(new Set(arr)).sort();
+  }, [allItems]);
   const pipeline = pipelineQuery.data;
   const predictions = predictionsQuery.data || [];
 
@@ -345,6 +366,33 @@ export default function OpsInventory() {
                 {sortOrder === "asc" ? "↑升序" : "↓降序"}
               </Button>
             </div>
+            {availableStores.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Warehouse className="w-4 h-4 text-gray-400" />
+                <Select value={storeFilter} onValueChange={setStoreFilter}>
+                  <SelectTrigger className="w-36 h-8 text-sm"><SelectValue placeholder="店铺" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部店铺</SelectItem>
+                    {availableStores.map((s: string) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {availableOperators.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Select value={operatorFilter} onValueChange={setOperatorFilter}>
+                  <SelectTrigger className="w-32 h-8 text-sm"><SelectValue placeholder="运营" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部运营</SelectItem>
+                    {availableOperators.map((o: string) => (
+                      <SelectItem key={o} value={o}>{o}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <Button
                 variant={tagFilterMode === "hide" ? "default" : "outline"}
