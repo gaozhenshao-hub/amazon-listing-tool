@@ -2271,3 +2271,13 @@
 - [x] 执行复盘：基线vs实际数据对比表从领星抓取填充
 - [x] 执行复盘：修复NaN%显示问题（同步数据后自动修复）
 - [x] 侧边栏：已确认无"物流批次管理"入口（上次已移除）
+
+## 模块三全面审查与数据抓取修复（第二轮）
+- [x] 利润看板：改用ASIN专用API(/bd/profit/report/open/report/asin/list)按产品parentAsin过滤
+- [x] 利润看板：增加MSKU列表fallback，按childAsin/SKU二次过滤
+- [x] 库存概览：FBA库存API增加keyword搜索参数，精准匹配产品ASIN
+- [x] 库存概览：增加全量列表fallback，按childAsin/seller_sku过滤
+- [x] 广告概览：新增spProductAdReports API按ASIN过滤产品级广告数据
+- [x] 广告概览：Campaign级别按ASIN/产品标题关键词过滤
+- [x] Seller缓存：新增findMatchedSid/getCachedSellers共享缓存，避免重复请求seller列表
+- [x] 测试验证：13个新测试覆盖ASIN过滤、缓存、聚合逻辑（全部通过）

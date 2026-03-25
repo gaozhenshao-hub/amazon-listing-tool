@@ -399,6 +399,14 @@ export const productOpsRouter = router({
 
       const adapter = getLingxingAdapter();
 
+      // Get product variants (child ASINs and SKUs) for filtering
+      const variants = await db!.select().from(productVariants)
+        .where(eq(productVariants.productId, input.productId));
+      const childAsins = variants.map(v => v.childAsin).filter(Boolean);
+      const skus = variants.map(v => v.sku).filter(Boolean) as string[];
+      const parentAsin = product.parentAsin;
+      console.log(`[ProfitSummary] Product ${parentAsin}, childAsins=[${childAsins.join(',')}], skus=[${skus.join(',')}]`);
+
       // Helper to aggregate profit items
       const aggregateProfit = (items: any[]) => {
         let totalRevenue = 0, totalProductCost = 0, totalAdSpend = 0;
@@ -431,25 +439,68 @@ export const productOpsRouter = router({
         };
       };
 
-      // Fetch 30-day profit data (实况预测)
-      const profitRes = await adapter.request({
-        path: "/bd/profit/report/open/report/msku/list",
-        body: { startDate: getDateNDaysAgo(30), endDate: getToday(), start_date: getDateNDaysAgo(30), end_date: getToday() },
-      });
-      const rawProfit = profitRes.data || [];
-      const items30 = Array.isArray(rawProfit) ? rawProfit : (rawProfit as any).records || (rawProfit as any).list || [];
-      const actual = aggregateProfit(items30);
+      // Filter items by this product's ASINs/SKUs
+      const filterByProduct = (items: any[]) => {
+        return items.filter((item: any) => {
+          const itemAsin = item.asin || item.parentAsin || '';
+          const itemSku = item.localSku || item.msku || item.seller_sku || '';
+          return childAsins.includes(itemAsin) || itemAsin === parentAsin ||
+                 skus.includes(itemSku);
+        });
+      };
+
+      // Strategy: First try ASIN-specific API, then fallback to MSKU list with filtering
+      let actual30Items: any[] = [];
+      let current7Items: any[] = [];
+
+      // Try ASIN-specific profit API first (more precise)
+      try {
+        const asinRes = await adapter.request({
+          path: "/bd/profit/report/open/report/asin/list",
+          body: { startDate: getDateNDaysAgo(30), endDate: getToday(), start_date: getDateNDaysAgo(30), end_date: getToday(), asin: parentAsin },
+        });
+        const rawAsin = asinRes.data || [];
+        actual30Items = Array.isArray(rawAsin) ? rawAsin : (rawAsin as any).records || (rawAsin as any).list || [];
+        console.log(`[ProfitSummary] ASIN API returned ${actual30Items.length} items for ${parentAsin}`);
+      } catch (err: any) {
+        console.warn(`[ProfitSummary] ASIN API failed, trying MSKU list: ${err.message}`);
+      }
+
+      // If ASIN API returned no data, fallback to MSKU list with product filtering
+      if (actual30Items.length === 0) {
+        const profitRes = await adapter.request({
+          path: "/bd/profit/report/open/report/msku/list",
+          body: { startDate: getDateNDaysAgo(30), endDate: getToday(), length: 500, summaryEnabled: true },
+        });
+        const rawProfit = profitRes.data || [];
+        const allItems = Array.isArray(rawProfit) ? rawProfit : (rawProfit as any).records || (rawProfit as any).list || [];
+        actual30Items = filterByProduct(allItems);
+        console.log(`[ProfitSummary] MSKU list: ${allItems.length} total, ${actual30Items.length} matched for ${parentAsin}`);
+      }
+      const actual = aggregateProfit(actual30Items);
 
       // Fetch 7-day profit data (现时 - real-time recent)
       let current = { revenue: 0, amazonFees: 0, referralFee: 0, fbaFee: 0, adSpend: 0, storageFee: 0, netRevenue: 0, fixedCosts: 0, productCost: 0, shippingCost: 0, tariff: 0, profit: 0, profitMargin: 0, orders: 0, units: 0 };
       try {
-        const recentRes = await adapter.request({
-          path: "/bd/profit/report/open/report/msku/list",
-          body: { startDate: getDateNDaysAgo(7), endDate: getToday(), start_date: getDateNDaysAgo(7), end_date: getToday() },
+        // Try ASIN API for 7-day data
+        const asinRes7 = await adapter.request({
+          path: "/bd/profit/report/open/report/asin/list",
+          body: { startDate: getDateNDaysAgo(7), endDate: getToday(), start_date: getDateNDaysAgo(7), end_date: getToday(), asin: parentAsin },
         });
-        const rawRecent = recentRes.data || [];
-        const items7 = Array.isArray(rawRecent) ? rawRecent : (rawRecent as any).records || (rawRecent as any).list || [];
-        current = aggregateProfit(items7);
+        const raw7 = asinRes7.data || [];
+        current7Items = Array.isArray(raw7) ? raw7 : (raw7 as any).records || (raw7 as any).list || [];
+
+        if (current7Items.length === 0) {
+          // Fallback to MSKU list
+          const recentRes = await adapter.request({
+            path: "/bd/profit/report/open/report/msku/list",
+            body: { startDate: getDateNDaysAgo(7), endDate: getToday(), length: 500, summaryEnabled: true },
+          });
+          const rawRecent = recentRes.data || [];
+          const allRecent = Array.isArray(rawRecent) ? rawRecent : (rawRecent as any).records || (rawRecent as any).list || [];
+          current7Items = filterByProduct(allRecent);
+        }
+        current = aggregateProfit(current7Items);
       } catch (err: any) {
         console.warn(`[ProfitSummary] Recent 7-day fetch error: ${err.message}`);
       }
@@ -478,38 +529,60 @@ export const productOpsRouter = router({
 
       const adapter = getLingxingAdapter();
 
-      // Get seller list to find matching sid for this product's store
-      let matchedSid: number | string = 1;
-      try {
-        const sellerRes = await adapter.request({ path: "/erp/sc/data/seller/lists" });
-        const sellers = Array.isArray(sellerRes.data) ? sellerRes.data : (sellerRes.data as any)?.list || [];
-        // Match by storeName or marketplace
-        const marketplaceMap: Record<string, number[]> = {
-          'US': [1], 'UK': [4], 'DE': [5], 'FR': [6], 'IT': [7], 'ES': [8], 'JP': [9], 'AU': [10], 'CA': [2], 'MX': [3],
-        };
-        const matched = sellers.find((s: any) =>
-          (product.storeName && (s.name === product.storeName || s.wname === product.storeName || s.account_name === product.storeName)) ||
-          (product.marketplace && (s.marketplace === product.marketplace || (marketplaceMap[product.marketplace] || []).includes(s.mid)))
-        );
-        if (matched) matchedSid = matched.sid;
-      } catch (err: any) {
-        console.warn(`[InventorySummary] Seller list fetch error: ${err.message}`);
+      // Get seller list (with cache) to find matching sid
+      const { matchedSid } = await findMatchedSid(adapter, product);
+      console.log(`[InventorySummary] Product ${product.parentAsin}, matchedSid=${matchedSid}`);
+
+      // Build search keywords from product's ASINs and SKUs for targeted FBA query
+      const childAsins = variants.map(v => v.childAsin).filter(Boolean);
+      const skus = variants.map(v => v.sku).filter(Boolean) as string[];
+      const searchKeywords = [...childAsins, ...skus];
+
+      // Fetch FBA inventory - try with search keyword first for precision
+      let invList: any[] = [];
+      for (const keyword of [product.parentAsin, ...searchKeywords.slice(0, 3)]) {
+        try {
+          const invRes = await adapter.request({
+            path: "/erp/sc/routing/fba/fbaStock/fbaList",
+            body: { sid: matchedSid, offset: 0, length: 200, keyword },
+          });
+          const rawInv = invRes.data || [];
+          const items = Array.isArray(rawInv) ? rawInv : (rawInv as any).list || [];
+          // Merge unique items
+          for (const item of items) {
+            const itemAsin = item.asin || item.fnsku || '';
+            if (!invList.find((existing: any) => (existing.asin || existing.fnsku) === itemAsin)) {
+              invList.push(item);
+            }
+          }
+        } catch (err: any) {
+          console.warn(`[InventorySummary] FBA search for '${keyword}' failed: ${err.message}`);
+        }
       }
 
-      // Fetch FBA inventory with matched sid
-      const invRes = await adapter.request({
-        path: "/erp/sc/routing/fba/fbaStock/fbaList",
-        body: { sid: matchedSid, offset: 0, length: 500 },
-      });
-
-      // Normalize: FBA API returns {total, list:[...]} or array
-      const rawInv = invRes.data || [];
-      const invList = Array.isArray(rawInv) ? rawInv : (rawInv as any).list || [];
+      // If keyword search returned nothing, fallback to full list with filtering
+      if (invList.length === 0) {
+        try {
+          const invRes = await adapter.request({
+            path: "/erp/sc/routing/fba/fbaStock/fbaList",
+            body: { sid: matchedSid, offset: 0, length: 500 },
+          });
+          const rawInv = invRes.data || [];
+          const allItems = Array.isArray(rawInv) ? rawInv : (rawInv as any).list || [];
+          invList = allItems.filter((inv: any) =>
+            childAsins.includes(inv.asin) || skus.includes(inv.seller_sku) || inv.asin === product.parentAsin
+          );
+          console.log(`[InventorySummary] Fallback: ${allItems.length} total, ${invList.length} matched`);
+        } catch (err: any) {
+          console.warn(`[InventorySummary] Full FBA list fetch error: ${err.message}`);
+        }
+      }
+      console.log(`[InventorySummary] Found ${invList.length} inventory records for ${product.parentAsin}`);
 
       // Build inventory summary per variant
       const variantInventory = variants.map(v => {
         const matched = invList.find((inv: Record<string, string>) =>
-          inv.asin === v.childAsin || inv.seller_sku === v.sku
+          inv.asin === v.childAsin || inv.seller_sku === v.sku || inv.fnsku === v.childAsin
         );
         const inv = matched as Record<string, number> | undefined;
         return {
@@ -555,32 +628,55 @@ export const productOpsRouter = router({
 
       const adapter = getLingxingAdapter();
 
-      // Get seller list to find matching sid
-      let matchedSid: number | string = 1;
+      // Get seller list (with cache) to find matching sid
+      const { matchedSid } = await findMatchedSid(adapter, product);
+      console.log(`[AdsSummary] Product ${product.parentAsin}, matchedSid=${matchedSid}`);
+
+      // Get product variants for ASIN-based ad filtering
+      const variants = await db!.select().from(productVariants)
+        .where(eq(productVariants.productId, input.productId));
+      const childAsins = variants.map(v => v.childAsin).filter(Boolean);
+      const allAsins = [product.parentAsin, ...childAsins];
+
+      // Try product-level ad report first (spProductAdReports) for ASIN-specific data
+      let productAdData: any[] = [];
       try {
-        const sellerRes = await adapter.request({ path: "/erp/sc/data/seller/lists" });
-        const sellers = Array.isArray(sellerRes.data) ? sellerRes.data : (sellerRes.data as any)?.list || [];
-        const marketplaceMap: Record<string, number[]> = {
-          'US': [1], 'UK': [4], 'DE': [5], 'FR': [6], 'IT': [7], 'ES': [8], 'JP': [9], 'AU': [10], 'CA': [2], 'MX': [3],
-        };
-        const matched = sellers.find((s: any) =>
-          (product.storeName && (s.name === product.storeName || s.wname === product.storeName || s.account_name === product.storeName)) ||
-          (product.marketplace && (s.marketplace === product.marketplace || (marketplaceMap[product.marketplace] || []).includes(s.mid)))
+        const productAdRes = await adapter.request({
+          path: "/pb/openapi/newad/spProductAdReports",
+          body: { sid: matchedSid, report_date: getDateNDaysAgo(1), show_detail: 0, offset: 0, length: 200 },
+          headers: { "X-API-VERSION": "2" },
+        });
+        const rawProductAd = productAdRes.data || [];
+        const allProductAds = Array.isArray(rawProductAd) ? rawProductAd : (rawProductAd as any).records || (rawProductAd as any).list || [];
+        // Filter by product ASINs
+        productAdData = allProductAds.filter((item: any) =>
+          allAsins.includes(item.asin) || allAsins.includes(item.advertised_asin)
         );
-        if (matched) matchedSid = matched.sid;
+        console.log(`[AdsSummary] Product ad reports: ${allProductAds.length} total, ${productAdData.length} matched for ${product.parentAsin}`);
       } catch (err: any) {
-        console.warn(`[AdsSummary] Seller list fetch error: ${err.message}`);
+        console.warn(`[AdsSummary] Product ad report fetch failed: ${err.message}`);
       }
 
+      // Also fetch campaign-level data and filter by product name/ASIN in campaign name
       const adRes = await adapter.request({
         path: "/pb/openapi/newad/spCampaigns",
         body: { sid: matchedSid, start_date: getDateNDaysAgo(30), end_date: getToday() },
         headers: { "X-API-VERSION": "2" },
       });
-
-      // Normalize: ad API may return array or {records/list}
       const rawAd = adRes.data || [];
-      const campaigns = Array.isArray(rawAd) ? rawAd : (rawAd as any).records || (rawAd as any).list || [];
+      const allCampaigns = Array.isArray(rawAd) ? rawAd : (rawAd as any).records || (rawAd as any).list || [];
+
+      // Filter campaigns that contain product ASIN or related keywords in name
+      const campaigns = allCampaigns.filter((c: any) => {
+        const name = String(c.campaign_name || c.name || '').toLowerCase();
+        // Check if campaign name contains any of the product's ASINs
+        return allAsins.some(asin => name.includes(asin.toLowerCase())) ||
+               // If no ASIN in name, check for product title keywords
+               (product.title && product.title.split(' ').slice(0, 3).some((word: string) =>
+                 word.length > 3 && name.includes(word.toLowerCase())
+               ));
+      });
+      console.log(`[AdsSummary] Campaigns: ${allCampaigns.length} total, ${campaigns.length} matched for ${product.parentAsin}`);
 
       let totalSpend = 0, totalSales = 0, totalClicks = 0, totalImpressions = 0, totalOrders = 0;
       const campaignList: Array<{
@@ -588,7 +684,19 @@ export const productOpsRouter = router({
         acos: number; roas: number; clicks: number; impressions: number;
       }> = [];
 
-      for (const c of campaigns) {
+      // If we have product-level ad data, use it for summary totals (more accurate)
+      if (productAdData.length > 0) {
+        for (const item of productAdData) {
+          totalSpend += Number(item.cost || item.spend || 0);
+          totalSales += Number(item.sales || item.attributed_sales || 0);
+          totalClicks += Number(item.clicks || 0);
+          totalImpressions += Number(item.impressions || 0);
+          totalOrders += Number(item.orders || item.attributed_orders || 0);
+        }
+      }
+
+      // Build campaign list from filtered campaigns
+      for (const c of (campaigns.length > 0 ? campaigns : allCampaigns.slice(0, 5))) {
         const camp = c as Record<string, unknown>;
         const spend = Number(camp.cost || camp.spend || 0);
         const sales = Number(camp.sales || camp.attributed_sales || 0);
@@ -596,11 +704,14 @@ export const productOpsRouter = router({
         const impressions = Number(camp.impressions || 0);
         const orders = Number(camp.orders || camp.attributed_orders || 0);
 
-        totalSpend += spend;
-        totalSales += sales;
-        totalClicks += clicks;
-        totalImpressions += impressions;
-        totalOrders += orders;
+        // If no product-level data, accumulate from campaigns
+        if (productAdData.length === 0) {
+          totalSpend += spend;
+          totalSales += sales;
+          totalClicks += clicks;
+          totalImpressions += impressions;
+          totalOrders += orders;
+        }
 
         campaignList.push({
           name: String(camp.campaign_name || camp.name || "Unknown"),
@@ -2146,6 +2257,40 @@ export const productOpsRouter = router({
 // ═══════════════════════════════════════════════════════
 // Helper functions
 // ═══════════════════════════════════════════════════════
+
+// Seller cache shared across all productOps procedures
+let _productOpsSellerCache: { sellers: any[], ts: number } | null = null;
+const SELLER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function getCachedSellers(adapter: any): Promise<any[]> {
+  if (_productOpsSellerCache && Date.now() - _productOpsSellerCache.ts < SELLER_CACHE_TTL) {
+    return _productOpsSellerCache.sellers;
+  }
+  try {
+    const res = await adapter.request({ path: "/erp/sc/data/seller/lists" });
+    const sellers = Array.isArray(res.data) ? res.data : (res.data as any)?.list || [];
+    _productOpsSellerCache = { sellers, ts: Date.now() };
+    return sellers;
+  } catch (err: any) {
+    console.warn(`[ProductOps] Seller list fetch error: ${err.message}`);
+    return _productOpsSellerCache?.sellers || [];
+  }
+}
+
+const MARKETPLACE_MID_MAP: Record<string, number[]> = {
+  'US': [1], 'UK': [4], 'DE': [5], 'FR': [6], 'IT': [7], 'ES': [8], 'JP': [9], 'AU': [10], 'CA': [2], 'MX': [3],
+};
+
+async function findMatchedSid(adapter: any, product: { storeName: string | null; marketplace: string | null }): Promise<{ matchedSid: number | string; sellers: any[] }> {
+  const sellers = await getCachedSellers(adapter);
+  let matchedSid: number | string = 1;
+  const matched = sellers.find((s: any) =>
+    (product.storeName && (s.name === product.storeName || s.wname === product.storeName || s.account_name === product.storeName)) ||
+    (product.marketplace && (s.marketplace === product.marketplace || (MARKETPLACE_MID_MAP[product.marketplace] || []).includes(s.mid)))
+  );
+  if (matched) matchedSid = matched.sid;
+  return { matchedSid, sellers };
+}
 
 function getToday(): string {
   return new Date().toISOString().split("T")[0];
