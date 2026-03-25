@@ -282,7 +282,8 @@ export default function OpsProfit() {
                   <thead>
                     <tr className="border-b bg-gray-50/50">
                       <th className="text-left p-3 font-medium text-gray-600">#</th>
-                      <th className="text-left p-3 font-medium text-gray-600">SKU</th>
+                      <th className="text-left p-3 font-medium text-gray-600">MSKU</th>
+                      <th className="text-left p-3 font-medium text-gray-600">ASIN</th>
                       <th className="text-left p-3 font-medium text-gray-600">产品名称</th>
                       <th className="text-right p-3 font-medium text-gray-600">收入</th>
                       <th className="text-right p-3 font-medium text-gray-600">利润</th>
@@ -291,7 +292,7 @@ export default function OpsProfit() {
                   </thead>
                   <tbody>
                     {products.length === 0 ? (
-                      <tr><td colSpan={6} className="text-center py-12 text-gray-400">暂无产品利润数据</td></tr>
+                      <tr><td colSpan={7} className="text-center py-12 text-gray-400">暂无产品利润数据</td></tr>
                     ) : (
                       products.map((p: any, i: number) => (
                         <tr key={i} className="border-b hover:bg-gray-50/50 cursor-pointer transition-colors" onClick={() => {
@@ -301,6 +302,7 @@ export default function OpsProfit() {
                         }} title="点击查看产品详情">
                           <td className="p-3 text-gray-400">{i + 1}</td>
                           <td className="p-3 font-mono text-xs text-blue-600 hover:underline">{p.seller_sku}</td>
+                          <td className="p-3 font-mono text-xs text-gray-500">{p.asin || "-"}</td>
                           <td className="p-3 max-w-[200px] truncate">{p.product_name || "-"}</td>
                           <td className="p-3 text-right">${(p.revenue || 0).toLocaleString()}</td>
                           <td className={`p-3 text-right font-medium ${(p.profit || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>

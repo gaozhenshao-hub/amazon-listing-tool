@@ -227,19 +227,19 @@ describe("Lingxing Adapter Logistics Endpoints", () => {
   const adapterCode = fs.readFileSync(adapterPath, "utf-8");
 
   it("should have FBA delivery order mock endpoint", () => {
-    expect(adapterCode).toContain("deliveryOrder/list");
+    expect(adapterCode).toContain("shipmentList");
   });
 
   it("should have logistics channel mock endpoint", () => {
-    expect(adapterCode).toContain("channel/list");
+    expect(adapterCode).toContain("channelList");
   });
 
   it("should have FBA inventory V2 mock endpoint", () => {
-    expect(adapterCode).toContain("fbaInventoryV2");
+    expect(adapterCode).toContain("fbaWarehouseDetail");
   });
 
   it("should have logistics provider mock endpoint", () => {
-    expect(adapterCode).toContain("provider/list");
+    expect(adapterCode).toContain("fbaStock/fbaList");
   });
 
   it("should have warehouse inventory mock endpoint", () => {

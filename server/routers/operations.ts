@@ -575,37 +575,40 @@ ${JSON.stringify(input.skuData, null, 2)}
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
-      // Use MSKU-level profit report for SKU ranking
-      const res = await adapter.request({
-        path: "/bd/profit/report/open/report/msku/list",
-        body: {
-          startDate: input.startDate || getDateNDaysAgo(30),
-          endDate: input.endDate || getToday(),
-          length: 200,
-          offset: 0,
-          summaryEnabled: true,  // Aggregate by MSKU to avoid duplicate rows per day
-        },
-      });
-      // Normalize: profit API returns {records:[...]} or array
-      const rawItems = res.data || [];
-      console.log(`[ProfitByProduct] rawItems type=${typeof rawItems}, isArray=${Array.isArray(rawItems)}, keys=${typeof rawItems === 'object' ? Object.keys(rawItems).join(',') : 'N/A'}`);
-      const rawList = Array.isArray(rawItems) ? rawItems : (rawItems as any).records || (rawItems as any).list || [];
+      const startDate = input.startDate || getDateNDaysAgo(30);
+      const endDate = input.endDate || getToday();
       
-      // Debug: log first 3 records' key identity fields
-      if (rawList.length > 0) {
-        console.log(`[ProfitByProduct] Total records: ${rawList.length}`);
-        // Log ALL keys of first record
-        const firstKeys = Object.keys(rawList[0]);
-        console.log(`[ProfitByProduct] Record[0] has ${firstKeys.length} keys: ${firstKeys.slice(-30).join(', ')}`);
-        // Log the identity fields specifically
-        const r = rawList[0];
-        console.log(`[ProfitByProduct] Record[0] identity values: msku="${r.msku}", localSku="${r.localSku}", asin="${r.asin}", itemName="${r.itemName}", localName="${r.localName}", storeName="${r.storeName}", totalFbaAndFbmAmount=${r.totalFbaAndFbmAmount}, grossProfit=${r.grossProfit}`);
-        // Log the last record (which should have sales data)
-        const last = rawList[rawList.length - 1];
-        console.log(`[ProfitByProduct] Record[last] identity values: msku="${last.msku}", localSku="${last.localSku}", asin="${last.asin}", itemName="${last.itemName}", totalFbaAndFbmAmount=${last.totalFbaAndFbmAmount}`);
-      } else {
-        console.log(`[ProfitByProduct] rawList is empty, rawItems preview: ${JSON.stringify(rawItems).slice(0, 300)}`);
+      // Paginate to fetch ALL MSKU records with summaryEnabled
+      let allRecords: any[] = [];
+      let offset = 0;
+      const pageSize = 200;
+      let hasMore = true;
+      
+      while (hasMore) {
+        const res = await adapter.request({
+          path: "/bd/profit/report/open/report/msku/list",
+          body: {
+            startDate,
+            endDate,
+            length: pageSize,
+            offset,
+            summaryEnabled: true,
+          },
+        });
+        const rawItems = res.data || [];
+        const records = Array.isArray(rawItems) ? rawItems : (rawItems as any).records || (rawItems as any).list || [];
+        const total = (rawItems as any).total || 0;
+        
+        allRecords = allRecords.concat(records);
+        offset += pageSize;
+        hasMore = records.length >= pageSize && allRecords.length < total;
+        
+        // Safety limit: max 10 pages (2000 MSKUs)
+        if (offset >= 2000) break;
       }
+      
+      const rawList = allRecords;
+      console.log(`[ProfitByProduct] Fetched ${rawList.length} MSKUs across ${Math.ceil(offset / pageSize)} pages`);
       
       // Map Lingxing API fields to frontend expected fields
       const items = rawList.map((d: any) => {
@@ -760,10 +763,11 @@ ${JSON.stringify(input.skuData, null, 2)}
       }
       console.log(`[AdCampaigns] Total campaigns from list API: ${allCampaignList.length}`);
       
-      // 2. Get campaign report data from all stores
+      // 2. Get campaign report data from all stores (also collect profile_ids)
       const reportDate = input.startDate || getDateNDaysAgo(1);
       console.log(`[AdCampaigns] Querying campaign reports for date=${reportDate}`);
       const reportMap: Record<string, any> = {};
+      const campaignProfileMap: Record<string, string> = {}; // campaign_id -> profile_id
       for (const sid of sidsToQuery) {
         try {
           const reportRes = await adapter.request({
@@ -782,8 +786,9 @@ ${JSON.stringify(input.skuData, null, 2)}
           console.log(`[AdCampaigns] sid=${sid}: Got ${reportData.length} campaign reports`);
           for (const r of reportData) {
             const cid = String(r.campaign_id);
+            // Save profile_id for later name lookup
+            if (r.profile_id) campaignProfileMap[cid] = String(r.profile_id);
             if (reportMap[cid]) {
-              // Aggregate if same campaign appears in multiple queries
               reportMap[cid].impressions += Number(r.impressions) || 0;
               reportMap[cid].clicks += Number(r.clicks) || 0;
               reportMap[cid].cost += Number(r.cost) || 0;
@@ -803,6 +808,52 @@ ${JSON.stringify(input.skuData, null, 2)}
         } catch (err: any) {
           console.warn(`[AdCampaigns] sid=${sid}: Failed to get reports: ${err.message}`);
         }
+      }
+      
+      // 2.5 Find campaigns in reports that are missing names, try to fetch by profile_id
+      const missingCampaignIds = Object.keys(reportMap).filter(cid => !campaignNameMap[cid]);
+      if (missingCampaignIds.length > 0) {
+        // Use profile_ids collected during report query (no re-query needed)
+        const missingProfileIds = new Set<string>();
+        for (const cid of missingCampaignIds) {
+          const pid = campaignProfileMap[cid];
+          if (pid) missingProfileIds.add(pid);
+        }
+        
+        // Query spCampaigns by profile_id for missing campaigns
+        for (const profileId of Array.from(missingProfileIds)) {
+          try {
+            console.log(`[AdCampaigns] Fetching campaigns by profile_id=${profileId} for ${missingCampaignIds.length} missing names`);
+            const profileRes = await adapter.request({
+              path: "/pb/openapi/newad/spCampaigns",
+              body: { profile_id: Number(profileId), offset: 0, length: 200 },
+              headers: { "X-API-VERSION": "2" },
+            });
+            const profileCampaigns = profileRes.data || [];
+            const campaigns2 = Array.isArray(profileCampaigns) ? profileCampaigns : (profileCampaigns as any).records || (profileCampaigns as any).list || [];
+            console.log(`[AdCampaigns] profile_id=${profileId}: Got ${campaigns2.length} campaigns`);
+            for (const c of campaigns2) {
+              const cid = String(c.campaign_id);
+              if (!campaignNameMap[cid]) {
+                campaignNameMap[cid] = {
+                  name: c.name || '',
+                  daily_budget: c.daily_budget || 0,
+                  state: c.state || 'unknown',
+                  serving_status: c.serving_status || '',
+                  targeting_type: c.targeting_type || '',
+                  campaign_type: c.campaign_type || '',
+                  start_date: c.start_date || '',
+                  sid: 0,
+                };
+              }
+            }
+          } catch (err: any) {
+            console.warn(`[AdCampaigns] profile_id=${profileId}: Failed: ${err.message}`);
+          }
+        }
+        
+        const stillMissing = missingCampaignIds.filter(cid => !campaignNameMap[cid]);
+        console.log(`[AdCampaigns] After profile_id lookup: ${missingCampaignIds.length - stillMissing.length} names resolved, ${stillMissing.length} still missing`);
       }
       
       // 3. Merge: start from all unique campaign IDs
@@ -857,30 +908,143 @@ ${JSON.stringify(input.skuData, null, 2)}
       campaignId: z.number().optional(),
       startDate: z.string().optional(),
       endDate: z.string().optional(),
+      days: z.number().optional(), // aggregate over N days (default 7)
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
-      // Get real SID if not provided
-      let realSid = input.sid;
-      if (!realSid) {
-        const { sids } = await getAllSellerSids();
-        realSid = sids.length > 0 ? Number(sids[0]) : 1;
+      const { sids: allSids } = await getAllSellerSids();
+      const sidsToQuery = input.sid ? [input.sid] : allSids.map(Number).slice(0, 5);
+      const days = input.days || 7;
+      
+      // Aggregate search terms over multiple days for more reliable data
+      const termAggMap: Record<string, {
+        query: string;
+        target_text: string;
+        match_type: string;
+        campaign_id: string;
+        ad_group_id: string;
+        impressions: number;
+        clicks: number;
+        cost: number;
+        sales: number;
+        orders: number;
+        units: number;
+        days_seen: number;
+      }> = {};
+      
+      // Query last N days across all sids
+      for (const sid of sidsToQuery) {
+        for (let d = 1; d <= days; d++) {
+          const reportDate = getDateNDaysAgo(d);
+          try {
+            // Paginate: get up to 500 terms per day per sid
+            let offset = 0;
+            const pageSize = 200;
+            let hasMore = true;
+            while (hasMore && offset < 1000) {
+              const res = await adapter.request({
+                path: "/pb/openapi/newad/queryWordReports",
+                body: {
+                  sid,
+                  report_date: reportDate,
+                  target_type: "keyword",
+                  offset,
+                  length: pageSize,
+                },
+                headers: { "X-API-VERSION": "2" },
+              });
+              const rawData = res.data || [];
+              const items = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
+              if (d === 1 && offset === 0) {
+                console.log(`[SearchTerms] sid=${sid}, date=${reportDate}: Got ${items.length} terms (total=${(res as any).total || 'N/A'})`);
+              }
+              
+              for (const item of items) {
+                const key = `${item.query}||${item.campaign_id}||${item.match_type}`;
+                if (termAggMap[key]) {
+                  termAggMap[key].impressions += Number(item.impressions) || 0;
+                  termAggMap[key].clicks += Number(item.clicks) || 0;
+                  termAggMap[key].cost += Number(item.cost) || 0;
+                  termAggMap[key].sales += Number(item.sales) || 0;
+                  termAggMap[key].orders += Number(item.orders) || 0;
+                  termAggMap[key].units += Number(item.units) || 0;
+                  termAggMap[key].days_seen += 1;
+                } else {
+                  termAggMap[key] = {
+                    query: item.query || '',
+                    target_text: item.target_text || '',
+                    match_type: item.match_type || '',
+                    campaign_id: String(item.campaign_id || ''),
+                    ad_group_id: String(item.ad_group_id || ''),
+                    impressions: Number(item.impressions) || 0,
+                    clicks: Number(item.clicks) || 0,
+                    cost: Number(item.cost) || 0,
+                    sales: Number(item.sales) || 0,
+                    orders: Number(item.orders) || 0,
+                    units: Number(item.units) || 0,
+                    days_seen: 1,
+                  };
+                }
+              }
+              
+              hasMore = items.length >= pageSize;
+              offset += pageSize;
+            }
+          } catch (err: any) {
+            // Skip failed days/sids
+            if (d === 1) console.warn(`[SearchTerms] sid=${sid}, date=${reportDate}: ${err.message}`);
+          }
+        }
       }
-      console.log(`[SearchTerms] Querying search terms with sid=${realSid}`);
-      const res = await adapter.request({
-        path: "/pb/openapi/newad/queryWordReports",
-        body: {
-          sid: realSid,
-          report_date: input.startDate || getDateNDaysAgo(1),
-          target_type: "keyword",
-        },
-        headers: { "X-API-VERSION": "2" },
+      
+      // Convert to array and compute derived metrics
+      const searchTerms = Object.values(termAggMap).map(t => {
+        const acos = t.sales > 0 ? Math.round(t.cost / t.sales * 10000) / 100 : (t.cost > 0 ? 999 : 0);
+        const ctr = t.impressions > 0 ? Math.round(t.clicks / t.impressions * 10000) / 100 : 0;
+        const cpc = t.clicks > 0 ? Math.round(t.cost / t.clicks * 100) / 100 : 0;
+        const convRate = t.clicks > 0 ? Math.round(t.orders / t.clicks * 10000) / 100 : 0;
+        
+        // Auto-classify search terms
+        let category: 'high_performer' | 'low_performer' | 'potential' | 'waste' | 'new_term' = 'new_term';
+        if (t.clicks < 3 && t.cost < 2) {
+          category = 'new_term'; // Too little data
+        } else if (t.orders > 0 && acos <= 25) {
+          category = 'high_performer';
+        } else if (t.orders > 0 && acos > 25 && acos <= 50) {
+          category = 'potential';
+        } else if (t.cost >= 5 && t.orders === 0) {
+          category = 'waste';
+        } else if (acos > 50) {
+          category = 'low_performer';
+        } else {
+          category = 'potential';
+        }
+        
+        return {
+          ...t,
+          acos,
+          ctr,
+          cpc,
+          convRate,
+          category,
+        };
       });
       
-      const rawData = res.data || [];
-      const searchTerms = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
-      console.log(`[SearchTerms] Got ${searchTerms.length} search terms`);
-      return { searchTerms, isMock: adapter.isMockMode() };
+      // Sort by cost descending (highest spend first)
+      searchTerms.sort((a, b) => b.cost - a.cost);
+      
+      // Compute category stats
+      const categoryStats = {
+        high_performer: searchTerms.filter(t => t.category === 'high_performer').length,
+        potential: searchTerms.filter(t => t.category === 'potential').length,
+        low_performer: searchTerms.filter(t => t.category === 'low_performer').length,
+        waste: searchTerms.filter(t => t.category === 'waste').length,
+        new_term: searchTerms.filter(t => t.category === 'new_term').length,
+        total: searchTerms.length,
+      };
+      
+      console.log(`[SearchTerms] Aggregated ${searchTerms.length} unique terms over ${days} days. Categories: ${JSON.stringify(categoryStats)}`);
+      return { searchTerms, categoryStats, days, isMock: adapter.isMockMode() };
     }),
 
   aiSearchTermAnalysis: protectedProcedure
@@ -891,12 +1055,24 @@ ${JSON.stringify(input.skuData, null, 2)}
       const response = await invokeLLM({
         messages: [
           { role: "system", content: "你是亚马逊PPC广告优化AI专家。分析搜索词数据并给出操作建议。输出严格JSON格式。" },
-          { role: "user", content: `分析以下搜索词数据，为每个搜索词给出操作建议：
+          { role: "user", content: `分析以下搜索词数据（已按花费降序排列），为每个搜索词给出操作建议。
 
-搜索词数据：
-${JSON.stringify(input.searchTerms, null, 2)}
+搜索词数据（包含关键指标）：
+${JSON.stringify(input.searchTerms.map(t => ({
+  query: (t as any).query,
+  impressions: (t as any).impressions,
+  clicks: (t as any).clicks,
+  cost: (t as any).cost,
+  sales: (t as any).sales,
+  orders: (t as any).orders,
+  acos: (t as any).acos,
+  ctr: (t as any).ctr,
+  convRate: (t as any).convRate,
+  category: (t as any).category,
+  match_type: (t as any).match_type,
+})))}
 
-对每个搜索词，判断应该执行的操作：
+对每个搜索词，结合其分类(category)和关键指标，判断应该执行的操作：
 - add_exact: 高转化词，建议添加为精确匹配关键词
 - add_phrase: 相关性好的词，建议添加为词组匹配
 - negate_exact: 无关词，建议否定精确匹配
@@ -907,11 +1083,14 @@ ${JSON.stringify(input.searchTerms, null, 2)}
 - monitor: 数据不足，继续观察
 
 判断标准：
-- ACoS < 15% 且有转化 → add_exact 或 increase_bid
-- ACoS 15-30% 且有转化 → keep 或 add_phrase
-- ACoS > 50% → decrease_bid 或 negate
-- 花费>$5 无转化 → negate_exact
-- 点击<3 → monitor` },
+- category=high_performer (ACoS≤25%且有转化) → add_exact 或 increase_bid
+- category=potential (ACoS 25-50%有转化) → keep 或 decrease_bid
+- category=low_performer (ACoS>50%) → decrease_bid 或 negate
+- category=waste (花费>$5无转化) → negate_exact
+- category=new_term (数据不足) → monitor
+- 特别注意：花费最高的词需要重点分析，给出具体的出价调整建议
+
+请同时给出整体分析总结和核心机会点。` },
         ],
         response_format: {
           type: "json_schema",

@@ -298,7 +298,8 @@ export default function OpsInventory() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b bg-gray-50/50">
-                      <th className="text-left p-3 font-medium text-gray-600">SKU</th>
+                      <th className="text-left p-3 font-medium text-gray-600">MSKU</th>
+                      <th className="text-left p-3 font-medium text-gray-600">ASIN</th>
                       <th className="text-left p-3 font-medium text-gray-600">产品名称</th>
                       <th className="text-right p-3 font-medium text-gray-600">可售数量</th>
                       <th className="text-right p-3 font-medium text-gray-600">在途数量</th>
@@ -309,14 +310,15 @@ export default function OpsInventory() {
                   </thead>
                   <tbody>
                     {items.length === 0 ? (
-                      <tr><td colSpan={7} className="text-center py-12 text-gray-400">暂无库存数据</td></tr>
+                      <tr><td colSpan={8} className="text-center py-12 text-gray-400">暂无库存数据</td></tr>
                     ) : (
                       items.map((item: any, idx: number) => {
                         const alertStyle = ALERT_COLORS[item.alertLevel as keyof typeof ALERT_COLORS] || ALERT_COLORS.normal;
                         return (
                           <tr key={idx} className={`border-b hover:bg-gray-50/50 ${alertStyle.bg}`}>
                             <td className="p-3 font-mono text-xs">{item.seller_sku}</td>
-                            <td className="p-3 max-w-[200px] truncate">{item.product_name || "-"}</td>
+                            <td className="p-3 font-mono text-xs text-gray-500">{item.asin || "-"}</td>
+                            <td className="p-3 max-w-[180px] truncate">{item.product_name || "-"}</td>
                             <td className="p-3 text-right font-medium">{(item.fulfillable_qty || 0).toLocaleString()}</td>
                             <td className="p-3 text-right text-blue-600">{(item.inbound_quantity || 0).toLocaleString()}</td>
                             <td className="p-3 text-right">{Number(item.avg_daily_sales || 0).toFixed(1)}</td>
