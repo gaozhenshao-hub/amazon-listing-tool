@@ -3,7 +3,7 @@ import { router, protectedProcedure } from "../_core/trpc";
 import { getDb } from "../db";
 import {
   shippingBatches, batchStepConfigs, batchProducts, batchLogs,
-  stepTimeHistory, replenishmentPredictions, stepTimeTemplates
+  stepTimeHistory, replenishmentPredictions, stepTimeTemplates, asinLogs
 } from "../../drizzle/schema";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 
@@ -911,4 +911,156 @@ export const shippingBatchRouter = router({
     const res = await lingxing.request({ path: '/erp/sc/routing/data/local_inventory/purchaseOrderList', body: {} });
     return Array.isArray(res.data) ? res.data : [];
   }),
+
+  // ─── ASIN维度：获取所有有批次记录的ASIN列表 ───
+  listAsinsWithBatches: protectedProcedure.query(async ({ ctx }) => {
+    const db = (await getDb())!;
+    // 获取该用户所有批次的产品
+    const userBatches = await db.select({ id: shippingBatches.id })
+      .from(shippingBatches)
+      .where(eq(shippingBatches.userId, String(ctx.user.id)));
+    if (userBatches.length === 0) return [];
+    const batchIds = userBatches.map(b => b.id);
+    const products = await db.select().from(batchProducts)
+      .where(inArray(batchProducts.batchId, batchIds));
+    // 按ASIN聚合
+    const asinMap = new Map<string, { asin: string; sku: string; productName: string; batchCount: number; totalQuantity: number }>();
+    for (const p of products) {
+      const key = p.asin || p.sku;
+      if (!key) continue;
+      const existing = asinMap.get(key);
+      if (existing) {
+        existing.batchCount += 1;
+        existing.totalQuantity += p.quantity;
+      } else {
+        asinMap.set(key, {
+          asin: p.asin || "",
+          sku: p.sku,
+          productName: p.productName || p.sku,
+          batchCount: 1,
+          totalQuantity: p.quantity,
+        });
+      }
+    }
+    return Array.from(asinMap.values()).sort((a, b) => b.batchCount - a.batchCount);
+  }),
+
+  // ─── ASIN维度：获取指定ASIN的所有批次信息 ───
+  getBatchesByAsin: protectedProcedure
+    .input(z.object({ asin: z.string(), sku: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      const db = (await getDb())!;
+      // 找到包含该ASIN/SKU的所有batch_products
+      const userBatches = await db.select({ id: shippingBatches.id })
+        .from(shippingBatches)
+        .where(eq(shippingBatches.userId, String(ctx.user.id)));
+      if (userBatches.length === 0) return { batches: [], totalQuantity: 0, inTransitQuantity: 0 };
+      const batchIds = userBatches.map(b => b.id);
+      // 查找匹配的产品记录
+      const allProducts = await db.select().from(batchProducts)
+        .where(inArray(batchProducts.batchId, batchIds));
+      const matchedProducts = allProducts.filter(p =>
+        (input.asin && p.asin === input.asin) || (input.sku && p.sku === input.sku)
+      );
+      if (matchedProducts.length === 0) return { batches: [], totalQuantity: 0, inTransitQuantity: 0 };
+      const matchedBatchIds = Array.from(new Set(matchedProducts.map(p => p.batchId)));
+      // 获取这些批次的详细信息
+      const batches = await db.select().from(shippingBatches)
+        .where(inArray(shippingBatches.id, matchedBatchIds))
+        .orderBy(desc(shippingBatches.createdAt));
+      // 获取这些批次的日志
+      const logs = await db.select().from(batchLogs)
+        .where(inArray(batchLogs.batchId, matchedBatchIds))
+        .orderBy(desc(batchLogs.createdAt));
+      // 计算汇总
+      let totalQuantity = 0;
+      let inTransitQuantity = 0;
+      const batchDetails = batches.map(batch => {
+        const batchProduct = matchedProducts.find(p => p.batchId === batch.id);
+        const qty = batchProduct?.quantity || 0;
+        totalQuantity += qty;
+        if (batch.status === "active") inTransitQuantity += qty;
+        return {
+          ...batch,
+          asinQuantity: qty,
+          asinSku: batchProduct?.sku || "",
+          asinProductName: batchProduct?.productName || "",
+        };
+      });
+      return { batches: batchDetails, logs, totalQuantity, inTransitQuantity };
+    }),
+
+  // ─── ASIN维度：添加ASIN级别日志（写入asin_logs表） ───
+  addAsinLog: protectedProcedure
+    .input(z.object({
+      asin: z.string(),
+      content: z.string(),
+      batchId: z.number().optional(),
+      batchName: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = (await getDb())!;
+      await db.insert(asinLogs).values({
+        userId: String(ctx.user.id),
+        userName: ctx.user.name || "Unknown",
+        asin: input.asin,
+        content: input.content,
+        logType: "manual",
+        batchId: input.batchId || null,
+        batchName: input.batchName || null,
+        createdAt: Date.now(),
+      });
+      return { success: true };
+    }),
+
+  // ─── ASIN维度：获取ASIN关联的批次列表（简化版） ───
+  getAsinBatches: protectedProcedure
+    .input(z.object({ asin: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const db = (await getDb())!;
+      const userId = String(ctx.user.id);
+      // 获取用户所有批次
+      const userBatches = await db.select({ id: shippingBatches.id })
+        .from(shippingBatches)
+        .where(eq(shippingBatches.userId, userId));
+      if (userBatches.length === 0) return [];
+      const batchIds = userBatches.map(b => b.id);
+      // 查找包含该ASIN的产品记录
+      const allProducts = await db.select().from(batchProducts)
+        .where(inArray(batchProducts.batchId, batchIds));
+      const matchedProducts = allProducts.filter(p => p.asin === input.asin);
+      if (matchedProducts.length === 0) return [];
+      const matchedBatchIds = Array.from(new Set(matchedProducts.map(p => p.batchId)));
+      // 获取批次详情
+      const batches = await db.select().from(shippingBatches)
+        .where(inArray(shippingBatches.id, matchedBatchIds))
+        .orderBy(desc(shippingBatches.createdAt));
+      return batches.map(batch => {
+        const prod = matchedProducts.find(p => p.batchId === batch.id);
+        return {
+          id: batch.id,
+          batchName: batch.batchName,
+          currentStep: batch.currentStep,
+          status: batch.status,
+          shippingMethod: batch.shippingMethod,
+          quantity: prod?.quantity || 0,
+          createdAt: batch.createdAt,
+        };
+      });
+    }),
+
+  // ─── ASIN维度：获取ASIN操作日志 ───
+  getAsinLogs: protectedProcedure
+    .input(z.object({ asin: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const db = (await getDb())!;
+      const logs = await db.select().from(asinLogs)
+        .where(and(
+          eq(asinLogs.asin, input.asin),
+          eq(asinLogs.userId, String(ctx.user.id))
+        ))
+        .orderBy(desc(asinLogs.createdAt))
+        .limit(50);
+      return logs;
+    }),
 });

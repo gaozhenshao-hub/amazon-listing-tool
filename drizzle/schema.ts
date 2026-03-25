@@ -1735,11 +1735,12 @@ export const productProfiles = mysqlTable("product_profiles", {
   budgetRevenue: decimal("budget_revenue", { precision: 12, scale: 2 }),
   budgetProfit: decimal("budget_profit", { precision: 12, scale: 2 }),
   budgetAcos: decimal("budget_acos", { precision: 5, scale: 1 }),
-  notes: text("notes"),
+   notes: text("notes"),
+  operator: varchar("operator", { length: 200 }),
+  storeName: varchar("store_name", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
-
 export type ProductProfile = typeof productProfiles.$inferSelect;
 export type InsertProductProfile = typeof productProfiles.$inferInsert;
 
@@ -2336,3 +2337,18 @@ export const asinTagAssignments = mysqlTable("asin_tag_assignments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 export type AsinTagAssignment = typeof asinTagAssignments.$inferSelect;
+
+// ============== ASIN Operation Logs (ASIN维度操作日志) ==============
+export const asinLogs = mysqlTable("asin_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: varchar("user_id", { length: 255 }).notNull(),
+  userName: varchar("user_name", { length: 255 }),
+  asin: varchar("asin", { length: 50 }).notNull(),
+  content: text("content").notNull(),
+  logType: varchar("log_type", { length: 50 }).default("manual"), // manual, system, batch_update
+  batchId: int("batch_id"),
+  batchName: varchar("batch_name", { length: 255 }),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+});
+export type AsinLog = typeof asinLogs.$inferSelect;
+export type InsertAsinLog = typeof asinLogs.$inferInsert;

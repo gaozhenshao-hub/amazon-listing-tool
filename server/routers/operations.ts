@@ -9,7 +9,7 @@ import {
   adAnalysisTasks, adAutomationRules, searchTermActions,
   competitorMonitors, competitorSnapshots, competitorReports,
   lingxingApiLogs, userSettings, asinStatusCache, asinPermissions,
-  asinTagDefinitions, asinTagAssignments
+  asinTagDefinitions, asinTagAssignments, productProfiles
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, lte } from "drizzle-orm";
 
@@ -262,7 +262,7 @@ export const operationsRouter = router({
       sortOrder: z.enum(["asc", "desc"]).optional().default("asc"),
       alertFilter: z.enum(["all", "critical", "low", "normal", "overstock"]).optional().default("all"),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
       const adapter = getLingxingAdapter();
       // Get real SIDs filtered by marketplace
       let sidStr: string;
@@ -333,6 +333,26 @@ export const operationsRouter = router({
         const valB = b[input.sortBy] || 0;
         return input.sortOrder === "asc" ? valA - valB : valB - valA;
       });
+
+      // Enrich with operator info from product_profiles
+      try {
+        const db = await getDb();
+        const profiles = await db!.select({
+          parentAsin: productProfiles.parentAsin,
+          operator: productProfiles.operator,
+          storeName: productProfiles.storeName,
+        }).from(productProfiles).where(eq(productProfiles.userId, ctx.user.id));
+        const profileMap = new Map(profiles.map(p => [p.parentAsin, p]));
+        items = items.map((item: any) => {
+          const profile = profileMap.get(item.asin);
+          return {
+            ...item,
+            operator: profile?.operator || '',
+          };
+        });
+      } catch (err) {
+        console.warn('[InventoryList] Failed to enrich operator info:', err);
+      }
 
       const stats = {
         total: items.length,

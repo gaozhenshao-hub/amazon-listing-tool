@@ -19,9 +19,12 @@ import {
   TrendingDown, TrendingUp, AlertCircle, CheckCircle2, Loader2,
   Truck, Ship, Plane, ArrowRight, Clock, Brain, ShieldAlert,
   ChevronRight, ExternalLink, Boxes, Warehouse, Tag, Plus, X, Pencil, Trash2, Eye, EyeOff,
+  Search, FileText, MessageSquare, Send, History,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
@@ -380,6 +383,8 @@ export default function OpsInventory() {
                       <th className="text-left p-3 font-medium text-gray-600">MSKU</th>
                       <th className="text-left p-3 font-medium text-gray-600">ASIN</th>
                       <th className="text-left p-3 font-medium text-gray-600">产品名称</th>
+                      <th className="text-left p-3 font-medium text-gray-600">店铺</th>
+                      <th className="text-left p-3 font-medium text-gray-600">运营</th>
                       <th className="text-right p-3 font-medium text-gray-600">可售数量</th>
                       <th className="text-right p-3 font-medium text-gray-600">在途数量</th>
                       <th className="text-right p-3 font-medium text-gray-600">日均销量</th>
@@ -389,7 +394,7 @@ export default function OpsInventory() {
                   </thead>
                   <tbody>
                     {items.length === 0 ? (
-                      <tr><td colSpan={8} className="text-center py-12 text-gray-400">暂无库存数据</td></tr>
+                      <tr><td colSpan={10} className="text-center py-12 text-gray-400">暂无库存数据</td></tr>
                     ) : (
                       items.map((item: any, idx: number) => {
                         const alertStyle = ALERT_COLORS[item.alertLevel as keyof typeof ALERT_COLORS] || ALERT_COLORS.normal;
@@ -402,6 +407,8 @@ export default function OpsInventory() {
                               {item.asin || "-"}
                             </td>
                             <td className="p-3 max-w-[180px] truncate">{item.product_name || "-"}</td>
+                            <td className="p-3 text-xs text-gray-500 max-w-[100px] truncate">{item.store_name || "-"}</td>
+                            <td className="p-3 text-xs text-gray-500">{item.operator || "-"}</td>
                             <td className="p-3 text-right font-medium">{(item.fulfillable_qty || 0).toLocaleString()}</td>
                             <td className="p-3 text-right text-blue-600">{(item.inbound_quantity || 0).toLocaleString()}</td>
                             <td className="p-3 text-right">{Number(item.avg_daily_sales || 0).toFixed(1)}</td>
@@ -732,21 +739,51 @@ export default function OpsInventory() {
 // ═══════ Inventory Pipeline View ═══════
 
 function InventoryPipelineView({ pipeline, onNavigate }: { pipeline: any; onNavigate: (path: string) => void }) {
-  if (!pipeline) {
-    return (
-      <Card>
-        <CardContent className="py-12 text-center text-gray-400">
-          <Boxes className="w-10 h-10 mx-auto mb-3 opacity-30" />
-          <p>暂无活跃物流批次</p>
-          <Button variant="outline" size="sm" className="mt-3" onClick={() => onNavigate("/ops/shipping")}>
-            前往创建批次
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
+  const [asinSearch, setAsinSearch] = useState("");
+  const [selectedAsin, setSelectedAsin] = useState<string | null>(null);
+  const [logContent, setLogContent] = useState("");
 
-  const steps = [
+  // Query ASIN batches when selected
+  const asinBatchesQuery = trpc.shippingBatch.getAsinBatches.useQuery(
+    { asin: selectedAsin || "" },
+    { enabled: !!selectedAsin }
+  );
+
+  // Query ASIN logs
+  const asinLogsQuery = trpc.shippingBatch.getAsinLogs.useQuery(
+    { asin: selectedAsin || "" },
+    { enabled: !!selectedAsin }
+  );
+
+  // Add log mutation
+  const addLogMut = trpc.shippingBatch.addAsinLog.useMutation({
+    onSuccess: () => {
+      asinLogsQuery.refetch();
+      setLogContent("");
+      toast.success("日志已添加");
+    },
+  });
+
+  // Get inventory data for ASIN info
+  const inventoryQuery = trpc.operations.getInventoryList.useQuery(
+    { marketplace: "US" },
+    { enabled: !!selectedAsin }
+  );
+
+  const asinInfo = selectedAsin && inventoryQuery.data
+    ? inventoryQuery.data.items?.find((item: any) => item.asin === selectedAsin)
+    : null;
+
+  const asinBatches = asinBatchesQuery.data || [];
+  const asinLogs = asinLogsQuery.data || [];
+
+  // Collect all unique ASINs from inventory for search suggestions
+  const allAsins = inventoryQuery.data?.items?.map((item: any) => item.asin).filter(Boolean) || [];
+  const filteredAsins = asinSearch.length > 0
+    ? allAsins.filter((a: string) => a.toUpperCase().includes(asinSearch.toUpperCase())).slice(0, 10)
+    : [];
+
+  const steps = pipeline ? [
     { name: "准备中", icon: Clock, qty: pipeline.planned, color: "bg-gray-100 text-gray-600", count: pipeline.stepDistribution?.[1] || 0 },
     { name: "采购中", icon: Package, qty: pipeline.purchasing, color: "bg-blue-100 text-blue-600", count: pipeline.stepDistribution?.[2] || 0 },
     { name: "国内运输", icon: Truck, qty: pipeline.domesticTransit, color: "bg-indigo-100 text-indigo-600", count: (pipeline.stepDistribution?.[3] || 0) + (pipeline.stepDistribution?.[4] || 0) + (pipeline.stepDistribution?.[5] || 0) },
@@ -754,67 +791,330 @@ function InventoryPipelineView({ pipeline, onNavigate }: { pipeline: any; onNavi
     { name: "国际运输", icon: Ship, qty: pipeline.internationalTransit, color: "bg-orange-100 text-orange-600", count: pipeline.stepDistribution?.[7] || 0 },
     { name: "接收中", icon: Plane, qty: pipeline.receiving, color: "bg-amber-100 text-amber-600", count: pipeline.stepDistribution?.[8] || 0 },
     { name: "亚马逊仓", icon: Boxes, qty: pipeline.amazonStocked, color: "bg-green-100 text-green-600", count: pipeline.stepDistribution?.[9] || 0 },
-  ];
+  ] : [];
+
+  const STATUS_MAP: Record<number, { label: string; color: string }> = {
+    1: { label: "准备中", color: "bg-gray-100 text-gray-700" },
+    2: { label: "采购中", color: "bg-blue-100 text-blue-700" },
+    3: { label: "国内运输", color: "bg-indigo-100 text-indigo-700" },
+    4: { label: "国内运输", color: "bg-indigo-100 text-indigo-700" },
+    5: { label: "国内运输", color: "bg-indigo-100 text-indigo-700" },
+    6: { label: "已到仓", color: "bg-purple-100 text-purple-700" },
+    7: { label: "国际运输", color: "bg-orange-100 text-orange-700" },
+    8: { label: "接收中", color: "bg-amber-100 text-amber-700" },
+    9: { label: "亚马逊仓", color: "bg-green-100 text-green-700" },
+    10: { label: "已完成", color: "bg-emerald-100 text-emerald-700" },
+  };
 
   return (
     <div className="space-y-6">
-      {/* Pipeline Flow */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Ship className="w-4 h-4" />
-            全链路库存流水线
-          </CardTitle>
-          <CardDescription>
-            活跃批次: {pipeline.batchCount} · 在途总量: {pipeline.totalInTransit.toLocaleString()} · 全链路总量: {pipeline.totalAll.toLocaleString()}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-1 overflow-x-auto py-4">
-            {steps.map((step, idx) => (
-              <div key={idx} className="flex items-center">
-                <div className={`flex flex-col items-center min-w-[100px] p-3 rounded-lg ${step.color} transition-all hover:scale-105`}>
-                  <step.icon className="w-5 h-5 mb-1" />
-                  <span className="text-xs font-medium">{step.name}</span>
-                  <span className="text-lg font-bold mt-1">{step.qty.toLocaleString()}</span>
-                  <span className="text-[10px] opacity-70">{step.count}个批次</span>
+      {/* Pipeline Flow (keep original) */}
+      {pipeline && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Ship className="w-4 h-4" />
+              全链路库存流水线
+            </CardTitle>
+            <CardDescription>
+              活跃批次: {pipeline.batchCount} · 在途总量: {pipeline.totalInTransit.toLocaleString()} · 全链路总量: {pipeline.totalAll.toLocaleString()}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-1 overflow-x-auto py-4">
+              {steps.map((step, idx) => (
+                <div key={idx} className="flex items-center">
+                  <div className={`flex flex-col items-center min-w-[100px] p-3 rounded-lg ${step.color} transition-all hover:scale-105`}>
+                    <step.icon className="w-5 h-5 mb-1" />
+                    <span className="text-xs font-medium">{step.name}</span>
+                    <span className="text-lg font-bold mt-1">{step.qty.toLocaleString()}</span>
+                    <span className="text-[10px] opacity-70">{step.count}个批次</span>
+                  </div>
+                  {idx < steps.length - 1 && (
+                    <ArrowRight className="w-4 h-4 text-gray-300 mx-1 shrink-0" />
+                  )}
                 </div>
-                {idx < steps.length - 1 && (
-                  <ArrowRight className="w-4 h-4 text-gray-300 mx-1 shrink-0" />
-                )}
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="bg-blue-50 border-transparent">
-          <CardContent className="py-3 px-4">
-            <p className="text-xs text-blue-600">国内在途</p>
-            <p className="text-2xl font-bold text-blue-700">{pipeline.domesticTransit.toLocaleString()}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-orange-50 border-transparent">
-          <CardContent className="py-3 px-4">
-            <p className="text-xs text-orange-600">国际在途</p>
-            <p className="text-2xl font-bold text-orange-700">{pipeline.internationalTransit.toLocaleString()}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-amber-50 border-transparent">
-          <CardContent className="py-3 px-4">
-            <p className="text-xs text-amber-600">接收中</p>
-            <p className="text-2xl font-bold text-amber-700">{pipeline.receiving.toLocaleString()}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-green-50 border-transparent">
-          <CardContent className="py-3 px-4">
-            <p className="text-xs text-green-600">已到亚马逊仓</p>
-            <p className="text-2xl font-bold text-green-700">{pipeline.amazonStocked.toLocaleString()}</p>
-          </CardContent>
-        </Card>
-      </div>
+      {pipeline && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card className="bg-blue-50 border-transparent">
+            <CardContent className="py-3 px-4">
+              <p className="text-xs text-blue-600">国内在途</p>
+              <p className="text-2xl font-bold text-blue-700">{pipeline.domesticTransit.toLocaleString()}</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-orange-50 border-transparent">
+            <CardContent className="py-3 px-4">
+              <p className="text-xs text-orange-600">国际在途</p>
+              <p className="text-2xl font-bold text-orange-700">{pipeline.internationalTransit.toLocaleString()}</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-amber-50 border-transparent">
+            <CardContent className="py-3 px-4">
+              <p className="text-xs text-amber-600">接收中</p>
+              <p className="text-2xl font-bold text-amber-700">{pipeline.receiving.toLocaleString()}</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-green-50 border-transparent">
+            <CardContent className="py-3 px-4">
+              <p className="text-xs text-green-600">已到亚马逊仓</p>
+              <p className="text-2xl font-bold text-green-700">{pipeline.amazonStocked.toLocaleString()}</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ASIN Dimension Section */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Search className="w-4 h-4" />
+            ASIN物流追踪
+          </CardTitle>
+          <CardDescription>输入ASIN查看该产品的物流批次信息和操作日志</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* ASIN Search */}
+          <div className="relative">
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input
+                  placeholder="输入ASIN搜索..."
+                  value={asinSearch}
+                  onChange={(e) => setAsinSearch(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && asinSearch.trim()) {
+                      setSelectedAsin(asinSearch.trim().toUpperCase());
+                    }
+                  }}
+                  className="pl-9"
+                />
+              </div>
+              <Button
+                onClick={() => {
+                  if (asinSearch.trim()) {
+                    setSelectedAsin(asinSearch.trim().toUpperCase());
+                  }
+                }}
+                disabled={!asinSearch.trim()}
+              >
+                查询
+              </Button>
+              {selectedAsin && (
+                <Button variant="outline" onClick={() => { setSelectedAsin(null); setAsinSearch(""); }}>
+                  清除
+                </Button>
+              )}
+            </div>
+            {/* Search suggestions dropdown */}
+            {filteredAsins.length > 0 && !selectedAsin && (
+              <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                {filteredAsins.map((asin: string) => (
+                  <button
+                    key={asin}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-2"
+                    onClick={() => { setSelectedAsin(asin); setAsinSearch(asin); }}
+                  >
+                    <Package className="w-3 h-3 text-gray-400" />
+                    {asin}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Selected ASIN Content */}
+          {selectedAsin && (
+            <div className="space-y-4">
+              {/* ASIN Basic Info */}
+              <Card className="bg-gray-50 border-gray-200">
+                <CardContent className="py-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="font-semibold text-lg">{selectedAsin}</h3>
+                      {asinInfo ? (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-2 mt-3 text-sm">
+                          <div><span className="text-gray-500">SKU:</span> <span className="font-medium">{asinInfo.msku || "-"}</span></div>
+                          <div><span className="text-gray-500">标题:</span> <span className="font-medium truncate max-w-[200px] inline-block align-bottom">{asinInfo.title || "-"}</span></div>
+                          <div><span className="text-gray-500">店铺:</span> <span className="font-medium">{asinInfo.storeName || "-"}</span></div>
+                          <div><span className="text-gray-500">运营:</span> <span className="font-medium">{asinInfo.operator || "-"}</span></div>
+                          <div><span className="text-gray-500">可售库存:</span> <span className="font-medium">{asinInfo.fulfillableQty?.toLocaleString() || "0"}</span></div>
+                          <div><span className="text-gray-500">日均销量:</span> <span className="font-medium">{asinInfo.avgDailySales?.toFixed(1) || "0"}</span></div>
+                          <div><span className="text-gray-500">可售天数:</span> <span className="font-medium">{asinInfo.daysOfSupply || "0"}</span></div>
+                          <div><span className="text-gray-500">FBA在途:</span> <span className="font-medium">{asinInfo.inboundQty?.toLocaleString() || "0"}</span></div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-gray-500 mt-1">未找到该ASIN的库存信息</p>
+                      )}
+                    </div>
+                    <Badge variant="outline" className="shrink-0">
+                      {asinBatches.length} 个关联批次
+                    </Badge>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Batch Info + Logs side by side */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {/* Left: Batch List */}
+                <div className="lg:col-span-2">
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Truck className="w-4 h-4" />
+                        关联物流批次
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {asinBatchesQuery.isLoading ? (
+                        <div className="space-y-2">
+                          <Skeleton className="h-12 w-full" />
+                          <Skeleton className="h-12 w-full" />
+                        </div>
+                      ) : asinBatches.length === 0 ? (
+                        <div className="py-8 text-center text-gray-400">
+                          <Boxes className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                          <p className="text-sm">该ASIN暂无关联物流批次</p>
+                          <Button variant="outline" size="sm" className="mt-2" onClick={() => onNavigate("/ops/shipping")}>
+                            前往创建批次
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b text-gray-500">
+                                <th className="text-left py-2 px-2 font-medium">批次名称</th>
+                                <th className="text-left py-2 px-2 font-medium">状态</th>
+                                <th className="text-right py-2 px-2 font-medium">数量</th>
+                                <th className="text-left py-2 px-2 font-medium">物流方式</th>
+                                <th className="text-left py-2 px-2 font-medium">创建时间</th>
+                                <th className="text-left py-2 px-2 font-medium">操作</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {asinBatches.map((batch: any) => {
+                                const st = STATUS_MAP[batch.currentStep] || { label: `步骤${batch.currentStep}`, color: "bg-gray-100 text-gray-700" };
+                                return (
+                                  <tr key={batch.id} className="border-b last:border-0 hover:bg-gray-50">
+                                    <td className="py-2 px-2 font-medium">{batch.batchName}</td>
+                                    <td className="py-2 px-2">
+                                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${st.color}`}>
+                                        {st.label}
+                                      </span>
+                                    </td>
+                                    <td className="py-2 px-2 text-right">{batch.quantity?.toLocaleString() || "-"}</td>
+                                    <td className="py-2 px-2">{batch.shippingMethod || "-"}</td>
+                                    <td className="py-2 px-2 text-gray-500">
+                                      {batch.createdAt ? new Date(batch.createdAt).toLocaleDateString() : "-"}
+                                    </td>
+                                    <td className="py-2 px-2">
+                                      <Button variant="ghost" size="sm" onClick={() => onNavigate(`/ops/shipping/${batch.id}`)}>
+                                        <ExternalLink className="w-3 h-3 mr-1" />
+                                        详情
+                                      </Button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Right: Logs Panel */}
+                <div className="lg:col-span-1">
+                  <Card className="h-full flex flex-col">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <History className="w-4 h-4" />
+                        操作日志
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="flex-1 flex flex-col">
+                      {/* Add log */}
+                      <div className="flex gap-2 mb-3">
+                        <Input
+                          placeholder="添加备注日志..."
+                          value={logContent}
+                          onChange={(e) => setLogContent(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && logContent.trim() && selectedAsin) {
+                              addLogMut.mutate({ asin: selectedAsin, content: logContent.trim() });
+                            }
+                          }}
+                          className="text-sm"
+                        />
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            if (logContent.trim() && selectedAsin) {
+                              addLogMut.mutate({ asin: selectedAsin, content: logContent.trim() });
+                            }
+                          }}
+                          disabled={!logContent.trim() || addLogMut.isPending}
+                        >
+                          <Send className="w-3 h-3" />
+                        </Button>
+                      </div>
+
+                      {/* Log list */}
+                      <ScrollArea className="flex-1 max-h-[320px]">
+                        {asinLogsQuery.isLoading ? (
+                          <div className="space-y-2">
+                            <Skeleton className="h-8 w-full" />
+                            <Skeleton className="h-8 w-full" />
+                          </div>
+                        ) : asinLogs.length === 0 ? (
+                          <div className="py-6 text-center text-gray-400">
+                            <MessageSquare className="w-6 h-6 mx-auto mb-2 opacity-30" />
+                            <p className="text-xs">暂无日志记录</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {asinLogs.map((log: any) => (
+                              <div key={log.id} className="border-l-2 border-gray-200 pl-3 py-1">
+                                <p className="text-sm">{log.content}</p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-[10px] text-gray-400">
+                                    {new Date(log.createdAt).toLocaleString()}
+                                  </span>
+                                  {log.batchName && (
+                                    <Badge variant="outline" className="text-[10px] py-0 px-1">
+                                      {log.batchName}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </ScrollArea>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!selectedAsin && (
+            <div className="py-8 text-center text-gray-400">
+              <Search className="w-8 h-8 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">输入ASIN查看物流批次详情和操作日志</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="text-center">
         <Button variant="outline" onClick={() => onNavigate("/ops/shipping")}>

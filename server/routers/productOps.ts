@@ -69,6 +69,8 @@ export const productOpsRouter = router({
       budgetProfit: z.string().optional(),
       budgetAcos: z.string().optional(),
       notes: z.string().optional(),
+      operator: z.string().optional(),
+      storeName: z.string().optional(),
       variants: z.array(z.object({
         childAsin: z.string().min(1).max(20),
         sku: z.string().optional(),
@@ -91,6 +93,8 @@ export const productOpsRouter = router({
         budgetProfit: input.budgetProfit || undefined,
         budgetAcos: input.budgetAcos || undefined,
         notes: input.notes || undefined,
+        operator: input.operator || undefined,
+        storeName: input.storeName || undefined,
       });
       const productId = result.insertId;
 
@@ -122,6 +126,8 @@ export const productOpsRouter = router({
       budgetProfit: z.string().optional(),
       budgetAcos: z.string().optional(),
       notes: z.string().optional(),
+      operator: z.string().optional(),
+      storeName: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -1574,6 +1580,7 @@ export const productOpsRouter = router({
               marketplace,
               imageUrl: item.main_image || item.smallImageUrl || '',
               status: (item.status === 'Active' || item.status === 'active') ? 'active' : 'inactive',
+              storeName: seller.name || seller.wname || seller.account_name || '',
               variants: [],
             });
           }
@@ -1607,6 +1614,7 @@ export const productOpsRouter = router({
             marketplace: product.marketplace,
             imageUrl: product.imageUrl || undefined,
             status: product.status as any,
+            storeName: product.storeName || undefined,
           });
           
           // Insert variants

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -15,44 +15,80 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Plus, Search, Package, ShoppingBag, AlertCircle, CheckCircle2, Trash2, RefreshCw, Loader2, Download,
+  Plus, Search, Package, ShoppingBag, AlertCircle, CheckCircle2, Trash2, Loader2, Download, Store, User, Globe,
 } from "lucide-react";
+
+const MARKETPLACE_OPTIONS = [
+  { value: "ALL", label: "全部站点" },
+  { value: "US", label: "🇺🇸 US" },
+  { value: "CA", label: "🇨🇦 CA" },
+  { value: "MX", label: "🇲🇽 MX" },
+  { value: "UK", label: "🇬🇧 UK" },
+  { value: "DE", label: "🇩🇪 DE" },
+  { value: "FR", label: "🇫🇷 FR" },
+  { value: "IT", label: "🇮🇹 IT" },
+  { value: "ES", label: "🇪🇸 ES" },
+  { value: "JP", label: "🇯🇵 JP" },
+  { value: "AU", label: "🇦🇺 AU" },
+];
 
 export default function OpsProducts() {
   const [, navigate] = useLocation();
   const { data: products, isLoading, refetch } = trpc.productOps.listProducts.useQuery();
   const createMut = trpc.productOps.createProduct.useMutation({
     onSuccess: () => { refetch(); setShowCreate(false); resetForm(); toast.success("产品创建成功"); },
-    onError: (e) => toast.error(e.message),
+    onError: (e: any) => toast.error(e.message),
   });
   const deleteMut = trpc.productOps.deleteProduct.useMutation({
     onSuccess: () => { refetch(); toast.success("产品已删除"); },
-    onError: (e) => toast.error(e.message),
+    onError: (e: any) => toast.error(e.message),
   });
   const syncMut = trpc.productOps.syncFromLingxing.useMutation({
     onSuccess: (data) => {
       refetch();
       toast.success(`同步完成：新增${data.synced}个产品，跳过${data.skipped}个已存在`);
     },
-    onError: (e) => toast.error("同步失败", { description: e.message }),
+    onError: (e: any) => toast.error("同步失败", { description: e.message }),
   });
 
   const [showCreate, setShowCreate] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [marketplaceFilter, setMarketplaceFilter] = useState("ALL");
   const [form, setForm] = useState({
     parentAsin: "", title: "", brand: "", category: "", marketplace: "US",
     budgetRevenue: "", budgetProfit: "", budgetAcos: "", notes: "",
+    operator: "", storeName: "",
   });
 
   function resetForm() {
-    setForm({ parentAsin: "", title: "", brand: "", category: "", marketplace: "US", budgetRevenue: "", budgetProfit: "", budgetAcos: "", notes: "" });
+    setForm({ parentAsin: "", title: "", brand: "", category: "", marketplace: "US", budgetRevenue: "", budgetProfit: "", budgetAcos: "", notes: "", operator: "", storeName: "" });
   }
 
-  const filtered = (products || []).filter(p =>
-    p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.parentAsin.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (p.brand || "").toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    let list = products || [];
+    // Filter by marketplace
+    if (marketplaceFilter !== "ALL") {
+      list = list.filter(p => p.marketplace === marketplaceFilter);
+    }
+    // Filter by search
+    if (searchTerm) {
+      const q = searchTerm.toLowerCase();
+      list = list.filter(p =>
+        p.title.toLowerCase().includes(q) ||
+        p.parentAsin.toLowerCase().includes(q) ||
+        (p.brand || "").toLowerCase().includes(q) ||
+        (p.operator || "").toLowerCase().includes(q) ||
+        (p.storeName || "").toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [products, marketplaceFilter, searchTerm]);
+
+  // Unique marketplaces from data
+  const availableMarketplaces = useMemo(() => {
+    const set = new Set((products || []).map(p => p.marketplace || "US"));
+    return Array.from(set).sort();
+  }, [products]);
 
   const statusColors: Record<string, string> = {
     active: "bg-emerald-100 text-emerald-700",
@@ -87,15 +123,30 @@ export default function OpsProducts() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          placeholder="搜索ASIN、标题或品牌..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          className="pl-10"
-        />
+      {/* Filters */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="搜索ASIN、标题、品牌、运营或店铺..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <div className="flex items-center gap-1">
+          <Globe className="h-4 w-4 text-muted-foreground" />
+          <Select value={marketplaceFilter} onValueChange={setMarketplaceFilter}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="站点筛选" />
+            </SelectTrigger>
+            <SelectContent>
+              {MARKETPLACE_OPTIONS.filter(o => o.value === "ALL" || availableMarketplaces.includes(o.value)).map(o => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -105,8 +156,10 @@ export default function OpsProducts() {
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-blue-50"><ShoppingBag className="h-5 w-5 text-blue-600" /></div>
               <div>
-                <p className="text-2xl font-bold">{products?.length || 0}</p>
-                <p className="text-sm text-muted-foreground">总产品数</p>
+                <p className="text-2xl font-bold">{filtered.length}</p>
+                <p className="text-sm text-muted-foreground">
+                  {marketplaceFilter !== "ALL" ? `${marketplaceFilter}站产品` : "总产品数"}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -116,7 +169,7 @@ export default function OpsProducts() {
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-emerald-50"><CheckCircle2 className="h-5 w-5 text-emerald-600" /></div>
               <div>
-                <p className="text-2xl font-bold">{products?.filter(p => p.status === "active").length || 0}</p>
+                <p className="text-2xl font-bold">{filtered.filter(p => p.status === "active").length}</p>
                 <p className="text-sm text-muted-foreground">在售产品</p>
               </div>
             </div>
@@ -127,7 +180,7 @@ export default function OpsProducts() {
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-lg bg-orange-50"><AlertCircle className="h-5 w-5 text-orange-600" /></div>
               <div>
-                <p className="text-2xl font-bold">{products?.reduce((s, p) => s + p.pendingTodoCount, 0) || 0}</p>
+                <p className="text-2xl font-bold">{filtered.reduce((s, p) => s + p.pendingTodoCount, 0)}</p>
                 <p className="text-sm text-muted-foreground">待办任务</p>
               </div>
             </div>
@@ -149,7 +202,7 @@ export default function OpsProducts() {
           <CardContent className="py-12 text-center">
             <Package className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
             <p className="text-muted-foreground">
-              {searchTerm ? "没有找到匹配的产品" : "还没有添加产品，点击右上角\"添加产品\"开始"}
+              {searchTerm || marketplaceFilter !== "ALL" ? "没有找到匹配的产品" : "还没有添加产品，点击\"从领星同步\"或\"添加产品\"开始"}
             </p>
           </CardContent>
         </Card>
@@ -184,6 +237,18 @@ export default function OpsProducts() {
                     <span className="text-muted-foreground">站点</span>
                     <span>{product.marketplace}</span>
                   </div>
+                  {product.storeName && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground flex items-center gap-1"><Store className="h-3 w-3" />店铺</span>
+                      <span className="truncate max-w-[160px]">{product.storeName}</span>
+                    </div>
+                  )}
+                  {product.operator && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground flex items-center gap-1"><User className="h-3 w-3" />运营</span>
+                      <span>{product.operator}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">变体数</span>
                     <span>{product.variantCount}</span>
@@ -237,11 +302,15 @@ export default function OpsProducts() {
                 <Select value={form.marketplace} onValueChange={v => setForm(f => ({ ...f, marketplace: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="US">US</SelectItem>
-                    <SelectItem value="UK">UK</SelectItem>
-                    <SelectItem value="DE">DE</SelectItem>
-                    <SelectItem value="JP">JP</SelectItem>
-                    <SelectItem value="CA">CA</SelectItem>
+                    <SelectItem value="US">🇺🇸 US</SelectItem>
+                    <SelectItem value="UK">🇬🇧 UK</SelectItem>
+                    <SelectItem value="DE">🇩🇪 DE</SelectItem>
+                    <SelectItem value="JP">🇯🇵 JP</SelectItem>
+                    <SelectItem value="CA">🇨🇦 CA</SelectItem>
+                    <SelectItem value="FR">🇫🇷 FR</SelectItem>
+                    <SelectItem value="IT">🇮🇹 IT</SelectItem>
+                    <SelectItem value="ES">🇪🇸 ES</SelectItem>
+                    <SelectItem value="AU">🇦🇺 AU</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -269,6 +338,24 @@ export default function OpsProducts() {
                   placeholder="产品类目"
                   value={form.category}
                   onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>店铺名称</Label>
+                <Input
+                  placeholder="所属店铺"
+                  value={form.storeName}
+                  onChange={e => setForm(f => ({ ...f, storeName: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label>运营负责人</Label>
+                <Input
+                  placeholder="负责人姓名"
+                  value={form.operator}
+                  onChange={e => setForm(f => ({ ...f, operator: e.target.value }))}
                 />
               </div>
             </div>
