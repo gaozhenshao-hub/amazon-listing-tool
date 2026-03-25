@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
+import { useMarketplace } from "@/contexts/MarketplaceContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,8 @@ export default function OpsAds() {
   const [sortField, setSortField] = useState<string>("cost");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [selectedDays, setSelectedDays] = useState(7);
+  const [adStateFilter, setAdStateFilter] = useState<"all" | "enabled" | "paused" | "archived">("enabled");
+  const { marketplace } = useMarketplace();
   
   // AI analysis user interaction state
   const [userDecisions, setUserDecisions] = useState<Record<number, {
@@ -58,9 +61,36 @@ export default function OpsAds() {
     notes?: string;
   }>>({});
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [translations, setTranslations] = useState<Record<string, string>>({});
+  const [isTranslating, setIsTranslating] = useState(false);
 
-  const { data: campaignData, isLoading: campaignLoading, refetch: refetchCampaigns } = trpc.operations.getAdCampaigns.useQuery({});
-  const { data: searchTermData, isLoading: stLoading, refetch: refetchTerms } = trpc.operations.getSearchTerms.useQuery({ days: selectedDays });
+  const translateTerms = trpc.operations.translateSearchTerms.useMutation({
+    onSuccess: (data) => {
+      setTranslations(prev => ({ ...prev, ...data }));
+      toast.success(`已翻译${Object.keys(data).length}个搜索词`);
+      setIsTranslating(false);
+    },
+    onError: (err) => {
+      toast.error("翻译失败", { description: err.message });
+      setIsTranslating(false);
+    },
+  });
+
+  const handleBatchTranslate = () => {
+    const untranslated = searchTerms
+      .filter((st: any) => !translations[st.query])
+      .map((st: any) => st.query)
+      .slice(0, 50);
+    if (untranslated.length === 0) {
+      toast.info("所有搜索词已翻译");
+      return;
+    }
+    setIsTranslating(true);
+    translateTerms.mutate({ terms: untranslated });
+  };
+
+  const { data: campaignData, isLoading: campaignLoading, refetch: refetchCampaigns } = trpc.operations.getAdCampaigns.useQuery({ marketplace, adState: adStateFilter });
+  const { data: searchTermData, isLoading: stLoading, refetch: refetchTerms } = trpc.operations.getSearchTerms.useQuery({ days: selectedDays, marketplace });
 
   const aiAnalysis = trpc.operations.aiSearchTermAnalysis.useMutation({
     onSuccess: () => {
@@ -277,6 +307,29 @@ export default function OpsAds() {
 
         {/* Campaigns Tab */}
         <TabsContent value="campaigns" className="space-y-4">
+          {/* Ad State Filter */}
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">广告状态：</span>
+            {[{ value: "enabled", label: "启用中", color: "bg-emerald-100 text-emerald-700" },
+              { value: "paused", label: "已暂停", color: "bg-amber-100 text-amber-700" },
+              { value: "archived", label: "已归档", color: "bg-gray-100 text-gray-600" },
+              { value: "all", label: "全部", color: "bg-blue-100 text-blue-700" },
+            ].map((s) => (
+              <button
+                key={s.value}
+                onClick={() => setAdStateFilter(s.value as "all" | "enabled" | "paused" | "archived")}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
+                  adStateFilter === s.value
+                    ? `${s.color} ring-2 ring-offset-1 ring-current`
+                    : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base">广告活动效果对比</CardTitle>
@@ -332,7 +385,7 @@ export default function OpsAds() {
                       <tr><td colSpan={7} className="text-center py-12 text-gray-400">暂无广告数据</td></tr>
                     ) : (
                       campaigns.map((c: any, i: number) => (
-                        <tr key={i} className="border-b hover:bg-gray-50/50">
+                        <tr key={i} className={`border-b hover:bg-gray-50/50 ${c.state === 'paused' ? 'opacity-60' : c.state === 'archived' ? 'opacity-40' : ''}`}>
                           <td className="p-3 font-medium max-w-[200px] truncate">{c.campaign_name}</td>
                           <td className="p-3 text-right">{(c.impressions || 0).toLocaleString()}</td>
                           <td className="p-3 text-right">{(c.clicks || 0).toLocaleString()}</td>
@@ -347,9 +400,12 @@ export default function OpsAds() {
                           </td>
                           <td className="p-3 text-center">
                             <Badge variant="outline" className={`text-[10px] ${
-                              (c.acos || 0) <= 25 ? "text-emerald-600" : (c.acos || 0) <= 40 ? "text-amber-600" : "text-red-600"
+                              c.state === 'enabled' ? 'text-emerald-600 bg-emerald-50' :
+                              c.state === 'paused' ? 'text-amber-600 bg-amber-50' :
+                              c.state === 'archived' ? 'text-gray-500 bg-gray-50' :
+                              'text-gray-400'
                             }`}>
-                              {(c.acos || 0) <= 25 ? "良好" : (c.acos || 0) <= 40 ? "一般" : "需优化"}
+                              {c.state === 'enabled' ? '启用中' : c.state === 'paused' ? '已暂停' : c.state === 'archived' ? '已归档' : c.state || '未知'}
                             </Badge>
                           </td>
                         </tr>
@@ -498,6 +554,10 @@ export default function OpsAds() {
                       清除筛选
                     </Button>
                   )}
+                  <Button size="sm" variant="outline" onClick={handleBatchTranslate} disabled={isTranslating || stLoading}>
+                    {isTranslating ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <span className="mr-1 text-xs">译</span>}
+                    中文翻译
+                  </Button>
                   <Button size="sm" variant="outline" onClick={handleAiAnalyze} disabled={aiAnalysis.isPending || stLoading}>
                     {aiAnalysis.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1" />}
                     AI智能分析
@@ -518,6 +578,7 @@ export default function OpsAds() {
                     <thead>
                       <tr className="border-b bg-gray-50/50">
                         <th className="text-left p-3 font-medium text-gray-600">搜索词</th>
+                        <th className="text-left p-3 font-medium text-gray-600">中文翻译</th>
                         <th className="text-left p-3 font-medium text-gray-600">目标ASIN/关键词</th>
                         <th className="text-left p-3 font-medium text-gray-600">匹配类型</th>
                         <th className="text-center p-3 font-medium text-gray-600">分类</th>
@@ -542,7 +603,7 @@ export default function OpsAds() {
                     </thead>
                     <tbody>
                       {filteredTerms.length === 0 ? (
-                        <tr><td colSpan={11} className="text-center py-12 text-gray-400">暂无搜索词数据</td></tr>
+                        <tr><td colSpan={12} className="text-center py-12 text-gray-400">暂无搜索词数据</td></tr>
                       ) : (
                         filteredTerms.slice(0, 200).map((st: any, i: number) => {
                           const catConfig = CATEGORY_CONFIG[st.category] || CATEGORY_CONFIG.new_term;
@@ -553,6 +614,13 @@ export default function OpsAds() {
                                   <Search className="w-3 h-3 text-gray-400 shrink-0" />
                                   <span className="font-medium">{st.query}</span>
                                 </div>
+                              </td>
+                              <td className="p-3 text-xs text-gray-500 max-w-[150px] truncate" title={translations[st.query] || ''}>
+                                {translations[st.query] ? (
+                                  <span className="text-gray-700">{translations[st.query]}</span>
+                                ) : (
+                                  <span className="text-gray-300 italic">未翻译</span>
+                                )}
                               </td>
                               <td className="p-3 font-mono text-xs text-gray-500 max-w-[120px] truncate" title={st.target_text}>{st.target_text || "-"}</td>
                               <td className="p-3 text-xs text-gray-500">{st.match_type || "-"}</td>

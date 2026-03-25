@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { useMarketplace } from "@/contexts/MarketplaceContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,8 @@ import {
 export default function OpsDashboard() {
   const [, setLocation] = useLocation();
   
-  const { data, isLoading, refetch } = trpc.operations.getDashboardOverview.useQuery();
+  const { marketplace } = useMarketplace();
+  const { data, isLoading, refetch } = trpc.operations.getDashboardOverview.useQuery({ marketplace });
   const { data: statusData } = trpc.operations.getLingxingStatus.useQuery();
   const { data: products } = trpc.productOps.listProducts.useQuery();
 

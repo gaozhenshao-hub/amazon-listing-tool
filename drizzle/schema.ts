@@ -2267,3 +2267,44 @@ export const stepTimeTemplates = mysqlTable("step_time_templates", {
 });
 export type StepTimeTemplate = typeof stepTimeTemplates.$inferSelect;
 export type InsertStepTimeTemplate = typeof stepTimeTemplates.$inferInsert;
+
+
+// ============== User Settings (Global Preferences) ==============
+export const userSettings = mysqlTable("user_settings", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  settingKey: varchar("setting_key", { length: 100 }).notNull(),
+  settingValue: text("setting_value"),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+});
+export type UserSetting = typeof userSettings.$inferSelect;
+export type InsertUserSetting = typeof userSettings.$inferInsert;
+
+// ============== ASIN Permissions ==============
+export const asinPermissions = mysqlTable("asin_permissions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  asin: varchar("asin", { length: 20 }).notNull(),
+  msku: varchar("msku", { length: 100 }),
+  marketplace: varchar("marketplace", { length: 10 }).default("US"),
+  permissionLevel: mysqlEnum("permission_level", ["read", "write", "admin"]).default("read").notNull(),
+  grantedBy: int("granted_by"),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+});
+export type AsinPermission = typeof asinPermissions.$inferSelect;
+
+// ============== ASIN Status Cache ==============
+export const asinStatusCache = mysqlTable("asin_status_cache", {
+  id: int("id").autoincrement().primaryKey(),
+  asin: varchar("asin", { length: 20 }).notNull(),
+  msku: varchar("msku", { length: 100 }),
+  sid: varchar("sid", { length: 20 }),
+  marketplace: varchar("marketplace", { length: 10 }).default("US"),
+  listingStatus: mysqlEnum("listing_status", ["active", "inactive", "deleted", "manual_inactive"]).default("active").notNull(),
+  lastSyncedAt: bigint("last_synced_at", { mode: "number" }),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+});
+export type AsinStatusCache = typeof asinStatusCache.$inferSelect;

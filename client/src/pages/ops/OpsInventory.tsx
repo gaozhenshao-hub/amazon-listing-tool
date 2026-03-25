@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
+import { useMarketplace } from "@/contexts/MarketplaceContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,11 +46,21 @@ export default function OpsInventory() {
   const [showAiDialog, setShowAiDialog] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [showPredictionDetail, setShowPredictionDetail] = useState<any>(null);
+  const [hideDiscontinued, setHideDiscontinued] = useState(true);
+  const { marketplace } = useMarketplace();
+
+  // Fetch ASIN statuses to filter discontinued products
+  const { data: asinStatuses } = trpc.operations.getAsinStatuses.useQuery();
+  const syncAsinStatuses = trpc.operations.syncAsinStatuses.useMutation({
+    onSuccess: (data: any) => toast.success(`已同步${data.synced}个ASIN状态`),
+    onError: (err: any) => toast.error("同步失败", { description: err.message }),
+  });
 
   const { data, isLoading, refetch } = trpc.operations.getInventoryList.useQuery({
     alertFilter,
     sortBy,
     sortOrder,
+    marketplace,
   });
 
   const pipelineQuery = trpc.shippingBatch.getInventoryPipelineSummary.useQuery(undefined, {
@@ -80,7 +91,14 @@ export default function OpsInventory() {
     onError: (err: any) => toast.error("生成失败", { description: err.message }),
   });
 
-  const items = data?.items || [];
+  const allItems = data?.items || [];
+  // Filter out discontinued ASINs if toggle is on
+  const discontinuedAsins = new Set(
+    (asinStatuses || []).filter((s: any) => s.status === 'discontinued' || s.status === 'inactive').map((s: any) => s.asin)
+  );
+  const items = hideDiscontinued
+    ? allItems.filter((item: any) => !discontinuedAsins.has(item.asin))
+    : allItems;
   const stats = data?.stats;
   const pipeline = pipelineQuery.data;
   const predictions = predictionsQuery.data || [];
@@ -282,8 +300,29 @@ export default function OpsInventory() {
                 {sortOrder === "asc" ? "↑升序" : "↓降序"}
               </Button>
             </div>
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1.5 cursor-pointer text-sm">
+                <input
+                  type="checkbox"
+                  checked={hideDiscontinued}
+                  onChange={(e) => setHideDiscontinued(e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-gray-600">隐藏停售</span>
+              </label>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-xs"
+                onClick={() => syncAsinStatuses.mutate()}
+                disabled={syncAsinStatuses.isPending}
+              >
+                {syncAsinStatuses.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+                同步状态
+              </Button>
+            </div>
             <div className="ml-auto flex items-center gap-2">
-              <span className="text-sm text-gray-500">共 {items.length} 个SKU</span>
+              <span className="text-sm text-gray-500">共 {items.length}{hideDiscontinued && discontinuedAsins.size > 0 ? `/${allItems.length}` : ''} 个SKU</span>
               <Button size="sm" onClick={handleAiReplenish} disabled={aiReplenish.isPending}>
                 {aiReplenish.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}
                 AI补货建议
@@ -314,10 +353,14 @@ export default function OpsInventory() {
                     ) : (
                       items.map((item: any, idx: number) => {
                         const alertStyle = ALERT_COLORS[item.alertLevel as keyof typeof ALERT_COLORS] || ALERT_COLORS.normal;
+                        const isDiscontinued = discontinuedAsins.has(item.asin);
                         return (
-                          <tr key={idx} className={`border-b hover:bg-gray-50/50 ${alertStyle.bg}`}>
+                          <tr key={idx} className={`border-b hover:bg-gray-50/50 ${isDiscontinued ? 'opacity-50 bg-gray-50' : alertStyle.bg}`}>
                             <td className="p-3 font-mono text-xs">{item.seller_sku}</td>
-                            <td className="p-3 font-mono text-xs text-gray-500">{item.asin || "-"}</td>
+                            <td className="p-3 font-mono text-xs text-gray-500">
+                              {item.asin || "-"}
+                              {isDiscontinued && <span className="ml-1 text-[10px] text-red-400 font-medium">停售</span>}
+                            </td>
                             <td className="p-3 max-w-[180px] truncate">{item.product_name || "-"}</td>
                             <td className="p-3 text-right font-medium">{(item.fulfillable_qty || 0).toLocaleString()}</td>
                             <td className="p-3 text-right text-blue-600">{(item.inbound_quantity || 0).toLocaleString()}</td>

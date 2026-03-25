@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
+import { useMarketplace } from "@/contexts/MarketplaceContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ type AnalysisType = "cost_optimization" | "anomaly_detection" | "trend_forecast"
 export default function OpsProfit() {
   const [, setLocation] = useLocation();
   
+  const { marketplace } = useMarketplace();
   const [dateRange, setDateRange] = useState("30");
   const [showAiDialog, setShowAiDialog] = useState(false);
   const [analysisType, setAnalysisType] = useState<AnalysisType>("cost_optimization");
@@ -37,11 +39,13 @@ export default function OpsProfit() {
   const { data, isLoading, refetch } = trpc.operations.getProfitOverview.useQuery({
     startDate,
     endDate,
+    marketplace,
   });
 
   const { data: productData, isLoading: productLoading } = trpc.operations.getProfitByProduct.useQuery({
     startDate,
     endDate,
+    marketplace,
   });
 
   const aiAnalysis = trpc.operations.aiProfitAnalysis.useMutation({

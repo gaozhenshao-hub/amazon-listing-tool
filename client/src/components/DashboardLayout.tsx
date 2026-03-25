@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { getLoginUrl } from "@/const";
+import { useMarketplace } from "@/contexts/MarketplaceContext";
 import NotificationBell from "@/components/NotificationBell";
 import { useIsMobile } from "@/hooks/useMobile";
 import {
@@ -41,6 +42,7 @@ import {
   Menu,
   Home,
   Settings,
+  Globe,
   Users,
   User,
   ClipboardCheck,
@@ -638,6 +640,11 @@ function DashboardLayoutContent({
               );
             })}
           </nav>
+
+          {/* Marketplace selector - only for ops module */}
+          {activeModuleId === 'ops' && (
+            <MarketplaceSelector />
+          )}
         </div>
       )}
 
@@ -657,6 +664,40 @@ function DashboardLayoutContent({
         )}
         <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
       </div>
+    </div>
+  );
+}
+
+// ─── Marketplace Selector (ops module only) ──────────────────
+function MarketplaceSelector() {
+  const { marketplace, setMarketplace, marketplaces, isLoading } = useMarketplace();
+  
+  if (isLoading) {
+    return (
+      <div className="px-3 py-3 border-t">
+        <div className="h-8 bg-muted animate-pulse rounded-md" />
+      </div>
+    );
+  }
+  
+  return (
+    <div className="px-3 py-3 border-t shrink-0">
+      <div className="flex items-center gap-2 mb-2">
+        <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-xs font-medium text-muted-foreground">站点筛选</span>
+      </div>
+      <select
+        value={marketplace}
+        onChange={(e) => setMarketplace(e.target.value)}
+        className="w-full h-8 px-2 text-sm rounded-md border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+      >
+        <option value="ALL">全部站点</option>
+        {marketplaces.map((mp) => (
+          <option key={mp.code} value={mp.code}>
+            {mp.name} ({mp.storeNames.length}店)
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

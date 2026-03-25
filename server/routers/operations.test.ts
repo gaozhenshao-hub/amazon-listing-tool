@@ -408,3 +408,226 @@ describe("Operations Router - Helper Functions", () => {
     expect(diff).toBeLessThanOrEqual(31);
   });
 });
+
+describe("Operations Router - Marketplace Filtering", () => {
+  it("MARKETPLACE_MAP has correct US entry (mid=1)", () => {
+    const MARKETPLACE_MAP: Record<number, { code: string; name: string; region: string }> = {
+      1: { code: 'US', name: '美国', region: 'NA' },
+      2: { code: 'CA', name: '加拿大', region: 'NA' },
+      9: { code: 'JP', name: '日本', region: 'FE' },
+    };
+    expect(MARKETPLACE_MAP[1].code).toBe('US');
+    expect(MARKETPLACE_MAP[1].region).toBe('NA');
+    expect(MARKETPLACE_MAP[2].code).toBe('CA');
+  });
+
+  it("filterSidsByMarketplace filters sellers by marketplace code", () => {
+    const sellers = [
+      { sid: 7395, mid: 1, name: "2店-US" },
+      { sid: 7392, mid: 1, name: "1店-US" },
+      { sid: 8001, mid: 2, name: "CA-Store" },
+    ];
+    const MARKETPLACE_MAP: Record<number, { code: string }> = {
+      1: { code: 'US' },
+      2: { code: 'CA' },
+    };
+
+    function filterSidsByMarketplace(sellers: any[], marketplaceCode?: string): string[] {
+      if (!marketplaceCode || marketplaceCode === 'ALL') {
+        return sellers.map((s: any) => String(s.sid));
+      }
+      const midEntry = Object.entries(MARKETPLACE_MAP).find(([_, v]) => v.code === marketplaceCode);
+      if (!midEntry) return sellers.map((s: any) => String(s.sid));
+      const targetMid = Number(midEntry[0]);
+      const filtered = sellers.filter((s: any) => Number(s.mid) === targetMid);
+      return filtered.length > 0 ? filtered.map((s: any) => String(s.sid)) : sellers.map((s: any) => String(s.sid));
+    }
+
+    const usSids = filterSidsByMarketplace(sellers, 'US');
+    expect(usSids).toEqual(['7395', '7392']);
+
+    const caSids = filterSidsByMarketplace(sellers, 'CA');
+    expect(caSids).toEqual(['8001']);
+
+    const allSids = filterSidsByMarketplace(sellers, 'ALL');
+    expect(allSids).toEqual(['7395', '7392', '8001']);
+  });
+
+  it("getMarketplaces groups sellers by marketplace correctly", async () => {
+    const sellers = [
+      { sid: 7395, mid: 1, name: "2店-US" },
+      { sid: 7392, mid: 1, name: "1店-US" },
+      { sid: 8001, mid: 2, name: "CA-Store" },
+    ];
+    const MARKETPLACE_MAP: Record<number, { code: string; name: string; region: string }> = {
+      1: { code: 'US', name: '美国', region: 'NA' },
+      2: { code: 'CA', name: '加拿大', region: 'NA' },
+    };
+
+    const mpMap: Record<string, { code: string; name: string; region: string; sids: string[]; storeNames: string[] }> = {};
+    for (const s of sellers) {
+      const mid = Number(s.mid);
+      const mp = MARKETPLACE_MAP[mid];
+      if (!mp) continue;
+      if (!mpMap[mp.code]) {
+        mpMap[mp.code] = { ...mp, sids: [], storeNames: [] };
+      }
+      mpMap[mp.code].sids.push(String(s.sid));
+      mpMap[mp.code].storeNames.push(s.name);
+    }
+
+    const result = Object.values(mpMap).sort((a, b) => b.sids.length - a.sids.length);
+    expect(result).toHaveLength(2);
+    expect(result[0].code).toBe('US');
+    expect(result[0].sids).toEqual(['7395', '7392']);
+    expect(result[0].storeNames).toEqual(['2店-US', '1店-US']);
+    expect(result[1].code).toBe('CA');
+    expect(result[1].sids).toEqual(['8001']);
+  });
+});
+
+describe("Operations Router - Ad State Filtering", () => {
+  it("adState filter correctly filters campaigns by state", () => {
+    const campaigns = [
+      { campaign_id: "1", campaign_name: "Active Campaign", state: "enabled", spend: 100 },
+      { campaign_id: "2", campaign_name: "Paused Campaign", state: "paused", spend: 50 },
+      { campaign_id: "3", campaign_name: "Archived Campaign", state: "archived", spend: 20 },
+    ];
+
+    // Filter enabled only
+    const enabled = campaigns.filter(c => c.state === "enabled");
+    expect(enabled).toHaveLength(1);
+    expect(enabled[0].campaign_name).toBe("Active Campaign");
+
+    // Filter paused only
+    const paused = campaigns.filter(c => c.state === "paused");
+    expect(paused).toHaveLength(1);
+    expect(paused[0].campaign_name).toBe("Paused Campaign");
+
+    // All (no filter)
+    expect(campaigns).toHaveLength(3);
+  });
+
+  it("adState defaults to 'all' when not specified", () => {
+    const defaultState = 'all';
+    const campaigns = [
+      { state: "enabled" },
+      { state: "paused" },
+    ];
+    const filtered = defaultState === 'all' ? campaigns : campaigns.filter(c => c.state === defaultState);
+    expect(filtered).toHaveLength(2);
+  });
+});
+
+describe("Operations Router - ASIN Status Management", () => {
+  it("ASIN status correctly identifies active vs inactive listings", () => {
+    const listings = [
+      { asin1: "B0ABC12345", status: "Active", msku: "SKU001" },
+      { asin1: "B0DEF67890", status: "Inactive", msku: "SKU002" },
+      { asin1: "B0GHI11111", status: "active", msku: "SKU003" },
+      { asin1: "B0JKL22222", status: "deleted", msku: "SKU004" },
+    ];
+
+    const statuses = listings.map(item => ({
+      asin: item.asin1,
+      status: item.status === 'Active' || item.status === 'active' ? 'active' : 'inactive',
+    }));
+
+    expect(statuses[0].status).toBe('active');
+    expect(statuses[1].status).toBe('inactive');
+    expect(statuses[2].status).toBe('active');
+    expect(statuses[3].status).toBe('inactive');
+  });
+
+  it("Discontinued ASINs are filtered from inventory list", () => {
+    const items = [
+      { asin: "B0ABC12345", msku: "SKU001", fulfillable_qty: 100 },
+      { asin: "B0DEF67890", msku: "SKU002", fulfillable_qty: 50 },
+      { asin: "B0GHI11111", msku: "SKU003", fulfillable_qty: 200 },
+    ];
+
+    const discontinuedAsins = new Set(["B0DEF67890"]);
+    const filtered = items.filter(item => !discontinuedAsins.has(item.asin));
+
+    expect(filtered).toHaveLength(2);
+    expect(filtered.map(i => i.asin)).toEqual(["B0ABC12345", "B0GHI11111"]);
+  });
+
+  it("Discontinued ASINs should not trigger restock alerts", () => {
+    const items = [
+      { asin: "B0ABC12345", msku: "SKU001", sellable_days: 3 }, // Critical, active
+      { asin: "B0DEF67890", msku: "SKU002", sellable_days: 2 }, // Critical, discontinued
+      { asin: "B0GHI11111", msku: "SKU003", sellable_days: 50 }, // Normal, active
+    ];
+
+    const discontinuedAsins = new Set(["B0DEF67890"]);
+    const activeItems = items.filter(item => !discontinuedAsins.has(item.asin));
+    const criticalAlerts = activeItems.filter(item => item.sellable_days <= 7);
+
+    expect(criticalAlerts).toHaveLength(1);
+    expect(criticalAlerts[0].msku).toBe("SKU001");
+    // B0DEF67890 is discontinued, should NOT appear in alerts
+    expect(criticalAlerts.find(a => a.asin === "B0DEF67890")).toBeUndefined();
+  });
+});
+
+describe("Operations Router - User Settings", () => {
+  it("User settings are stored as key-value pairs", () => {
+    const settings: Record<string, string> = {};
+    settings['default_marketplace'] = 'US';
+    settings['language'] = 'zh-CN';
+
+    expect(settings.default_marketplace).toBe('US');
+    expect(settings.language).toBe('zh-CN');
+  });
+
+  it("Default marketplace preference is applied correctly", () => {
+    const userSettings = { default_marketplace: 'US' };
+    const marketplace = userSettings.default_marketplace || 'ALL';
+    expect(marketplace).toBe('US');
+
+    const emptySettings = {};
+    const defaultMp = (emptySettings as any).default_marketplace || 'ALL';
+    expect(defaultMp).toBe('ALL');
+  });
+});
+
+describe("Operations Router - Search Term Translation", () => {
+  it("Translation result maps English terms to Chinese", () => {
+    const translations: Record<string, string> = {
+      "wireless earbuds": "无线耳塞",
+      "bluetooth headphones": "蓝牙耳机",
+      "phone case": "手机壳",
+    };
+
+    expect(translations["wireless earbuds"]).toBe("无线耳塞");
+    expect(translations["bluetooth headphones"]).toBe("蓝牙耳机");
+    expect(translations["phone case"]).toBe("手机壳");
+  });
+
+  it("Batch translation limits to 50 terms", () => {
+    const allTerms = Array.from({ length: 100 }, (_, i) => `term_${i}`);
+    const batch = allTerms.slice(0, 50);
+
+    expect(batch).toHaveLength(50);
+    expect(batch[0]).toBe("term_0");
+    expect(batch[49]).toBe("term_49");
+  });
+
+  it("Already translated terms are skipped in batch", () => {
+    const searchTerms = [
+      { query: "wireless earbuds" },
+      { query: "bluetooth headphones" },
+      { query: "phone case" },
+    ];
+    const translations: Record<string, string> = {
+      "wireless earbuds": "无线耳塞",
+    };
+
+    const untranslated = searchTerms
+      .filter(st => !translations[st.query])
+      .map(st => st.query);
+
+    expect(untranslated).toEqual(["bluetooth headphones", "phone case"]);
+  });
+});

@@ -8,9 +8,45 @@ import {
   inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules,
   adAnalysisTasks, adAutomationRules, searchTermActions,
   competitorMonitors, competitorSnapshots, competitorReports,
-  lingxingApiLogs
+  lingxingApiLogs, userSettings, asinStatusCache, asinPermissions
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, lte } from "drizzle-orm";
+
+// Marketplace ID mapping (Lingxing mid -> country code)
+const MARKETPLACE_MAP: Record<number, { code: string; name: string; region: string }> = {
+  1: { code: 'US', name: '美国', region: 'NA' },
+  2: { code: 'CA', name: '加拿大', region: 'NA' },
+  3: { code: 'MX', name: '墨西哥', region: 'NA' },
+  4: { code: 'UK', name: '英国', region: 'EU' },
+  5: { code: 'DE', name: '德国', region: 'EU' },
+  6: { code: 'FR', name: '法国', region: 'EU' },
+  7: { code: 'IT', name: '意大利', region: 'EU' },
+  8: { code: 'ES', name: '西班牙', region: 'EU' },
+  9: { code: 'JP', name: '日本', region: 'FE' },
+  10: { code: 'AU', name: '澳大利亚', region: 'FE' },
+  11: { code: 'IN', name: '印度', region: 'FE' },
+  12: { code: 'AE', name: '阿联酋', region: 'ME' },
+  13: { code: 'SA', name: '沙特', region: 'ME' },
+  14: { code: 'SG', name: '新加坡', region: 'FE' },
+  15: { code: 'NL', name: '荷兰', region: 'EU' },
+  16: { code: 'SE', name: '瑞典', region: 'EU' },
+  17: { code: 'PL', name: '波兰', region: 'EU' },
+  18: { code: 'BR', name: '巴西', region: 'SA' },
+  19: { code: 'TR', name: '土耳其', region: 'EU' },
+  20: { code: 'BE', name: '比利时', region: 'EU' },
+};
+
+// Helper: Filter sids by marketplace code
+function filterSidsByMarketplace(sellers: any[], marketplaceCode?: string): string[] {
+  if (!marketplaceCode || marketplaceCode === 'ALL') {
+    return sellers.map((s: any) => String(s.sid));
+  }
+  const midEntry = Object.entries(MARKETPLACE_MAP).find(([_, v]) => v.code === marketplaceCode);
+  if (!midEntry) return sellers.map((s: any) => String(s.sid));
+  const targetMid = Number(midEntry[0]);
+  const filtered = sellers.filter((s: any) => Number(s.mid) === targetMid);
+  return filtered.length > 0 ? filtered.map((s: any) => String(s.sid)) : sellers.map((s: any) => String(s.sid));
+}
 
 // Helper: Get all seller SIDs from Lingxing (with cache + retry)
 let _sellerCache: { sids: string[], sellers: any[], ts: number } | null = null;
@@ -57,12 +93,16 @@ async function getAllSellerSids(): Promise<{sids: string[], sellers: any[]}> {
 // ============== Operations Dashboard ==============
 export const operationsRouter = router({
   // --- Dashboard Overview ---
-  getDashboardOverview: protectedProcedure.query(async ({ ctx }) => {
+  getDashboardOverview: protectedProcedure
+    .input(z.object({ marketplace: z.string().optional() }).optional())
+    .query(async ({ ctx, input }) => {
     const adapter = getLingxingAdapter();
     const isMock = adapter.isMockMode();
 
-    // First get all seller SIDs
-    const { sids, sellers } = await getAllSellerSids();
+    // First get all seller SIDs, then filter by marketplace
+    const { sids: allSids, sellers } = await getAllSellerSids();
+    const mp = input?.marketplace || 'US';
+    const sids = filterSidsByMarketplace(sellers, mp);
     const allSidsStr = sids.join(',');
     const firstSid = sids.length > 0 ? Number(sids[0]) : 1;
     
@@ -223,13 +263,14 @@ export const operationsRouter = router({
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
-      // Get real SIDs if not provided
+      // Get real SIDs filtered by marketplace
       let sidStr: string;
       if (input.sid) {
         sidStr = String(input.sid);
       } else {
-        const { sids } = await getAllSellerSids();
-        sidStr = sids.join(',');
+        const { sids, sellers } = await getAllSellerSids();
+        const filteredSids = filterSidsByMarketplace(sellers, input.marketplace);
+        sidStr = filteredSids.join(',');
       }
       console.log(`[InventoryList] Querying FBA inventory with sid=${sidStr}`);
       const res = await adapter.request({
@@ -448,6 +489,7 @@ ${JSON.stringify(input.skuData, null, 2)}
       startDate: z.string().optional(),
       endDate: z.string().optional(),
       granularity: z.enum(["daily", "weekly", "monthly"]).optional().default("daily"),
+      marketplace: z.string().optional(),
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
@@ -572,6 +614,7 @@ ${JSON.stringify(input.skuData, null, 2)}
     .input(z.object({
       startDate: z.string().optional(),
       endDate: z.string().optional(),
+      marketplace: z.string().optional(),
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
@@ -717,18 +760,16 @@ ${JSON.stringify(input.skuData, null, 2)}
       sid: z.number().optional(),
       startDate: z.string().optional(),
       endDate: z.string().optional(),
+      marketplace: z.string().optional(),
+      adState: z.enum(['all', 'enabled', 'paused', 'archived']).optional().default('all'),
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
-      // Get real SID if not provided
-      let realSid = input.sid;
-      if (!realSid) {
-        const { sids } = await getAllSellerSids();
-        realSid = sids.length > 0 ? Number(sids[0]) : 1;
-      }
-      // Get all sids to query campaigns across all stores
-      const { sids: allSids } = await getAllSellerSids();
-      const sidsToQuery = input.sid ? [input.sid] : allSids.map(Number).slice(0, 5); // Limit to first 5 stores
+      // Get real SIDs filtered by marketplace
+      const { sids: allSids, sellers } = await getAllSellerSids();
+      const filteredSids = filterSidsByMarketplace(sellers, input.marketplace);
+      let realSid = input.sid || (filteredSids.length > 0 ? Number(filteredSids[0]) : 1);
+      const sidsToQuery = input.sid ? [input.sid] : filteredSids.map(Number).slice(0, 5);
       console.log(`[AdCampaigns] Querying ad campaigns across sids: ${sidsToQuery.join(',')}`);
       
       // 1. Get campaign list from all stores (names, status, budget)
@@ -895,11 +936,17 @@ ${JSON.stringify(input.skuData, null, 2)}
         });
       }
       
-      // Sort by spend descending
-      campaigns.sort((a, b) => b.spend - a.spend);
+      // Filter by adState if specified
+      let filteredCampaigns = campaigns;
+      if (input.adState && input.adState !== 'all') {
+        filteredCampaigns = campaigns.filter(c => c.state === input.adState);
+      }
       
-      console.log(`[AdCampaigns] Final merged campaigns: ${campaigns.length}`);
-      return { campaigns, isMock: adapter.isMockMode() };
+      // Sort by spend descending
+      filteredCampaigns.sort((a, b) => b.spend - a.spend);
+      
+      console.log(`[AdCampaigns] Final merged campaigns: ${filteredCampaigns.length} (filtered from ${campaigns.length}, state=${input.adState})`);
+      return { campaigns: filteredCampaigns, allCampaigns: campaigns, isMock: adapter.isMockMode() };
     }),
 
   getSearchTerms: protectedProcedure
@@ -909,11 +956,13 @@ ${JSON.stringify(input.skuData, null, 2)}
       startDate: z.string().optional(),
       endDate: z.string().optional(),
       days: z.number().optional(), // aggregate over N days (default 7)
+      marketplace: z.string().optional(),
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
-      const { sids: allSids } = await getAllSellerSids();
-      const sidsToQuery = input.sid ? [input.sid] : allSids.map(Number).slice(0, 5);
+      const { sids: allSids, sellers } = await getAllSellerSids();
+      const filteredSids = filterSidsByMarketplace(sellers, input.marketplace);
+      const sidsToQuery = input.sid ? [input.sid] : filteredSids.map(Number).slice(0, 5);
       const days = input.days || 7;
       
       // Aggregate search terms over multiple days for more reliable data
@@ -1416,6 +1465,166 @@ ${JSON.stringify(input.searchTerms.map(t => ({
       .where(eq(competitorReports.userId, ctx.user.id))
       .orderBy(desc(competitorReports.createdAt));
   }),
+
+  // ============== Marketplace & Settings ==============
+  getMarketplaces: protectedProcedure.query(async () => {
+    const { sellers } = await getAllSellerSids();
+    // Group sellers by marketplace
+    const mpMap: Record<string, { code: string; name: string; region: string; sids: string[]; storeNames: string[] }> = {};
+    for (const s of sellers) {
+      const mid = Number(s.mid);
+      const mp = MARKETPLACE_MAP[mid];
+      if (!mp) continue;
+      if (!mpMap[mp.code]) {
+        mpMap[mp.code] = { ...mp, sids: [], storeNames: [] };
+      }
+      mpMap[mp.code].sids.push(String(s.sid));
+      mpMap[mp.code].storeNames.push(s.name || `Store ${s.sid}`);
+    }
+    return Object.values(mpMap).sort((a, b) => b.sids.length - a.sids.length);
+  }),
+
+  getUserSettings: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    const rows = await db!.select().from(userSettings)
+      .where(eq(userSettings.userId, ctx.user.id));
+    const result: Record<string, string> = {};
+    for (const r of rows) {
+      result[r.settingKey] = r.settingValue || '';
+    }
+    return result;
+  }),
+
+  saveUserSetting: protectedProcedure
+    .input(z.object({ key: z.string(), value: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const now = Date.now();
+      // Upsert: try to find existing, then insert or update
+      const existing = await db!.select().from(userSettings)
+        .where(and(eq(userSettings.userId, ctx.user.id), eq(userSettings.settingKey, input.key)));
+      if (existing.length > 0) {
+        await db!.update(userSettings)
+          .set({ settingValue: input.value, updatedAt: now })
+          .where(eq(userSettings.id, existing[0].id));
+      } else {
+        await db!.insert(userSettings).values({
+          userId: ctx.user.id,
+          settingKey: input.key,
+          settingValue: input.value,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      return { success: true };
+    }),
+
+  // ============== ASIN Status Management ==============
+  getAsinStatuses: protectedProcedure.query(async () => {
+    const db = await getDb();
+    const rows = await db!.select().from(asinStatusCache);
+    return rows.map(r => ({
+      asin: r.asin,
+      msku: r.msku,
+      marketplace: r.marketplace,
+      status: r.listingStatus,
+      lastSyncedAt: r.lastSyncedAt,
+    }));
+  }),
+
+  syncAsinStatuses: protectedProcedure.mutation(async () => {
+    const adapter = getLingxingAdapter();
+    const db = await getDb();
+    const { sids: allSids } = await getAllSellerSids();
+    let synced = 0;
+    const now = Date.now();
+    
+    // Query listing status from Lingxing for each store
+    for (const sid of allSids.slice(0, 10)) {
+      try {
+        const res = await adapter.request({
+          path: "/erp/sc/data/mws/listing",
+          body: { sid: Number(sid), offset: 0, length: 200 },
+        });
+        const listings = Array.isArray(res.data) ? res.data : (res.data as any)?.list || [];
+        for (const item of listings) {
+          const asin = item.asin1 || item.asin;
+          if (!asin) continue;
+          const status = item.status === 'Active' || item.status === 'active' ? 'active' : 'inactive';
+          // Upsert
+          const existing = await db!.select().from(asinStatusCache)
+            .where(and(eq(asinStatusCache.asin, asin), eq(asinStatusCache.sid, String(sid))));
+          if (existing.length > 0) {
+            await db!.update(asinStatusCache)
+              .set({ listingStatus: status as any, lastSyncedAt: now, updatedAt: now, msku: item.msku || item.seller_sku })
+              .where(eq(asinStatusCache.id, existing[0].id));
+          } else {
+            await db!.insert(asinStatusCache).values({
+              asin,
+              msku: item.msku || item.seller_sku || '',
+              sid: String(sid),
+              marketplace: 'US',
+              listingStatus: status as any,
+              lastSyncedAt: now,
+              createdAt: now,
+              updatedAt: now,
+            });
+          }
+          synced++;
+        }
+      } catch (err: any) {
+        console.warn(`[SyncAsinStatus] sid=${sid}: ${err.message}`);
+      }
+    }
+    return { synced };
+  }),
+
+  // ============== Search Term Translation ==============
+  translateSearchTerms: protectedProcedure
+    .input(z.object({ terms: z.array(z.string()).max(50) }))
+    .mutation(async ({ input }) => {
+      try {
+        const response = await invokeLLM({
+          messages: [
+            {
+              role: "system",
+              content: "You are a translation assistant. Translate the following English Amazon search terms to Chinese. Return a JSON object where keys are the original English terms and values are the Chinese translations. Be concise and accurate. Focus on the product/shopping intent."
+            },
+            {
+              role: "user",
+              content: `Translate these search terms to Chinese:\n${input.terms.join('\n')}`
+            }
+          ],
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "translations",
+              strict: true,
+              schema: {
+                type: "object",
+                properties: {
+                  translations: {
+                    type: "object",
+                    additionalProperties: { type: "string" },
+                  }
+                },
+                required: ["translations"],
+                additionalProperties: false,
+              }
+            }
+          }
+        });
+        const content = response.choices?.[0]?.message?.content;
+        if (content && typeof content === 'string') {
+          const parsed = JSON.parse(content);
+          return parsed.translations || {};
+        }
+        return {};
+      } catch (err: any) {
+        console.error(`[TranslateSearchTerms] Error: ${err.message}`);
+        return {};
+      }
+    }),
 });
 
 // Helper functions
