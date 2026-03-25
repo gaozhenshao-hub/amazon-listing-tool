@@ -713,3 +713,106 @@ export const STEP5_APLUS_COMBO_RECOMMEND_PROMPT = `${EXPERT_ROLE}
 - score为0-100的推荐评分，基于产品特征与方案的匹配度
 - 3套方案应有明显差异化，覆盖不同的展示策略
 - 每个模块的contentSuggestion要结合产品的实际卖点来写，不要泛泛而谈`;
+
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── Step 6 Lovart: Lovart ChatCanvas 逐张精雕提示词 ─────────────
+// ═══════════════════════════════════════════════════════════════════
+
+export const STEP6_LOVART_PROMPT_GENERATION = `${EXPERT_ROLE}
+
+你同时也是Lovart AI设计平台的资深用户，精通Lovart ChatCanvas的对话式图片生成工作流。
+
+你的任务：根据前5步确认的所有内容（卖点、大纲、风格、参考图、图片建议），为每张图生成**专门适配Lovart ChatCanvas逐张精雕模式**的提示词。
+
+**Lovart提示词核心原则：**
+1. 使用**自然语言完整句子**描述，不要使用Midjourney式的关键词堆叠
+2. 每张图的提示词必须包含5个结构化段落：【产品描述】【灯光设置】【背景/场景】【构图】【情感基调】
+3. 不需要negative prompt（Lovart不使用负面提示词机制）
+4. 不需要seed、style strength等参数（Lovart通过对话迭代调整）
+5. 提供3-5条**迭代调整话术**，用于生成后的对话式精修
+6. 提供**后期精修步骤**，指导使用Touch Edit、Text Edit、Edit Elements等工具
+
+**Lovart模式推荐规则：**
+- 主图（白底产品图）→ "Thinking Mode + Nano Banana Pro"（高保真产品摄影）
+- 卖点信息图/辅图 → "ChatCanvas对话式 + Text Edit"（需要文字排版）
+- 场景/生活方式图 → "ChatCanvas对话式 + Touch Edit"（需要场景融合和细节调整）
+- 对比/数据展示图 → "ChatCanvas + Edit Elements"（需要图层编辑）
+- A+全屏Banner → "Thinking Mode + Nano Banana Pro"（高品质全屏图）
+- A+图文模块 → "ChatCanvas对话式 + Text Edit"（图文混排）
+- A+对比表/参数图 → "ChatCanvas + Edit Elements"（精确布局）
+
+**产品描述要求（关键！）：**
+描述产品时必须包含：形状、尺寸（大致）、材质、颜色、纹理/质感、品牌元素位置。
+例如："这是一款圆柱形不锈钢保温杯，高约25cm，哑光黑色外壳，杯身中部有品牌Logo激光雕刻，杯盖为旋转式设计，硅胶密封圈可见。"
+
+**灯光描述要求（关键！）：**
+必须指定：光源方向（左/右/上/前）、角度（如45°）、类型（柔光箱/硬光/自然光）、色温感受。
+例如："主光源从左上方45°照射，使用大面积柔光箱，营造均匀的光影过渡。补光从右侧填充阴影区域，亮度约为主光的60%。整体色温偏暖，约5500K。"
+
+**构图描述要求：**
+必须描述：产品在画面中的位置和占比、文案区域位置、留白方向、视觉焦点。
+例如："产品位于画面左侧偏下，占画面约55%。右上方留出35%空间用于放置标题和卖点文案。视觉焦点在产品的核心功能区域。底部留10%呼吸空间。"
+
+请以JSON格式输出：
+{
+  "brandDNA": {
+    "template": "完整的品牌DNA定义文本（用户需要在Lovart中首先发送这段内容）",
+    "instructions": "使用说明：在Lovart ChatCanvas中新建会话后，首先发送此品牌DNA定义，等AI确认后再逐张生成图片"
+  },
+  "consistencyStrategy": {
+    "lockReference": "Lock as Reference使用指南：上传产品图后锁定为参考，确保所有图片中产品外观一致",
+    "sameSession": "在同一ChatCanvas会话中生成所有图片，利用会话记忆保持风格一致",
+    "checkList": ["一致性检查项1", "一致性检查项2", "..."]
+  },
+  "imagePrompts": [
+    {
+      "imageType": "mainImage/secondaryImage/aPlusSection",
+      "imageNumber": 1,
+      "imageLabel": "图片标签（如：主图、辅图2-卖点信息图、A+模块1-品牌Banner）",
+      "purpose": "图片目的简述",
+      "lovartMode": "推荐的Lovart模式组合（如：Thinking Mode + Nano Banana Pro）",
+      "lovartPrompt": "完整的Lovart ChatCanvas提示词，使用自然语言，包含【产品描述】【灯光设置】【背景/场景】【构图】【情感基调】五个段落",
+      "iterationGuide": [
+        "如果xxx不满意：'具体的Lovart对话修改指令'",
+        "如果xxx不满意：'具体的Lovart对话修改指令'",
+        "如果xxx不满意：'具体的Lovart对话修改指令'"
+      ],
+      "postEditSteps": [
+        "使用Touch Edit/Text Edit/Edit Elements的具体操作指引",
+        "最终使用Upscale放大到目标尺寸"
+      ],
+      "estimatedIterations": "预计迭代次数（如：2-3次）",
+      "keyQualityChecks": ["质量检查项1", "质量检查项2"]
+    }
+  ],
+  "workflowSummary": {
+    "totalImages": "总图片数量",
+    "estimatedTime": "预计总耗时",
+    "workflowOrder": "建议的生成顺序说明（先主图建立基调，再辅图，最后A+）",
+    "tips": ["整体工作流提示1", "整体工作流提示2"]
+  }
+}
+
+**重要提醒：**
+- lovartPrompt字段必须是可以直接复制粘贴到Lovart ChatCanvas的完整文本
+- 使用中文撰写提示词（Lovart完美支持中文输入）
+- 每张图的提示词长度建议在200-400字之间，既要详细又不要冗余
+- 迭代指南中的对话指令要具体、可操作，不要泛泛而谈
+- 信息图/卖点图中的文案内容要在提示词中明确写出，方便Lovart直接渲染`;
+
+export const STEP6_LOVART_TRANSLATION_PROMPT = `你是一名专业的中英文翻译专家，精通AI设计工具和亚马逊电商领域的术语。
+
+你的任务：将以下Lovart提示词方案翻译为英文版本。
+
+**翻译要求：**
+1. 保持完全相同的JSON结构
+2. lovartPrompt字段翻译为英文（Lovart也支持英文输入，部分用户偏好英文）
+3. iterationGuide中的对话指令翻译为英文
+4. brandDNA.template翻译为英文
+5. 其他描述性字段翻译为英文
+6. 保留所有色值（#开头的）不翻译
+7. 翻译要自然流畅，使用专业的设计和摄影术语
+
+输入：中文Lovart提示词方案JSON
+输出：仅返回翻译后的JSON，结构完全一致`;

@@ -330,6 +330,13 @@
       "when": 1774409286537,
       "tag": "0046_loose_the_hood",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "5",
+      "when": 1774423182284,
+      "tag": "0047_heavy_shatterstar",
+      "breakpoints": true
     }
   ]
 }

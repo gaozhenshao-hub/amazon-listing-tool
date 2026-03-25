@@ -17,6 +17,8 @@ import {
   STEP5_APLUS_COMBO_RECOMMEND_PROMPT,
   STEP6_AI_PROMPT_GENERATION,
   STEP6_TRANSLATION_PROMPT,
+  STEP6_LOVART_PROMPT_GENERATION,
+  STEP6_LOVART_TRANSLATION_PROMPT,
 } from "../imageWorkflowPrompts";
 import { IMAGE_ADVICE_TRANSLATION_PROMPT } from "../prompts";
 import { storagePut } from "../storage";
@@ -828,6 +830,80 @@ export const imageWorkflowRouter = router({
       return { success: true };
     }),
 
+  // ─── Step 6 Lovart: Generate Lovart ChatCanvas prompts ────────
+  generateStep6Lovart: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      if (!session.step5Confirmed) throw new Error("Step 5 not confirmed yet");
+
+      const step5Data = session.step5OptimizedResult || session.step5UserEdit || session.step5AiResult;
+
+      // Generate Lovart-optimized prompts (Chinese primary)
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: STEP6_LOVART_PROMPT_GENERATION },
+          {
+            role: "user",
+            content: `\u4ea7\u54c1\u540d\u79f0: ${project.productName || project.name}\n\u54c1\u724c: ${project.brand || '\u672a\u6307\u5b9a'}\n\u7c7b\u76ee: ${project.category || '\u672a\u6307\u5b9a'}\n\n--- \u5df2\u786e\u8ba4\u7684\u5356\u70b9\u4f53\u7cfb ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- \u5df2\u786e\u8ba4\u7684\u56fe\u7247\u5927\u7eb2 ---\n${session.step2UserEdit || session.step2AiResult}\n\n--- \u5df2\u786e\u8ba4\u7684\u98ce\u683c\u65b9\u6848 ---\n${session.step3UserEdit || session.step3AiResult}\n\n--- \u5df2\u786e\u8ba4\u7684\u53c2\u8003\u56fe ---\n${session.step4UserEdit || session.step4AiResult}\n\n--- \u5df2\u786e\u8ba4\u7684\u56fe\u7247\u5efa\u8bae ---\n${step5Data}\n\n\u8bf7\u4e3a\u6bcf\u5f20\u56fe\u751f\u6210\u4e13\u95e8\u9002\u914dLovart ChatCanvas\u7684\u63d0\u793a\u8bcd\uff0c\u5305\u542b\u54c1\u724cDNA\u5b9a\u4e49\u3001\u4e00\u81f4\u6027\u7b56\u7565\u3001\u6bcf\u5f20\u56fe\u7684\u8be6\u7ec6\u63d0\u793a\u8bcd\u548c\u8fed\u4ee3\u6307\u5357\u3002`,
+          },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const result = parseLLMJson(response);
+      const resultStr = JSON.stringify(result);
+
+      // Generate English translation
+      let enStr: string | null = null;
+      try {
+        const enResponse = await invokeLLM({
+          messages: [
+            { role: "system", content: STEP6_LOVART_TRANSLATION_PROMPT },
+            { role: "user", content: `\u8bf7\u5c06\u4ee5\u4e0bLovart\u63d0\u793a\u8bcd\u65b9\u6848\u7ffb\u8bd1\u4e3a\u82f1\u6587\uff1a\n\n${resultStr}` },
+          ],
+          response_format: { type: "json_object" },
+        });
+        const enContent = typeof enResponse.choices[0].message.content === "string"
+          ? enResponse.choices[0].message.content
+          : JSON.stringify(enResponse.choices[0].message.content);
+        JSON.parse(enContent); // validate
+        enStr = enContent;
+      } catch (err) {
+        console.error("Step 6 Lovart EN translation failed:", err);
+      }
+
+      await db.updateImageWorkflowSession(session.id, {
+        step6LovartResult: resultStr,
+        step6LovartResultEn: enStr,
+        currentStep: 6,
+      });
+
+      return { cn: result, en: enStr ? JSON.parse(enStr) : null };
+    }),
+
+  // ─── Step 6 Lovart: Save user edits ───────────────────────────
+  saveStep6LovartEdit: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      userEdit: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
+
+      await db.updateImageWorkflowSession(session.id, {
+        step6LovartUserEdit: input.userEdit,
+      });
+
+      return { success: true };
+    }),
+
   // ─── Reset to a specific step ─────────────────────────────────
   resetToStep: protectedProcedure
     .input(z.object({
@@ -877,6 +953,9 @@ export const imageWorkflowRouter = router({
         clearData.step6AiResultCn = null;
         clearData.step6UserEdit = null;
         clearData.step6Confirmed = 0;
+        clearData.step6LovartResult = null;
+        clearData.step6LovartResultEn = null;
+        clearData.step6LovartUserEdit = null;
       }
       clearData.status = "in_progress";
 

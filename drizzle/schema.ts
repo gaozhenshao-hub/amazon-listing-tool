@@ -1353,6 +1353,10 @@ export const imageWorkflowSessions = mysqlTable("image_workflow_sessions", {
   step6AiResultCn: text("step6AiResultCn"),    // AI generated prompts JSON (Chinese)
   step6UserEdit: text("step6UserEdit"),        // User edited prompts JSON
   step6Confirmed: int("step6Confirmed").default(0).notNull(),
+  // Step 6 Lovart: Lovart ChatCanvas专用提示词
+  step6LovartResult: text("step6LovartResult"),      // Lovart prompts JSON (Chinese - primary)
+  step6LovartResultEn: text("step6LovartResultEn"),  // Lovart prompts JSON (English translation)
+  step6LovartUserEdit: text("step6LovartUserEdit"),  // User edited Lovart prompts JSON
   // PDF export
   pdfUrl: text("pdfUrl"),                      // S3 URL for exported PDF
 

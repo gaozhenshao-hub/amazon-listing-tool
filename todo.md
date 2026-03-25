@@ -2140,3 +2140,14 @@
 - [x] 数据库：设计asin_permissions表（user_id + asin + permission_level）
 - [x] 后端：预留权限校验中间件
 - [x] 前端：预留管理入口（设置页面中）
+
+## Lovart专用提示词优化
+- [x] 后端：新增STEP6_LOVART_PROMPT_GENERATION提示词模板（品牌DNA、五段式结构、迭代指南）
+- [x] 后端：新增STEP6_LOVART_TRANSLATION_PROMPT翻译模板
+- [x] 后端：新增generateStep6Lovart procedure（生成Lovart专用提示词）
+- [x] 后端：新增saveStep6LovartEdit procedure（保存用户编辑）
+- [x] 数据库：新增step6_lovart_result、step6_lovart_result_en、step6_lovart_user_edit字段
+- [x] 前端：Step6新增Lovart/通用双标签页切换
+- [x] 前端：Lovart标签页展示品牌DNA、一致性策略、工作流总览
+- [x] 前端：每张图片可展开查看提示词、迭代话术、精修步骤、质量检查项
+- [x] 前端：支持中英文切换和一键复制

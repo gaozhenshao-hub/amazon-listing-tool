@@ -3391,8 +3391,362 @@ function safeJsonParse(str: string | null | undefined): any {
   try { return JSON.parse(str); } catch { return null; }
 }
 // ═════════════════════════════════════════════════════════════════
-// ─── Step 6: AI Prompts Generation ──────────────────────────────────
+// ─── Step 6: AI Prompts Generation (with Lovart Tab) ─────────────
 // ═════════════════════════════════════════════════════════════════
+
+// ---- Lovart Sub-Tab Component ----
+function Step6LovartTab({
+  projectId,
+  session,
+}: {
+  projectId: number;
+  session: any;
+}) {
+  const generateLovartMutation = trpc.imageWorkflow.generateStep6Lovart.useMutation();
+  const saveLovartEditMutation = trpc.imageWorkflow.saveStep6LovartEdit.useMutation();
+  const [lovartCnData, setLovartCnData] = useState<any>(null);
+  const [lovartEnData, setLovartEnData] = useState<any>(null);
+  const [lovartLang, setLovartLang] = useState<"cn" | "en">("cn");
+  const [copiedIdx, setCopiedIdx] = useState<string | null>(null);
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (session?.step6LovartResult) {
+      try { setLovartCnData(JSON.parse(session.step6LovartUserEdit || session.step6LovartResult)); } catch {}
+    }
+    if (session?.step6LovartResultEn) {
+      try { setLovartEnData(JSON.parse(session.step6LovartResultEn)); } catch {}
+    }
+  }, [session?.step6LovartResult, session?.step6LovartResultEn, session?.step6LovartUserEdit]);
+
+  const handleGenerateLovart = async () => {
+    try {
+      const result = await generateLovartMutation.mutateAsync({ projectId });
+      setLovartCnData(result.cn);
+      setLovartEnData(result.en);
+      toast.success("Lovart提示词生成完成");
+    } catch (err: any) {
+      toast.error(err.message || "生成失败");
+    }
+  };
+
+  const handleCopy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedIdx(key);
+      toast.success("已复制到剪贴板");
+      setTimeout(() => setCopiedIdx(null), 2000);
+    });
+  };
+
+  const handleEditLovartPrompt = (idx: number, value: string) => {
+    setLovartCnData((prev: any) => {
+      if (!prev?.imagePrompts) return prev;
+      const prompts = [...prev.imagePrompts];
+      prompts[idx] = { ...prompts[idx], lovartPrompt: value };
+      const updated = { ...prev, imagePrompts: prompts };
+      saveLovartEditMutation.mutate({ projectId, userEdit: JSON.stringify(updated) });
+      return updated;
+    });
+  };
+
+  const data = lovartLang === "en" && lovartEnData ? lovartEnData : lovartCnData;
+
+  if (!lovartCnData && !generateLovartMutation.isPending) {
+    return (
+      <div className="space-y-4">
+        <Card className="border-pink-200 bg-gradient-to-br from-pink-50/50 to-purple-50/50">
+          <CardContent className="py-12 text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 text-white mb-4">
+              <Paintbrush className="w-8 h-8" />
+            </div>
+            <h3 className="text-lg font-semibold mb-2">Lovart ChatCanvas 专用提示词</h3>
+            <p className="text-muted-foreground text-sm mb-6 max-w-md mx-auto">
+              专为Lovart平台优化的自然语言提示词，支持逐张精雕工作流。包含品牌DNA定义、五段式结构化描述、迭代调整话术和精修工具指引。
+            </p>
+            <Button onClick={handleGenerateLovart} disabled={generateLovartMutation.isPending} className="bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700">
+              {generateLovartMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+              生成Lovart提示词
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (generateLovartMutation.isPending) {
+    return (
+      <Card>
+        <CardContent className="py-12">
+          <div className="flex items-center justify-center">
+            <Loader2 className="w-8 h-8 animate-spin text-pink-500 mr-3" />
+            <span className="text-muted-foreground">AI正在生成Lovart专用提示词（包含品牌DNA、逐张提示词、迭代指南）...</span>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleGenerateLovart} disabled={generateLovartMutation.isPending}>
+            <RotateCcw className="w-3 h-3 mr-1" /> 重新生成
+          </Button>
+        </div>
+        {lovartEnData && (
+          <div className="inline-flex rounded-lg border p-0.5 bg-muted">
+            <button
+              className={`px-3 py-1 rounded-md text-sm transition-all ${lovartLang === 'cn' ? 'bg-white shadow-sm font-medium' : 'text-muted-foreground'}`}
+              onClick={() => setLovartLang('cn')}
+            >
+              中文
+            </button>
+            <button
+              className={`px-3 py-1 rounded-md text-sm transition-all ${lovartLang === 'en' ? 'bg-white shadow-sm font-medium' : 'text-muted-foreground'}`}
+              onClick={() => setLovartLang('en')}
+            >
+              English
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Brand DNA */}
+      {data?.brandDNA && (
+        <Card className="border-pink-200">
+          <CardHeader className="pb-3 bg-gradient-to-r from-pink-50 to-purple-50">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Target className="w-4 h-4 text-pink-500" /> 品牌DNA定义（第一步：在Lovart中发送此内容）
+              </CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-xs border-pink-300 text-pink-700 hover:bg-pink-50"
+                onClick={() => handleCopy(data.brandDNA.template, 'brandDNA')}
+              >
+                {copiedIdx === 'brandDNA' ? <Check className="w-3 h-3 mr-1 text-green-500" /> : <Copy className="w-3 h-3 mr-1" />}
+                {copiedIdx === 'brandDNA' ? '已复制' : '复制品牌DNA'}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <div className="p-4 bg-pink-50/50 rounded-lg border border-pink-200 text-sm whitespace-pre-wrap leading-relaxed">
+              {data.brandDNA.template}
+            </div>
+            {data.brandDNA.instructions && (
+              <p className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
+                <Lightbulb className="w-3 h-3 text-amber-500" /> {data.brandDNA.instructions}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Consistency Strategy */}
+      {data?.consistencyStrategy && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Layers className="w-4 h-4 text-blue-500" /> 一致性保障策略
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+              <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                <p className="text-xs font-medium text-blue-700 mb-1">Lock as Reference</p>
+                <p className="text-sm">{data.consistencyStrategy.lockReference}</p>
+              </div>
+              <div className="p-3 bg-green-50 rounded-lg border border-green-100">
+                <p className="text-xs font-medium text-green-700 mb-1">同会话策略</p>
+                <p className="text-sm">{data.consistencyStrategy.sameSession}</p>
+              </div>
+            </div>
+            {data.consistencyStrategy.checkList?.length > 0 && (
+              <div className="p-3 bg-gray-50 rounded-lg border">
+                <p className="text-xs font-medium text-muted-foreground mb-2">一致性检查清单</p>
+                <div className="grid grid-cols-2 gap-1">
+                  {data.consistencyStrategy.checkList.map((item: string, i: number) => (
+                    <div key={i} className="flex items-center gap-1.5 text-xs">
+                      <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Workflow Summary */}
+      {data?.workflowSummary && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <BarChart3 className="w-4 h-4 text-green-500" /> 工作流总览
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+              <div className="p-3 bg-gray-50 rounded-lg border text-center">
+                <p className="text-2xl font-bold text-primary">{data.workflowSummary.totalImages}</p>
+                <p className="text-xs text-muted-foreground">总图片数</p>
+              </div>
+              <div className="p-3 bg-gray-50 rounded-lg border text-center">
+                <p className="text-lg font-bold text-primary">{data.workflowSummary.estimatedTime}</p>
+                <p className="text-xs text-muted-foreground">预计耗时</p>
+              </div>
+            </div>
+            {data.workflowSummary.workflowOrder && (
+              <div className="p-3 bg-amber-50 rounded-lg border border-amber-100 text-sm mb-2">
+                <strong className="text-amber-700">建议生成顺序：</strong> {data.workflowSummary.workflowOrder}
+              </div>
+            )}
+            {data.workflowSummary.tips?.length > 0 && (
+              <div className="space-y-1">
+                {data.workflowSummary.tips.map((tip: string, i: number) => (
+                  <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
+                    <Lightbulb className="w-3 h-3 text-amber-500 mt-0.5 shrink-0" />
+                    {tip}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Individual Image Prompts */}
+      {data?.imagePrompts?.map((prompt: any, idx: number) => (
+        <Card key={idx} className="overflow-hidden">
+          <CardHeader
+            className="pb-3 bg-gradient-to-r from-pink-50 to-purple-50 cursor-pointer"
+            onClick={() => setExpandedIdx(expandedIdx === idx ? null : idx)}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Badge className={`${
+                  prompt.imageType === 'mainImage' ? 'bg-amber-500' :
+                  prompt.imageType === 'secondaryImage' ? 'bg-blue-500' : 'bg-purple-500'
+                }`}>
+                  {prompt.imageLabel || `Image ${idx + 1}`}
+                </Badge>
+                <span className="text-sm text-muted-foreground">{prompt.purpose}</span>
+                {prompt.lovartMode && (
+                  <Badge variant="outline" className="text-xs border-pink-300 text-pink-700 bg-pink-50">
+                    {prompt.lovartMode}
+                  </Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {prompt.estimatedIterations && (
+                  <span className="text-xs text-muted-foreground">预计{prompt.estimatedIterations}迭代</span>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs border-pink-300 text-pink-700 hover:bg-pink-50"
+                  onClick={(e) => { e.stopPropagation(); handleCopy(prompt.lovartPrompt || '', `prompt-${idx}`); }}
+                >
+                  {copiedIdx === `prompt-${idx}` ? <Check className="w-3 h-3 mr-1 text-green-500" /> : <Copy className="w-3 h-3 mr-1" />}
+                  {copiedIdx === `prompt-${idx}` ? '已复制' : '复制提示词'}
+                </Button>
+                <ChevronRight className={`w-4 h-4 transition-transform ${expandedIdx === idx ? 'rotate-90' : ''}`} />
+              </div>
+            </div>
+          </CardHeader>
+
+          {expandedIdx === idx && (
+            <CardContent className="pt-4 space-y-4">
+              {/* Main Lovart Prompt */}
+              <div>
+                <label className="text-xs font-medium text-pink-700 flex items-center gap-1 mb-1">
+                  <Paintbrush className="w-3 h-3" /> Lovart ChatCanvas 提示词
+                </label>
+                {lovartLang === 'cn' ? (
+                  <Textarea
+                    value={lovartCnData?.imagePrompts?.[idx]?.lovartPrompt || ''}
+                    onChange={(e) => handleEditLovartPrompt(idx, e.target.value)}
+                    className="min-h-[200px] text-sm bg-pink-50/30 border-pink-200 leading-relaxed"
+                  />
+                ) : (
+                  <div className="p-4 bg-pink-50/30 rounded-lg border border-pink-200 text-sm whitespace-pre-wrap leading-relaxed">
+                    {prompt.lovartPrompt}
+                  </div>
+                )}
+              </div>
+
+              {/* Iteration Guide */}
+              {prompt.iterationGuide?.length > 0 && (
+                <div>
+                  <label className="text-xs font-medium text-blue-700 flex items-center gap-1 mb-2">
+                    <RefreshCw className="w-3 h-3" /> 迭代调整话术（生成后不满意时使用）
+                  </label>
+                  <div className="space-y-1.5">
+                    {prompt.iterationGuide.map((guide: string, gi: number) => (
+                      <div key={gi} className="flex items-start gap-2 group">
+                        <div className="flex-1 p-2 bg-blue-50/50 rounded border border-blue-100 text-xs font-mono">
+                          {guide}
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => handleCopy(guide, `guide-${idx}-${gi}`)}
+                        >
+                          {copiedIdx === `guide-${idx}-${gi}` ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Post Edit Steps */}
+              {prompt.postEditSteps?.length > 0 && (
+                <div>
+                  <label className="text-xs font-medium text-purple-700 flex items-center gap-1 mb-2">
+                    <Wand2 className="w-3 h-3" /> 精修步骤
+                  </label>
+                  <div className="space-y-1">
+                    {prompt.postEditSteps.map((step: string, si: number) => (
+                      <div key={si} className="flex items-center gap-2 text-xs">
+                        <Badge variant="outline" className="h-5 w-5 p-0 flex items-center justify-center text-[10px] shrink-0">
+                          {si + 1}
+                        </Badge>
+                        <span>{step}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Quality Checks */}
+              {prompt.keyQualityChecks?.length > 0 && (
+                <div className="p-3 bg-green-50 rounded-lg border border-green-100">
+                  <p className="text-xs font-medium text-green-700 mb-1.5">质量检查项</p>
+                  <div className="grid grid-cols-2 gap-1">
+                    {prompt.keyQualityChecks.map((check: string, ci: number) => (
+                      <div key={ci} className="flex items-center gap-1.5 text-xs">
+                        <Check className="w-3 h-3 text-green-500" />
+                        {check}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          )}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ---- Main Step 6 Component with Tabs ----
 function Step6AIPrompts({
   projectId,
   session,
@@ -3410,6 +3764,7 @@ function Step6AIPrompts({
   const [isLocked, setIsLocked] = useState(!!session?.step6Confirmed);
   const [showLang, setShowLang] = useState<"en" | "cn">("en");
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<"lovart" | "general">("lovart");
 
   useEffect(() => {
     if (session?.step6AiResult) {
@@ -3488,6 +3843,7 @@ function Step6AIPrompts({
 
   return (
     <div className="space-y-4">
+      {/* Header Card with Tab Switcher */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -3496,47 +3852,83 @@ function Step6AIPrompts({
                 <Wand2 className="w-5 h-5 text-purple-500" />
                 Step 6: AI图片提示词生成
               </CardTitle>
-              <CardDescription>根据前5步确认的内容，生成可直接用于AI图片生成工具的提示词（支持Midjourney/DALL-E/Stable Diffusion）</CardDescription>
+              <CardDescription>根据前5步确认的内容，生成可直接用于AI图片生成工具的提示词</CardDescription>
             </div>
-            <div className="flex gap-2">
-              {!enData && (
-                <Button onClick={handleGenerate} disabled={generateMutation.isPending}>
-                  {generateMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-                  生成AI提示词
-                </Button>
-              )}
-              {enData && !isConfirmed && (
-                <>
-                  <Button variant="outline" onClick={handleGenerate} disabled={generateMutation.isPending}>
-                    <RotateCcw className="w-4 h-4 mr-2" /> 重新生成
+            {activeTab === 'general' && (
+              <div className="flex gap-2">
+                {!enData && (
+                  <Button onClick={handleGenerate} disabled={generateMutation.isPending}>
+                    {generateMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                    生成通用提示词
                   </Button>
-                  <Button variant="outline" onClick={handleCopyAll}>
-                    <Copy className="w-4 h-4 mr-2" /> 复制全部
-                  </Button>
-                  <Button onClick={handleConfirm} disabled={confirmMutation.isPending}>
-                    {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
-                    确认提示词
-                  </Button>
-                </>
-              )}
-              {isConfirmed && (
-                <div className="flex gap-2 items-center">
-                  <Button variant="outline" onClick={handleCopyAll}>
-                    <Copy className="w-4 h-4 mr-2" /> 复制全部
-                  </Button>
-                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                    <Lock className="w-3 h-3 mr-1" /> 已锁定
-                  </Badge>
-                  <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={resetMutation.isPending}>
-                    {resetMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
-                    解锁编辑
-                  </Button>
-                </div>
-              )}
-            </div>
+                )}
+                {enData && !isConfirmed && (
+                  <>
+                    <Button variant="outline" onClick={handleGenerate} disabled={generateMutation.isPending}>
+                      <RotateCcw className="w-4 h-4 mr-2" /> 重新生成
+                    </Button>
+                    <Button variant="outline" onClick={handleCopyAll}>
+                      <Copy className="w-4 h-4 mr-2" /> 复制全部
+                    </Button>
+                    <Button onClick={handleConfirm} disabled={confirmMutation.isPending}>
+                      {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
+                      确认提示词
+                    </Button>
+                  </>
+                )}
+                {isConfirmed && (
+                  <div className="flex gap-2 items-center">
+                    <Button variant="outline" onClick={handleCopyAll}>
+                      <Copy className="w-4 h-4 mr-2" /> 复制全部
+                    </Button>
+                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                      <Lock className="w-3 h-3 mr-1" /> 已锁定
+                    </Badge>
+                    <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={resetMutation.isPending}>
+                      {resetMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
+                      解锁编辑
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Tab Switcher */}
+          <div className="mt-4 flex border-b">
+            <button
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'lovart'
+                  ? 'border-pink-500 text-pink-700'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300'
+              }`}
+              onClick={() => setActiveTab('lovart')}
+            >
+              <span className="flex items-center gap-1.5">
+                <Paintbrush className="w-4 h-4" />
+                Lovart 专用
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-pink-50 text-pink-600 border-pink-200">推荐</Badge>
+              </span>
+            </button>
+            <button
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'general'
+                  ? 'border-purple-500 text-purple-700'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-gray-300'
+              }`}
+              onClick={() => setActiveTab('general')}
+            >
+              <span className="flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4" />
+                通用提示词
+                <span className="text-[10px] text-muted-foreground">(MJ/DALL-E/SD)</span>
+              </span>
+            </button>
           </div>
         </CardHeader>
-        {generateMutation.isPending && (
+
+        {/* General Tab Loading */}
+        {activeTab === 'general' && generateMutation.isPending && (
           <CardContent>
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-purple-500 mr-3" />
@@ -3546,7 +3938,13 @@ function Step6AIPrompts({
         )}
       </Card>
 
-      {data?.imagePrompts && !generateMutation.isPending && (
+      {/* Lovart Tab Content */}
+      {activeTab === 'lovart' && (
+        <Step6LovartTab projectId={projectId} session={session} />
+      )}
+
+      {/* General Tab Content */}
+      {activeTab === 'general' && data?.imagePrompts && !generateMutation.isPending && (
         <>
           {/* Language toggle */}
           {cnData && (
@@ -3714,6 +4112,7 @@ function Step6AIPrompts({
     </div>
   );
 }
+
 
 // ═════════════════════════════════════════════════════════════════
 // ─── Main Page Component ─────────────────────────────────────────────
