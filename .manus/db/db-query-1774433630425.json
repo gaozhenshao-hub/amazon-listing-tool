@@ -1,0 +1,20 @@
+{
+  "query": "SELECT * FROM role_permissions WHERE role = 'product_dev';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT * FROM role_permissions WHERE role = 'product_dev';",
+  "rows": [
+    {
+      "id": "5",
+      "role": "product_dev",
+      "modules": "[\"dev\",\"knowledge\"]",
+      "description": "产品开发 - 产品开发和知识库模块",
+      "updatedBy": "1",
+      "createdAt": "2026-03-18 13:35:43",
+      "updatedAt": "2026-03-25 09:45:03",
+      "detailedPermissions": "[{\"moduleId\":\"dev\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[{\"subModuleId\":\"dev_dashboard\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"dev_new_project\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"dev_projects\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"dev_compare\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"dev_supplier\",\"operations\":[\"read\",\"edit\",\"delete\"]}]},{\"moduleId\":\"knowledge\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[{\"subModuleId\":\"kb_overview\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"kb_bot\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"kb_products\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"kb_listings\",\"operations\":[]},{\"subModuleId\":\"kb_images\",\"operations\":[]},{\"subModuleId\":\"kb_skills\",\"operations\":[]},{\"subModuleId\":\"kb_videos\",\"operations\":[]},{\"subModuleId\":\"kb_intel\",\"operations\":[]}]}]"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\trole\tmodules\tdescription\tupdatedBy\tcreatedAt\tupdatedAt\tdetailedPermissions\n5\tproduct_dev\t[\"dev\",\"knowledge\"]\t产品开发 - 产品开发和知识库模块\t1\t2026-03-18 13:35:43\t2026-03-25 09:45:03\t[{\"moduleId\":\"dev\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[{\"subModuleId\":\"dev_dashboard\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"dev_new_project\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"dev_projects\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"dev_compare\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"dev_supplier\",\"operations\":[\"read\",\"edit\",\"delete\"]}]},{\"moduleId\":\"knowledge\",\"operations\":[\"read\",\"edit\",\"delete\"],\"subModules\":[{\"subModuleId\":\"kb_overview\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"kb_bot\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"kb_products\",\"operations\":[\"read\",\"edit\",\"delete\"]},{\"subModuleId\":\"kb_listings\",\"operations\":[]},{\"subModuleId\":\"kb_images\",\"operations\":[]},{\"subModuleId\":\"kb_skills\",\"operations\":[]},{\"subModuleId\":\"kb_videos\",\"operations\":[]},{\"subModuleId\":\"kb_intel\",\"operations\":[]}]}]\n",
+  "stderr": "",
+  "execution_time_ms": 402
+}
