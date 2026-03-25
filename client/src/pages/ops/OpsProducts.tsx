@@ -15,8 +15,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Plus, Search, Package, ShoppingBag, AlertCircle, CheckCircle2, Trash2, Loader2, Download, Store, User, Globe,
+  Plus, Search, Package, ShoppingBag, AlertCircle, CheckCircle2, Trash2, Loader2, Download, Store, User, Globe, Users, CheckSquare, Square,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const MARKETPLACE_OPTIONS = [
   { value: "ALL", label: "全部站点" },
@@ -51,7 +52,21 @@ export default function OpsProducts() {
     onError: (e: any) => toast.error("同步失败", { description: e.message }),
   });
 
+  const batchAssignMut = trpc.productOps.batchAssignOperator.useMutation({
+    onSuccess: (data) => {
+      refetch();
+      setSelectedIds(new Set());
+      setShowBatchAssign(false);
+      setBatchOperator("");
+      toast.success(`已将${data.updated}个产品分配给 ${data.operator}`);
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const [showCreate, setShowCreate] = useState(false);
+  const [showBatchAssign, setShowBatchAssign] = useState(false);
+  const [batchOperator, setBatchOperator] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [searchTerm, setSearchTerm] = useState("");
   const [marketplaceFilter, setMarketplaceFilter] = useState("ALL");
   const [operatorFilter, setOperatorFilter] = useState("ALL");
@@ -144,6 +159,21 @@ export default function OpsProducts() {
           </Button>
         </div>
       </div>
+
+      {/* Batch Action Bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+          <CheckSquare className="h-4 w-4 text-blue-600" />
+          <span className="text-sm text-blue-700 font-medium">已选择 {selectedIds.size} 个产品</span>
+          <Button variant="outline" size="sm" onClick={() => setShowBatchAssign(true)} className="gap-1">
+            <Users className="h-3 w-3" />
+            批量分配运营
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+            取消选择
+          </Button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">
@@ -261,18 +291,44 @@ export default function OpsProducts() {
           </CardContent>
         </Card>
       ) : (
+        <>
+        <div className="mb-2 flex items-center gap-2">
+          <Checkbox
+            checked={selectedIds.size === filtered.length && filtered.length > 0}
+            onCheckedChange={(checked) => {
+              if (checked) {
+                setSelectedIds(new Set(filtered.map(p => p.id)));
+              } else {
+                setSelectedIds(new Set());
+              }
+            }}
+          />
+          <span className="text-sm text-muted-foreground">全选当前页 ({filtered.length})</span>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map(product => (
             <Card
               key={product.id}
-              className="cursor-pointer hover:shadow-md transition-shadow group"
+              className={`cursor-pointer hover:shadow-md transition-shadow group ${selectedIds.has(product.id) ? 'ring-2 ring-blue-400' : ''}`}
               onClick={() => navigate(`/ops/products/${product.id}`)}
             >
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <CardTitle className="text-base truncate">{product.title}</CardTitle>
-                    <p className="text-sm text-muted-foreground mt-1 font-mono">{product.parentAsin}</p>
+                  <div className="flex items-start gap-2 flex-1 min-w-0">
+                    <Checkbox
+                      checked={selectedIds.has(product.id)}
+                      onCheckedChange={(checked) => {
+                        const next = new Set(selectedIds);
+                        if (checked) next.add(product.id); else next.delete(product.id);
+                        setSelectedIds(next);
+                      }}
+                      onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                      className="mt-1"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-base truncate">{product.title}</CardTitle>
+                      <p className="text-sm text-muted-foreground mt-1 font-mono">{product.parentAsin}</p>
+                    </div>
                   </div>
                   <Badge variant="secondary" className={statusColors[product.status] || ""}>
                     {statusLabels[product.status] || product.status}
@@ -333,6 +389,7 @@ export default function OpsProducts() {
             </Card>
           ))}
         </div>
+        </>
       )}
 
       {/* Create Product Dialog */}
@@ -459,6 +516,53 @@ export default function OpsProducts() {
               disabled={!form.parentAsin || !form.title || createMut.isPending}
             >
               {createMut.isPending ? "创建中..." : "创建"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 批量分配运营 Dialog */}
+      <Dialog open={showBatchAssign} onOpenChange={setShowBatchAssign}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-blue-500" />
+              批量分配运营负责人
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">将 {selectedIds.size} 个产品分配给指定运营负责人</p>
+            <div>
+              <Label>运营负责人</Label>
+              <div className="mt-1 space-y-2">
+                {availableOperators.length > 0 && (
+                  <Select value={batchOperator} onValueChange={setBatchOperator}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="选择已有运营..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableOperators.map(o => (
+                        <SelectItem key={o} value={o}>{o}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <Input
+                  placeholder="或输入新的运营名称..."
+                  value={batchOperator}
+                  onChange={e => setBatchOperator(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBatchAssign(false)}>取消</Button>
+            <Button
+              onClick={() => batchAssignMut.mutate({ productIds: Array.from(selectedIds), operator: batchOperator })}
+              disabled={!batchOperator || batchAssignMut.isPending}
+            >
+              {batchAssignMut.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              确认分配
             </Button>
           </DialogFooter>
         </DialogContent>

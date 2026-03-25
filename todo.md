@@ -2213,3 +2213,26 @@
 - [x] 增加店铺筛选器
 - [x] 确保店铺和运营列正确显示数据
 - [x] 9个vitest测试全部通过
+
+## 全链路库存流水线ASIN联动+领星批次同步
+- [x] 流水线步骤统计数据根据选中ASIN过滤
+- [x] 在途数量统计根据选中ASIN过滤
+- [x] 从领星ERP自动同步物流批次数据
+- [x] 批次列表与ASIN关联展示
+- [x] 新增getAsinPipelineSummary后端API
+- [x] 新增syncBatchesFromLingxing API
+
+## NextSLS国际物流路由追踪
+- [x] 根据FBA号在NextSLS API中查询路由信息
+- [x] 在物流流水线中展示国际物流最新路由状态
+- [x] 路由信息时间线展示
+- [x] 新增getAsinTrackingInfo后端API
+
+## 产品总览批量分配运营
+- [x] 批量选择未设置运营的产品
+- [x] 选择运营负责人并批量分配
+- [x] 批量分配后刷新列表
+- [x] 新增batchAssignOperator后端API
+- [x] 产品卡片添加Checkbox多选功能
+- [x] 批量操作栏和分配运营Dialog
+- [x] 13个vitest测试全部通过，TS 0错误

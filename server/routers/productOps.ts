@@ -1639,6 +1639,40 @@ export const productOpsRouter = router({
     return { synced, skipped, total: synced + skipped };
   }),
 
+  // ─── 批量分配运营负责人 ───
+  batchAssignOperator: protectedProcedure
+    .input(z.object({
+      productIds: z.array(z.number()).min(1),
+      operator: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const now = new Date();
+      let updated = 0;
+      for (const pid of input.productIds) {
+        await db!.update(productProfiles)
+          .set({ operator: input.operator, updatedAt: now })
+          .where(and(
+            eq(productProfiles.id, pid),
+            eq(productProfiles.userId, ctx.user.id)
+          ));
+        updated++;
+      }
+      return { updated, operator: input.operator };
+    }),
+
+  // ─── 获取所有运营人员列表 ───
+  listOperators: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    const results = await db!.selectDistinct({ operator: productProfiles.operator })
+      .from(productProfiles)
+      .where(and(
+        eq(productProfiles.userId, ctx.user.id),
+        sql`${productProfiles.operator} IS NOT NULL AND ${productProfiles.operator} != ''`
+      ));
+    return results.map(r => r.operator).filter(Boolean) as string[];
+  }),
+
 });
 
 // ═══════════════════════════════════════════════════════

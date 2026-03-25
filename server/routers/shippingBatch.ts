@@ -1063,4 +1063,191 @@ export const shippingBatchRouter = router({
         .limit(50);
       return logs;
     }),
+
+  // ─── ASIN维度：获取ASIN级别的流水线统计（联动） ───
+  getAsinPipelineSummary: protectedProcedure
+    .input(z.object({ asin: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const db = (await getDb())!;
+      const userId = String(ctx.user.id);
+      // 获取用户所有批次
+      const userBatches = await db.select({ id: shippingBatches.id })
+        .from(shippingBatches)
+        .where(and(eq(shippingBatches.userId, userId), eq(shippingBatches.status, 'active')));
+      if (userBatches.length === 0) return null;
+      const batchIds = userBatches.map(b => b.id);
+      // 查找包含该ASIN的产品记录
+      const allProducts = await db.select().from(batchProducts)
+        .where(inArray(batchProducts.batchId, batchIds));
+      const matchedProducts = allProducts.filter(p => p.asin === input.asin);
+      if (matchedProducts.length === 0) return null;
+      const matchedBatchIds = new Set(matchedProducts.map(p => p.batchId));
+      // 获取匹配的批次
+      const batches = await db.select().from(shippingBatches)
+        .where(inArray(shippingBatches.id, Array.from(matchedBatchIds)));
+      // 计算流水线统计
+      const pipeline = {
+        planned: 0, purchasing: 0, domesticTransit: 0, warehouse: 0,
+        internationalTransit: 0, receiving: 0, amazonStocked: 0,
+        totalInTransit: 0, totalAll: 0, batchCount: batches.length,
+        stepDistribution: Array(10).fill(0),
+      };
+      for (const batch of batches) {
+        const prod = matchedProducts.find(p => p.batchId === batch.id);
+        const qty = prod?.quantity || 0;
+        const step = batch.currentStep;
+        pipeline.stepDistribution[step]++;
+        switch (step) {
+          case 1: pipeline.planned += qty; break;
+          case 2: case 3: pipeline.purchasing += qty; break;
+          case 4: case 5: pipeline.domesticTransit += qty; break;
+          case 6: pipeline.warehouse += qty; break;
+          case 7: pipeline.internationalTransit += qty; break;
+          case 8: pipeline.receiving += qty; break;
+          case 9: pipeline.amazonStocked += qty; break;
+        }
+      }
+      pipeline.totalInTransit = pipeline.domesticTransit + pipeline.internationalTransit + pipeline.receiving;
+      pipeline.totalAll = pipeline.planned + pipeline.purchasing + pipeline.domesticTransit + pipeline.warehouse + pipeline.internationalTransit + pipeline.receiving + pipeline.amazonStocked;
+      return pipeline;
+    }),
+
+  // ─── 从领星ERP同步物流批次 ───
+  syncBatchesFromLingxing: protectedProcedure.mutation(async ({ ctx }) => {
+    const db = (await getDb())!;
+    const userId = String(ctx.user.id);
+    const lingxing = (await import("../lingxingAdapter")).getLingxingAdapter();
+    
+    // 1. 获取领星发货单列表
+    const shipmentRes = await lingxing.request({
+      path: '/erp/sc/routing/storage/shipment/getInboundShipmentList',
+      body: {},
+    });
+    const shipments = Array.isArray(shipmentRes.data) ? shipmentRes.data : [];
+    if (shipments.length === 0) return { synced: 0, created: 0, updated: 0, message: '领星无发货单数据' };
+    
+    // 2. 获取已有批次（通过fbaShipmentId匹配）
+    const existingBatches = await db.select().from(shippingBatches)
+      .where(eq(shippingBatches.userId, userId));
+    const existingFbaIds = new Set(existingBatches.map(b => b.fbaShipmentId).filter(Boolean));
+    
+    let created = 0;
+    let updated = 0;
+    
+    for (const shipment of shipments) {
+      const fbaId = shipment.shipment_id || shipment.delivery_id;
+      if (!fbaId) continue;
+      
+      // 映射领星状态到9步流程
+      let currentStep = 1;
+      const status = (shipment.status || '').toUpperCase();
+      if (status === 'WORKING' || status === 'PLANNED') currentStep = 1;
+      else if (status === 'PURCHASING') currentStep = 2;
+      else if (status === 'SHIPPED' || status === 'IN_TRANSIT') currentStep = 7;
+      else if (status === 'RECEIVING') currentStep = 8;
+      else if (status === 'CLOSED' || status === 'RECEIVED') currentStep = 9;
+      
+      if (existingFbaIds.has(fbaId)) {
+        // 更新已有批次的状态
+        await db.update(shippingBatches)
+          .set({ currentStep, updatedAt: Date.now() })
+          .where(and(
+            eq(shippingBatches.userId, userId),
+            eq(shippingBatches.fbaShipmentId, fbaId),
+          ));
+        updated++;
+      } else {
+        // 创建新批次
+        const totalUnits = shipment.total_units || 0;
+        const result = await db.insert(shippingBatches).values({
+          userId,
+          batchName: `领星-${fbaId}`,
+          batchNumber: Date.now() % 100000,
+          status: currentStep >= 9 ? 'completed' : 'active',
+          currentStep,
+          shippingMethod: '海运',
+          storeName: shipment.destination || '',
+          fbaShipmentId: fbaId,
+          plannedQuantity: totalUnits,
+          orderedQuantity: totalUnits,
+          shippedQuantity: status === 'SHIPPED' || status === 'IN_TRANSIT' ? totalUnits : 0,
+          internationalShippedQuantity: currentStep >= 7 ? totalUnits : 0,
+          amazonReceivedQuantity: currentStep >= 8 ? totalUnits : 0,
+          amazonStockedQuantity: currentStep >= 9 ? totalUnits : 0,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+        created++;
+        
+        // 获取发货单详情以创建产品记录
+        try {
+          const detailRes = await lingxing.request({
+            path: '/erp/sc/data/fba_report/shipmentList',
+            body: { delivery_id: shipment.delivery_id || fbaId },
+          });
+          const detail = detailRes.data;
+          if (detail && detail.items && Array.isArray(detail.items)) {
+            const batchId = (result as any).insertId || (result as any)[0]?.insertId;
+            if (batchId) {
+              for (const item of detail.items) {
+                await db.insert(batchProducts).values({
+                  batchId: Number(batchId),
+                  sku: item.sku || '',
+                  asin: item.asin || item.fnsku || '',
+                  productName: item.sku || '',
+                  quantity: item.quantity_shipped || 0,
+                  createdAt: Date.now(),
+                });
+              }
+            }
+          }
+        } catch (e) {
+          // 详情获取失败不影响主流程
+          console.warn('[SyncBatches] Failed to get shipment detail:', e);
+        }
+      }
+    }
+    
+    return { synced: shipments.length, created, updated, message: `同步完成：新建${created}个，更新${updated}个` };
+  }),
+
+  // ─── ASIN维度：根据FBA号从NextSLS查询物流路由 ───
+  getAsinTrackingInfo: protectedProcedure
+    .input(z.object({
+      fbaShipmentId: z.string().optional(),
+      trackingNumber: z.string().optional(),
+      clientReference: z.string().optional(),
+    }))
+    .query(async ({ input }) => {
+      const { nextSlsAdapter } = await import("../nextsls/adapter");
+      if (!nextSlsAdapter.isReady()) {
+        return { available: false, message: 'NextSLS未配置', tracking: null };
+      }
+      try {
+        // 尝试用client_reference（FBA号）查询
+        const tracking = await nextSlsAdapter.getTracking({
+          client_reference: input.fbaShipmentId || input.clientReference,
+          tracking_number: input.trackingNumber,
+          language: 'zh',
+        });
+        return {
+          available: true,
+          message: '查询成功',
+          tracking: {
+            shipmentId: tracking.shipment_id,
+            status: tracking.status,
+            carrierCode: tracking.carrier_code,
+            trackingNumber: tracking.tracking_number,
+            traces: (tracking.traces || []).map(t => ({
+              info: t.info,
+              time: t.time,
+              location: t.location || '',
+              timeStr: new Date(t.time * 1000).toLocaleString('zh-CN'),
+            })),
+          },
+        };
+      } catch (err: any) {
+        return { available: true, message: err.message || '查询失败', tracking: null };
+      }
+    }),
 });

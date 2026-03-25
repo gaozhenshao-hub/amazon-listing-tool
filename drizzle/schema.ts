@@ -2133,6 +2133,7 @@ export const shippingBatches = mysqlTable("shipping_batches", {
   logisticsOwner: varchar("logistics_owner", { length: 255 }),
 
   // 领星ERP关联
+  fbaShipmentId: varchar("fba_shipment_id", { length: 255 }),
   lingxingDeliveryOrderId: varchar("lingxing_delivery_order_id", { length: 255 }),
   lingxingPurchaseOrderId: varchar("lingxing_purchase_order_id", { length: 255 }),
   lingxingPurchasePlanId: varchar("lingxing_purchase_plan_id", { length: 255 }),
