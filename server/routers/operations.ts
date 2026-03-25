@@ -110,8 +110,8 @@ export const operationsRouter = router({
     // Fetch key data from Lingxing using real SIDs
     // Two profit requests: summary for cards, daily for trend chart
     const [profitSummaryRes, profitDailyRes, inventoryRes, adReportRes] = await Promise.all([
-      adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { startDate: getDateNDaysAgo(30), endDate: getToday(), length: 500, summaryEnabled: true } }),
-      adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { startDate: getDateNDaysAgo(30), endDate: getToday(), length: 500 } }),
+      adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { sid: firstSid, startDate: getDateNDaysAgo(30), endDate: getToday(), length: 500, summaryEnabled: true } }),
+      adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { sid: firstSid, startDate: getDateNDaysAgo(30), endDate: getToday(), length: 500 } }),
       adapter.request({ path: "/erp/sc/routing/fba/fbaStock/fbaList", body: { sid: allSidsStr, length: 200 } }),
       adapter.request({ path: "/pb/openapi/newad/spCampaignReports", body: { sid: firstSid, report_date: getDateNDaysAgo(1), show_detail: 0, offset: 0, length: 200 }, headers: { "X-API-VERSION": "2" } }).catch(() => ({ data: [] })),
     ]);
@@ -411,7 +411,28 @@ export const operationsRouter = router({
       if (items.length > 0) {
         console.log(`[Replenishment] First item keys: ${Object.keys(items[0]).join(', ')}`);
       }
-      return { items, isMock: adapter.isMockMode() };
+      
+      // Filter out discontinued/inactive ASINs from replenishment suggestions
+      // Check asinStatusCache for status, also filter items with 0 daily sales and 0 inventory
+      const db = await getDb();
+      const asinStatuses = db ? await db.select().from(asinStatusCache) : [];
+      const discontinuedAsins = new Set(
+        asinStatuses
+          .filter((s: any) => s.status === 'discontinued' || s.status === 'inactive')
+          .map((s: any) => s.asin)
+      );
+      
+      const filteredItems = items.filter((item: any) => {
+        const asin = item.asin || item.parent_asin || '';
+        // Skip if ASIN is marked as discontinued
+        if (asin && discontinuedAsins.has(asin)) {
+          return false;
+        }
+        return true;
+      });
+      
+      console.log(`[Replenishment] After filtering discontinued: ${filteredItems.length} items (removed ${items.length - filteredItems.length})`);
+      return { items: filteredItems, isMock: adapter.isMockMode() };
     }),
 
   getInventoryConfig: protectedProcedure
@@ -544,6 +565,12 @@ ${JSON.stringify(input.skuData, null, 2)}
       const startDate = input.startDate || getDateNDaysAgo(30);
       const endDate = input.endDate || getToday();
       
+      // Get seller SIDs filtered by marketplace
+      const { sellers } = await getAllSellerSids();
+      const mp = input.marketplace || 'US';
+      const sids = filterSidsByMarketplace(sellers, mp);
+      const firstSid = sids.length > 0 ? Number(sids[0]) : 1;
+      
       // Fetch ALL records with pagination (each page up to 200)
       let allData: any[] = [];
       let offset = 0;
@@ -554,6 +581,7 @@ ${JSON.stringify(input.skuData, null, 2)}
         const res = await adapter.request({
           path: "/bd/profit/report/open/report/msku/list",
           body: {
+            sid: firstSid,
             startDate,
             endDate,
             length: pageSize,
@@ -853,11 +881,25 @@ ${JSON.stringify(input.skuData, null, 2)}
       console.log(`[AdCampaigns] Total campaigns from list API: ${allCampaignList.length}`);
       
       // 2. Get campaign report data from all stores (also collect profile_ids)
-      const reportDate = input.startDate || getDateNDaysAgo(1);
-      console.log(`[AdCampaigns] Querying campaign reports for date=${reportDate}`);
+      // Support multi-day aggregation: query each day and sum up
+      const reportEndDate = input.endDate || getDateNDaysAgo(1);
+      const reportStartDate = input.startDate || getDateNDaysAgo(7);
+      // Build list of dates to query
+      const datesToQuery: string[] = [];
+      {
+        const start = new Date(reportStartDate + 'T00:00:00Z');
+        const end = new Date(reportEndDate + 'T00:00:00Z');
+        for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+          datesToQuery.push(d.toISOString().slice(0, 10));
+        }
+      }
+      // Limit to max 30 days to avoid excessive API calls
+      const queryDates = datesToQuery.slice(-30);
+      console.log(`[AdCampaigns] Querying campaign reports for ${queryDates.length} days: ${queryDates[0]} ~ ${queryDates[queryDates.length - 1]}`);
       const reportMap: Record<string, any> = {};
       const campaignProfileMap: Record<string, string> = {}; // campaign_id -> profile_id
       for (const sid of sidsToQuery) {
+       for (const reportDate of queryDates) {
         try {
           const reportRes = await adapter.request({
             path: "/pb/openapi/newad/spCampaignReports",
@@ -895,9 +937,10 @@ ${JSON.stringify(input.skuData, null, 2)}
             }
           }
         } catch (err: any) {
-          console.warn(`[AdCampaigns] sid=${sid}: Failed to get reports: ${err.message}`);
+          console.warn(`[AdCampaigns] sid=${sid}, date=${reportDate}: Failed to get reports: ${err.message}`);
         }
-      }
+       } // end reportDate loop
+      } // end sid loop
       
       // 2.5 Find campaigns in reports that are missing names, try to fetch by profile_id
       const missingCampaignIds = Object.keys(reportMap).filter(cid => !campaignNameMap[cid]);

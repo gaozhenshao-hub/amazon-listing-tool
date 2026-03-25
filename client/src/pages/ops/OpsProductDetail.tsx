@@ -349,7 +349,7 @@ export default function OpsProductDetail() {
                       { label: "广告花费", value: `$${adsData.summary.totalSpend}` },
                       { label: "广告销售额", value: `$${adsData.summary.totalSales}` },
                       { label: "ACoS", value: `${adsData.summary.acos}%` },
-                      { label: "ROAS", value: adsData.summary.roas.toFixed(2) },
+                      { label: "ROAS", value: (isNaN(adsData.summary.roas) || !isFinite(adsData.summary.roas)) ? "0.00" : adsData.summary.roas.toFixed(2) },
                     ].map((item, idx) => (
                       <div key={idx} className="text-center p-3 rounded-lg bg-muted/50">
                         <p className="text-xs text-muted-foreground">{item.label}</p>

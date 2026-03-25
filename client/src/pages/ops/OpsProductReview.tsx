@@ -108,10 +108,16 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
     }));
   }, [reviews]);
 
+  const safeFixed = (val: number | undefined, digits: number = 1) => {
+    const n = val ?? 0;
+    return isNaN(n) || !isFinite(n) ? "0" + (digits > 0 ? "." + "0".repeat(digits) : "") : n.toFixed(digits);
+  };
+
   const getAchievementBadge = (rate: number) => {
-    if (rate >= 100) return <Badge className="bg-emerald-100 text-emerald-700">达标 {rate.toFixed(1)}%</Badge>;
-    if (rate >= 80) return <Badge className="bg-amber-100 text-amber-700">接近 {rate.toFixed(1)}%</Badge>;
-    return <Badge className="bg-red-100 text-red-700">未达标 {rate.toFixed(1)}%</Badge>;
+    const safe = isNaN(rate) || !isFinite(rate) ? 0 : rate;
+    if (safe >= 100) return <Badge className="bg-emerald-100 text-emerald-700">达标 {safeFixed(safe)}%</Badge>;
+    if (safe >= 80) return <Badge className="bg-amber-100 text-amber-700">接近 {safeFixed(safe)}%</Badge>;
+    return <Badge className="bg-red-100 text-red-700">未达标 {safeFixed(safe)}%</Badge>;
   };
 
   const getDeltaIcon = (delta: number) => {
@@ -251,14 +257,14 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
             <Card>
               <CardContent className="pt-4 pb-3 text-center">
                 <p className="text-xs text-muted-foreground mb-1">销售额达成</p>
-                <div className="text-2xl font-bold text-blue-600">{achievementRates?.salesRate.toFixed(1)}%</div>
+                <div className="text-2xl font-bold text-blue-600">{isNaN(achievementRates?.salesRate ?? 0) ? "0.0" : (achievementRates?.salesRate ?? 0).toFixed(1)}%</div>
                 <div className="mt-1">{getAchievementBadge(achievementRates?.salesRate || 0)}</div>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-4 pb-3 text-center">
                 <p className="text-xs text-muted-foreground mb-1">利润达成</p>
-                <div className="text-2xl font-bold text-emerald-600">{achievementRates?.profitRate.toFixed(1)}%</div>
+                <div className="text-2xl font-bold text-emerald-600">{isNaN(achievementRates?.profitRate ?? 0) ? "0.0" : (achievementRates?.profitRate ?? 0).toFixed(1)}%</div>
                 <div className="mt-1">{getAchievementBadge(achievementRates?.profitRate || 0)}</div>
               </CardContent>
             </Card>
@@ -267,7 +273,7 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
                 <p className="text-xs text-muted-foreground mb-1">订单转化率变化</p>
                 <div className="flex items-center justify-center gap-1">
                   {getDeltaIcon(achievementRates?.orderConvDelta || 0)}
-                  <span className="text-lg font-bold">{(achievementRates?.orderConvDelta || 0) > 0 ? "+" : ""}{achievementRates?.orderConvDelta.toFixed(2)}%</span>
+                  <span className="text-lg font-bold">{(achievementRates?.orderConvDelta || 0) > 0 ? "+" : ""}{isNaN(achievementRates?.orderConvDelta ?? 0) ? "0.00" : (achievementRates?.orderConvDelta ?? 0).toFixed(2)}%</span>
                 </div>
               </CardContent>
             </Card>
@@ -276,7 +282,7 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
                 <p className="text-xs text-muted-foreground mb-1">搜索转化率变化</p>
                 <div className="flex items-center justify-center gap-1">
                   {getDeltaIcon(achievementRates?.searchConvDelta || 0)}
-                  <span className="text-lg font-bold">{(achievementRates?.searchConvDelta || 0) > 0 ? "+" : ""}{achievementRates?.searchConvDelta.toFixed(2)}%</span>
+                  <span className="text-lg font-bold">{(achievementRates?.searchConvDelta || 0) > 0 ? "+" : ""}{isNaN(achievementRates?.searchConvDelta ?? 0) ? "0.00" : (achievementRates?.searchConvDelta ?? 0).toFixed(2)}%</span>
                 </div>
               </CardContent>
             </Card>
@@ -285,7 +291,7 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
                 <p className="text-xs text-muted-foreground mb-1">广告转化率变化</p>
                 <div className="flex items-center justify-center gap-1">
                   {getDeltaIcon(achievementRates?.adConvDelta || 0)}
-                  <span className="text-lg font-bold">{(achievementRates?.adConvDelta || 0) > 0 ? "+" : ""}{achievementRates?.adConvDelta.toFixed(2)}%</span>
+                  <span className="text-lg font-bold">{(achievementRates?.adConvDelta || 0) > 0 ? "+" : ""}{isNaN(achievementRates?.adConvDelta ?? 0) ? "0.00" : (achievementRates?.adConvDelta ?? 0).toFixed(2)}%</span>
                 </div>
               </CardContent>
             </Card>
@@ -334,7 +340,7 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
                       <TableCell className="text-right">—</TableCell>
                       <TableCell className="text-right">
                         <span className={`${(achievementRates?.orderConvDelta || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                          {(achievementRates?.orderConvDelta || 0) > 0 ? "+" : ""}{achievementRates?.orderConvDelta.toFixed(2)}%
+                          {(achievementRates?.orderConvDelta || 0) > 0 ? "+" : ""}{safeFixed(achievementRates?.orderConvDelta, 2)}%
                         </span>
                       </TableCell>
                     </TableRow>
@@ -346,7 +352,7 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
                       <TableCell className="text-right">—</TableCell>
                       <TableCell className="text-right">
                         <span className={`${(achievementRates?.searchConvDelta || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                          {(achievementRates?.searchConvDelta || 0) > 0 ? "+" : ""}{achievementRates?.searchConvDelta.toFixed(2)}%
+                          {(achievementRates?.searchConvDelta || 0) > 0 ? "+" : ""}{safeFixed(achievementRates?.searchConvDelta, 2)}%
                         </span>
                       </TableCell>
                     </TableRow>
@@ -358,7 +364,7 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
                       <TableCell className="text-right">—</TableCell>
                       <TableCell className="text-right">
                         <span className={`${(achievementRates?.adConvDelta || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                          {(achievementRates?.adConvDelta || 0) > 0 ? "+" : ""}{achievementRates?.adConvDelta.toFixed(2)}%
+                          {(achievementRates?.adConvDelta || 0) > 0 ? "+" : ""}{safeFixed(achievementRates?.adConvDelta, 2)}%
                         </span>
                       </TableCell>
                     </TableRow>

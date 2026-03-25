@@ -29,6 +29,7 @@ const SHIPPING_STEPS = [
   { number: 7, name: "国际物流运输中", key: "internationalTransit" },
   { number: 8, name: "接收中", key: "receiving" },
   { number: 9, name: "已到亚马逊仓", key: "arrivedAmazon" },
+  { number: 10, name: "上架可售", key: "availableForSale" },
 ];
 
 const SHIPPING_METHODS = [
@@ -45,7 +46,7 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
   cancelled: { label: "已取消", color: "bg-red-500/10 text-red-600 border-red-200", icon: XCircle },
 };
 
-// ─── 9步进度条组件 ───
+// ─── 10步进度条组件 ───
 function ShippingStepProgress({ currentStep, status }: { currentStep: number; status: string }) {
   return (
     <div className="flex items-center gap-0.5 w-full">

@@ -27,6 +27,7 @@ const SHIPPING_STEPS = [
   { number: 7, name: "国际物流运输中", key: "internationalTransit" },
   { number: 8, name: "接收中", key: "receiving" },
   { number: 9, name: "已到亚马逊仓", key: "arrivedAmazon" },
+  { number: 10, name: "上架可售", key: "availableForSale" },
 ];
 
 const QUANTITY_FIELDS = [
@@ -37,9 +38,10 @@ const QUANTITY_FIELDS = [
   { step: 7, field: "internationalShippedQuantity", label: "国际发出数量" },
   { step: 8, field: "amazonReceivedQuantity", label: "亚马逊接收数量" },
   { step: 9, field: "amazonStockedQuantity", label: "上架数量" },
+  { step: 10, field: "availableForSaleQuantity", label: "上架可售数量" },
 ];
 
-// ─── 9步进度条（详情版） ───
+// ─── 10步进度条（详情版） ───
 function DetailStepProgress({ steps, currentStep, status }: { steps: any[]; currentStep: number; status: string }) {
   return (
     <div className="relative">
@@ -58,7 +60,7 @@ function DetailStepProgress({ steps, currentStep, status }: { steps: any[]; curr
           else if (isCurrent) circleClass = "bg-blue-500 text-white ring-4 ring-blue-200";
 
           return (
-            <div key={stepDef.number} className="flex flex-col items-center w-[11%]">
+            <div key={stepDef.number} className="flex flex-col items-center w-[10%]">
               <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${circleClass}`}>
                 {isCompleted ? <CheckCircle2 className="h-5 w-5" /> : stepDef.number}
               </div>

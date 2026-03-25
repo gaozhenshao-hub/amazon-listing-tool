@@ -2281,3 +2281,13 @@
 - [x] 广告概览：Campaign级别按ASIN/产品标题关键词过滤
 - [x] Seller缓存：新增findMatchedSid/getCachedSellers共享缓存，避免重复请求seller列表
 - [x] 测试验证：13个新测试覆盖ASIN过滤、缓存、聚合逻辑（全部通过）
+
+## 模块三第三轮优化
+- [x] OpsShippingBatchDetail SHIPPING_STEPS更新为10步（加上架可售）
+- [x] OpsShippingBatch SHIPPING_STEPS更新为10步
+- [x] OpsProductReview/OpsProductDetail NaN保护（safeFixed + isNaN/isFinite检查）
+- [x] 利润分析页getProfitOverview按marketplace传sid + seller缓存
+- [x] 仪表盘getDashboardOverview利润API传sid参数
+- [x] 广告优化页getAdCampaigns支持多天聚合（默认7天，最多30天）
+- [x] 已停售ASIN不提醒补货（查询asinStatusCache过滤discontinued/inactive）
+- [x] 过滤已暂停广告活动（getAdCampaigns已有adState过滤参数）
