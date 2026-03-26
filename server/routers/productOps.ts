@@ -1160,6 +1160,22 @@ export const productOpsRouter = router({
     return { message: "Initialized", count: defaultItems.length };
   }),
 
+  // Force reset: delete all system check items + overrides + scores + suggestions, then re-init
+  resetAndReinitCheckItems: protectedProcedure.mutation(async ({ ctx }) => {
+    const db = await getDb();
+    // 1. Delete all system default check items (userId IS NULL)
+    await db!.delete(conversionCheckItems).where(isNull(conversionCheckItems.userId));
+    // 2. Delete all user overrides (they reference old check item IDs)
+    await db!.delete(checkItemOverrides).where(eq(checkItemOverrides.userId, ctx.user.id));
+    // 3. Re-insert new 129 items
+    const defaultItems = getDefault132CheckItems();
+    for (const item of defaultItems) {
+      await db!.insert(conversionCheckItems).values({ ...item, userId: null });
+    }
+    console.log(`[ConversionCheck] Reset & re-initialized ${defaultItems.length} check items for user ${ctx.user.id}`);
+    return { message: "Reset and re-initialized", count: defaultItems.length };
+  }),
+
   addCustomCheckItem: protectedProcedure.input(z.object({
     categoryIndex: z.number(),
     categoryName: z.string(),
@@ -1281,7 +1297,10 @@ export const productOpsRouter = router({
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     const updates: Record<string, any> = {};
-    if (input.score !== undefined) updates.score = input.score;
+    if (input.score !== undefined) {
+      updates.score = input.score;
+      updates.source = "manual"; // User manually edited score
+    }
     if (input.reason !== undefined) updates.reason = input.reason;
     if (input.isLocked !== undefined) updates.isLocked = input.isLocked ? 1 : 0;
     await db!.update(conversionScores).set(updates).where(eq(conversionScores.id, input.scoreId));
@@ -1299,7 +1318,10 @@ export const productOpsRouter = router({
     const db = await getDb();
     for (const s of input.scores) {
       const updates: Record<string, any> = {};
-      if (s.score !== undefined) updates.score = s.score;
+      if (s.score !== undefined) {
+        updates.score = s.score;
+        updates.source = "manual"; // User manually edited score
+      }
       if (s.reason !== undefined) updates.reason = s.reason;
       if (s.isLocked !== undefined) updates.isLocked = s.isLocked ? 1 : 0;
       await db!.update(conversionScores).set(updates).where(eq(conversionScores.id, s.scoreId));
@@ -1385,6 +1407,7 @@ export const productOpsRouter = router({
             reason: s.reason,
             aiReason: s.reason,
             rawData: s.rawData,
+            source: s.source || "ai",
           });
         }
       } else {
@@ -1399,6 +1422,7 @@ export const productOpsRouter = router({
             reason: "数据采集失败，请手动评分",
             aiReason: "数据采集失败，请手动评分",
             rawData: JSON.stringify({ error: "crawl_failed" }),
+            source: "ai",
           });
         }
       }

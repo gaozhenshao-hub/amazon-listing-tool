@@ -93,6 +93,10 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
   const resetOverrideMut = trpc.productOps.resetCheckItemOverride.useMutation({
     onSuccess: () => { refetchItems(); toast.success("已恢复默认设置"); },
   });
+  const resetAndReinitMut = trpc.productOps.resetAndReinitCheckItems.useMutation({
+    onSuccess: (data) => { refetchItems(); refetchScores(); toast.success(`检查项已重置，共${data.count}项`); },
+    onError: (err) => toast.error(`重置失败: ${err.message}`),
+  });
   const removeCheckItem = trpc.productOps.removeCustomCheckItem.useMutation({
     onSuccess: () => { refetchItems(); toast.success("自定义检查项已删除"); },
   });
@@ -369,6 +373,52 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
             </Card>
           )}
 
+          {/* Source Statistics */}
+          {scores && scores.length > 0 && (() => {
+            const ownAsin = activeComp?.ownAsin;
+            const ownScores = scores.filter((s: any) => s.asin === ownAsin);
+            const programmaticCount = ownScores.filter((s: any) => s.source === 'programmatic').length;
+            const aiCount = ownScores.filter((s: any) => s.source === 'ai').length;
+            const manualCount = ownScores.filter((s: any) => s.source === 'manual').length;
+            const totalScored = ownScores.filter((s: any) => s.score && s.score > 0).length;
+            if (totalScored === 0) return null;
+            return (
+              <Card>
+                <CardContent className="pt-4 pb-3">
+                  <div className="flex items-center gap-6 text-sm">
+                    <span className="text-muted-foreground font-medium">己品评分来源统计</span>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                        <span className="text-emerald-700 font-medium">程序化 {programmaticCount}</span>
+                        <span className="text-muted-foreground text-xs">({totalScored > 0 ? Math.round(programmaticCount / totalScored * 100) : 0}%)</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                        <span className="text-blue-700 font-medium">AI {aiCount}</span>
+                        <span className="text-muted-foreground text-xs">({totalScored > 0 ? Math.round(aiCount / totalScored * 100) : 0}%)</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-orange-500"></span>
+                        <span className="text-orange-700 font-medium">手动 {manualCount}</span>
+                        <span className="text-muted-foreground text-xs">({totalScored > 0 ? Math.round(manualCount / totalScored * 100) : 0}%)</span>
+                      </div>
+                    </div>
+                    <div className="ml-auto text-xs text-muted-foreground">
+                      共 {totalScored} 项已评分 / {ownScores.length} 项总计
+                    </div>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="flex h-2 rounded-full overflow-hidden mt-2 bg-muted">
+                    {programmaticCount > 0 && <div className="bg-emerald-500" style={{ width: `${programmaticCount / totalScored * 100}%` }}></div>}
+                    {aiCount > 0 && <div className="bg-blue-500" style={{ width: `${aiCount / totalScored * 100}%` }}></div>}
+                    {manualCount > 0 && <div className="bg-orange-500" style={{ width: `${manualCount / totalScored * 100}%` }}></div>}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
+
           {/* Check Items by Category */}
           <div className="space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
@@ -393,6 +443,16 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                 <Button size="sm" variant="outline" onClick={() => setShowAddItem(true)}>
                   <Plus className="h-3 w-3 mr-1" /> 添加自定义维度
                 </Button>
+                {manageMode && (
+                  <Button size="sm" variant="destructive" onClick={() => {
+                    if (confirm("确定要重置所有检查项吗？\n\n这将清空所有系统默认检查项和您的自定义修改，\n然后重新初始化最新的129项检查标准。")) {
+                      resetAndReinitMut.mutate();
+                    }
+                  }} disabled={resetAndReinitMut.isPending}>
+                    {resetAndReinitMut.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RotateCcw className="h-3 w-3 mr-1" />}
+                    重置检查项
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -524,6 +584,24 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                                             {score}
                                           </span>
                                         )}
+                                        {/* Source badge */}
+                                        {existing?.source && score > 0 && (
+                                          <span className={`text-[9px] px-1 py-0 rounded-sm font-medium ${
+                                            existing.source === 'programmatic' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' :
+                                            existing.source === 'manual' ? 'bg-orange-100 text-orange-700 border border-orange-200' :
+                                            'bg-blue-100 text-blue-700 border border-blue-200'
+                                          }`} title={{
+                                            programmatic: '程序化评分：基于爬虫数据自动计算',
+                                            ai: 'AI评分：基于LLM智能分析',
+                                            manual: '手动评分：用户手动调整',
+                                          }[existing.source] || 'AI评分'}>
+                                            {{
+                                              programmatic: '程序',
+                                              ai: 'AI',
+                                              manual: '手动',
+                                            }[existing.source] || 'AI'}
+                                          </span>
+                                        )}
                                         {/* Lock toggle */}
                                         <button
                                           onClick={() => toggleScoreLock(item.id, asin)}
@@ -546,10 +624,16 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                                           </button>
                                         )}
                                       </div>
-                                      {/* Note */}
+                                      {/* Note + raw data hint */}
                                       {existing?.reason && !editing && (
-                                        <p className="text-xs text-muted-foreground mt-1 max-w-[120px] truncate" title={existing.reason || ''}>
+                                        <p className="text-xs text-muted-foreground mt-1 max-w-[140px] truncate" title={existing.reason || ''}>
                                           {existing.reason}
+                                        </p>
+                                      )}
+                                      {/* Show AI original score if user modified */}
+                                      {existing?.source === 'manual' && existing?.aiScore && existing.aiScore !== existing.score && (
+                                        <p className="text-[10px] text-blue-500 mt-0.5" title={`AI原始评分: ${existing.aiScore}分`}>
+                                          AI原始: {existing.aiScore}★
                                         </p>
                                       )}
                                     </TableCell>

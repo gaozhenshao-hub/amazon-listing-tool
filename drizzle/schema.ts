@@ -1985,6 +1985,7 @@ export const conversionScores = mysqlTable("conversion_scores", {
   reason: text("reason"), // 评分理由
   aiReason: text("ai_reason"), // AI original reason
   rawData: text("raw_data"), // 爬虫抓取的原始数据
+  source: varchar("source", { length: 20 }).default("ai"), // programmatic | ai | manual
   isLocked: int("is_locked").default(0), // 0=unlocked, 1=locked by user
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

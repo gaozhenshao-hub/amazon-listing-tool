@@ -361,3 +361,119 @@ describe("ConversionAiScorer - Category Context Builder", () => {
     expect(mod.scoreAllCheckItems).toBeDefined();
   });
 });
+
+
+// ═══════════════════════════════════════════════════════════════
+// Test: Source Field in Scoring
+// ═══════════════════════════════════════════════════════════════
+
+describe("ConversionAiScorer - Source Field", () => {
+  const createMockCrawlData = (overrides: any = {}) => ({
+    asin: "B0TEST123",
+    crawledAt: new Date().toISOString(),
+    raw: { scraperData: null, competitorData: null, adData: null },
+    categories: {
+      标题: { text: "Premium Test Product for Home Use with Great Features", charCount: 52, wordCount: 9, brand: "TestBrand", hasBrand: true, rawTitle: "Premium Test Product for Home Use with Great Features" },
+      五点: { bullets: ["Point 1", "Point 2", "Point 3", "Point 4", "Point 5"], bulletCount: 5, avgCharCount: 7, totalCharCount: 35, charCounts: [7, 7, 7, 7, 7] },
+      标: { hasBestSeller: true, hasAmazonChoice: false, hasNewRelease: false, hasDeal: true, dealInfo: "20% off", hasCoupon: true, couponInfo: "5% coupon", hasPrime: true, hasSubscribeSave: false, hasClimateTag: false, hasSmallBusiness: false, totalBadges: 4 },
+      价格: { currentPrice: 29.99, listPrice: 39.99, hasStrikethrough: true, discountPercent: 25, hasCoupon: true, couponValue: "5% coupon", hasSubscribeSave: false, unitPrice: null, buyBoxPrice: 29.99, priceEnding: "99" },
+      限购: { hasLimit: false, limitQuantity: null, limitText: null },
+      配送: { isFBA: true, isFBM: false, deliveryDays: 2, deliveryText: "Free delivery by Thursday", hasPrime: true, hasFreeShipping: true, shipsFrom: "Amazon", soldBy: "TestBrand" },
+      变体: { variantCount: 5, variantTypes: ["Color", "Size"], variants: [{ name: "Red", hasImage: true }, { name: "Blue", hasImage: true }], hasImages: true },
+      产品信息: { fieldCount: 8, hasWeight: true, hasDimensions: true, hasMaterial: true, hasColor: true, hasManufacturer: true, fields: { "Weight": "2 lbs", "Dimensions": "10x5x3 inches" } },
+      商品文档: { hasManual: true, hasCertification: true, documentCount: 2, documentTypes: ["User Manual", "Safety Certificate"] },
+      主图: { mainImages: [], mainImageCount: 1, hasMainImage: true, mainImageResolution: null, secondaryImages: [], secondaryImageCount: 6, aplusImages: [], brandStoryImages: [], videoCount: 2, hasVideo: true, totalImageCount: 9 },
+      流量闭环: { hasNewModel: false, hasBundleDeal: true, hasFrequentlyBought: true, hasSponsoredProducts: true, hasVirtualBundle: false, hasBrandStoreLink: true },
+      品牌故事: { hasBrandStory: true, hasRecommendation: true, imageCount: 4, textContent: "Our brand story...", images: [] },
+      "A+": { hasAplus: true, moduleCount: 7, moduleTypes: ["banner", "comparison"], hasComparisonChart: true, hasVideo: false, imageCount: 10, textContent: "Premium quality...", images: [] },
+      Video: { videoCount: 2, hasMainVideo: true, videoUrls: [] },
+      "Q&A": { questionCount: 35, topQuestions: [] },
+      Review: { rating: 4.5, reviewCount: 1200, hasVine: true, topReviews: ["Great product!"], ratingDistribution: { "5": 70, "4": 15, "3": 8, "2": 4, "1": 3 } },
+      店铺介绍页面: { feedbackScore: 96, feedbackCount: 5000, hasStorefront: true, storeName: "TestBrand Official" },
+      广告: { hasCampaigns: true, campaignCount: 5, totalSpend: 500, acos: 22, roas: 4.5, keywordCount: 30, topKeywords: [{ keyword: "test product", impressions: 10000, clicks: 500, spend: 100, acos: 20 }], searchTerms: [{ term: "best test product", impressions: 5000, clicks: 200, conversions: 50 }] },
+      ...overrides,
+    },
+  });
+
+  it("programmatic scores should have source='programmatic'", async () => {
+    const mod = await import("./routers/conversionAiScorer");
+    const data = createMockCrawlData();
+    
+    // Test title charCount - a programmatic item
+    const items = [{ id: 1, categoryName: "标题", subDimension: "字数", standard: "对应类目要充分使用标题字符数", categoryIndex: 1, sortOrder: 0 }];
+    
+    const scores = await mod.scoreAllCheckItems(items, data as any);
+    expect(scores[0].source).toBe("programmatic");
+  });
+
+  it("AI scores should have source='ai'", async () => {
+    const mod = await import("./routers/conversionAiScorer");
+    const data = createMockCrawlData();
+    
+    // Test an item that requires AI scoring (e.g., 主图 quality)
+    const items = [{ id: 100, categoryName: "首图", subDimension: "构图", standard: "主图构图合理", categoryIndex: 10, sortOrder: 0 }];
+    
+    vi.mock("../_core/llm", () => ({
+      invokeLLM: vi.fn().mockResolvedValue({
+        choices: [{ message: { content: JSON.stringify({ scores: [{ index: 100, score: 4, reason: "Good composition" }] }) } }]
+      })
+    }));
+    
+    const scores = await mod.scoreAllCheckItems(items, data as any);
+    expect(scores[0].source).toBe("ai");
+  });
+
+  it("CheckItemScore interface should include source field", async () => {
+    const mod = await import("./routers/conversionAiScorer");
+    const data = createMockCrawlData();
+    
+    const items = [
+      { id: 1, categoryName: "标题", subDimension: "字数", standard: "对应类目要充分使用标题字符数", categoryIndex: 1, sortOrder: 0 },
+      { id: 2, categoryName: "标题", subDimension: "品牌词", standard: "品牌有一定知名度，突出品牌词", categoryIndex: 1, sortOrder: 1 },
+    ];
+    
+    const scores = await mod.scoreAllCheckItems(items, data as any);
+    for (const s of scores) {
+      expect(s).toHaveProperty("source");
+      expect(["programmatic", "ai"]).toContain(s.source);
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Test: Schema Source Field
+// ═══════════════════════════════════════════════════════════════
+
+describe("Schema - ConversionScores source field", () => {
+  it("conversionScores table should have source column defined", async () => {
+    const schema = await import("../drizzle/schema");
+    expect(schema.conversionScores).toBeDefined();
+    // Check that the table has the source column by checking the column names
+    const columns = Object.keys(schema.conversionScores);
+    // The table object has column accessors
+    expect(schema.conversionScores.source).toBeDefined();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// Test: Reset and Reinit Check Items
+// ═══════════════════════════════════════════════════════════════
+
+describe("ProductOps - resetAndReinitCheckItems", () => {
+  it("productOpsRouter should be exported and defined", async () => {
+    const routerMod = await import("./routers/productOps");
+    expect(routerMod).toBeDefined();
+    expect(routerMod.productOpsRouter).toBeDefined();
+  });
+
+  it("productOpsRouter should have resetAndReinitCheckItems procedure", async () => {
+    const routerMod = await import("./routers/productOps");
+    // tRPC routers expose procedures as properties
+    const router = routerMod.productOpsRouter;
+    expect(router).toBeDefined();
+    // Check that the router has the procedure defined
+    expect(router._def).toBeDefined();
+    expect(router._def.procedures).toBeDefined();
+    expect(router._def.procedures.resetAndReinitCheckItems).toBeDefined();
+  });
+});

@@ -372,6 +372,13 @@
       "when": 1774493741045,
       "tag": "0052_spooky_komodo",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "5",
+      "when": 1774507413669,
+      "tag": "0053_noisy_thundra",
+      "breakpoints": true
     }
   ]
 }
