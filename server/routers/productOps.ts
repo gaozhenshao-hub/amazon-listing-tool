@@ -580,22 +580,40 @@ export const productOpsRouter = router({
       console.log(`[InventorySummary] Found ${invList.length} inventory records for ${product.parentAsin}`);
 
       // Build inventory summary per variant
-      const variantInventory = variants.map(v => {
-        const matched = invList.find((inv: Record<string, string>) =>
-          inv.asin === v.childAsin || inv.seller_sku === v.sku || inv.fnsku === v.childAsin
-        );
-        const inv = matched as Record<string, number> | undefined;
-        return {
-          childAsin: v.childAsin,
-          sku: v.sku || "",
-          title: v.title || "",
-          fulfillableQty: inv?.fulfillable_quantity || inv?.afn_fulfillable_quantity || 0,
-          inboundQty: inv?.inbound_quantity || inv?.afn_inbound_quantity || 0,
-          reservedQty: inv?.reserved_quantity || inv?.afn_reserved_quantity || 0,
-          avgDailySales: inv?.avg_daily_sales || 0,
-          daysOfSupply: inv?.days_of_supply || 0,
-        };
-      });
+      let variantInventory: Array<{ childAsin: string; sku: string; title: string; fulfillableQty: number; inboundQty: number; reservedQty: number; avgDailySales: number; daysOfSupply: number }> = [];
+      
+      if (variants.length > 0) {
+        variantInventory = variants.map(v => {
+          const matched = invList.find((inv: Record<string, string>) =>
+            inv.asin === v.childAsin || inv.seller_sku === v.sku || inv.fnsku === v.childAsin
+          );
+          const inv = matched as Record<string, number> | undefined;
+          return {
+            childAsin: v.childAsin,
+            sku: v.sku || "",
+            title: v.title || "",
+            fulfillableQty: inv?.fulfillable_quantity || inv?.afn_fulfillable_quantity || 0,
+            inboundQty: inv?.inbound_quantity || inv?.afn_inbound_quantity || 0,
+            reservedQty: inv?.reserved_quantity || inv?.afn_reserved_quantity || 0,
+            avgDailySales: inv?.avg_daily_sales || inv?.avg_daily_sales_30d || 0,
+            daysOfSupply: inv?.days_of_supply || 0,
+          };
+        });
+      } else if (invList.length > 0) {
+        // No variants in DB, but FBA API returned data via parentAsin search
+        // Use invList directly to build summary
+        variantInventory = invList.map((inv: any) => ({
+          childAsin: inv.asin || product.parentAsin,
+          sku: inv.seller_sku || '',
+          title: inv.product_name || product.title || '',
+          fulfillableQty: inv.fulfillable_quantity || inv.afn_fulfillable_quantity || 0,
+          inboundQty: inv.inbound_quantity || inv.afn_inbound_quantity || inv.afn_inbound_working_quantity || 0,
+          reservedQty: inv.reserved_quantity || inv.afn_reserved_quantity || 0,
+          avgDailySales: inv.avg_daily_sales || inv.avg_daily_sales_30d || 0,
+          daysOfSupply: inv.days_of_supply || 0,
+        }));
+        console.log(`[InventorySummary] No variants, using ${invList.length} FBA items directly for ${product.parentAsin}`);
+      }
 
       // Totals
       const totalFulfillable = variantInventory.reduce((s, v) => s + v.fulfillableQty, 0);
@@ -643,7 +661,7 @@ export const productOpsRouter = router({
       try {
         const productAdRes = await adapter.request({
           path: "/pb/openapi/newad/spProductAdReports",
-          body: { sid: matchedSid, report_date: getDateNDaysAgo(1), show_detail: 0, offset: 0, length: 200 },
+          body: { sid: matchedSid, report_date: getDateNDaysAgo(1), show_detail: 0, offset: 0, length: 200, asin: product.parentAsin },
           headers: { "X-API-VERSION": "2" },
         });
         const rawProductAd = productAdRes.data || [];
@@ -660,7 +678,7 @@ export const productOpsRouter = router({
       // Also fetch campaign-level data and filter by product name/ASIN in campaign name
       const adRes = await adapter.request({
         path: "/pb/openapi/newad/spCampaigns",
-        body: { sid: matchedSid, start_date: getDateNDaysAgo(30), end_date: getToday() },
+        body: { sid: matchedSid, start_date: getDateNDaysAgo(30), end_date: getToday(), asin: product.parentAsin },
         headers: { "X-API-VERSION": "2" },
       });
       const rawAd = adRes.data || [];
@@ -1735,15 +1753,35 @@ export const productOpsRouter = router({
               variants: [],
             });
           }
-          // Add as variant if child ASIN is different
+          // Add as variant (including self for single-variant products)
           const childAsin = item.asin || item.child_asin;
-          if (childAsin && childAsin !== asin) {
-            parentMap.get(asin)!.variants.push({
-              childAsin,
-              sku: item.msku || item.seller_sku || '',
-              title: item.item_name || item.title || '',
-              price: item.price ? String(item.price) : undefined,
-            });
+          const sku = item.msku || item.seller_sku || '';
+          if (childAsin && sku) {
+            // Avoid duplicate variants
+            const existingVariant = parentMap.get(asin)!.variants.find(
+              (v: any) => v.childAsin === childAsin && v.sku === sku
+            );
+            if (!existingVariant) {
+              parentMap.get(asin)!.variants.push({
+                childAsin,
+                sku,
+                title: item.item_name || item.title || '',
+                price: item.price ? String(item.price) : undefined,
+              });
+            }
+          } else if (childAsin) {
+            // Even without SKU, add variant with ASIN only
+            const existingVariant = parentMap.get(asin)!.variants.find(
+              (v: any) => v.childAsin === childAsin
+            );
+            if (!existingVariant) {
+              parentMap.get(asin)!.variants.push({
+                childAsin,
+                sku: sku || '',
+                title: item.item_name || item.title || '',
+                price: item.price ? String(item.price) : undefined,
+              });
+            }
           }
         }
         
@@ -1753,19 +1791,48 @@ export const productOpsRouter = router({
           const key = `${asin}_${marketplace}`;
           if (existingSet.has(key)) {
             // Update existing product status, title, image, storeName
-            await db!.update(productProfiles)
-              .set({
-                status: product.status as any,
-                title: product.title.substring(0, 500),
-                imageUrl: product.imageUrl || undefined,
-                storeName: product.storeName || undefined,
-                brand: product.brand || undefined,
-              })
+            const [existingProduct] = await db!.select({ id: productProfiles.id })
+              .from(productProfiles)
               .where(and(
                 eq(productProfiles.userId, ctx.user.id),
                 eq(productProfiles.parentAsin, asin),
                 eq(productProfiles.marketplace, marketplace)
               ));
+            if (existingProduct) {
+              await db!.update(productProfiles)
+                .set({
+                  status: product.status as any,
+                  title: product.title.substring(0, 500),
+                  imageUrl: product.imageUrl || undefined,
+                  storeName: product.storeName || undefined,
+                  brand: product.brand || undefined,
+                })
+                .where(eq(productProfiles.id, existingProduct.id));
+              
+              // Sync variants for existing products too
+              if (product.variants.length > 0) {
+                // Get existing variants
+                const existingVariants = await db!.select({ childAsin: productVariants.childAsin, sku: productVariants.sku })
+                  .from(productVariants)
+                  .where(eq(productVariants.productId, existingProduct.id));
+                const existingVariantSet = new Set(existingVariants.map(v => `${v.childAsin}_${v.sku}`));
+                
+                // Insert only new variants
+                const newVariants = product.variants.filter((v: any) => !existingVariantSet.has(`${v.childAsin}_${v.sku}`));
+                if (newVariants.length > 0) {
+                  await db!.insert(productVariants).values(
+                    newVariants.map((v: any) => ({
+                      productId: existingProduct.id,
+                      childAsin: v.childAsin,
+                      sku: v.sku,
+                      title: v.title,
+                      price: v.price,
+                    }))
+                  );
+                  console.log(`[SyncProducts] Added ${newVariants.length} new variants for ${asin}`);
+                }
+              }
+            }
             updated++;
             skipped++;
             continue;

@@ -1,0 +1,40 @@
+{
+  "query": "SELECT id, parent_asin, title, store_name FROM product_profiles LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT id, parent_asin, title, store_name FROM product_profiles LIMIT 5;",
+  "rows": [
+    {
+      "id": "30001",
+      "parent_asin": "B0D3DXMTWN",
+      "title": "USQ1152 Pool Pump Motor Kit 1.5HP Replacement with Puri Tech/AO Smith Century USQ1152 Square Flange Electric Motor Compatible with Pentair Pump",
+      "store_name": "2店-US"
+    },
+    {
+      "id": "30002",
+      "parent_asin": "B0D3F2GS3D",
+      "title": "UST1202 Pool Pump Motor 2 HP Replacement for Hayward A.O. Smith SP2615X20 Electric Motor",
+      "store_name": "2店-US"
+    },
+    {
+      "id": "30003",
+      "parent_asin": "B0D3ZZD83K",
+      "title": "2 Inch Suction Hose Pump Kit for Water/Trash Pump Includes 2\" X 65ft Blue Discharge Hose & 2\" X 20ft Green Pvc Suction Hose & Aluminum Round Hole Suction Strainer, Cam And Groove Adapter",
+      "store_name": "2店-US"
+    },
+    {
+      "id": "30004",
+      "parent_asin": "B0D4CZ7BK9",
+      "title": "B2855 Pool Pump Motor 2 HP with Square Flange 230V 3450RPM Replacement for Century/A.O. Smith Pool Pump Motors for Above Ground and Inground Swimming Pools",
+      "store_name": "2店-US"
+    },
+    {
+      "id": "30005",
+      "parent_asin": "B0D59Y9PSD",
+      "title": "SP1610Z1MBK Pool Pump Motor 1 HP, C-Flange, 1 HP Swimming Pool Pump Motor Compatible with Hayward SuperPump series, NorthStar Pump SP4000 series, Super II SP3000X series, MaxFlo series (230V/115V)",
+      "store_name": "2店-US"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tparent_asin\ttitle\tstore_name\n30001\tB0D3DXMTWN\tUSQ1152 Pool Pump Motor Kit 1.5HP Replacement with Puri Tech/AO Smith Century USQ1152 Square Flange Electric Motor Compatible with Pentair Pump\t2店-US\n30002\tB0D3F2GS3D\tUST1202 Pool Pump Motor 2 HP Replacement for Hayward A.O. Smith SP2615X20 Electric Motor\t2店-US\n30003\tB0D3ZZD83K\t2 Inch Suction Hose Pump Kit for Water/Trash Pump Includes 2\" X 65ft Blue Discharge Hose & 2\" X 20ft Green Pvc Suction Hose & Aluminum Round Hole Suction Strainer, Cam And Groove Adapter\t2店-US\n30004\tB0D4CZ7BK9\tB2855 Pool Pump Motor 2 HP with Square Flange 230V 3450RPM Replacement for Century/A.O. Smith Pool Pump Motors for Above Ground and Inground Swimming Pools\t2店-US\n30005\tB0D59Y9PSD\tSP1610Z1MBK Pool Pump Motor 1 HP, C-Flange, 1 HP Swimming Pool Pump Motor Compatible with Hayward SuperPump series, NorthStar Pump SP4000 series, Super II SP3000X series, MaxFlo series (230V/115V)\t2店-US\n",
+  "stderr": "",
+  "execution_time_ms": 356
+}

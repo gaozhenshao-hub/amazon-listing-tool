@@ -1,0 +1,13 @@
+{
+  "query": "SELECT COUNT(*) as cnt FROM product_variants; SELECT product_id, child_asin, sku FROM product_variants LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT COUNT(*) as cnt FROM product_variants; SELECT product_id, child_asin, sku FROM product_variants LIMIT 10;",
+  "rows": [
+    {
+      "cnt": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "cnt\n0\n",
+  "stderr": "",
+  "execution_time_ms": 432
+}

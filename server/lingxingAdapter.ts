@@ -919,6 +919,7 @@ class LingxingAdapter {
       "/bd/profit/report/open/report/asin/list": () => mockProfitDetail(body),
       // 广告数据
       "/pb/openapi/newad/spCampaigns": () => mockAdCampaigns(body),
+      "/pb/openapi/newad/spProductAdReports": () => mockProductAdReports(body),
       "/pb/openapi/newad/spAdGroups": () => mockAdGroups(body),
       "/pb/openapi/newad/spKeywords": () => mockAdKeywords(body),
       "/pb/openapi/newad/queryWordReports": () => mockSearchTerms(body),
@@ -982,12 +983,41 @@ function mockExchangeRates() {
 
 function mockFbaInventory(body: Record<string, any>) {
   const items = [];
+  // If keyword/ASIN is provided, generate matching data
+  const keyword = body.keyword || body.search || body.asin || '';
   const skus = ["SKU-A001", "SKU-A002", "SKU-B001", "SKU-B002", "SKU-C001", "SKU-C002", "SKU-D001", "SKU-D002", "SKU-E001", "SKU-E002"];
   const titles = [
     "无线蓝牙耳机 降噪版", "手机支架 桌面款", "USB-C数据线 1.5m", "便携充电宝 10000mAh",
     "硅胶手机壳 透明", "LED台灯 护眼款", "蓝牙音箱 防水版", "笔记本散热器",
     "车载手机支架 磁吸", "智能手表带 运动款"
   ];
+  
+  // If searching for a specific ASIN, generate matching inventory item first
+  if (keyword && keyword.startsWith('B0')) {
+    const dailySales = Math.floor(Math.random() * 30) + 5;
+    const available = Math.floor(Math.random() * 500) + 50;
+    items.push({
+      seller_sku: `SKU-${keyword}`,
+      asin: keyword,
+      fnsku: `X00${keyword.slice(-4)}`,
+      product_name: `Product ${keyword}`,
+      afn_fulfillable_quantity: available,
+      afn_inbound_working_quantity: Math.floor(Math.random() * 100),
+      afn_inbound_shipped_quantity: Math.floor(Math.random() * 200),
+      afn_reserved_quantity: Math.floor(Math.random() * 50),
+      afn_unsellable_quantity: Math.floor(Math.random() * 10),
+      avg_daily_sales_30d: dailySales,
+      days_of_supply: Math.round(available / dailySales),
+      inv_age_0_to_90: Math.floor(available * 0.4),
+      inv_age_91_to_180: Math.floor(available * 0.3),
+      inv_age_181_to_270: Math.floor(available * 0.2),
+      inv_age_271_to_365: Math.floor(available * 0.1),
+      inv_age_365_plus: Math.floor(Math.random() * 5),
+      estimated_storage_fee: +(Math.random() * 50 + 5).toFixed(2),
+      marketplace: "US",
+    });
+  }
+  
   for (let i = 0; i < skus.length; i++) {
     const dailySales = Math.floor(Math.random() * 30) + 5;
     const available = Math.floor(Math.random() * 500) + 50;
@@ -1064,38 +1094,80 @@ function mockProfitList(body: Record<string, any>) {
 }
 
 function mockProfitDetail(body: Record<string, any>) {
-  const skus = ["SKU-A001", "SKU-A002", "SKU-B001", "SKU-C001", "SKU-D001"];
-  const titles = ["无线蓝牙耳机 降噪版", "手机支架 桌面款", "USB-C数据线 1.5m", "硅胶手机壳 透明", "蓝牙音箱 防水版"];
-  return skus.map((sku, i) => {
-    const revenue = +(Math.random() * 3000 + 500).toFixed(2);
-    const cost = +(revenue * (0.25 + Math.random() * 0.15)).toFixed(2);
-    const adSpend = +(revenue * (0.05 + Math.random() * 0.1)).toFixed(2);
-    const fbaFee = +(revenue * (0.12 + Math.random() * 0.08)).toFixed(2);
-    const profit = +(revenue - cost - adSpend - fbaFee).toFixed(2);
-    return {
-      seller_sku: sku,
-      product_name: titles[i],
-      asin: `B0${String(9000 + i).padStart(7, "0")}`,
-      revenue,
-      product_cost: cost,
-      ad_spend: adSpend,
-      fba_fee: fbaFee,
-      referral_fee: +(revenue * 0.15).toFixed(2),
-      storage_fee: +(Math.random() * 20 + 2).toFixed(2),
-      other_fee: +(Math.random() * 30 + 5).toFixed(2),
-      profit,
-      profit_margin: +((profit / revenue) * 100).toFixed(1),
-      units_sold: Math.floor(Math.random() * 200 + 20),
-      return_rate: +(Math.random() * 5 + 0.5).toFixed(1),
-    };
-  });
+  // Use the ASIN from request body to generate matching mock data
+  const requestAsin = body.asin || body.parentAsin || 'B0UNKNOWN';
+  const revenue = +(Math.random() * 3000 + 500).toFixed(2);
+  const cost = +(revenue * (0.25 + Math.random() * 0.15)).toFixed(2);
+  const adSpend = +(revenue * (0.05 + Math.random() * 0.1)).toFixed(2);
+  const fbaFee = +(revenue * (0.12 + Math.random() * 0.08)).toFixed(2);
+  const referralFee = +(revenue * 0.15).toFixed(2);
+  const storageFee = +(Math.random() * 20 + 2).toFixed(2);
+  const profit = +(revenue - cost - adSpend - fbaFee - referralFee).toFixed(2);
+  return [{
+    seller_sku: `SKU-${requestAsin}`,
+    product_name: `Product ${requestAsin}`,
+    asin: requestAsin,
+    parentAsin: requestAsin,
+    revenue,
+    totalFbaAndFbmAmount: revenue,
+    platformIncome: revenue,
+    product_cost: cost,
+    cgPriceTotal: cost,
+    ad_spend: adSpend,
+    totalAdsCost: adSpend,
+    fba_fee: fbaFee,
+    totalFbaDeliveryFee: fbaFee,
+    referral_fee: referralFee,
+    platformFee: referralFee,
+    storage_fee: storageFee,
+    totalStorageFee: storageFee,
+    other_fee: +(Math.random() * 30 + 5).toFixed(2),
+    profit,
+    grossProfit: profit,
+    totalProfit: profit,
+    profit_margin: +((profit / revenue) * 100).toFixed(1),
+    units_sold: Math.floor(Math.random() * 200 + 20),
+    totalFbaAndFbmQuantity: Math.floor(Math.random() * 200 + 20),
+    totalSalesQuantity: Math.floor(Math.random() * 50 + 5),
+    return_rate: +(Math.random() * 5 + 0.5).toFixed(1),
+    cgTransportCostsTotal: +(Math.random() * 100 + 10).toFixed(2),
+  }];
+}
+
+function mockProductAdReports(body: Record<string, any>) {
+  // Generate product-level ad report data matching the requested ASIN
+  const asin = body.asin || body.advertised_asin || 'B0UNKNOWN';
+  const impressions = Math.floor(Math.random() * 30000 + 5000);
+  const clicks = Math.floor(Math.random() * 300 + 50);
+  const spend = +(Math.random() * 150 + 20).toFixed(2);
+  const sales = +(Math.random() * 800 + 100).toFixed(2);
+  const orders = Math.floor(Math.random() * 20 + 3);
+  return [{
+    asin,
+    advertised_asin: asin,
+    sku: `SKU-${asin}`,
+    impressions,
+    clicks,
+    cost: spend,
+    spend,
+    sales,
+    attributed_sales: sales,
+    orders,
+    attributed_orders: orders,
+    acos: sales > 0 ? +(spend / sales * 100).toFixed(1) : 0,
+    roas: spend > 0 ? +(sales / spend).toFixed(2) : 0,
+    ctr: impressions > 0 ? +(clicks / impressions * 100).toFixed(2) : 0,
+    cvr: clicks > 0 ? +(orders / clicks * 100).toFixed(1) : 0,
+  }];
 }
 
 function mockAdCampaigns(body: Record<string, any>) {
+  // Use ASIN from body context to make campaign names match product filtering
+  const asin = body.asin || '';
   const campaigns = [
-    { campaign_id: "C001", campaign_name: "SP - 蓝牙耳机 - 自动", campaign_type: "SP", targeting_type: "auto", status: "enabled", daily_budget: 50 },
-    { campaign_id: "C002", campaign_name: "SP - 蓝牙耳机 - 手动精准", campaign_type: "SP", targeting_type: "manual", status: "enabled", daily_budget: 80 },
-    { campaign_id: "C003", campaign_name: "SP - 数据线 - 自动", campaign_type: "SP", targeting_type: "auto", status: "enabled", daily_budget: 30 },
+    { campaign_id: "C001", campaign_name: `SP - ${asin || '蓝牙耳机'} - 自动`, campaign_type: "SP", targeting_type: "auto", status: "enabled", daily_budget: 50 },
+    { campaign_id: "C002", campaign_name: `SP - ${asin || '蓝牙耳机'} - 手动精准`, campaign_type: "SP", targeting_type: "manual", status: "enabled", daily_budget: 80 },
+    { campaign_id: "C003", campaign_name: `SP - ${asin || '数据线'} - 自动`, campaign_type: "SP", targeting_type: "auto", status: "enabled", daily_budget: 30 },
     { campaign_id: "C004", campaign_name: "SB - 品牌推广", campaign_type: "SB", targeting_type: "manual", status: "enabled", daily_budget: 100 },
     { campaign_id: "C005", campaign_name: "SD - 再营销", campaign_type: "SD", targeting_type: "auto", status: "paused", daily_budget: 40 },
   ];

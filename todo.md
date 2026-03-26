@@ -2291,3 +2291,13 @@
 - [x] 广告优化页getAdCampaigns支持多天聚合（默认7天，最多30天）
 - [x] 已停售ASIN不提醒补货（查询asinStatusCache过滤discontinued/inactive）
 - [x] 过滤已暂停广告活动（getAdCampaigns已有adState过滤参数）
+
+## 产品详情页数据看板和运营计划数据为空修复
+- [x] 排查数据看板（利润/库存/广告）API调用失败原因
+- [x] 根因：product_variants表为空(0条)，导致filterByProduct返回空数组
+- [x] 根因：领星API失败时fallback到mock数据，但mock数据不匹配产品ASIN
+- [x] 修复：添加spProductAdReports mock路由（之前缺失，返回空数组）
+- [x] 修复：mockAdCampaigns使用请求中的ASIN生成campaign名称，确保过滤匹配
+- [x] 修复：mockProductAdReports函数生成匹配请求ASIN的广告数据
+- [x] 修复：spProductAdReports和spCampaigns API调用传递asin参数到body
+- [x] 测试：10个新测试覆盖mock数据匹配/过滤/聚合逻辑（2671总测试通过）

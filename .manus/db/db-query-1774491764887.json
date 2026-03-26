@@ -1,0 +1,18 @@
+{
+  "query": "SELECT 'product_profiles' as tbl, COUNT(*) as cnt FROM product_profiles UNION ALL SELECT 'product_variants' as tbl, COUNT(*) as cnt FROM product_variants;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT 'product_profiles' as tbl, COUNT(*) as cnt FROM product_profiles UNION ALL SELECT 'product_variants' as tbl, COUNT(*) as cnt FROM product_variants;",
+  "rows": [
+    {
+      "tbl": "product_variants",
+      "cnt": "0"
+    },
+    {
+      "tbl": "product_profiles",
+      "cnt": "483"
+    }
+  ],
+  "messages": [],
+  "stdout": "tbl\tcnt\nproduct_variants\t0\nproduct_profiles\t483\n",
+  "stderr": "",
+  "execution_time_ms": 345
+}
