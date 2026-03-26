@@ -2453,3 +2453,10 @@
 - [x] 编写测试验证三种文件格式的解析（27项测试全部通过）
 - [x] 真实文件验证：Products(1条)、ReverseASIN(38条)、Reviews(60→去重10条)全部成功
 - [x] 保存检查点
+
+## Bug修复：导入卖家精灵xlsx后检查项显示"无数据"（已修复）
+- [x] 分析数据流向：xlsx解析→applySellerSpriteData→crawlData→检查项评分数据
+- [x] 定位断点：applySellerSpriteData只标记source为sellersprite但score保持null，前端判断score===null显示"无数据"
+- [x] 修复方案：新增buildCrawlDataFromSellerSprite函数将卖家精灵数据转换为ConversionCrawlData格式，直接调用scoreAllCheckItems进行程序化+AI评分
+- [x] 测试验证：16项buildCrawlData测试 + 27项解析器测试 + 42项评分测试 + 8项检查项测试全部通过
+- [x] 保存检查点

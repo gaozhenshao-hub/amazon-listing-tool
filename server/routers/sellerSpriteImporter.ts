@@ -903,3 +903,304 @@ export function mergeSellerSpriteWithCrawlData(
   
   return merged;
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// Build ConversionCrawlData from SellerSprite Data
+// ═══════════════════════════════════════════════════════════════════════
+
+import type {
+  ConversionCrawlData,
+  TitleData, BulletPointsData, BadgeData, PriceData,
+  PurchaseLimitData, DeliveryData, VariantData, ProductInfoData,
+  ProductDocData, ImageData, TrafficLoopData, BrandStoryData,
+  AplusData, VideoData, QAData, ReviewData as CrawlReviewData,
+  StoreData, AdCategoryData,
+} from "./conversionDataCollector";
+
+/**
+ * 将卖家精灵解析的数据转换为 ConversionCrawlData 格式，
+ * 使其可以直接传入 scoreAllCheckItems 进行程序化+AI评分。
+ */
+export function buildCrawlDataFromSellerSprite(
+  asin: string,
+  productData: Partial<SellerSpriteProductData>,
+  keywordData?: SellerSpriteKeywordData[],
+  reviewData?: SellerSpriteReviewData[],
+): ConversionCrawlData {
+
+  // ── 标题 ──
+  const titleText = productData.title || "";
+  const titleData: TitleData = {
+    text: titleText,
+    charCount: titleText.length,
+    wordCount: titleText.split(/\s+/).filter(Boolean).length,
+    brand: productData.brand || "",
+    hasBrand: !!(productData.brand && titleText.toLowerCase().includes(productData.brand.toLowerCase())),
+    rawTitle: titleText,
+  };
+
+  // ── 五点 ──
+  const bullets = productData.bulletPoints || [];
+  const bulletCharCounts = bullets.map(b => b.length);
+  const bulletPointsData: BulletPointsData = {
+    bullets,
+    bulletCount: bullets.length,
+    avgCharCount: bulletCharCounts.length > 0 ? Math.round(bulletCharCounts.reduce((a, b) => a + b, 0) / bulletCharCounts.length) : 0,
+    totalCharCount: bulletCharCounts.reduce((a, b) => a + b, 0),
+    charCounts: bulletCharCounts,
+  };
+
+  // ── 标签 ──
+  const hasBestSeller = !!productData.hasBestSeller;
+  const hasAmazonChoice = !!productData.hasAmazonChoice;
+  const hasNewRelease = !!productData.hasNewRelease;
+  const hasCoupon = !!productData.coupon;
+  let badgeCount = 0;
+  if (hasBestSeller) badgeCount++;
+  if (hasAmazonChoice) badgeCount++;
+  if (hasNewRelease) badgeCount++;
+  if (hasCoupon) badgeCount++;
+
+  const badges: BadgeData = {
+    hasBestSeller,
+    hasAmazonChoice,
+    hasNewRelease,
+    hasDeal: false,
+    dealInfo: null,
+    hasCoupon,
+    couponInfo: productData.coupon || null,
+    hasPrime: productData.fulfillment?.toUpperCase().includes('FBA') || false,
+    hasSubscribeSave: false,
+    hasClimateTag: !!productData.hasCPFGreen,
+    hasSmallBusiness: false,
+    totalBadges: badgeCount,
+  };
+
+  // ── 价格 ──
+  const currentPrice = productData.price || null;
+  const priceData: PriceData = {
+    currentPrice,
+    listPrice: null,
+    hasStrikethrough: false,
+    discountPercent: null,
+    hasCoupon,
+    couponValue: productData.coupon || null,
+    hasSubscribeSave: false,
+    unitPrice: null,
+    buyBoxPrice: currentPrice,
+    priceEnding: currentPrice ? currentPrice.toFixed(2).slice(-2) : null,
+  };
+
+  // ── 限购 ──
+  const purchaseLimitData: PurchaseLimitData = {
+    hasLimit: false,
+    limitQuantity: null,
+    limitText: null,
+  };
+
+  // ── 配送 ──
+  const isFBA = productData.fulfillment?.toUpperCase().includes('FBA') || false;
+  const deliveryData: DeliveryData = {
+    isFBA,
+    isFBM: !isFBA && !!productData.fulfillment,
+    deliveryDays: null,
+    deliveryText: productData.fulfillment || null,
+    hasPrime: isFBA,
+    hasFreeShipping: isFBA,
+    shipsFrom: isFBA ? "Amazon" : null,
+    soldBy: productData.buyboxSeller || null,
+  };
+
+  // ── 变体 ──
+  const variantData: VariantData = {
+    variantCount: productData.variationCount || 0,
+    variantTypes: [],
+    variants: [],
+    hasImages: false,
+  };
+
+  // ── 产品信息 ──
+  const fields: Record<string, string> = {};
+  if (productData.productWeight) fields["Item Weight"] = productData.productWeight;
+  if (productData.productDimensions) fields["Product Dimensions"] = productData.productDimensions;
+  if (productData.packageWeight) fields["Package Weight"] = productData.packageWeight;
+  if (productData.packageDimensions) fields["Package Dimensions"] = productData.packageDimensions;
+  if (productData.packageSizeTier) fields["Size Tier"] = productData.packageSizeTier;
+  if (productData.brand) fields["Brand"] = productData.brand;
+
+  const productInfoData: ProductInfoData = {
+    fieldCount: Object.keys(fields).length,
+    hasWeight: !!productData.productWeight || !!productData.packageWeight,
+    hasDimensions: !!productData.productDimensions || !!productData.packageDimensions,
+    hasMaterial: false,
+    hasColor: false,
+    hasManufacturer: false,
+    fields,
+  };
+
+  // ── 商品文档 ──
+  const productDocData: ProductDocData = {
+    hasManual: false,
+    hasCertification: false,
+    documentCount: 0,
+    documentTypes: [],
+  };
+
+  // ── 主图 ──
+  const imageData: ImageData = {
+    mainImages: [],
+    mainImageCount: productData.imageCount || 0,
+    hasMainImage: (productData.imageCount || 0) > 0,
+    mainImageResolution: null,
+    secondaryImages: [],
+    secondaryImageCount: Math.max(0, (productData.imageCount || 0) - 1),
+    aplusImages: [],
+    brandStoryImages: [],
+    videoCount: productData.hasVideo ? 1 : 0,
+    hasVideo: !!productData.hasVideo,
+    totalImageCount: productData.imageCount || 0,
+  };
+
+  // ── 流量闭环 ──
+  const trafficLoopData: TrafficLoopData = {
+    hasNewModel: false,
+    hasBundleDeal: false,
+    hasFrequentlyBought: false,
+    hasSponsoredProducts: !!productData.hasSPAd,
+    hasVirtualBundle: false,
+    hasBrandStoreLink: false,
+  };
+
+  // ── 品牌故事 ──
+  const brandStoryData: BrandStoryData = {
+    hasBrandStory: !!productData.hasBrandStory,
+    hasRecommendation: false,
+    imageCount: 0,
+    textContent: "",
+    images: [],
+  };
+
+  // ── A+ ──
+  const aplusData: AplusData = {
+    hasAplus: !!productData.hasAplus,
+    moduleCount: productData.hasAplus ? 1 : 0, // 至少知道有A+
+    moduleTypes: [],
+    hasComparisonChart: false,
+    hasVideo: false,
+    imageCount: 0,
+    textContent: productData.description || "",
+    images: [],
+  };
+
+  // ── Video ──
+  const videoData: VideoData = {
+    videoCount: productData.hasVideo ? 1 : 0,
+    hasMainVideo: !!productData.hasVideo,
+    videoUrls: [],
+  };
+
+  // ── Q&A ──
+  const qaData: QAData = {
+    questionCount: productData.qaCount || 0,
+    topQuestions: [],
+  };
+
+  // ── Review ──
+  // 合并产品数据中的评分和评论文件中的详细评论
+  const topReviews: string[] = [];
+  const ratingDistribution: Record<string, number> = {};
+  let hasVine = false;
+  if (reviewData && reviewData.length > 0) {
+    for (const r of reviewData) {
+      const reviewText = [r.title, r.content].filter(Boolean).join(': ');
+      if (reviewText) topReviews.push(reviewText);
+      if (r.isVineVoice) hasVine = true;
+    }
+    // 计算评分分布
+    const dist: Record<number, number> = {};
+    for (const r of reviewData) {
+      dist[r.rating] = (dist[r.rating] || 0) + 1;
+    }
+    const total = reviewData.length;
+    for (const [star, count] of Object.entries(dist)) {
+      ratingDistribution[`${star} star`] = Math.round((count / total) * 100);
+    }
+  }
+
+  const crawlReviewData: CrawlReviewData = {
+    rating: productData.rating || null,
+    reviewCount: productData.reviewCount || null,
+    hasVine,
+    topReviews: topReviews.slice(0, 20),
+    ratingDistribution,
+  };
+
+  // ── 店铺 ──
+  const storeData: StoreData = {
+    feedbackScore: null,
+    feedbackCount: null,
+    hasStorefront: false,
+    storeName: productData.buyboxSeller || null,
+  };
+
+  // ── 广告 ──
+  // 从关键词数据中构建广告信息
+  const adKeywords = (keywordData || []).filter(k => k.adRank && k.adRank > 0);
+  const adCategoryData: AdCategoryData = {
+    hasCampaigns: adKeywords.length > 0 || !!productData.hasSPAd,
+    campaignCount: adKeywords.length > 0 ? 1 : 0,
+    totalSpend: null,
+    acos: null,
+    roas: null,
+    keywordCount: adKeywords.length,
+    topKeywords: adKeywords.slice(0, 20).map(k => ({
+      keyword: k.keyword,
+      impressions: k.impressions || 0,
+      clicks: k.clicks || 0,
+      spend: k.ppcBid ? k.ppcBid * (k.clicks || 0) : 0,
+      acos: 0,
+    })),
+    searchTerms: (keywordData || []).slice(0, 20).map(k => ({
+      term: k.keyword,
+      impressions: k.impressions || 0,
+      clicks: k.clicks || 0,
+      conversions: k.purchaseCount || 0,
+    })),
+  };
+
+  return {
+    asin: asin.toUpperCase(),
+    crawledAt: new Date().toISOString(),
+    hasData: true,
+    dataSourceStatus: {
+      scraper: { success: false, error: "使用卖家精灵数据替代爬虫" },
+      competitor: { success: false, error: "使用卖家精灵数据替代" },
+      lingxingAd: { success: adKeywords.length > 0, error: adKeywords.length > 0 ? undefined : "使用卖家精灵关键词数据" },
+    },
+    raw: {
+      scraperData: null,
+      competitorData: null,
+      adData: null,
+    },
+    categories: {
+      标题: titleData,
+      五点: bulletPointsData,
+      标: badges,
+      价格: priceData,
+      限购: purchaseLimitData,
+      配送: deliveryData,
+      变体: variantData,
+      产品信息: productInfoData,
+      商品文档: productDocData,
+      主图: imageData,
+      流量闭环: trafficLoopData,
+      品牌故事: brandStoryData,
+      "A+": aplusData,
+      Video: videoData,
+      "Q&A": qaData,
+      Review: crawlReviewData,
+      店铺介绍页面: storeData,
+      广告: adCategoryData,
+    },
+  };
+}

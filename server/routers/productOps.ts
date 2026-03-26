@@ -6,7 +6,7 @@ import { getLingxingAdapter } from "../lingxingAdapter";
 import { invokeLLM } from "../_core/llm";
 import { collectConversionData, collectMultipleAsins, type ConversionCrawlData } from "./conversionDataCollector";
 import { scoreAllCheckItems, type CheckItemScore } from "./conversionAiScorer";
-import { parseSellerSpriteData, parseSellerSpriteXlsx, mergeSellerSpriteWithCrawlData, type SellerSpriteProductData, type ImportResult } from "./sellerSpriteImporter";
+import { parseSellerSpriteData, parseSellerSpriteXlsx, mergeSellerSpriteWithCrawlData, buildCrawlDataFromSellerSprite, type SellerSpriteProductData, type ImportResult } from "./sellerSpriteImporter";
 import {
   productProfiles, productVariants, productTodos, productLogs,
   keywordMonitors, keywordSnapshots,
@@ -2644,112 +2644,131 @@ export const productOpsRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '数据库连接失败' });
       const { comparisonId, asin, productData, keywordData, reviewData } = input;
+      const upperAsin = asin.toUpperCase();
 
-      // 获取该对比下所有检查项
+      // Step 1: 将卖家精灵数据转换为 ConversionCrawlData 格式
+      const crawlData = buildCrawlDataFromSellerSprite(
+        upperAsin,
+        productData as any,
+        keywordData as any,
+        reviewData as any,
+      );
+
+      // Step 2: 获取所有检查项
       const checkItems = await db.select().from(conversionCheckItems)
-        .where(isNull(conversionCheckItems.userId));
+        .where(isNull(conversionCheckItems.userId))
+        .orderBy(asc(conversionCheckItems.categoryIndex), asc(conversionCheckItems.sortOrder));
 
-      // 获取现有评分
+      // Step 3: 获取已锁定的评分（不覆盖）
       const existingScores = await db.select().from(conversionScores)
         .where(and(
           eq(conversionScores.comparisonId, comparisonId),
-          eq(conversionScores.asin, asin.toUpperCase()),
+          eq(conversionScores.asin, upperAsin),
+        ));
+      const lockedKeys = new Set(
+        existingScores.filter(s => s.isLocked === 1).map(s => s.checkItemId)
+      );
+
+      // Step 4: 删除该ASIN的未锁定评分（重新评分）
+      await db.delete(conversionScores)
+        .where(and(
+          eq(conversionScores.comparisonId, comparisonId),
+          eq(conversionScores.asin, upperAsin),
+          eq(conversionScores.isLocked, 0),
         ));
 
-      // 构建现有评分的映射
-      const scoreMap = new Map(existingScores.map(s => [s.checkItemId, s]));
+      // Step 5: 使用评分引擎进行程序化+AI评分
+      const unlocked = checkItems.filter(item => !lockedKeys.has(item.id));
+      console.log(`[applySellerSpriteData] Scoring ${unlocked.length} items for ${upperAsin} (${lockedKeys.size} locked)`);
 
-      // 确定哪些类别可以被卖家精灵数据补充
-      const categoryDataMap: Record<string, boolean> = {};
-      if (productData.title) categoryDataMap['标题'] = true;
-      if (productData.bulletPoints && productData.bulletPoints.length > 0) categoryDataMap['五点'] = true;
-      if (productData.price || productData.primePrice) categoryDataMap['价格'] = true;
-      if (productData.variationCount) categoryDataMap['变体'] = true;
-      if (productData.fulfillment) categoryDataMap['配送'] = true;
-      if (productData.reviewCount || productData.rating) categoryDataMap['Review'] = true;
-      if (productData.imageCount) {
-        categoryDataMap['主图'] = true;
-      }
-      if (productData.hasAplus) categoryDataMap['A+'] = true;
-      if (productData.hasVideo) categoryDataMap['Video'] = true;
-      if (productData.hasBrandStory) categoryDataMap['品牌故事'] = true;
-      if (productData.qaCount) categoryDataMap['Q&A'] = true;
-      if (productData.lqs) categoryDataMap['标'] = true;
-      if (keywordData && keywordData.length > 0) categoryDataMap['广告'] = true;
-      if (reviewData && reviewData.length > 0) categoryDataMap['Review'] = true;
+      const scores = await scoreAllCheckItems(
+        unlocked.map(item => ({
+          id: item.id,
+          categoryName: item.categoryName,
+          subDimension: item.subDimension || "",
+          standard: item.standard || "",
+          categoryIndex: item.categoryIndex,
+          sortOrder: item.sortOrder || 0,
+        })),
+        crawlData
+      );
 
-      // 找出当前无数据的检查项（source = 'no_data'）
-      const updatedItems: { checkItemId: number; categoryName: string; }[] = [];
-
-      for (const item of checkItems) {
-        const existingScore = scoreMap.get(item.id);
-        
-        // 只处理无数据的项（source = 'no_data' 或没有评分记录）
-        if (existingScore && existingScore.source !== 'no_data' && existingScore.score !== null) {
-          continue; // 已有真实评分，不覆盖
-        }
-
-        // 检查该类别是否有卖家精灵数据可以补充
-        if (categoryDataMap[item.categoryName]) {
-          updatedItems.push({ checkItemId: item.id, categoryName: item.categoryName });
-        }
+      // Step 6: 批量插入评分结果
+      let scoredCount = 0;
+      let noDataCount = 0;
+      for (const s of scores) {
+        await db.insert(conversionScores).values({
+          comparisonId,
+          checkItemId: s.checkItemId,
+          asin: upperAsin,
+          score: s.score,
+          aiScore: s.score,
+          reason: s.reason,
+          aiReason: s.reason,
+          rawData: s.rawData,
+          source: s.source === 'no_data' ? 'no_data' : (s.source === 'programmatic' ? 'programmatic' : 'ai'),
+        });
+        if (s.score !== null && s.score > 0) scoredCount++;
+        else noDataCount++;
       }
 
-      // 将有数据的项标记为“待重新评分”（source = 'sellersprite'， score暂时为null）
-      // 用户可以重新触发AI评分来基于新数据评分
-      let updatedCount = 0;
-      for (const item of updatedItems) {
-        if (scoreMap.has(item.checkItemId)) {
-          // 更新现有记录
-          await db.update(conversionScores)
-            .set({
-              source: 'sellersprite',
-              reason: `卖家精灵数据已导入，请重新触发AI评分或手动评分`,
-            })
-            .where(and(
-              eq(conversionScores.comparisonId, comparisonId),
-              eq(conversionScores.asin, asin.toUpperCase()),
-              eq(conversionScores.checkItemId, item.checkItemId),
-            ));
-        } else {
-          // 插入新记录
-          await db.insert(conversionScores).values({
-            comparisonId,
-            asin: asin.toUpperCase(),
-            checkItemId: item.checkItemId,
-            score: null,
-            source: 'sellersprite',
-            reason: `卖家精灵数据已导入，请重新触发AI评分或手动评分`,
-          });
-        }
-        updatedCount++;
-      }
-
-      // 保存卖家精灵原始数据到对比记录的crawlData中
+      // Step 7: 保存卖家精灵原始数据到对比记录的crawlData中
       const comparison = await db.select().from(conversionComparisons)
         .where(eq(conversionComparisons.id, comparisonId))
         .limit(1);
 
       if (comparison.length > 0) {
         const existingCrawl = comparison[0].crawlData ? JSON.parse(comparison[0].crawlData as string) : {};
+        // 保存转换后的crawlData（用于后续AI评分）
+        if (!existingCrawl[upperAsin]) existingCrawl[upperAsin] = crawlData;
+        else {
+          // 合并：卖家精灵数据补充到现有数据
+          for (const [catName, catData] of Object.entries(crawlData.categories)) {
+            if (catData && typeof catData === 'object') {
+              existingCrawl[upperAsin].categories = existingCrawl[upperAsin].categories || {};
+              existingCrawl[upperAsin].categories[catName] = {
+                ...existingCrawl[upperAsin].categories[catName],
+                ...catData,
+              };
+            }
+          }
+          existingCrawl[upperAsin].hasData = true;
+        }
+        // 同时保存原始卖家精灵数据
         if (!existingCrawl.sellerSpriteData) existingCrawl.sellerSpriteData = {};
-        existingCrawl.sellerSpriteData[asin.toUpperCase()] = {
+        existingCrawl.sellerSpriteData[upperAsin] = {
           productData,
           keywordData,
           reviewData,
           importedAt: Date.now(),
         };
-        await db!.update(conversionComparisons)
+        await db.update(conversionComparisons)
           .set({ crawlData: JSON.stringify(existingCrawl) })
           .where(eq(conversionComparisons.id, comparisonId));
       }
 
-      const affectedCats = Array.from(new Set(updatedItems.map(i => i.categoryName)));
+      // Step 8: 更新对比记录的整体评分
+      const allOwnScores = await db.select().from(conversionScores)
+        .where(and(eq(conversionScores.comparisonId, comparisonId), eq(conversionScores.asin, upperAsin)));
+      const validScores = allOwnScores.filter(s => s.score !== null && s.score > 0);
+      const avgScore = validScores.length > 0
+        ? Math.round(validScores.reduce((sum, s) => sum + (s.score || 0), 0) / validScores.length * 10) / 10
+        : 0;
+
+      // 如果是己品ASIN，更新整体评分
+      if (comparison.length > 0 && comparison[0].ownAsin === upperAsin) {
+        await db.update(conversionComparisons).set({
+          overallOwnScore: String(avgScore),
+        }).where(eq(conversionComparisons.id, comparisonId));
+      }
+
       return {
         success: true,
-        updatedCount,
-        affectedCategories: affectedCats,
-        message: `已导入卖家精灵数据，${updatedCount}个检查项已更新。请重新触发AI评分以基于新数据评分。`,
+        updatedCount: scores.length,
+        scoredCount,
+        noDataCount,
+        avgScore,
+        message: `已导入卖家精灵数据并完成评分：${scoredCount}项已评分，${noDataCount}项无数据。`,
       };
     }),
 
