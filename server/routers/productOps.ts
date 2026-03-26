@@ -6,7 +6,7 @@ import { getLingxingAdapter } from "../lingxingAdapter";
 import { invokeLLM } from "../_core/llm";
 import { collectConversionData, collectMultipleAsins, type ConversionCrawlData } from "./conversionDataCollector";
 import { scoreAllCheckItems, type CheckItemScore } from "./conversionAiScorer";
-import { parseSellerSpriteData, mergeSellerSpriteWithCrawlData, type SellerSpriteProductData, type ImportResult } from "./sellerSpriteImporter";
+import { parseSellerSpriteData, parseSellerSpriteXlsx, mergeSellerSpriteWithCrawlData, type SellerSpriteProductData, type ImportResult } from "./sellerSpriteImporter";
 import {
   productProfiles, productVariants, productTodos, productLogs,
   keywordMonitors, keywordSnapshots,
@@ -2520,7 +2520,7 @@ export const productOpsRouter = router({
 
   // ============== SellerSprite Import ==============
 
-  /** 解析卖家精灵导出的CSV文本，返回解析结果预览 */
+  /** 解析卖家精灵导出的CSV文本，返回解析结果预览（向后兼容） */
   parseSellerSpriteCSV: protectedProcedure
     .input(z.object({
       csvText: z.string().min(10, '文件内容不能为空'),
@@ -2528,6 +2528,39 @@ export const productOpsRouter = router({
     }))
     .mutation(async ({ input }) => {
       const result = parseSellerSpriteData(input.csvText, input.targetAsin);
+      return result;
+    }),
+
+  /** 解析卖家精灵导出的xlsx文件（base64编码），返回解析结果预览 */
+  parseSellerSpriteXlsx: protectedProcedure
+    .input(z.object({
+      /** xlsx文件的base64编码内容 */
+      fileBase64: z.string().min(10, '文件内容不能为空'),
+      /** 原始文件名（用于辅助判断文件类型） */
+      fileName: z.string().optional(),
+      targetAsin: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const buffer = Buffer.from(input.fileBase64, 'base64');
+      const result = parseSellerSpriteXlsx(buffer, input.targetAsin);
+      // 如果文件名包含特征词，辅助修正文件类型
+      if (input.fileName) {
+        const fn = input.fileName.toLowerCase();
+        if (fn.includes('reverseasin') && result.fileType !== 'keyword') {
+          // 文件名明确是反查ASIN，但列名检测可能失败
+          if (result.keywords.length === 0 && result.parsedRows === 0) {
+            // 重新尝试按关键词解析
+            const retryResult = parseSellerSpriteXlsx(buffer, input.targetAsin);
+            if (retryResult.keywords.length > 0) return retryResult;
+          }
+        }
+        if (fn.includes('review') && result.fileType !== 'review') {
+          if (result.reviews.length === 0 && result.parsedRows === 0) {
+            const retryResult = parseSellerSpriteXlsx(buffer, input.targetAsin);
+            if (retryResult.reviews.length > 0) return retryResult;
+          }
+        }
+      }
       return result;
     }),
 
@@ -2540,29 +2573,77 @@ export const productOpsRouter = router({
         title: z.string().optional(),
         brand: z.string().optional(),
         category: z.string().optional(),
+        categoryPath: z.string().optional(),
         bsrRank: z.number().optional(),
+        subCategoryRank: z.number().optional(),
         price: z.number().optional(),
+        primePrice: z.number().optional(),
         rating: z.number().optional(),
         reviewCount: z.number().optional(),
         monthlySales: z.number().optional(),
+        monthlyRevenue: z.number().optional(),
         variationCount: z.number().optional(),
         fulfillment: z.string().optional(),
         imageCount: z.number().optional(),
         bulletPoints: z.array(z.string()).optional(),
         description: z.string().optional(),
+        lqs: z.number().optional(),
+        qaCount: z.number().optional(),
+        coupon: z.string().optional(),
+        launchDate: z.string().optional(),
+        listingAge: z.number().optional(),
+        sellerCount: z.number().optional(),
+        fbaFee: z.number().optional(),
+        grossMargin: z.number().optional(),
+        // 标签
+        hasBestSeller: z.boolean().optional(),
+        hasAmazonChoice: z.boolean().optional(),
+        hasNewRelease: z.boolean().optional(),
+        hasAplus: z.boolean().optional(),
+        hasVideo: z.boolean().optional(),
+        hasSPAd: z.boolean().optional(),
+        hasBrandStory: z.boolean().optional(),
+        hasBrandAd: z.boolean().optional(),
+        hasCPFGreen: z.boolean().optional(),
+        acKeyword: z.string().optional(),
+        // 卖家信息
+        buyboxSeller: z.string().optional(),
+        buyboxType: z.string().optional(),
+        sellerLocation: z.string().optional(),
+        // 物流尺寸
+        productWeight: z.string().optional(),
+        productDimensions: z.string().optional(),
+        packageWeight: z.string().optional(),
+        packageDimensions: z.string().optional(),
+        packageSizeTier: z.string().optional(),
       }),
       keywordData: z.array(z.object({
         keyword: z.string(),
+        keywordTranslation: z.string().optional(),
         searchVolume: z.number().optional(),
         organicRank: z.number().optional(),
         adRank: z.number().optional(),
         ppcBid: z.number().optional(),
+        spr: z.number().optional(),
+        titleDensity: z.number().optional(),
+        trafficShare: z.number().optional(),
+        abaWeeklyRank: z.number().optional(),
+      })).optional(),
+      reviewData: z.array(z.object({
+        title: z.string().optional(),
+        content: z.string(),
+        rating: z.number(),
+        isVerified: z.boolean().optional(),
+        isVineVoice: z.boolean().optional(),
+        variant: z.string().optional(),
+        date: z.string().optional(),
+        helpfulVotes: z.number().optional(),
       })).optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '数据库连接失败' });
-      const { comparisonId, asin, productData, keywordData } = input;
+      const { comparisonId, asin, productData, keywordData, reviewData } = input;
 
       // 获取该对比下所有检查项
       const checkItems = await db.select().from(conversionCheckItems)
@@ -2582,15 +2663,20 @@ export const productOpsRouter = router({
       const categoryDataMap: Record<string, boolean> = {};
       if (productData.title) categoryDataMap['标题'] = true;
       if (productData.bulletPoints && productData.bulletPoints.length > 0) categoryDataMap['五点'] = true;
-      if (productData.price) categoryDataMap['价格'] = true;
+      if (productData.price || productData.primePrice) categoryDataMap['价格'] = true;
       if (productData.variationCount) categoryDataMap['变体'] = true;
       if (productData.fulfillment) categoryDataMap['配送'] = true;
       if (productData.reviewCount || productData.rating) categoryDataMap['Review'] = true;
       if (productData.imageCount) {
-        categoryDataMap['首图'] = true;
-        categoryDataMap['辅图'] = true;
+        categoryDataMap['主图'] = true;
       }
+      if (productData.hasAplus) categoryDataMap['A+'] = true;
+      if (productData.hasVideo) categoryDataMap['Video'] = true;
+      if (productData.hasBrandStory) categoryDataMap['品牌故事'] = true;
+      if (productData.qaCount) categoryDataMap['Q&A'] = true;
+      if (productData.lqs) categoryDataMap['标'] = true;
       if (keywordData && keywordData.length > 0) categoryDataMap['广告'] = true;
+      if (reviewData && reviewData.length > 0) categoryDataMap['Review'] = true;
 
       // 找出当前无数据的检查项（source = 'no_data'）
       const updatedItems: { checkItemId: number; categoryName: string; }[] = [];
@@ -2650,6 +2736,7 @@ export const productOpsRouter = router({
         existingCrawl.sellerSpriteData[asin.toUpperCase()] = {
           productData,
           keywordData,
+          reviewData,
           importedAt: Date.now(),
         };
         await db!.update(conversionComparisons)

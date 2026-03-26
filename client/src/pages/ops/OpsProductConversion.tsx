@@ -19,7 +19,7 @@ import {
 import {
   Plus, Trash2, Lock, Unlock, Loader2, Brain, ChevronDown, ChevronUp,
   Star, ArrowRight, Search, BarChart3, Sparkles, Download, CheckCircle, Filter,
-  Eye, EyeOff, Pencil, RotateCcw, Settings2, Upload, FileSpreadsheet, AlertCircle, Camera, ImageIcon,
+  Eye, EyeOff, Pencil, RotateCcw, Settings2, Upload, FileSpreadsheet, AlertCircle, Camera, ImageIcon, X, FileUp,
 } from "lucide-react";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -111,6 +111,18 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
     },
     onError: (err) => toast.error(`解析失败: ${err.message}`),
   });
+  const parseSSXlsx = trpc.productOps.parseSellerSpriteXlsx.useMutation({
+    onSuccess: (data) => {
+      setSSImportResult(data as any);
+      if (data.success) {
+        const typeLabel = data.fileType === 'keyword' ? '关键词' : data.fileType === 'review' ? '评论' : data.fileType === 'product' ? '产品' : '未知';
+        toast.success(`解析成功：${data.parsedRows}条${typeLabel}数据`);
+      } else {
+        toast.error(`解析失败：${data.errors.join('; ')}`);
+      }
+    },
+    onError: (err) => toast.error(`解析失败: ${err.message}`),
+  });
   const applySSData = trpc.productOps.applySellerSpriteData.useMutation({
     onSuccess: (data) => {
       refetchScores();
@@ -165,6 +177,45 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
   const [showSSImport, setShowSSImport] = useState(false);
   const [ssImportResult, setSSImportResult] = useState<any>(null);
   const [ssTargetAsin, setSSTargetAsin] = useState('');
+  const [ssUploadedFiles, setSSUploadedFiles] = useState<Array<{name: string; size: number; type: string; base64: string}>>([]);
+  const [ssParsingIndex, setSSParsingIndex] = useState<number>(-1);
+
+  // 处理卖家精灵文件选择（读取为base64）
+  const handleSSFileSelect = (files: File[]) => {
+    const validExts = ['.xlsx', '.xls', '.csv'];
+    const validFiles = files.filter(f => validExts.some(ext => f.name.toLowerCase().endsWith(ext)));
+    if (validFiles.length === 0) {
+      toast.error('请选择 .xlsx 或 .csv 格式的文件');
+      return;
+    }
+    if (validFiles.length !== files.length) {
+      toast.warning(`已过滤 ${files.length - validFiles.length} 个不支持的文件格式`);
+    }
+    // 读取每个文件为base64
+    validFiles.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const arrayBuffer = ev.target?.result as ArrayBuffer;
+        if (!arrayBuffer) return;
+        // 转换ArrayBuffer为base64
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        const base64 = btoa(binary);
+        setSSUploadedFiles(prev => [...prev, {
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          base64,
+        }]);
+      };
+      reader.readAsArrayBuffer(file);
+    });
+    // 清除之前的解析结果
+    setSSImportResult(null);
+  };
   const [showManualInput, setShowManualInput] = useState(false);
   const [manualAsin, setManualAsin] = useState('');
   const [manualForm, setManualForm] = useState({
@@ -1285,9 +1336,9 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {/* SellerSprite Import Dialog */}
-      <Dialog open={showSSImport} onOpenChange={(open) => { if (!open) { setShowSSImport(false); setSSImportResult(null); } }}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+      {/* SellerSprite Import Dialog — xlsx文件上传版 */}
+      <Dialog open={showSSImport} onOpenChange={(open) => { if (!open) { setShowSSImport(false); setSSImportResult(null); setSSUploadedFiles([]); setSSParsingIndex(-1); } }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="h-5 w-5" />
@@ -1295,13 +1346,85 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
-              <p className="font-medium mb-1">支持的数据类型：</p>
-              <p>• 产品查询导出（包含标题、价格、评分、变体等）</p>
-              <p>• 关键词分析导出（包含搜索量、排名、竞价等）</p>
-              <p>• 评论分析导出（包含评论内容、评分等）</p>
-              <p className="mt-1 text-blue-600">将卖家精灵导出的CSV文件内容粘贴到下方，或直接拖拽CSV文件到此处。</p>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 dark:bg-blue-950/30 dark:border-blue-800 dark:text-blue-300">
+              <p className="font-medium mb-1">支持卖家精灵导出的三种xlsx文件：</p>
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                <div className="bg-white/60 dark:bg-white/10 rounded p-2">
+                  <p className="font-medium text-xs">📊 产品数据</p>
+                  <p className="text-xs mt-0.5 opacity-80">Products导出（标题、价格、评分、BSR、变体、标签等）</p>
+                </div>
+                <div className="bg-white/60 dark:bg-white/10 rounded p-2">
+                  <p className="font-medium text-xs">🔍 反查关键词</p>
+                  <p className="text-xs mt-0.5 opacity-80">ReverseASIN导出（流量词、搜索量、排名、SPR等）</p>
+                </div>
+                <div className="bg-white/60 dark:bg-white/10 rounded p-2">
+                  <p className="font-medium text-xs">⭐ 评论数据</p>
+                  <p className="text-xs mt-0.5 opacity-80">Reviews导出（评论内容、星级、VP、Vine等）</p>
+                </div>
+              </div>
+              <p className="mt-2 text-xs opacity-80">支持同时上传多个文件，系统自动识别文件类型。同时支持 .xlsx 和 .csv 格式。</p>
             </div>
+
+            {/* 文件上传区域 */}
+            <div>
+              <Label>上传文件</Label>
+              <div
+                className="mt-1 border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center hover:border-primary/50 transition-colors cursor-pointer"
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const files = Array.from(e.dataTransfer.files);
+                  handleSSFileSelect(files);
+                }}
+                onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-primary/50', 'bg-primary/5'); }}
+                onDragLeave={(e) => { e.currentTarget.classList.remove('border-primary/50', 'bg-primary/5'); }}
+                onClick={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.multiple = true;
+                  input.accept = '.xlsx,.xls,.csv';
+                  input.onchange = (ev) => {
+                    const files = Array.from((ev.target as HTMLInputElement).files || []);
+                    handleSSFileSelect(files);
+                  };
+                  input.click();
+                }}
+              >
+                <FileUp className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
+                <p className="text-sm text-muted-foreground">点击或拖拽文件到此处</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">支持 .xlsx / .csv 格式，可多选</p>
+              </div>
+            </div>
+
+            {/* 已上传文件列表 */}
+            {ssUploadedFiles.length > 0 && (
+              <div className="space-y-2">
+                <Label>已选择文件 ({ssUploadedFiles.length})</Label>
+                {ssUploadedFiles.map((f, idx) => (
+                  <div key={idx} className="flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-2">
+                    <FileSpreadsheet className="h-4 w-4 text-green-600 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm truncate">{f.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {(f.size / 1024).toFixed(1)} KB
+                        {f.name.toLowerCase().includes('reverseasin') && ' · 反查关键词'}
+                        {f.name.toLowerCase().includes('review') && ' · 评论数据'}
+                        {f.name.toLowerCase().includes('product') && ' · 产品数据'}
+                      </p>
+                    </div>
+                    {ssParsingIndex === idx && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+                    {ssParsingIndex > idx && <CheckCircle className="h-4 w-4 text-green-600" />}
+                    <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={(e) => {
+                      e.stopPropagation();
+                      setSSUploadedFiles(prev => prev.filter((_, i) => i !== idx));
+                    }}>
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 目标ASIN */}
             <div>
               <Label>目标ASIN（可选，留空则导入所有）</Label>
               <Input
@@ -1311,55 +1434,51 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                 className="mt-1 font-mono"
               />
             </div>
-            <div>
-              <Label>CSV文件内容</Label>
-              <div className="mt-1 relative">
-                <Textarea
-                  id="ss-csv-input"
-                  placeholder="粘贴CSV文件内容…\n\n或拖拽CSV文件到此处"
-                  className="min-h-[200px] font-mono text-xs"
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const file = e.dataTransfer.files[0];
-                    if (file) {
-                      const reader = new FileReader();
-                      reader.onload = (ev) => {
-                        const textarea = document.getElementById('ss-csv-input') as HTMLTextAreaElement;
-                        if (textarea && ev.target?.result) {
-                          textarea.value = ev.target.result as string;
-                        }
-                      };
-                      reader.readAsText(file);
-                    }
-                  }}
-                  onDragOver={(e) => e.preventDefault()}
-                />
-              </div>
-            </div>
+
+            {/* 解析按钮 */}
             <Button
               className="w-full"
-              disabled={parseSSCSV.isPending}
-              onClick={() => {
-                const textarea = document.getElementById('ss-csv-input') as HTMLTextAreaElement;
-                const csvText = textarea?.value?.trim();
-                if (!csvText || csvText.length < 10) {
-                  toast.error('请粘贴CSV文件内容');
+              disabled={ssUploadedFiles.length === 0 || parseSSXlsx.isPending || parseSSCSV.isPending}
+              onClick={async () => {
+                if (ssUploadedFiles.length === 0) {
+                  toast.error('请先选择文件');
                   return;
                 }
-                parseSSCSV.mutate({
-                  csvText,
-                  targetAsin: ssTargetAsin || undefined,
-                });
+                // 逐个解析文件
+                for (let i = 0; i < ssUploadedFiles.length; i++) {
+                  setSSParsingIndex(i);
+                  const f = ssUploadedFiles[i];
+                  try {
+                    if (f.name.endsWith('.csv')) {
+                      // CSV文件用旧接口
+                      const text = atob(f.base64);
+                      await parseSSCSV.mutateAsync({
+                        csvText: text,
+                        targetAsin: ssTargetAsin || undefined,
+                      });
+                    } else {
+                      // xlsx文件用新接口
+                      await parseSSXlsx.mutateAsync({
+                        fileBase64: f.base64,
+                        fileName: f.name,
+                        targetAsin: ssTargetAsin || undefined,
+                      });
+                    }
+                  } catch (err: any) {
+                    toast.error(`解析 ${f.name} 失败: ${err.message}`);
+                  }
+                }
+                setSSParsingIndex(-1);
               }}
             >
-              {parseSSCSV.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Search className="h-4 w-4 mr-2" />}
-              解析数据
+              {(parseSSXlsx.isPending || parseSSCSV.isPending) ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Search className="h-4 w-4 mr-2" />}
+              解析文件 ({ssUploadedFiles.length}个)
             </Button>
 
             {/* Parse Result Preview */}
             {ssImportResult && (
               <div className="space-y-3">
-                <div className={`p-3 rounded-lg border ${ssImportResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                <div className={`p-3 rounded-lg border ${ssImportResult.success ? 'bg-green-50 border-green-200 dark:bg-green-950/30 dark:border-green-800' : 'bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-800'}`}>
                   <p className="font-medium text-sm">
                     {ssImportResult.success ? '✅ 解析成功' : '❌ 解析失败'}
                   </p>
@@ -1368,14 +1487,14 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                     {' | '}总行数: {ssImportResult.totalRows} | 成功解析: {ssImportResult.parsedRows}
                   </p>
                   {ssImportResult.warnings?.length > 0 && (
-                    <div className="mt-2 text-xs text-amber-700">
+                    <div className="mt-2 text-xs text-amber-700 dark:text-amber-400">
                       <p className="font-medium">警告:</p>
                       {ssImportResult.warnings.slice(0, 5).map((w: string, i: number) => <p key={i}>{w}</p>)}
                       {ssImportResult.warnings.length > 5 && <p>...及其他{ssImportResult.warnings.length - 5}条</p>}
                     </div>
                   )}
                   {ssImportResult.errors?.length > 0 && (
-                    <div className="mt-2 text-xs text-red-700">
+                    <div className="mt-2 text-xs text-red-700 dark:text-red-400">
                       <p className="font-medium">错误:</p>
                       {ssImportResult.errors.map((e: string, i: number) => <p key={i}>{e}</p>)}
                     </div>
@@ -1395,7 +1514,9 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                             <TableHead className="text-xs">价格</TableHead>
                             <TableHead className="text-xs">评分</TableHead>
                             <TableHead className="text-xs">评论数</TableHead>
+                            <TableHead className="text-xs">月销量</TableHead>
                             <TableHead className="text-xs">变体</TableHead>
+                            <TableHead className="text-xs">标签</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1406,11 +1527,24 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                               <TableCell className="text-xs">{p.price ? `$${p.price}` : '-'}</TableCell>
                               <TableCell className="text-xs">{p.rating || '-'}</TableCell>
                               <TableCell className="text-xs">{p.reviewCount || '-'}</TableCell>
+                              <TableCell className="text-xs">{p.monthlySales || '-'}</TableCell>
                               <TableCell className="text-xs">{p.variationCount || '-'}</TableCell>
+                              <TableCell className="text-xs">
+                                <div className="flex flex-wrap gap-0.5">
+                                  {p.hasBestSeller && <Badge variant="secondary" className="text-[10px] px-1 py-0">BS</Badge>}
+                                  {p.hasAmazonChoice && <Badge variant="secondary" className="text-[10px] px-1 py-0">AC</Badge>}
+                                  {p.hasAplus && <Badge variant="secondary" className="text-[10px] px-1 py-0">A+</Badge>}
+                                  {p.hasVideo && <Badge variant="secondary" className="text-[10px] px-1 py-0">Video</Badge>}
+                                  {p.hasBrandStory && <Badge variant="secondary" className="text-[10px] px-1 py-0">品牌</Badge>}
+                                </div>
+                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
                       </Table>
+                      {ssImportResult.products.length > 10 && (
+                        <p className="text-xs text-muted-foreground text-center mt-2">仅显示前10条，共{ssImportResult.products.length}条</p>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1423,39 +1557,90 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead className="text-xs">关键词</TableHead>
-                            <TableHead className="text-xs">搜索量</TableHead>
+                            <TableHead className="text-xs">流量词</TableHead>
+                            <TableHead className="text-xs">翻译</TableHead>
+                            <TableHead className="text-xs">月搜索量</TableHead>
                             <TableHead className="text-xs">自然排名</TableHead>
-                            <TableHead className="text-xs">广告竞价</TableHead>
+                            <TableHead className="text-xs">广告排名</TableHead>
+                            <TableHead className="text-xs">SPR</TableHead>
+                            <TableHead className="text-xs">PPC竞价</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {ssImportResult.keywords.slice(0, 10).map((k: any, i: number) => (
                             <TableRow key={i}>
                               <TableCell className="text-xs">{k.keyword}</TableCell>
-                              <TableCell className="text-xs">{k.searchVolume || '-'}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground max-w-[120px] truncate">{k.keywordTranslation || '-'}</TableCell>
+                              <TableCell className="text-xs">{k.searchVolume?.toLocaleString() || '-'}</TableCell>
                               <TableCell className="text-xs">{k.organicRank || '-'}</TableCell>
+                              <TableCell className="text-xs">{k.adRank || '-'}</TableCell>
+                              <TableCell className="text-xs">{k.spr || '-'}</TableCell>
                               <TableCell className="text-xs">{k.ppcBid ? `$${k.ppcBid}` : '-'}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
                       </Table>
+                      {ssImportResult.keywords.length > 10 && (
+                        <p className="text-xs text-muted-foreground text-center mt-2">仅显示前10条，共{ssImportResult.keywords.length}条</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Review Data Preview */}
+                {ssImportResult.success && ssImportResult.reviews?.length > 0 && (
+                  <div className="border rounded-lg p-3">
+                    <p className="font-medium text-sm mb-2">评论数据预览 ({ssImportResult.reviews.length}条)</p>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="text-xs">星级</TableHead>
+                            <TableHead className="text-xs">标题</TableHead>
+                            <TableHead className="text-xs">内容摘要</TableHead>
+                            <TableHead className="text-xs">VP</TableHead>
+                            <TableHead className="text-xs">Vine</TableHead>
+                            <TableHead className="text-xs">日期</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {ssImportResult.reviews.slice(0, 8).map((r: any, i: number) => (
+                            <TableRow key={i}>
+                              <TableCell className="text-xs">
+                                <div className="flex items-center gap-0.5">
+                                  {Array.from({length: 5}).map((_, si) => (
+                                    <Star key={si} className={`h-3 w-3 ${si < (r.rating || 0) ? 'text-yellow-500 fill-yellow-500' : 'text-gray-300'}`} />
+                                  ))}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-xs max-w-[150px] truncate">{r.title || '-'}</TableCell>
+                              <TableCell className="text-xs max-w-[250px] truncate">{r.content?.substring(0, 80) || '-'}</TableCell>
+                              <TableCell className="text-xs">{r.isVerified ? '✅' : '-'}</TableCell>
+                              <TableCell className="text-xs">{r.isVineVoice ? '🌿' : '-'}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{r.date || '-'}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      {ssImportResult.reviews.length > 8 && (
+                        <p className="text-xs text-muted-foreground text-center mt-2">仅显示前8条，共{ssImportResult.reviews.length}条</p>
+                      )}
                     </div>
                   </div>
                 )}
 
                 {/* Column Mapping */}
                 {Object.keys(ssImportResult.columnMapping || {}).length > 0 && (
-                  <div className="border rounded-lg p-3">
-                    <p className="font-medium text-sm mb-2">列名映射</p>
-                    <div className="flex flex-wrap gap-1">
+                  <details className="border rounded-lg p-3">
+                    <summary className="font-medium text-sm cursor-pointer">列名映射 ({Object.keys(ssImportResult.columnMapping).length}列)</summary>
+                    <div className="flex flex-wrap gap-1 mt-2">
                       {Object.entries(ssImportResult.columnMapping).map(([orig, mapped]: [string, any]) => (
                         <Badge key={orig} variant="outline" className="text-xs">
                           {orig} → {mapped}
                         </Badge>
                       ))}
                     </div>
-                  </div>
+                  </details>
                 )}
 
                 {/* Apply Button */}
@@ -1486,16 +1671,70 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                           productData: {
                             title: product?.title,
                             brand: product?.brand,
+                            category: product?.category,
+                            categoryPath: product?.categoryPath,
+                            bsrRank: product?.bsrRank,
+                            subCategoryRank: product?.subCategoryRank,
                             price: product?.price,
+                            primePrice: product?.primePrice,
                             rating: product?.rating,
                             reviewCount: product?.reviewCount,
+                            monthlySales: product?.monthlySales,
+                            monthlyRevenue: product?.monthlyRevenue,
                             variationCount: product?.variationCount,
                             fulfillment: product?.fulfillment,
                             imageCount: product?.imageCount,
                             bulletPoints: product?.bulletPoints,
                             description: product?.description,
+                            lqs: product?.lqs,
+                            qaCount: product?.qaCount,
+                            coupon: product?.coupon,
+                            launchDate: product?.launchDate,
+                            listingAge: product?.listingAge,
+                            sellerCount: product?.sellerCount,
+                            fbaFee: product?.fbaFee,
+                            grossMargin: product?.grossMargin,
+                            hasBestSeller: product?.hasBestSeller,
+                            hasAmazonChoice: product?.hasAmazonChoice,
+                            hasNewRelease: product?.hasNewRelease,
+                            hasAplus: product?.hasAplus,
+                            hasVideo: product?.hasVideo,
+                            hasSPAd: product?.hasSPAd,
+                            hasBrandStory: product?.hasBrandStory,
+                            hasBrandAd: product?.hasBrandAd,
+                            hasCPFGreen: product?.hasCPFGreen,
+                            acKeyword: product?.acKeyword,
+                            buyboxSeller: product?.buyboxSeller,
+                            buyboxType: product?.buyboxType,
+                            sellerLocation: product?.sellerLocation,
+                            productWeight: product?.productWeight,
+                            productDimensions: product?.productDimensions,
+                            packageWeight: product?.packageWeight,
+                            packageDimensions: product?.packageDimensions,
+                            packageSizeTier: product?.packageSizeTier,
                           },
-                          keywordData: ssImportResult.keywords?.length > 0 ? ssImportResult.keywords : undefined,
+                          keywordData: ssImportResult.keywords?.length > 0 ? ssImportResult.keywords.map((k: any) => ({
+                            keyword: k.keyword,
+                            keywordTranslation: k.keywordTranslation,
+                            searchVolume: k.searchVolume,
+                            organicRank: k.organicRank,
+                            adRank: k.adRank,
+                            ppcBid: k.ppcBid,
+                            spr: k.spr,
+                            titleDensity: k.titleDensity,
+                            trafficShare: k.trafficShare,
+                            abaWeeklyRank: k.abaWeeklyRank,
+                          })) : undefined,
+                          reviewData: ssImportResult.reviews?.length > 0 ? ssImportResult.reviews.map((r: any) => ({
+                            title: r.title,
+                            content: r.content,
+                            rating: r.rating,
+                            isVerified: r.isVerified,
+                            isVineVoice: r.isVineVoice,
+                            variant: r.variant,
+                            date: r.date,
+                            helpfulVotes: r.helpfulVotes,
+                          })) : undefined,
                         });
                       }}
                     >

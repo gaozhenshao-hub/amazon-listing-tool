@@ -1,19 +1,15 @@
 /**
- * SellerSprite (卖家精灵) CSV/Excel Import Parser
+ * SellerSprite (卖家精灵) XLSX/CSV Import Parser
  * 
- * 解析卖家精灵导出的产品数据文件，提取可用于转化率对比评分的字段。
- * 支持中英文列名自动识别，兼容CSV和Excel格式。
+ * 解析卖家精灵导出的三种xlsx文件：
+ * 1. ReverseASIN — 反查ASIN关键词（流量词、搜索量、SPR、自然排名等）
+ * 2. Reviews — 评论数据（标题、内容、星级、VP、Vine等）
+ * 3. Products — 产品数据（标题、五点、价格、BSR、评分、变体、标签等）
  * 
- * 覆盖的数据类别：
- * - 标题 (Title)
- * - 五点 (Bullet Points)  
- * - 变体 (Variations)
- * - 产品信息 (Product Info)
- * - 价格 (Price)
- * - 配送 (Fulfillment)
- * - Review
- * - 广告关键词 (Ad Keywords)
+ * 支持中英文列名自动识别，兼容CSV和Excel(xlsx)格式。
  */
+
+import * as XLSX from "xlsx";
 
 // ═══════════════════════════════════════════════════════════════════════
 // Types
@@ -21,24 +17,58 @@
 
 export interface SellerSpriteProductData {
   asin: string;
+  parentAsin?: string;
   title?: string;
   brand?: string;
   category?: string;
+  categoryPath?: string;
+  subCategory?: string;
   bsrRank?: number;
   subCategoryRank?: number;
   price?: number;
+  primePrice?: number;
   rating?: number;
   reviewCount?: number;
   monthlySales?: number;
   monthlyRevenue?: number;
+  childSales?: number;
+  childRevenue?: number;
   launchDate?: string;
+  listingAge?: number;
   sellerCount?: number;
   variationCount?: number;
   fbaFee?: number;
-  fulfillment?: string;  // FBA / FBM / AMZ
+  grossMargin?: number;
+  fulfillment?: string;
   imageCount?: number;
   bulletPoints?: string[];
   description?: string;
+  lqs?: number;
+  qaCount?: number;
+  coupon?: string;
+  // 标签字段
+  hasBestSeller?: boolean;
+  hasAmazonChoice?: boolean;
+  hasNewRelease?: boolean;
+  hasAplus?: boolean;
+  hasVideo?: boolean;
+  hasSPAd?: boolean;
+  hasBrandStory?: boolean;
+  hasBrandAd?: boolean;
+  hasCPFGreen?: boolean;
+  has7DayPromo?: boolean;
+  acKeyword?: string;
+  // 卖家信息
+  buyboxSeller?: string;
+  buyboxType?: string;
+  sellerLocation?: string;
+  sellerInfo?: string;
+  // 物流尺寸
+  productWeight?: string;
+  productDimensions?: string;
+  packageWeight?: string;
+  packageDimensions?: string;
+  packageSizeTier?: string;
   // 关键词相关
   keywords?: SellerSpriteKeywordData[];
   // 评论相关
@@ -47,19 +77,59 @@ export interface SellerSpriteProductData {
 
 export interface SellerSpriteKeywordData {
   keyword: string;
-  searchVolume?: number;
+  keywordTranslation?: string;
+  isACRecommended?: boolean;
+  trafficShare?: number;
+  weeklyExposure?: number;
+  keywordType?: string;
+  conversionEffect?: string;
+  trafficWordType?: string;
+  organicTrafficShare?: number;
+  adTrafficShare?: number;
   organicRank?: number;
+  organicRankPage?: number;
+  organicRankUpdateTime?: string;
   adRank?: number;
-  ppcBid?: number;
+  adRankPage?: number;
+  adRankUpdateTime?: string;
+  abaWeeklyRank?: number;
+  searchVolume?: number;
+  spr?: number;
   titleDensity?: number;
+  purchaseCount?: number;
+  purchaseRate?: number;
+  impressions?: number;
+  clicks?: number;
+  productCount?: number;
+  supplyDemandRatio?: number;
+  adCompetitorCount?: number;
+  clickTotalShare?: number;
+  conversionTotalShare?: number;
+  ppcBid?: number;
+  suggestedBidRange?: string;
+  topTenAsins?: string;
 }
 
 export interface SellerSpriteReviewData {
-  content: string;
-  rating: number;
-  date?: string;
-  isVerified?: boolean;
+  asin?: string;
   title?: string;
+  content: string;
+  isVerified?: boolean;
+  isVineVoice?: boolean;
+  variant?: string;
+  rating: number;
+  helpfulVotes?: number;
+  imageCount?: number;
+  imageUrls?: string;
+  hasVideo?: boolean;
+  videoUrl?: string;
+  reviewUrl?: string;
+  reviewer?: string;
+  reviewerAvatar?: string;
+  reviewerCountry?: string;
+  reviewerProfile?: string;
+  influencerLink?: string;
+  date?: string;
 }
 
 export interface ImportResult {
@@ -79,217 +149,260 @@ export interface ImportResult {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Column Name Mapping (中英文双语)
+// Column Name Mapping — ReverseASIN (关键词)
 // ═══════════════════════════════════════════════════════════════════════
 
-/** 列名到标准字段的映射 */
-const COLUMN_MAPPINGS: Record<string, string> = {
-  // ASIN
-  'asin': 'asin',
-  'ASIN': 'asin',
-  'Asin': 'asin',
-  'Parent ASIN': 'parentAsin',
-  '父ASIN': 'parentAsin',
-  
-  // 标题
-  'title': 'title',
-  'Title': 'title',
-  '标题': 'title',
-  'Product Title': 'title',
-  '产品标题': 'title',
-  '商品名称': 'title',
-  
-  // 品牌
-  'brand': 'brand',
-  'Brand': 'brand',
-  '品牌': 'brand',
-  'Brand Name': 'brand',
-  '品牌名称': 'brand',
-  
-  // 品类
-  'category': 'category',
-  'Category': 'category',
-  '品类': 'category',
-  '类目': 'category',
-  'Main Category': 'category',
-  '大类': 'category',
-  
-  // BSR排名
-  'bsr': 'bsrRank',
-  'BSR': 'bsrRank',
-  'BSR Rank': 'bsrRank',
-  '大类排名': 'bsrRank',
-  'Best Sellers Rank': 'bsrRank',
-  
-  // 小类排名
-  'Sub Category Rank': 'subCategoryRank',
-  '小类排名': 'subCategoryRank',
-  'Sub BSR': 'subCategoryRank',
-  
-  // 价格
-  'price': 'price',
-  'Price': 'price',
-  '价格': 'price',
-  '售价': 'price',
-  'Current Price': 'price',
-  '当前价格': 'price',
-  
-  // 评分
-  'rating': 'rating',
-  'Rating': 'rating',
-  '评分': 'rating',
-  'Star Rating': 'rating',
-  '星级': 'rating',
-  'Avg Rating': 'rating',
-  '平均评分': 'rating',
-  
-  // 评论数
-  'reviews': 'reviewCount',
-  'Reviews': 'reviewCount',
-  'Review Count': 'reviewCount',
-  '评论数': 'reviewCount',
-  '评论数量': 'reviewCount',
-  'Ratings': 'reviewCount',
-  '评分数': 'reviewCount',
-  
-  // 月销量
-  'Monthly Sales': 'monthlySales',
-  '月销量': 'monthlySales',
-  'Est. Monthly Sales': 'monthlySales',
-  '预估月销量': 'monthlySales',
-  'Sales': 'monthlySales',
-  '销量': 'monthlySales',
-  
-  // 月收入
-  'Monthly Revenue': 'monthlyRevenue',
-  '月收入': 'monthlyRevenue',
-  'Est. Monthly Revenue': 'monthlyRevenue',
-  '预估月收入': 'monthlyRevenue',
-  'Revenue': 'monthlyRevenue',
-  '收入': 'monthlyRevenue',
-  
-  // 上架时间
-  'Launch Date': 'launchDate',
-  '上架时间': 'launchDate',
-  'Date First Available': 'launchDate',
-  '首次上架': 'launchDate',
-  '上架日期': 'launchDate',
-  
-  // 卖家数
-  'Sellers': 'sellerCount',
-  '卖家数': 'sellerCount',
-  'Seller Count': 'sellerCount',
-  '卖家数量': 'sellerCount',
-  
-  // 变体数
-  'Variations': 'variationCount',
-  '变体数': 'variationCount',
-  'Variation Count': 'variationCount',
-  '变体数量': 'variationCount',
-  
-  // FBA费用
-  'FBA Fee': 'fbaFee',
-  'FBA费用': 'fbaFee',
-  'FBA Fees': 'fbaFee',
-  
-  // 配送方式
-  'Fulfillment': 'fulfillment',
-  '配送方式': 'fulfillment',
-  'Fulfilled By': 'fulfillment',
-  '发货方式': 'fulfillment',
-  'FBA/FBM': 'fulfillment',
-  
-  // 图片数
-  'Images': 'imageCount',
-  '图片数': 'imageCount',
-  'Image Count': 'imageCount',
-  '图片数量': 'imageCount',
-  
-  // 五点描述
-  'Bullet Points': 'bulletPoints',
-  '五点描述': 'bulletPoints',
-  'Bullet Point': 'bulletPoints',
-  '卖点': 'bulletPoints',
-  'Feature Bullets': 'bulletPoints',
-  '产品特点': 'bulletPoints',
-  // 分开的五点
-  'Bullet Point 1': 'bulletPoint1',
-  'Bullet Point 2': 'bulletPoint2',
-  'Bullet Point 3': 'bulletPoint3',
-  'Bullet Point 4': 'bulletPoint4',
-  'Bullet Point 5': 'bulletPoint5',
-  '五点1': 'bulletPoint1',
-  '五点2': 'bulletPoint2',
-  '五点3': 'bulletPoint3',
-  '五点4': 'bulletPoint4',
-  '五点5': 'bulletPoint5',
-  
-  // 描述
-  'Description': 'description',
-  '描述': 'description',
-  '产品描述': 'description',
-  'Product Description': 'description',
-  
-  // 关键词相关
-  'Keyword': 'keyword',
-  '关键词': 'keyword',
-  'Search Term': 'keyword',
-  '搜索词': 'keyword',
-  
-  'Search Volume': 'searchVolume',
-  '搜索量': 'searchVolume',
-  'Monthly Search Volume': 'searchVolume',
-  '月搜索量': 'searchVolume',
-  
-  'Organic Rank': 'organicRank',
+const KEYWORD_COLUMN_MAP: Record<string, string> = {
+  '流量词': 'keyword',
+  '关键词翻译': 'keywordTranslation',
+  'AC推荐词': 'isACRecommended',
+  '流量占比': 'trafficShare',
+  '预估周曝光量': 'weeklyExposure',
+  '关键词类型': 'keywordType',
+  '转化效果': 'conversionEffect',
+  '流量词类型': 'trafficWordType',
+  '自然流量占比': 'organicTrafficShare',
+  '广告流量占比': 'adTrafficShare',
   '自然排名': 'organicRank',
-  'Natural Rank': 'organicRank',
-  
-  'Ad Rank': 'adRank',
+  '自然排名页码': 'organicRankPage',
   '广告排名': 'adRank',
-  'Sponsored Rank': 'adRank',
-  'SP Rank': 'adRank',
-  
-  'PPC Bid': 'ppcBid',
-  '广告竞价': 'ppcBid',
-  'CPC': 'ppcBid',
-  'Bid': 'ppcBid',
-  
-  'Title Density': 'titleDensity',
+  '广告排名页码': 'adRankPage',
+  'ABA周排名': 'abaWeeklyRank',
+  '月搜索量': 'searchVolume',
+  'SPR': 'spr',
   '标题密度': 'titleDensity',
-  
-  // 评论相关
-  'Review Content': 'reviewContent',
-  '评论内容': 'reviewContent',
-  'Review Text': 'reviewContent',
-  'Content': 'reviewContent',
-  
-  'Review Rating': 'reviewRating',
-  '评论评分': 'reviewRating',
-  'Star': 'reviewRating',
-  
-  'Review Date': 'reviewDate',
-  '评论日期': 'reviewDate',
-  'Date': 'reviewDate',
-  '日期': 'reviewDate',
-  
-  'Verified Purchase': 'isVerified',
-  'VP': 'isVerified',
-  '是否VP': 'isVerified',
-  
-  'Review Title': 'reviewTitle',
-  '评论标题': 'reviewTitle',
+  '购买量': 'purchaseCount',
+  '购买率': 'purchaseRate',
+  '展示量': 'impressions',
+  '点击量': 'clicks',
+  '商品数': 'productCount',
+  '需供比': 'supplyDemandRatio',
+  '广告竞品数': 'adCompetitorCount',
+  '点击总占比': 'clickTotalShare',
+  '转化总占比': 'conversionTotalShare',
+  'PPC价格': 'ppcBid',
+  '建议竞价范围': 'suggestedBidRange',
+  '前十ASIN': 'topTenAsins',
+  // English fallbacks
+  'Keyword': 'keyword',
+  'Search Volume': 'searchVolume',
+  'Organic Rank': 'organicRank',
+  'Ad Rank': 'adRank',
+  'PPC Bid': 'ppcBid',
+  'Title Density': 'titleDensity',
 };
 
 // ═══════════════════════════════════════════════════════════════════════
-// CSV Parser
+// Column Name Mapping — Reviews (评论)
 // ═══════════════════════════════════════════════════════════════════════
 
+const REVIEW_COLUMN_MAP: Record<string, string> = {
+  'ASIN': 'asin',
+  '标题': 'title',
+  '内容': 'content',
+  'VP评论': 'isVerified',
+  'Vine Voice评论': 'isVineVoice',
+  '型号': 'variant',
+  '星级': 'rating',
+  '赞同数': 'helpfulVotes',
+  '图片数量': 'imageCount',
+  '图片地址': 'imageUrls',
+  '是否有视频': 'hasVideo',
+  '视频地址': 'videoUrl',
+  '评论链接': 'reviewUrl',
+  '评论人': 'reviewer',
+  '头像地址': 'reviewerAvatar',
+  '所属国家': 'reviewerCountry',
+  '评论人主页': 'reviewerProfile',
+  '红人计划链接': 'influencerLink',
+  '评论时间': 'date',
+  // English fallbacks
+  'Title': 'title',
+  'Content': 'content',
+  'Rating': 'rating',
+  'Review Content': 'content',
+  'Review Title': 'title',
+  'Star': 'rating',
+  'Verified Purchase': 'isVerified',
+  'VP': 'isVerified',
+  'Review Date': 'date',
+  'Date': 'date',
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Column Name Mapping — Products (产品数据)
+// ═══════════════════════════════════════════════════════════════════════
+
+const PRODUCT_COLUMN_MAP: Record<string, string> = {
+  '#': 'index',
+  '图片': 'image',
+  'ASIN': 'asin',
+  'SKU': 'sku',
+  '详细参数': 'detailParams',
+  '品牌': 'brand',
+  '品牌链接': 'brandLink',
+  '商品标题': 'title',
+  '产品卖点': 'bulletPoints',
+  '商品详情页链接': 'detailPageLink',
+  '商品主图': 'mainImage',
+  '父ASIN': 'parentAsin',
+  '类目路径': 'categoryPath',
+  '大类目': 'category',
+  '大类BSR': 'bsrRank',
+  '大类BSR增长数': 'bsrGrowth',
+  '大类BSR增长率': 'bsrGrowthRate',
+  '小类目': 'subCategory',
+  '小类BSR': 'subCategoryRank',
+  '月销量': 'monthlySales',
+  '月销量增长率': 'monthlySalesGrowthRate',
+  '月销售额($)': 'monthlyRevenue',
+  '子体销量': 'childSales',
+  '子体销售额($)': 'childRevenue',
+  '变体数': 'variationCount',
+  '价格($)': 'price',
+  'Prime价格($)': 'primePrice',
+  'Coupon': 'coupon',
+  'Q&A数': 'qaCount',
+  '评分数': 'reviewCount',
+  '月新增\n评分数': 'monthlyNewReviews',
+  '评分': 'rating',
+  '留评率': 'reviewRate',
+  'FBA($)': 'fbaFee',
+  '毛利率': 'grossMargin',
+  '评级': 'ratingGrade',
+  '上架时间': 'launchDate',
+  '上架天数': 'listingAge',
+  '配送方式': 'fulfillment',
+  '买家运费($)': 'buyerShipping',
+  'LQS': 'lqs',
+  '卖家数': 'sellerCount',
+  'Buybox卖家': 'buyboxSeller',
+  'BuyBox类型': 'buyboxType',
+  '卖家所属地': 'sellerLocation',
+  '卖家信息': 'sellerInfo',
+  '卖家首页': 'sellerPage',
+  'Best Seller标识': 'hasBestSeller',
+  "Amazon's Choice": 'hasAmazonChoice',
+  'CPF绿标': 'hasCPFGreen',
+  'CPF绿标信息': 'cpfGreenInfo',
+  'New Release标识': 'hasNewRelease',
+  'A+页面': 'hasAplus',
+  '视频介绍': 'hasVideo',
+  'SP广告': 'hasSPAd',
+  '品牌故事': 'hasBrandStory',
+  '品牌广告': 'hasBrandAd',
+  '7天促销': 'has7DayPromo',
+  'AC关键词': 'acKeyword',
+  '商品重量': 'productWeight',
+  '商品重量（单位换算）': 'productWeightConverted',
+  '商品尺寸': 'productDimensions',
+  '商品尺寸（单位换算）': 'productDimensionsConverted',
+  '包装重量': 'packageWeight',
+  '包装重量（单位换算）': 'packageWeightConverted',
+  '包装尺寸': 'packageDimensions',
+  '包装尺寸（单位换算）': 'packageDimensionsConverted',
+  '包装尺寸分段': 'packageSizeTier',
+  // English fallbacks
+  'Title': 'title',
+  'Brand': 'brand',
+  'Price': 'price',
+  'Rating': 'rating',
+  'Reviews': 'reviewCount',
+  'Monthly Sales': 'monthlySales',
+  'BSR': 'bsrRank',
+  'Variations': 'variationCount',
+  'Fulfillment': 'fulfillment',
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════════════════
+
+function parseNumber(value: any): number | undefined {
+  if (value === null || value === undefined || value === '' || value === '-' || value === 'N/A' || value === '--') return undefined;
+  if (typeof value === 'number') return isNaN(value) ? undefined : value;
+  const cleaned = String(value).replace(/[$€£¥,\s%]/g, '');
+  const num = parseFloat(cleaned);
+  return isNaN(num) ? undefined : num;
+}
+
+function parseYN(value: any): boolean {
+  if (value === null || value === undefined || value === '') return false;
+  const s = String(value).trim().toUpperCase();
+  return s === 'Y' || s === 'YES' || s === '是' || s === 'TRUE' || s === '1';
+}
+
 /**
- * 解析CSV文本内容
+ * 自动检测文件类型
+ * 基于列名特征判断：关键词/评论/产品
  */
-function parseCSV(text: string): string[][] {
-  const rows: string[][] = [];
+function detectFileType(headers: string[]): 'keyword' | 'review' | 'product' | 'unknown' {
+  const headerSet = new Set(headers.map(h => (h || '').trim()));
+  
+  // 关键词文件特征：有"流量词"或"月搜索量"
+  if (headerSet.has('流量词') || (headerSet.has('Keyword') && headerSet.has('Search Volume'))) {
+    return 'keyword';
+  }
+  
+  // 评论文件特征：有"内容"+"星级" 或 "VP评论"
+  if ((headerSet.has('内容') && headerSet.has('星级')) || headerSet.has('VP评论') || headerSet.has('Vine Voice评论')) {
+    return 'review';
+  }
+  
+  // 产品文件特征：有"商品标题"或"大类BSR"或"产品卖点"
+  if (headerSet.has('商品标题') || headerSet.has('大类BSR') || headerSet.has('产品卖点') || headerSet.has('月销量')) {
+    return 'product';
+  }
+  
+  // Fallback: 有ASIN列的当产品处理
+  if (headerSet.has('ASIN')) {
+    return 'product';
+  }
+  
+  return 'unknown';
+}
+
+/**
+ * 从xlsx Buffer中解析数据
+ */
+function parseXlsxBuffer(buffer: Buffer): { headers: string[]; rows: Record<string, any>[]; sheetName: string } {
+  const workbook = XLSX.read(buffer, { type: 'buffer' });
+  // 取第一个sheet（跳过Note等辅助sheet）
+  const sheetName = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[sheetName];
+  
+  // 转换为JSON，header: 1 返回数组格式
+  const rawRows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+  
+  if (rawRows.length < 2) {
+    return { headers: [], rows: [], sheetName };
+  }
+  
+  const headers = rawRows[0].map((h: any) => String(h || '').trim());
+  const rows: Record<string, any>[] = [];
+  
+  for (let i = 1; i < rawRows.length; i++) {
+    const row = rawRows[i];
+    // 跳过完全空行
+    if (!row || row.every((cell: any) => cell === '' || cell === null || cell === undefined)) continue;
+    
+    const obj: Record<string, any> = {};
+    headers.forEach((header, idx) => {
+      if (header) {
+        obj[header] = row[idx] !== undefined ? row[idx] : '';
+      }
+    });
+    rows.push(obj);
+  }
+  
+  return { headers, rows, sheetName };
+}
+
+/**
+ * 从CSV文本中解析数据
+ */
+function parseCSVText(text: string): { headers: string[]; rows: Record<string, any>[] } {
+  const csvRows: string[][] = [];
   let currentRow: string[] = [];
   let currentField = '';
   let inQuotes = false;
@@ -301,7 +414,7 @@ function parseCSV(text: string): string[][] {
     if (inQuotes) {
       if (char === '"' && nextChar === '"') {
         currentField += '"';
-        i++; // skip next quote
+        i++;
       } else if (char === '"') {
         inQuotes = false;
       } else {
@@ -315,79 +428,295 @@ function parseCSV(text: string): string[][] {
         currentField = '';
       } else if (char === '\n' || (char === '\r' && nextChar === '\n')) {
         currentRow.push(currentField.trim());
-        if (currentRow.some(f => f !== '')) {
-          rows.push(currentRow);
-        }
+        if (currentRow.some(f => f !== '')) csvRows.push(currentRow);
         currentRow = [];
         currentField = '';
-        if (char === '\r') i++; // skip \n
+        if (char === '\r') i++;
       } else {
         currentField += char;
       }
     }
   }
-  
-  // Last field/row
   currentRow.push(currentField.trim());
-  if (currentRow.some(f => f !== '')) {
-    rows.push(currentRow);
+  if (currentRow.some(f => f !== '')) csvRows.push(currentRow);
+  
+  if (csvRows.length < 2) return { headers: [], rows: [] };
+  
+  const headers = csvRows[0];
+  const rows: Record<string, any>[] = [];
+  for (let i = 1; i < csvRows.length; i++) {
+    const obj: Record<string, any> = {};
+    headers.forEach((h, idx) => {
+      obj[h] = csvRows[i][idx] || '';
+    });
+    rows.push(obj);
+  }
+  return { headers, rows };
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Row Parsers
+// ═══════════════════════════════════════════════════════════════════════
+
+function parseKeywordRow(raw: Record<string, any>, colMap: Record<string, string>): SellerSpriteKeywordData | null {
+  const mapped: Record<string, any> = {};
+  for (const [origCol, value] of Object.entries(raw)) {
+    const field = colMap[origCol.trim()];
+    if (field) mapped[field] = value;
   }
   
-  return rows;
+  const keyword = String(mapped.keyword || '').trim();
+  if (!keyword) return null;
+  
+  return {
+    keyword,
+    keywordTranslation: mapped.keywordTranslation ? String(mapped.keywordTranslation).trim() : undefined,
+    isACRecommended: parseYN(mapped.isACRecommended),
+    trafficShare: parseNumber(mapped.trafficShare),
+    weeklyExposure: parseNumber(mapped.weeklyExposure),
+    keywordType: mapped.keywordType ? String(mapped.keywordType).trim() : undefined,
+    conversionEffect: mapped.conversionEffect ? String(mapped.conversionEffect).trim() : undefined,
+    trafficWordType: mapped.trafficWordType ? String(mapped.trafficWordType).trim() : undefined,
+    organicTrafficShare: parseNumber(mapped.organicTrafficShare),
+    adTrafficShare: parseNumber(mapped.adTrafficShare),
+    organicRank: parseNumber(mapped.organicRank),
+    organicRankPage: parseNumber(mapped.organicRankPage),
+    organicRankUpdateTime: mapped.organicRankUpdateTime ? String(mapped.organicRankUpdateTime).trim() : undefined,
+    adRank: parseNumber(mapped.adRank),
+    adRankPage: parseNumber(mapped.adRankPage),
+    adRankUpdateTime: mapped.adRankUpdateTime ? String(mapped.adRankUpdateTime).trim() : undefined,
+    abaWeeklyRank: parseNumber(mapped.abaWeeklyRank),
+    searchVolume: parseNumber(mapped.searchVolume),
+    spr: parseNumber(mapped.spr),
+    titleDensity: parseNumber(mapped.titleDensity),
+    purchaseCount: parseNumber(mapped.purchaseCount),
+    purchaseRate: parseNumber(mapped.purchaseRate),
+    impressions: parseNumber(mapped.impressions),
+    clicks: parseNumber(mapped.clicks),
+    productCount: parseNumber(mapped.productCount),
+    supplyDemandRatio: parseNumber(mapped.supplyDemandRatio),
+    adCompetitorCount: parseNumber(mapped.adCompetitorCount),
+    clickTotalShare: parseNumber(mapped.clickTotalShare),
+    conversionTotalShare: parseNumber(mapped.conversionTotalShare),
+    ppcBid: parseNumber(mapped.ppcBid),
+    suggestedBidRange: mapped.suggestedBidRange ? String(mapped.suggestedBidRange).trim() : undefined,
+    topTenAsins: mapped.topTenAsins ? String(mapped.topTenAsins).trim() : undefined,
+  };
 }
 
-/**
- * 检测文件类型（产品/关键词/评论）
- */
-function detectFileType(headers: string[]): 'product' | 'keyword' | 'review' | 'unknown' {
-  const normalizedHeaders = headers.map(h => {
-    const mapped = COLUMN_MAPPINGS[h.trim()];
-    return mapped || h.trim().toLowerCase();
-  });
+function parseReviewRow(raw: Record<string, any>, colMap: Record<string, string>): SellerSpriteReviewData | null {
+  const mapped: Record<string, any> = {};
+  for (const [origCol, value] of Object.entries(raw)) {
+    const field = colMap[origCol.trim()];
+    if (field) mapped[field] = value;
+  }
   
-  // 关键词文件特征：有keyword和searchVolume
-  const hasKeyword = normalizedHeaders.some(h => h === 'keyword');
-  const hasSearchVolume = normalizedHeaders.some(h => h === 'searchVolume');
-  if (hasKeyword && hasSearchVolume) return 'keyword';
+  const content = String(mapped.content || '').trim();
+  if (!content) return null;
   
-  // 评论文件特征：有reviewContent
-  const hasReviewContent = normalizedHeaders.some(h => h === 'reviewContent');
-  if (hasReviewContent) return 'review';
-  
-  // 产品文件特征：有asin
-  const hasAsin = normalizedHeaders.some(h => h === 'asin');
-  if (hasAsin) return 'product';
-  
-  return 'unknown';
+  return {
+    asin: mapped.asin ? String(mapped.asin).trim() : undefined,
+    title: mapped.title ? String(mapped.title).trim() : undefined,
+    content,
+    isVerified: parseYN(mapped.isVerified),
+    isVineVoice: parseYN(mapped.isVineVoice),
+    variant: mapped.variant ? String(mapped.variant).trim() : undefined,
+    rating: parseNumber(mapped.rating) ?? 0,
+    helpfulVotes: parseNumber(mapped.helpfulVotes),
+    imageCount: parseNumber(mapped.imageCount),
+    imageUrls: mapped.imageUrls ? String(mapped.imageUrls).trim() : undefined,
+    hasVideo: parseYN(mapped.hasVideo),
+    videoUrl: mapped.videoUrl ? String(mapped.videoUrl).trim() : undefined,
+    reviewUrl: mapped.reviewUrl ? String(mapped.reviewUrl).trim() : undefined,
+    reviewer: mapped.reviewer ? String(mapped.reviewer).trim() : undefined,
+    reviewerAvatar: mapped.reviewerAvatar ? String(mapped.reviewerAvatar).trim() : undefined,
+    reviewerCountry: mapped.reviewerCountry ? String(mapped.reviewerCountry).trim() : undefined,
+    reviewerProfile: mapped.reviewerProfile ? String(mapped.reviewerProfile).trim() : undefined,
+    influencerLink: mapped.influencerLink ? String(mapped.influencerLink).trim() : undefined,
+    date: mapped.date ? String(mapped.date).trim() : undefined,
+  };
 }
 
-/**
- * 解析数字，支持逗号分隔和货币符号
- */
-function parseNumber(value: string): number | undefined {
-  if (!value || value === '-' || value === 'N/A' || value === '--') return undefined;
-  // 移除货币符号、逗号、空格
-  const cleaned = value.replace(/[$€£¥,\s]/g, '');
-  const num = parseFloat(cleaned);
-  return isNaN(num) ? undefined : num;
-}
-
-/**
- * 解析布尔值
- */
-function parseBoolean(value: string): boolean {
-  const lower = value.toLowerCase().trim();
-  return lower === 'yes' || lower === 'true' || lower === '是' || lower === '1' || lower === 'y';
+function parseProductRow(raw: Record<string, any>, colMap: Record<string, string>): SellerSpriteProductData | null {
+  const mapped: Record<string, any> = {};
+  for (const [origCol, value] of Object.entries(raw)) {
+    const field = colMap[origCol.trim()];
+    if (field) mapped[field] = value;
+  }
+  
+  const asin = String(mapped.asin || '').trim().toUpperCase();
+  if (!asin || asin.length < 5) return null;
+  
+  // 解析五点描述（产品卖点字段，通常以换行分隔）
+  let bulletPoints: string[] | undefined;
+  if (mapped.bulletPoints) {
+    const raw = String(mapped.bulletPoints);
+    // 卖家精灵的产品卖点通常用换行分隔
+    const points = raw.split(/\n/).map(s => s.trim()).filter(s => s.length > 0);
+    if (points.length > 0) bulletPoints = points;
+  }
+  
+  return {
+    asin,
+    parentAsin: mapped.parentAsin ? String(mapped.parentAsin).trim() : undefined,
+    title: mapped.title ? String(mapped.title).trim() : undefined,
+    brand: mapped.brand ? String(mapped.brand).trim() : undefined,
+    category: mapped.category ? String(mapped.category).trim() : undefined,
+    categoryPath: mapped.categoryPath ? String(mapped.categoryPath).trim() : undefined,
+    subCategory: mapped.subCategory ? String(mapped.subCategory).trim() : undefined,
+    bsrRank: parseNumber(mapped.bsrRank),
+    subCategoryRank: parseNumber(mapped.subCategoryRank),
+    price: parseNumber(mapped.price),
+    primePrice: parseNumber(mapped.primePrice),
+    rating: parseNumber(mapped.rating),
+    reviewCount: parseNumber(mapped.reviewCount),
+    monthlySales: parseNumber(mapped.monthlySales),
+    monthlyRevenue: parseNumber(mapped.monthlyRevenue),
+    childSales: parseNumber(mapped.childSales),
+    childRevenue: parseNumber(mapped.childRevenue),
+    launchDate: mapped.launchDate ? String(mapped.launchDate).trim() : undefined,
+    listingAge: parseNumber(mapped.listingAge),
+    sellerCount: parseNumber(mapped.sellerCount),
+    variationCount: parseNumber(mapped.variationCount),
+    fbaFee: parseNumber(mapped.fbaFee),
+    grossMargin: parseNumber(mapped.grossMargin),
+    fulfillment: mapped.fulfillment ? String(mapped.fulfillment).trim() : undefined,
+    bulletPoints,
+    lqs: parseNumber(mapped.lqs),
+    qaCount: parseNumber(mapped.qaCount),
+    coupon: mapped.coupon ? String(mapped.coupon).trim() : undefined,
+    // 标签
+    hasBestSeller: parseYN(mapped.hasBestSeller),
+    hasAmazonChoice: parseYN(mapped.hasAmazonChoice),
+    hasNewRelease: parseYN(mapped.hasNewRelease),
+    hasAplus: parseYN(mapped.hasAplus),
+    hasVideo: parseYN(mapped.hasVideo),
+    hasSPAd: parseYN(mapped.hasSPAd),
+    hasBrandStory: parseYN(mapped.hasBrandStory),
+    hasBrandAd: parseYN(mapped.hasBrandAd),
+    hasCPFGreen: parseYN(mapped.hasCPFGreen),
+    has7DayPromo: parseYN(mapped.has7DayPromo),
+    acKeyword: mapped.acKeyword ? String(mapped.acKeyword).trim() : undefined,
+    // 卖家信息
+    buyboxSeller: mapped.buyboxSeller ? String(mapped.buyboxSeller).trim() : undefined,
+    buyboxType: mapped.buyboxType ? String(mapped.buyboxType).trim() : undefined,
+    sellerLocation: mapped.sellerLocation ? String(mapped.sellerLocation).trim() : undefined,
+    sellerInfo: mapped.sellerInfo ? String(mapped.sellerInfo).trim() : undefined,
+    // 物流尺寸
+    productWeight: mapped.productWeightConverted ? String(mapped.productWeightConverted).trim() : (mapped.productWeight ? String(mapped.productWeight).trim() : undefined),
+    productDimensions: mapped.productDimensionsConverted ? String(mapped.productDimensionsConverted).trim() : (mapped.productDimensions ? String(mapped.productDimensions).trim() : undefined),
+    packageWeight: mapped.packageWeightConverted ? String(mapped.packageWeightConverted).trim() : (mapped.packageWeight ? String(mapped.packageWeight).trim() : undefined),
+    packageDimensions: mapped.packageDimensionsConverted ? String(mapped.packageDimensionsConverted).trim() : (mapped.packageDimensions ? String(mapped.packageDimensions).trim() : undefined),
+    packageSizeTier: mapped.packageSizeTier ? String(mapped.packageSizeTier).trim() : undefined,
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Main Import Function
+// Main Import Functions
 // ═══════════════════════════════════════════════════════════════════════
 
 /**
- * 解析卖家精灵导出的CSV/Excel文本数据
- * @param text - CSV文本内容（如果是Excel，需要先转换为CSV）
- * @param targetAsin - 可选，只提取特定ASIN的数据
+ * 从xlsx Buffer解析卖家精灵数据
+ */
+export function parseSellerSpriteXlsx(buffer: Buffer, targetAsin?: string): ImportResult {
+  const result: ImportResult = {
+    success: false,
+    fileType: 'unknown',
+    products: [],
+    keywords: [],
+    reviews: [],
+    warnings: [],
+    errors: [],
+    columnMapping: {},
+    totalRows: 0,
+    parsedRows: 0,
+  };
+  
+  try {
+    const { headers, rows, sheetName } = parseXlsxBuffer(buffer);
+    
+    if (headers.length === 0 || rows.length === 0) {
+      result.errors.push('文件内容为空或只有表头');
+      return result;
+    }
+    
+    result.totalRows = rows.length;
+    result.fileType = detectFileType(headers);
+    
+    if (result.fileType === 'unknown') {
+      result.warnings.push(`无法自动识别文件类型（Sheet: ${sheetName}），将尝试按产品数据解析`);
+      result.fileType = 'product';
+    }
+    
+    // 选择对应的列名映射
+    const colMap = result.fileType === 'keyword' ? KEYWORD_COLUMN_MAP
+      : result.fileType === 'review' ? REVIEW_COLUMN_MAP
+      : PRODUCT_COLUMN_MAP;
+    
+    // 记录列名映射
+    headers.forEach(h => {
+      const mapped = colMap[h.trim()];
+      if (mapped) result.columnMapping[h.trim()] = mapped;
+    });
+    
+    // 解析数据行
+    const seenReviews = new Set<string>(); // 用于评论去重
+    
+    for (let i = 0; i < rows.length; i++) {
+      try {
+        if (result.fileType === 'keyword') {
+          const kw = parseKeywordRow(rows[i], colMap);
+          if (kw) {
+            result.keywords.push(kw);
+            result.parsedRows++;
+          }
+        } else if (result.fileType === 'review') {
+          const review = parseReviewRow(rows[i], colMap);
+          if (review) {
+            // 去重：基于内容+评论人
+            const dedupeKey = `${review.content.substring(0, 100)}|${review.reviewer || ''}`;
+            if (!seenReviews.has(dedupeKey)) {
+              seenReviews.add(dedupeKey);
+              result.reviews.push(review);
+              result.parsedRows++;
+            }
+          }
+        } else {
+          const product = parseProductRow(rows[i], colMap);
+          if (product) {
+            if (targetAsin && product.asin !== targetAsin.toUpperCase()) continue;
+            result.products.push(product);
+            result.parsedRows++;
+          }
+        }
+      } catch (e: any) {
+        result.warnings.push(`第${i + 2}行解析失败: ${e.message}`);
+      }
+    }
+    
+    // 评论去重统计
+    if (result.fileType === 'review' && rows.length > result.parsedRows) {
+      const dupeCount = rows.length - result.parsedRows;
+      if (dupeCount > 0) {
+        result.warnings.push(`已自动去重${dupeCount}条重复评论`);
+      }
+    }
+    
+    result.success = result.parsedRows > 0;
+    
+    if (result.parsedRows === 0) {
+      result.errors.push('没有成功解析任何数据行，请检查文件格式是否正确');
+    }
+    
+  } catch (e: any) {
+    result.errors.push(`xlsx文件解析失败: ${e.message}`);
+  }
+  
+  return result;
+}
+
+/**
+ * 从CSV文本解析卖家精灵数据（保持向后兼容）
  */
 export function parseSellerSpriteData(text: string, targetAsin?: string): ImportResult {
   const result: ImportResult = {
@@ -404,39 +733,14 @@ export function parseSellerSpriteData(text: string, targetAsin?: string): Import
   };
   
   try {
-    // 解析CSV
-    const rows = parseCSV(text);
-    if (rows.length < 2) {
+    const { headers, rows } = parseCSVText(text);
+    
+    if (headers.length === 0 || rows.length === 0) {
       result.errors.push('文件内容为空或只有表头');
       return result;
     }
     
-    const headers = rows[0];
-    const dataRows = rows.slice(1);
-    result.totalRows = dataRows.length;
-    
-    // 建立列名映射
-    const columnMap: Record<number, string> = {};
-    headers.forEach((header, index) => {
-      const trimmed = header.trim();
-      const mapped = COLUMN_MAPPINGS[trimmed];
-      if (mapped) {
-        columnMap[index] = mapped;
-        result.columnMapping[trimmed] = mapped;
-      } else {
-        // 尝试模糊匹配
-        const lowerHeader = trimmed.toLowerCase();
-        for (const [key, value] of Object.entries(COLUMN_MAPPINGS)) {
-          if (key.toLowerCase() === lowerHeader) {
-            columnMap[index] = value;
-            result.columnMapping[trimmed] = value;
-            break;
-          }
-        }
-      }
-    });
-    
-    // 检测文件类型
+    result.totalRows = rows.length;
     result.fileType = detectFileType(headers);
     
     if (result.fileType === 'unknown') {
@@ -444,131 +748,59 @@ export function parseSellerSpriteData(text: string, targetAsin?: string): Import
       result.fileType = 'product';
     }
     
-    // 解析数据行
-    for (let rowIdx = 0; rowIdx < dataRows.length; rowIdx++) {
-      const row = dataRows[rowIdx];
+    const colMap = result.fileType === 'keyword' ? KEYWORD_COLUMN_MAP
+      : result.fileType === 'review' ? REVIEW_COLUMN_MAP
+      : PRODUCT_COLUMN_MAP;
+    
+    headers.forEach(h => {
+      const mapped = colMap[h.trim()];
+      if (mapped) result.columnMapping[h.trim()] = mapped;
+    });
+    
+    const seenReviews = new Set<string>();
+    
+    for (let i = 0; i < rows.length; i++) {
       try {
-        const rowData: Record<string, string> = {};
-        row.forEach((cell, colIdx) => {
-          const field = columnMap[colIdx];
-          if (field) {
-            rowData[field] = cell;
-          }
-        });
-        
-        if (result.fileType === 'product') {
-          const product = parseProductRow(rowData);
-          if (product) {
-            // 如果指定了目标ASIN，只保留匹配的
-            if (targetAsin && product.asin.toUpperCase() !== targetAsin.toUpperCase()) {
-              continue;
-            }
-            result.products.push(product);
-            result.parsedRows++;
-          }
-        } else if (result.fileType === 'keyword') {
-          const keyword = parseKeywordRow(rowData);
-          if (keyword) {
-            result.keywords.push(keyword);
-            result.parsedRows++;
-          }
+        if (result.fileType === 'keyword') {
+          const kw = parseKeywordRow(rows[i], colMap);
+          if (kw) { result.keywords.push(kw); result.parsedRows++; }
         } else if (result.fileType === 'review') {
-          const review = parseReviewRow(rowData);
+          const review = parseReviewRow(rows[i], colMap);
           if (review) {
-            result.reviews.push(review);
+            const dedupeKey = `${review.content.substring(0, 100)}|${review.reviewer || ''}`;
+            if (!seenReviews.has(dedupeKey)) {
+              seenReviews.add(dedupeKey);
+              result.reviews.push(review);
+              result.parsedRows++;
+            }
+          }
+        } else {
+          const product = parseProductRow(rows[i], colMap);
+          if (product) {
+            if (targetAsin && product.asin !== targetAsin.toUpperCase()) continue;
+            result.products.push(product);
             result.parsedRows++;
           }
         }
       } catch (e: any) {
-        result.warnings.push(`第${rowIdx + 2}行解析失败: ${e.message}`);
+        result.warnings.push(`第${i + 2}行解析失败: ${e.message}`);
       }
     }
     
-    result.success = result.parsedRows > 0;
+    if (result.fileType === 'review' && rows.length > result.parsedRows) {
+      const dupeCount = rows.length - result.parsedRows;
+      if (dupeCount > 0) result.warnings.push(`已自动去重${dupeCount}条重复评论`);
+    }
     
+    result.success = result.parsedRows > 0;
     if (result.parsedRows === 0) {
       result.errors.push('没有成功解析任何数据行，请检查文件格式是否正确');
     }
-    
   } catch (e: any) {
-    result.errors.push(`文件解析失败: ${e.message}`);
+    result.errors.push(`CSV文件解析失败: ${e.message}`);
   }
   
   return result;
-}
-
-/**
- * 解析产品数据行
- */
-function parseProductRow(data: Record<string, string>): SellerSpriteProductData | null {
-  const asin = data.asin?.trim();
-  if (!asin || asin.length < 5) return null;
-  
-  // 合并五点描述
-  const bulletPoints: string[] = [];
-  if (data.bulletPoints) {
-    // 可能是用分号或换行分隔的
-    bulletPoints.push(...data.bulletPoints.split(/[;\n]/).filter(b => b.trim()));
-  }
-  for (let i = 1; i <= 5; i++) {
-    const bp = data[`bulletPoint${i}`];
-    if (bp?.trim()) bulletPoints.push(bp.trim());
-  }
-  
-  return {
-    asin: asin.toUpperCase(),
-    title: data.title?.trim() || undefined,
-    brand: data.brand?.trim() || undefined,
-    category: data.category?.trim() || undefined,
-    bsrRank: parseNumber(data.bsrRank),
-    subCategoryRank: parseNumber(data.subCategoryRank),
-    price: parseNumber(data.price),
-    rating: parseNumber(data.rating),
-    reviewCount: parseNumber(data.reviewCount),
-    monthlySales: parseNumber(data.monthlySales),
-    monthlyRevenue: parseNumber(data.monthlyRevenue),
-    launchDate: data.launchDate?.trim() || undefined,
-    sellerCount: parseNumber(data.sellerCount),
-    variationCount: parseNumber(data.variationCount),
-    fbaFee: parseNumber(data.fbaFee),
-    fulfillment: data.fulfillment?.trim() || undefined,
-    imageCount: parseNumber(data.imageCount),
-    bulletPoints: bulletPoints.length > 0 ? bulletPoints : undefined,
-    description: data.description?.trim() || undefined,
-  };
-}
-
-/**
- * 解析关键词数据行
- */
-function parseKeywordRow(data: Record<string, string>): SellerSpriteKeywordData | null {
-  const keyword = data.keyword?.trim();
-  if (!keyword) return null;
-  
-  return {
-    keyword,
-    searchVolume: parseNumber(data.searchVolume),
-    organicRank: parseNumber(data.organicRank),
-    adRank: parseNumber(data.adRank),
-    ppcBid: parseNumber(data.ppcBid),
-    titleDensity: parseNumber(data.titleDensity),
-  };
-}
-
-/**
- * 解析评论数据行
- */
-function parseReviewRow(data: Record<string, string>): SellerSpriteReviewData | null {
-  const content = data.reviewContent?.trim();
-  if (!content) return null;
-  
-  return {
-    content,
-    rating: parseNumber(data.reviewRating) ?? 0,
-    date: data.reviewDate?.trim() || undefined,
-    isVerified: data.isVerified ? parseBoolean(data.isVerified) : undefined,
-    title: data.reviewTitle?.trim() || undefined,
-  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -629,12 +861,6 @@ export function mergeSellerSpriteWithCrawlData(
     merged._fulfillmentSource = 'sellersprite';
   }
   
-  // 图片数
-  if (!merged.imageCount && ssData.imageCount) {
-    merged.imageCount = ssData.imageCount;
-    merged._imageCountSource = 'sellersprite';
-  }
-  
   // BSR
   if (!merged.bsrRank && ssData.bsrRank) {
     merged.bsrRank = ssData.bsrRank;
@@ -651,6 +877,28 @@ export function mergeSellerSpriteWithCrawlData(
   if (!merged.description && ssData.description) {
     merged.description = ssData.description;
     merged._descriptionSource = 'sellersprite';
+  }
+  
+  // 标签类 — 补充爬虫无法获取的标签信息
+  if (ssData.hasBestSeller) merged.hasBestSeller = true;
+  if (ssData.hasAmazonChoice) merged.hasAmazonChoice = true;
+  if (ssData.hasNewRelease) merged.hasNewRelease = true;
+  if (ssData.hasAplus) merged.hasAplus = true;
+  if (ssData.hasVideo) merged.hasVideo = true;
+  if (ssData.hasBrandStory) merged.hasBrandStory = true;
+  if (ssData.hasSPAd) merged.hasSPAd = true;
+  if (ssData.hasBrandAd) merged.hasBrandAd = true;
+  
+  // Q&A
+  if (!merged.qaCount && ssData.qaCount) {
+    merged.qaCount = ssData.qaCount;
+    merged._qaSource = 'sellersprite';
+  }
+  
+  // LQS
+  if (!merged.lqs && ssData.lqs) {
+    merged.lqs = ssData.lqs;
+    merged._lqsSource = 'sellersprite';
   }
   
   return merged;
