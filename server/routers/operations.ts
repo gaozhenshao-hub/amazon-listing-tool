@@ -65,7 +65,8 @@ async function getAllSellerSids(): Promise<{sids: string[], sellers: any[]}> {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const res = await adapter.request({ path: "/erp/sc/data/seller/lists" });
-      const sellers = Array.isArray(res.data) ? res.data : (res.data as any)?.list || [];
+      const rawSellers = res.data || [];
+      const sellers = Array.isArray(rawSellers) ? rawSellers : (rawSellers as any)?.records || (rawSellers as any)?.list || [];
       const sids = sellers.map((s: any) => String(s.sid));
       if (sids.length > 0) {
         _sellerCache = { sids, sellers, ts: Date.now() };
@@ -1637,7 +1638,8 @@ ${JSON.stringify(input.searchTerms.map(t => ({
           path: "/erp/sc/data/mws/listing",
           body: { sid: Number(sid), offset: 0, length: 200 },
         });
-        const listings = Array.isArray(res.data) ? res.data : (res.data as any)?.list || [];
+        const listingsRaw = res.data || [];
+        const listings = Array.isArray(listingsRaw) ? listingsRaw : (listingsRaw as any)?.records || (listingsRaw as any)?.list || [];
         for (const item of listings) {
           const asin = item.asin1 || item.asin;
           if (!asin) continue;

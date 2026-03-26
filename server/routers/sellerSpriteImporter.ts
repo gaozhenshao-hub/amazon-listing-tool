@@ -302,6 +302,12 @@ const PRODUCT_COLUMN_MAP: Record<string, string> = {
   '包装尺寸': 'packageDimensions',
   '包装尺寸（单位换算）': 'packageDimensionsConverted',
   '包装尺寸分段': 'packageSizeTier',
+  // 简写兼容映射
+  '标题': 'title',
+  '价格': 'price',
+  '评论数': 'reviewCount',
+  '销量': 'monthlySales',
+  '类目': 'category',
   // English fallbacks
   'Title': 'title',
   'Brand': 'brand',

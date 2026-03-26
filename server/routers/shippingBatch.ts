@@ -892,25 +892,29 @@ export const shippingBatchRouter = router({
   getLingxingDeliveryOrders: protectedProcedure.query(async () => {
     const lingxing = (await import("../lingxingAdapter")).getLingxingAdapter();
     const res = await lingxing.request({ path: '/erp/sc/routing/storage/shipment/getInboundShipmentList', body: {} });
-    return Array.isArray(res.data) ? res.data : [];
+    const raw = res.data || [];
+    return Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
   }),
 
   getLingxingLogisticsChannels: protectedProcedure.query(async () => {
     const lingxing = (await import("../lingxingAdapter")).getLingxingAdapter();
     const res = await lingxing.request({ path: '/erp/sc/data/local_inventory/channelList', body: {} });
-    return Array.isArray(res.data) ? res.data : [];
+    const raw = res.data || [];
+    return Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
   }),
 
   getLingxingFbaInventory: protectedProcedure.query(async () => {
     const lingxing = (await import("../lingxingAdapter")).getLingxingAdapter();
     const res = await lingxing.request({ path: '/basicOpen/openapi/storage/fbaWarehouseDetail', body: {} });
-    return Array.isArray(res.data) ? res.data : [];
+    const raw = res.data || [];
+    return Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
   }),
 
   getLingxingPurchaseOrders: protectedProcedure.query(async () => {
     const lingxing = (await import("../lingxingAdapter")).getLingxingAdapter();
     const res = await lingxing.request({ path: '/erp/sc/routing/data/local_inventory/purchaseOrderList', body: {} });
-    return Array.isArray(res.data) ? res.data : [];
+    const raw = res.data || [];
+    return Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
   }),
 
   // ─── ASIN维度：获取所有有批次记录的ASIN列表 ───
@@ -1125,7 +1129,8 @@ export const shippingBatchRouter = router({
       path: '/erp/sc/routing/storage/shipment/getInboundShipmentList',
       body: {},
     });
-    const shipments = Array.isArray(shipmentRes.data) ? shipmentRes.data : [];
+    const shipmentRaw = shipmentRes.data || [];
+    const shipments = Array.isArray(shipmentRaw) ? shipmentRaw : (shipmentRaw as any)?.records || (shipmentRaw as any)?.list || [];
     if (shipments.length === 0) return { synced: 0, created: 0, updated: 0, message: '领星无发货单数据' };
     
     // 2. 获取已有批次（通过fbaShipmentId匹配）

@@ -1911,7 +1911,8 @@ export const productOpsRouter = router({
     let sellers: any[] = [];
     try {
       const sellerRes = await adapter.request({ path: "/erp/sc/data/seller/lists" });
-      sellers = Array.isArray(sellerRes.data) ? sellerRes.data : (sellerRes.data as any)?.list || [];
+      const sellerRaw = sellerRes.data || [];
+      sellers = Array.isArray(sellerRaw) ? sellerRaw : (sellerRaw as any)?.records || (sellerRaw as any)?.list || [];
     } catch (err: any) {
       console.error(`[SyncProducts] Failed to get sellers: ${err.message}`);
     }
@@ -1937,7 +1938,8 @@ export const productOpsRouter = router({
           path: "/erp/sc/data/mws/listing",
           body: { sid: Number(sid), offset: 0, length: 200 },
         });
-        const listings = Array.isArray(res.data) ? res.data : (res.data as any)?.list || [];
+        const listingsRaw = res.data || [];
+        const listings = Array.isArray(listingsRaw) ? listingsRaw : (listingsRaw as any)?.records || (listingsRaw as any)?.list || [];
         
         // Group by parent ASIN (asin1 or asin)
         const parentMap = new Map<string, any>();
@@ -2163,7 +2165,8 @@ export const productOpsRouter = router({
           path: "/bd/profit/report/open/report/msku/list",
           body: { start_date: startDate, end_date: endDate },
         });
-        const profitList = Array.isArray(profitRes.data) ? profitRes.data : [];
+        const profitRaw = profitRes.data || [];
+        const profitList = Array.isArray(profitRaw) ? profitRaw : (profitRaw as any).records || (profitRaw as any).list || [];
         for (const item of profitList) {
           profitData.revenue += Number(item.revenue || 0);
           profitData.cost += Number(item.product_cost || 0);
@@ -2180,7 +2183,8 @@ export const productOpsRouter = router({
           path: "/bd/profit/report/open/report/msku/list",
           body: { start_date: prevStartDate, end_date: prevEndDate },
         });
-        const prevProfitList = Array.isArray(prevProfitRes.data) ? prevProfitRes.data : [];
+        const prevProfitRaw = prevProfitRes.data || [];
+        const prevProfitList = Array.isArray(prevProfitRaw) ? prevProfitRaw : (prevProfitRaw as any).records || (prevProfitRaw as any).list || [];
         for (const item of prevProfitList) {
           prevProfitData.revenue += Number(item.revenue || 0);
           prevProfitData.cost += Number(item.product_cost || 0);
@@ -2202,7 +2206,8 @@ export const productOpsRouter = router({
           path: "/erp/sc/routing/fba/fbaStock/fbaList",
           body: { offset: 0, length: 500 },
         });
-        const invList = Array.isArray(invRes.data) ? invRes.data : (invRes.data as any)?.list || [];
+        const invRaw = invRes.data || [];
+        const invList = Array.isArray(invRaw) ? invRaw : (invRaw as any).records || (invRaw as any).list || [];
         for (const item of invList) {
           inventoryData.totalStock += Number(item.afn_fulfillable_quantity || item.fulfillable_quantity || 0);
           inventoryData.inboundQty += Number(item.afn_inbound_working_quantity || item.inbound_quantity || 0);
@@ -2222,7 +2227,8 @@ export const productOpsRouter = router({
           path: "/pb/openapi/newad/spCampaigns",
           body: { start_date: startDate, end_date: endDate },
         });
-        const adList = Array.isArray(adRes.data) ? adRes.data : (adRes.data as any)?.list || [];
+        const adRaw = adRes.data || [];
+        const adList = Array.isArray(adRaw) ? adRaw : (adRaw as any).records || (adRaw as any).list || [];
         for (const item of adList) {
           adData.totalSpend += Number(item.spend || item.cost || 0);
           adData.totalSales += Number(item.sales || item.attributed_sales || 0);
@@ -2299,16 +2305,45 @@ export const productOpsRouter = router({
             path: "/bd/profit/report/open/report/asin/list",
             body: { start_date: start, end_date: end, startDate: start, endDate: end, asin: product.parentAsin },
           });
-          const list = Array.isArray(res.data) ? res.data : [];
+          const rawData = res.data || [];
+          let list = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
+          console.log(`[OpsPlanComparison] ASIN API returned ${list.length} items for ${product.parentAsin} (${start}-${end})`);
+
+          // Fallback to MSKU list if no data
+          if (list.length === 0) {
+            try {
+              const mskuRes = await adapter.request({
+                path: "/bd/profit/report/open/report/msku/list",
+                body: { startDate: start, endDate: end, length: 500, summaryEnabled: true },
+              });
+              const rawMsku = mskuRes.data || [];
+              const allItems = Array.isArray(rawMsku) ? rawMsku : (rawMsku as any).records || (rawMsku as any).list || [];
+              // Get variants for filtering
+              const variants = await (await getDb())!.select().from(productVariants)
+                .where(eq(productVariants.productId, input.productId));
+              const childAsins = variants.map(v => v.childAsin).filter(Boolean);
+              const skuList = variants.map(v => v.sku).filter(Boolean) as string[];
+              list = allItems.filter((item: any) => {
+                const itemAsin = item.asin || item.parentAsin || '';
+                const itemSku = item.localSku || item.msku || item.seller_sku || '';
+                return childAsins.includes(itemAsin) || itemAsin === product.parentAsin || skuList.includes(itemSku);
+              });
+              console.log(`[OpsPlanComparison] MSKU fallback: ${allItems.length} total, ${list.length} matched`);
+            } catch (e: any) {
+              console.warn(`[OpsPlanComparison] MSKU fallback error: ${e.message}`);
+            }
+          }
+
           for (const item of list) {
-            data.revenue += Number(item.revenue || item.totalFbaAndFbmAmount || 0);
-            data.profit += Number(item.profit || item.grossProfit || 0);
-            data.adSpend += Number(item.ad_spend || item.totalAdsCost || 0);
-            data.orders += Number(item.order_count || item.totalSalesQuantity || 0);
-            data.units += Number(item.units_sold || item.totalFbaAndFbmQuantity || 0);
-            data.avgPrice = Number(item.avg_price || item.averageSellingPrice || data.avgPrice || 0);
-            data.ratingCount = Number(item.rating_count || item.reviewCount || data.ratingCount || 0);
-            data.ratingScore = Number(item.rating_score || item.averageRating || data.ratingScore || 0);
+            const i = item as Record<string, any>;
+            data.revenue += Number(i.totalFbaAndFbmAmount || i.platformIncome || i.revenue || 0);
+            data.profit += Number(i.grossProfit || i.totalProfit || i.profit || 0);
+            data.adSpend += Math.abs(Number(i.totalAdsCost || i.adsSpCost || i.adCost || i.ad_spend || 0));
+            data.orders += Number(i.totalSalesQuantity || i.order_count || i.orders || 0);
+            data.units += Number(i.totalFbaAndFbmQuantity || i.unit_count || i.units || 0);
+            data.avgPrice = Number(i.averageSellingPrice || i.avg_price || data.avgPrice || 0);
+            data.ratingCount = Number(i.reviewCount || i.rating_count || data.ratingCount || 0);
+            data.ratingScore = Number(i.averageRating || i.rating_score || data.ratingScore || 0);
           }
           // Calculate daily averages
           const days = Math.max(1, Math.ceil((new Date(end).getTime() - new Date(start).getTime()) / 86400000));
@@ -2385,23 +2420,55 @@ export const productOpsRouter = router({
         currentRatingCount: 0, currentRatingScore: '0',
       };
 
+      // Get product variants for filtering
+      const variants = await db!.select().from(productVariants)
+        .where(eq(productVariants.productId, input.productId));
+      const childAsins = variants.map(v => v.childAsin).filter(Boolean);
+      const skus = variants.map(v => v.sku).filter(Boolean) as string[];
+
       try {
+        // Try ASIN-specific profit API first
         const res = await adapter.request({
           path: "/bd/profit/report/open/report/asin/list",
-          body: { start_date: start, end_date: end, startDate: start, endDate: end, asin: product.parentAsin },
+          body: { startDate: start, endDate: end, start_date: start, end_date: end, asin: product.parentAsin },
         });
-        const list = Array.isArray(res.data) ? res.data : [];
+        const rawData = res.data || [];
+        let list = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
+        console.log(`[SyncPlanCurrentData] ASIN API returned ${list.length} items for ${product.parentAsin}`);
+
+        // If ASIN API returned no data, fallback to MSKU list with product filtering
+        if (list.length === 0) {
+          const mskuRes = await adapter.request({
+            path: "/bd/profit/report/open/report/msku/list",
+            body: { startDate: start, endDate: end, length: 500, summaryEnabled: true },
+          });
+          const rawMsku = mskuRes.data || [];
+          const allItems = Array.isArray(rawMsku) ? rawMsku : (rawMsku as any).records || (rawMsku as any).list || [];
+          list = allItems.filter((item: any) => {
+            const itemAsin = item.asin || item.parentAsin || '';
+            const itemSku = item.localSku || item.msku || item.seller_sku || '';
+            return childAsins.includes(itemAsin) || itemAsin === product.parentAsin || skus.includes(itemSku);
+          });
+          console.log(`[SyncPlanCurrentData] MSKU fallback: ${allItems.length} total, ${list.length} matched`);
+        }
         let totalRevenue = 0, totalOrders = 0, totalAdSpend = 0, totalAdSales = 0;
         let avgPrice = 0, ratingCount = 0, ratingScore = 0;
         for (const item of list) {
-          totalRevenue += Number(item.revenue || item.totalFbaAndFbmAmount || 0);
-          totalOrders += Number(item.order_count || item.totalSalesQuantity || 0);
-          totalAdSpend += Math.abs(Number(item.ad_spend || item.totalAdsCost || 0));
-          totalAdSales += Number(item.ad_sales || item.adSales || 0);
-          avgPrice = Number(item.avg_price || item.averageSellingPrice || avgPrice || 0);
-          ratingCount = Number(item.rating_count || item.reviewCount || ratingCount || 0);
-          ratingScore = Number(item.rating_score || item.averageRating || ratingScore || 0);
+          const i = item as Record<string, any>;
+          // Revenue: use same field mapping as getProductProfitSummary
+          totalRevenue += Number(i.totalFbaAndFbmAmount || i.platformIncome || i.revenue || 0);
+          // Orders: totalSalesQuantity is the primary field from lingxing
+          totalOrders += Number(i.totalSalesQuantity || i.order_count || i.orders || 0);
+          // Ad spend and sales
+          totalAdSpend += Math.abs(Number(i.totalAdsCost || i.adsSpCost || i.adCost || i.ad_spend || 0));
+          totalAdSales += Number(i.adSales || i.ad_sales || 0);
+          // Average price
+          avgPrice = Number(i.averageSellingPrice || i.avg_price || avgPrice || 0);
+          // Rating data
+          ratingCount = Number(i.reviewCount || i.rating_count || ratingCount || 0);
+          ratingScore = Number(i.averageRating || i.rating_score || ratingScore || 0);
         }
+        console.log(`[SyncPlanCurrentData] Aggregated: revenue=${totalRevenue}, orders=${totalOrders}, adSpend=${totalAdSpend}, adSales=${totalAdSales}, avgPrice=${avgPrice}`);
         const days = Math.max(1, periodDays);
         const adConvRate = totalAdSales > 0 && totalAdSpend > 0 ? round2(totalAdSales / totalAdSpend * 100) : 0;
         const searchConvRate = totalOrders > 0 ? round2(Math.random() * 5 + 8) : 0; // Placeholder - real data from business reports
@@ -2467,23 +2534,52 @@ export const productOpsRouter = router({
       const baselineEnd = currentStart;
       const baselineStart = new Date(now.getTime() - 2 * periodDays * 86400000).toISOString().split('T')[0];
 
+      // Get product variants for filtering (same as syncPlanCurrentData)
+      const variants = await db!.select().from(productVariants)
+        .where(eq(productVariants.productId, input.productId));
+      const childAsins = variants.map(v => v.childAsin).filter(Boolean);
+      const skus = variants.map(v => v.sku).filter(Boolean) as string[];
+
       const fetchPeriodMetrics = async (start: string, end: string) => {
         let sales = 0, profit = 0, orders = 0, units = 0, adSpend = 0, adSales = 0, sessions = 0;
         try {
+          // Try ASIN-specific profit API first
           const res = await adapter.request({
             path: "/bd/profit/report/open/report/asin/list",
-            body: { start_date: start, end_date: end, startDate: start, endDate: end, asin: product.parentAsin },
+            body: { startDate: start, endDate: end, start_date: start, end_date: end, asin: product.parentAsin },
           });
-          const list = Array.isArray(res.data) ? res.data : [];
-          for (const item of list) {
-            sales += Number(item.revenue || item.totalFbaAndFbmAmount || 0);
-            profit += Number(item.profit || item.grossProfit || 0);
-            orders += Number(item.order_count || item.totalSalesQuantity || 0);
-            units += Number(item.units_sold || item.totalFbaAndFbmQuantity || 0);
-            adSpend += Math.abs(Number(item.ad_spend || item.totalAdsCost || 0));
-            adSales += Number(item.ad_sales || item.adSales || 0);
-            sessions += Number(item.sessions || 0);
+          const rawData = res.data || [];
+          let list = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
+          console.log(`[SyncReview] ASIN API returned ${list.length} items for ${product.parentAsin} (${start} to ${end})`);
+
+          // Fallback to MSKU list if no data
+          if (list.length === 0) {
+            const mskuRes = await adapter.request({
+              path: "/bd/profit/report/open/report/msku/list",
+              body: { startDate: start, endDate: end, length: 500, summaryEnabled: true },
+            });
+            const rawMsku = mskuRes.data || [];
+            const allItems = Array.isArray(rawMsku) ? rawMsku : (rawMsku as any).records || (rawMsku as any).list || [];
+            list = allItems.filter((item: any) => {
+              const itemAsin = item.asin || item.parentAsin || '';
+              const itemSku = item.localSku || item.msku || item.seller_sku || '';
+              return childAsins.includes(itemAsin) || itemAsin === product.parentAsin || skus.includes(itemSku);
+            });
+            console.log(`[SyncReview] MSKU fallback: ${allItems.length} total, ${list.length} matched`);
           }
+
+          for (const item of list) {
+            const i = item as Record<string, any>;
+            // Use same field mapping as getProductProfitSummary
+            sales += Number(i.totalFbaAndFbmAmount || i.platformIncome || i.revenue || 0);
+            profit += Number(i.grossProfit || i.totalProfit || i.profit || 0);
+            orders += Number(i.totalSalesQuantity || i.order_count || i.orders || 0);
+            units += Number(i.totalFbaAndFbmQuantity || i.unit_count || i.units || 0);
+            adSpend += Math.abs(Number(i.totalAdsCost || i.adsSpCost || i.adCost || i.ad_spend || 0));
+            adSales += Number(i.adSales || i.ad_sales || 0);
+            sessions += Number(i.sessions || 0);
+          }
+          console.log(`[SyncReview] Aggregated (${start}-${end}): sales=${sales}, profit=${profit}, orders=${orders}, units=${units}`);
         } catch (err: any) {
           console.warn(`[SyncReview] Error fetching ${start}-${end}: ${err.message}`);
         }
@@ -2850,7 +2946,8 @@ async function getCachedSellers(adapter: any): Promise<any[]> {
   }
   try {
     const res = await adapter.request({ path: "/erp/sc/data/seller/lists" });
-    const sellers = Array.isArray(res.data) ? res.data : (res.data as any)?.list || [];
+    const sellersRaw = res.data || [];
+    const sellers = Array.isArray(sellersRaw) ? sellersRaw : (sellersRaw as any)?.records || (sellersRaw as any)?.list || [];
     _productOpsSellerCache = { sellers, ts: Date.now() };
     return sellers;
   } catch (err: any) {

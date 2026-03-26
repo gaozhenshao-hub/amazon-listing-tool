@@ -2474,3 +2474,19 @@
 - [x] 评分原因添加点击展开/收起功能（expandedReasons状态+line-clamp-2默认截断）
 - [x] 优化评分原因展示样式（AI蓝色/程序绿色背景、圆角卡片、MessageSquareText图标、展开/收起指示器）
 - [x] 保存检查点
+
+## Bug修复：单产品详情页数据看板"当期数据"全为0
+- [x] 分析数据看板"同步领星数据"按钮的数据拉取逻辑
+- [x] 检查领星API调用是否正确（订单/销售/广告/转化率接口）
+- [x] 修复数据映射逻辑，确保日均销售额、订单数、转化率等正确显示
+- [x] 修复执行复盘页面数据为0的问题
+- [x] 测试验证并保存检查点（2844测试全部通过）
+
+## Bug修复：领星API数据结构解析全面修复（已完成）
+- [x] 修复PRODUCT_COLUMN_MAP缺少简写兼容映射（标题/价格/评论数/销量/类目）
+- [x] 修复getProductProfitSummary中利润/库存/广告4处数据结构解析（Array.isArray → records/list fallback）
+- [x] 修复productOps.ts中sellers/listings/getSellerSids 3处数据结构解析
+- [x] 修复operations.ts中sellers/listings 2处数据结构解析
+- [x] 修复shippingBatch.ts中shipments 1处数据结构解析
+- [x] 删除过时的productOps.ts.bak文件
+- [x] 全部2827测试通过，TypeScript 0错误
