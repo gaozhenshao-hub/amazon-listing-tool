@@ -2320,3 +2320,24 @@
 - [x] 修复：getCheckItems查询添加自动初始化逻辑，表为空时自动插入132项默认检查维度
 - [x] 修复：原来只有114项，补充至132项（新增关键词布局、长尾词、变体价格梯度、Prime标识等18项）
 - [x] 测试：6个新测试覆盖132项维度完整性和自动初始化逻辑（2689总测试通过）
+
+## 转化率对比检查项自定义管理
+- [x] 后端：新建check_item_overrides表（用户级覆盖：自定义名称/标准/隐藏状态）
+- [x] 后端：新增editCheckItem API（自定义项直接编辑，系统项创建override）
+- [x] 后端：新增toggleCheckItemHidden API（通过override控制隐藏/显示）
+- [x] 后端：新增resetCheckItemOverride API（恢复系统默认设置）
+- [x] 后端：新增removeCustomCheckItem API（删除自定义项+清理override）
+- [x] 后端：getCheckItems支持includeHidden参数，合并override返回isHidden/hasOverride/originalSubDimension
+- [x] 前端：管理模式开关（Settings图标，切换显示操作列）
+- [x] 前端：显示已隐藏项开关（含隐藏项数量Badge）
+- [x] 前端：编辑弹窗（系统项提示仅对当前用户生效，可编辑名称和评分标准）
+- [x] 前端：隐藏/取消隐藏按钮（EyeOff图标）
+- [x] 前端：恢复默认设置按钮（RotateCcw图标，仅系统项有override时显示）
+- [x] 前端：删除自定义项按钮（Trash2图标，仅自定义项显示）
+- [x] 前端：自定义/已修改/已隐藏Badge标识
+- [x] 前端：隐藏项半透明样式（opacity-50）
+- [x] 测试：19个新测试覆盖后端API/数据库schema/前端UI（2708总测试通过）
+
+## 转化率对比数据来源方案查找
+- [ ] 查找转化率对比模块的数据来源方案（爬虫预设数据等）
+- [ ] 整理并发送给用户确认

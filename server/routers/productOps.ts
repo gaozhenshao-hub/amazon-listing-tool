@@ -9,7 +9,7 @@ import {
   keywordMonitors, keywordSnapshots,
   competitorMonitors, competitorSnapshots,
   opsPlans, opsPlanActions, opsPlanSummaries,
-  conversionComparisons, conversionCheckItems, conversionScores, conversionSuggestions,
+  conversionComparisons, conversionCheckItems, conversionScores, conversionSuggestions, checkItemOverrides,
   executionReviews, teamTasks,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, asc, isNull, inArray } from "drizzle-orm";
@@ -1105,7 +1105,7 @@ export const productOpsRouter = router({
 
   // ─── Check Items (fixed template + user custom) ───
 
-  getCheckItems: protectedProcedure.query(async ({ ctx }) => {
+  getCheckItems: protectedProcedure.input(z.object({ includeHidden: z.boolean().optional() }).optional()).query(async ({ ctx, input }) => {
     const db = await getDb();
     // Auto-initialize default check items if none exist
     const existing = await db!.select({ count: sql<number>`count(*)` }).from(conversionCheckItems)
@@ -1122,17 +1122,35 @@ export const productOpsRouter = router({
     const items = await db!.select().from(conversionCheckItems)
       .where(sql`${conversionCheckItems.userId} IS NULL OR ${conversionCheckItems.userId} = ${ctx.user.id}`)
       .orderBy(asc(conversionCheckItems.categoryIndex), asc(conversionCheckItems.sortOrder));
-    return items;
+    // Get user overrides
+    const overrides = await db!.select().from(checkItemOverrides)
+      .where(eq(checkItemOverrides.userId, ctx.user.id));
+    const overrideMap = new Map(overrides.map(o => [o.checkItemId, o]));
+    // Merge items with overrides
+    const merged = items.map(item => {
+      const override = overrideMap.get(item.id);
+      return {
+        ...item,
+        subDimension: override?.customSubDimension || item.subDimension,
+        standard: override?.customStandard !== undefined && override?.customStandard !== null ? override.customStandard : item.standard,
+        isHidden: override?.isHidden === 1 ? true : false,
+        hasOverride: !!override,
+        originalSubDimension: override?.customSubDimension ? item.subDimension : null,
+        originalStandard: override?.customStandard !== undefined && override?.customStandard !== null ? item.standard : null,
+      };
+    });
+    // Filter hidden items unless includeHidden is true
+    if (!input?.includeHidden) {
+      return merged.filter(item => !item.isHidden);
+    }
+    return merged;
   }),
 
   initDefaultCheckItems: protectedProcedure.mutation(async ({ ctx }) => {
     const db = await getDb();
-    // Check if defaults already exist
     const existing = await db!.select({ count: sql<number>`count(*)` }).from(conversionCheckItems)
       .where(isNull(conversionCheckItems.userId));
     if (Number(existing[0]?.count) > 0) return { message: "Default items already exist", count: Number(existing[0]?.count) };
-
-    // Insert all 132 default check items
     const defaultItems = getDefault132CheckItems();
     for (const item of defaultItems) {
       await db!.insert(conversionCheckItems).values({ ...item, userId: null });
@@ -1158,8 +1176,88 @@ export const productOpsRouter = router({
     return { id: result.insertId };
   }),
 
+  editCheckItem: protectedProcedure.input(z.object({
+    checkItemId: z.number(),
+    subDimension: z.string().optional(),
+    standard: z.string().optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    // Check if item exists
+    const [item] = await db!.select().from(conversionCheckItems).where(eq(conversionCheckItems.id, input.checkItemId));
+    if (!item) throw new TRPCError({ code: 'NOT_FOUND', message: '检查项不存在' });
+
+    // If it's user's own custom item, edit directly
+    if (item.isCustom === 1 && item.userId === ctx.user.id) {
+      await db!.update(conversionCheckItems).set({
+        ...(input.subDimension !== undefined ? { subDimension: input.subDimension } : {}),
+        ...(input.standard !== undefined ? { standard: input.standard } : {}),
+      }).where(eq(conversionCheckItems.id, input.checkItemId));
+      return { success: true, type: 'direct_edit' as const };
+    }
+
+    // For system items, create/update user override
+    const [existingOverride] = await db!.select().from(checkItemOverrides)
+      .where(and(eq(checkItemOverrides.userId, ctx.user.id), eq(checkItemOverrides.checkItemId, input.checkItemId)));
+
+    if (existingOverride) {
+      await db!.update(checkItemOverrides).set({
+        ...(input.subDimension !== undefined ? { customSubDimension: input.subDimension } : {}),
+        ...(input.standard !== undefined ? { customStandard: input.standard } : {}),
+        updatedAt: new Date(),
+      }).where(eq(checkItemOverrides.id, existingOverride.id));
+    } else {
+      await db!.insert(checkItemOverrides).values({
+        userId: ctx.user.id,
+        checkItemId: input.checkItemId,
+        customSubDimension: input.subDimension || null,
+        customStandard: input.standard || null,
+      });
+    }
+    return { success: true, type: 'override' as const };
+  }),
+
+  toggleCheckItemHidden: protectedProcedure.input(z.object({
+    checkItemId: z.number(),
+    isHidden: z.boolean(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    // Check if item exists
+    const [item] = await db!.select().from(conversionCheckItems).where(eq(conversionCheckItems.id, input.checkItemId));
+    if (!item) throw new TRPCError({ code: 'NOT_FOUND', message: '检查项不存在' });
+
+    // Create/update user override
+    const [existingOverride] = await db!.select().from(checkItemOverrides)
+      .where(and(eq(checkItemOverrides.userId, ctx.user.id), eq(checkItemOverrides.checkItemId, input.checkItemId)));
+
+    if (existingOverride) {
+      await db!.update(checkItemOverrides).set({
+        isHidden: input.isHidden ? 1 : 0,
+        updatedAt: new Date(),
+      }).where(eq(checkItemOverrides.id, existingOverride.id));
+    } else {
+      await db!.insert(checkItemOverrides).values({
+        userId: ctx.user.id,
+        checkItemId: input.checkItemId,
+        isHidden: input.isHidden ? 1 : 0,
+      });
+    }
+    return { success: true, isHidden: input.isHidden };
+  }),
+
+  resetCheckItemOverride: protectedProcedure.input(z.object({
+    checkItemId: z.number(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    await db!.delete(checkItemOverrides)
+      .where(and(eq(checkItemOverrides.userId, ctx.user.id), eq(checkItemOverrides.checkItemId, input.checkItemId)));
+    return { success: true };
+  }),
+
   removeCustomCheckItem: protectedProcedure.input(z.object({ itemId: z.number() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
+    // Also remove any overrides for this item
+    await db!.delete(checkItemOverrides)
+      .where(and(eq(checkItemOverrides.userId, ctx.user.id), eq(checkItemOverrides.checkItemId, input.itemId)));
     await db!.delete(conversionCheckItems)
       .where(and(eq(conversionCheckItems.id, input.itemId), eq(conversionCheckItems.userId, ctx.user.id), eq(conversionCheckItems.isCustom, 1)));
     return { success: true };

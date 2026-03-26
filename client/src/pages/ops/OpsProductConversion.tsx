@@ -19,6 +19,7 @@ import {
 import {
   Plus, Trash2, Lock, Unlock, Loader2, Brain, ChevronDown, ChevronUp,
   Star, ArrowRight, Search, BarChart3, Sparkles, Download, CheckCircle, Filter,
+  Eye, EyeOff, Pencil, RotateCcw, Settings2,
 } from "lucide-react";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -44,6 +45,11 @@ const CATEGORY_COLORS: Record<number, string> = {
 };
 
 export default function OpsProductConversion({ productId, parentAsin }: Props) {
+  // ─── Management State (must be before queries that depend on them) ───
+  const [manageMode, setManageMode] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
+  const [editItemDialog, setEditItemDialog] = useState<{ id: number; subDimension: string; standard: string; isCustom: boolean; hasOverride: boolean } | null>(null);
+
   // ─── Queries ───
   const { data: comparisons, refetch: refetchComparisons, isLoading } = trpc.productOps.listComparisons.useQuery(
     { productProfileId: productId }
@@ -53,7 +59,9 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
   const activeComp = comparisons?.find((c: any) => c.id === selectedCompId) || comparisons?.[0];
   const activeCompId = activeComp?.id;
 
-  const { data: checkItems, refetch: refetchItems } = trpc.productOps.getCheckItems.useQuery();
+  const { data: checkItems, refetch: refetchItems } = trpc.productOps.getCheckItems.useQuery(
+    { includeHidden: showHidden || manageMode }
+  );
   const { data: scores, refetch: refetchScores } = trpc.productOps.getScores.useQuery(
     { comparisonId: activeCompId! }, { enabled: !!activeCompId }
   );
@@ -75,6 +83,18 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
   });
   const addCheckItem = trpc.productOps.addCustomCheckItem.useMutation({
     onSuccess: () => { refetchItems(); setShowAddItem(false); toast.success("检查项已添加"); },
+  });
+  const editCheckItemMut = trpc.productOps.editCheckItem.useMutation({
+    onSuccess: () => { refetchItems(); setEditItemDialog(null); toast.success("检查项已更新"); },
+  });
+  const toggleHiddenMut = trpc.productOps.toggleCheckItemHidden.useMutation({
+    onSuccess: (data) => { refetchItems(); toast.success(data.isHidden ? "检查项已隐藏" : "检查项已显示"); },
+  });
+  const resetOverrideMut = trpc.productOps.resetCheckItemOverride.useMutation({
+    onSuccess: () => { refetchItems(); toast.success("已恢复默认设置"); },
+  });
+  const removeCheckItem = trpc.productOps.removeCustomCheckItem.useMutation({
+    onSuccess: () => { refetchItems(); toast.success("自定义检查项已删除"); },
   });
   const updateScore = trpc.productOps.updateScore.useMutation({
     onSuccess: () => refetchScores(),
@@ -351,11 +371,29 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
 
           {/* Check Items by Category */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold">检查项目（{checkItems?.length || 0}项）</h3>
-              <Button size="sm" variant="outline" onClick={() => setShowAddItem(true)}>
-                <Plus className="h-3 w-3 mr-1" /> 添加自定义维度
-              </Button>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-3">
+                <h3 className="font-semibold">检查项目（{checkItems?.filter((i: any) => !i.isHidden).length || 0}项）</h3>
+                {checkItems?.some((i: any) => i.isHidden) && (
+                  <Badge variant="secondary" className="text-xs">
+                    {checkItems.filter((i: any) => i.isHidden).length}项已隐藏
+                  </Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {manageMode && (
+                  <Button size="sm" variant="outline" onClick={() => setShowHidden(!showHidden)} className={showHidden ? "border-amber-300 bg-amber-50 text-amber-700" : ""}>
+                    {showHidden ? <Eye className="h-3 w-3 mr-1" /> : <EyeOff className="h-3 w-3 mr-1" />}
+                    {showHidden ? "显示已隐藏项" : "显示已隐藏项"}
+                  </Button>
+                )}
+                <Button size="sm" variant={manageMode ? "default" : "outline"} onClick={() => { setManageMode(!manageMode); if (!manageMode) setShowHidden(false); }}>
+                  <Settings2 className="h-3 w-3 mr-1" /> {manageMode ? "退出管理" : "管理检查项"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setShowAddItem(true)}>
+                  <Plus className="h-3 w-3 mr-1" /> 添加自定义维度
+                </Button>
+              </div>
             </div>
 
             {Object.entries(groupedItems).sort(([a], [b]) => Number(a) - Number(b)).map(([catIdx, group]) => {
@@ -384,6 +422,7 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                         <Table>
                           <TableHeader>
                             <TableRow>
+                              {manageMode && <TableHead className="w-[90px]">操作</TableHead>}
                               <TableHead className="w-[160px]">检查项</TableHead>
                               <TableHead className="w-[200px]">评分标准</TableHead>
                               {allAsins.map((asin, i) => (
@@ -401,8 +440,59 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                           </TableHeader>
                           <TableBody>
                             {group.items.map((item: any) => (
-                              <TableRow key={item.id}>
-                                <TableCell className="font-medium text-sm">{item.subDimension}</TableCell>
+                              <TableRow key={item.id} className={item.isHidden ? "opacity-50 bg-muted/30" : ""}>
+                                {manageMode && (
+                                  <TableCell>
+                                    <div className="flex items-center gap-0.5">
+                                      <button
+                                        onClick={() => setEditItemDialog({
+                                          id: item.id,
+                                          subDimension: item.subDimension || "",
+                                          standard: item.standard || "",
+                                          isCustom: item.isCustom === 1,
+                                          hasOverride: item.hasOverride || false,
+                                        })}
+                                        className="p-1 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
+                                        title="编辑检查项"
+                                      >
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => toggleHiddenMut.mutate({ checkItemId: item.id, isHidden: !item.isHidden })}
+                                        className={`p-1 hover:bg-muted rounded ${item.isHidden ? "text-amber-600" : "text-muted-foreground hover:text-foreground"}`}
+                                        title={item.isHidden ? "取消隐藏" : "隐藏检查项"}
+                                      >
+                                        {item.isHidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                                      </button>
+                                      {item.hasOverride && (
+                                        <button
+                                          onClick={() => resetOverrideMut.mutate({ checkItemId: item.id })}
+                                          className="p-1 hover:bg-muted rounded text-blue-600"
+                                          title="恢复默认设置"
+                                        >
+                                          <RotateCcw className="h-3.5 w-3.5" />
+                                        </button>
+                                      )}
+                                      {item.isCustom === 1 && (
+                                        <button
+                                          onClick={() => removeCheckItem.mutate({ itemId: item.id })}
+                                          className="p-1 hover:bg-muted rounded text-red-500 hover:text-red-700"
+                                          title="删除自定义项"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                )}
+                                <TableCell className="font-medium text-sm">
+                                  <div className="flex items-center gap-1">
+                                    {item.subDimension}
+                                    {item.isCustom === 1 && <Badge variant="outline" className="text-[10px] px-1 py-0 border-blue-300 text-blue-600">自定义</Badge>}
+                                    {item.hasOverride && !item.isHidden && <Badge variant="outline" className="text-[10px] px-1 py-0 border-amber-300 text-amber-600">已修改</Badge>}
+                                    {item.isHidden && <Badge variant="outline" className="text-[10px] px-1 py-0 border-gray-400 text-gray-500">已隐藏</Badge>}
+                                  </div>
+                                </TableCell>
                                 <TableCell className="text-xs text-muted-foreground">{item.standard || "—"}</TableCell>
                                 {allAsins.map((asin) => {
                                   const key = `${item.id}_${asin}`;
@@ -807,6 +897,61 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
             >
               {syncToPlan.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <ArrowRight className="h-4 w-4 mr-1" />}
               确认同步
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Check Item Dialog */}
+      <Dialog open={!!editItemDialog} onOpenChange={(open) => { if (!open) setEditItemDialog(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-4 w-4" />
+              {editItemDialog?.isCustom ? "编辑自定义检查项" : "编辑检查项"}
+            </DialogTitle>
+          </DialogHeader>
+          {editItemDialog && (
+            <div className="space-y-4">
+              {!editItemDialog.isCustom && (
+                <div className="rounded-md bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
+                  这是系统默认检查项。修改后仅对您生效，不影响其他用户。您可以随时恢复默认设置。
+                </div>
+              )}
+              <div>
+                <Label>检查项名称</Label>
+                <Input
+                  value={editItemDialog.subDimension}
+                  onChange={e => setEditItemDialog(prev => prev ? { ...prev, subDimension: e.target.value } : null)}
+                  placeholder="检查项名称"
+                />
+              </div>
+              <div>
+                <Label>评分标准</Label>
+                <Textarea
+                  value={editItemDialog.standard}
+                  onChange={e => setEditItemDialog(prev => prev ? { ...prev, standard: e.target.value } : null)}
+                  placeholder="描述1-5分的评判标准"
+                  rows={3}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditItemDialog(null)}>取消</Button>
+            <Button
+              disabled={!editItemDialog?.subDimension || editCheckItemMut.isPending}
+              onClick={() => {
+                if (!editItemDialog) return;
+                editCheckItemMut.mutate({
+                  checkItemId: editItemDialog.id,
+                  subDimension: editItemDialog.subDimension,
+                  standard: editItemDialog.standard || undefined,
+                });
+              }}
+            >
+              {editCheckItemMut.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              保存修改
             </Button>
           </DialogFooter>
         </DialogContent>

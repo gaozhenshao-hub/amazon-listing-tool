@@ -29,12 +29,12 @@ describe("Conversion Check Items - 132 Default Dimensions", () => {
     expect(source).toContain("Auto-initialize default check items if none exist");
     expect(source).toContain("auto-initializing 132 check items");
 
-    // Verify it checks for empty table first
-    const getCheckItemsSection = source.match(
-      /getCheckItems:.*?protectedProcedure\.query\(async.*?\{([\s\S]*?)return items;\s*\}\)/
-    );
-    expect(getCheckItemsSection).not.toBeNull();
-    const body = getCheckItemsSection![1];
+    // Verify it checks for empty table first - getCheckItems now accepts input with includeHidden
+    const getCheckItemsStart = source.indexOf("getCheckItems: protectedProcedure");
+    const getCheckItemsEnd = source.indexOf("initDefaultCheckItems:");
+    expect(getCheckItemsStart).toBeGreaterThan(-1);
+    expect(getCheckItemsEnd).toBeGreaterThan(getCheckItemsStart);
+    const body = source.substring(getCheckItemsStart, getCheckItemsEnd);
 
     // Should check count of system defaults
     expect(body).toContain("isNull(conversionCheckItems.userId)");
@@ -43,6 +43,10 @@ describe("Conversion Check Items - 132 Default Dimensions", () => {
     // Should call getDefault132CheckItems and insert
     expect(body).toContain("getDefault132CheckItems()");
     expect(body).toContain("insert(conversionCheckItems).values");
+
+    // Should support includeHidden parameter
+    expect(body).toContain("includeHidden");
+    expect(body).toContain("filter(item => !item.isHidden)");
   });
 
   it("all 20 categories should be defined with correct names", async () => {

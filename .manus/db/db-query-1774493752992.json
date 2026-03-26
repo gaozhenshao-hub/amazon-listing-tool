@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `check_item_overrides` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`user_id` int NOT NULL,\n\t`check_item_id` int NOT NULL,\n\t`is_hidden` int DEFAULT 0,\n\t`custom_sub_dimension` varchar(200),\n\t`custom_standard` text,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `check_item_overrides_id` PRIMARY KEY(`id`)\n);\nCREATE INDEX idx_overrides_user_item ON check_item_overrides(user_id, check_item_id);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute CREATE TABLE `check_item_overrides` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`user_id` int NOT NULL,\n\t`check_item_id` int NOT NULL,\n\t`is_hidden` int DEFAULT 0,\n\t`custom_sub_dimension` varchar(200),\n\t`custom_standard` text,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `check_item_overrides_id` PRIMARY KEY(`id`)\n);\nCREATE INDEX idx_overrides_user_item ON check_item_overrides(user_id, check_item_id);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 690
+}

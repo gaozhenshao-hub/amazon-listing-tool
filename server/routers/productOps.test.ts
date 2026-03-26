@@ -114,6 +114,9 @@ describe("productOps router module", () => {
     expect(procedures).toContain("addCustomCheckItem");
     expect(procedures).toContain("removeCustomCheckItem");
     expect(procedures).toContain("initDefaultCheckItems");
+    expect(procedures).toContain("editCheckItem");
+    expect(procedures).toContain("toggleCheckItemHidden");
+    expect(procedures).toContain("resetCheckItemOverride");
     
     // Scores
     expect(procedures).toContain("getScores");
@@ -161,7 +164,7 @@ describe("productOps router module", () => {
   it("should have exactly 68 procedures", async () => {
     const mod = await import("./productOps");
     const procedures = Object.keys(mod.productOpsRouter._def.procedures);
-    expect(procedures.length).toBe(68);
+    expect(procedures.length).toBe(71);
   });
 
   it("all procedures should be defined", async () => {

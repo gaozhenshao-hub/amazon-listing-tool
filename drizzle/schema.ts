@@ -1960,6 +1960,20 @@ export const conversionCheckItems = mysqlTable("conversion_check_items", {
 export type ConversionCheckItem = typeof conversionCheckItems.$inferSelect;
 export type InsertConversionCheckItem = typeof conversionCheckItems.$inferInsert;
 
+// User-level overrides for check items (hide, rename, change standard)
+export const checkItemOverrides = mysqlTable("check_item_overrides", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  checkItemId: int("check_item_id").notNull(), // references conversion_check_items.id
+  isHidden: int("is_hidden").default(0), // 0=visible, 1=hidden
+  customSubDimension: varchar("custom_sub_dimension", { length: 200 }), // NULL=use original
+  customStandard: text("custom_standard"), // NULL=use original
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export type CheckItemOverride = typeof checkItemOverrides.$inferSelect;
+export type InsertCheckItemOverride = typeof checkItemOverrides.$inferInsert;
+
 // Conversion scores (per comparison × per ASIN × per check item)
 export const conversionScores = mysqlTable("conversion_scores", {
   id: int("id").autoincrement().primaryKey(),
