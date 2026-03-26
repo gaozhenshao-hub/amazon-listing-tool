@@ -19,7 +19,7 @@ import {
 import {
   Plus, Trash2, Lock, Unlock, Loader2, Brain, ChevronDown, ChevronUp,
   Star, ArrowRight, Search, BarChart3, Sparkles, Download, CheckCircle, Filter,
-  Eye, EyeOff, Pencil, RotateCcw, Settings2, Upload, FileSpreadsheet, AlertCircle, Camera, ImageIcon, X, FileUp,
+  Eye, EyeOff, Pencil, RotateCcw, Settings2, Upload, FileSpreadsheet, AlertCircle, Camera, ImageIcon, X, FileUp, MessageSquareText,
 } from "lucide-react";
 import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -176,6 +176,7 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
     categoryIndex: 1, categoryName: "", subDimension: "", standard: "",
   });
   const [editingScore, setEditingScore] = useState<Record<string, { score: number; note: string }>>({});
+  const [expandedReasons, setExpandedReasons] = useState<Set<string>>(new Set());
   const [editingSuggestion, setEditingSuggestion] = useState<Record<number, string>>({});
   const [aiScoringCategory, setAiScoringCategory] = useState<number | null>(null);
   const [selectedSuggestions, setSelectedSuggestions] = useState<Set<number>>(new Set());
@@ -974,11 +975,57 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                                         )}
                                       </div>
                                       {/* Note + raw data hint */}
-                                      {existing?.reason && !editing && (
-                                        <p className="text-xs text-muted-foreground mt-1 max-w-[140px] truncate" title={existing.reason || ''}>
-                                          {existing.reason}
-                                        </p>
-                                      )}
+                                      {existing?.reason && !editing && (() => {
+                                        const reasonKey = `${item.id}_${asin}`;
+                                        const isExpanded = expandedReasons.has(reasonKey);
+                                        const isLong = (existing.reason || '').length > 30;
+                                        const toggleExpand = () => {
+                                          setExpandedReasons(prev => {
+                                            const next = new Set(prev);
+                                            if (next.has(reasonKey)) next.delete(reasonKey);
+                                            else next.add(reasonKey);
+                                            return next;
+                                          });
+                                        };
+                                        return (
+                                          <div
+                                            className={`mt-1.5 max-w-[180px] rounded-md px-2 py-1 transition-all ${
+                                              existing.source === 'ai' ? 'bg-blue-50 border border-blue-100' :
+                                              existing.source === 'programmatic' ? 'bg-emerald-50 border border-emerald-100' :
+                                              'bg-gray-50 border border-gray-100'
+                                            } ${isLong ? 'cursor-pointer hover:shadow-sm' : ''}`}
+                                            onClick={isLong ? toggleExpand : undefined}
+                                          >
+                                            <div className="flex items-start gap-1">
+                                              <MessageSquareText className={`h-3 w-3 mt-0.5 shrink-0 ${
+                                                existing.source === 'ai' ? 'text-blue-400' :
+                                                existing.source === 'programmatic' ? 'text-emerald-400' :
+                                                'text-gray-400'
+                                              }`} />
+                                              <p className={`text-[11px] leading-relaxed ${
+                                                existing.source === 'ai' ? 'text-blue-700' :
+                                                existing.source === 'programmatic' ? 'text-emerald-700' :
+                                                'text-muted-foreground'
+                                              } ${isExpanded ? '' : 'line-clamp-2'}`}>
+                                                {existing.reason}
+                                              </p>
+                                            </div>
+                                            {isLong && (
+                                              <div className={`flex items-center justify-end mt-0.5 text-[10px] ${
+                                                existing.source === 'ai' ? 'text-blue-400' :
+                                                existing.source === 'programmatic' ? 'text-emerald-400' :
+                                                'text-gray-400'
+                                              }`}>
+                                                {isExpanded ? (
+                                                  <><ChevronUp className="h-2.5 w-2.5" /> 收起</>
+                                                ) : (
+                                                  <><ChevronDown className="h-2.5 w-2.5" /> 展开</>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
                                       {/* Show AI original score if user modified */}
                                       {existing?.source === 'manual' && existing?.aiScore && existing.aiScore !== existing.score && (
                                         <p className="text-[10px] text-blue-500 mt-0.5" title={`AI原始评分: ${existing.aiScore}分`}>
