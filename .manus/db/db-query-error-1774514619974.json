@@ -1,0 +1,8 @@
+{
+  "query": "DELETE FROM conversion_scores; DELETE FROM conversion_check_item_overrides;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute DELETE FROM conversion_scores; DELETE FROM conversion_check_item_overrides;",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1146 (42S02) at line 1: Table 'a79tkwusxj5hwplxcxssxn.conversion_check_item_overrides' doesn't exist"
+  ]
+}

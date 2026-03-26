@@ -1114,8 +1114,8 @@ export const productOpsRouter = router({
     const existing = await db!.select({ count: sql<number>`count(*)` }).from(conversionCheckItems)
       .where(isNull(conversionCheckItems.userId));
     if (Number(existing[0]?.count) === 0) {
-      console.log('[ConversionCheck] No default items found, auto-initializing 132 check items...');
-      const defaultItems = getDefault132CheckItems();
+      console.log('[ConversionCheck] No default items found, auto-initializing 129 check items...');
+      const defaultItems = getDefault129CheckItems();
       for (const item of defaultItems) {
         await db!.insert(conversionCheckItems).values({ ...item, userId: null });
       }
@@ -1154,7 +1154,7 @@ export const productOpsRouter = router({
     const existing = await db!.select({ count: sql<number>`count(*)` }).from(conversionCheckItems)
       .where(isNull(conversionCheckItems.userId));
     if (Number(existing[0]?.count) > 0) return { message: "Default items already exist", count: Number(existing[0]?.count) };
-    const defaultItems = getDefault132CheckItems();
+    const defaultItems = getDefault129CheckItems();
     for (const item of defaultItems) {
       await db!.insert(conversionCheckItems).values({ ...item, userId: null });
     }
@@ -1169,7 +1169,7 @@ export const productOpsRouter = router({
     // 2. Delete all user overrides (they reference old check item IDs)
     await db!.delete(checkItemOverrides).where(eq(checkItemOverrides.userId, ctx.user.id));
     // 3. Re-insert new 129 items
-    const defaultItems = getDefault132CheckItems();
+    const defaultItems = getDefault129CheckItems();
     for (const item of defaultItems) {
       await db!.insert(conversionCheckItems).values({ ...item, userId: null });
     }
@@ -2767,8 +2767,8 @@ function generateMockCrawlData(asin: string): Record<string, any> {
   };
 }
 
-// Default 132 check items
-function getDefault132CheckItems() {
+// Default 129 check items (18 categories)
+function getDefault129CheckItems() {
   const items: Array<{ categoryIndex: number; categoryName: string; subDimension: string; standard: string; sortOrder: number }> = [];
   let order = 0;
 

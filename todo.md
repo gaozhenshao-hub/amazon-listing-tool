@@ -2434,3 +2434,10 @@
 - [x] 覆盖率颜色阈值：≥80%绿色、≥50%黄色、≥20%橙色、<20%红色
 - [x] 己品ASIN绿色边框高亮区分
 - [x] 编写测试验证（2784全部通过）
+
+## 修复检查项：重新解析Excel替换旧的132项
+- [x] 重新解析最新Excel文件，提取正确的检查项名称和标准/说明
+- [x] 更新后端getDefault132CheckItems函数为Excel中的正确数据（已重命名为getDefault129CheckItems）
+- [x] 清空数据库旧检查项并重新初始化（129项，18个类别）
+- [x] 前端显示正确的检查项名称和评分标准（132→129）
+- [x] 编写测试验证（conversionCheckItems.test.ts 8项 + conversionScoring.test.ts 42项全部通过）

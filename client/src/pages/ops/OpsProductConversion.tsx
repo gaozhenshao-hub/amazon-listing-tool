@@ -336,7 +336,7 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
         <Card>
           <CardContent className="py-12 text-center">
             <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-muted-foreground mb-4">输入己品和竞品ASIN，开始132项转化率维度对比</p>
+            <p className="text-muted-foreground mb-4">输入己品和竞品ASIN，开始129项转化率维度对比</p>
             <Button onClick={() => setShowCreate(true)}>
               <Plus className="h-4 w-4 mr-2" /> 创建转化率对比
             </Button>
@@ -1073,7 +1073,7 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
               })}
             >
               {createComparison.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-              创建并初始化132项检查
+              创建并初始化129项检查
             </Button>
           </DialogFooter>
         </DialogContent>

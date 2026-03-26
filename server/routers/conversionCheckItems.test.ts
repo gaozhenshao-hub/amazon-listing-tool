@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 describe("Conversion Check Items - 129 Default Dimensions (Excel-based, no Post)", () => {
-  it("getDefault132CheckItems should return exactly 129 items", async () => {
+  it("getDefault129CheckItems should return exactly 129 items", async () => {
     const fs = await import("fs");
     const source = fs.readFileSync(
       "/home/ubuntu/amazon-listing-tool/server/routers/productOps.ts",
@@ -9,10 +9,10 @@ describe("Conversion Check Items - 129 Default Dimensions (Excel-based, no Post)
     );
 
     // Verify the function exists
-    expect(source).toContain("function getDefault132CheckItems()");
+    expect(source).toContain("function getDefault129CheckItems()");
 
     // Count all items.push calls within the function
-    const funcStart = source.indexOf("function getDefault132CheckItems()");
+    const funcStart = source.indexOf("function getDefault129CheckItems()");
     const funcEnd = source.indexOf("return items;\n}", funcStart);
     const funcBody = source.substring(funcStart, funcEnd);
     const pushCalls = funcBody.match(/items\.push\(/g);
@@ -49,7 +49,7 @@ describe("Conversion Check Items - 129 Default Dimensions (Excel-based, no Post)
       "utf-8"
     );
 
-    const funcStart = source.indexOf("function getDefault132CheckItems()");
+    const funcStart = source.indexOf("function getDefault129CheckItems()");
     const funcEnd = source.indexOf("return items;\n}", funcStart);
     const funcBody = source.substring(funcStart, funcEnd);
 
@@ -80,7 +80,7 @@ describe("Conversion Check Items - 129 Default Dimensions (Excel-based, no Post)
       "utf-8"
     );
 
-    const funcStart = source.indexOf("function getDefault132CheckItems()");
+    const funcStart = source.indexOf("function getDefault129CheckItems()");
     const funcEnd = source.indexOf("return items;\n}", funcStart);
     const funcBody = source.substring(funcStart, funcEnd);
 
@@ -112,7 +112,7 @@ describe("Conversion Check Items - 129 Default Dimensions (Excel-based, no Post)
       "utf-8"
     );
 
-    const funcStart = source.indexOf("function getDefault132CheckItems()");
+    const funcStart = source.indexOf("function getDefault129CheckItems()");
     const funcEnd = source.indexOf("return items;\n}", funcStart);
     const funcBody = source.substring(funcStart, funcEnd);
 
@@ -147,7 +147,7 @@ describe("Conversion Check Items - 129 Default Dimensions (Excel-based, no Post)
 
     expect(body).toContain("isNull(conversionCheckItems.userId)");
     expect(body).toContain("Number(existing[0]?.count) === 0");
-    expect(body).toContain("getDefault132CheckItems()");
+    expect(body).toContain("getDefault129CheckItems()");
     expect(body).toContain("insert(conversionCheckItems).values");
     expect(body).toContain("includeHidden");
     expect(body).toContain("filter(item => !item.isHidden)");

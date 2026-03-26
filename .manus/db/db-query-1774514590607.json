@@ -1,0 +1,90 @@
+{
+  "query": "SELECT category_name, COUNT(*) as cnt FROM conversion_check_items WHERE user_id IS NULL GROUP BY category_name ORDER BY MIN(sort_order);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT category_name, COUNT(*) as cnt FROM conversion_check_items WHERE user_id IS NULL GROUP BY category_name ORDER BY MIN(sort_order);",
+  "rows": [
+    {
+      "category_name": "标题",
+      "cnt": "7"
+    },
+    {
+      "category_name": "五点描述",
+      "cnt": "7"
+    },
+    {
+      "category_name": "长描述",
+      "cnt": "5"
+    },
+    {
+      "category_name": "搜索词",
+      "cnt": "5"
+    },
+    {
+      "category_name": "价格",
+      "cnt": "5"
+    },
+    {
+      "category_name": "变体",
+      "cnt": "5"
+    },
+    {
+      "category_name": "配送",
+      "cnt": "4"
+    },
+    {
+      "category_name": "退货",
+      "cnt": "4"
+    },
+    {
+      "category_name": "产品信息",
+      "cnt": "5"
+    },
+    {
+      "category_name": "商品文档",
+      "cnt": "4"
+    },
+    {
+      "category_name": "主图",
+      "cnt": "25"
+    },
+    {
+      "category_name": "流量闭环",
+      "cnt": "6"
+    },
+    {
+      "category_name": "品牌故事",
+      "cnt": "4"
+    },
+    {
+      "category_name": "A+",
+      "cnt": "13"
+    },
+    {
+      "category_name": "Post",
+      "cnt": "5"
+    },
+    {
+      "category_name": "Video",
+      "cnt": "4"
+    },
+    {
+      "category_name": "Q&A",
+      "cnt": "7"
+    },
+    {
+      "category_name": "Review",
+      "cnt": "5"
+    },
+    {
+      "category_name": "店铺介绍",
+      "cnt": "4"
+    },
+    {
+      "category_name": "广告",
+      "cnt": "8"
+    }
+  ],
+  "messages": [],
+  "stdout": "category_name\tcnt\n标题\t7\n五点描述\t7\n长描述\t5\n搜索词\t5\n价格\t5\n变体\t5\n配送\t4\n退货\t4\n产品信息\t5\n商品文档\t4\n主图\t25\n流量闭环\t6\n品牌故事\t4\nA+\t13\nPost\t5\nVideo\t4\nQ&A\t7\nReview\t5\n店铺介绍\t4\n广告\t8\n",
+  "stderr": "",
+  "execution_time_ms": 373
+}

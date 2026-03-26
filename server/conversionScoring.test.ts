@@ -233,7 +233,7 @@ describe("ConversionAiScorer - Programmatic Scoring", () => {
 
 describe("Check Items Definition - 129 items in 18 categories", () => {
   it("should have exactly 129 check items", async () => {
-    // Read the getDefault132CheckItems function output
+    // Read the getDefault129CheckItems function output
     // We can't call it directly since it's not exported, but we can verify the count
     const fs = await import("fs");
     const content = fs.readFileSync("server/routers/productOps.ts", "utf-8");
