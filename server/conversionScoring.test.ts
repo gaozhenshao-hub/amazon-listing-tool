@@ -329,15 +329,23 @@ describe("Integration - triggerAiScoring uses real modules", () => {
     expect(triggerSection).toContain("eq(conversionScores.isLocked, 0)");
   });
 
-  it("triggerAiScoring should have fallback for crawl failures", async () => {
+  it("triggerAiScoring should handle no-data case without fake scores", async () => {
     const fs = await import("fs");
     const content = fs.readFileSync("server/routers/productOps.ts", "utf-8");
     const triggerSection = content.substring(
       content.indexOf("triggerAiScoring:"),
       content.indexOf("generateSuggestions:")
     );
-    expect(triggerSection).toContain("crawl_failed");
+    // Should use no_data source for failed crawls
+    expect(triggerSection).toContain('source: "no_data"');
+    // Should set score to null when no data
+    expect(triggerSection).toContain("score: null");
+    // Should NOT use default 3 score for no-data
+    expect(triggerSection).not.toContain('score: 3');
+    // Should mention data collection failure
     expect(triggerSection).toContain("数据采集失败");
+    // Should track failedAsins
+    expect(triggerSection).toContain("failedAsins");
   });
 });
 
@@ -423,7 +431,7 @@ describe("ConversionAiScorer - Source Field", () => {
     expect(scores[0].source).toBe("ai");
   });
 
-  it("CheckItemScore interface should include source field", async () => {
+  it("CheckItemScore interface should include source field with no_data option", async () => {
     const mod = await import("./routers/conversionAiScorer");
     const data = createMockCrawlData();
     
@@ -435,7 +443,7 @@ describe("ConversionAiScorer - Source Field", () => {
     const scores = await mod.scoreAllCheckItems(items, data as any);
     for (const s of scores) {
       expect(s).toHaveProperty("source");
-      expect(["programmatic", "ai"]).toContain(s.source);
+      expect(["programmatic", "ai", "no_data"]).toContain(s.source);
     }
   });
 });
@@ -475,5 +483,150 @@ describe("ProductOps - resetAndReinitCheckItems", () => {
     expect(router._def).toBeDefined();
     expect(router._def.procedures).toBeDefined();
     expect(router._def.procedures.resetAndReinitCheckItems).toBeDefined();
+  });
+});
+
+
+// ═══════════════════════════════════════════════════════════════
+// Test: No-Data / No-Hallucination Behavior
+// ═══════════════════════════════════════════════════════════════
+
+describe("No-Hallucination: No fake data when crawl fails", () => {
+  it("collectMultipleAsins should NOT export createFallbackData", async () => {
+    const mod = await import("./routers/conversionDataCollector");
+    // createFallbackData should not be exported - no fake data generation
+    expect((mod as any).createFallbackData).toBeUndefined();
+  });
+
+  it("conversionDataCollector code should not contain hasPrime: true default", async () => {
+    const fs = await import("fs");
+    const content = fs.readFileSync("server/routers/conversionDataCollector.ts", "utf-8");
+    // Should use actual scraper data for hasPrime, not default true
+    const lines = content.split("\n");
+    const hasPrimeDefaults = lines.filter(l => l.includes("hasPrime: true") && l.includes("默认"));
+    expect(hasPrimeDefaults.length).toBe(0);
+  });
+
+  it("ConversionCrawlData should have hasData and dataSourceStatus fields", async () => {
+    const mod = await import("./routers/conversionDataCollector");
+    // Verify the type structure includes the new fields
+    expect(mod.collectConversionData).toBeDefined();
+    expect(mod.collectMultipleAsins).toBeDefined();
+  });
+
+  it("conversionDataCollector should NOT have createFallbackData function exported", async () => {
+    const mod = await import("./routers/conversionDataCollector");
+    // createFallbackData should not be exported (or should not exist)
+    expect((mod as any).createFallbackData).toBeUndefined();
+  });
+
+  it("productOps.ts should NOT contain default 3 score for no-data", async () => {
+    const fs = await import("fs");
+    const content = fs.readFileSync("server/routers/productOps.ts", "utf-8");
+    const triggerSection = content.substring(
+      content.indexOf("triggerAiScoring:"),
+      content.indexOf("generateSuggestions:")
+    );
+    // Should NOT have "score: 3" for no-data fallback
+    expect(triggerSection).not.toContain("score: 3,");
+    // Should have "score: null" for no-data
+    expect(triggerSection).toContain("score: null");
+  });
+
+  it("conversionAiScorer should return null score when data is missing for programmatic items", async () => {
+    const mod = await import("./routers/conversionAiScorer");
+    // Create data with empty title (simulating no data)
+    const emptyData = {
+      asin: "B0EMPTY",
+      crawledAt: new Date().toISOString(),
+      hasData: true,
+      dataSourceStatus: {
+        scraper: { success: false, error: "Failed" },
+        competitor: { success: false, error: "Failed" },
+        lingxingAd: { success: false, error: "Failed" },
+      },
+      raw: { scraperData: null, competitorData: null, adData: null },
+      categories: {
+        标题: { text: "", charCount: 0, wordCount: 0, brand: "", hasBrand: false, rawTitle: "" },
+        五点: { bullets: [], bulletCount: 0, avgCharCount: 0, totalCharCount: 0, charCounts: [] },
+        标: { hasBestSeller: false, hasAmazonChoice: false, hasNewRelease: false, hasDeal: false, dealInfo: null, hasCoupon: false, couponInfo: null, hasPrime: false, hasSubscribeSave: false, hasClimateTag: false, hasSmallBusiness: false, totalBadges: 0 },
+        价格: { currentPrice: null, listPrice: null, hasStrikethrough: false, discountPercent: null, hasCoupon: false, couponValue: null, hasSubscribeSave: false, unitPrice: null, buyBoxPrice: null, priceEnding: null },
+        限购: { hasLimit: false, limitQuantity: null, limitText: null },
+        配送: { isFBA: false, isFBM: false, deliveryDays: null, deliveryText: null, hasPrime: false, hasFreeShipping: false, shipsFrom: null, soldBy: null },
+        变体: { variantCount: 0, variantTypes: [], variants: [], hasImages: false },
+        产品信息: { fieldCount: 0, hasWeight: false, hasDimensions: false, hasMaterial: false, hasColor: false, hasManufacturer: false, fields: {} },
+        商品文档: { hasManual: false, hasCertification: false, documentCount: 0, documentTypes: [] },
+        主图: { mainImages: [], mainImageCount: 0, hasMainImage: false, mainImageResolution: null, secondaryImages: [], secondaryImageCount: 0, aplusImages: [], brandStoryImages: [], videoCount: 0, hasVideo: false, totalImageCount: 0 },
+        流量闭环: { hasNewModel: false, hasBundleDeal: false, hasFrequentlyBought: false, hasSponsoredProducts: false, hasVirtualBundle: false, hasBrandStoreLink: false },
+        品牌故事: { hasBrandStory: false, hasRecommendation: false, imageCount: 0, textContent: "", images: [] },
+        "A+": { hasAplus: false, moduleCount: 0, moduleTypes: [], hasComparisonChart: false, hasVideo: false, imageCount: 0, textContent: "", images: [] },
+        Video: { videoCount: 0, hasMainVideo: false, videoUrls: [] },
+        "Q&A": { questionCount: 0, topQuestions: [] },
+        Review: { rating: null, reviewCount: null, hasVine: false, topReviews: [], ratingDistribution: {} },
+        店铺介绍页面: { feedbackScore: null, feedbackCount: null, hasStorefront: false, storeName: null },
+        广告: { hasCampaigns: false, campaignCount: 0, totalSpend: null, acos: null, roas: null, keywordCount: 0, topKeywords: [], searchTerms: [] },
+      },
+    };
+
+    // Test title with 0 charCount - should return null score
+    const titleItem = [{ id: 1, categoryName: "标题", subDimension: "字数", standard: "test", categoryIndex: 1, sortOrder: 0 }];
+    const titleScores = await mod.scoreAllCheckItems(titleItem, emptyData as any);
+    expect(titleScores[0].score).toBeNull();
+    expect(titleScores[0].source).toBe("no_data");
+    expect(titleScores[0].reason).toContain("手动评分");
+
+    // Test brand with empty brand - should return null score
+    const brandItem = [{ id: 2, categoryName: "标题", subDimension: "品牌词", standard: "test", categoryIndex: 1, sortOrder: 1 }];
+    const brandScores = await mod.scoreAllCheckItems(brandItem, emptyData as any);
+    expect(brandScores[0].score).toBeNull();
+    expect(brandScores[0].source).toBe("no_data");
+
+    // Test variant count with 0 variants - should return null score
+    const variantItem = [{ id: 3, categoryName: "变体", subDimension: "变体数量", standard: "test", categoryIndex: 7, sortOrder: 0 }];
+    const variantScores = await mod.scoreAllCheckItems(variantItem, emptyData as any);
+    expect(variantScores[0].score).toBeNull();
+    expect(variantScores[0].source).toBe("no_data");
+
+    // Test delivery time with null - should return null score
+    const deliveryItem = [{ id: 4, categoryName: "配送", subDimension: "配送时效", standard: "test", categoryIndex: 6, sortOrder: 1 }];
+    const deliveryScores = await mod.scoreAllCheckItems(deliveryItem, emptyData as any);
+    expect(deliveryScores[0].score).toBeNull();
+    expect(deliveryScores[0].source).toBe("no_data");
+
+    // Test buy box with null - should return null score
+    const buyBoxItem = [{ id: 5, categoryName: "价格", subDimension: "购物车价格", standard: "test", categoryIndex: 4, sortOrder: 0 }];
+    const buyBoxScores = await mod.scoreAllCheckItems(buyBoxItem, emptyData as any);
+    expect(buyBoxScores[0].score).toBeNull();
+    expect(buyBoxScores[0].source).toBe("no_data");
+  });
+
+  it("conversionDataCollector should NOT default hasPrime to true", async () => {
+    const fs = await import("fs");
+    const content = fs.readFileSync("server/routers/conversionDataCollector.ts", "utf-8");
+    // Should NOT have "hasPrime: true" as a default
+    expect(content).not.toContain("hasPrime: true, // 默认FBA有Prime");
+    expect(content).not.toContain("hasPrime: true, // 默认");
+  });
+
+  it("conversionDataCollector should NOT default isFBA to true", async () => {
+    const fs = await import("fs");
+    const content = fs.readFileSync("server/routers/conversionDataCollector.ts", "utf-8");
+    // Should NOT have "isFBA: true" as a default
+    expect(content).not.toContain("isFBA: true, // 默认假设FBA");
+    expect(content).not.toContain("isFBA: true, // 默认");
+  });
+
+  it("overall score calculation should exclude no-data items", async () => {
+    const fs = await import("fs");
+    const content = fs.readFileSync("server/routers/productOps.ts", "utf-8");
+    const triggerSection = content.substring(
+      content.indexOf("triggerAiScoring:"),
+      content.indexOf("generateSuggestions:")
+    );
+    // Should filter out null scores when calculating average
+    expect(triggerSection).toContain("scoredItems");
+    expect(triggerSection).toContain("noDataItems");
+    // Should only average scored items
+    expect(triggerSection).toContain("scoredItems.length > 0");
   });
 });

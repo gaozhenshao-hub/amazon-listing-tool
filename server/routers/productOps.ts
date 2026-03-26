@@ -1350,14 +1350,17 @@ export const productOpsRouter = router({
 
     // ═══ Step 1: 真实数据采集（爬虫 + 领星API） ═══
     let crawlData: Record<string, any> = {};
+    const failedAsins: string[] = [];
     try {
       crawlData = await collectMultipleAsins(allAsins, { skipAds: false });
-    } catch (err: any) {
-      console.error(`[triggerAiScoring] Data collection failed: ${err.message}`);
-      // Fallback: 使用空数据继续评分
+      // 记录采集失败的ASIN
       for (const asin of allAsins) {
-        crawlData[asin] = { asin, crawledAt: new Date().toISOString(), raw: {}, categories: {} };
+        if (!crawlData[asin]) failedAsins.push(asin);
       }
+    } catch (err: any) {
+      console.error(`[triggerAiScoring] Data collection completely failed: ${err.message}`);
+      // 全部失败，不生成任何假数据
+      failedAsins.push(...allAsins);
     }
     await db!.update(conversionComparisons).set({ crawlData, status: "scoring" as any })
       .where(eq(conversionComparisons.id, input.comparisonId));
@@ -1382,8 +1385,8 @@ export const productOpsRouter = router({
       // 过滤掉已锁定的检查项
       const unlocked = checkItems.filter(item => !lockedKeys.has(`${item.id}:${asin}`));
       
-      if (asinData && asinData.categories) {
-        // 使用AI评分引擎
+      if (asinData && asinData.hasData && asinData.categories) {
+        // 有真实数据，使用AI评分引擎
         const scores = await scoreAllCheckItems(
           unlocked.map(item => ({
             id: item.id,
@@ -1396,13 +1399,13 @@ export const productOpsRouter = router({
           asinData
         );
         
-        // 批量插入评分
+        // 批量插入评分（区分有数据和无数据的情况）
         for (const s of scores) {
           await db!.insert(conversionScores).values({
             comparisonId: input.comparisonId,
             checkItemId: s.checkItemId,
             asin,
-            score: s.score,
+            score: s.score,       // 可能为null（无数据）
             aiScore: s.score,
             reason: s.reason,
             aiReason: s.reason,
@@ -1411,18 +1414,18 @@ export const productOpsRouter = router({
           });
         }
       } else {
-        // 无数据时使用默认3分
+        // 无数据：插入空评分记录，score=null，明确标记为无数据
         for (const item of unlocked) {
           await db!.insert(conversionScores).values({
             comparisonId: input.comparisonId,
             checkItemId: item.id,
             asin,
-            score: 3,
-            aiScore: 3,
-            reason: "数据采集失败，请手动评分",
-            aiReason: "数据采集失败，请手动评分",
-            rawData: JSON.stringify({ error: "crawl_failed" }),
-            source: "ai",
+            score: null,
+            aiScore: null,
+            reason: "数据采集失败，无法自动评分，请手动评分",
+            aiReason: null,
+            rawData: JSON.stringify({ error: "no_data", failedSources: failedAsins.includes(asin) ? "all" : "partial" }),
+            source: "no_data",
           });
         }
       }
@@ -1431,8 +1434,11 @@ export const productOpsRouter = router({
     // Calculate overall score for own ASIN
     const ownScores = await db!.select().from(conversionScores)
       .where(and(eq(conversionScores.comparisonId, input.comparisonId), eq(conversionScores.asin, comp.ownAsin)));
-    const avgScore = ownScores.length > 0
-      ? round2(ownScores.reduce((sum, s) => sum + (s.score || 0), 0) / ownScores.length)
+    // 只计算有实际分数的项，跳过无数据的项
+    const scoredItems = ownScores.filter(s => s.score !== null && s.score > 0);
+    const noDataItems = ownScores.filter(s => s.score === null || s.source === 'no_data');
+    const avgScore = scoredItems.length > 0
+      ? round2(scoredItems.reduce((sum, s) => sum + (s.score || 0), 0) / scoredItems.length)
       : 0;
 
     await db!.update(conversionComparisons).set({
@@ -1440,7 +1446,13 @@ export const productOpsRouter = router({
       status: "completed" as any,
     }).where(eq(conversionComparisons.id, input.comparisonId));
 
-    return { success: true, totalScores: ownScores.length, avgScore };
+    return { 
+      success: true, 
+      totalScores: ownScores.length, 
+      scoredCount: scoredItems.length,
+      noDataCount: noDataItems.length,
+      avgScore,
+    };
   }),
 
   // ─── AI Optimization Suggestions ───

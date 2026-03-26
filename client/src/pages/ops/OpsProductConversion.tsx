@@ -175,7 +175,7 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
       for (const asin of allAsins) {
         if (!catScores[item.categoryIndex][asin]) catScores[item.categoryIndex][asin] = { total: 0, count: 0 };
         const s = scoreMap[`${item.id}_${asin}`];
-        if (s?.score) {
+        if (s?.score && s.score > 0 && s.source !== 'no_data') {
           catScores[item.categoryIndex][asin].total += s.score;
           catScores[item.categoryIndex][asin].count += 1;
         }
@@ -380,8 +380,9 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
             const programmaticCount = ownScores.filter((s: any) => s.source === 'programmatic').length;
             const aiCount = ownScores.filter((s: any) => s.source === 'ai').length;
             const manualCount = ownScores.filter((s: any) => s.source === 'manual').length;
+            const noDataCount = ownScores.filter((s: any) => s.source === 'no_data' || s.score === null).length;
             const totalScored = ownScores.filter((s: any) => s.score && s.score > 0).length;
-            if (totalScored === 0) return null;
+            if (ownScores.length === 0) return null;
             return (
               <Card>
                 <CardContent className="pt-4 pb-3">
@@ -403,16 +404,24 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                         <span className="text-orange-700 font-medium">手动 {manualCount}</span>
                         <span className="text-muted-foreground text-xs">({totalScored > 0 ? Math.round(manualCount / totalScored * 100) : 0}%)</span>
                       </div>
+                      {noDataCount > 0 && (
+                        <div className="flex items-center gap-1.5">
+                          <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500"></span>
+                          <span className="text-red-700 font-medium">无数据 {noDataCount}</span>
+                          <span className="text-muted-foreground text-xs">(待手动评分)</span>
+                        </div>
+                      )}
                     </div>
                     <div className="ml-auto text-xs text-muted-foreground">
-                      共 {totalScored} 项已评分 / {ownScores.length} 项总计
+                      共 {totalScored} 项已评分 / {ownScores.length} 项总计{noDataCount > 0 ? ` (其中${noDataCount}项无数据)` : ''}
                     </div>
                   </div>
                   {/* Progress bar */}
                   <div className="flex h-2 rounded-full overflow-hidden mt-2 bg-muted">
-                    {programmaticCount > 0 && <div className="bg-emerald-500" style={{ width: `${programmaticCount / totalScored * 100}%` }}></div>}
-                    {aiCount > 0 && <div className="bg-blue-500" style={{ width: `${aiCount / totalScored * 100}%` }}></div>}
-                    {manualCount > 0 && <div className="bg-orange-500" style={{ width: `${manualCount / totalScored * 100}%` }}></div>}
+                    {programmaticCount > 0 && <div className="bg-emerald-500" style={{ width: `${programmaticCount / ownScores.length * 100}%` }}></div>}
+                    {aiCount > 0 && <div className="bg-blue-500" style={{ width: `${aiCount / ownScores.length * 100}%` }}></div>}
+                    {manualCount > 0 && <div className="bg-orange-500" style={{ width: `${manualCount / ownScores.length * 100}%` }}></div>}
+                    {noDataCount > 0 && <div className="bg-red-400" style={{ width: `${noDataCount / ownScores.length * 100}%` }}></div>}
                   </div>
                 </CardContent>
               </Card>
@@ -559,10 +568,32 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                                   const existing = scoreMap[key];
                                   const editing = editingScore[key];
                                   const score = editing?.score ?? existing?.score ?? 0;
-                                 const isLocked = existing?.isLocked === 1;
+                                  const isNoData = existing?.source === 'no_data' || (existing && existing.score === null);
+                                  const isLocked = existing?.isLocked === 1;
                                   return (
                                     <TableCell key={asin} className="text-center">
                                       <div className="flex items-center justify-center gap-1">
+                                        {/* No Data indicator */}
+                                        {isNoData && !editing && score === 0 ? (
+                                          <div className="flex items-center gap-1">
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-200 font-medium">
+                                              无数据
+                                            </span>
+                                            <div className="flex items-center gap-0.5">
+                                              {[1, 2, 3, 4, 5].map(s => (
+                                                <button
+                                                  key={s}
+                                                  onClick={() => handleScoreChange(item.id, asin, s)}
+                                                  className="p-0 cursor-pointer hover:scale-110 transition-transform"
+                                                  title="手动评分"
+                                                >
+                                                  <Star className="h-3 w-3 text-gray-200" />
+                                                </button>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <>
                                         {/* Score Stars */}
                                         <div className="flex items-center gap-0.5">
                                           {[1, 2, 3, 4, 5].map(s => (
@@ -589,18 +620,23 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
                                           <span className={`text-[9px] px-1 py-0 rounded-sm font-medium ${
                                             existing.source === 'programmatic' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' :
                                             existing.source === 'manual' ? 'bg-orange-100 text-orange-700 border border-orange-200' :
+                                            existing.source === 'no_data' ? 'bg-red-100 text-red-700 border border-red-200' :
                                             'bg-blue-100 text-blue-700 border border-blue-200'
                                           }`} title={{
                                             programmatic: '程序化评分：基于爬虫数据自动计算',
                                             ai: 'AI评分：基于LLM智能分析',
                                             manual: '手动评分：用户手动调整',
+                                            no_data: '无数据：爬虫/API未获取到数据',
                                           }[existing.source] || 'AI评分'}>
                                             {{
                                               programmatic: '程序',
                                               ai: 'AI',
                                               manual: '手动',
+                                              no_data: '无数据',
                                             }[existing.source] || 'AI'}
                                           </span>
+                                        )}
+                                          </>
                                         )}
                                         {/* Lock toggle */}
                                         <button

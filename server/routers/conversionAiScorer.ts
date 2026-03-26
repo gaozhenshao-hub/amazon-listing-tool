@@ -22,11 +22,11 @@ export interface CheckItemScore {
   checkItemId: number;
   categoryName: string;
   subDimension: string;
-  score: number;       // 1-5分
-  reason: string;      // 评分理由
-  rawData: string;     // 用于评分的原始数据（JSON）
-  /** 评分来源：programmatic=程序计算，ai=AI分析 */
-  source: "programmatic" | "ai";
+  score: number | null;  // 1-5分，null表示无数据无法评分
+  reason: string;        // 评分理由或无数据提示
+  rawData: string;       // 用于评分的原始数据（JSON）
+  /** 评分来源：programmatic=程序计算，ai=AI分析，no_data=无数据 */
+  source: "programmatic" | "ai" | "no_data";
 }
 
 interface CheckItemDef {
@@ -49,7 +49,7 @@ interface CheckItemDef {
 function tryProgrammaticScore(
   item: CheckItemDef,
   data: ConversionCrawlData
-): { score: number; reason: string; rawData: string } | null {
+): { score: number | null; reason: string; rawData: string } | null {
   const cat = item.categoryName;
   const sub = item.subDimension;
 
@@ -57,7 +57,7 @@ function tryProgrammaticScore(
   if (cat === "标题" && sub === "字数") {
     const { charCount } = data.categories.标题;
     const rawData = JSON.stringify({ charCount, text: data.categories.标题.text.substring(0, 100) });
-    if (charCount === 0) return { score: 1, reason: "未获取到标题数据", rawData };
+    if (charCount === 0) return { score: null, reason: "未获取到标题数据，请手动评分", rawData };
     if (charCount >= 150 && charCount <= 200) return { score: 5, reason: `标题${charCount}字符，充分利用了字符数限制（150-200最佳）`, rawData };
     if (charCount >= 120 && charCount < 150) return { score: 4, reason: `标题${charCount}字符，较好但可进一步扩展`, rawData };
     if (charCount >= 80 && charCount < 120) return { score: 3, reason: `标题${charCount}字符，有较大优化空间`, rawData };
@@ -69,7 +69,7 @@ function tryProgrammaticScore(
   if (cat === "标题" && sub === "品牌词") {
     const { hasBrand, brand, text } = data.categories.标题;
     const rawData = JSON.stringify({ hasBrand, brand, titlePreview: text.substring(0, 80) });
-    if (!brand) return { score: 3, reason: "未检测到品牌信息", rawData };
+    if (!brand) return { score: null, reason: "未检测到品牌信息，请手动评分", rawData };
     if (hasBrand) return { score: 5, reason: `品牌"${brand}"已包含在标题中`, rawData };
     return { score: 2, reason: `品牌"${brand}"未出现在标题中`, rawData };
   }
@@ -138,7 +138,7 @@ function tryProgrammaticScore(
     const p = data.categories.价格;
     const rawData = JSON.stringify({ buyBoxPrice: p.buyBoxPrice, currentPrice: p.currentPrice });
     if (p.buyBoxPrice) return { score: 4, reason: `已获得购物车，价格$${p.buyBoxPrice}`, rawData };
-    return { score: 2, reason: "未检测到购物车价格信息", rawData };
+    return { score: null, reason: "未检测到购物车价格信息，请手动评分", rawData };
   }
 
   // ── 配送 ──
@@ -157,14 +157,14 @@ function tryProgrammaticScore(
       if (d.deliveryDays <= 5) return { score: 4, reason: `配送时效${d.deliveryDays}天，较快`, rawData };
       return { score: 3, reason: `配送时效${d.deliveryDays}天，建议优化`, rawData };
     }
-    return { score: 3, reason: "未获取到配送时效信息", rawData };
+    return { score: null, reason: "未获取到配送时效信息，请手动评分", rawData };
   }
 
   // ── 变体：数量 ──
   if (cat === "变体" && sub === "变体数量") {
     const v = data.categories.变体;
     const rawData = JSON.stringify({ variantCount: v.variantCount, variantTypes: v.variantTypes });
-    if (v.variantCount === 0) return { score: 3, reason: "无变体或未检测到变体信息", rawData };
+    if (v.variantCount === 0) return { score: null, reason: "未检测到变体信息，请手动评分", rawData };
     if (v.variantCount >= 3 && v.variantCount <= 10) return { score: 5, reason: `${v.variantCount}个变体，数量合理`, rawData };
     if (v.variantCount > 10 && v.variantCount <= 20) return { score: 4, reason: `${v.variantCount}个变体，数量较多但可接受`, rawData };
     if (v.variantCount > 20) return { score: 3, reason: `${v.variantCount}个变体，过多可能造成选择障碍`, rawData };
@@ -175,7 +175,7 @@ function tryProgrammaticScore(
   if (cat === "变体" && sub === "变体图片") {
     const v = data.categories.变体;
     const rawData = JSON.stringify({ hasImages: v.hasImages, variantCount: v.variantCount });
-    if (v.variantCount === 0) return { score: 3, reason: "无变体", rawData };
+    if (v.variantCount === 0) return { score: null, reason: "未检测到变体信息，请手动评分", rawData };
     if (v.hasImages) return { score: 5, reason: "变体有独立图片，方便区分", rawData };
     return { score: 2, reason: "变体缺少独立图片，不利于区分", rawData };
   }
@@ -501,8 +501,8 @@ ${itemsDescription}`
 
     return items.map((item, idx) => {
       const aiScore = aiScores.find((s: any) => s.index === idx + 1);
-      const score = aiScore ? Math.min(5, Math.max(1, aiScore.score)) : 3;
-      const reason = aiScore?.reason || "AI评分数据不足，默认3分";
+      const score = aiScore ? Math.min(5, Math.max(1, aiScore.score)) : null;
+      const reason = aiScore?.reason || "无数据，请手动评分";
       
       return {
         checkItemId: item.id,
@@ -516,15 +516,15 @@ ${itemsDescription}`
     });
   } catch (err: any) {
     console.warn(`[ConversionAiScorer] AI scoring failed for category ${categoryName}: ${err.message}`);
-    // Fallback: 返回默认3分
+    // AI评分失败，返回null分数，不生成假评分
     return items.map(item => ({
       checkItemId: item.id,
       categoryName: item.categoryName,
       subDimension: item.subDimension,
-      score: 3,
-      reason: `AI评分暂时不可用（${err.message?.substring(0, 30)}），请手动评分`,
+      score: null,
+      reason: `AI评分失败（${err.message?.substring(0, 30)}），请手动评分`,
       rawData: JSON.stringify({ error: err.message }),
-      source: "ai" as const,
+      source: "no_data" as const,
     }));
   }
 }
@@ -560,7 +560,7 @@ export async function scoreAllCheckItems(
         score: programmaticResult.score,
         reason: programmaticResult.reason,
         rawData: programmaticResult.rawData,
-        source: "programmatic",
+        source: programmaticResult.score === null ? "no_data" : "programmatic",
       });
     } else {
       // 需要AI评分，按类别分组

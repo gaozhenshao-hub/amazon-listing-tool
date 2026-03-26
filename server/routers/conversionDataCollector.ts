@@ -23,13 +23,21 @@ import { getLingxingAdapter } from "../lingxingAdapter";
 export interface ConversionCrawlData {
   asin: string;
   crawledAt: string;
+  /** 数据采集是否成功（至少有一个数据源返回了有效数据） */
+  hasData: boolean;
+  /** 各数据源的采集状态 */
+  dataSourceStatus: {
+    scraper: { success: boolean; error?: string };
+    competitor: { success: boolean; error?: string };
+    lingxingAd: { success: boolean; error?: string };
+  };
   /** 原始爬虫数据（用于AI分析） */
   raw: {
     scraperData: AmazonProductData | null;
     competitorData: CompetitorCrawlData | null;
     adData: AdData | null;
   };
-  /** 按18个类别组织的结构化数据 */
+  /** 按18个类别组织的结构化数据（仅当hasData=true时有意义） */
   categories: {
     标题: TitleData;
     五点: BulletPointsData;
@@ -573,12 +581,19 @@ export async function collectConversionData(
   const competitorData = competitorResult.status === "fulfilled" ? competitorResult.value?.data as CompetitorCrawlData : null;
   const adData = adResult.status === "fulfilled" ? adResult.value : null;
 
-  if (scraperResult.status === "rejected") {
-    console.warn(`[ConversionCollector] Scraper failed for ${asin}: ${scraperResult.reason}`);
-  }
-  if (competitorResult.status === "rejected") {
-    console.warn(`[ConversionCollector] Competitor crawl failed for ${asin}: ${competitorResult.reason}`);
-  }
+  const scraperError = scraperResult.status === "rejected" ? String(scraperResult.reason) : null;
+  const competitorError = competitorResult.status === "rejected" ? String(competitorResult.reason) : null;
+  const adError = adResult.status === "rejected" ? String(adResult.reason) : null;
+
+  if (scraperError) console.warn(`[ConversionCollector] Scraper failed for ${asin}: ${scraperError}`);
+  if (competitorError) console.warn(`[ConversionCollector] Competitor crawl failed for ${asin}: ${competitorError}`);
+  if (adError) console.warn(`[ConversionCollector] Ad data failed for ${asin}: ${adError}`);
+
+  // 判断是否有任何有效数据
+  const hasScraperData = !!scraperData;
+  const hasCompetitorData = !!competitorData;
+  const hasAdData = !!adData && (adData.campaigns?.length > 0 || adData.keywords?.length > 0);
+  const hasAnyData = hasScraperData || hasCompetitorData || hasAdData;
 
   // Step 2: 从原始HTML中提取扩展数据（如果scraper成功的话）
   // 注意：scraper.ts 的 fetchWithRetry 返回HTML，但 scrapeAmazonProduct 只返回解析后的数据
@@ -621,7 +636,7 @@ export async function collectConversionData(
     dealInfo: competitorData?.dealInfo || null,
     hasCoupon: !!competitorData?.couponInfo,
     couponInfo: competitorData?.couponInfo || null,
-    hasPrime: true, // 默认FBA有Prime
+    hasPrime: false, // 不默认假设，需要真实数据确认
     hasSubscribeSave: false,
     hasClimateTag: false,
     hasSmallBusiness: false,
@@ -661,7 +676,7 @@ export async function collectConversionData(
 
   // ── 配送 ──
   const deliveryData: DeliveryData = {
-    isFBA: true, // 默认假设FBA
+    isFBA: false, // 不默认假设，需要真实数据确认
     isFBM: false,
     deliveryDays: null,
     deliveryText: null,
@@ -818,6 +833,12 @@ export async function collectConversionData(
   return {
     asin,
     crawledAt: new Date().toISOString(),
+    hasData: hasAnyData,
+    dataSourceStatus: {
+      scraper: { success: hasScraperData, error: scraperError || undefined },
+      competitor: { success: hasCompetitorData, error: competitorError || undefined },
+      lingxingAd: { success: hasAdData, error: adError || undefined },
+    },
     raw: {
       scraperData,
       competitorData,
@@ -853,19 +874,24 @@ export async function collectMultipleAsins(
   asins: string[],
   options: CollectionOptions = {},
   onProgress?: (asin: string, index: number, total: number) => void
-): Promise<Record<string, ConversionCrawlData>> {
-  const results: Record<string, ConversionCrawlData> = {};
+): Promise<Record<string, ConversionCrawlData | null>> {
+  const results: Record<string, ConversionCrawlData | null> = {};
   
   for (let i = 0; i < asins.length; i++) {
     const asin = asins[i];
     onProgress?.(asin, i, asins.length);
     
     try {
-      results[asin] = await collectConversionData(asin, options);
+      const data = await collectConversionData(asin, options);
+      // 如果所有数据源都失败，返回null而不是假数据
+      results[asin] = data.hasData ? data : null;
+      if (!data.hasData) {
+        console.warn(`[ConversionCollector] No valid data collected for ${asin} - all data sources failed`);
+      }
     } catch (err: any) {
       console.error(`[ConversionCollector] Failed to collect data for ${asin}: ${err.message}`);
-      // 创建一个空的fallback数据
-      results[asin] = createFallbackData(asin);
+      // 采集完全失败，返回null，不生成假数据
+      results[asin] = null;
     }
     
     // 在ASIN之间添加随机延迟（2-5秒），避免被封
@@ -876,35 +902,4 @@ export async function collectMultipleAsins(
   }
   
   return results;
-}
-
-/**
- * 创建fallback空数据（爬取失败时使用）
- */
-function createFallbackData(asin: string): ConversionCrawlData {
-  return {
-    asin,
-    crawledAt: new Date().toISOString(),
-    raw: { scraperData: null, competitorData: null, adData: null },
-    categories: {
-      标题: { text: "", charCount: 0, wordCount: 0, brand: "", hasBrand: false, rawTitle: "" },
-      五点: { bullets: [], bulletCount: 0, avgCharCount: 0, totalCharCount: 0, charCounts: [] },
-      标: { hasBestSeller: false, hasAmazonChoice: false, hasNewRelease: false, hasDeal: false, dealInfo: null, hasCoupon: false, couponInfo: null, hasPrime: false, hasSubscribeSave: false, hasClimateTag: false, hasSmallBusiness: false, totalBadges: 0 },
-      价格: { currentPrice: null, listPrice: null, hasStrikethrough: false, discountPercent: null, hasCoupon: false, couponValue: null, hasSubscribeSave: false, unitPrice: null, buyBoxPrice: null, priceEnding: null },
-      限购: { hasLimit: false, limitQuantity: null, limitText: null },
-      配送: { isFBA: false, isFBM: false, deliveryDays: null, deliveryText: null, hasPrime: false, hasFreeShipping: false, shipsFrom: null, soldBy: null },
-      变体: { variantCount: 0, variantTypes: [], variants: [], hasImages: false },
-      产品信息: { fieldCount: 0, hasWeight: false, hasDimensions: false, hasMaterial: false, hasColor: false, hasManufacturer: false, fields: {} },
-      商品文档: { hasManual: false, hasCertification: false, documentCount: 0, documentTypes: [] },
-      主图: { mainImages: [], mainImageCount: 0, hasMainImage: false, mainImageResolution: null, secondaryImages: [], secondaryImageCount: 0, aplusImages: [], brandStoryImages: [], videoCount: 0, hasVideo: false, totalImageCount: 0 },
-      流量闭环: { hasNewModel: false, hasBundleDeal: false, hasFrequentlyBought: false, hasSponsoredProducts: false, hasVirtualBundle: false, hasBrandStoreLink: false },
-      品牌故事: { hasBrandStory: false, hasRecommendation: false, imageCount: 0, textContent: "", images: [] },
-      "A+": { hasAplus: false, moduleCount: 0, moduleTypes: [], hasComparisonChart: false, hasVideo: false, imageCount: 0, textContent: "", images: [] },
-      Video: { videoCount: 0, hasMainVideo: false, videoUrls: [] },
-      "Q&A": { questionCount: 0, topQuestions: [] },
-      Review: { rating: null, reviewCount: null, hasVine: false, topReviews: [], ratingDistribution: {} },
-      店铺介绍页面: { feedbackScore: null, feedbackCount: null, hasStorefront: false, storeName: null },
-      广告: { hasCampaigns: false, campaignCount: 0, totalSpend: null, acos: null, roas: null, keywordCount: 0, topKeywords: [], searchTerms: [] },
-    },
-  };
 }
