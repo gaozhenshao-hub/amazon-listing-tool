@@ -2386,3 +2386,7 @@
 - [x] AI评分时无真实数据支撑：不评分，标记为“待手动评分”
 - [x] 前端展示：无数据的检查项显示“无数据”提示而非0分
 - [x] 编写测试验证（2752全部通过）
+- [x] 修复lingxingAdapter中广告数据的mock_fallback幻觉问题（IP白名单失败不再降级到假数据）
+- [x] 修复lingxingAdapter中网络错误的mock_fallback幻觉问题
+- [x] 更新dataSource.test.ts测试反映新行为
+- [x] 用B0F21JYKNT实际测试爬取，生成详细报告

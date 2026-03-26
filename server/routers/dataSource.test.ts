@@ -25,26 +25,32 @@ describe("LingxingAdapter _meta data source tagging", () => {
     expect(adapterSource).toContain("mockResult._meta = { source: 'mock_mode'");
   });
 
-  it("IP whitelist fallback should inject _meta with source=mock_fallback and reason", async () => {
+  it("IP whitelist error should throw error instead of falling back to mock", async () => {
     const fs = await import("fs");
     const adapterSource = fs.readFileSync(
       "/home/ubuntu/amazon-listing-tool/server/lingxingAdapter.ts",
       "utf-8"
     );
 
-    // Verify IP whitelist error sets _meta
-    expect(adapterSource).toContain("mockResult._meta = { source: 'mock_fallback', reason: 'IP不在领星白名单中");
+    // Verify IP whitelist error throws instead of returning mock
+    expect(adapterSource).toContain("// Do NOT fallback to mock - throw error so caller knows data is unavailable");
+    expect(adapterSource).toContain('throw new Error(`[LingxingAPI] ${errMsg} (path: ${path})`)');
+    // Should NOT contain mock_fallback for IP whitelist
+    expect(adapterSource).not.toContain("mockResult._meta = { source: 'mock_fallback', reason: 'IP不在领星白名单中");
   });
 
-  it("network error fallback should inject _meta with source=mock_fallback", async () => {
+  it("network error should throw error instead of falling back to mock", async () => {
     const fs = await import("fs");
     const adapterSource = fs.readFileSync(
       "/home/ubuntu/amazon-listing-tool/server/lingxingAdapter.ts",
       "utf-8"
     );
 
-    // Verify network error sets _meta
-    expect(adapterSource).toContain("mockResult._meta = { source: 'mock_fallback', reason: `领星API请求失败:");
+    // Verify network error throws instead of returning mock
+    expect(adapterSource).toContain("// Do NOT fallback to mock on network errors - propagate error");
+    expect(adapterSource).toContain("throw err;");
+    // Should NOT contain mock_fallback for network errors
+    expect(adapterSource).not.toContain("mockResult._meta = { source: 'mock_fallback', reason: `领星API请求失败:");
   });
 
   it("real API success should inject _meta with source=real", async () => {

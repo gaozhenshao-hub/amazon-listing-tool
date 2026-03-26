@@ -745,17 +745,15 @@ class LingxingAdapter {
         return this.request(options);
       }
 
-      // Handle IP whitelist error
+      // Handle IP whitelist error - throw error instead of falling back to mock
       if (json.code === "3001002") {
         const errMsg = usingProxy
           ? `IP not in whitelist (proxy IP). Check proxy or whitelist config.`
           : `IP not in whitelist. Configure a proxy with whitelisted IP.`;
         console.warn(`[LingxingAdapter] ${errMsg} path: ${path}`);
         this.logCall(path, method, json.code, duration, false, usingProxy, errMsg);
-        // Fallback to mock
-        const mockResult = this.getMockData<T>(path, body);
-        mockResult._meta = { source: 'mock_fallback', reason: 'IP不在领星白名单中，请检查代理IP配置' };
-        return mockResult;
+        // Do NOT fallback to mock - throw error so caller knows data is unavailable
+        throw new Error(`[LingxingAPI] ${errMsg} (path: ${path})`);
       }
 
       if (!skipCache && json.code === "200") {
@@ -768,11 +766,9 @@ class LingxingAdapter {
       const duration = Date.now() - startTime;
       this.logCall(path, method, "ERROR", duration, false, usingProxy, err.message);
 
-      // Fallback to mock on network errors
-      console.warn(`[LingxingAdapter] API error for ${path}, falling back to mock: ${err.message}`);
-      const mockResult = this.getMockData<T>(path, body);
-      mockResult._meta = { source: 'mock_fallback', reason: `领星API请求失败: ${err.message}` };
-      return mockResult;
+      // Do NOT fallback to mock on network errors - propagate error
+      console.warn(`[LingxingAdapter] API error for ${path}: ${err.message}`);
+      throw err;
     } finally {
       this.rateLimiter.release();
     }
