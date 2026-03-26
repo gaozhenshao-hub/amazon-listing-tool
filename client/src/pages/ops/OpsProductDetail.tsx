@@ -24,7 +24,7 @@ import {
   ArrowLeft, Plus, Trash2, CheckCircle2, Clock, AlertTriangle,
   TrendingUp, TrendingDown, Package, DollarSign, Target, Eye,
   Search, BarChart3, Edit2, MessageSquare, Flag, Milestone,
-  AlertCircle, FileText, Loader2, Bell, BellOff,
+  AlertCircle, FileText, Loader2, Bell, BellOff, RefreshCw, Info, WifiOff,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -39,14 +39,14 @@ export default function OpsProductDetail() {
   const { data: product, isLoading: loadingProduct, refetch: refetchProduct } = trpc.productOps.getProduct.useQuery(
     { id: productId }, { enabled: !!productId }
   );
-  const { data: profitData, isLoading: loadingProfit } = trpc.productOps.getProductProfitSummary.useQuery(
-    { productId }, { enabled: !!productId }
+  const { data: profitData, isLoading: loadingProfit, error: profitError, refetch: refetchProfit, isFetching: fetchingProfit } = trpc.productOps.getProductProfitSummary.useQuery(
+    { productId }, { enabled: !!productId, retry: 1 }
   );
-  const { data: inventoryData, isLoading: loadingInventory } = trpc.productOps.getProductInventorySummary.useQuery(
-    { productId }, { enabled: !!productId }
+  const { data: inventoryData, isLoading: loadingInventory, error: inventoryError, refetch: refetchInventory, isFetching: fetchingInventory } = trpc.productOps.getProductInventorySummary.useQuery(
+    { productId }, { enabled: !!productId, retry: 1 }
   );
-  const { data: adsData, isLoading: loadingAds } = trpc.productOps.getProductAdsSummary.useQuery(
-    { productId }, { enabled: !!productId }
+  const { data: adsData, isLoading: loadingAds, error: adsError, refetch: refetchAds, isFetching: fetchingAds } = trpc.productOps.getProductAdsSummary.useQuery(
+    { productId }, { enabled: !!productId, retry: 1 }
   );
   const { data: todos, refetch: refetchTodos } = trpc.productOps.getTodos.useQuery(
     { productId }, { enabled: !!productId }
@@ -216,16 +216,46 @@ export default function OpsProductDetail() {
           {/* Profit Summary */}
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5 text-emerald-600" />
-                <CardTitle className="text-base">利润总览（近30天）</CardTitle>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5 text-emerald-600" />
+                  <CardTitle className="text-base">利润总览（近30天）</CardTitle>
+                  {profitData?.dataSource?.source === 'mock_fallback' && (
+                    <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">模拟数据</Badge>
+                  )}
+                  {profitData?.dataSource?.source === 'mock_mode' && (
+                    <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">演示模式</Badge>
+                  )}
+                </div>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => refetchProfit()} disabled={fetchingProfit}>
+                  <RefreshCw className={`h-4 w-4 ${fetchingProfit ? 'animate-spin' : ''}`} />
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
-              {loadingProfit ? (
+              {profitError ? (
+                <div className="flex flex-col items-center gap-3 py-6">
+                  <div className="rounded-full bg-red-50 p-3"><WifiOff className="h-6 w-6 text-red-500" /></div>
+                  <p className="text-sm font-medium text-red-600">利润数据加载失败</p>
+                  <p className="text-xs text-muted-foreground text-center max-w-[250px]">{profitError.message}</p>
+                  <Button size="sm" variant="outline" onClick={() => refetchProfit()} disabled={fetchingProfit}>
+                    <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${fetchingProfit ? 'animate-spin' : ''}`} />
+                    重新加载
+                  </Button>
+                </div>
+              ) : loadingProfit ? (
                 <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
               ) : profitData ? (
                 <div className="overflow-x-auto">
+                  {profitData.dataSource?.source === 'mock_fallback' && (
+                    <div className="flex items-start gap-2 p-2.5 mb-3 rounded-md bg-amber-50 border border-amber-200">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                      <div className="text-xs">
+                        <p className="font-medium text-amber-800">领星API连接失败，当前显示为模拟数据</p>
+                        {profitData.dataSource.reason && <p className="text-amber-600 mt-0.5">{profitData.dataSource.reason}</p>}
+                      </div>
+                    </div>
+                  )}
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b">
@@ -283,7 +313,13 @@ export default function OpsProductDetail() {
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground text-center py-4">暂无利润数据</p>
+                <div className="flex flex-col items-center gap-3 py-6">
+                  <p className="text-sm text-muted-foreground">暂无利润数据</p>
+                  <Button size="sm" variant="outline" onClick={() => refetchProfit()} disabled={fetchingProfit}>
+                    <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${fetchingProfit ? 'animate-spin' : ''}`} />
+                    重新加载
+                  </Button>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -291,16 +327,46 @@ export default function OpsProductDetail() {
           {/* Inventory Summary */}
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center gap-2">
-                <Package className="h-5 w-5 text-blue-600" />
-                <CardTitle className="text-base">库存概览</CardTitle>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Package className="h-5 w-5 text-blue-600" />
+                  <CardTitle className="text-base">库存概览</CardTitle>
+                  {inventoryData?.dataSource?.source === 'mock_fallback' && (
+                    <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">模拟数据</Badge>
+                  )}
+                  {inventoryData?.dataSource?.source === 'mock_mode' && (
+                    <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">演示模式</Badge>
+                  )}
+                </div>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => refetchInventory()} disabled={fetchingInventory}>
+                  <RefreshCw className={`h-4 w-4 ${fetchingInventory ? 'animate-spin' : ''}`} />
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
-              {loadingInventory ? (
+              {inventoryError ? (
+                <div className="flex flex-col items-center gap-3 py-6">
+                  <div className="rounded-full bg-red-50 p-3"><WifiOff className="h-6 w-6 text-red-500" /></div>
+                  <p className="text-sm font-medium text-red-600">库存数据加载失败</p>
+                  <p className="text-xs text-muted-foreground text-center max-w-[250px]">{inventoryError.message}</p>
+                  <Button size="sm" variant="outline" onClick={() => refetchInventory()} disabled={fetchingInventory}>
+                    <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${fetchingInventory ? 'animate-spin' : ''}`} />
+                    重新加载
+                  </Button>
+                </div>
+              ) : loadingInventory ? (
                 <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
               ) : inventoryData ? (
                 <div>
+                  {inventoryData.dataSource?.source === 'mock_fallback' && (
+                    <div className="flex items-start gap-2 p-2.5 mb-3 rounded-md bg-amber-50 border border-amber-200">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                      <div className="text-xs">
+                        <p className="font-medium text-amber-800">领星API连接失败，当前显示为模拟数据</p>
+                        {inventoryData.dataSource.reason && <p className="text-amber-600 mt-0.5">{inventoryData.dataSource.reason}</p>}
+                      </div>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
                     {[
                       { label: "FBA可售", value: inventoryData.total.fulfillableQty, color: "text-emerald-600" },
@@ -326,7 +392,13 @@ export default function OpsProductDetail() {
                   </Badge>
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground text-center py-4">暂无库存数据</p>
+                <div className="flex flex-col items-center gap-3 py-6">
+                  <p className="text-sm text-muted-foreground">暂无库存数据</p>
+                  <Button size="sm" variant="outline" onClick={() => refetchInventory()} disabled={fetchingInventory}>
+                    <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${fetchingInventory ? 'animate-spin' : ''}`} />
+                    重新加载
+                  </Button>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -334,16 +406,46 @@ export default function OpsProductDetail() {
           {/* Ads Summary */}
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center gap-2">
-                <Target className="h-5 w-5 text-orange-600" />
-                <CardTitle className="text-base">广告概览</CardTitle>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Target className="h-5 w-5 text-orange-600" />
+                  <CardTitle className="text-base">广告概览</CardTitle>
+                  {adsData?.dataSource?.source === 'mock_fallback' && (
+                    <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">模拟数据</Badge>
+                  )}
+                  {adsData?.dataSource?.source === 'mock_mode' && (
+                    <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">演示模式</Badge>
+                  )}
+                </div>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => refetchAds()} disabled={fetchingAds}>
+                  <RefreshCw className={`h-4 w-4 ${fetchingAds ? 'animate-spin' : ''}`} />
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
-              {loadingAds ? (
+              {adsError ? (
+                <div className="flex flex-col items-center gap-3 py-6">
+                  <div className="rounded-full bg-red-50 p-3"><WifiOff className="h-6 w-6 text-red-500" /></div>
+                  <p className="text-sm font-medium text-red-600">广告数据加载失败</p>
+                  <p className="text-xs text-muted-foreground text-center max-w-[250px]">{adsError.message}</p>
+                  <Button size="sm" variant="outline" onClick={() => refetchAds()} disabled={fetchingAds}>
+                    <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${fetchingAds ? 'animate-spin' : ''}`} />
+                    重新加载
+                  </Button>
+                </div>
+              ) : loadingAds ? (
                 <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
               ) : adsData ? (
                 <div>
+                  {adsData.dataSource?.source === 'mock_fallback' && (
+                    <div className="flex items-start gap-2 p-2.5 mb-3 rounded-md bg-amber-50 border border-amber-200">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                      <div className="text-xs">
+                        <p className="font-medium text-amber-800">领星API连接失败，当前显示为模拟数据</p>
+                        {adsData.dataSource.reason && <p className="text-amber-600 mt-0.5">{adsData.dataSource.reason}</p>}
+                      </div>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
                     {[
                       { label: "广告花费", value: `$${adsData.summary.totalSpend}` },
@@ -385,7 +487,13 @@ export default function OpsProductDetail() {
                   )}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground text-center py-4">暂无广告数据</p>
+                <div className="flex flex-col items-center gap-3 py-6">
+                  <p className="text-sm text-muted-foreground">暂无广告数据</p>
+                  <Button size="sm" variant="outline" onClick={() => refetchAds()} disabled={fetchingAds}>
+                    <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${fetchingAds ? 'animate-spin' : ''}`} />
+                    重新加载
+                  </Button>
+                </div>
               )}
             </CardContent>
           </Card>

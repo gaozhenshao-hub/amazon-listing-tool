@@ -45,6 +45,11 @@ export interface LingxingResponse<T = any> {
   msg: string;
   data: T;
   total?: number;
+  /** Meta info about data source, injected by adapter */
+  _meta?: {
+    source: 'real' | 'mock_mode' | 'mock_fallback';
+    reason?: string; // e.g. "IP whitelist", "network error", "token expired"
+  };
 }
 
 /**
@@ -662,6 +667,7 @@ class LingxingAdapter {
     // If mock mode, return mock data
     if (this.useMock) {
       const mockResult = this.getMockData<T>(path, body);
+      mockResult._meta = { source: 'mock_mode', reason: '已启用模拟数据模式' };
       this.logCall(path, method, "200", 0, true, false);
       if (!skipCache) this.cache.set(effectiveCacheKey, mockResult, cacheTTL);
       return mockResult;
@@ -748,6 +754,7 @@ class LingxingAdapter {
         this.logCall(path, method, json.code, duration, false, usingProxy, errMsg);
         // Fallback to mock
         const mockResult = this.getMockData<T>(path, body);
+        mockResult._meta = { source: 'mock_fallback', reason: 'IP不在领星白名单中，请检查代理IP配置' };
         return mockResult;
       }
 
@@ -755,6 +762,7 @@ class LingxingAdapter {
         this.cache.set(effectiveCacheKey, json, cacheTTL);
       }
 
+      json._meta = { source: 'real' };
       return json;
     } catch (err: any) {
       const duration = Date.now() - startTime;
@@ -762,7 +770,9 @@ class LingxingAdapter {
 
       // Fallback to mock on network errors
       console.warn(`[LingxingAdapter] API error for ${path}, falling back to mock: ${err.message}`);
-      return this.getMockData<T>(path, body);
+      const mockResult = this.getMockData<T>(path, body);
+      mockResult._meta = { source: 'mock_fallback', reason: `领星API请求失败: ${err.message}` };
+      return mockResult;
     } finally {
       this.rateLimiter.release();
     }

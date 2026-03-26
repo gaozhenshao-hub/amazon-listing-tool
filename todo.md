@@ -2301,3 +2301,16 @@
 - [x] 修复：mockProductAdReports函数生成匹配请求ASIN的广告数据
 - [x] 修复：spProductAdReports和spCampaigns API调用传递asin参数到body
 - [x] 测试：10个新测试覆盖mock数据匹配/过滤/聚合逻辑（2671总测试通过）
+
+## 产品详情页数据看板错误提示与重试
+- [x] 后端：LingxingResponse接口添加_meta字段（source: real/mock_mode/mock_fallback, reason）
+- [x] 后端：mock模式、IP白名单失败、网络错误分别注入不同_meta标记
+- [x] 后端：真实API成功时注入source='real'标记
+- [x] 后端：利润/库存/广告三个API收集_meta并返回dataSource字段
+- [x] 前端：三个看板卡片标题栏添加数据来源Badge（模拟数据/演示模式）
+- [x] 前端：mock_fallback时显示黄色警告横幅（含具体失败原因）
+- [x] 前端：tRPC查询失败时显示红色错误提示（WifiOff图标+错误信息）
+- [x] 前端：每个看板添加RefreshCw重试按钮（标题栏+错误状态+空数据状态）
+- [x] 前端：重试时RefreshCw图标旋转动画（isFetching状态）
+- [x] 前端：tRPC查询设置retry:1避免过度重试
+- [x] 测试：12个新测试覆盖_meta标记/前端错误提示/重试按钮逻辑（2683总测试通过）

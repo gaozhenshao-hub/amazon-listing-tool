@@ -452,6 +452,8 @@ export const productOpsRouter = router({
       // Strategy: First try ASIN-specific API, then fallback to MSKU list with filtering
       let actual30Items: any[] = [];
       let current7Items: any[] = [];
+      // Collect data source meta from API responses
+      let dataSourceMeta: { source: 'real' | 'mock_mode' | 'mock_fallback'; reason?: string } = { source: 'real' };
 
       // Try ASIN-specific profit API first (more precise)
       try {
@@ -459,6 +461,7 @@ export const productOpsRouter = router({
           path: "/bd/profit/report/open/report/asin/list",
           body: { startDate: getDateNDaysAgo(30), endDate: getToday(), start_date: getDateNDaysAgo(30), end_date: getToday(), asin: parentAsin },
         });
+        if (asinRes._meta) dataSourceMeta = asinRes._meta;
         const rawAsin = asinRes.data || [];
         actual30Items = Array.isArray(rawAsin) ? rawAsin : (rawAsin as any).records || (rawAsin as any).list || [];
         console.log(`[ProfitSummary] ASIN API returned ${actual30Items.length} items for ${parentAsin}`);
@@ -472,6 +475,7 @@ export const productOpsRouter = router({
           path: "/bd/profit/report/open/report/msku/list",
           body: { startDate: getDateNDaysAgo(30), endDate: getToday(), length: 500, summaryEnabled: true },
         });
+        if (profitRes._meta && profitRes._meta.source !== 'real') dataSourceMeta = profitRes._meta;
         const rawProfit = profitRes.data || [];
         const allItems = Array.isArray(rawProfit) ? rawProfit : (rawProfit as any).records || (rawProfit as any).list || [];
         actual30Items = filterByProduct(allItems);
@@ -513,6 +517,7 @@ export const productOpsRouter = router({
         },
         actual,
         current,
+        dataSource: dataSourceMeta,
       };
     }),
 
@@ -540,12 +545,14 @@ export const productOpsRouter = router({
 
       // Fetch FBA inventory - try with search keyword first for precision
       let invList: any[] = [];
+      let dataSourceMeta: { source: 'real' | 'mock_mode' | 'mock_fallback'; reason?: string } = { source: 'real' };
       for (const keyword of [product.parentAsin, ...searchKeywords.slice(0, 3)]) {
         try {
           const invRes = await adapter.request({
             path: "/erp/sc/routing/fba/fbaStock/fbaList",
             body: { sid: matchedSid, offset: 0, length: 200, keyword },
           });
+          if (invRes._meta && invRes._meta.source !== 'real') dataSourceMeta = invRes._meta;
           const rawInv = invRes.data || [];
           const items = Array.isArray(rawInv) ? rawInv : (rawInv as any).list || [];
           // Merge unique items
@@ -633,6 +640,7 @@ export const productOpsRouter = router({
           replenishStatus: avgDaysOfSupply < 7 ? "urgent" : avgDaysOfSupply < 14 ? "warning" : avgDaysOfSupply < 90 ? "normal" : "overstock",
         },
         variants: variantInventory,
+        dataSource: dataSourceMeta,
       };
     }),
 
@@ -658,12 +666,14 @@ export const productOpsRouter = router({
 
       // Try product-level ad report first (spProductAdReports) for ASIN-specific data
       let productAdData: any[] = [];
+      let dataSourceMeta: { source: 'real' | 'mock_mode' | 'mock_fallback'; reason?: string } = { source: 'real' };
       try {
         const productAdRes = await adapter.request({
           path: "/pb/openapi/newad/spProductAdReports",
           body: { sid: matchedSid, report_date: getDateNDaysAgo(1), show_detail: 0, offset: 0, length: 200, asin: product.parentAsin },
           headers: { "X-API-VERSION": "2" },
         });
+        if (productAdRes._meta && productAdRes._meta.source !== 'real') dataSourceMeta = productAdRes._meta;
         const rawProductAd = productAdRes.data || [];
         const allProductAds = Array.isArray(rawProductAd) ? rawProductAd : (rawProductAd as any).records || (rawProductAd as any).list || [];
         // Filter by product ASINs
@@ -681,6 +691,7 @@ export const productOpsRouter = router({
         body: { sid: matchedSid, start_date: getDateNDaysAgo(30), end_date: getToday(), asin: product.parentAsin },
         headers: { "X-API-VERSION": "2" },
       });
+      if (adRes._meta && adRes._meta.source !== 'real') dataSourceMeta = adRes._meta;
       const rawAd = adRes.data || [];
       const allCampaigns = Array.isArray(rawAd) ? rawAd : (rawAd as any).records || (rawAd as any).list || [];
 
@@ -756,6 +767,7 @@ export const productOpsRouter = router({
           cvr: totalClicks > 0 ? round2(totalOrders / totalClicks * 100) : 0,
         },
         campaigns: campaignList,
+        dataSource: dataSourceMeta,
       };
     }),
 
