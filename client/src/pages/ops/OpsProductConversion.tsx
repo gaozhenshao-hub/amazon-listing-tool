@@ -406,6 +406,150 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
             </CardContent>
           </Card>
 
+          {/* ─── Data Coverage Dashboard ─── */}
+          {scores && scores.length > 0 && checkItems && checkItems.length > 0 && (() => {
+            const totalCheckItems = checkItems.filter((i: any) => !i.isHidden).length;
+            
+            // Build per-ASIN coverage stats
+            const asinCoverage = allAsins.map((asin: string) => {
+              const asinScores = scores.filter((s: any) => s.asin === asin);
+              const scored = asinScores.filter((s: any) => s.score && s.score > 0 && s.source !== 'no_data').length;
+              const noData = asinScores.filter((s: any) => s.source === 'no_data' || s.score === null).length;
+              const pending = totalCheckItems - scored - noData;
+              const coverageRate = totalCheckItems > 0 ? Math.round(scored / totalCheckItems * 100) : 0;
+              const avgScore = scored > 0 
+                ? Math.round(asinScores.filter((s: any) => s.score && s.score > 0 && s.source !== 'no_data').reduce((sum: number, s: any) => sum + s.score, 0) / scored * 10) / 10 
+                : 0;
+              
+              // Per-category coverage
+              const catCoverage = Object.entries(groupedItems).map(([catIdx, group]: [string, any]) => {
+                const catItems = group.items.filter((i: any) => !i.isHidden);
+                const catScored = catItems.filter((i: any) => {
+                  const s = scoreMap[`${i.id}_${asin}`];
+                  return s?.score && s.score > 0 && s.source !== 'no_data';
+                }).length;
+                const catNoData = catItems.filter((i: any) => {
+                  const s = scoreMap[`${i.id}_${asin}`];
+                  return s?.source === 'no_data' || (s && s.score === null);
+                }).length;
+                return {
+                  catIdx: Number(catIdx),
+                  name: group.categoryName,
+                  total: catItems.length,
+                  scored: catScored,
+                  noData: catNoData,
+                  rate: catItems.length > 0 ? Math.round(catScored / catItems.length * 100) : 0,
+                };
+              });
+              
+              return { asin, scored, noData, pending, coverageRate, avgScore, catCoverage, isOwn: asin === activeComp?.ownAsin };
+            });
+            
+            return (
+              <Card>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4 text-emerald-600" />
+                      数据覆盖率仪表盘
+                    </CardTitle>
+                    <span className="text-xs text-muted-foreground">共 {totalCheckItems} 项检查维度</span>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${Math.min(allAsins.length, 4)}, 1fr)` }}>
+                    {asinCoverage.map((ac) => (
+                      <div key={ac.asin} className={`rounded-lg border p-4 ${ac.isOwn ? 'border-emerald-200 bg-emerald-50/30' : 'border-border'}`}>
+                        {/* ASIN Header */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm font-semibold">{ac.asin}</span>
+                            {ac.isOwn && <Badge className="text-[10px] px-1.5 py-0 bg-emerald-100 text-emerald-700 border-emerald-200">己品</Badge>}
+                          </div>
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                            ac.coverageRate >= 80 ? 'bg-emerald-100 text-emerald-700' :
+                            ac.coverageRate >= 50 ? 'bg-yellow-100 text-yellow-700' :
+                            ac.coverageRate >= 20 ? 'bg-orange-100 text-orange-700' :
+                            'bg-red-100 text-red-700'
+                          }`}>
+                            {ac.coverageRate}%
+                          </span>
+                        </div>
+                        
+                        {/* Circular Progress */}
+                        <div className="flex items-center gap-4 mb-3">
+                          <div className="relative w-16 h-16 flex-shrink-0">
+                            <svg viewBox="0 0 36 36" className="w-16 h-16 -rotate-90">
+                              <circle cx="18" cy="18" r="15.5" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-muted/30" />
+                              <circle cx="18" cy="18" r="15.5" fill="none" 
+                                stroke={ac.coverageRate >= 80 ? '#10b981' : ac.coverageRate >= 50 ? '#eab308' : ac.coverageRate >= 20 ? '#f97316' : '#ef4444'}
+                                strokeWidth="2.5" strokeLinecap="round"
+                                strokeDasharray={`${ac.coverageRate * 0.974} 100`}
+                              />
+                            </svg>
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="text-sm font-bold">{ac.coverageRate}%</span>
+                            </div>
+                          </div>
+                          <div className="flex-1 space-y-1 text-xs">
+                            <div className="flex justify-between">
+                              <span className="text-emerald-600 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+                                已评分
+                              </span>
+                              <span className="font-medium">{ac.scored}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-red-500 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-400 inline-block"></span>
+                                无数据
+                              </span>
+                              <span className="font-medium">{ac.noData}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block"></span>
+                                待评分
+                              </span>
+                              <span className="font-medium">{ac.pending > 0 ? ac.pending : 0}</span>
+                            </div>
+                            {ac.avgScore > 0 && (
+                              <div className="flex justify-between pt-0.5 border-t border-dashed">
+                                <span className="text-muted-foreground">平均分</span>
+                                <span className={`font-bold ${ac.avgScore >= 4 ? 'text-emerald-600' : ac.avgScore >= 3 ? 'text-yellow-600' : 'text-red-600'}`}>
+                                  {ac.avgScore}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {/* Category Mini Bars */}
+                        <div className="space-y-1">
+                          <p className="text-[10px] text-muted-foreground font-medium mb-1">各类别覆盖率</p>
+                          {ac.catCoverage.map((cat) => (
+                            <div key={cat.catIdx} className="flex items-center gap-1.5 text-[10px]">
+                              <span className="w-14 truncate text-muted-foreground" title={cat.name}>{cat.name}</span>
+                              <div className="flex-1 h-1.5 rounded-full bg-muted/50 overflow-hidden">
+                                <div className={`h-full rounded-full transition-all ${
+                                  cat.rate >= 80 ? 'bg-emerald-500' :
+                                  cat.rate >= 50 ? 'bg-yellow-500' :
+                                  cat.rate >= 20 ? 'bg-orange-500' :
+                                  cat.rate > 0 ? 'bg-red-400' : 'bg-gray-300'
+                                }`} style={{ width: `${Math.max(cat.rate, cat.total > 0 ? 2 : 0)}%` }}></div>
+                              </div>
+                              <span className="w-8 text-right tabular-nums">{cat.scored}/{cat.total}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })()}
+
           {/* Radar Chart */}
           {radarData.length > 0 && (
             <Card>
