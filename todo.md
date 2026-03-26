@@ -2390,3 +2390,38 @@
 - [x] 修复lingxingAdapter中网络错误的mock_fallback幻觉问题
 - [x] 更新dataSource.test.ts测试反映新行为
 - [x] 用B0F21JYKNT实际测试爬取，生成详细报告
+
+## 高优先级：修复CAPTCHA问题（代理池+浏览器指纹）
+- [x] 审查现有scraper.ts和crawlerEngine.ts的反爬策略
+- [x] 创建antiBot.ts共享反爬模块（50+UA、浏览器指纹、Cookie模拟、CAPTCHA检测）
+- [x] 添加User-Agent轮换池（50+真实浏览器UA）
+- [x] 添加请求头伪装（Accept-Language/Encoding/Connection/Sec-CH-UA等）
+- [x] 添加代理池支持（住宅代理轮换）
+- [x] 添加CAPTCHA检测和自动重试机制（smartFetch）
+- [x] 添加请求间隔随机化（避免固定频率被检测）
+- [x] scraper.ts和crawlerEngine.ts切换到antiBot引擎
+
+## 高优先级：卖家精灵CSV导入功能
+- [x] 创建sellerSpriteImporter.ts解析器（支持CSV/Excel，中英文列名自动识别）
+- [x] 支持卖家精灵产品数据CSV格式
+- [x] 支持Helium10/Jungle Scout等工具的CSV格式
+- [x] 后端parseSellerSpriteCSV + applySellerSpriteData API
+- [x] 将CSV数据映射到18个检查类别并自动评分
+- [x] 前端添加CSV上传Dialog（解析预览+确认导入）
+- [x] 编写测试验证
+
+## 中优先级：手动录入表单
+- [x] 前端手动录入Dialog（覆盖配送方式/主图数量/视频数量/Q&A数量/变体数量等）
+- [x] 复用applySellerSpriteData API保存手动数据
+- [x] 前端在转化率对比页面添加“手动补充”按钮
+- [x] 手动录入的数据可覆盖爬虫数据并自动评分
+- [x] 编写测试验证
+
+## 低优先级：截图AI识别（主图质量评分）
+- [x] 创建imageAiAnalyzer.ts模块（LLM Vision多模态分析）
+- [x] 支持从爬虫数据中提取图片URL直接分析
+- [x] 自动识别图片类型（白底/场景/尺寸对比/信息图/包装/生活方式）
+- [x] 评分维度：背景纯净度、产品占比、光影质量、信息展示、专业度
+- [x] 后端analyzeProductImages API
+- [x] 前端图片AI分析Dialog（显示每张图片的评分和建议）
+- [x] 编写测试验证（2777全部通过）

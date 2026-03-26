@@ -11,6 +11,7 @@
 
 import * as cheerio from "cheerio";
 import { getScraperConfig } from "./routers/systemSettings";
+import { smartFetch, buildProxyPool, randomDelay as antiBotDelay } from "./antiBot";
 
 // ============== Types ==============
 
@@ -46,78 +47,27 @@ export interface KeywordRankData {
   totalResults: number | null;
 }
 
-// ============== User-Agent Pool ==============
+// ============== Anti-Bot: Now uses shared antiBot.ts module ==============
+// All UA rotation, fingerprinting, CAPTCHA detection, and proxy rotation
+// is handled by the shared antiBot module.
 
-const USER_AGENTS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:121.0) Gecko/20100101 Firefox/121.0",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-];
-
-function getRandomUA(): string {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-}
-
-function randomDelay(min: number, max: number): Promise<void> {
-  const ms = Math.floor(Math.random() * (max - min) + min);
-  return new Promise(r => setTimeout(r, ms));
-}
-
-// ============== Fetch with Retry + Proxy ==============
-
+/**
+ * Fetch Amazon page using the shared antiBot smart fetch engine.
+ */
 async function fetchPage(url: string, config?: {
   proxyUrl?: string;
   timeout?: number;
   maxRetries?: number;
 }): Promise<string> {
-  const maxRetries = config?.maxRetries ?? 3;
-  const timeout = config?.timeout ?? 20000;
-
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      const fetchOpts: any = {
-        headers: {
-          "User-Agent": getRandomUA(),
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.9",
-          "Accept-Encoding": "gzip, deflate, br",
-          "Cache-Control": "no-cache",
-          "Pragma": "no-cache",
-        },
-        signal: AbortSignal.timeout(timeout),
-      };
-
-      // Add proxy if available
-      if (config?.proxyUrl) {
-        try {
-          const { HttpsProxyAgent } = await import("https-proxy-agent");
-          fetchOpts.agent = new HttpsProxyAgent(config.proxyUrl);
-        } catch {
-          // proxy agent not available, continue without
-        }
-      }
-
-      const res = await fetch(url, fetchOpts);
-      if (res.status === 503 || res.status === 429) {
-        // Rate limited or blocked, wait and retry
-        await randomDelay(3000 * (attempt + 1), 6000 * (attempt + 1));
-        continue;
-      }
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
-      }
-      return await res.text();
-    } catch (err: any) {
-      if (attempt === maxRetries - 1) throw err;
-      await randomDelay(2000 * (attempt + 1), 4000 * (attempt + 1));
-    }
-  }
-  throw new Error("Max retries exceeded");
+  const proxyPool = buildProxyPool(config?.proxyUrl, 5);
+  return smartFetch(url, {
+    proxyUrl: config?.proxyUrl,
+    proxyPool: proxyPool.length > 0 ? proxyPool : undefined,
+    maxRetries: config?.maxRetries ?? 5,
+    baseDelay: 3000,
+    timeout: config?.timeout ?? 25000,
+    simulateNavigation: true,
+  });
 }
 
 // ============== Competitor Data Crawler ==============
@@ -377,7 +327,7 @@ export async function executeCrawlBatch(
 
     // Rate limiting delay between requests
     if (i < jobs.length - 1) {
-      await randomDelay(minDelay, maxDelay);
+      await antiBotDelay(minDelay, maxDelay);
     }
   }
 

@@ -6,6 +6,7 @@ import { getLingxingAdapter } from "../lingxingAdapter";
 import { invokeLLM } from "../_core/llm";
 import { collectConversionData, collectMultipleAsins, type ConversionCrawlData } from "./conversionDataCollector";
 import { scoreAllCheckItems, type CheckItemScore } from "./conversionAiScorer";
+import { parseSellerSpriteData, mergeSellerSpriteWithCrawlData, type SellerSpriteProductData, type ImportResult } from "./sellerSpriteImporter";
 import {
   productProfiles, productVariants, productTodos, productLogs,
   keywordMonitors, keywordSnapshots,
@@ -2515,6 +2516,177 @@ export const productOpsRouter = router({
           actual: { start: currentStart, end: currentEnd },
         },
       };
+    }),
+
+  // ============== SellerSprite Import ==============
+
+  /** 解析卖家精灵导出的CSV文本，返回解析结果预览 */
+  parseSellerSpriteCSV: protectedProcedure
+    .input(z.object({
+      csvText: z.string().min(10, '文件内容不能为空'),
+      targetAsin: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const result = parseSellerSpriteData(input.csvText, input.targetAsin);
+      return result;
+    }),
+
+  /** 将卖家精灵数据应用到转化率对比的评分中（补充爬虫缺失的数据） */
+  applySellerSpriteData: protectedProcedure
+    .input(z.object({
+      comparisonId: z.number(),
+      asin: z.string(),
+      productData: z.object({
+        title: z.string().optional(),
+        brand: z.string().optional(),
+        category: z.string().optional(),
+        bsrRank: z.number().optional(),
+        price: z.number().optional(),
+        rating: z.number().optional(),
+        reviewCount: z.number().optional(),
+        monthlySales: z.number().optional(),
+        variationCount: z.number().optional(),
+        fulfillment: z.string().optional(),
+        imageCount: z.number().optional(),
+        bulletPoints: z.array(z.string()).optional(),
+        description: z.string().optional(),
+      }),
+      keywordData: z.array(z.object({
+        keyword: z.string(),
+        searchVolume: z.number().optional(),
+        organicRank: z.number().optional(),
+        adRank: z.number().optional(),
+        ppcBid: z.number().optional(),
+      })).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: '数据库连接失败' });
+      const { comparisonId, asin, productData, keywordData } = input;
+
+      // 获取该对比下所有检查项
+      const checkItems = await db.select().from(conversionCheckItems)
+        .where(isNull(conversionCheckItems.userId));
+
+      // 获取现有评分
+      const existingScores = await db.select().from(conversionScores)
+        .where(and(
+          eq(conversionScores.comparisonId, comparisonId),
+          eq(conversionScores.asin, asin.toUpperCase()),
+        ));
+
+      // 构建现有评分的映射
+      const scoreMap = new Map(existingScores.map(s => [s.checkItemId, s]));
+
+      // 确定哪些类别可以被卖家精灵数据补充
+      const categoryDataMap: Record<string, boolean> = {};
+      if (productData.title) categoryDataMap['标题'] = true;
+      if (productData.bulletPoints && productData.bulletPoints.length > 0) categoryDataMap['五点'] = true;
+      if (productData.price) categoryDataMap['价格'] = true;
+      if (productData.variationCount) categoryDataMap['变体'] = true;
+      if (productData.fulfillment) categoryDataMap['配送'] = true;
+      if (productData.reviewCount || productData.rating) categoryDataMap['Review'] = true;
+      if (productData.imageCount) {
+        categoryDataMap['首图'] = true;
+        categoryDataMap['辅图'] = true;
+      }
+      if (keywordData && keywordData.length > 0) categoryDataMap['广告'] = true;
+
+      // 找出当前无数据的检查项（source = 'no_data'）
+      const updatedItems: { checkItemId: number; categoryName: string; }[] = [];
+
+      for (const item of checkItems) {
+        const existingScore = scoreMap.get(item.id);
+        
+        // 只处理无数据的项（source = 'no_data' 或没有评分记录）
+        if (existingScore && existingScore.source !== 'no_data' && existingScore.score !== null) {
+          continue; // 已有真实评分，不覆盖
+        }
+
+        // 检查该类别是否有卖家精灵数据可以补充
+        if (categoryDataMap[item.categoryName]) {
+          updatedItems.push({ checkItemId: item.id, categoryName: item.categoryName });
+        }
+      }
+
+      // 将有数据的项标记为“待重新评分”（source = 'sellersprite'， score暂时为null）
+      // 用户可以重新触发AI评分来基于新数据评分
+      let updatedCount = 0;
+      for (const item of updatedItems) {
+        if (scoreMap.has(item.checkItemId)) {
+          // 更新现有记录
+          await db.update(conversionScores)
+            .set({
+              source: 'sellersprite',
+              reason: `卖家精灵数据已导入，请重新触发AI评分或手动评分`,
+            })
+            .where(and(
+              eq(conversionScores.comparisonId, comparisonId),
+              eq(conversionScores.asin, asin.toUpperCase()),
+              eq(conversionScores.checkItemId, item.checkItemId),
+            ));
+        } else {
+          // 插入新记录
+          await db.insert(conversionScores).values({
+            comparisonId,
+            asin: asin.toUpperCase(),
+            checkItemId: item.checkItemId,
+            score: null,
+            source: 'sellersprite',
+            reason: `卖家精灵数据已导入，请重新触发AI评分或手动评分`,
+          });
+        }
+        updatedCount++;
+      }
+
+      // 保存卖家精灵原始数据到对比记录的crawlData中
+      const comparison = await db.select().from(conversionComparisons)
+        .where(eq(conversionComparisons.id, comparisonId))
+        .limit(1);
+
+      if (comparison.length > 0) {
+        const existingCrawl = comparison[0].crawlData ? JSON.parse(comparison[0].crawlData as string) : {};
+        if (!existingCrawl.sellerSpriteData) existingCrawl.sellerSpriteData = {};
+        existingCrawl.sellerSpriteData[asin.toUpperCase()] = {
+          productData,
+          keywordData,
+          importedAt: Date.now(),
+        };
+        await db!.update(conversionComparisons)
+          .set({ crawlData: JSON.stringify(existingCrawl) })
+          .where(eq(conversionComparisons.id, comparisonId));
+      }
+
+      const affectedCats = Array.from(new Set(updatedItems.map(i => i.categoryName)));
+      return {
+        success: true,
+        updatedCount,
+        affectedCategories: affectedCats,
+        message: `已导入卖家精灵数据，${updatedCount}个检查项已更新。请重新触发AI评分以基于新数据评分。`,
+      };
+    }),
+
+  // ─── Image AI Analysis ───
+  analyzeProductImages: protectedProcedure
+    .input(z.object({
+      comparisonId: z.number(),
+      asin: z.string(),
+      imageUrls: z.array(z.object({
+        url: z.string(),
+        position: z.enum(["main", "secondary", "aplus", "brand_story"]),
+        positionIndex: z.number(),
+      })),
+      maxImages: z.number().optional().default(10),
+    }))
+    .mutation(async ({ input }) => {
+      const { analyzeImages } = await import('./imageAiAnalyzer');
+      const images = input.imageUrls.map(img => ({
+        url: img.url,
+        position: img.position,
+        positionIndex: img.positionIndex,
+      }));
+      const result = await analyzeImages(images, input.maxImages);
+      return result;
     }),
 
 });

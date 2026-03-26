@@ -1,5 +1,6 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
+import { smartFetch, buildProxyPool, randomDelay as antiBotDelay, checkForCaptcha } from "./antiBot";
 
 // ═══════════════════════════════════════════════════════════════════════
 // Types
@@ -65,209 +66,27 @@ export interface ScraperConfig {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// Anti-Scraping: User-Agent Pool (20+ real browser UAs)
+// Anti-Scraping: Now uses shared antiBot.ts module for:
+// - 50+ real browser UAs (2025-2026)
+// - Complete browser fingerprint (Sec-CH-UA, cookies, etc.)
+// - CAPTCHA detection + automatic proxy rotation
+// - Smart retry with exponential backoff
 // ═══════════════════════════════════════════════════════════════════════
-
-const USER_AGENTS = [
-  // Chrome on Windows
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-  // Chrome on macOS
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  // Firefox on Windows
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0",
-  // Firefox on macOS
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.0; rv:133.0) Gecko/20100101 Firefox/133.0",
-  // Safari on macOS
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15",
-  // Edge on Windows
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
-  // Chrome on Linux
-  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-  // Chrome on Android (mobile)
-  "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
-  "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
-  // Safari on iPhone (mobile)
-  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1",
-];
-
-// Accept-Language variations to appear as different locales
-const ACCEPT_LANGUAGES = [
-  "en-US,en;q=0.9",
-  "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
-  "en-US,en;q=0.9,es;q=0.8",
-  "en-GB,en;q=0.9,en-US;q=0.8",
-  "en,en-US;q=0.9",
-];
-
-function getRandomItem<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
 
 /**
- * Generate realistic browser headers with randomized fingerprint.
+ * Fetch Amazon page using the shared antiBot smart fetch engine.
+ * Replaces the old fetchWithRetry with full fingerprint rotation + CAPTCHA handling.
  */
-function getHeaders(): Record<string, string> {
-  const ua = getRandomItem(USER_AGENTS);
-  const isFirefox = ua.includes("Firefox");
-  const isSafari = ua.includes("Safari") && !ua.includes("Chrome");
-  const isMobile = ua.includes("Mobile");
-
-  const headers: Record<string, string> = {
-    "User-Agent": ua,
-    "Accept-Language": getRandomItem(ACCEPT_LANGUAGES),
-    "Accept-Encoding": "gzip, deflate, br",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Cache-Control": "max-age=0",
-  };
-
-  // Browser-specific Accept header
-  if (isFirefox) {
-    headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8";
-  } else if (isSafari) {
-    headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
-  } else {
-    headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7";
-  }
-
-  // Sec-* headers (Chrome/Edge only, not Firefox/Safari)
-  if (!isFirefox && !isSafari) {
-    headers["Sec-Fetch-Dest"] = "document";
-    headers["Sec-Fetch-Mode"] = "navigate";
-    headers["Sec-Fetch-Site"] = "none";
-    headers["Sec-Fetch-User"] = "?1";
-    headers["Sec-Ch-Ua-Platform"] = ua.includes("Windows") ? '"Windows"' : ua.includes("Mac") ? '"macOS"' : '"Linux"';
-    headers["Sec-Ch-Ua-Mobile"] = isMobile ? "?1" : "?0";
-  }
-
-  return headers;
-}
-
-/**
- * Random delay between min and max milliseconds.
- */
-function randomDelay(min: number, max: number): Promise<void> {
-  const ms = min + Math.floor(Math.random() * (max - min));
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// Anti-Scraping: Fetch with Retry + Exponential Backoff + Proxy
-// ═══════════════════════════════════════════════════════════════════════
-
 async function fetchWithRetry(url: string, config: ScraperConfig = {}): Promise<string> {
-  const maxRetries = config.maxRetries ?? 3;
-  const baseDelay = config.retryBaseDelay ?? 2000;
-  const timeout = config.timeout ?? 20000;
-
-  // Build axios config
-  const axiosConfig: any = {
-    headers: getHeaders(),
-    timeout,
-    maxRedirects: 5,
-    // Decompress gzip/br responses
-    decompress: true,
-  };
-
-  // Proxy support
-  if (config.proxyUrl) {
-    try {
-      const proxyUrlObj = new URL(config.proxyUrl);
-      axiosConfig.proxy = {
-        host: proxyUrlObj.hostname,
-        port: parseInt(proxyUrlObj.port) || 8080,
-        protocol: proxyUrlObj.protocol.replace(":", ""),
-        ...(proxyUrlObj.username ? {
-          auth: {
-            username: decodeURIComponent(proxyUrlObj.username),
-            password: decodeURIComponent(proxyUrlObj.password || ""),
-          }
-        } : {}),
-      };
-      console.log(`[Scraper] Using proxy: ${proxyUrlObj.hostname}:${proxyUrlObj.port}`);
-    } catch (e) {
-      console.warn(`[Scraper] Invalid proxy URL: ${config.proxyUrl}, proceeding without proxy`);
-    }
-  }
-
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      // Rotate headers for each attempt
-      axiosConfig.headers = getHeaders();
-
-      // Add Referer on retries to simulate navigation
-      if (attempt > 0) {
-        axiosConfig.headers["Referer"] = "https://www.amazon.com/s?k=" + encodeURIComponent("product");
-      }
-
-      const response = await axios.get(url, axiosConfig);
-
-      if (response.status === 200 && response.data) {
-        const html = typeof response.data === "string" ? response.data : String(response.data);
-
-        // Check for CAPTCHA / robot check page
-        if (html.includes("api-services-support@amazon.com") || html.includes("Type the characters you see in this image")) {
-          console.warn(`[Scraper] CAPTCHA detected on attempt ${attempt + 1} for ${url}`);
-          if (attempt < maxRetries - 1) {
-            // Longer delay on CAPTCHA
-            const captchaDelay = baseDelay * Math.pow(3, attempt + 1);
-            console.log(`[Scraper] Waiting ${captchaDelay}ms before retry...`);
-            await new Promise(resolve => setTimeout(resolve, captchaDelay));
-            continue;
-          }
-          throw new Error("Amazon CAPTCHA detected. Consider using a proxy or waiting before retrying.");
-        }
-
-        // Check for empty/error page
-        if (html.length < 5000 || html.includes("Sorry, we just need to make sure you")) {
-          console.warn(`[Scraper] Suspicious response on attempt ${attempt + 1} (${html.length} bytes)`);
-          if (attempt < maxRetries - 1) {
-            await new Promise(resolve => setTimeout(resolve, baseDelay * Math.pow(2, attempt)));
-            continue;
-          }
-        }
-
-        return html;
-      }
-
-      // Non-200 status
-      console.warn(`[Scraper] HTTP ${response.status} on attempt ${attempt + 1} for ${url}`);
-    } catch (error: any) {
-      const errMsg = error.message || "Unknown error";
-      const status = error.response?.status;
-
-      console.warn(`[Scraper] Attempt ${attempt + 1}/${maxRetries} failed for ${url}: ${errMsg}${status ? ` (HTTP ${status})` : ""}`);
-
-      // 503 = throttled, use longer backoff
-      if (status === 503 && attempt < maxRetries - 1) {
-        const throttleDelay = baseDelay * Math.pow(3, attempt + 1);
-        console.log(`[Scraper] Throttled (503), waiting ${throttleDelay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, throttleDelay));
-        continue;
-      }
-    }
-
-    // Exponential backoff between retries
-    if (attempt < maxRetries - 1) {
-      const delay = baseDelay * Math.pow(2, attempt) + Math.floor(Math.random() * 1000);
-      console.log(`[Scraper] Retrying in ${delay}ms...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-
-  throw new Error(`Failed to fetch ${url} after ${maxRetries} retries. Amazon may be blocking requests. Try using a proxy.`);
+  const proxyPool = buildProxyPool(config.proxyUrl, 5);
+  return smartFetch(url, {
+    proxyUrl: config.proxyUrl,
+    proxyPool: proxyPool.length > 0 ? proxyPool : undefined,
+    maxRetries: config.maxRetries ?? 5,
+    baseDelay: config.retryBaseDelay ?? 3000,
+    timeout: config.timeout ?? 25000,
+    simulateNavigation: true,
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -882,7 +701,7 @@ async function fetchReviews(asin: string, config: ScraperConfig = {}): Promise<s
   const reviews: string[] = [];
   try {
     // Random delay before review fetch to avoid pattern detection
-    await randomDelay(config.minRequestDelay ?? 1000, config.maxRequestDelay ?? 3000);
+    await antiBotDelay(config.minRequestDelay ?? 1000, config.maxRequestDelay ?? 3000);
 
     const url = `https://www.amazon.com/product-reviews/${asin}/ref=cm_cr_dp_d_show_all_btm?ie=UTF8&reviewerType=all_reviews&sortBy=recent`;
     const html = await fetchWithRetry(url, config);
@@ -921,7 +740,8 @@ export async function scrapeAmazonProduct(asin: string, config: ScraperConfig = 
   const html = await fetchWithRetry(productUrl, config);
   const productData = extractProductData(html, asin);
 
-  // Fetch reviews with random delay
+  // Fetch reviews with random delay (using antiBot delay)
+  await antiBotDelay(1000, 3000);
   const reviews = await fetchReviews(asin, config);
   productData.reviews = reviews;
 
