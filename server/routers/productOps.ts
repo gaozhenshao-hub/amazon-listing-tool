@@ -17,6 +17,15 @@ import {
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, asc, isNull, inArray } from "drizzle-orm";
 
+// ============== Scoring Progress Tracking ==============
+type ScoringProgress = {
+  status: 'running' | 'done' | 'error';
+  scored: number;
+  total: number;
+  message: string;
+};
+const scoringProgressMap = new Map<string, ScoringProgress>();
+
 // ============== Product Operations Overview ==============
 export const productOpsRouter = router({
 
@@ -2654,75 +2663,15 @@ export const productOpsRouter = router({
         reviewData as any,
       );
 
-      // Step 2: 获取所有检查项
-      const checkItems = await db.select().from(conversionCheckItems)
-        .where(isNull(conversionCheckItems.userId))
-        .orderBy(asc(conversionCheckItems.categoryIndex), asc(conversionCheckItems.sortOrder));
-
-      // Step 3: 获取已锁定的评分（不覆盖）
-      const existingScores = await db.select().from(conversionScores)
-        .where(and(
-          eq(conversionScores.comparisonId, comparisonId),
-          eq(conversionScores.asin, upperAsin),
-        ));
-      const lockedKeys = new Set(
-        existingScores.filter(s => s.isLocked === 1).map(s => s.checkItemId)
-      );
-
-      // Step 4: 删除该ASIN的未锁定评分（重新评分）
-      await db.delete(conversionScores)
-        .where(and(
-          eq(conversionScores.comparisonId, comparisonId),
-          eq(conversionScores.asin, upperAsin),
-          eq(conversionScores.isLocked, 0),
-        ));
-
-      // Step 5: 使用评分引擎进行程序化+AI评分
-      const unlocked = checkItems.filter(item => !lockedKeys.has(item.id));
-      console.log(`[applySellerSpriteData] Scoring ${unlocked.length} items for ${upperAsin} (${lockedKeys.size} locked)`);
-
-      const scores = await scoreAllCheckItems(
-        unlocked.map(item => ({
-          id: item.id,
-          categoryName: item.categoryName,
-          subDimension: item.subDimension || "",
-          standard: item.standard || "",
-          categoryIndex: item.categoryIndex,
-          sortOrder: item.sortOrder || 0,
-        })),
-        crawlData
-      );
-
-      // Step 6: 批量插入评分结果
-      let scoredCount = 0;
-      let noDataCount = 0;
-      for (const s of scores) {
-        await db.insert(conversionScores).values({
-          comparisonId,
-          checkItemId: s.checkItemId,
-          asin: upperAsin,
-          score: s.score,
-          aiScore: s.score,
-          reason: s.reason,
-          aiReason: s.reason,
-          rawData: s.rawData,
-          source: s.source === 'no_data' ? 'no_data' : (s.source === 'programmatic' ? 'programmatic' : 'ai'),
-        });
-        if (s.score !== null && s.score > 0) scoredCount++;
-        else noDataCount++;
-      }
-
-      // Step 7: 保存卖家精灵原始数据到对比记录的crawlData中
+      // Step 2: 保存卖家精灵原始数据到对比记录的crawlData中（先保存数据）
       const comparison = await db.select().from(conversionComparisons)
         .where(eq(conversionComparisons.id, comparisonId))
         .limit(1);
 
       if (comparison.length > 0) {
         const existingCrawl = comparison[0].crawlData ? JSON.parse(comparison[0].crawlData as string) : {};
-        // 保存转换后的crawlData（用于后续AI评分）
         if (!existingCrawl[upperAsin]) existingCrawl[upperAsin] = crawlData;
         else {
-          // 合并：卖家精灵数据补充到现有数据
           for (const [catName, catData] of Object.entries(crawlData.categories)) {
             if (catData && typeof catData === 'object') {
               existingCrawl[upperAsin].categories = existingCrawl[upperAsin].categories || {};
@@ -2734,7 +2683,6 @@ export const productOpsRouter = router({
           }
           existingCrawl[upperAsin].hasData = true;
         }
-        // 同时保存原始卖家精灵数据
         if (!existingCrawl.sellerSpriteData) existingCrawl.sellerSpriteData = {};
         existingCrawl.sellerSpriteData[upperAsin] = {
           productData,
@@ -2747,29 +2695,120 @@ export const productOpsRouter = router({
           .where(eq(conversionComparisons.id, comparisonId));
       }
 
-      // Step 8: 更新对比记录的整体评分
-      const allOwnScores = await db.select().from(conversionScores)
-        .where(and(eq(conversionScores.comparisonId, comparisonId), eq(conversionScores.asin, upperAsin)));
-      const validScores = allOwnScores.filter(s => s.score !== null && s.score > 0);
-      const avgScore = validScores.length > 0
-        ? Math.round(validScores.reduce((sum, s) => sum + (s.score || 0), 0) / validScores.length * 10) / 10
-        : 0;
+      // Step 3: 设置评分进度跟踪
+      const taskKey = `scoring_${comparisonId}_${upperAsin}`;
+      scoringProgressMap.set(taskKey, { status: 'running', scored: 0, total: 0, message: '正在准备评分...' });
 
-      // 如果是己品ASIN，更新整体评分
-      if (comparison.length > 0 && comparison[0].ownAsin === upperAsin) {
-        await db.update(conversionComparisons).set({
-          overallOwnScore: String(avgScore),
-        }).where(eq(conversionComparisons.id, comparisonId));
-      }
+      // Step 4: 启动异步评分（不等待完成，立即返回）
+      (async () => {
+        try {
+          const checkItems = await db.select().from(conversionCheckItems)
+            .where(isNull(conversionCheckItems.userId))
+            .orderBy(asc(conversionCheckItems.categoryIndex), asc(conversionCheckItems.sortOrder));
+
+          const existingScores = await db.select().from(conversionScores)
+            .where(and(
+              eq(conversionScores.comparisonId, comparisonId),
+              eq(conversionScores.asin, upperAsin),
+            ));
+          const lockedKeys = new Set(
+            existingScores.filter(s => s.isLocked === 1).map(s => s.checkItemId)
+          );
+
+          await db.delete(conversionScores)
+            .where(and(
+              eq(conversionScores.comparisonId, comparisonId),
+              eq(conversionScores.asin, upperAsin),
+              eq(conversionScores.isLocked, 0),
+            ));
+
+          const unlocked = checkItems.filter(item => !lockedKeys.has(item.id));
+          console.log(`[applySellerSpriteData] Async scoring ${unlocked.length} items for ${upperAsin} (${lockedKeys.size} locked)`);
+          scoringProgressMap.set(taskKey, { status: 'running', scored: 0, total: unlocked.length, message: `正在评分 0/${unlocked.length} 项...` });
+
+          const scores = await scoreAllCheckItems(
+            unlocked.map(item => ({
+              id: item.id,
+              categoryName: item.categoryName,
+              subDimension: item.subDimension || "",
+              standard: item.standard || "",
+              categoryIndex: item.categoryIndex,
+              sortOrder: item.sortOrder || 0,
+            })),
+            crawlData,
+            (scored, total) => {
+              scoringProgressMap.set(taskKey, { status: 'running', scored, total, message: `正在评分 ${scored}/${total} 项...` });
+            }
+          );
+
+          let scoredCount = 0;
+          let noDataCount = 0;
+          for (const s of scores) {
+            await db.insert(conversionScores).values({
+              comparisonId,
+              checkItemId: s.checkItemId,
+              asin: upperAsin,
+              score: s.score,
+              aiScore: s.score,
+              reason: s.reason,
+              aiReason: s.reason,
+              rawData: s.rawData,
+              source: s.source === 'no_data' ? 'no_data' : (s.source === 'programmatic' ? 'programmatic' : 'ai'),
+            });
+            if (s.score !== null && s.score > 0) scoredCount++;
+            else noDataCount++;
+          }
+
+          // 更新整体评分
+          const allOwnScores = await db.select().from(conversionScores)
+            .where(and(eq(conversionScores.comparisonId, comparisonId), eq(conversionScores.asin, upperAsin)));
+          const validScores = allOwnScores.filter(s => s.score !== null && s.score > 0);
+          const avgScore = validScores.length > 0
+            ? Math.round(validScores.reduce((sum, s) => sum + (s.score || 0), 0) / validScores.length * 10) / 10
+            : 0;
+
+          if (comparison.length > 0 && comparison[0].ownAsin === upperAsin) {
+            await db.update(conversionComparisons).set({
+              overallOwnScore: String(avgScore),
+            }).where(eq(conversionComparisons.id, comparisonId));
+          }
+
+          scoringProgressMap.set(taskKey, {
+            status: 'done',
+            scored: scoredCount,
+            total: scores.length,
+            message: `评分完成：${scoredCount}项已评分，${noDataCount}项无数据，平均分${avgScore}`,
+          });
+          console.log(`[applySellerSpriteData] Async scoring done: ${scoredCount} scored, ${noDataCount} no_data`);
+
+          // 5分钟后清理进度缓存
+          setTimeout(() => scoringProgressMap.delete(taskKey), 5 * 60 * 1000);
+        } catch (err: any) {
+          console.error(`[applySellerSpriteData] Async scoring error:`, err);
+          scoringProgressMap.set(taskKey, {
+            status: 'error',
+            scored: 0,
+            total: 0,
+            message: `评分失败：${err.message?.substring(0, 100)}`,
+          });
+          setTimeout(() => scoringProgressMap.delete(taskKey), 5 * 60 * 1000);
+        }
+      })();
 
       return {
         success: true,
-        updatedCount: scores.length,
-        scoredCount,
-        noDataCount,
-        avgScore,
-        message: `已导入卖家精灵数据并完成评分：${scoredCount}项已评分，${noDataCount}项无数据。`,
+        taskKey,
+        message: `卖家精灵数据已保存，AI评分已在后台启动...`,
       };
+    }),
+
+  // ─── Scoring Progress Query ───
+  getScoringProgress: protectedProcedure
+    .input(z.object({ taskKey: z.string() }))
+    .query(({ input }) => {
+      const progress = scoringProgressMap.get(input.taskKey);
+      if (!progress) return { status: 'unknown' as const, scored: 0, total: 0, message: '未找到评分任务' };
+      return progress;
     }),
 
   // ─── Image AI Analysis ───

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -125,10 +125,16 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
   });
   const applySSData = trpc.productOps.applySellerSpriteData.useMutation({
     onSuccess: (data) => {
-      refetchScores();
+      // 异步评分模式：保存taskKey启动轮询
+      if (data.taskKey) {
+        setScoringTaskKey(data.taskKey);
+        toast.info(data.message);
+      } else {
+        refetchScores();
+        toast.success(data.message);
+      }
       setShowSSImport(false);
       setSSImportResult(null);
-      toast.success(data.message);
     },
     onError: (err) => toast.error(`导入失败: ${err.message}`),
   });
@@ -228,6 +234,26 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
   const [showImageAnalysis, setShowImageAnalysis] = useState(false);
   const [imageAnalysisResults, setImageAnalysisResults] = useState<any[]>([]);
   const [imageAnalysisAsin, setImageAnalysisAsin] = useState('');
+  const [scoringTaskKey, setScoringTaskKey] = useState<string | null>(null);
+
+  // ─── Scoring Progress Polling ───
+  const scoringProgress = trpc.productOps.getScoringProgress.useQuery(
+    { taskKey: scoringTaskKey! },
+    { enabled: !!scoringTaskKey, refetchInterval: 2000 }
+  );
+
+  useEffect(() => {
+    if (!scoringProgress.data) return;
+    const { status, message } = scoringProgress.data;
+    if (status === 'done') {
+      toast.success(message);
+      refetchScores();
+      setScoringTaskKey(null);
+    } else if (status === 'error') {
+      toast.error(message);
+      setScoringTaskKey(null);
+    }
+  }, [scoringProgress.data?.status]);
 
   // ─── Computed ───
   const groupedItems = useMemo(() => {
@@ -456,6 +482,33 @@ export default function OpsProductConversion({ productId, parentAsin }: Props) {
               </div>
             </CardContent>
           </Card>
+
+          {/* ─── Scoring Progress Bar ─── */}
+          {scoringTaskKey && scoringProgress.data && scoringProgress.data.status === 'running' && (
+            <Card className="border-blue-200 bg-blue-50/50">
+              <CardContent className="py-3">
+                <div className="flex items-center gap-3">
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-medium text-blue-700">
+                        {scoringProgress.data.message}
+                      </span>
+                      <span className="text-xs text-blue-500">
+                        {scoringProgress.data.total > 0 ? `${Math.round(scoringProgress.data.scored / scoringProgress.data.total * 100)}%` : '...'}
+                      </span>
+                    </div>
+                    <div className="w-full bg-blue-200 rounded-full h-1.5">
+                      <div
+                        className="bg-blue-600 h-1.5 rounded-full transition-all duration-500"
+                        style={{ width: scoringProgress.data.total > 0 ? `${scoringProgress.data.scored / scoringProgress.data.total * 100}%` : '5%' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* ─── Data Coverage Dashboard ─── */}
           {scores && scores.length > 0 && checkItems && checkItems.length > 0 && (() => {
