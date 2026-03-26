@@ -1107,6 +1107,17 @@ export const productOpsRouter = router({
 
   getCheckItems: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
+    // Auto-initialize default check items if none exist
+    const existing = await db!.select({ count: sql<number>`count(*)` }).from(conversionCheckItems)
+      .where(isNull(conversionCheckItems.userId));
+    if (Number(existing[0]?.count) === 0) {
+      console.log('[ConversionCheck] No default items found, auto-initializing 132 check items...');
+      const defaultItems = getDefault132CheckItems();
+      for (const item of defaultItems) {
+        await db!.insert(conversionCheckItems).values({ ...item, userId: null });
+      }
+      console.log(`[ConversionCheck] Initialized ${defaultItems.length} default check items`);
+    }
     // Get system defaults (userId IS NULL) + user custom items
     const items = await db!.select().from(conversionCheckItems)
       .where(sql`${conversionCheckItems.userId} IS NULL OR ${conversionCheckItems.userId} = ${ctx.user.id}`)
@@ -2413,9 +2424,8 @@ function generateMockCrawlData(asin: string): Record<string, any> {
 function getDefault132CheckItems() {
   const items: Array<{ categoryIndex: number; categoryName: string; subDimension: string; standard: string; sortOrder: number }> = [];
   let order = 0;
-
-  // 1. 标题 (5项)
-  const cat1 = ["可读性", "文字数字标点规范", "字数(≤200字符)", "内容(核心关键词+卖点)", "品牌名"];
+  // 1. 标题 (7项)
+  const cat1 = ["可读性", "文字数字标点规范", "字数(≤200字符)", "内容(核心关键词+卖点)", "品牌名", "关键词布局顺序", "差异化卖点突出"];
   cat1.forEach(s => items.push({ categoryIndex: 1, categoryName: "标题", subDimension: s, standard: `检查标题${s}是否符合亚马逊规范`, sortOrder: order++ }));
 
   // 2. 五点 (7项)
@@ -2426,32 +2436,32 @@ function getDefault132CheckItems() {
   const cat3 = ["可读性", "字数(≤2000字符)", "内容(品牌故事+产品详情)", "格式(HTML标签使用)", "关键词覆盖"];
   cat3.forEach(s => items.push({ categoryIndex: 3, categoryName: "长描述", subDimension: s, standard: `检查长描述${s}`, sortOrder: order++ }));
 
-  // 4. 搜索词 (3项)
-  const cat4 = ["字数(≤250字节)", "内容(无重复/无品牌词)", "关键词覆盖率"];
+  // 4. 搜索词 (5项)
+  const cat4 = ["字数(≤250字节)", "内容(无重复/无品牌词)", "关键词覆盖率", "长尾词覆盖", "西语/多语言词覆盖"];
   cat4.forEach(s => items.push({ categoryIndex: 4, categoryName: "搜索词", subDimension: s, standard: `检查搜索词${s}`, sortOrder: order++ }));
 
   // 5. 价格 (5项)
   const cat5 = ["划线价设置", "优惠券", "促销活动", "会员折扣", "价格竞争力"];
   cat5.forEach(s => items.push({ categoryIndex: 5, categoryName: "价格", subDimension: s, standard: `检查${s}设置和竞争力`, sortOrder: order++ }));
 
-  // 6. 变体 (3项)
-  const cat6 = ["变体数量", "变体图片", "变体命名规范"];
+  // 6. 变体 (5项)
+  const cat6 = ["变体数量", "变体图片", "变体命名规范", "变体价格梯度", "变体评论合并策略"];
   cat6.forEach(s => items.push({ categoryIndex: 6, categoryName: "变体", subDimension: s, standard: `检查${s}`, sortOrder: order++ }));
 
-  // 7. 配送 (2项)
-  const cat7 = ["配送方式(FBA/FBM)", "配送时效"];
+  // 7. 配送 (4项)
+  const cat7 = ["配送方式(FBA/FBM)", "配送时效", "Prime标识", "配送费用竞争力"];
   cat7.forEach(s => items.push({ categoryIndex: 7, categoryName: "配送", subDimension: s, standard: `检查${s}`, sortOrder: order++ }));
 
-  // 8. 退货 (2项)
-  const cat8 = ["退货政策", "退货率控制"];
+  // 8. 退货 (4项)
+  const cat8 = ["退货政策", "退货率控制", "退货原因分析", "售后卡片/联系方式"];
   cat8.forEach(s => items.push({ categoryIndex: 8, categoryName: "退货", subDimension: s, standard: `检查${s}`, sortOrder: order++ }));
 
-  // 9. 产品信息 (3项)
-  const cat9 = ["信息完整性", "信息正确性", "合规性"];
+  // 9. 产品信息 (5项)
+  const cat9 = ["信息完整性", "信息正确性", "合规性", "产品尺寸/重量准确性", "材质/成分说明"];
   cat9.forEach(s => items.push({ categoryIndex: 9, categoryName: "产品信息", subDimension: s, standard: `检查产品信息${s}`, sortOrder: order++ }));
 
-  // 10. 商品文档 (2项)
-  const cat10 = ["产品介绍/安装文档", "检测报告/安全认证"];
+  // 10. 商品文档 (4项)
+  const cat10 = ["产品介绍/安装文档", "检测报告/安全认证", "使用说明书(多语言)", "保修卡/质保信息"];
   cat10.forEach(s => items.push({ categoryIndex: 10, categoryName: "商品文档", subDimension: s, standard: `检查是否上传${s}`, sortOrder: order++ }));
 
   // 11. 主图 (25项)
@@ -2476,8 +2486,8 @@ function getDefault132CheckItems() {
   const cat14 = ["整体性和连贯性", "PC和手机端兼顾", "卖点展示形式多样", "对比图表", "故事线逻辑", "场景化展示", "视频嵌入", "售后方式说明", "QA常见问题", "产品闭环推荐", "卖点痛点补充", "卖点对比(vs竞品)", "图片像素清晰度"];
   cat14.forEach(s => items.push({ categoryIndex: 14, categoryName: "A+", subDimension: s, standard: `检查A+${s}`, sortOrder: order++ }));
 
-  // 15. Post (3项)
-  const cat15 = ["发帖数量和频率", "图片质量-清晰度", "图片质量-吸引力"];
+  // 15. Post (5项)
+  const cat15 = ["发帖数量和频率", "图片质量-清晰度", "图片质量-吸引力", "内容与产品相关性", "互动率(点赞/评论)"];
   cat15.forEach(s => items.push({ categoryIndex: 15, categoryName: "Post", subDimension: s, standard: `检查Post${s}`, sortOrder: order++ }));
 
   // 16. Video (4项)
@@ -2492,8 +2502,8 @@ function getDefault132CheckItems() {
   const cat18 = ["Vine计划", "种子链接", "首页无差评", "关键词标签", "售后服务响应"];
   cat18.forEach(s => items.push({ categoryIndex: 18, categoryName: "Review", subDimension: s, standard: `检查Review${s}`, sortOrder: order++ }));
 
-  // 19. 店铺介绍 (2项)
-  const cat19 = ["Feedback评分", "店铺介绍页面"];
+  // 19. 店铺介绍 (4项)
+  const cat19 = ["Feedback评分", "店铺介绍页面", "店铺装修完整度", "品牌旗舰店设置"];
   cat19.forEach(s => items.push({ categoryIndex: 19, categoryName: "店铺介绍", subDimension: s, standard: `检查${s}`, sortOrder: order++ }));
 
   // 20. 广告 (8项)
