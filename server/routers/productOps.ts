@@ -594,6 +594,31 @@ export const productOpsRouter = router({
         console.warn(`[ProfitSummary] Recent 7-day fetch error: ${err.message}`);
       }
 
+      // Fetch ASIN 360 hourly data for real-time sales/ranking trends
+      let hourlyTrend: Array<{ hour: string; volume: number; orderItems: number; amount: number; price: number; salesRank: number }> = [];
+      try {
+        const asin360Res = await adapter.request({
+          path: "/basicOpen/salesAnalysis/productPerformance/performanceTrendByHour",
+          body: {
+            asin: childAsins.length > 0 ? childAsins[0] : parentAsin,
+            report_date: getYesterday(),
+          },
+        });
+        const rawHourly = asin360Res.data || [];
+        const hourlyList = Array.isArray(rawHourly) ? rawHourly : (rawHourly as any).records || (rawHourly as any).list || [];
+        hourlyTrend = hourlyList.map((h: any) => ({
+          hour: String(h.hour || h.time || ''),
+          volume: Number(h.volume || h.quantity || 0),
+          orderItems: Number(h.order_items || h.orders || 0),
+          amount: Number(h.amount || h.sales || 0),
+          price: Number(h.price || 0),
+          salesRank: Number(h.sales_rank || h.rank || 0),
+        }));
+        console.log(`[ProfitSummary] ASIN360 hourly data: ${hourlyTrend.length} hours for ${parentAsin}`);
+      } catch (err: any) {
+        console.warn(`[ProfitSummary] ASIN360 hourly fetch error: ${err.message}`);
+      }
+
       return {
         budget: {
           revenue: product.budgetRevenue ? Number(product.budgetRevenue) : null,
@@ -602,6 +627,7 @@ export const productOpsRouter = router({
         },
         actual,
         current,
+        hourlyTrend,
         dataSource: dataSourceMeta,
       };
     }),
@@ -628,18 +654,20 @@ export const productOpsRouter = router({
       const skus = variants.map(v => v.sku).filter(Boolean) as string[];
       const searchKeywords = [...childAsins, ...skus];
 
-      // Fetch FBA inventory - try with search keyword first for precision
+      // Fetch FBA inventory using v2 API (/erp/sc/data/fba/FbaStockLists)
       let invList: any[] = [];
       let dataSourceMeta: { source: 'real' | 'mock_mode' | 'mock_fallback'; reason?: string } = { source: 'real' };
+      
+      // Try searching by ASIN first using v2 FBA Stock API
       for (const keyword of [product.parentAsin, ...searchKeywords.slice(0, 3)]) {
         try {
           const invRes = await adapter.request({
-            path: "/erp/sc/routing/fba/fbaStock/fbaList",
-            body: { sid: matchedSid, offset: 0, length: 200, keyword },
+            path: "/erp/sc/data/fba/FbaStockLists",
+            body: { sid: matchedSid, offset: 0, length: 200, search_field: "asin", search_value: keyword },
           });
           if (invRes._meta && invRes._meta.source !== 'real') dataSourceMeta = invRes._meta;
           const rawInv = invRes.data || [];
-          const items = Array.isArray(rawInv) ? rawInv : (rawInv as any).list || [];
+          const items = Array.isArray(rawInv) ? rawInv : (rawInv as any).records || (rawInv as any).list || [];
           // Merge unique items
           for (const item of items) {
             const itemAsin = item.asin || item.fnsku || '';
@@ -648,25 +676,25 @@ export const productOpsRouter = router({
             }
           }
         } catch (err: any) {
-          console.warn(`[InventorySummary] FBA search for '${keyword}' failed: ${err.message}`);
+          console.warn(`[InventorySummary] FBA v2 search for '${keyword}' failed: ${err.message}`);
         }
       }
 
-      // If keyword search returned nothing, fallback to full list with filtering
+      // If v2 search returned nothing, fallback to full list with filtering
       if (invList.length === 0) {
         try {
           const invRes = await adapter.request({
-            path: "/erp/sc/routing/fba/fbaStock/fbaList",
+            path: "/erp/sc/data/fba/FbaStockLists",
             body: { sid: matchedSid, offset: 0, length: 500 },
           });
           const rawInv = invRes.data || [];
-          const allItems = Array.isArray(rawInv) ? rawInv : (rawInv as any).list || [];
+          const allItems = Array.isArray(rawInv) ? rawInv : (rawInv as any).records || (rawInv as any).list || [];
           invList = allItems.filter((inv: any) =>
             childAsins.includes(inv.asin) || skus.includes(inv.seller_sku) || inv.asin === product.parentAsin
           );
           console.log(`[InventorySummary] Fallback: ${allItems.length} total, ${invList.length} matched`);
         } catch (err: any) {
-          console.warn(`[InventorySummary] Full FBA list fetch error: ${err.message}`);
+          console.warn(`[InventorySummary] Full FBA v2 list fetch error: ${err.message}`);
         }
       }
       console.log(`[InventorySummary] Found ${invList.length} inventory records for ${product.parentAsin}`);
@@ -2272,45 +2300,48 @@ export const productOpsRouter = router({
         console.warn(`[Dashboard] Profit fetch error: ${err.message}`);
       }
       
-      // Fetch inventory data from Lingxing
+      // Fetch inventory data from Lingxing FBA v2 API
       let inventoryData = { totalStock: 0, inboundQty: 0, reservedQty: 0, totalValue: 0 };
       try {
         const invRes = await adapter.request({
-          path: "/erp/sc/routing/fba/fbaStock/fbaList",
+          path: "/erp/sc/data/fba/FbaStockLists",
           body: { offset: 0, length: 500 },
         });
         const invRaw = invRes.data || [];
         const invList = Array.isArray(invRaw) ? invRaw : (invRaw as any).records || (invRaw as any).list || [];
         for (const item of invList) {
-          inventoryData.totalStock += Number(item.afn_fulfillable_quantity || item.fulfillable_quantity || 0);
-          inventoryData.inboundQty += Number(item.afn_inbound_working_quantity || item.inbound_quantity || 0);
-          inventoryData.reservedQty += Number(item.afn_reserved_quantity || item.reserved_quantity || 0);
+          inventoryData.totalStock += Number(item.fulfillable_quantity || item.afn_fulfillable_quantity || 0);
+          inventoryData.inboundQty += Number(item.inbound_quantity || item.afn_inbound_working_quantity || 0);
+          inventoryData.reservedQty += Number(item.reserved_quantity || item.afn_reserved_quantity || 0);
           const price = Number(item.your_price || item.price || 0);
-          const qty = Number(item.afn_fulfillable_quantity || item.fulfillable_quantity || 0);
+          const qty = Number(item.fulfillable_quantity || item.afn_fulfillable_quantity || 0);
           inventoryData.totalValue += price * qty;
         }
+        console.log(`[Dashboard] FBA v2 inventory: ${invList.length} items, totalStock=${inventoryData.totalStock}`);
       } catch (err: any) {
         console.warn(`[Dashboard] Inventory fetch error: ${err.message}`);
       }
       
-      // Fetch ad data from Lingxing
+      // Fetch ad data from Lingxing SP广告小时数据 API
       let adData = { totalSpend: 0, totalSales: 0, impressions: 0, clicks: 0, acos: 0, roas: 0, activeCampaigns: 0 };
       try {
+        // Use SP广告商品小时数据 for per-ASIN ad metrics
         const adRes = await adapter.request({
-          path: "/pb/openapi/newad/spCampaigns",
-          body: { start_date: startDate, end_date: endDate },
+          path: "/ph/openaps/newad/spAdvertiseHourData",
+          body: { report_date: endDate, offset: 0, length: 1000 },
         });
         const adRaw = adRes.data || [];
         const adList = Array.isArray(adRaw) ? adRaw : (adRaw as any).records || (adRaw as any).list || [];
         for (const item of adList) {
-          adData.totalSpend += Number(item.spend || item.cost || 0);
-          adData.totalSales += Number(item.sales || item.attributed_sales || 0);
+          adData.totalSpend += Number(item.cost || 0);
+          adData.totalSales += Number(item.sales || 0);
           adData.impressions += Number(item.impressions || 0);
           adData.clicks += Number(item.clicks || 0);
-          if (item.status === 'enabled' || item.status === 'active') adData.activeCampaigns++;
         }
-        adData.acos = adData.totalSales > 0 ? (adData.totalSpend / adData.totalSales) * 100 : 0;
-        adData.roas = adData.totalSpend > 0 ? adData.totalSales / adData.totalSpend : 0;
+        adData.acos = adData.totalSales > 0 ? round2((adData.totalSpend / adData.totalSales) * 100) : 0;
+        adData.roas = adData.totalSpend > 0 ? round2(adData.totalSales / adData.totalSpend) : 0;
+        adData.activeCampaigns = new Set(adList.map((i: any) => i.campaign_id).filter(Boolean)).size;
+        console.log(`[Dashboard] SP Ad hourly data: ${adList.length} items, spend=${adData.totalSpend}, sales=${adData.totalSales}`);
       } catch (err: any) {
         console.warn(`[Dashboard] Ad fetch error: ${err.message}`);
       }

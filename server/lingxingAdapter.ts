@@ -913,7 +913,8 @@ class LingxingAdapter {
       "/erp/sc/data/seller/lists": () => mockSellerList(),
       // 基础数据 - 汇率
       "/erp/sc/data/exchange_rate": () => mockExchangeRates(),
-      // FBA库存
+      // FBA库存 (v2 API)
+      "/erp/sc/data/fba/FbaStockLists": () => mockFbaInventory(body),
       "/erp/sc/routing/fba/fbaStock/fbaList": () => mockFbaInventory(body),
       "/erp/sc/data/fba_report/inventoryAge": () => mockFbaInventory(body),
       // 本地仓库存
@@ -923,12 +924,18 @@ class LingxingAdapter {
       // 利润报表
       "/bd/profit/report/open/report/msku/list": () => mockProfitList(body),
       "/bd/profit/report/open/report/asin/list": () => mockProfitDetail(body),
-      // 广告数据
+      // 广告数据 (小时数据 API)
+      "/ph/openaps/newad/spAdvertiseHourData": () => mockProductAdReports(body),
+      "/pb/openaps/newad/spCampaignHourData": () => mockAdCampaigns(body),
+      "/pb/openapi/newad/spAdGroupHourData": () => mockAdGroups(body),
       "/pb/openapi/newad/spCampaigns": () => mockAdCampaigns(body),
+      "/pb/openapi/newad/spCampaignReports": () => mockAdCampaigns(body),
       "/pb/openapi/newad/spProductAdReports": () => mockProductAdReports(body),
       "/pb/openapi/newad/spAdGroups": () => mockAdGroups(body),
       "/pb/openapi/newad/spKeywords": () => mockAdKeywords(body),
       "/pb/openapi/newad/queryWordReports": () => mockSearchTerms(body),
+      // ASIN 360小时数据
+      "/basicOpen/salesAnalysis/productPerformance/performanceTrendByHour": () => mockProfitDetail(body),
       // 产品列表
       "/erp/sc/routing/data/local_inventory/productList": () => mockMskuList(body),
       "/erp/sc/data/mws/listing": () => mockProductList(body),

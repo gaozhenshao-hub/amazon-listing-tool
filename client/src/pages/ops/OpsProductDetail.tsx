@@ -315,6 +315,25 @@ export default function OpsProductDetail() {
                       <p className="font-semibold text-lg">{profitData.actual.profitMargin}%</p>
                     </div>
                   </div>
+                  {/* ASIN 360 小时数据图表 */}
+                  {profitData.hourlyTrend && profitData.hourlyTrend.length > 0 && (
+                    <div className="mt-4 border-t pt-3">
+                      <p className="text-sm font-medium text-muted-foreground mb-2">📈 ASIN 360 昨日小时数据</p>
+                      <ResponsiveContainer width="100%" height={200}>
+                        <LineChart data={profitData.hourlyTrend} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                          <XAxis dataKey="hour" tick={{ fontSize: 11 }} />
+                          <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                          <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
+                          <Tooltip contentStyle={{ fontSize: 12 }} />
+                          <Legend wrapperStyle={{ fontSize: 11 }} />
+                          <Line yAxisId="left" type="monotone" dataKey="volume" name="销量" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                          <Line yAxisId="left" type="monotone" dataKey="orderItems" name="订单" stroke="#10b981" strokeWidth={2} dot={false} />
+                          <Line yAxisId="right" type="monotone" dataKey="salesRank" name="大类排名" stroke="#f59e0b" strokeWidth={1.5} dot={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-3 py-6">

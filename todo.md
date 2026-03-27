@@ -2505,3 +2505,14 @@
 - [x] 并行提取所有截图中的接口信息（99个独立接口，23个分类）
 - [x] 生成结构化API文档保存到 shared/lingxing_api_complete_doc.md
 - [x] 关键分类：FBA(21个)、广告(24个)、产品(10个)、客服(9个)、基础数据(7个)、库存(6个)
+
+## 补充库存/广告接口精确字段映射（已完成）
+- [x] 分析FBA库存列表接口(/erp/sc/data/fba/FbaStockLists)字段映射
+- [x] 分析SP广告小时数据接口字段映射
+- [x] 分析ASIN 360小时数据接口字段映射
+- [x] 后端：替换FBA库存API调用和字段映射（productOps.ts + operations.ts）
+- [x] 后端：Dashboard广告数据采用SP广告小时数据接口
+- [x] 后端：产品总览新增ASIN 360小时数据调用（hourlyTrend）
+- [x] 前端：添加ASIN 360昨日小时数据图表（销量/订单/大类排名）
+- [x] lingxingAdapter.ts mock路由更新新API路径
+- [x] 测试验证并保存检查点（2844测试全部通过）

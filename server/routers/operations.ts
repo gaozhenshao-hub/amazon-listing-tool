@@ -113,8 +113,8 @@ export const operationsRouter = router({
     const [profitSummaryRes, profitDailyRes, inventoryRes, adReportRes] = await Promise.all([
       adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 1000, startDate: getDateNDaysAgo(30), endDate: getYesterday(), monthlyQuery: false, orderStatus: "All", summaryEnabled: true } }),
       adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 1000, startDate: getDateNDaysAgo(30), endDate: getYesterday(), monthlyQuery: false, orderStatus: "All" } }),
-      adapter.request({ path: "/erp/sc/routing/fba/fbaStock/fbaList", body: { sid: allSidsStr, length: 200 } }),
-      adapter.request({ path: "/pb/openapi/newad/spCampaignReports", body: { sid: firstSid, report_date: getDateNDaysAgo(1), show_detail: 0, offset: 0, length: 200 }, headers: { "X-API-VERSION": "2" } }).catch(() => ({ data: [] })),
+      adapter.request({ path: "/erp/sc/data/fba/FbaStockLists", body: { offset: 0, length: 500 } }),
+      adapter.request({ path: "/ph/openaps/newad/spAdvertiseHourData", body: { report_date: getYesterday(), offset: 0, length: 1000 } }).catch(() => ({ data: [] })),
     ]);
     const sellerRes = { data: sellers };
 
@@ -129,7 +129,7 @@ export const operationsRouter = router({
     // Use summary data for card calculations
     const profitData = profitSummaryData;
     const rawInventory = inventoryRes.data || [];
-    const inventoryData = Array.isArray(rawInventory) ? rawInventory : (rawInventory as any).list || [];
+    const inventoryData = Array.isArray(rawInventory) ? rawInventory : (rawInventory as any).records || (rawInventory as any).list || [];
     const rawAd = adReportRes.data || [];
     const adData = Array.isArray(rawAd) ? rawAd : (rawAd as any).records || (rawAd as any).list || [];
     console.log(`[Dashboard] Profit records: ${profitData.length}, Inventory records: ${inventoryData.length}, Ad report records: ${adData.length}`);
@@ -277,13 +277,13 @@ export const operationsRouter = router({
       }
       console.log(`[InventoryList] Querying FBA inventory with sid=${sidStr}`);
       const res = await adapter.request({
-        path: "/erp/sc/routing/fba/fbaStock/fbaList",
-        body: { sid: sidStr, length: 200 },
+        path: "/erp/sc/data/fba/FbaStockLists",
+        body: { offset: 0, length: 500 },
       });
 
-      // Normalize: FBA API returns {total, list:[...]}
+      // Normalize: FBA v2 API returns {records:[...]} or array
       const rawData = res.data || [];
-      const dataList = Array.isArray(rawData) ? rawData : (rawData as any).list || [];
+      const dataList = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
       console.log(`[InventoryList] Got ${dataList.length} items, total=${(rawData as any)?.total || 'N/A'}`);
       if (dataList.length > 0) {
         console.log(`[InventoryList] First item keys: ${Object.keys(dataList[0]).join(', ')}`);
