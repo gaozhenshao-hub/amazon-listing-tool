@@ -2490,3 +2490,12 @@
 - [x] 修复shippingBatch.ts中shipments 1处数据结构解析
 - [x] 删除过时的productOps.ts.bak文件
 - [x] 全部2827测试通过，TypeScript 0错误
+
+## Bug修复：基于领星API文档修复产品详情页数据不准确（B0F21JYKNT日销11单/30天506单）
+- [x] 分析getProductProfitSummary请求参数问题（需用searchField/searchValue而非asin参数）
+- [x] 修复利润报表API请求参数（ASIN接口用searchField="asin"，父ASIN接口用searchField="parent_asin"）
+- [x] 修复日期范围逻辑（endDate用getYesterday()而非getToday()，避免不完整数据）
+- [x] 修复字段映射（totalSalesQuantity=销量，totalSalesAmount=销售额，totalAdsCost=广告费等）
+- [x] 修复前端数据展示逻辑（30天销量/日均销量/7天销量/利润率）
+- [x] 测试验证并保存检查点（2844测试全部通过）
+- [x] 领星API字段文档已保存到 shared/lingxing_api_fields.md

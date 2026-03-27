@@ -111,8 +111,8 @@ export const operationsRouter = router({
     // Fetch key data from Lingxing using real SIDs
     // Two profit requests: summary for cards, daily for trend chart
     const [profitSummaryRes, profitDailyRes, inventoryRes, adReportRes] = await Promise.all([
-      adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { sid: firstSid, startDate: getDateNDaysAgo(30), endDate: getToday(), length: 500, summaryEnabled: true } }),
-      adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { sid: firstSid, startDate: getDateNDaysAgo(30), endDate: getToday(), length: 500 } }),
+      adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 1000, startDate: getDateNDaysAgo(30), endDate: getYesterday(), monthlyQuery: false, orderStatus: "All", summaryEnabled: true } }),
+      adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 1000, startDate: getDateNDaysAgo(30), endDate: getYesterday(), monthlyQuery: false, orderStatus: "All" } }),
       adapter.request({ path: "/erp/sc/routing/fba/fbaStock/fbaList", body: { sid: allSidsStr, length: 200 } }),
       adapter.request({ path: "/pb/openapi/newad/spCampaignReports", body: { sid: firstSid, report_date: getDateNDaysAgo(1), show_detail: 0, offset: 0, length: 200 }, headers: { "X-API-VERSION": "2" } }).catch(() => ({ data: [] })),
     ]);
@@ -139,9 +139,10 @@ export const operationsRouter = router({
     // orders: totalSalesQuantity, adSpend: totalAdsCost
     // fees: platformFee(-), totalFbaDeliveryFee(-), totalStorageFee(-)
     // cost: cgPriceAbsTotal, cgTransportCostsTotal
-    const totalRevenue = profitData.reduce((s: number, d: any) => s + (d.totalFbaAndFbmAmount || d.revenue || 0), 0);
-    const totalProfit = profitData.reduce((s: number, d: any) => s + (d.grossProfit || d.totalProfit || d.profit || 0), 0);
-    const totalOrders = profitData.reduce((s: number, d: any) => s + (d.totalSalesQuantity || d.order_count || 0), 0);
+    // Field mapping per Lingxing API docs: totalSalesAmount=销售额, grossProfit=毛利润, totalSalesQuantity=销量
+    const totalRevenue = profitData.reduce((s: number, d: any) => s + Number(d.totalSalesAmount || d.totalFbaAndFbmAmount || 0), 0);
+    const totalProfit = profitData.reduce((s: number, d: any) => s + Number(d.grossProfit || 0), 0);
+    const totalOrders = profitData.reduce((s: number, d: any) => s + Number(d.totalSalesQuantity || 0), 0);
     const avgMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
 
     // FBA inventory fields: sellable_days (可售天数), fulfillable_quantity (可售库存), msku, product_name
@@ -158,7 +159,7 @@ export const operationsRouter = router({
     const totalAdSpend = adData.reduce((s: number, d: any) => s + (Number(d.cost) || 0), 0);
     const totalAdSales = adData.reduce((s: number, d: any) => s + (Number(d.sales) || 0), 0);
     // Fallback: extract ad cost from profit data if ad report is empty
-    const profitAdSpend = profitData.reduce((s: number, d: any) => s + Math.abs(d.totalAdsCost || d.adsSpCost || 0), 0);
+    const profitAdSpend = profitData.reduce((s: number, d: any) => s + Math.abs(Number(d.totalAdsCost || 0)), 0);
     const finalAdSpend = totalAdSpend > 0 ? totalAdSpend : profitAdSpend;
     const avgAcos = totalAdSales > 0 ? (finalAdSpend / totalAdSales * 100) : 0;
     console.log(`[Dashboard] Ad spend: $${finalAdSpend.toFixed(2)}, Ad sales: $${totalAdSales.toFixed(2)}, ACoS: ${avgAcos.toFixed(1)}%`);
@@ -184,9 +185,9 @@ export const operationsRouter = router({
           const date = d.postedDateLocale || d.reportDateMonth || d.date || d.statDate || '';
           if (!date) continue;
           if (!dateMap[date]) dateMap[date] = { revenue: 0, profit: 0, orders: 0 };
-          dateMap[date].revenue += d.totalFbaAndFbmAmount || d.revenue || 0;
-          dateMap[date].profit += d.grossProfit || d.totalProfit || d.profit || 0;
-          dateMap[date].orders += d.totalSalesQuantity || d.order_count || 0;
+          dateMap[date].revenue += Number(d.totalSalesAmount || d.totalFbaAndFbmAmount || 0);
+          dateMap[date].profit += Number(d.grossProfit || 0);
+          dateMap[date].orders += Number(d.totalSalesQuantity || 0);
         }
         return Object.entries(dateMap)
           .sort(([a], [b]) => a.localeCompare(b))
@@ -1861,6 +1862,12 @@ ${JSON.stringify(input.searchTerms.map(t => ({
 // Helper functions
 function getToday(): string {
   return new Date().toISOString().split("T")[0];
+}
+
+function getYesterday(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().split("T")[0];
 }
 
 function getDateNDaysAgo(n: number): string {

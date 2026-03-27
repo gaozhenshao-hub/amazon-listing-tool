@@ -297,18 +297,22 @@ export default function OpsProductDetail() {
                       ))}
                     </tbody>
                   </table>
-                  <div className="mt-3 grid grid-cols-3 gap-4 text-center text-sm border-t pt-3">
+                  <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-4 text-center text-sm border-t pt-3">
                     <div>
-                      <p className="text-muted-foreground">订单数</p>
-                      <p className="font-semibold">{profitData.actual.orders}</p>
+                      <p className="text-muted-foreground">30天销量</p>
+                      <p className="font-semibold text-lg">{profitData.actual.orders}</p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">销量</p>
-                      <p className="font-semibold">{profitData.actual.units}</p>
+                      <p className="text-muted-foreground">日均销量</p>
+                      <p className="font-semibold text-lg">{profitData.actual.orders > 0 ? Math.round(profitData.actual.orders / 30) : 0}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">7天销量</p>
+                      <p className="font-semibold text-lg">{profitData.current.orders}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">利润率</p>
-                      <p className="font-semibold">{profitData.actual.profitMargin}%</p>
+                      <p className="font-semibold text-lg">{profitData.actual.profitMargin}%</p>
                     </div>
                   </div>
                 </div>
