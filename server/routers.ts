@@ -57,6 +57,7 @@ import { productOpsRouter } from "./routers/productOps";
 import { crawlerRouter } from "./routers/crawler";
 import { shippingBatchRouter } from "./routers/shippingBatch";
 import { logisticsRouter } from "./routers/logistics";
+import { adAnalysisRouter } from "./routers/adAnalysis";
 
 export const appRouter = router({
   system: systemRouter,
@@ -124,6 +125,7 @@ export const appRouter = router({
   crawler: crawlerRouter,
   shippingBatch: shippingBatchRouter,
   logistics: logisticsRouter,
+  adAnalysis: adAnalysisRouter,
 });
 
 export type AppRouter = typeof appRouter;
