@@ -2454,3 +2454,57 @@ export const keywordDailyRecords = mysqlTable("keyword_daily_records", {
 });
 export type KeywordDailyRecord = typeof keywordDailyRecords.$inferSelect;
 export type InsertKeywordDailyRecord = typeof keywordDailyRecords.$inferInsert;
+
+
+// Competitor Ad Benchmark (竞品广告对标)
+export const competitorAdBenchmarks = mysqlTable("competitor_ad_benchmarks", {
+  id: int("id").autoincrement().primaryKey(),
+  planId: int("plan_id").notNull(),
+  competitorBrand: varchar("competitor_brand", { length: 200 }).notNull(),
+  competitorAsin: varchar("competitor_asin", { length: 20 }),
+  adType: mysqlEnum("ad_type", ["sp", "sb", "sd", "dsp", "mixed"]).default("mixed").notNull(),
+  // Five radar dimensions
+  acos: decimal("acos", { precision: 8, scale: 2 }),
+  ctr: decimal("ctr", { precision: 8, scale: 4 }),
+  cvr: decimal("cvr", { precision: 8, scale: 4 }),
+  cpc: decimal("cpc", { precision: 8, scale: 2 }),
+  cpa: decimal("cpa", { precision: 8, scale: 2 }),
+  // Additional metrics
+  totalSpend: decimal("total_spend", { precision: 12, scale: 2 }),
+  totalSales: decimal("total_sales", { precision: 12, scale: 2 }),
+  totalOrders: int("total_orders"),
+  totalImpressions: int("total_impressions"),
+  totalClicks: int("total_clicks"),
+  dataPeriod: varchar("data_period", { length: 50 }),
+  analysisNotes: text("analysis_notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type CompetitorAdBenchmark = typeof competitorAdBenchmarks.$inferSelect;
+export type InsertCompetitorAdBenchmark = typeof competitorAdBenchmarks.$inferInsert;
+
+// Promotion Phase (推广周期管理)
+export const promotionPhases = mysqlTable("promotion_phases", {
+  id: int("id").autoincrement().primaryKey(),
+  planId: int("plan_id").notNull(),
+  phaseName: varchar("phase_name", { length: 200 }).notNull(),
+  phaseType: mysqlEnum("phase_type", [
+    "launch", "growth", "maturity", "optimization", "clearance", "custom"
+  ]).default("custom").notNull(),
+  bsrRangeStart: int("bsr_range_start"),
+  bsrRangeEnd: int("bsr_range_end"),
+  durationDays: int("duration_days"),
+  startDate: varchar("start_date", { length: 10 }),
+  endDate: varchar("end_date", { length: 10 }),
+  adBudgetDaily: decimal("ad_budget_daily", { precision: 10, scale: 2 }),
+  targetAcos: decimal("target_acos", { precision: 8, scale: 2 }),
+  keyStrategy: text("key_strategy"),
+  milestones: text("milestones"),
+  status: mysqlEnum("status", ["pending", "active", "completed", "skipped"]).default("pending").notNull(),
+  progress: int("progress").default(0),
+  sortOrder: int("sort_order").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type PromotionPhase = typeof promotionPhases.$inferSelect;
+export type InsertPromotionPhase = typeof promotionPhases.$inferInsert;

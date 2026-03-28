@@ -2685,16 +2685,35 @@
 - [x] 数据库：新建product_ops_daily_record表（日度跟踪记录）
 - [x] 数据库：新建keyword_tracking表（关键词跟踪）
 - [x] 数据库：新建keyword_daily_record表（关键词日度记录）
-- [ ] 数据库：新建competitor_ad_analysis表（竞品广告分析）
+- [x] 数据库：新建competitor_ad_benchmark表（竞品广告对标数据）
 - [x] 后端：新增运营计划CRUD API（创建/编辑/查看/删除计划）
 - [x] 后端：新增日度记录API（getDailyRecords + upsertDailyRecord）
 - [x] 后端：新增关键词跟踪CRUD API（listKeywords + addKeyword + deleteKeyword + getKeywordDailyRecords + upsertKeywordDailyRecord）
-- [ ] 后端：新增竞品广告对标CRUD API
+- [x] 后端：新增竞品广告对标CRUD API
 - [x] 后端：新增AI运营建议API（aiOpsSuggestion）
 - [x] 前端：OpsProductPlan页面（运营目标设置+日度跟踪+关键词排位+AI建议）
 - [x] 前端：运营目标设置表单（16个KPI目标值）
 - [x] 前端：目标vs实际趋势图（双线对比折线图）
 - [x] 前端：日度明细数据表（可编辑单元格）
 - [x] 前端：关键词排位跟踪图表（排位折线图+出单量柱状图）
-- [ ] 前端：竞品广告对标雷达图（多品牌五维度对比）
-- [ ] 前端：推广周期甘特图（BSR分段推荐+进度条）
+- [x] 前端：竞品广告对标雷达图（多品牌五维度对比）
+- [x] 前端：推广周期甘特图（BSR分段推荐+进度条）
+
+### 2.5补充：竞品广告对标雷达图 + 推广周期甘特图
+
+#### 竞品广告对标雷达图
+- [x] 数据库：新建competitor_ad_benchmark表（竞品广告对标数据）
+- [x] 后端：新增竞品广告对标CRUD API（addBenchmark/listBenchmarks/updateBenchmark/deleteBenchmark）
+- [x] 后端：新增AI竞品广告分析API（根据对标数据生成策略建议）
+- [x] 前端：CompetitorAdBenchmark组件（五维度雷达图+对标数据表+AI建议）
+
+#### 推广周期甘特图
+- [x] 数据库：新建promotion_phase表（推广阶段定义）
+- [x] 后端：新增推广阶段CRUD API（addPhase/listPhases/updatePhase/deletePhase）
+- [x] 后端：新增BSR分段推荐初始化API（initBsrPhases）
+- [x] 后端：新增AI推广节奏建议API（根据BSR阶段推荐推广策略）
+- [x] 前端：PromotionGantt组件（甘特图+BSR分段推荐+进度条+状态管理+AI建议）
+
+#### 集成
+- [x] 集成到OpsProductPlan页面（竞品对标+推广甘特图Section）
+- [x] 单元测试覆盖（21个测试全部通过）

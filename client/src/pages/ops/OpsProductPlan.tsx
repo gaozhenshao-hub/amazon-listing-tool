@@ -17,8 +17,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Plus, Trash2, Edit2, Save, Target, TrendingUp, Users, Calendar,
   CheckCircle2, Clock, AlertTriangle, Loader2, FileText, Award,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, Zap,
 } from "lucide-react";
+import CompetitorAdBenchmark from "./plan/CompetitorAdBenchmark";
+import PromotionGantt from "./plan/PromotionGantt";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -524,6 +526,11 @@ export default function OpsProductPlan({ productId, parentAsin, productTitle }: 
               </CardContent>
             )}
           </Card>
+          {/* Competitor Ad Benchmark - 竞品广告对标雷达图 */}
+          <CompetitorAdBenchmark planId={activePlanId!} asin={parentAsin} />
+
+          {/* Promotion Gantt - 推广周期甘特图 */}
+          <PromotionGantt planId={activePlanId!} asin={parentAsin} />
         </>
       )}
 
