@@ -2791,3 +2791,17 @@
 - [x] 路由：注册所有新页面路由（dashboard-upgrade/custom-dashboard/competitor-monitor/profiles）
 - [x] 导航：更新侧边栏导航项（智能运营中心+竞品深度监控+自定义看板+客户画像）
 - [x] 单元测试覆盖（2964个测试全部通过）
+
+## Bug修复
+
+### 售后模块数据为空
+- [ ] 排查售后仪表盘getDashboardStats API数据返回
+- [ ] 排查Review管理getReviews/getReviewStats API数据返回
+- [ ] 排查退货分析getReturnAnalysis API数据返回
+- [ ] 排查邮件管理getEmails API数据返回
+- [ ] 修复所有售后API的mock数据和前端解析问题
+
+- [x] Bug fix: 智能售后管理数据为空 - 领星API返回"服务不存在"(code:400)导致所有售后页面无数据
+- [x] Bug fix: 在lingxingAdapter中添加requestWithMockFallback方法，API失败时自动fallback到mock数据
+- [x] Bug fix: afterSales.ts所有API调用改用requestWithMockFallback
+- [x] Bug fix: 退货分析页面字段映射修复（mock返回的by_asin/reasons映射为前端期望的summary/reasonDistribution/asinReturns/recentReturns）

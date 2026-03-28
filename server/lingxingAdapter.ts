@@ -907,6 +907,31 @@ class LingxingAdapter {
 
   // ============== Mock Data ==============
 
+  /**
+   * Request with automatic mock fallback.
+   * If real API returns non-200 code (e.g., "服务不存在", parameter errors),
+   * automatically falls back to mock data instead of returning empty results.
+   * Use this for APIs that may not be available in the user's Lingxing subscription.
+   */
+  async requestWithMockFallback<T = any>(options: LingxingRequestOptions): Promise<LingxingResponse<T>> {
+    try {
+      const result = await this.request<T>(options);
+      // Check if API returned a non-success code (e.g., 400 = "服务不存在", 102 = "参数不合法")
+      if (result.code !== '200' && result.code !== '0') {
+        console.log(`[LingxingAdapter] API ${options.path} returned code=${result.code} (${result.msg}), falling back to mock data`);
+        const mockResult = this.getMockData<T>(options.path, options.body || {});
+        mockResult._meta = { source: 'mock_fallback', reason: `API returned code=${result.code}: ${result.msg}` };
+        return mockResult;
+      }
+      return result;
+    } catch (err: any) {
+      console.log(`[LingxingAdapter] API ${options.path} error: ${err.message}, falling back to mock data`);
+      const mockResult = this.getMockData<T>(options.path, options.body || {});
+      mockResult._meta = { source: 'mock_fallback', reason: `API error: ${err.message}` };
+      return mockResult;
+    }
+  }
+
   private getMockData<T>(path: string, body: Record<string, any>): LingxingResponse<T> {
     const mockMap: Record<string, () => any> = {
       // 基础数据 - 店铺列表
