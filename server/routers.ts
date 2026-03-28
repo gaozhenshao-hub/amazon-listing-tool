@@ -61,6 +61,7 @@ import { adAnalysisRouter } from "./routers/adAnalysis";
 import { adAnalysisP2Router } from "./routers/adAnalysisP2";
 import { profitDeepRouter } from "./routers/profitDeep";
 import { opsProductPlanRouter } from "./routers/opsProductPlan";
+import { afterSalesRouter } from "./routers/afterSales";
 
 export const appRouter = router({
   system: systemRouter,
@@ -132,6 +133,8 @@ export const appRouter = router({
   adAnalysisP2: adAnalysisP2Router,
   profitDeep: profitDeepRouter,
   opsProductPlan: opsProductPlanRouter,
+  // Module 4: After-Sales Management
+  afterSales: afterSalesRouter,
 });
 
 export type AppRouter = typeof appRouter;

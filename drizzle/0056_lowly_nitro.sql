@@ -1,0 +1,121 @@
+CREATE TABLE `email_replies` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`user_id` int NOT NULL,
+	`sid` int,
+	`email_id` varchar(100),
+	`buyer_email` varchar(320),
+	`order_id` varchar(50),
+	`asin` varchar(20),
+	`email_category` enum('return_request','product_inquiry','complaint','positive_feedback','other'),
+	`urgency_level` enum('critical','high','medium','low') DEFAULT 'medium',
+	`ai_classification` text,
+	`ai_draft_reply` text,
+	`edited_reply` text,
+	`final_reply` text,
+	`template_id` int,
+	`status` enum('unread','read','draft','replied','closed') NOT NULL DEFAULT 'unread',
+	`replied_at` timestamp,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `email_replies_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `email_templates` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`user_id` int NOT NULL,
+	`category` enum('return_handling','product_inquiry','negative_review_reply','positive_review_thanks','logistics_inquiry','after_sales_followup','other') NOT NULL DEFAULT 'other',
+	`template_name` varchar(200) NOT NULL,
+	`subject` varchar(500),
+	`body_content` text NOT NULL,
+	`language` varchar(10) NOT NULL DEFAULT 'en',
+	`variables` json,
+	`is_ai_generated` int DEFAULT 0,
+	`usage_count` int DEFAULT 0,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `email_templates_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `return_analysis_cache` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`user_id` int NOT NULL,
+	`asin` varchar(20) NOT NULL,
+	`sid` int,
+	`return_rate` decimal(8,2),
+	`total_returns` int,
+	`total_orders` int,
+	`return_reasons` json,
+	`ai_root_cause_analysis` text,
+	`ai_primary_causes` json,
+	`ai_improvement_plan` json,
+	`ai_listing_optimization` text,
+	`analysis_date_start` varchar(10),
+	`analysis_date_end` varchar(10),
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `return_analysis_cache_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `review_records` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`user_id` int NOT NULL,
+	`sid` int,
+	`asin` varchar(20) NOT NULL,
+	`review_id` varchar(100),
+	`star_rating` int NOT NULL,
+	`review_title` text,
+	`review_content` text,
+	`reviewer_name` varchar(200),
+	`is_verified_purchase` int DEFAULT 0,
+	`has_image` int DEFAULT 0,
+	`has_video` int DEFAULT 0,
+	`review_date` varchar(20),
+	`ai_problem_category` varchar(100),
+	`ai_severity` enum('high','medium','low'),
+	`ai_key_issues` json,
+	`ai_sentiment` enum('negative','neutral','positive'),
+	`ai_suggested_reply` text,
+	`ai_internal_action` text,
+	`ai_follow_up_needed` int DEFAULT 0,
+	`process_status` enum('pending','in_progress','replied','ignored') NOT NULL DEFAULT 'pending',
+	`processed_by` int,
+	`processed_at` timestamp,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `review_records_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `review_replies` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`review_record_id` int NOT NULL,
+	`user_id` int NOT NULL,
+	`ai_draft_reply` text,
+	`edited_reply` text,
+	`final_reply` text,
+	`reply_language` varchar(10) DEFAULT 'en',
+	`status` enum('draft','edited','confirmed','sent') NOT NULL DEFAULT 'draft',
+	`confirmed_at` timestamp,
+	`sent_at` timestamp,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `review_replies_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `service_tasks` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`user_id` int NOT NULL,
+	`task_type` enum('negative_review','return_handling','email_reply','rma_processing','performance_notice','feedback_response') NOT NULL,
+	`related_id` varchar(100),
+	`asin` varchar(20),
+	`sid` int,
+	`title` varchar(500) NOT NULL,
+	`description` text,
+	`priority` enum('critical','high','medium','low') NOT NULL DEFAULT 'medium',
+	`status` enum('open','in_progress','resolved','closed') NOT NULL DEFAULT 'open',
+	`assigned_to` int,
+	`due_date` varchar(10),
+	`resolved_at` timestamp,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `service_tasks_id` PRIMARY KEY(`id`)
+);

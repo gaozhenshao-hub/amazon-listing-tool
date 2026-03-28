@@ -55,6 +55,7 @@ import {
   Truck,
   Clock,
   PieChart,
+  Star,
   type LucideIcon,
 } from "lucide-react";
 import { ROLE_LABELS, ROLE_MODULE_ACCESS, ADMIN_ROLES } from "@shared/const";
@@ -152,13 +153,12 @@ const modules: ModuleDef[] = [
     label: "智能售后管理",
     shortLabel: "售后管理",
     prefix: "/service",
-    enabled: false,
+    enabled: true,
     items: [
       { icon: LayoutDashboard, label: "售后仪表盘", path: "/service" },
-      { icon: MessageSquareText, label: "AI客服回复", path: "/service/replies" },
+      { icon: Star, label: "Review智能管理", path: "/service/reviews" },
       { icon: History, label: "退货分析", path: "/service/returns" },
-      { icon: FileText, label: "邮件模板", path: "/service/templates" },
-      { icon: Search, label: "客户画像", path: "/service/profiles" },
+      { icon: MessageSquareText, label: "邮件管理 & AI客服", path: "/service/emails" },
     ],
   },
   {

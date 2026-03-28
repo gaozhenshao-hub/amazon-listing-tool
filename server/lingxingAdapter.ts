@@ -977,6 +977,35 @@ class LingxingAdapter {
       "/pb/openaps/newad/sbCampaignHourData": () => mockSbCampaignHourData(body),
       // SD广告活动小时数据
       "/pb/openaps/newad/sdCampaignHourData": () => mockSdCampaignHourData(body),
+      // ============ 售后模块 API ============
+      // Review列表(新)
+      "/erp/comment/data/review/listNewReview": () => mockReviewList(body),
+      // Review统计
+      "/erp/sc/v2/ca/reviewReport/lists": () => mockReviewStats(body),
+      // Feedback列表
+      "/erp/sc/cs/feedback/listMws": () => mockFeedbackList(body),
+      // Feedback统计
+      "/erp/sc/data/fba/feedbackReport": () => mockFeedbackStats(body),
+      // 邮件列表
+      "/erp/sc/data/mail/lists": () => mockEmailList(body),
+      // 邮件详情
+      "/erp/sc/data/mail/info": () => mockEmailDetail(body),
+      // RMA管理
+      "/erp/sc/open/customerService/rmaManage/list": () => mockRmaList(body),
+      // 买家之声
+      "/v2/open/customerService/voiceOfBuyer/list": () => mockVoiceOfBuyer(body),
+      // 业绩通知
+      "/basicOpen/customerService/performanceNotice/list": () => mockPerformanceNotice(body),
+      // 店铺绩效列表
+      "/erp/sc/cs/performance/list": () => mockShopPerformance(body),
+      // 店铺绩效详情
+      "/erp/data/seller/performance/list": () => mockShopPerformanceDetail(body),
+      // 客户列表
+      "/erp/sc/open/customerService/customer/list": () => mockCustomerList(body),
+      // 退货分析
+      "/erp/sc/data/fba/returnAnalysis": () => mockReturnAnalysis(body),
+      // 亚马逊订单
+      "/erp/sc/data/amazon/OrderLists": () => mockAmazonOrders(body),
     };
 
     const mockFn = mockMap[path];
@@ -1543,6 +1572,284 @@ function mockSdCampaignHourData(body: Record<string, any>) {
     });
   }
   return campaigns;
+}
+
+// ============== 售后模块 Mock 数据 ==============
+
+function mockReviewList(body: Record<string, any>) {
+  const reviews = [];
+  const titles = ['Great product!', 'Not as expected', 'Terrible quality', 'Love it!', 'Decent for the price', 'Broke after 2 weeks', 'Perfect gift', 'Would not recommend', 'Exceeded expectations', 'Average product'];
+  const contents = [
+    'This product is amazing! Exactly what I needed.',
+    'The quality is not what I expected from the pictures. Very disappointing.',
+    'Stopped working after just two weeks. Complete waste of money.',
+    'Absolutely love this! Great quality and fast shipping.',
+    'It\'s okay for the price. Nothing special but does the job.',
+    'The material feels cheap and it broke within days.',
+    'Bought this as a gift and they loved it!',
+    'Poor quality control. Received a defective unit.',
+    'Much better than I expected. Will buy again!',
+    'Average quality. You get what you pay for.'
+  ];
+  const names = ['John D.', 'Sarah M.', 'Mike R.', 'Emily W.', 'David L.', 'Lisa K.', 'Tom B.', 'Anna C.', 'James H.', 'Mary P.'];
+  const count = Math.min(body.length || 20, 20);
+  for (let i = 0; i < count; i++) {
+    const star = [1, 1, 2, 3, 4, 4, 5, 5, 5, 5][i % 10];
+    const d = new Date(); d.setDate(d.getDate() - i * 2);
+    reviews.push({
+      review_id: `R${1000 + i}`,
+      asin: body.asin || `B0TEST${String(i % 5).padStart(4, '0')}`,
+      star_rating: star,
+      title: titles[i % titles.length],
+      content: contents[i % contents.length],
+      reviewer_name: names[i % names.length],
+      is_verified_purchase: Math.random() > 0.2 ? 1 : 0,
+      has_image: Math.random() > 0.6 ? 1 : 0,
+      has_video: Math.random() > 0.85 ? 1 : 0,
+      review_date: d.toISOString().slice(0, 10),
+      marketplace: 'US',
+    });
+  }
+  return { total: 156, list: reviews };
+}
+
+function mockReviewStats(body: Record<string, any>) {
+  const days = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    days.push({
+      date: d.toISOString().slice(0, 10),
+      star_1: Math.floor(Math.random() * 3),
+      star_2: Math.floor(Math.random() * 2),
+      star_3: Math.floor(Math.random() * 4),
+      star_4: Math.floor(Math.random() * 8 + 2),
+      star_5: Math.floor(Math.random() * 15 + 5),
+      total: 0,
+    });
+    days[days.length - 1].total = days[days.length - 1].star_1 + days[days.length - 1].star_2 + days[days.length - 1].star_3 + days[days.length - 1].star_4 + days[days.length - 1].star_5;
+  }
+  return { average_rating: 4.2, total_reviews: 1856, daily: days };
+}
+
+function mockFeedbackList(body: Record<string, any>) {
+  const feedbacks = [];
+  for (let i = 0; i < 15; i++) {
+    const rating = [1, 2, 3, 4, 5, 5, 5, 4, 4, 5, 3, 5, 4, 5, 5][i];
+    const d = new Date(); d.setDate(d.getDate() - i * 3);
+    feedbacks.push({
+      feedback_id: `FB${2000 + i}`,
+      order_id: `111-${7000000 + i}-${3000000 + i}`,
+      rating,
+      content: rating >= 4 ? 'Great seller, fast shipping!' : 'Slow delivery and poor packaging.',
+      buyer_name: `Buyer_${i}`,
+      feedback_date: d.toISOString().slice(0, 10),
+      is_removed: 0,
+    });
+  }
+  return { total: 89, positive_rate: 92.3, list: feedbacks };
+}
+
+function mockFeedbackStats(body: Record<string, any>) {
+  return {
+    total_feedback: 89,
+    positive: 82,
+    neutral: 4,
+    negative: 3,
+    positive_rate: 92.3,
+    last_30_days: { positive: 28, neutral: 1, negative: 1, total: 30 },
+    last_90_days: { positive: 75, neutral: 3, negative: 2, total: 80 },
+  };
+}
+
+function mockEmailList(body: Record<string, any>) {
+  const emails = [];
+  const subjects = ['Where is my order?', 'Product inquiry', 'Return request', 'Thank you!', 'Damaged item received', 'Wrong item sent', 'Refund status', 'Product warranty', 'Size exchange', 'Missing parts'];
+  for (let i = 0; i < 15; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    emails.push({
+      mail_id: `M${3000 + i}`,
+      subject: subjects[i % subjects.length],
+      buyer_email: `buyer${i}@marketplace.amazon.com`,
+      order_id: `111-${8000000 + i}-${4000000 + i}`,
+      asin: `B0TEST${String(i % 5).padStart(4, '0')}`,
+      is_read: i > 3 ? 1 : 0,
+      mail_date: d.toISOString().slice(0, 10),
+      direction: i % 3 === 0 ? 'sent' : 'received',
+    });
+  }
+  return { total: 234, unread: 4, list: emails };
+}
+
+function mockEmailDetail(body: Record<string, any>) {
+  return {
+    mail_id: body.mail_id || 'M3000',
+    subject: 'Where is my order?',
+    buyer_email: 'buyer0@marketplace.amazon.com',
+    order_id: '111-8000000-4000000',
+    asin: 'B0TEST0000',
+    content: 'Hi, I ordered this product 10 days ago and still haven\'t received it. The tracking shows it\'s been stuck in transit for 5 days. Can you please check on this? I need it urgently for an event this weekend. Thank you.',
+    mail_date: new Date().toISOString().slice(0, 10),
+    history: [
+      { direction: 'received', content: 'Hi, where is my order? It\'s been 10 days.', date: new Date(Date.now() - 86400000 * 2).toISOString().slice(0, 10) },
+      { direction: 'sent', content: 'We apologize for the delay. Let us check with the carrier.', date: new Date(Date.now() - 86400000).toISOString().slice(0, 10) },
+    ],
+  };
+}
+
+function mockRmaList(body: Record<string, any>) {
+  const rmas = [];
+  const reasons = ['Defective', 'Wrong item', 'Not as described', 'No longer needed', 'Better price found', 'Arrived too late'];
+  const statuses = ['pending', 'authorized', 'received', 'refunded', 'closed'];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i * 4);
+    rmas.push({
+      rma_id: `RMA${4000 + i}`,
+      order_id: `111-${9000000 + i}-${5000000 + i}`,
+      asin: `B0TEST${String(i % 5).padStart(4, '0')}`,
+      sku: `SKU-${1000 + i}`,
+      reason: reasons[i % reasons.length],
+      status: statuses[i % statuses.length],
+      quantity: 1,
+      refund_amount: +(15 + Math.random() * 85).toFixed(2),
+      created_date: d.toISOString().slice(0, 10),
+    });
+  }
+  return { total: 45, list: rmas };
+}
+
+function mockVoiceOfBuyer(body: Record<string, any>) {
+  const items = [];
+  const statuses = ['Excellent', 'Good', 'Fair', 'Poor', 'Very Poor'];
+  for (let i = 0; i < 8; i++) {
+    items.push({
+      asin: `B0TEST${String(i % 5).padStart(4, '0')}`,
+      product_name: `Test Product ${i + 1}`,
+      cx_health_status: statuses[i % statuses.length],
+      ncx_rate: +(Math.random() * 8).toFixed(2),
+      return_rate: +(Math.random() * 12).toFixed(2),
+      total_orders: Math.floor(Math.random() * 500 + 50),
+      total_returns: Math.floor(Math.random() * 30),
+    });
+  }
+  return { list: items };
+}
+
+function mockPerformanceNotice(body: Record<string, any>) {
+  const notices = [];
+  const types = ['Policy Warning', 'Listing Deactivated', 'Account Health Alert', 'Intellectual Property Complaint', 'Product Authenticity Complaint'];
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i * 7);
+    notices.push({
+      notice_id: `PN${5000 + i}`,
+      type: types[i % types.length],
+      title: `${types[i % types.length]} - Action Required`,
+      content: `You have received a ${types[i % types.length].toLowerCase()}. Please review and take action within 48 hours.`,
+      asin: i < 3 ? `B0TEST${String(i).padStart(4, '0')}` : null,
+      status: i < 2 ? 'open' : 'resolved',
+      created_date: d.toISOString().slice(0, 10),
+      due_date: new Date(d.getTime() + 86400000 * 2).toISOString().slice(0, 10),
+    });
+  }
+  return { total: 12, list: notices };
+}
+
+function mockShopPerformance(body: Record<string, any>) {
+  return {
+    order_defect_rate: 0.8,
+    late_shipment_rate: 1.2,
+    pre_fulfillment_cancel_rate: 0.5,
+    valid_tracking_rate: 98.5,
+    on_time_delivery_rate: 96.8,
+    return_dissatisfaction_rate: 2.1,
+    customer_service_dissatisfaction_rate: 1.5,
+    account_health_rating: 'Healthy',
+  };
+}
+
+function mockShopPerformanceDetail(body: Record<string, any>) {
+  return {
+    feedback_rating: 4.6,
+    feedback_count: 89,
+    a_to_z_claims: 2,
+    a_to_z_claims_rate: 0.3,
+    chargeback_claims: 0,
+    account_health: 'Good',
+    listing_violations: 1,
+    ip_complaints: 0,
+    product_authenticity: 0,
+    product_safety: 0,
+  };
+}
+
+function mockCustomerList(body: Record<string, any>) {
+  const customers = [];
+  for (let i = 0; i < 10; i++) {
+    customers.push({
+      customer_id: `CUST${6000 + i}`,
+      buyer_name: `Customer ${i + 1}`,
+      email: `customer${i}@email.com`,
+      total_orders: Math.floor(Math.random() * 10 + 1),
+      total_spend: +(Math.random() * 500 + 20).toFixed(2),
+      last_order_date: new Date(Date.now() - Math.random() * 86400000 * 90).toISOString().slice(0, 10),
+      return_count: Math.floor(Math.random() * 3),
+    });
+  }
+  return { total: 1234, list: customers };
+}
+
+function mockReturnAnalysis(body: Record<string, any>) {
+  const asinData = [];
+  const reasons = [
+    { reason: 'Defective/Does not work', count: 23, pct: 28.4 },
+    { reason: 'Not as described', count: 18, pct: 22.2 },
+    { reason: 'Wrong item sent', count: 12, pct: 14.8 },
+    { reason: 'No longer needed', count: 11, pct: 13.6 },
+    { reason: 'Better price available', count: 8, pct: 9.9 },
+    { reason: 'Arrived too late', count: 5, pct: 6.2 },
+    { reason: 'Other', count: 4, pct: 4.9 },
+  ];
+  for (let i = 0; i < 8; i++) {
+    const totalOrders = Math.floor(Math.random() * 800 + 100);
+    const totalReturns = Math.floor(totalOrders * (0.02 + Math.random() * 0.1));
+    asinData.push({
+      asin: `B0TEST${String(i).padStart(4, '0')}`,
+      sku: `SKU-${1000 + i}`,
+      product_name: `Test Product ${i + 1}`,
+      total_orders: totalOrders,
+      total_returns: totalReturns,
+      return_rate: +((totalReturns / totalOrders) * 100).toFixed(2),
+      return_reasons: reasons.map(r => ({ ...r, count: Math.floor(r.count * (0.5 + Math.random())) })),
+    });
+  }
+  // 30-day trend
+  const trend = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    trend.push({
+      date: d.toISOString().slice(0, 10),
+      returns: Math.floor(Math.random() * 8 + 1),
+      orders: Math.floor(Math.random() * 100 + 30),
+      return_rate: +(Math.random() * 8 + 2).toFixed(2),
+    });
+  }
+  return { overall_return_rate: 5.8, total_returns: 81, total_orders: 1396, by_asin: asinData, trend, reasons };
+}
+
+function mockAmazonOrders(body: Record<string, any>) {
+  const orders = [];
+  for (let i = 0; i < 10; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    orders.push({
+      order_id: `111-${7000000 + i}-${3000000 + i}`,
+      asin: `B0TEST${String(i % 5).padStart(4, '0')}`,
+      sku: `SKU-${1000 + i}`,
+      quantity: Math.floor(Math.random() * 3 + 1),
+      price: +(15 + Math.random() * 85).toFixed(2),
+      status: ['Shipped', 'Delivered', 'Pending', 'Cancelled'][i % 4],
+      order_date: d.toISOString().slice(0, 10),
+    });
+  }
+  return { total: 4567, list: orders };
 }
 
 // ============== Singleton Instance ==============

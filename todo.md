@@ -2717,3 +2717,41 @@
 #### 集成
 - [x] 集成到OpsProductPlan页面（竞品对标+推广甘特图Section）
 - [x] 单元测试覆盖（21个测试全部通过）
+
+## 第三阶段：智能售后管理（Module 4）
+
+### 3.1 售后仪表盘 + Review智能管理（P0, 3天）
+- [x] 数据库：新建review_records表（同步的Review记录+AI分析结果）
+- [x] 数据库：新建review_replies表（Review回复记录：AI建议+人工编辑）
+- [x] 数据库：新建return_analysis_cache表（退货分析缓存）
+- [x] 数据库：新建service_tasks表（售后任务队列）
+- [x] 后端：lingxingAdapter添加售后API路径和mock数据（Review/Feedback/退货/RMA/邮件/买家之声/业绩通知/店铺绩效）
+- [x] 后端：售后仪表盘API（getDashboardStats聚合所有售后KPI）
+- [x] 后端：AI售后简报API（aiServiceBriefing生成每日售后AI简报）
+- [x] 后端：Review列表API（getReviews按店铺/ASIN/星级/时间筛选）
+- [x] 后端：Review统计API（getReviewStats星级分布+趋势）
+- [x] 后端：AI差评分析回复API（aiReviewAnalysis生成回复草稿+问题分类）
+- [x] 后端：Review回复CRUD API（保存/编辑/确认回复）
+- [x] 前端：ServiceDashboard页面（KPI卡片+Review趋势折线图+退货率趋势+差评预警队列+AI简报）
+- [x] 前端：ServiceReviews页面（Review列表+统计面板+差评预警+AI分析回复+可编辑回复草稿）
+
+### 3.2 退货分析 + AI根因诊断（P0, 2天）
+- [x] 后端：退货分析API（getReturnAnalysis按ASIN/SKU/店铺维度统计）
+- [x] 后端：RMA管理API（getRmaList退货授权列表）
+- [x] 后端：买家之声API（getVoiceOfBuyer满意度和退货标识）
+- [x] 后端：AI退货根因诊断API（aiReturnDiagnosis综合退货+差评+买家之声数据）
+- [x] 前端：ServiceReturns页面（退货率总览+原因分布饼图+RMA列表+退货趋势+AI根因诊断报告）
+
+### 3.3 AI客服回复 + 邮件模板（P1, 3天）
+- [x] 数据库：新建email_templates表（邮件模板库）
+- [x] 数据库：新建email_replies表（邮件回复记录）
+- [x] 后端：邮件列表API（getEmails按店铺/时间/已读状态筛选）
+- [x] 后端：AI邮件分类+回复生成API（aiEmailReply分类+生成+紧急度评估）
+- [x] 后端：邮件模板CRUD API（listTemplates/createTemplate/updateTemplate/deleteTemplate）
+- [x] 后端：AI模板生成API（aiGenerateTemplate）
+- [x] 前端：ServiceEmails页面（邮件收件箱+AI回复+模板管理+可编辑确认）
+
+### 3.4 集成与测试
+- [x] 路由：注册所有售后页面路由（/service, /service/reviews, /service/returns, /service/emails）
+- [x] 导航：更新侧边栏售后模块导航项（启用模块+4个子菜单）
+- [x] 单元测试覆盖（2925个测试全部通过）

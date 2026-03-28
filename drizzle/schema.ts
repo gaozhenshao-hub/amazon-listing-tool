@@ -2508,3 +2508,152 @@ export const promotionPhases = mysqlTable("promotion_phases", {
 });
 export type PromotionPhase = typeof promotionPhases.$inferSelect;
 export type InsertPromotionPhase = typeof promotionPhases.$inferInsert;
+
+// ============================================================
+// Module 4: 智能售后管理
+// ============================================================
+
+// Review Records (同步的Review记录+AI分析结果)
+export const reviewRecords = mysqlTable("review_records", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  sid: int("sid"), // 店铺ID
+  asin: varchar("asin", { length: 20 }).notNull(),
+  reviewId: varchar("review_id", { length: 100 }),
+  starRating: int("star_rating").notNull(),
+  reviewTitle: text("review_title"),
+  reviewContent: text("review_content"),
+  reviewerName: varchar("reviewer_name", { length: 200 }),
+  isVerifiedPurchase: int("is_verified_purchase").default(0),
+  hasImage: int("has_image").default(0),
+  hasVideo: int("has_video").default(0),
+  reviewDate: varchar("review_date", { length: 20 }),
+  // AI analysis fields
+  aiProblemCategory: varchar("ai_problem_category", { length: 100 }),
+  aiSeverity: mysqlEnum("ai_severity", ["high", "medium", "low"]),
+  aiKeyIssues: json("ai_key_issues"), // string[]
+  aiSentiment: mysqlEnum("ai_sentiment", ["negative", "neutral", "positive"]),
+  aiSuggestedReply: text("ai_suggested_reply"),
+  aiInternalAction: text("ai_internal_action"),
+  aiFollowUpNeeded: int("ai_follow_up_needed").default(0),
+  // Processing status
+  processStatus: mysqlEnum("process_status", ["pending", "in_progress", "replied", "ignored"]).default("pending").notNull(),
+  processedBy: int("processed_by"),
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ReviewRecord = typeof reviewRecords.$inferSelect;
+export type InsertReviewRecord = typeof reviewRecords.$inferInsert;
+
+// Review Replies (Review回复记录)
+export const reviewReplies = mysqlTable("review_replies", {
+  id: int("id").autoincrement().primaryKey(),
+  reviewRecordId: int("review_record_id").notNull(),
+  userId: int("user_id").notNull(),
+  aiDraftReply: text("ai_draft_reply"),
+  editedReply: text("edited_reply"),
+  finalReply: text("final_reply"),
+  replyLanguage: varchar("reply_language", { length: 10 }).default("en"),
+  status: mysqlEnum("status", ["draft", "edited", "confirmed", "sent"]).default("draft").notNull(),
+  confirmedAt: timestamp("confirmed_at"),
+  sentAt: timestamp("sent_at"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ReviewReply = typeof reviewReplies.$inferSelect;
+export type InsertReviewReply = typeof reviewReplies.$inferInsert;
+
+// Email Templates (邮件模板库)
+export const emailTemplates = mysqlTable("email_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  category: mysqlEnum("category", [
+    "return_handling", "product_inquiry", "negative_review_reply",
+    "positive_review_thanks", "logistics_inquiry", "after_sales_followup", "other"
+  ]).default("other").notNull(),
+  templateName: varchar("template_name", { length: 200 }).notNull(),
+  subject: varchar("subject", { length: 500 }),
+  bodyContent: text("body_content").notNull(),
+  language: varchar("language", { length: 10 }).default("en").notNull(),
+  variables: json("variables"), // string[] e.g. ["{buyer_name}", "{order_id}", "{product_name}"]
+  isAiGenerated: int("is_ai_generated").default(0),
+  usageCount: int("usage_count").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmailTemplate = typeof emailTemplates.$inferSelect;
+export type InsertEmailTemplate = typeof emailTemplates.$inferInsert;
+
+// Email Replies (邮件回复记录)
+export const emailReplies = mysqlTable("email_replies", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  sid: int("sid"),
+  emailId: varchar("email_id", { length: 100 }),
+  buyerEmail: varchar("buyer_email", { length: 320 }),
+  orderId: varchar("order_id", { length: 50 }),
+  asin: varchar("asin", { length: 20 }),
+  emailCategory: mysqlEnum("email_category", [
+    "return_request", "product_inquiry", "complaint",
+    "positive_feedback", "other"
+  ]),
+  urgencyLevel: mysqlEnum("urgency_level", ["critical", "high", "medium", "low"]).default("medium"),
+  aiClassification: text("ai_classification"),
+  aiDraftReply: text("ai_draft_reply"),
+  editedReply: text("edited_reply"),
+  finalReply: text("final_reply"),
+  templateId: int("template_id"),
+  status: mysqlEnum("status", ["unread", "read", "draft", "replied", "closed"]).default("unread").notNull(),
+  repliedAt: timestamp("replied_at"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmailReply = typeof emailReplies.$inferSelect;
+export type InsertEmailReply = typeof emailReplies.$inferInsert;
+
+// Return Analysis Cache (退货分析缓存)
+export const returnAnalysisCache = mysqlTable("return_analysis_cache", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  asin: varchar("asin", { length: 20 }).notNull(),
+  sid: int("sid"),
+  returnRate: decimal("return_rate", { precision: 8, scale: 2 }),
+  totalReturns: int("total_returns"),
+  totalOrders: int("total_orders"),
+  returnReasons: json("return_reasons"), // {reason: string, count: number, pct: number}[]
+  aiRootCauseAnalysis: text("ai_root_cause_analysis"),
+  aiPrimaryCauses: json("ai_primary_causes"), // {cause, evidence, impact_pct, fix_difficulty}[]
+  aiImprovementPlan: json("ai_improvement_plan"), // {priority, action, responsible, expected_reduction}[]
+  aiListingOptimization: text("ai_listing_optimization"),
+  analysisDateStart: varchar("analysis_date_start", { length: 10 }),
+  analysisDateEnd: varchar("analysis_date_end", { length: 10 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ReturnAnalysisCache = typeof returnAnalysisCache.$inferSelect;
+export type InsertReturnAnalysisCache = typeof returnAnalysisCache.$inferInsert;
+
+// Service Tasks (售后任务队列)
+export const serviceTasks = mysqlTable("service_tasks", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  taskType: mysqlEnum("task_type", [
+    "negative_review", "return_handling", "email_reply",
+    "rma_processing", "performance_notice", "feedback_response"
+  ]).notNull(),
+  relatedId: varchar("related_id", { length: 100 }),
+  asin: varchar("asin", { length: 20 }),
+  sid: int("sid"),
+  title: varchar("title", { length: 500 }).notNull(),
+  description: text("description"),
+  priority: mysqlEnum("priority", ["critical", "high", "medium", "low"]).default("medium").notNull(),
+  status: mysqlEnum("status", ["open", "in_progress", "resolved", "closed"]).default("open").notNull(),
+  assignedTo: int("assigned_to"),
+  dueDate: varchar("due_date", { length: 10 }),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ServiceTask = typeof serviceTasks.$inferSelect;
+export type InsertServiceTask = typeof serviceTasks.$inferInsert;

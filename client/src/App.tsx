@@ -56,8 +56,12 @@ import OpsShippingBatchDetail from "./pages/ops/OpsShippingBatchDetail";
 import OpsLogistics from "./pages/ops/OpsLogistics";
 import OpsProfitDeep from "./pages/ops/OpsProfitDeep";
 
-// ─── Module 4: Placeholder ──────────────────────────────────────
+// ─── Module 4: After-sales Management ──────────────────────────
 import ComingSoonPage from "./pages/ComingSoonPage";
+import ServiceDashboard from "./pages/service/ServiceDashboard";
+import ServiceReviews from "./pages/service/ServiceReviews";
+import ServiceReturns from "./pages/service/ServiceReturns";
+import ServiceEmails from "./pages/service/ServiceEmails";
 
 // ─── Platform Home ──────────────────────────────────────────────
 import PlatformHome from "./pages/PlatformHome";
@@ -145,9 +149,11 @@ function Router() {
         <Route path="/ops/logistics">{() => <PermissionGuard><OpsLogistics /></PermissionGuard>}</Route>
         <Route path="/ops/profit-deep">{() => <PermissionGuard><OpsProfitDeep /></PermissionGuard>}</Route>
 
-        {/* ─── Module 4: After-sales (placeholder) ─── */}
-        <Route path="/service">{() => <PermissionGuard><ComingSoonPage moduleName="智能售后管理" /></PermissionGuard>}</Route>
-        <Route path="/service/:rest*">{() => <PermissionGuard><ComingSoonPage moduleName="智能售后管理" /></PermissionGuard>}</Route>
+        {/* ─── Module 4: After-sales Management ─── */}
+        <Route path="/service">{() => <PermissionGuard><ServiceDashboard /></PermissionGuard>}</Route>
+        <Route path="/service/reviews">{() => <PermissionGuard><ServiceReviews /></PermissionGuard>}</Route>
+        <Route path="/service/returns">{() => <PermissionGuard><ServiceReturns /></PermissionGuard>}</Route>
+        <Route path="/service/emails">{() => <PermissionGuard><ServiceEmails /></PermissionGuard>}</Route>
 
         {/* ─── System Settings ─── */}
         <Route path="/settings" component={SystemSettings} />
