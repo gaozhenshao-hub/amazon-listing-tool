@@ -2544,8 +2544,8 @@
 - [x] 前端：投放对象Tab页面（9分类卡片+建议+操作）
 
 #### 1.4 词频属性6分类分析
-- [ ] 后端：新增wordFreqClassify API（属性词转化率×点击量分类）
-- [ ] 前端：词频属性Tab页面（6分类+词云图+建议）
+- [x] 后端：新增getWordFrequencyAnalysis API（属性词转化率×点击量6分类）
+- [x] 前端：词频属性Tab页面（6分类卡片+数据表格+操作建议）
 
 #### 1.5 出单时段热力图
 - [x] 后端：新增getOrderHourlyHeatmap API（领星出单时段分析API）
@@ -2565,9 +2565,9 @@
 - [x] 前端：三个列表Tab+批量添加/删除+Bulk Sheet导出
 
 #### 1.9 有效出单搜索词发现
-- [ ] 后端：新增discoverEffectiveTerms API（对比自然出单词和已投放词）
-- [ ] 后端：AI价值评估（预估CPC/转化率/月搜索量）
-- [ ] 前端：未投放词列表+AI评估+一键创建广告组
+- [x] 后端：新增getEffectiveSearchTerms API（对比自然出单词和已投放词）
+- [x] 后端：新增aiEvaluateSearchTerms API（AI价值评估）
+- [x] 前端：有效出单搜索词Tab（未投放词列表+AI评估+一键创建广告组）
 
 #### 1.10 广告诊断
 - [x] 后端：新增adDiagnosis API（6维度健康度评分）
@@ -2575,10 +2575,13 @@
 - [x] 前端：6维度雷达图+问题清单+可编辑AI建议
 
 #### 1.11 库存预警优化
-- [ ] 后端：AWD库存数据集成（领星AWD API）
-- [ ] 后端：AI补货建议增强（考虑季节性/促销计划/竞品动态）
-- [ ] 前端：库存健康度评分卡片
-- [ ] 前端：AWD库存显示
+- [x] 后端：AWD库存数据集成（getAwdInventory API）
+- [x] 后端：本地仓库存数据集成（getLocalWarehouseInventory API）
+- [x] 后端：全渠道库存聚合（getOmniChannelInventory API）
+- [x] 后端：AI增强补货建议（aiEnhancedReplenishment API，考虑AWD+本地仓+季节性）
+- [x] 前端：全渠道库存总览Tab（FBA+AWD+本地仓聚合KPI+表格）
+- [x] 前端：AWD库存Tab（AWD库存列表+状态筛选）
+- [x] 前端：本地仓库存Tab（仓库筛选+库存明细）
 
 ### 第二阶段 P1：DSP + AI Bot + 跨渠道 + 利润 + 运营计划
 

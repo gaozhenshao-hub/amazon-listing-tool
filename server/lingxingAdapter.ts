@@ -960,6 +960,11 @@ class LingxingAdapter {
       "/basicOpen/openapi/storage/fbaWarehouseDetail": () => mockFbaInventoryV2(body),
       // AWD库存
       "/erp/sc/routing/storage/awdInventory": () => mockAwdInventory(body),
+      "/erp/sc/data/fba/awdStockLists": () => mockAwdInventory(body),
+      // 本地仓库存明细
+      "/erp/sc/data/inventory/getWarehouseStockDetail": () => mockLocalWarehouseDetail(body),
+      // 补货建议图表
+      "/erp/sc/data/fba/replenish/chart": () => mockReplenishChart(body),
       // 补货建议 - 未来销量预测
       "/erp/sc/data/replenish/salesForecast": () => mockSalesForecast(body),
     };
@@ -1347,10 +1352,57 @@ function mockFbaInventoryV2(body: Record<string, any>) {
 }
 
 function mockAwdInventory(body: Record<string, any>) {
-  return [
-    { sku: "SKU-A001", awd_quantity: 500, awd_warehouse: "AWD-US-1", status: "available" },
-    { sku: "SKU-B001", awd_quantity: 300, awd_warehouse: "AWD-US-2", status: "in_transit" },
-  ];
+  const skus = ["SKU-A001", "SKU-B001", "SKU-C001", "SKU-D001", "SKU-E001"];
+  return skus.map((sku, i) => ({
+    sku,
+    asin: `B0${String(1000 + i).padStart(7, '0')}`,
+    product_name: `产品${String.fromCharCode(65 + i)} - 美国站`,
+    awd_quantity: Math.floor(Math.random() * 800 + 100),
+    awd_warehouse: `AWD-US-${i + 1}`,
+    awd_inbound_quantity: Math.floor(Math.random() * 200),
+    awd_reserved_quantity: Math.floor(Math.random() * 50),
+    status: ["available", "in_transit", "processing"][i % 3],
+    last_updated: new Date(Date.now() - Math.random() * 7 * 86400000).toISOString().split('T')[0],
+  }));
+}
+
+function mockLocalWarehouseDetail(body: Record<string, any>) {
+  const skus = ["SKU-A001", "SKU-B001", "SKU-C001", "SKU-D001"];
+  return skus.map((sku, i) => ({
+    sku,
+    asin: `B0${String(1000 + i).padStart(7, '0')}`,
+    product_name: `产品${String.fromCharCode(65 + i)}`,
+    warehouse_name: ["深圳仓", "义乌仓", "广州仓", "上海仓"][i % 4],
+    available_qty: Math.floor(Math.random() * 500 + 50),
+    reserved_qty: Math.floor(Math.random() * 100),
+    defective_qty: Math.floor(Math.random() * 20),
+    total_qty: 0,
+    batch_no: `BATCH-2026${String(i + 1).padStart(4, '0')}`,
+    unit_cost: +(Math.random() * 50 + 10).toFixed(2),
+    total_value: 0,
+  })).map(item => ({ ...item, total_qty: item.available_qty + item.reserved_qty + item.defective_qty, total_value: +(item.total_qty * item.unit_cost).toFixed(2) }));
+}
+
+function mockReplenishChart(body: Record<string, any>) {
+  const days = 60;
+  const data = [];
+  let stock = Math.floor(Math.random() * 500 + 200);
+  const dailySales = Math.floor(Math.random() * 15 + 5);
+  for (let i = 0; i < days; i++) {
+    const date = new Date(Date.now() + i * 86400000).toISOString().split('T')[0];
+    stock = Math.max(0, stock - dailySales + (i === 20 ? 300 : 0) + (i === 40 ? 200 : 0));
+    data.push({
+      date,
+      projected_stock: stock,
+      safety_stock: dailySales * 14,
+      reorder_point: dailySales * 21,
+      daily_sales_forecast: dailySales + Math.floor(Math.random() * 5 - 2),
+    });
+  }
+  return { chart_data: data, restock_events: [
+    { date: data[20]?.date, qty: 300, method: "海运" },
+    { date: data[40]?.date, qty: 200, method: "空运" },
+  ]};
 }
 
 function mockSalesForecast(body: Record<string, any>) {

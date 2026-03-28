@@ -16,7 +16,7 @@ import {
   Target, Sparkles, RefreshCw, Loader2, Search, DollarSign,
   MousePointerClick, Eye, TrendingUp, TrendingDown, AlertTriangle,
   Zap, Filter, BarChart3, Clock, XCircle, Activity, Crosshair,
-  Package, Settings2,
+  Package, Settings2, Type, Gem,
 } from "lucide-react";
 
 // Sub-components
@@ -27,6 +27,8 @@ import HourlyBidStrategy from "./ads/HourlyBidStrategy";
 import NegativeKeywords from "./ads/NegativeKeywords";
 import AdDiagnostics from "./ads/AdDiagnostics";
 import TargetingAnalysis from "./ads/TargetingAnalysis";
+import WordFrequencyAnalysis from "./ads/WordFrequencyAnalysis";
+import EffectiveSearchTerms from "./ads/EffectiveSearchTerms";
 
 const PIE_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#9ca3af", "#8b5cf6", "#06b6d4", "#f97316"];
 
@@ -138,6 +140,14 @@ export default function OpsAds() {
           <TabsTrigger value="negative" className="text-xs gap-1">
             <XCircle className="w-3.5 h-3.5" />
             否定词管理
+          </TabsTrigger>
+          <TabsTrigger value="word-freq" className="text-xs gap-1">
+            <Type className="w-3.5 h-3.5" />
+            词频属性
+          </TabsTrigger>
+          <TabsTrigger value="effective-terms" className="text-xs gap-1">
+            <Gem className="w-3.5 h-3.5" />
+            有效出单词
           </TabsTrigger>
           <TabsTrigger value="diagnostics" className="text-xs gap-1">
             <Activity className="w-3.5 h-3.5" />
@@ -342,6 +352,24 @@ export default function OpsAds() {
         {/* Tab: Negative Keywords */}
         <TabsContent value="negative" className="mt-4">
           <NegativeKeywords
+            asin={selectedAsin}
+            marketplace={marketplace}
+            days={selectedDays}
+          />
+        </TabsContent>
+
+        {/* Tab: Word Frequency Analysis */}
+        <TabsContent value="word-freq" className="mt-4">
+          <WordFrequencyAnalysis
+            asin={selectedAsin}
+            marketplace={marketplace}
+            days={selectedDays}
+          />
+        </TabsContent>
+
+        {/* Tab: Effective Search Terms */}
+        <TabsContent value="effective-terms" className="mt-4">
+          <EffectiveSearchTerms
             asin={selectedAsin}
             marketplace={marketplace}
             days={selectedDays}

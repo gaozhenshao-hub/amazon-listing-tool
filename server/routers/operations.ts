@@ -554,6 +554,263 @@ ${JSON.stringify(input.skuData, null, 2)}
       return JSON.parse(content);
     }),
 
+  // ============== AWD & Enhanced Inventory ==============
+  
+  // AWD库存查询
+  getAwdInventory: protectedProcedure
+    .input(z.object({ marketplace: z.string().optional().default("US") }))
+    .query(async ({ input }) => {
+      const adapter = getLingxingAdapter();
+      const res = await adapter.request({
+        path: "/erp/sc/data/fba/awdStockLists",
+        body: { offset: 0, length: 200 },
+      });
+      const rawData = res.data || [];
+      const items = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
+      return {
+        items: items.map((item: any) => ({
+          sku: item.sku || item.msku || '',
+          asin: item.asin || '',
+          product_name: item.product_name || '',
+          awd_quantity: item.awd_quantity || item.available_quantity || 0,
+          awd_inbound_quantity: item.awd_inbound_quantity || 0,
+          awd_reserved_quantity: item.awd_reserved_quantity || 0,
+          awd_warehouse: item.awd_warehouse || item.warehouse_id || '',
+          status: item.status || 'unknown',
+          last_updated: item.last_updated || '',
+        })),
+        isMock: adapter.isMockMode(),
+      };
+    }),
+
+  // 本地仓库存查询
+  getLocalWarehouseInventory: protectedProcedure
+    .input(z.object({ marketplace: z.string().optional().default("US") }))
+    .query(async ({ input }) => {
+      const adapter = getLingxingAdapter();
+      const res = await adapter.request({
+        path: "/erp/sc/data/inventory/getWarehouseStockDetail",
+        body: { offset: 0, length: 200 },
+      });
+      const rawData = res.data || [];
+      const items = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
+      return {
+        items: items.map((item: any) => ({
+          sku: item.sku || item.msku || '',
+          asin: item.asin || '',
+          product_name: item.product_name || '',
+          warehouse_name: item.warehouse_name || '',
+          available_qty: item.available_qty || 0,
+          reserved_qty: item.reserved_qty || 0,
+          defective_qty: item.defective_qty || 0,
+          total_qty: item.total_qty || 0,
+          batch_no: item.batch_no || '',
+          unit_cost: item.unit_cost || 0,
+          total_value: item.total_value || 0,
+        })),
+        isMock: adapter.isMockMode(),
+      };
+    }),
+
+  // 全渠道库存汇总（FBA + AWD + 本地仓）
+  getOmniChannelInventory: protectedProcedure
+    .input(z.object({ marketplace: z.string().optional().default("US") }))
+    .query(async ({ input }) => {
+      const adapter = getLingxingAdapter();
+      // 并行获取三个渠道的库存
+      const [fbaRes, awdRes, localRes] = await Promise.all([
+        adapter.request({ path: "/erp/sc/data/fba/FbaStockLists", body: { offset: 0, length: 500 } }),
+        adapter.request({ path: "/erp/sc/data/fba/awdStockLists", body: { offset: 0, length: 200 } }),
+        adapter.request({ path: "/erp/sc/data/inventory/getWarehouseStockDetail", body: { offset: 0, length: 200 } }),
+      ]);
+      
+      const fbaItems = Array.isArray(fbaRes.data) ? fbaRes.data : ((fbaRes.data as any)?.records || []);
+      const awdItems = Array.isArray(awdRes.data) ? awdRes.data : ((awdRes.data as any)?.records || []);
+      const localItems = Array.isArray(localRes.data) ? localRes.data : ((localRes.data as any)?.records || []);
+      
+      // 按SKU聚合
+      const skuMap = new Map<string, any>();
+      
+      for (const item of fbaItems) {
+        const sku = item.msku || item.sku || '';
+        if (!sku) continue;
+        const existing = skuMap.get(sku) || { sku, asin: item.asin || '', product_name: item.product_name || item.localName || '', fba_qty: 0, awd_qty: 0, local_qty: 0, inbound_qty: 0, total_qty: 0 };
+        existing.fba_qty += (item.afn_fulfillable_quantity || item.total_fulfillable_quantity || 0);
+        existing.inbound_qty += (item.afn_inbound_shipped_quantity || 0) + (item.afn_inbound_working_quantity || 0);
+        skuMap.set(sku, existing);
+      }
+      
+      for (const item of awdItems) {
+        const sku = item.sku || item.msku || '';
+        if (!sku) continue;
+        const existing = skuMap.get(sku) || { sku, asin: item.asin || '', product_name: item.product_name || '', fba_qty: 0, awd_qty: 0, local_qty: 0, inbound_qty: 0, total_qty: 0 };
+        existing.awd_qty += (item.awd_quantity || item.available_quantity || 0);
+        if (!existing.asin && item.asin) existing.asin = item.asin;
+        if (!existing.product_name && item.product_name) existing.product_name = item.product_name;
+        skuMap.set(sku, existing);
+      }
+      
+      for (const item of localItems) {
+        const sku = item.sku || item.msku || '';
+        if (!sku) continue;
+        const existing = skuMap.get(sku) || { sku, asin: item.asin || '', product_name: item.product_name || '', fba_qty: 0, awd_qty: 0, local_qty: 0, inbound_qty: 0, total_qty: 0 };
+        existing.local_qty += (item.available_qty || 0);
+        if (!existing.asin && item.asin) existing.asin = item.asin;
+        if (!existing.product_name && item.product_name) existing.product_name = item.product_name;
+        skuMap.set(sku, existing);
+      }
+      
+      const aggregated = Array.from(skuMap.values()).map(item => ({
+        ...item,
+        total_qty: item.fba_qty + item.awd_qty + item.local_qty + item.inbound_qty,
+      }));
+      
+      const summary = {
+        total_skus: aggregated.length,
+        total_fba: aggregated.reduce((s: number, i: any) => s + i.fba_qty, 0),
+        total_awd: aggregated.reduce((s: number, i: any) => s + i.awd_qty, 0),
+        total_local: aggregated.reduce((s: number, i: any) => s + i.local_qty, 0),
+        total_inbound: aggregated.reduce((s: number, i: any) => s + i.inbound_qty, 0),
+        total_all: aggregated.reduce((s: number, i: any) => s + i.total_qty, 0),
+      };
+      
+      return { items: aggregated, summary, isMock: adapter.isMockMode() };
+    }),
+
+  // 增强版AI补货建议（含AWD+本地仓+停售ASIN过滤）
+  aiEnhancedReplenishment: protectedProcedure
+    .input(z.object({
+      skuData: z.array(z.object({
+        seller_sku: z.string(),
+        product_name: z.string().optional(),
+        asin: z.string().optional(),
+        fulfillable_qty: z.number(),
+        awd_qty: z.number().optional().default(0),
+        local_qty: z.number().optional().default(0),
+        inbound_qty: z.number().optional().default(0),
+        avg_daily_sales: z.number(),
+        avg_7d_sales: z.number().optional(),
+        days_of_supply: z.number(),
+        lead_time_days: z.number().optional().default(30),
+        safety_stock_days: z.number().optional().default(14),
+        is_peak_season: z.boolean().optional().default(false),
+        product_status: z.string().optional().default("active"),
+      })).max(20),
+    }))
+    .mutation(async ({ input }) => {
+      // 过滤停售ASIN
+      const activeSkus = input.skuData.filter(s => s.product_status !== 'discontinued' && s.product_status !== 'inactive');
+      if (activeSkus.length === 0) {
+        return { suggestions: [], message: "所有SKU均已停售，无需补货" };
+      }
+
+      const prompt = `你是一位资深的亚马逊FBA库存管理专家。请基于以下单个ASIN的全渠道库存数据计算最优补货方案。
+
+## 全渠道库存数据
+${activeSkus.map((s, i) => `
+### SKU ${i + 1}: ${s.seller_sku}
+- 产品状态: ${s.product_status}
+- FBA可售库存: ${s.fulfillable_qty} 件
+- AWD库存: ${s.awd_qty} 件
+- 本地仓库存: ${s.local_qty} 件
+- 在途库存: ${s.inbound_qty} 件
+- 近30天日均销量: ${s.avg_daily_sales} 件/天
+- 近7天日均销量: ${s.avg_7d_sales || s.avg_daily_sales} 件/天
+- 头程运输天数: ${s.lead_time_days} 天
+- 安全库存天数: ${s.safety_stock_days} 天
+- 是否旺季: ${s.is_peak_season ? '是' : '否'}
+`).join('')}
+
+## 分析要求
+1. 综合考虑FBA+AWD+本地仓+在途的全渠道库存
+2. 如果AWD有库存，优先建议从AWD转运到FBA（周期短）
+3. 如果本地仓有库存，建议从本地仓发货
+4. 旺季需要额外增加20%安全库存
+5. 考虑运输方式：紧急用空运，常规用海运
+
+## 输出格式（JSON）
+每个SKU返回:
+- seller_sku: SKU编号
+- risk_level: "紧急"/"警告"/"正常"/"充足"
+- sellable_days: 全渠道可售天数
+- fba_sellable_days: 仅FBA可售天数
+- recommended_action: "紧急补货"/"AWD转运"/"本地仓发货"/"新采购"/"暂不需要"
+- recommended_qty: 建议补货数量
+- source: "本地仓"/"AWD"/"新采购"
+- shipping_method: "空运"/"海运"/"AWD转运"
+- estimated_stockout_date: "预计断货日期"
+- reasoning: "分析说明（100字以内）"
+- priority_score: 1-10优先级评分`;
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: "你是亚马逊FBA全渠道库存管理AI助手，输出严格的JSON格式。" },
+          { role: "user", content: prompt },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "enhanced_replenishment",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                suggestions: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      seller_sku: { type: "string" },
+                      risk_level: { type: "string" },
+                      sellable_days: { type: "number" },
+                      fba_sellable_days: { type: "number" },
+                      recommended_action: { type: "string" },
+                      recommended_qty: { type: "number" },
+                      source: { type: "string" },
+                      shipping_method: { type: "string" },
+                      estimated_stockout_date: { type: "string" },
+                      reasoning: { type: "string" },
+                      priority_score: { type: "number" },
+                    },
+                    required: ["seller_sku", "risk_level", "sellable_days", "fba_sellable_days", "recommended_action", "recommended_qty", "source", "shipping_method", "estimated_stockout_date", "reasoning", "priority_score"],
+                    additionalProperties: false,
+                  },
+                },
+                summary: {
+                  type: "object",
+                  properties: {
+                    urgent_count: { type: "number" },
+                    total_restock_qty: { type: "number" },
+                    estimated_total_cost: { type: "string" },
+                    key_insight: { type: "string" },
+                  },
+                  required: ["urgent_count", "total_restock_qty", "estimated_total_cost", "key_insight"],
+                  additionalProperties: false,
+                },
+              },
+              required: ["suggestions", "summary"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const content = response.choices?.[0]?.message?.content as string;
+      return JSON.parse(content);
+    }),
+
+  // 补货建议图表数据
+  getReplenishChart: protectedProcedure
+    .input(z.object({ sku: z.string().optional(), asin: z.string().optional() }))
+    .query(async ({ input }) => {
+      const adapter = getLingxingAdapter();
+      const res = await adapter.request({
+        path: "/erp/sc/data/fba/replenish/chart",
+        body: { sku: input.sku, asin: input.asin },
+      });
+      return { data: res.data, isMock: adapter.isMockMode() };
+    }),
+
   // ============== Profit Module ==============
   getProfitOverview: protectedProcedure
     .input(z.object({

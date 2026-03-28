@@ -247,8 +247,11 @@ export default function OpsInventory() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="overview">库存总览</TabsTrigger>
+          <TabsTrigger value="omni">全渠道库存</TabsTrigger>
+          <TabsTrigger value="awd">AWD库存</TabsTrigger>
+          <TabsTrigger value="local">本地仓库存</TabsTrigger>
           <TabsTrigger value="pipeline">物流流水线</TabsTrigger>
           <TabsTrigger value="predictions">AI补货预测</TabsTrigger>
         </TabsList>
@@ -508,6 +511,21 @@ export default function OpsInventory() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ═══════ Tab: 全渠道库存 ═══════ */}
+        <TabsContent value="omni" className="space-y-6 mt-4">
+          <OmniChannelInventoryTab />
+        </TabsContent>
+
+        {/* ═══════ Tab: AWD库存 ═══════ */}
+        <TabsContent value="awd" className="space-y-6 mt-4">
+          <AwdInventoryTab />
+        </TabsContent>
+
+        {/* ═══════ Tab: 本地仓库存 ═══════ */}
+        <TabsContent value="local" className="space-y-6 mt-4">
+          <LocalWarehouseTab />
         </TabsContent>
 
         {/* ═══════ Tab 2: 物流流水线 ═══════ */}
@@ -1792,5 +1810,307 @@ function StatCard({ label, value, icon: Icon, color, onClick }: {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+
+// ═══════ 全渠道库存Tab ═══════
+function OmniChannelInventoryTab() {
+  const { data, isLoading } = trpc.operations.getOmniChannelInventory.useQuery({ marketplace: "US" });
+
+  if (isLoading) return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24" />)}</div>;
+
+  const items = data?.items || [];
+  const summary = data?.summary;
+
+  return (
+    <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+          <CardContent className="pt-4 pb-3 px-4">
+            <p className="text-xs text-blue-600 font-medium">总SKU数</p>
+            <p className="text-2xl font-bold text-blue-700">{summary?.total_skus || 0}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+          <CardContent className="pt-4 pb-3 px-4">
+            <p className="text-xs text-green-600 font-medium">FBA可售</p>
+            <p className="text-2xl font-bold text-green-700">{(summary?.total_fba || 0).toLocaleString()}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+          <CardContent className="pt-4 pb-3 px-4">
+            <p className="text-xs text-purple-600 font-medium">AWD库存</p>
+            <p className="text-2xl font-bold text-purple-700">{(summary?.total_awd || 0).toLocaleString()}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200">
+          <CardContent className="pt-4 pb-3 px-4">
+            <p className="text-xs text-amber-600 font-medium">本地仓</p>
+            <p className="text-2xl font-bold text-amber-700">{(summary?.total_local || 0).toLocaleString()}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-gradient-to-br from-cyan-50 to-cyan-100 border-cyan-200">
+          <CardContent className="pt-4 pb-3 px-4">
+            <p className="text-xs text-cyan-600 font-medium">在途库存</p>
+            <p className="text-2xl font-bold text-cyan-700">{(summary?.total_inbound || 0).toLocaleString()}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Channel Distribution Chart */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Layers className="w-4 h-4 text-blue-500" />
+            全渠道库存分布
+          </CardTitle>
+          <CardDescription>FBA + AWD + 本地仓 + 在途 汇总</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={items.slice(0, 15)} margin={{ left: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="sku" tick={{ fontSize: 10 }} angle={-30} textAnchor="end" height={60} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="fba_qty" name="FBA" fill="#10b981" stackId="a" />
+                <Bar dataKey="awd_qty" name="AWD" fill="#8b5cf6" stackId="a" />
+                <Bar dataKey="local_qty" name="本地仓" fill="#f59e0b" stackId="a" />
+                <Bar dataKey="inbound_qty" name="在途" fill="#06b6d4" stackId="a" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Detail Table */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">全渠道库存明细</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="py-2 px-3 font-medium text-gray-500">SKU</th>
+                  <th className="py-2 px-3 font-medium text-gray-500">ASIN</th>
+                  <th className="py-2 px-3 font-medium text-gray-500 text-right">FBA</th>
+                  <th className="py-2 px-3 font-medium text-gray-500 text-right">AWD</th>
+                  <th className="py-2 px-3 font-medium text-gray-500 text-right">本地仓</th>
+                  <th className="py-2 px-3 font-medium text-gray-500 text-right">在途</th>
+                  <th className="py-2 px-3 font-medium text-gray-500 text-right">总计</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item: any, i: number) => (
+                  <tr key={i} className="border-b hover:bg-gray-50">
+                    <td className="py-2 px-3 font-mono text-xs">{item.sku}</td>
+                    <td className="py-2 px-3 font-mono text-xs text-gray-500">{item.asin}</td>
+                    <td className="py-2 px-3 text-right font-medium text-green-600">{item.fba_qty.toLocaleString()}</td>
+                    <td className="py-2 px-3 text-right font-medium text-purple-600">{item.awd_qty.toLocaleString()}</td>
+                    <td className="py-2 px-3 text-right font-medium text-amber-600">{item.local_qty.toLocaleString()}</td>
+                    <td className="py-2 px-3 text-right font-medium text-cyan-600">{item.inbound_qty.toLocaleString()}</td>
+                    <td className="py-2 px-3 text-right font-bold">{item.total_qty.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+      {data?.isMock && <p className="text-xs text-amber-500 text-center">当前显示为模拟数据</p>}
+    </div>
+  );
+}
+
+// ═══════ AWD库存Tab ═══════
+function AwdInventoryTab() {
+  const { data, isLoading } = trpc.operations.getAwdInventory.useQuery({ marketplace: "US" });
+
+  if (isLoading) return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24" />)}</div>;
+
+  const items = data?.items || [];
+  const totalQty = items.reduce((s: number, i: any) => s + (i.awd_quantity || 0), 0);
+  const totalInbound = items.reduce((s: number, i: any) => s + (i.awd_inbound_quantity || 0), 0);
+
+  return (
+    <div className="space-y-6">
+      {/* Summary */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="bg-purple-50 border-purple-200">
+          <CardContent className="pt-4 pb-3 px-4">
+            <p className="text-xs text-purple-600 font-medium">AWD总库存</p>
+            <p className="text-2xl font-bold text-purple-700">{totalQty.toLocaleString()}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-blue-50 border-blue-200">
+          <CardContent className="pt-4 pb-3 px-4">
+            <p className="text-xs text-blue-600 font-medium">AWD在途</p>
+            <p className="text-2xl font-bold text-blue-700">{totalInbound.toLocaleString()}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-green-50 border-green-200">
+          <CardContent className="pt-4 pb-3 px-4">
+            <p className="text-xs text-green-600 font-medium">SKU数</p>
+            <p className="text-2xl font-bold text-green-700">{items.length}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-amber-50 border-amber-200">
+          <CardContent className="pt-4 pb-3 px-4">
+            <p className="text-xs text-amber-600 font-medium">仓库数</p>
+            <p className="text-2xl font-bold text-amber-700">{new Set(items.map((i: any) => i.awd_warehouse)).size}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* AWD Table */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Warehouse className="w-4 h-4 text-purple-500" />
+            AWD库存明细
+          </CardTitle>
+          <CardDescription>Amazon Warehousing and Distribution 库存</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="py-2 px-3 font-medium text-gray-500">SKU</th>
+                  <th className="py-2 px-3 font-medium text-gray-500">产品名称</th>
+                  <th className="py-2 px-3 font-medium text-gray-500">仓库</th>
+                  <th className="py-2 px-3 font-medium text-gray-500 text-right">可用库存</th>
+                  <th className="py-2 px-3 font-medium text-gray-500 text-right">在途</th>
+                  <th className="py-2 px-3 font-medium text-gray-500 text-right">预留</th>
+                  <th className="py-2 px-3 font-medium text-gray-500">状态</th>
+                  <th className="py-2 px-3 font-medium text-gray-500">更新时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item: any, i: number) => (
+                  <tr key={i} className="border-b hover:bg-gray-50">
+                    <td className="py-2 px-3 font-mono text-xs">{item.sku}</td>
+                    <td className="py-2 px-3 text-xs truncate max-w-[200px]">{item.product_name}</td>
+                    <td className="py-2 px-3 text-xs">{item.awd_warehouse}</td>
+                    <td className="py-2 px-3 text-right font-bold text-purple-600">{item.awd_quantity.toLocaleString()}</td>
+                    <td className="py-2 px-3 text-right text-blue-600">{item.awd_inbound_quantity.toLocaleString()}</td>
+                    <td className="py-2 px-3 text-right text-gray-500">{item.awd_reserved_quantity.toLocaleString()}</td>
+                    <td className="py-2 px-3">
+                      <Badge variant="outline" className={
+                        item.status === "available" ? "text-green-600 border-green-300" :
+                        item.status === "in_transit" ? "text-blue-600 border-blue-300" :
+                        "text-amber-600 border-amber-300"
+                      }>
+                        {item.status === "available" ? "可用" : item.status === "in_transit" ? "在途" : "处理中"}
+                      </Badge>
+                    </td>
+                    <td className="py-2 px-3 text-xs text-gray-400">{item.last_updated}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+      {data?.isMock && <p className="text-xs text-amber-500 text-center">当前显示为模拟数据</p>}
+    </div>
+  );
+}
+
+// ═══════ 本地仓库存Tab ═══════
+function LocalWarehouseTab() {
+  const { data, isLoading } = trpc.operations.getLocalWarehouseInventory.useQuery({ marketplace: "US" });
+
+  if (isLoading) return <div className="space-y-4">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24" />)}</div>;
+
+  const items = data?.items || [];
+  const totalQty = items.reduce((s: number, i: any) => s + (i.total_qty || 0), 0);
+  const totalValue = items.reduce((s: number, i: any) => s + (i.total_value || 0), 0);
+  const warehouses = Array.from(new Set(items.map((i: any) => i.warehouse_name))).filter(Boolean);
+
+  return (
+    <div className="space-y-6">
+      {/* Summary */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="bg-amber-50 border-amber-200">
+          <CardContent className="pt-4 pb-3 px-4">
+            <p className="text-xs text-amber-600 font-medium">本地仓总库存</p>
+            <p className="text-2xl font-bold text-amber-700">{totalQty.toLocaleString()}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-green-50 border-green-200">
+          <CardContent className="pt-4 pb-3 px-4">
+            <p className="text-xs text-green-600 font-medium">库存总价值</p>
+            <p className="text-2xl font-bold text-green-700">${totalValue.toLocaleString()}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-blue-50 border-blue-200">
+          <CardContent className="pt-4 pb-3 px-4">
+            <p className="text-xs text-blue-600 font-medium">SKU数</p>
+            <p className="text-2xl font-bold text-blue-700">{items.length}</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-purple-50 border-purple-200">
+          <CardContent className="pt-4 pb-3 px-4">
+            <p className="text-xs text-purple-600 font-medium">仓库数</p>
+            <p className="text-2xl font-bold text-purple-700">{warehouses.length}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Warehouse Table */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Boxes className="w-4 h-4 text-amber-500" />
+            本地仓库存明细
+          </CardTitle>
+          <CardDescription>国内仓库库存分布</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="py-2 px-3 font-medium text-gray-500">SKU</th>
+                  <th className="py-2 px-3 font-medium text-gray-500">产品名称</th>
+                  <th className="py-2 px-3 font-medium text-gray-500">仓库</th>
+                  <th className="py-2 px-3 font-medium text-gray-500 text-right">可用</th>
+                  <th className="py-2 px-3 font-medium text-gray-500 text-right">预留</th>
+                  <th className="py-2 px-3 font-medium text-gray-500 text-right">不良品</th>
+                  <th className="py-2 px-3 font-medium text-gray-500 text-right">总计</th>
+                  <th className="py-2 px-3 font-medium text-gray-500">批次号</th>
+                  <th className="py-2 px-3 font-medium text-gray-500 text-right">单价</th>
+                  <th className="py-2 px-3 font-medium text-gray-500 text-right">总价值</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item: any, i: number) => (
+                  <tr key={i} className="border-b hover:bg-gray-50">
+                    <td className="py-2 px-3 font-mono text-xs">{item.sku}</td>
+                    <td className="py-2 px-3 text-xs truncate max-w-[150px]">{item.product_name}</td>
+                    <td className="py-2 px-3 text-xs">{item.warehouse_name}</td>
+                    <td className="py-2 px-3 text-right font-medium text-green-600">{item.available_qty.toLocaleString()}</td>
+                    <td className="py-2 px-3 text-right text-amber-600">{item.reserved_qty.toLocaleString()}</td>
+                    <td className="py-2 px-3 text-right text-red-500">{item.defective_qty.toLocaleString()}</td>
+                    <td className="py-2 px-3 text-right font-bold">{item.total_qty.toLocaleString()}</td>
+                    <td className="py-2 px-3 text-xs text-gray-400">{item.batch_no}</td>
+                    <td className="py-2 px-3 text-right text-gray-600">${item.unit_cost.toFixed(2)}</td>
+                    <td className="py-2 px-3 text-right font-medium">${item.total_value.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+      {data?.isMock && <p className="text-xs text-amber-500 text-center">当前显示为模拟数据</p>}
+    </div>
   );
 }
