@@ -526,3 +526,117 @@ describe("Deployment Configuration", () => {
     expect(peerConfig.peerApiKey).toBeTruthy();
   });
 });
+
+
+// ─── Test: Phase 2 P1 Router Modules ───
+describe("Phase 2 P1 - adAnalysisP2 router module", () => {
+  it("should export adAnalysisP2Router", async () => {
+    const mod = await import("./routers/adAnalysisP2");
+    expect(mod.adAnalysisP2Router).toBeDefined();
+    expect(mod.adAnalysisP2Router._def).toBeDefined();
+  });
+
+  it("adAnalysisP2Router should have DSP report procedure", async () => {
+    const mod = await import("./routers/adAnalysisP2");
+    const procedures = Object.keys(mod.adAnalysisP2Router._def.procedures);
+    expect(procedures).toContain("getDspReport");
+  });
+
+  it("adAnalysisP2Router should have AI DSP advice procedure", async () => {
+    const mod = await import("./routers/adAnalysisP2");
+    const procedures = Object.keys(mod.adAnalysisP2Router._def.procedures);
+    expect(procedures).toContain("aiDspStrategy");
+  });
+
+  it("adAnalysisP2Router should have cross-channel analysis procedure", async () => {
+    const mod = await import("./routers/adAnalysisP2");
+    const procedures = Object.keys(mod.adAnalysisP2Router._def.procedures);
+    expect(procedures).toContain("getCrossChannelData");
+  });
+
+  it("adAnalysisP2Router should have AI ad chat procedure", async () => {
+    const mod = await import("./routers/adAnalysisP2");
+    const procedures = Object.keys(mod.adAnalysisP2Router._def.procedures);
+    expect(procedures).toContain("adChatBot");
+  });
+
+  it("adAnalysisP2Router should have AI cross-channel advice procedure", async () => {
+    const mod = await import("./routers/adAnalysisP2");
+    const procedures = Object.keys(mod.adAnalysisP2Router._def.procedures);
+    expect(procedures).toContain("aiChannelStrategy");
+  });
+});
+
+describe("Phase 2 P1 - profitDeep router module", () => {
+  it("should export profitDeepRouter", async () => {
+    const mod = await import("./routers/profitDeep");
+    expect(mod.profitDeepRouter).toBeDefined();
+    expect(mod.profitDeepRouter._def).toBeDefined();
+  });
+
+  it("profitDeepRouter should have profit detail procedure", async () => {
+    const mod = await import("./routers/profitDeep");
+    const procedures = Object.keys(mod.profitDeepRouter._def.procedures);
+    expect(procedures).toContain("getParentAsinProfit");
+  });
+
+  it("profitDeepRouter should have AI profit diagnosis procedure", async () => {
+    const mod = await import("./routers/profitDeep");
+    const procedures = Object.keys(mod.profitDeepRouter._def.procedures);
+    expect(procedures).toContain("aiProfitDiagnosis");
+  });
+});
+
+describe("Phase 2 P1 - opsProductPlan router module", () => {
+  it("should export opsProductPlanRouter", async () => {
+    const mod = await import("./routers/opsProductPlan");
+    expect(mod.opsProductPlanRouter).toBeDefined();
+    expect(mod.opsProductPlanRouter._def).toBeDefined();
+  });
+
+  it("opsProductPlanRouter should have CRUD procedures", async () => {
+    const mod = await import("./routers/opsProductPlan");
+    const procedures = Object.keys(mod.opsProductPlanRouter._def.procedures);
+    expect(procedures).toContain("listPlans");
+    expect(procedures).toContain("getPlan");
+    expect(procedures).toContain("createPlan");
+    expect(procedures).toContain("updatePlan");
+    expect(procedures).toContain("deletePlan");
+  });
+
+  it("opsProductPlanRouter should have daily record procedures", async () => {
+    const mod = await import("./routers/opsProductPlan");
+    const procedures = Object.keys(mod.opsProductPlanRouter._def.procedures);
+    expect(procedures).toContain("getDailyRecords");
+    expect(procedures).toContain("upsertDailyRecord");
+  });
+
+  it("opsProductPlanRouter should have keyword tracking procedures", async () => {
+    const mod = await import("./routers/opsProductPlan");
+    const procedures = Object.keys(mod.opsProductPlanRouter._def.procedures);
+    expect(procedures).toContain("listKeywords");
+    expect(procedures).toContain("addKeyword");
+    expect(procedures).toContain("deleteKeyword");
+    expect(procedures).toContain("getKeywordDailyRecords");
+    expect(procedures).toContain("upsertKeywordDailyRecord");
+  });
+
+  it("opsProductPlanRouter should have AI ops suggestion procedure", async () => {
+    const mod = await import("./routers/opsProductPlan");
+    const procedures = Object.keys(mod.opsProductPlanRouter._def.procedures);
+    expect(procedures).toContain("aiOpsSuggestion");
+  });
+});
+
+describe("Phase 2 P1 - appRouter integration", () => {
+  it("appRouter should include all Phase 2 P1 routers", async () => {
+    const mod = await import("./routers");
+    const routerKeys = Object.keys(mod.appRouter._def.procedures);
+    const hasAdP2 = routerKeys.some(k => k.startsWith("adAnalysisP2."));
+    const hasProfitDeep = routerKeys.some(k => k.startsWith("profitDeep."));
+    const hasOpsProductPlan = routerKeys.some(k => k.startsWith("opsProductPlan."));
+    expect(hasAdP2).toBe(true);
+    expect(hasProfitDeep).toBe(true);
+    expect(hasOpsProductPlan).toBe(true);
+  });
+});

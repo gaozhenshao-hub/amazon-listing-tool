@@ -967,6 +967,16 @@ class LingxingAdapter {
       "/erp/sc/data/fba/replenish/chart": () => mockReplenishChart(body),
       // 补货建议 - 未来销量预测
       "/erp/sc/data/replenish/salesForecast": () => mockSalesForecast(body),
+      // DSP广告报告
+      "/basicopen/dapReport/order/list": () => mockDspOrderReport(body),
+      // 父ASIN利润报表
+      "/bd/profit/report/open/report/parent/asin/list": () => mockParentAsinProfit(body),
+      // 财务流水
+      "/erp/finance/data/inventory/getInventoryStatementList": () => mockFinanceStatement(body),
+      // SB广告活动小时数据
+      "/pb/openaps/newad/sbCampaignHourData": () => mockSbCampaignHourData(body),
+      // SD广告活动小时数据
+      "/pb/openaps/newad/sdCampaignHourData": () => mockSdCampaignHourData(body),
     };
 
     const mockFn = mockMap[path];
@@ -1424,6 +1434,115 @@ function mockSalesForecast(body: Record<string, any>) {
     });
   }
   return forecasts;
+}
+
+// ============== DSP / Profit / SB / SD Mock Data Generators ==============
+
+function mockDspOrderReport(body: Record<string, any>) {
+  const orders = [];
+  const orderNames = [
+    'Brand Awareness - Electronics', 'Retargeting - Earbuds', 'Audience - In-Market',
+    'Competitor Conquest - Audio', 'Lifestyle - Fitness', 'Seasonal - Holiday',
+    'Lookalike - High Value', 'Cross-sell - Accessories'
+  ];
+  for (let i = 0; i < orderNames.length; i++) {
+    const budget = +(Math.random() * 5000 + 1000).toFixed(2);
+    const spends = +(budget * (0.3 + Math.random() * 0.6)).toFixed(2);
+    const impressions = Math.floor(Math.random() * 500000 + 50000);
+    const viewableImpressions = Math.floor(impressions * (0.5 + Math.random() * 0.3));
+    const clicks = Math.floor(impressions * (0.001 + Math.random() * 0.003));
+    const dpv = Math.floor(clicks * (0.3 + Math.random() * 0.5));
+    const addToCart = Math.floor(dpv * (0.1 + Math.random() * 0.2));
+    const orderCount = Math.floor(addToCart * (0.3 + Math.random() * 0.4));
+    const sales = +(orderCount * (15 + Math.random() * 50)).toFixed(2);
+    orders.push({
+      profile_id: `PF${1000 + i}`,
+      order_id: `DSP-${2000 + i}`,
+      order_name: orderNames[i],
+      advertiser_id: `ADV-${100 + i}`,
+      advertiser_name: 'TechPro Brand',
+      order_budget: budget,
+      spends, sales, orders: orderCount,
+      impressions, viewable_impressions: viewableImpressions,
+      clicks, dpv, total_add_to_cart: addToCart,
+      ad_units: Math.floor(Math.random() * 5 + 1),
+      start_date: '2026-03-01', end_date: '2026-03-31',
+    });
+  }
+  return orders;
+}
+
+function mockParentAsinProfit(body: Record<string, any>) {
+  const parentAsins = ['B009000000', 'B009100000', 'B009200000'];
+  return parentAsins.map((pa, i) => ({
+    parent_asin: pa,
+    child_asin_count: Math.floor(Math.random() * 5 + 1),
+    totalSalesAmount: +(Math.random() * 20000 + 5000).toFixed(2),
+    totalSalesQuantity: Math.floor(Math.random() * 500 + 100),
+    totalProfit: +(Math.random() * 5000 + 500).toFixed(2),
+    profitRate: +(Math.random() * 30 + 5).toFixed(2),
+    totalAdsCost: +(Math.random() * 3000 + 200).toFixed(2),
+    totalFbaDeliveryFee: +(Math.random() * 2000 + 300).toFixed(2),
+    totalStorageFee: +(Math.random() * 500 + 50).toFixed(2),
+    totalCommission: +(Math.random() * 3000 + 500).toFixed(2),
+    cgPriceTotal: +(Math.random() * 5000 + 1000).toFixed(2),
+    cgTransportCostsTotal: +(Math.random() * 1500 + 200).toFixed(2),
+    totalRefund: +(Math.random() * 500 + 50).toFixed(2),
+  }));
+}
+
+function mockFinanceStatement(body: Record<string, any>) {
+  const items = [];
+  for (let i = 0; i < 20; i++) {
+    items.push({
+      id: i + 1,
+      batch_no: `BATCH-${2026}${String(i + 1).padStart(3, '0')}`,
+      sku: `SKU-${['A', 'B', 'C', 'D'][i % 4]}001`,
+      asin: `B00${9 + Math.floor(i / 5)}${String(i % 5).padStart(5, '0')}`,
+      type: ['purchase', 'shipping', 'fba_fee', 'storage_fee', 'refund'][i % 5],
+      amount: +(Math.random() * 2000 - 500).toFixed(2),
+      currency: 'USD',
+      description: ['采购入库', '头程运费', 'FBA配送费', '仓储费', '退款'][i % 5],
+      created_at: new Date(Date.now() - i * 86400000 * 3).toISOString().slice(0, 10),
+    });
+  }
+  return items;
+}
+
+function mockSbCampaignHourData(body: Record<string, any>) {
+  const campaigns = [];
+  const names = ['SB-Brand Video', 'SB-Store Spotlight', 'SB-Product Collection'];
+  for (let i = 0; i < names.length; i++) {
+    const impressions = Math.floor(Math.random() * 30000 + 5000);
+    const clicks = Math.floor(impressions * (0.003 + Math.random() * 0.005));
+    const cost = +(clicks * (0.5 + Math.random() * 1.5)).toFixed(2);
+    const sales = +(cost * (1.5 + Math.random() * 3)).toFixed(2);
+    const orders = Math.floor(sales / (20 + Math.random() * 30));
+    campaigns.push({
+      campaign_id: `SB-C${100 + i}`, campaign_name: names[i],
+      impressions, clicks, cost, sales, orders,
+      campaign_type: 'SB', status: 'enabled',
+    });
+  }
+  return campaigns;
+}
+
+function mockSdCampaignHourData(body: Record<string, any>) {
+  const campaigns = [];
+  const names = ['SD-Product Targeting', 'SD-Audience Retargeting', 'SD-Views Remarketing'];
+  for (let i = 0; i < names.length; i++) {
+    const impressions = Math.floor(Math.random() * 50000 + 10000);
+    const clicks = Math.floor(impressions * (0.002 + Math.random() * 0.004));
+    const cost = +(clicks * (0.3 + Math.random() * 1.0)).toFixed(2);
+    const sales = +(cost * (1.0 + Math.random() * 2.5)).toFixed(2);
+    const orders = Math.floor(sales / (25 + Math.random() * 35));
+    campaigns.push({
+      campaign_id: `SD-C${200 + i}`, campaign_name: names[i],
+      impressions, clicks, cost, sales, orders,
+      campaign_type: 'SD', status: 'enabled',
+    });
+  }
+  return campaigns;
 }
 
 // ============== Singleton Instance ==============

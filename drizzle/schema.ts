@@ -2369,3 +2369,88 @@ export const asinLogs = mysqlTable("asin_logs", {
 });
 export type AsinLog = typeof asinLogs.$inferSelect;
 export type InsertAsinLog = typeof asinLogs.$inferInsert;
+
+
+// ==================== 运营计划目标跟踪模块 (Phase 2) ====================
+
+// Product operations plan - target setting & daily tracking
+export const productOpsPlans = mysqlTable("product_ops_plans", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  productProfileId: int("product_profile_id"),
+  asin: varchar("asin", { length: 20 }).notNull(),
+  planName: varchar("plan_name", { length: 200 }).notNull(),
+  // Target metrics
+  targetBsr: int("target_bsr"),
+  targetDailyOrders: decimal("target_daily_orders", { precision: 10, scale: 2 }),
+  targetAdOrders: decimal("target_ad_orders", { precision: 10, scale: 2 }),
+  targetOrganicOrders: decimal("target_organic_orders", { precision: 10, scale: 2 }),
+  targetAcos: decimal("target_acos", { precision: 6, scale: 2 }),
+  targetProfitMargin: decimal("target_profit_margin", { precision: 6, scale: 2 }),
+  targetOrganicRatio: decimal("target_organic_ratio", { precision: 6, scale: 2 }),
+  targetConversionRate: decimal("target_conversion_rate", { precision: 6, scale: 2 }),
+  promotionCycleDays: int("promotion_cycle_days"),
+  startDate: varchar("start_date", { length: 10 }),
+  endDate: varchar("end_date", { length: 10 }),
+  status: mysqlEnum("product_ops_plan_status", ["planning", "active", "completed", "paused"]).default("planning").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ProductOpsPlan = typeof productOpsPlans.$inferSelect;
+export type InsertProductOpsPlan = typeof productOpsPlans.$inferInsert;
+
+// Product ops daily record - daily tracking data
+export const productOpsDailyRecords = mysqlTable("product_ops_daily_records", {
+  id: int("id").autoincrement().primaryKey(),
+  planId: int("plan_id").notNull(),
+  recordDate: varchar("record_date", { length: 10 }).notNull(),
+  // Actual metrics
+  actualBsr: int("actual_bsr"),
+  actualImpressions: int("actual_impressions"),
+  actualTotalOrders: int("actual_total_orders"),
+  actualAdOrders: int("actual_ad_orders"),
+  actualOrganicOrders: int("actual_organic_orders"),
+  actualAcos: decimal("actual_acos", { precision: 6, scale: 2 }),
+  actualProfitMargin: decimal("actual_profit_margin", { precision: 6, scale: 2 }),
+  actualConversionRate: decimal("actual_conversion_rate", { precision: 6, scale: 2 }),
+  actualOrganicRatio: decimal("actual_organic_ratio", { precision: 6, scale: 2 }),
+  actualUnitPrice: decimal("actual_unit_price", { precision: 10, scale: 2 }),
+  actualSales: decimal("actual_sales", { precision: 12, scale: 2 }),
+  actualAdSpend: decimal("actual_ad_spend", { precision: 12, scale: 2 }),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ProductOpsDailyRecord = typeof productOpsDailyRecords.$inferSelect;
+export type InsertProductOpsDailyRecord = typeof productOpsDailyRecords.$inferInsert;
+
+// Keyword tracking configuration
+export const keywordTrackings = mysqlTable("keyword_trackings", {
+  id: int("id").autoincrement().primaryKey(),
+  planId: int("plan_id").notNull(),
+  keyword: varchar("keyword", { length: 300 }).notNull(),
+  keywordCn: varchar("keyword_cn", { length: 300 }),
+  targetOrganicRank: int("target_organic_rank"),
+  targetDailyAdOrders: int("target_daily_ad_orders"),
+  isCoreKeyword: int("is_core_keyword").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type KeywordTracking = typeof keywordTrackings.$inferSelect;
+export type InsertKeywordTracking = typeof keywordTrackings.$inferInsert;
+
+// Keyword daily record
+export const keywordDailyRecords = mysqlTable("keyword_daily_records", {
+  id: int("id").autoincrement().primaryKey(),
+  trackingId: int("tracking_id").notNull(),
+  recordDate: varchar("record_date", { length: 10 }).notNull(),
+  actualOrganicRank: int("actual_organic_rank"),
+  actualAdOrders: int("actual_ad_orders"),
+  actualAdSpend: decimal("actual_ad_spend", { precision: 12, scale: 2 }),
+  actualImpressions: int("actual_impressions"),
+  actualClicks: int("actual_clicks"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type KeywordDailyRecord = typeof keywordDailyRecords.$inferSelect;
+export type InsertKeywordDailyRecord = typeof keywordDailyRecords.$inferInsert;

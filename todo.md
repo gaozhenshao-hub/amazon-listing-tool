@@ -2652,3 +2652,49 @@
 - [ ] 后端：竞品广告策略对标API
 - [ ] 前端：客户画像页面+竞品广告对标页面
 
+### 第二阶段P1实施（2026-03-28开始）
+
+#### 2.1 DSP广告分析（1.5天）
+- [x] 后端：lingxingAdapter添加DSP报告-订单API路径和mock数据
+- [x] 后端：新增getDspReport API（DSP订单列表+KPI聚合）
+- [x] 后端：新增aiDspStrategy API（AI DSP投放建议）
+- [x] 前端：新建DspAnalysis组件（KPI卡片+订单表格+DSP vs SP/SB/SD对比图+AI建议）
+- [x] 路由：集成到OpsAds页面DSP分析Tab
+
+#### 2.2 AI广告问答Bot（1.5天）
+- [x] 后端：新增adChatBot API（意图识别+数据查询+知识库检索+LLM生成）
+- [x] 后端：广告知识库预设内容（SP/SB/SD/DSP基础知识+操作指南）
+- [x] 前端：AdChatBot组件（Markdown渲染+快捷问题+数据卡片+操作建议）
+- [x] 前端：集成到OpsAds页面AI广告助手Tab
+
+#### 2.3 跨渠道广告分析（1天）
+- [x] 后端：新增getCrossChannelData API（SP/SB/SD/DSP四渠道聚合对比）
+- [x] 后端：新增aiChannelStrategy API（AI渠道预算分配建议）
+- [x] 前端：CrossChannelAnalysis组件（渠道对比表+花费分布图+雷达图+AI建议）
+- [x] 前端：集成到OpsAds页面跨渠道分析Tab
+
+#### 2.4 利润深度分析（2天）
+- [x] 后端：lingxingAdapter添加ASIN利润报表+父ASIN利润报表+财务流水API路径和mock
+- [x] 后端：新增getParentAsinProfit + getAsinProfit + getFinanceStatement API
+- [x] 后端：新增aiProfitDiagnosis API（AI利润诊断+成本优化建议）
+- [x] 前端：OpsProfitDeep页面（利润趋势折线图+成本结构饼图+ASIN利润排行+AI诊断报告）
+- [x] 路由：注册/ops/profit-deep路由+侧边栏导航
+
+#### 2.5 产品总览·运营计划（3天）
+- [x] 数据库：新建product_ops_plan表（运营计划）
+- [x] 数据库：新建product_ops_daily_record表（日度跟踪记录）
+- [x] 数据库：新建keyword_tracking表（关键词跟踪）
+- [x] 数据库：新建keyword_daily_record表（关键词日度记录）
+- [ ] 数据库：新建competitor_ad_analysis表（竞品广告分析）
+- [x] 后端：新增运营计划CRUD API（创建/编辑/查看/删除计划）
+- [x] 后端：新增日度记录API（getDailyRecords + upsertDailyRecord）
+- [x] 后端：新增关键词跟踪CRUD API（listKeywords + addKeyword + deleteKeyword + getKeywordDailyRecords + upsertKeywordDailyRecord）
+- [ ] 后端：新增竞品广告对标CRUD API
+- [x] 后端：新增AI运营建议API（aiOpsSuggestion）
+- [x] 前端：OpsProductPlan页面（运营目标设置+日度跟踪+关键词排位+AI建议）
+- [x] 前端：运营目标设置表单（16个KPI目标值）
+- [x] 前端：目标vs实际趋势图（双线对比折线图）
+- [x] 前端：日度明细数据表（可编辑单元格）
+- [x] 前端：关键词排位跟踪图表（排位折线图+出单量柱状图）
+- [ ] 前端：竞品广告对标雷达图（多品牌五维度对比）
+- [ ] 前端：推广周期甘特图（BSR分段推荐+进度条）

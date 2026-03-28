@@ -16,7 +16,7 @@ import {
   Target, Sparkles, RefreshCw, Loader2, Search, DollarSign,
   MousePointerClick, Eye, TrendingUp, TrendingDown, AlertTriangle,
   Zap, Filter, BarChart3, Clock, XCircle, Activity, Crosshair,
-  Package, Settings2, Type, Gem,
+  Package, Settings2, Type, Gem, MessageSquare, Layers, Monitor,
 } from "lucide-react";
 
 // Sub-components
@@ -29,6 +29,9 @@ import AdDiagnostics from "./ads/AdDiagnostics";
 import TargetingAnalysis from "./ads/TargetingAnalysis";
 import WordFrequencyAnalysis from "./ads/WordFrequencyAnalysis";
 import EffectiveSearchTerms from "./ads/EffectiveSearchTerms";
+import DspAnalysis from "./ads/DspAnalysis";
+import AdChatBot from "./ads/AdChatBot";
+import CrossChannelAnalysis from "./ads/CrossChannelAnalysis";
 
 const PIE_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#9ca3af", "#8b5cf6", "#06b6d4", "#f97316"];
 
@@ -152,6 +155,18 @@ export default function OpsAds() {
           <TabsTrigger value="diagnostics" className="text-xs gap-1">
             <Activity className="w-3.5 h-3.5" />
             广告诊断
+          </TabsTrigger>
+          <TabsTrigger value="dsp" className="text-xs gap-1">
+            <Monitor className="w-3.5 h-3.5" />
+            DSP分析
+          </TabsTrigger>
+          <TabsTrigger value="cross-channel" className="text-xs gap-1">
+            <Layers className="w-3.5 h-3.5" />
+            跨渠道分析
+          </TabsTrigger>
+          <TabsTrigger value="ai-bot" className="text-xs gap-1">
+            <MessageSquare className="w-3.5 h-3.5" />
+            AI广告助手
           </TabsTrigger>
         </TabsList>
 
@@ -382,6 +397,30 @@ export default function OpsAds() {
             asin={selectedAsin}
             marketplace={marketplace}
             days={selectedDays}
+          />
+        </TabsContent>
+
+        {/* Tab: DSP Analysis */}
+        <TabsContent value="dsp" className="mt-4">
+          <DspAnalysis
+            marketplace={marketplace}
+            days={selectedDays}
+          />
+        </TabsContent>
+
+        {/* Tab: Cross Channel Analysis */}
+        <TabsContent value="cross-channel" className="mt-4">
+          <CrossChannelAnalysis
+            marketplace={marketplace}
+            days={selectedDays}
+          />
+        </TabsContent>
+
+        {/* Tab: AI Ad ChatBot */}
+        <TabsContent value="ai-bot" className="mt-4">
+          <AdChatBot
+            asin={selectedAsin}
+            marketplace={marketplace}
           />
         </TabsContent>
       </Tabs>

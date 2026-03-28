@@ -54,6 +54,7 @@ import {
   Rss,
   Truck,
   Clock,
+  PieChart,
   type LucideIcon,
 } from "lucide-react";
 import { ROLE_LABELS, ROLE_MODULE_ACCESS, ADMIN_ROLES } from "@shared/const";
@@ -140,6 +141,7 @@ const modules: ModuleDef[] = [
       { icon: Package, label: "库存预警", path: "/ops/inventory" },
       { icon: Target, label: "广告优化", path: "/ops/ads" },
       { icon: Eye, label: "竞品监控", path: "/ops/competitor" },
+      { icon: PieChart, label: "利润深度分析", path: "/ops/profit-deep" },
       { icon: Bot, label: "爬虫引擎", path: "/ops/crawler" },
       { icon: Clock, label: "物流时效分析", path: "/ops/logistics" },
     ],
