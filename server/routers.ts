@@ -66,6 +66,13 @@ import { dashboardUpgradeRouter } from "./routers/dashboardUpgrade";
 import { customDashboardRouter } from "./routers/customDashboard";
 import { competitorMonitorRouter } from "./routers/competitorMonitor";
 import { customerProfileRouter } from "./routers/customerProfile";
+// Module 6: Off-site Marketing
+import { offInfluencerRouter } from "./routers/offInfluencer";
+import { offCampaignRouter } from "./routers/offCampaign";
+import { offOutreachRouter } from "./routers/offOutreach";
+import { offContentRouter } from "./routers/offContent";
+import { offSocialRouter } from "./routers/offSocial";
+import { offAnalyticsRouter } from "./routers/offAnalytics";
 
 export const appRouter = router({
   system: systemRouter,
@@ -144,6 +151,13 @@ export const appRouter = router({
   customDashboard: customDashboardRouter,
   competitorMonitor: competitorMonitorRouter,
   customerProfile: customerProfileRouter,
+  // Module 6: Off-site Marketing
+  offInfluencer: offInfluencerRouter,
+  offCampaign: offCampaignRouter,
+  offOutreach: offOutreachRouter,
+  offContent: offContentRouter,
+  offSocial: offSocialRouter,
+  offAnalytics: offAnalyticsRouter,
 });
 
 export type AppRouter = typeof appRouter;

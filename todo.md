@@ -2813,3 +2813,36 @@
 - [x] 全面审计: 广告优化12个子Tab全部数据正常
 - [x] 全面审计: 竞品监控4个子Tab全部数据正常
 - [x] 全面审计: 运营仪表盘/产品总览/利润分析/利润深度分析/库存预警/智能运营中心/爬虫引擎/物流时效分析 全部正常
+
+## 模块六：站外营销模块 (Off-site Marketing Module)
+### 数据库
+- [x] 创建12张站外营销数据库表（off_influencers, off_influencer_scores, off_campaigns, off_collaborations, off_outreach_messages, off_content_submissions, off_social_accounts, off_content_calendar, off_attribution_links, off_campaign_analytics, off_matrix_groups, off_ai_analysis_logs）
+- [x] Schema列名映射修复（匹配已有DB的snake_case列名）
+### 后端路由
+- [x] AI提示词文件（offsitePrompts.ts - 8个专业AI分析提示词）
+- [x] 数据库操作层（offsiteDb.ts - 全部CRUD操作）
+- [x] 后端路由：达人管理(offInfluencer) - 搜索/AI匹配/详情/候选池
+- [x] 后端路由：活动管理(offCampaign) - CRUD/状态管理/预算追踪
+- [x] 后端路由：外联管理(offOutreach) - AI邮件生成/发送/跟进序列
+- [x] 后端路由：内容审核(offContent) - AI审核/人工确认
+- [x] 后端路由：社媒账号+内容日历+矩阵管理(offSocial)
+- [x] 后端路由：归因追踪+数据分析+AI洞察(offAnalytics)
+### 前端页面
+- [x] 导航结构集成到DashboardLayout（offsite模块+10个子页面）
+- [x] 权限配置（ROLE_MODULE_ACCESS + SUB_MODULES）
+- [x] 站外营销概览首页(/offsite)
+- [x] 达人发现与AI匹配(/offsite/influencers)
+- [x] 活动管理与看板(/offsite/campaigns)
+- [x] 外联管理(/offsite/outreach)
+- [x] 内容审核(/offsite/content-review)
+- [x] 社媒账号管理(/offsite/social-accounts)
+- [x] 内容日历(/offsite/content-calendar)
+- [x] TikTok矩阵管理(/offsite/tiktok-matrix)
+- [x] 归因追踪(/offsite/attribution)
+- [x] 全渠道分析仪表板(/offsite/analytics)
+- [x] App.tsx路由注册（10个offsite路由）
+### 测试
+- [x] 14个单元测试全部通过（搜索/创建/更新/统计/日历/矩阵/归因链接）
+### 第五轮优化
+- [x] 广告页面API并行化（getAdCampaigns和getSearchTerms改为Promise.allSettled批量并行）
+- [x] 广告页面默认美国站点

@@ -407,6 +407,13 @@
       "when": 1774692316310,
       "tag": "0057_awesome_loki",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "5",
+      "when": 1774709239572,
+      "tag": "0058_massive_vindicator",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,46 @@
+{
+  "query": "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'off_%' ORDER BY TABLE_NAME;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'off_%' ORDER BY TABLE_NAME;",
+  "rows": [
+    {
+      "TABLE_NAME": "off_ai_analysis_logs"
+    },
+    {
+      "TABLE_NAME": "off_attribution_links"
+    },
+    {
+      "TABLE_NAME": "off_campaign_analytics"
+    },
+    {
+      "TABLE_NAME": "off_campaigns"
+    },
+    {
+      "TABLE_NAME": "off_collaborations"
+    },
+    {
+      "TABLE_NAME": "off_content_calendar"
+    },
+    {
+      "TABLE_NAME": "off_content_submissions"
+    },
+    {
+      "TABLE_NAME": "off_influencer_scores"
+    },
+    {
+      "TABLE_NAME": "off_influencers"
+    },
+    {
+      "TABLE_NAME": "off_matrix_groups"
+    },
+    {
+      "TABLE_NAME": "off_outreach_messages"
+    },
+    {
+      "TABLE_NAME": "off_social_accounts"
+    }
+  ],
+  "messages": [],
+  "stdout": "TABLE_NAME\noff_ai_analysis_logs\noff_attribution_links\noff_campaign_analytics\noff_campaigns\noff_collaborations\noff_content_calendar\noff_content_submissions\noff_influencer_scores\noff_influencers\noff_matrix_groups\noff_outreach_messages\noff_social_accounts\n",
+  "stderr": "",
+  "execution_time_ms": 1603
+}

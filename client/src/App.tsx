@@ -67,6 +67,18 @@ import ServiceReturns from "./pages/service/ServiceReturns";
 import ServiceEmails from "./pages/service/ServiceEmails";
 import ServiceProfiles from "./pages/service/ServiceProfiles";
 
+// ─── Module 6: Off-site Marketing ──────────────────────────────
+import OffsiteOverview from "./pages/offsite/OffsiteOverview";
+import OffsiteInfluencers from "./pages/offsite/OffsiteInfluencers";
+import OffsiteCampaigns from "./pages/offsite/OffsiteCampaigns";
+import OffsiteOutreach from "./pages/offsite/OffsiteOutreach";
+import OffsiteContentReview from "./pages/offsite/OffsiteContentReview";
+import OffsiteSocialAccounts from "./pages/offsite/OffsiteSocialAccounts";
+import OffsiteContentCalendar from "./pages/offsite/OffsiteContentCalendar";
+import OffsiteTikTokMatrix from "./pages/offsite/OffsiteTikTokMatrix";
+import OffsiteAttribution from "./pages/offsite/OffsiteAttribution";
+import OffsiteAnalytics from "./pages/offsite/OffsiteAnalytics";
+
 // ─── Platform Home ──────────────────────────────────────────────
 import PlatformHome from "./pages/PlatformHome";
 
@@ -162,6 +174,18 @@ function Router() {
         <Route path="/service/returns">{() => <PermissionGuard><ServiceReturns /></PermissionGuard>}</Route>
         <Route path="/service/emails">{() => <PermissionGuard><ServiceEmails /></PermissionGuard>}</Route>
         <Route path="/service/profiles">{() => <PermissionGuard><ServiceProfiles /></PermissionGuard>}</Route>
+
+        {/* ─── Module 6: Off-site Marketing ─── */}
+        <Route path="/offsite">{() => <PermissionGuard><OffsiteOverview /></PermissionGuard>}</Route>
+        <Route path="/offsite/influencers">{() => <PermissionGuard><OffsiteInfluencers /></PermissionGuard>}</Route>
+        <Route path="/offsite/campaigns">{() => <PermissionGuard><OffsiteCampaigns /></PermissionGuard>}</Route>
+        <Route path="/offsite/outreach">{() => <PermissionGuard><OffsiteOutreach /></PermissionGuard>}</Route>
+        <Route path="/offsite/content-review">{() => <PermissionGuard><OffsiteContentReview /></PermissionGuard>}</Route>
+        <Route path="/offsite/social-accounts">{() => <PermissionGuard><OffsiteSocialAccounts /></PermissionGuard>}</Route>
+        <Route path="/offsite/content-calendar">{() => <PermissionGuard><OffsiteContentCalendar /></PermissionGuard>}</Route>
+        <Route path="/offsite/tiktok-matrix">{() => <PermissionGuard><OffsiteTikTokMatrix /></PermissionGuard>}</Route>
+        <Route path="/offsite/attribution">{() => <PermissionGuard><OffsiteAttribution /></PermissionGuard>}</Route>
+        <Route path="/offsite/analytics">{() => <PermissionGuard><OffsiteAnalytics /></PermissionGuard>}</Route>
 
         {/* ─── System Settings ─── */}
         <Route path="/settings" component={SystemSettings} />

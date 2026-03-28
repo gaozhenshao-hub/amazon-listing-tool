@@ -30,9 +30,9 @@ export const MANAGER_ROLES = ['super_admin', 'admin', 'ops_manager'] as const;
 
 // Module access by role
 export const ROLE_MODULE_ACCESS: Record<string, string[]> = {
-  super_admin:    ['dev', 'listing', 'ops', 'service', 'knowledge', 'admin'],
-  admin:          ['dev', 'listing', 'ops', 'service', 'knowledge', 'admin'],
-  ops_manager:    ['listing', 'knowledge', 'ops'],
+  super_admin:    ['dev', 'listing', 'ops', 'service', 'knowledge', 'admin', 'offsite'],
+  admin:          ['dev', 'listing', 'ops', 'service', 'knowledge', 'admin', 'offsite'],
+  ops_manager:    ['listing', 'knowledge', 'ops', 'offsite'],
   ops_specialist: ['listing', 'knowledge'],
   product_dev:    ['dev', 'knowledge'],
   finance:        ['dev'],
@@ -104,6 +104,18 @@ export const SUB_MODULES: Record<string, { id: string; label: string }[]> = {
     { id: 'admin_sop_access', label: 'SOP权限' },
     { id: 'admin_roles', label: '角色管理' },
     { id: 'admin_sync', label: '同步与监控' },
+  ],
+  offsite: [
+    { id: 'offsite_overview', label: '站外总览' },
+    { id: 'offsite_influencers', label: '达人管理' },
+    { id: 'offsite_campaigns', label: '活动管理' },
+    { id: 'offsite_outreach', label: '外联管理' },
+    { id: 'offsite_content_review', label: '内容审核' },
+    { id: 'offsite_social', label: '社媒账号' },
+    { id: 'offsite_calendar', label: '内容日历' },
+    { id: 'offsite_tiktok', label: 'TikTok矩阵' },
+    { id: 'offsite_attribution', label: '归因追踪' },
+    { id: 'offsite_analytics', label: '全渠道分析' },
   ],
 };
 

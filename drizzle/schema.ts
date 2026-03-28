@@ -2720,3 +2720,274 @@ export const customerProfiles = mysqlTable("customer_profiles", {
 });
 export type CustomerProfile = typeof customerProfiles.$inferSelect;
 export type InsertCustomerProfile = typeof customerProfiles.$inferInsert;
+
+// ============================================================
+// Module 6: Off-site Marketing (站外营销)
+// ============================================================
+
+// 6.1 Influencers
+export const offInfluencers = mysqlTable("off_influencers", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  platform: varchar("platform", { length: 50 }).notNull(),
+  handle: varchar("handle", { length: 200 }).notNull(),
+  displayName: varchar("display_name", { length: 200 }),
+  profileUrl: varchar("profile_url", { length: 500 }),
+  avatarUrl: varchar("avatar_url", { length: 500 }),
+  email: varchar("email", { length: 320 }),
+  phone: varchar("phone", { length: 50 }),
+  country: varchar("country", { length: 50 }),
+  language: varchar("language", { length: 50 }),
+  category: varchar("category", { length: 100 }),
+  tags: text("tags"),
+  followerCount: int("follower_count").default(0),
+  avgViews: int("avg_views").default(0),
+  avgLikes: int("avg_likes").default(0),
+  engagementRate: decimal("engagement_rate", { precision: 5, scale: 2 }),
+  estimatedCpm: decimal("estimated_cpm", { precision: 10, scale: 2 }),
+  priceRange: varchar("price_range", { length: 100 }),
+  notes: text("notes"),
+  status: varchar("status", { length: 30 }).default("active"),
+  source: varchar("source", { length: 50 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OffInfluencer = typeof offInfluencers.$inferSelect;
+export type InsertOffInfluencer = typeof offInfluencers.$inferInsert;
+
+// 6.2 Influencer AI Scores
+export const offInfluencerScores = mysqlTable("off_influencer_scores", {
+  id: int("id").autoincrement().primaryKey(),
+  influencerId: int("influencer_id").notNull(),
+  overallScore: decimal("overall_score", { precision: 5, scale: 2 }).default("0"),
+  relevanceScore: decimal("relevance_score", { precision: 5, scale: 2 }).default("0"),
+  engagementScore: decimal("engagement_score", { precision: 5, scale: 2 }).default("0"),
+  authenticityScore: decimal("authenticity_score", { precision: 5, scale: 2 }).default("0"),
+  costEfficiencyScore: decimal("cost_efficiency_score", { precision: 5, scale: 2 }).default("0"),
+  audienceMatchScore: decimal("audience_match_score", { precision: 5, scale: 2 }).default("0"),
+  aiAnalysis: text("ai_analysis"),
+  scoredForProduct: varchar("scored_for_product", { length: 200 }),
+  scoredAt: timestamp("scored_at").defaultNow().notNull(),
+});
+export type OffInfluencerScore = typeof offInfluencerScores.$inferSelect;
+
+// 6.3 Campaigns
+export const offCampaigns = mysqlTable("off_campaigns", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  name: varchar("name", { length: 300 }).notNull(),
+  description: text("description"),
+  type: varchar("type", { length: 50 }).default("influencer"),
+  status: varchar("status", { length: 30 }).default("draft"),
+  targetMarketplace: varchar("target_marketplace", { length: 10 }),
+  targetAsin: varchar("target_asin", { length: 50 }),
+  targetProductName: varchar("target_product_name", { length: 300 }),
+  budget: decimal("budget", { precision: 12, scale: 2 }).default("0"),
+  spentAmount: decimal("spent_amount", { precision: 12, scale: 2 }).default("0"),
+  startDate: varchar("start_date", { length: 20 }),
+  endDate: varchar("end_date", { length: 20 }),
+  goals: text("goals"),
+  kpiTargets: text("kpi_targets"),
+  tags: text("tags"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OffCampaign = typeof offCampaigns.$inferSelect;
+export type InsertOffCampaign = typeof offCampaigns.$inferInsert;
+
+// 6.4 Collaborations (Kanban board items)
+export const offCollaborations = mysqlTable("off_collaborations", {
+  id: int("id").autoincrement().primaryKey(),
+  campaignId: int("campaign_id").notNull(),
+  influencerId: int("influencer_id").notNull(),
+  userId: int("user_id").notNull(),
+  stage: varchar("stage", { length: 30 }).default("contacted"),
+  agreedPrice: decimal("agreed_price", { precision: 10, scale: 2 }).default("0"),
+  paymentStatus: varchar("payment_status", { length: 30 }).default("pending"),
+  deliverables: text("deliverables"),
+  deadline: varchar("deadline", { length: 20 }),
+  contentUrl: text("content_url"),
+  trackingLink: text("tracking_link"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OffCollaboration = typeof offCollaborations.$inferSelect;
+export type InsertOffCollaboration = typeof offCollaborations.$inferInsert;
+
+// 6.5 Outreach Messages
+export const offOutreachMessages = mysqlTable("off_outreach_messages", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  influencerId: int("influencer_id").notNull(),
+  campaignId: int("campaign_id"),
+  collaborationId: int("collaboration_id"),
+  channel: varchar("channel", { length: 30 }).default("email"),
+  direction: varchar("direction", { length: 10 }).default("outbound"),
+  subject: varchar("subject", { length: 500 }),
+  body: text("body"),
+  aiGenerated: boolean("ai_generated").default(false),
+  status: varchar("status", { length: 30 }).default("draft"),
+  scheduledAt: timestamp("scheduled_at"),
+  sentAt: timestamp("sent_at"),
+  sequenceStep: int("sequence_step"),
+  templateId: varchar("template_id", { length: 100 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type OffOutreachMessage = typeof offOutreachMessages.$inferSelect;
+export type InsertOffOutreachMessage = typeof offOutreachMessages.$inferInsert;
+
+// 6.6 Content Submissions (for review)
+export const offContentSubmissions = mysqlTable("off_content_submissions", {
+  id: int("id").autoincrement().primaryKey(),
+  collaborationId: int("collaboration_id"),
+  influencerId: int("influencer_id"),
+  userId: int("user_id").notNull(),
+  contentType: varchar("content_type", { length: 30 }).default("post"),
+  contentUrl: text("content_url"),
+  thumbnailUrl: text("thumbnail_url"),
+  caption: text("caption"),
+  status: varchar("status", { length: 30 }).default("pending"),
+  aiReviewResult: text("ai_review_result"),
+  humanReviewNotes: text("human_review_notes"),
+  revisionCount: int("revision_count").default(0),
+  publishedAt: timestamp("published_at"),
+  metrics: text("metrics"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OffContentSubmission = typeof offContentSubmissions.$inferSelect;
+export type InsertOffContentSubmission = typeof offContentSubmissions.$inferInsert;
+
+// 6.7 Social Accounts
+export const offSocialAccounts = mysqlTable("off_social_accounts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  platform: varchar("platform", { length: 50 }).notNull(),
+  accountName: varchar("account_name", { length: 200 }).notNull(),
+  accountId: varchar("account_id", { length: 200 }),
+  profileUrl: varchar("profile_url", { length: 500 }),
+  avatarUrl: varchar("avatar_url", { length: 500 }),
+  followerCount: int("follower_count").default(0),
+  followingCount: int("following_count").default(0),
+  postCount: int("post_count").default(0),
+  matrixGroupId: int("matrix_group_id"),
+  status: varchar("status", { length: 30 }).default("active"),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  lastSyncAt: timestamp("last_sync_at"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OffSocialAccount = typeof offSocialAccounts.$inferSelect;
+export type InsertOffSocialAccount = typeof offSocialAccounts.$inferInsert;
+
+// 6.8 Content Calendar
+export const offContentCalendar = mysqlTable("off_content_calendar", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  socialAccountId: int("social_account_id"),
+  campaignId: int("campaign_id"),
+  title: varchar("title", { length: 300 }).notNull(),
+  contentType: varchar("content_type", { length: 50 }),
+  platform: varchar("platform", { length: 50 }).notNull(),
+  status: varchar("status", { length: 30 }).default("draft"),
+  scheduledDate: varchar("scheduled_date", { length: 20 }).notNull(),
+  scheduledTime: varchar("scheduled_time", { length: 10 }),
+  publishedAt: timestamp("published_at"),
+  content: text("content"),
+  mediaUrls: text("media_urls"),
+  hashtags: text("hashtags"),
+  aiGeneratedContent: text("ai_generated_content"),
+  metrics: text("metrics"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OffContentCalendarItem = typeof offContentCalendar.$inferSelect;
+export type InsertOffContentCalendarItem = typeof offContentCalendar.$inferInsert;
+
+// 6.9 Attribution Links
+export const offAttributionLinks = mysqlTable("off_attribution_links", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  campaignId: int("campaign_id"),
+  collaborationId: int("collaboration_id"),
+  influencerId: int("influencer_id"),
+  originalUrl: text("original_url").notNull(),
+  shortUrl: varchar("short_url", { length: 500 }),
+  amazonTag: varchar("amazon_tag", { length: 100 }),
+  utmSource: varchar("utm_source", { length: 100 }),
+  utmMedium: varchar("utm_medium", { length: 100 }),
+  utmCampaign: varchar("utm_campaign", { length: 200 }),
+  utmContent: varchar("utm_content", { length: 200 }),
+  clickCount: int("click_count").default(0),
+  conversionCount: int("conversion_count").default(0),
+  revenue: decimal("revenue", { precision: 12, scale: 2 }).default("0"),
+  brbAmount: decimal("brb_amount", { precision: 12, scale: 2 }).default("0"),
+  lastClickAt: timestamp("last_click_at"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OffAttributionLink = typeof offAttributionLinks.$inferSelect;
+export type InsertOffAttributionLink = typeof offAttributionLinks.$inferInsert;
+
+// 6.10 Campaign Analytics
+export const offCampaignAnalytics = mysqlTable("off_campaign_analytics", {
+  id: int("id").autoincrement().primaryKey(),
+  campaignId: int("campaign_id").notNull(),
+  date: varchar("date", { length: 20 }).notNull(),
+  impressions: int("impressions").default(0),
+  reach: int("reach").default(0),
+  clicks: int("clicks").default(0),
+  conversions: int("conversions").default(0),
+  revenue: decimal("revenue", { precision: 12, scale: 2 }).default("0"),
+  spend: decimal("spend", { precision: 12, scale: 2 }).default("0"),
+  engagements: int("engagements").default(0),
+  videoViews: int("video_views").default(0),
+  shares: int("shares").default(0),
+  comments: int("comments").default(0),
+  saves: int("saves").default(0),
+  brbRevenue: decimal("brb_revenue", { precision: 12, scale: 2 }).default("0"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type OffCampaignAnalytic = typeof offCampaignAnalytics.$inferSelect;
+
+// 6.11 Matrix Groups (TikTok account groups)
+export const offMatrixGroups = mysqlTable("off_matrix_groups", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  name: varchar("name", { length: 200 }).notNull(),
+  description: text("description"),
+  platform: varchar("platform", { length: 50 }).default("tiktok"),
+  strategy: text("strategy"),
+  accountCount: int("account_count").default(0),
+  totalFollowers: int("total_followers").default(0),
+  totalViews: int("total_views").default(0),
+  status: varchar("status", { length: 30 }).default("active"),
+  aiContentStrategy: text("ai_content_strategy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type OffMatrixGroup = typeof offMatrixGroups.$inferSelect;
+export type InsertOffMatrixGroup = typeof offMatrixGroups.$inferInsert;
+
+// 6.12 AI Analysis Logs (off-site)
+export const offAiAnalysisLogs = mysqlTable("off_ai_analysis_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  analysisType: varchar("analysis_type", { length: 50 }).notNull(),
+  entityType: varchar("entity_type", { length: 50 }),
+  entityId: int("entity_id"),
+  inputData: text("input_data"),
+  outputData: text("output_data"),
+  promptUsed: text("prompt_used"),
+  tokensUsed: int("tokens_used").default(0),
+  durationMs: int("duration_ms").default(0),
+  status: varchar("status", { length: 30 }).default("completed"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type OffAiAnalysisLog = typeof offAiAnalysisLogs.$inferSelect;

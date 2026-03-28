@@ -58,6 +58,13 @@ import {
   Star,
   Radar,
   Layers,
+  Share2,
+  UserCheck,
+  CalendarDays,
+  Link2,
+  Activity,
+  Send,
+  CheckCircle,
   type LucideIcon,
 } from "lucide-react";
 import { ROLE_LABELS, ROLE_MODULE_ACCESS, ADMIN_ROLES } from "@shared/const";
@@ -74,7 +81,7 @@ import {
 import { toast } from "sonner";
 
 // ─── Module definitions ────────────────────────────────────────
-type ModuleId = "home" | "dev" | "listing" | "ops" | "service" | "knowledge" | "admin";
+type ModuleId = "home" | "dev" | "listing" | "ops" | "service" | "knowledge" | "admin" | "offsite";
 
 interface MenuItem {
   icon: LucideIcon;
@@ -186,6 +193,26 @@ const modules: ModuleDef[] = [
     ],
   },
   {
+    id: "offsite",
+    icon: Share2,
+    label: "站外营销",
+    shortLabel: "站外",
+    prefix: "/offsite",
+    enabled: true,
+    items: [
+      { icon: LayoutDashboard, label: "站外总览", path: "/offsite" },
+      { icon: UserCheck, label: "达人管理", path: "/offsite/influencers" },
+      { icon: Target, label: "活动管理", path: "/offsite/campaigns" },
+      { icon: Send, label: "外联管理", path: "/offsite/outreach" },
+      { icon: CheckCircle, label: "内容审核", path: "/offsite/content-review" },
+      { icon: Globe, label: "社媒账号", path: "/offsite/social-accounts" },
+      { icon: CalendarDays, label: "内容日历", path: "/offsite/content-calendar" },
+      { icon: Video, label: "TikTok矩阵", path: "/offsite/tiktok-matrix" },
+      { icon: Link2, label: "归因追踪", path: "/offsite/attribution" },
+      { icon: Activity, label: "全渠道分析", path: "/offsite/analytics" },
+    ],
+  },
+  {
     id: "admin",
     icon: Users,
     label: "系统管理",
@@ -211,6 +238,7 @@ function detectActiveModule(location: string): ModuleId {
   if (location.startsWith("/ops")) return "ops";
   if (location.startsWith("/service")) return "service";
   if (location.startsWith("/knowledge")) return "knowledge";
+  if (location.startsWith("/offsite")) return "offsite";
   if (location.startsWith("/admin")) return "admin";
   // Legacy routes (before migration) - map to listing
   const legacyPaths = ["/analysis", "/comparison", "/review-history", "/review-aggregation", "/keywords", "/ad-structure", "/data-files", "/generate", "/preview", "/score"];

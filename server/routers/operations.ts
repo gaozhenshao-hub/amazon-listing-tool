@@ -1157,49 +1157,47 @@ ${activeSkus.map((s, i) => `
       console.log(`[AdCampaigns] Querying campaign reports for ${queryDates.length} days: ${queryDates[0]} ~ ${queryDates[queryDates.length - 1]}`);
       const reportMap: Record<string, any> = {};
       const campaignProfileMap: Record<string, string> = {}; // campaign_id -> profile_id
-      for (const sid of sidsToQuery) {
-       for (const reportDate of queryDates) {
-        try {
-          const reportRes = await adapter.requestWithMockFallback({
+      // Parallel: build all sid+date combos and fetch concurrently
+      const reportTasks = sidsToQuery.flatMap(sid =>
+        queryDates.map(reportDate => ({ sid, reportDate }))
+      );
+      console.log(`[AdCampaigns] Fetching ${reportTasks.length} report tasks in parallel (${sidsToQuery.length} sids x ${queryDates.length} days)`);
+      const reportResults = await Promise.allSettled(
+        reportTasks.map(({ sid, reportDate }) =>
+          adapter.requestWithMockFallback({
             path: "/pb/openapi/newad/spCampaignReports",
-            body: {
-              sid,
-              report_date: reportDate,
-              show_detail: 0,
-              offset: 0,
-              length: 200,
-            },
+            body: { sid, report_date: reportDate, show_detail: 0, offset: 0, length: 200 },
             headers: { "X-API-VERSION": "2" },
-          });
-          const rawReport = reportRes.data || [];
-          const reportData = Array.isArray(rawReport) ? rawReport : (rawReport as any).records || (rawReport as any).list || [];
-          console.log(`[AdCampaigns] sid=${sid}: Got ${reportData.length} campaign reports`);
-          for (const r of reportData) {
-            const cid = String(r.campaign_id);
-            // Save profile_id for later name lookup
-            if (r.profile_id) campaignProfileMap[cid] = String(r.profile_id);
-            if (reportMap[cid]) {
-              reportMap[cid].impressions += Number(r.impressions) || 0;
-              reportMap[cid].clicks += Number(r.clicks) || 0;
-              reportMap[cid].cost += Number(r.cost) || 0;
-              reportMap[cid].sales += Number(r.sales) || 0;
-              reportMap[cid].orders += Number(r.orders) || 0;
-            } else {
-              reportMap[cid] = {
-                impressions: Number(r.impressions) || 0,
-                clicks: Number(r.clicks) || 0,
-                cost: Number(r.cost) || 0,
-                sales: Number(r.sales) || 0,
-                orders: Number(r.orders) || 0,
-                units: Number(r.units) || 0,
-              };
-            }
+          }).then(res => ({ sid, reportDate, res }))
+        )
+      );
+      for (const result of reportResults) {
+        if (result.status === 'rejected') continue;
+        const { sid, reportDate, res } = result.value;
+        const rawReport = res.data || [];
+        const reportData = Array.isArray(rawReport) ? rawReport : (rawReport as any).records || (rawReport as any).list || [];
+        for (const r of reportData) {
+          const cid = String(r.campaign_id);
+          if (r.profile_id) campaignProfileMap[cid] = String(r.profile_id);
+          if (reportMap[cid]) {
+            reportMap[cid].impressions += Number(r.impressions) || 0;
+            reportMap[cid].clicks += Number(r.clicks) || 0;
+            reportMap[cid].cost += Number(r.cost) || 0;
+            reportMap[cid].sales += Number(r.sales) || 0;
+            reportMap[cid].orders += Number(r.orders) || 0;
+          } else {
+            reportMap[cid] = {
+              impressions: Number(r.impressions) || 0,
+              clicks: Number(r.clicks) || 0,
+              cost: Number(r.cost) || 0,
+              sales: Number(r.sales) || 0,
+              orders: Number(r.orders) || 0,
+              units: Number(r.units) || 0,
+            };
           }
-        } catch (err: any) {
-          console.warn(`[AdCampaigns] sid=${sid}, date=${reportDate}: Failed to get reports: ${err.message}`);
         }
-       } // end reportDate loop
-      } // end sid loop
+      }
+      console.log(`[AdCampaigns] Parallel report fetch complete: ${reportResults.filter(r => r.status === 'fulfilled').length}/${reportTasks.length} succeeded`);
       
       // 2.5 Find campaigns in reports that are missing names, try to fetch by profile_id
       const missingCampaignIds = Object.keys(reportMap).filter(cid => !campaignNameMap[cid]);
@@ -1331,70 +1329,54 @@ ${activeSkus.map((s, i) => `
         days_seen: number;
       }> = {};
       
-      // Query last N days across all sids
-      for (const sid of sidsToQuery) {
-        for (let d = 1; d <= days; d++) {
-          const reportDate = getDateNDaysAgo(d);
-          try {
-            // Paginate: get up to 500 terms per day per sid
-            let offset = 0;
-            const pageSize = 200;
-            let hasMore = true;
-            while (hasMore && offset < 1000) {
-              const res = await adapter.requestWithMockFallback({
-                path: "/pb/openapi/newad/queryWordReports",
-                body: {
-                  sid,
-                  report_date: reportDate,
-                  target_type: "keyword",
-                  offset,
-                  length: pageSize,
-                },
-                headers: { "X-API-VERSION": "2" },
-              });
-              const rawData = res.data || [];
-              const items = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
-              if (d === 1 && offset === 0) {
-                console.log(`[SearchTerms] sid=${sid}, date=${reportDate}: Got ${items.length} terms (total=${(res as any).total || 'N/A'})`);
-              }
-              
-              for (const item of items) {
-                const key = `${item.query}||${item.campaign_id}||${item.match_type}`;
-                if (termAggMap[key]) {
-                  termAggMap[key].impressions += Number(item.impressions) || 0;
-                  termAggMap[key].clicks += Number(item.clicks) || 0;
-                  termAggMap[key].cost += Number(item.cost) || 0;
-                  termAggMap[key].sales += Number(item.sales) || 0;
-                  termAggMap[key].orders += Number(item.orders) || 0;
-                  termAggMap[key].units += Number(item.units) || 0;
-                  termAggMap[key].days_seen += 1;
-                } else {
-                  termAggMap[key] = {
-                    query: item.query || '',
-                    target_text: item.target_text || '',
-                    match_type: item.match_type || '',
-                    campaign_id: String(item.campaign_id || ''),
-                    ad_group_id: String(item.ad_group_id || ''),
-                    impressions: Number(item.impressions) || 0,
-                    clicks: Number(item.clicks) || 0,
-                    cost: Number(item.cost) || 0,
-                    sales: Number(item.sales) || 0,
-                    orders: Number(item.orders) || 0,
-                    units: Number(item.units) || 0,
-                    days_seen: 1,
-                  };
-                }
-              }
-              
-              hasMore = items.length >= pageSize;
-              offset += pageSize;
-            }
-          } catch (err: any) {
-            // Skip failed days/sids
-            if (d === 1) console.warn(`[SearchTerms] sid=${sid}, date=${reportDate}: ${err.message}`);
+      // Parallel: build all sid+day combos and fetch concurrently
+      const termTasks = sidsToQuery.flatMap(sid =>
+        Array.from({ length: days }, (_, i) => ({ sid, reportDate: getDateNDaysAgo(i + 1) }))
+      );
+      console.log(`[SearchTerms] Fetching ${termTasks.length} search term tasks in parallel (${sidsToQuery.length} sids x ${days} days)`);
+      const termResults = await Promise.allSettled(
+        termTasks.map(({ sid, reportDate }) =>
+          adapter.requestWithMockFallback({
+            path: "/pb/openapi/newad/queryWordReports",
+            body: { sid, report_date: reportDate, target_type: "keyword", offset: 0, length: 200 },
+            headers: { "X-API-VERSION": "2" },
+          }).then(res => ({ sid, reportDate, res }))
+        )
+      );
+      for (const result of termResults) {
+        if (result.status === 'rejected') continue;
+        const { res } = result.value;
+        const rawData = res.data || [];
+        const items = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
+        for (const item of items) {
+          const key = `${item.query}||${item.campaign_id}||${item.match_type}`;
+          if (termAggMap[key]) {
+            termAggMap[key].impressions += Number(item.impressions) || 0;
+            termAggMap[key].clicks += Number(item.clicks) || 0;
+            termAggMap[key].cost += Number(item.cost) || 0;
+            termAggMap[key].sales += Number(item.sales) || 0;
+            termAggMap[key].orders += Number(item.orders) || 0;
+            termAggMap[key].units += Number(item.units) || 0;
+            termAggMap[key].days_seen += 1;
+          } else {
+            termAggMap[key] = {
+              query: item.query || '',
+              target_text: item.target_text || '',
+              match_type: item.match_type || '',
+              campaign_id: String(item.campaign_id || ''),
+              ad_group_id: String(item.ad_group_id || ''),
+              impressions: Number(item.impressions) || 0,
+              clicks: Number(item.clicks) || 0,
+              cost: Number(item.cost) || 0,
+              sales: Number(item.sales) || 0,
+              orders: Number(item.orders) || 0,
+              units: Number(item.units) || 0,
+              days_seen: 1,
+            };
           }
         }
       }
+      console.log(`[SearchTerms] Parallel fetch complete: ${termResults.filter(r => r.status === 'fulfilled').length}/${termTasks.length} succeeded`);
       
       // Convert to array and compute derived metrics
       const searchTerms = Object.values(termAggMap).map(t => {
