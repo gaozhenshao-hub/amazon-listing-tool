@@ -81,7 +81,7 @@ export const adAnalysisP2Router = router({
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
-      const res = await adapter.request<any[]>({
+      const res = await adapter.requestWithMockFallback({
         path: "/basicopen/dapReport/order/list",
         method: "POST",
         body: {
@@ -250,7 +250,7 @@ ${input.topOrders ? `TOP DSP订单:\n${input.topOrders.map(o => `- ${o.order_nam
         try {
           const adapter = getLingxingAdapter();
           // Fetch recent ad data for context
-          const adRes = await adapter.request<any[]>({
+          const adRes = await adapter.requestWithMockFallback({
             path: "/ph/openaps/newad/spAdvertiseHourData",
             method: "POST",
             body: {
@@ -402,10 +402,10 @@ ${AD_KNOWLEDGE_BASE}
 
       // Fetch all 4 channels in parallel
       const [spRes, sbRes, sdRes, dspRes] = await Promise.all([
-        adapter.request<any[]>({ path: "/pb/openaps/newad/spCampaignHourData", body: baseParams }),
-        adapter.request<any[]>({ path: "/pb/openaps/newad/sbCampaignHourData", body: baseParams }),
-        adapter.request<any[]>({ path: "/pb/openaps/newad/sdCampaignHourData", body: baseParams }),
-        adapter.request<any[]>({ path: "/basicopen/dapReport/order/list", body: baseParams }),
+        adapter.requestWithMockFallback({ path: "/pb/openaps/newad/spCampaignHourData", body: baseParams }),
+        adapter.requestWithMockFallback({ path: "/pb/openaps/newad/sbCampaignHourData", body: baseParams }),
+        adapter.requestWithMockFallback({ path: "/pb/openaps/newad/sdCampaignHourData", body: baseParams }),
+        adapter.requestWithMockFallback({ path: "/basicopen/dapReport/order/list", body: baseParams }),
       ]);
 
       function aggregateChannel(data: any[], channelName: string) {

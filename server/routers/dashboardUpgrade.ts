@@ -20,8 +20,8 @@ export const dashboardUpgradeRouter = router({
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
       const [dealsRes, couponsRes] = await Promise.all([
-        adapter.request({ path: "/erp/sc/data/mws/lightningDeal", body: { offset: 0, length: 100, sid: input?.sid } }),
-        adapter.request({ path: "/erp/sc/data/mws/coupon/list", body: { offset: 0, length: 100, sid: input?.sid } }),
+        adapter.requestWithMockFallback({ path: "/erp/sc/data/mws/lightningDeal", body: { offset: 0, length: 100, sid: input?.sid } }),
+        adapter.requestWithMockFallback({ path: "/erp/sc/data/mws/coupon/list", body: { offset: 0, length: 100, sid: input?.sid } }),
       ]);
       const deals = Array.isArray(dealsRes.data) ? dealsRes.data : (dealsRes.data as any)?.list || [];
       const coupons = Array.isArray(couponsRes.data) ? couponsRes.data : (couponsRes.data as any)?.list || [];
@@ -71,8 +71,8 @@ export const dashboardUpgradeRouter = router({
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
       const [perfRes, perfDetailRes] = await Promise.all([
-        adapter.request({ path: "/erp/sc/cs/performance/list", body: { offset: 0, length: 50 } }),
-        adapter.request({ path: "/erp/data/seller/performance/list", body: { offset: 0, length: 50, sid: input?.sid } }),
+        adapter.requestWithMockFallback({ path: "/erp/sc/cs/performance/list", body: { offset: 0, length: 50 } }),
+        adapter.requestWithMockFallback({ path: "/erp/data/seller/performance/list", body: { offset: 0, length: 50, sid: input?.sid } }),
       ]);
       const perfList = Array.isArray(perfRes.data) ? perfRes.data : (perfRes.data as any)?.list || [];
       const perfDetails = Array.isArray(perfDetailRes.data) ? perfDetailRes.data : (perfDetailRes.data as any)?.list || [];
@@ -122,8 +122,8 @@ export const dashboardUpgradeRouter = router({
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
       const [inventoryRes, returnRes] = await Promise.all([
-        adapter.request({ path: "/basicOpen/openapi/storage/fbaWarehouseDetail", body: { offset: 0, length: 500 } }),
-        adapter.request({ path: "/erp/sc/data/fba/returnAnalysis", body: { offset: 0, length: 200, startDate: getDateNDaysAgo(30), endDate: getYesterday() } }),
+        adapter.requestWithMockFallback({ path: "/basicOpen/openapi/storage/fbaWarehouseDetail", body: { offset: 0, length: 500 } }),
+        adapter.requestWithMockFallback({ path: "/erp/sc/data/fba/returnAnalysis", body: { offset: 0, length: 200, startDate: getDateNDaysAgo(30), endDate: getYesterday() } }),
       ]);
       const inventory = Array.isArray(inventoryRes.data) ? inventoryRes.data : (inventoryRes.data as any)?.list || [];
       const returns = Array.isArray(returnRes.data) ? returnRes.data : (returnRes.data as any)?.list || [];
@@ -169,10 +169,10 @@ export const dashboardUpgradeRouter = router({
       const adapter = getLingxingAdapter();
       // Gather key data for briefing
       const [profitRes, inventoryRes, adRes, returnRes] = await Promise.all([
-        adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 100, startDate: getDateNDaysAgo(7), endDate: getYesterday(), summaryEnabled: true } }),
-        adapter.request({ path: "/basicOpen/openapi/storage/fbaWarehouseDetail", body: { offset: 0, length: 200 } }),
-        adapter.request({ path: "/ph/openaps/newad/spAdvertiseHourData", body: { report_date: getYesterday(), offset: 0, length: 200 } }),
-        adapter.request({ path: "/erp/sc/data/fba/returnAnalysis", body: { offset: 0, length: 100, startDate: getDateNDaysAgo(7), endDate: getYesterday() } }),
+        adapter.requestWithMockFallback({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 100, startDate: getDateNDaysAgo(7), endDate: getYesterday(), summaryEnabled: true } }),
+        adapter.requestWithMockFallback({ path: "/basicOpen/openapi/storage/fbaWarehouseDetail", body: { offset: 0, length: 200 } }),
+        adapter.requestWithMockFallback({ path: "/ph/openaps/newad/spAdvertiseHourData", body: { report_date: getYesterday(), offset: 0, length: 200 } }),
+        adapter.requestWithMockFallback({ path: "/erp/sc/data/fba/returnAnalysis", body: { offset: 0, length: 100, startDate: getDateNDaysAgo(7), endDate: getYesterday() } }),
       ]);
 
       const profitData = Array.isArray(profitRes.data) ? profitRes.data : (profitRes.data as any)?.records || [];

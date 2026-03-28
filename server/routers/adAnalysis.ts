@@ -240,7 +240,7 @@ export const adAnalysisRouter = router({
       for (const sid of sidsToQuery) {
         try {
           // Get product list with ASIN info
-          const res = await adapter.request({
+          const res = await adapter.requestWithMockFallback({
             path: "/erp/sc/data/mws/listing",
             body: { sid, offset: 0, length: 200 },
           });
@@ -307,8 +307,8 @@ export const adAnalysisRouter = router({
             let offset = 0;
             let hasMore = true;
             while (hasMore && offset < 2000) {
-              const res = await adapter.request({
-                path: "/pb/openapi/newad/queryWordReports",
+              const res = await adapter.requestWithMockFallback({
+                path: "/pb/openapi/newad/ad/queryWordReports",
                 body: { sid, report_date: reportDate, target_type: "keyword", offset, length: 200 },
                 headers: { "X-API-VERSION": "2" },
               });
@@ -497,8 +497,8 @@ ${JSON.stringify(anonymizedTerms)}
         for (let d = 1; d <= days; d++) {
           const reportDate = getDateNDaysAgo(d);
           try {
-            const res = await adapter.request({
-              path: "/erp/sp/api/v2/adGroups/placementReports",
+           const res = await adapter.requestWithMockFallback({
+              path: "/pb/openapi/newad/Groups/placementReports",
               body: { sid, report_date: reportDate, show_detail: 0, offset: 0, length: 200 },
             });
             const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
@@ -563,8 +563,8 @@ ${JSON.stringify(anonymizedTerms)}
             if (input.campaignId) body.campaign_id = Number(input.campaignId);
             else body.sid = sid;
             
-            const res = await adapter.request({
-              path: "/pb/openaps/newad/spCampaignHourData",
+            const res = await adapter.requestWithMockFallback({
+              path: "/pb/openapi/newad/spCampaignHourData",
               body,
               headers: { "X-API-VERSION": "2" },
             });
@@ -620,7 +620,7 @@ ${JSON.stringify(anonymizedTerms)}
         };
         if (input.asin) body.summary_field_value = input.asin;
 
-        const res = await adapter.request({
+        const res = await adapter.requestWithMockFallback({
           path: "/basicOpen/salesAnalysis/productPerformance/performanceTrendByHour",
           body,
         });
@@ -739,8 +739,8 @@ ${JSON.stringify(input.hourlyData)}
       for (const sid of sidsToQuery) {
         for (let d = 1; d <= Math.min(input.days || 30, 30); d++) {
           try {
-            const res = await adapter.request({
-              path: "/pb/openapi/newad/spCampaignReports",
+            const res = await adapter.requestWithMockFallback({
+            path: "/pb/openapi/newad/d/spCampaignReports",
               body: { sid, report_date: getDateNDaysAgo(d), show_detail: 0, offset: 0, length: 200 },
               headers: { "X-API-VERSION": "2" },
             });
@@ -854,7 +854,7 @@ ${JSON.stringify(metrics)}
       for (const sid of sidsToQuery) {
         for (let d = 1; d <= days; d++) {
           try {
-            const res = await adapter.request({
+            const res = await adapter.requestWithMockFallback({
               path: "/erp/sp/api/v2/reports/targets",
               body: { sid, report_date: getDateNDaysAgo(d), show_detail: 0, offset: 0, length: 200 },
             });
@@ -933,7 +933,7 @@ ${JSON.stringify(metrics)}
           try {
             const body: any = { sid, report_date: getDateNDaysAgo(d), offset: 0, length: 500 };
             if (input.asin) body.asin = input.asin;
-            const res = await adapter.request({
+            const res = await adapter.requestWithMockFallback({
               path: "/erp/sp/query/queryUserSearchTerm",
               body,
             });
@@ -1046,7 +1046,7 @@ ${JSON.stringify(metrics)}
           try {
             const body: any = { sid, report_date: getDateNDaysAgo(d), offset: 0, length: 500 };
             if (input.asin) body.asin = input.asin;
-            const res = await adapter.request({
+            const res = await adapter.requestWithMockFallback({
               path: "/erp/sp/query/queryUserSearchTerm",
               body,
             });
@@ -1073,7 +1073,7 @@ ${JSON.stringify(metrics)}
       const targetedKeywords = new Set<string>();
       for (const sid of sidsToQuery) {
         try {
-          const res = await adapter.request({
+          const res = await adapter.requestWithMockFallback({
             path: "/erp/sp/data/getKeywordsReports",
             body: { sid, report_date: getDateNDaysAgo(1), offset: 0, length: 500 },
           });

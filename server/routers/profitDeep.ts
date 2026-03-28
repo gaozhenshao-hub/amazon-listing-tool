@@ -16,7 +16,7 @@ export const profitDeepRouter = router({
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
-      const res = await adapter.request<any[]>({
+      const res = await adapter.requestWithMockFallback({
         path: "/bd/profit/report/open/report/parent/asin/list",
         body: {
           start_date: input.startDate || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
@@ -105,7 +105,7 @@ export const profitDeepRouter = router({
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
-      const res = await adapter.request<any[]>({
+      const res = await adapter.requestWithMockFallback({
         path: "/bd/profit/report/open/report/asin/list",
         body: {
           start_date: input.startDate || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
@@ -127,7 +127,7 @@ export const profitDeepRouter = router({
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
-      const res = await adapter.request<any[]>({
+      const res = await adapter.requestWithMockFallback({
         path: "/erp/finance/data/inventory/getInventoryStatementList",
         body: {
           start_date: input.startDate || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),

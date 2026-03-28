@@ -2805,3 +2805,11 @@
 - [x] Bug fix: 在lingxingAdapter中添加requestWithMockFallback方法，API失败时自动fallback到mock数据
 - [x] Bug fix: afterSales.ts所有API调用改用requestWithMockFallback
 - [x] Bug fix: 退货分析页面字段映射修复（mock返回的by_asin/reasons映射为前端期望的summary/reasonDistribution/asinReturns/recentReturns）
+
+- [x] Bug fix: 运营仪表盘升级内容合并到主仪表盘（促销日历+店铺健康+智能预警+AI简报）
+- [x] Bug fix: 所有路由文件adapter.request改为requestWithMockFallback（dashboardUpgrade/competitorMonitor/customDashboard/customerProfile/operations/productOps/adAnalysis/adAnalysisP2/conversionDataCollector/profitDeep）
+- [x] Bug fix: 竞品监控字段映射修复（current_price→price, bsr_rank→bsr）
+- [x] Bug fix: 竞品mock数据添加price_history/review_history/bsr_history字段，修复价格变动和Review变动Tab为空
+- [x] 全面审计: 广告优化12个子Tab全部数据正常
+- [x] 全面审计: 竞品监控4个子Tab全部数据正常
+- [x] 全面审计: 运营仪表盘/产品总览/利润分析/利润深度分析/库存预警/智能运营中心/爬虫引擎/物流时效分析 全部正常

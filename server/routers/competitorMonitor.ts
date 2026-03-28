@@ -19,7 +19,7 @@ export const competitorMonitorRouter = router({
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
-      const res = await adapter.request({
+      const res = await adapter.requestWithMockFallback({
         path: "/erp/sc/data/mws/competitorMonitor",
         body: { offset: input.offset, length: input.length, sid: input.sid, asin: input.asin },
       });
@@ -30,10 +30,10 @@ export const competitorMonitorRouter = router({
           asin: item.asin || '',
           title: item.title || '',
           brand: item.brand || '',
-          price: Number(item.price) || 0,
+          price: Number(item.price || item.current_price) || 0,
           rating: Number(item.rating) || 0,
           reviewCount: Number(item.review_count || item.reviewCount) || 0,
-          bsr: Number(item.bsr) || 0,
+          bsr: Number(item.bsr || item.bsr_rank) || 0,
           category: item.category || '',
           imageUrl: item.image_url || item.imageUrl || '',
           lastUpdated: item.last_updated || item.lastUpdated || '',
@@ -52,7 +52,7 @@ export const competitorMonitorRouter = router({
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
-      const res = await adapter.request({
+      const res = await adapter.requestWithMockFallback({
         path: "/erp/sc/data/mws/competitorMonitor",
         body: { offset: 0, length: 200, asin: input.asin },
       });
@@ -95,7 +95,7 @@ export const competitorMonitorRouter = router({
       const results: any[] = [];
 
       for (const asin of input.asins) {
-        const res = await adapter.request({
+        const res = await adapter.requestWithMockFallback({
           path: "/erp/sc/data/mws/competitorMonitor",
           body: { offset: 0, length: 10, asin },
         });
@@ -107,7 +107,7 @@ export const competitorMonitorRouter = router({
             title: item.title || '',
             brand: item.brand || '',
             bsrHistory: item.bsr_history || [],
-            currentBsr: Number(item.bsr) || 0,
+            currentBsr: Number(item.bsr || item.bsr_rank) || 0,
           });
         }
       }
@@ -122,7 +122,7 @@ export const competitorMonitorRouter = router({
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
-      const res = await adapter.request({
+      const res = await adapter.requestWithMockFallback({
         path: "/erp/sc/data/mws/competitorMonitor",
         body: { offset: 0, length: 200 },
       });
@@ -159,7 +159,7 @@ export const competitorMonitorRouter = router({
       const products: any[] = [];
 
       for (const asin of input.asins) {
-        const res = await adapter.request({
+        const res = await adapter.requestWithMockFallback({
           path: "/erp/sc/data/mws/competitorMonitor",
           body: { offset: 0, length: 10, asin },
         });
@@ -170,10 +170,10 @@ export const competitorMonitorRouter = router({
             asin,
             title: item.title || '',
             brand: item.brand || '',
-            price: Number(item.price) || 0,
+            price: Number(item.price || item.current_price) || 0,
             rating: Number(item.rating) || 0,
             reviewCount: Number(item.review_count || item.reviewCount) || 0,
-            bsr: Number(item.bsr) || 0,
+            bsr: Number(item.bsr || item.bsr_rank) || 0,
             category: item.category || '',
             imageUrl: item.image_url || item.imageUrl || '',
             bulletPoints: item.bullet_points || [],

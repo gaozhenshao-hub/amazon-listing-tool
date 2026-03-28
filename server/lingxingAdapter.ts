@@ -1967,6 +1967,32 @@ function mockCompetitorMonitor(body: Record<string, any>) {
       image_url: '',
       category: ['Electronics', 'Home & Kitchen', 'Sports', 'Beauty'][i % 4],
       marketplace: body?.marketplace || 'US',
+      // History data for price/review/BSR change tracking
+      price_history: Array.from({ length: 30 }, (_, j) => {
+        const hd = new Date(); hd.setDate(hd.getDate() - (29 - j));
+        const basePrice = 15 + (i * 7) % 80;
+        return {
+          date: hd.toISOString().slice(0, 10),
+          price: +(basePrice + Math.sin(j / 5) * 5 + (i % 3 === 0 && j > 20 ? -8 : 0)).toFixed(2),
+        };
+      }),
+      review_history: Array.from({ length: 30 }, (_, j) => {
+        const hd = new Date(); hd.setDate(hd.getDate() - (29 - j));
+        const baseCount = 500 + i * 300;
+        return {
+          date: hd.toISOString().slice(0, 10),
+          count: baseCount + j * (2 + i % 3),
+          rating: +(3.5 + Math.sin(j / 10) * 0.3 + (i % 4) * 0.2).toFixed(1),
+        };
+      }),
+      bsr_history: Array.from({ length: 30 }, (_, j) => {
+        const hd = new Date(); hd.setDate(hd.getDate() - (29 - j));
+        const baseBsr = 1000 + i * 3000;
+        return {
+          date: hd.toISOString().slice(0, 10),
+          bsr: Math.floor(baseBsr + Math.sin(j / 4) * baseBsr * 0.2),
+        };
+      }),
     });
   }
   return { total: competitors.length, list: competitors };

@@ -111,10 +111,10 @@ export const operationsRouter = router({
     // Fetch key data from Lingxing using real SIDs
     // Two profit requests: summary for cards, daily for trend chart
     const [profitSummaryRes, profitDailyRes, inventoryRes, adReportRes] = await Promise.all([
-      adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 1000, startDate: getDateNDaysAgo(30), endDate: getYesterday(), monthlyQuery: false, orderStatus: "All", summaryEnabled: true } }),
-      adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 1000, startDate: getDateNDaysAgo(30), endDate: getYesterday(), monthlyQuery: false, orderStatus: "All" } }),
-      adapter.request({ path: "/erp/sc/data/fba/FbaStockLists", body: { offset: 0, length: 500 } }),
-      adapter.request({ path: "/ph/openaps/newad/spAdvertiseHourData", body: { report_date: getYesterday(), offset: 0, length: 1000 } }).catch(() => ({ data: [] })),
+      adapter.requestWithMockFallback({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 1000, startDate: getDateNDaysAgo(30), endDate: getYesterday(), monthlyQuery: false, orderStatus: "All", summaryEnabled: true } }),
+      adapter.requestWithMockFallback({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 1000, startDate: getDateNDaysAgo(30), endDate: getYesterday(), monthlyQuery: false, orderStatus: "All" } }),
+      adapter.requestWithMockFallback({ path: "/erp/sc/data/fba/FbaStockLists", body: { offset: 0, length: 500 } }),
+      adapter.requestWithMockFallback({ path: "/ph/openaps/newad/spAdvertiseHourData", body: { report_date: getYesterday(), offset: 0, length: 1000 } }).catch(() => ({ data: [] })),
     ]);
     const sellerRes = { data: sellers };
 
@@ -276,7 +276,7 @@ export const operationsRouter = router({
         sidStr = filteredSids.join(',');
       }
       console.log(`[InventoryList] Querying FBA inventory with sid=${sidStr}`);
-      const res = await adapter.request({
+      const res = await adapter.requestWithMockFallback({
         path: "/erp/sc/data/fba/FbaStockLists",
         body: { offset: 0, length: 500 },
       });
@@ -402,7 +402,7 @@ export const operationsRouter = router({
       const { sids } = await getAllSellerSids();
       const sidList = input.sid ? [input.sid] : sids.map(Number);
       console.log(`[Replenishment] Querying with sid_list=${JSON.stringify(sidList)}`);
-      const res = await adapter.request({
+      const res = await adapter.requestWithMockFallback({
         path: "/erp/sc/routing/restocking/analysis/getSummaryList",
         body: { data_type: 1, sid_list: sidList, length: 50 },
       });
@@ -561,7 +561,7 @@ ${JSON.stringify(input.skuData, null, 2)}
     .input(z.object({ marketplace: z.string().optional().default("US") }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
-      const res = await adapter.request({
+      const res = await adapter.requestWithMockFallback({
         path: "/erp/sc/data/fba/awdStockLists",
         body: { offset: 0, length: 200 },
       });
@@ -588,7 +588,7 @@ ${JSON.stringify(input.skuData, null, 2)}
     .input(z.object({ marketplace: z.string().optional().default("US") }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
-      const res = await adapter.request({
+      const res = await adapter.requestWithMockFallback({
         path: "/erp/sc/data/inventory/getWarehouseStockDetail",
         body: { offset: 0, length: 200 },
       });
@@ -619,9 +619,9 @@ ${JSON.stringify(input.skuData, null, 2)}
       const adapter = getLingxingAdapter();
       // 并行获取三个渠道的库存
       const [fbaRes, awdRes, localRes] = await Promise.all([
-        adapter.request({ path: "/erp/sc/data/fba/FbaStockLists", body: { offset: 0, length: 500 } }),
-        adapter.request({ path: "/erp/sc/data/fba/awdStockLists", body: { offset: 0, length: 200 } }),
-        adapter.request({ path: "/erp/sc/data/inventory/getWarehouseStockDetail", body: { offset: 0, length: 200 } }),
+        adapter.requestWithMockFallback({ path: "/erp/sc/data/fba/FbaStockLists", body: { offset: 0, length: 500 } }),
+        adapter.requestWithMockFallback({ path: "/erp/sc/data/fba/awdStockLists", body: { offset: 0, length: 200 } }),
+        adapter.requestWithMockFallback({ path: "/erp/sc/data/inventory/getWarehouseStockDetail", body: { offset: 0, length: 200 } }),
       ]);
       
       const fbaItems = Array.isArray(fbaRes.data) ? fbaRes.data : ((fbaRes.data as any)?.records || []);
@@ -804,7 +804,7 @@ ${activeSkus.map((s, i) => `
     .input(z.object({ sku: z.string().optional(), asin: z.string().optional() }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
-      const res = await adapter.request({
+      const res = await adapter.requestWithMockFallback({
         path: "/erp/sc/data/fba/replenish/chart",
         body: { sku: input.sku, asin: input.asin },
       });
@@ -837,7 +837,7 @@ ${activeSkus.map((s, i) => `
       let hasMore = true;
       
       while (hasMore) {
-        const res = await adapter.request({
+        const res = await adapter.requestWithMockFallback({
           path: "/bd/profit/report/open/report/msku/list",
           body: {
             sid: firstSid,
@@ -963,7 +963,7 @@ ${activeSkus.map((s, i) => `
       let hasMore = true;
       
       while (hasMore) {
-        const res = await adapter.request({
+        const res = await adapter.requestWithMockFallback({
           path: "/bd/profit/report/open/report/msku/list",
           body: {
             startDate,
@@ -1112,7 +1112,7 @@ ${activeSkus.map((s, i) => `
       const allCampaignList: any[] = [];
       for (const sid of sidsToQuery) {
         try {
-          const campaignListRes = await adapter.request({
+          const campaignListRes = await adapter.requestWithMockFallback({
             path: "/pb/openapi/newad/spCampaigns",
             body: { sid },
             headers: { "X-API-VERSION": "2" },
@@ -1160,7 +1160,7 @@ ${activeSkus.map((s, i) => `
       for (const sid of sidsToQuery) {
        for (const reportDate of queryDates) {
         try {
-          const reportRes = await adapter.request({
+          const reportRes = await adapter.requestWithMockFallback({
             path: "/pb/openapi/newad/spCampaignReports",
             body: {
               sid,
@@ -1215,7 +1215,7 @@ ${activeSkus.map((s, i) => `
         for (const profileId of Array.from(missingProfileIds)) {
           try {
             console.log(`[AdCampaigns] Fetching campaigns by profile_id=${profileId} for ${missingCampaignIds.length} missing names`);
-            const profileRes = await adapter.request({
+            const profileRes = await adapter.requestWithMockFallback({
               path: "/pb/openapi/newad/spCampaigns",
               body: { profile_id: Number(profileId), offset: 0, length: 200 },
               headers: { "X-API-VERSION": "2" },
@@ -1341,7 +1341,7 @@ ${activeSkus.map((s, i) => `
             const pageSize = 200;
             let hasMore = true;
             while (hasMore && offset < 1000) {
-              const res = await adapter.request({
+              const res = await adapter.requestWithMockFallback({
                 path: "/pb/openapi/newad/queryWordReports",
                 body: {
                   sid,
@@ -1892,7 +1892,7 @@ ${JSON.stringify(input.searchTerms.map(t => ({
     // Query listing status from Lingxing for each store
     for (const sid of allSids.slice(0, 10)) {
       try {
-        const res = await adapter.request({
+        const res = await adapter.requestWithMockFallback({
           path: "/erp/sc/data/mws/listing",
           body: { sid: Number(sid), offset: 0, length: 200 },
         });

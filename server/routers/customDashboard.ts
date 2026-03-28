@@ -16,7 +16,7 @@ async function fetchWidgetData(dataSource: string, config: any) {
   const adapter = getLingxingAdapter();
   switch (dataSource) {
     case 'sales': {
-      const res = await adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 50, startDate: getDateNDaysAgo(30), endDate: getYesterday(), summaryEnabled: true } });
+      const res = await adapter.requestWithMockFallback({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 50, startDate: getDateNDaysAgo(30), endDate: getYesterday(), summaryEnabled: true } });
       const data = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
       return {
         totalRevenue: data.reduce((s: number, d: any) => s + Number(d.totalSalesAmount || 0), 0),
@@ -26,7 +26,7 @@ async function fetchWidgetData(dataSource: string, config: any) {
       };
     }
     case 'ads_sp': {
-      const res = await adapter.request({ path: "/ph/openaps/newad/spAdvertiseHourData", body: { report_date: getYesterday(), offset: 0, length: 100 } });
+      const res = await adapter.requestWithMockFallback({ path: "/ph/openaps/newad/spAdvertiseHourData", body: { report_date: getYesterday(), offset: 0, length: 100 } });
       const data = Array.isArray(res.data) ? res.data : (res.data as any)?.list || [];
       return {
         totalSpend: data.reduce((s: number, d: any) => s + (Number(d.cost) || 0), 0),
@@ -35,7 +35,7 @@ async function fetchWidgetData(dataSource: string, config: any) {
       };
     }
     case 'inventory': {
-      const res = await adapter.request({ path: "/erp/sc/data/fba/FbaStockLists", body: { offset: 0, length: 200 } });
+      const res = await adapter.requestWithMockFallback({ path: "/erp/sc/data/fba/FbaStockLists", body: { offset: 0, length: 200 } });
       const data = Array.isArray(res.data) ? res.data : (res.data as any)?.list || [];
       return {
         totalSkus: data.length,
@@ -45,12 +45,12 @@ async function fetchWidgetData(dataSource: string, config: any) {
       };
     }
     case 'profit': {
-      const res = await adapter.request({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 50, startDate: getDateNDaysAgo(30), endDate: getYesterday() } });
+      const res = await adapter.requestWithMockFallback({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 50, startDate: getDateNDaysAgo(30), endDate: getYesterday() } });
       const data = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
       return { items: data.slice(0, 20) };
     }
     case 'reviews': {
-      const res = await adapter.request({ path: "/erp/sc/data/mws/reviewList", body: { offset: 0, length: 50 } });
+      const res = await adapter.requestWithMockFallback({ path: "/erp/sc/data/mws/reviewList", body: { offset: 0, length: 50 } });
       const data = Array.isArray(res.data) ? res.data : (res.data as any)?.list || [];
       return { items: data.slice(0, 20), total: data.length };
     }

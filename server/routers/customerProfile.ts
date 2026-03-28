@@ -122,7 +122,7 @@ export const customerProfileRouter = router({
     .input(z.object({ sid: z.number().optional() }))
     .mutation(async ({ ctx }) => {
       const adapter = getLingxingAdapter();
-      const ordersRes = await adapter.request({
+      const ordersRes = await adapter.requestWithMockFallback({
         path: "/erp/sc/data/mws/orders",
         body: { offset: 0, length: 200 },
       });

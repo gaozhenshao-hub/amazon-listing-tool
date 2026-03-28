@@ -511,19 +511,19 @@ async function collectAdData(asin: string, sid?: number): Promise<AdData | null>
     
     // 并行获取广告数据
     const [campaignsRes, keywordsRes, searchTermsRes, productReportsRes] = await Promise.allSettled([
-      adapter.request({
+      adapter.requestWithMockFallback({
         path: "/pb/openapi/newad/spCampaigns",
         body: { sid: sid || 0, asin },
       }),
-      adapter.request({
+      adapter.requestWithMockFallback({
         path: "/pb/openapi/newad/spKeywords",
         body: { sid: sid || 0, asin },
       }),
-      adapter.request({
+      adapter.requestWithMockFallback({
         path: "/pb/openapi/newad/queryWordReports",
         body: { sid: sid || 0, asin },
       }),
-      adapter.request({
+      adapter.requestWithMockFallback({
         path: "/pb/openapi/newad/spProductAdReports",
         body: { sid: sid || 0, asin },
       }),

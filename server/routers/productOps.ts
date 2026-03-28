@@ -478,7 +478,7 @@ export const productOpsRouter = router({
       // Try ASIN-specific profit API first (more precise)
       // Use searchField + searchValue per Lingxing API docs, endDate = yesterday (today's data incomplete)
       try {
-        const asinRes = await adapter.request({
+        const asinRes = await adapter.requestWithMockFallback({
           path: "/bd/profit/report/open/report/asin/list",
           body: {
             offset: 0,
@@ -502,7 +502,7 @@ export const productOpsRouter = router({
       // If ASIN API returned no data, try parent ASIN API, then fallback to MSKU
       if (actual30Items.length === 0 && parentAsin) {
         try {
-          const parentRes = await adapter.request({
+          const parentRes = await adapter.requestWithMockFallback({
             path: "/bd/profit/report/open/report/parent/asin/list",
             body: {
               offset: 0,
@@ -524,7 +524,7 @@ export const productOpsRouter = router({
         }
       }
       if (actual30Items.length === 0) {
-        const profitRes = await adapter.request({
+        const profitRes = await adapter.requestWithMockFallback({
           path: "/bd/profit/report/open/report/msku/list",
           body: { startDate: getDateNDaysAgo(30), endDate: getYesterday(), length: 500, summaryEnabled: true },
         });
@@ -540,7 +540,7 @@ export const productOpsRouter = router({
       let current = { revenue: 0, amazonFees: 0, referralFee: 0, fbaFee: 0, adSpend: 0, storageFee: 0, netRevenue: 0, fixedCosts: 0, productCost: 0, shippingCost: 0, tariff: 0, profit: 0, profitMargin: 0, orders: 0, units: 0 };
       try {
         // Try ASIN API for 7-day data
-        const asinRes7 = await adapter.request({
+        const asinRes7 = await adapter.requestWithMockFallback({
           path: "/bd/profit/report/open/report/asin/list",
           body: {
             offset: 0,
@@ -559,7 +559,7 @@ export const productOpsRouter = router({
         // Try parent ASIN API if no data
         if (current7Items.length === 0 && parentAsin) {
           try {
-            const parentRes7 = await adapter.request({
+            const parentRes7 = await adapter.requestWithMockFallback({
               path: "/bd/profit/report/open/report/parent/asin/list",
               body: {
                 offset: 0,
@@ -581,7 +581,7 @@ export const productOpsRouter = router({
         }
         if (current7Items.length === 0) {
           // Fallback to MSKU list
-          const recentRes = await adapter.request({
+          const recentRes = await adapter.requestWithMockFallback({
             path: "/bd/profit/report/open/report/msku/list",
             body: { startDate: getDateNDaysAgo(7), endDate: getYesterday(), length: 500, summaryEnabled: true },
           });
@@ -597,7 +597,7 @@ export const productOpsRouter = router({
       // Fetch ASIN 360 hourly data for real-time sales/ranking trends
       let hourlyTrend: Array<{ hour: string; volume: number; orderItems: number; amount: number; price: number; salesRank: number }> = [];
       try {
-        const asin360Res = await adapter.request({
+        const asin360Res = await adapter.requestWithMockFallback({
           path: "/basicOpen/salesAnalysis/productPerformance/performanceTrendByHour",
           body: {
             asin: childAsins.length > 0 ? childAsins[0] : parentAsin,
@@ -661,7 +661,7 @@ export const productOpsRouter = router({
       // Try searching by ASIN first using v2 FBA Stock API
       for (const keyword of [product.parentAsin, ...searchKeywords.slice(0, 3)]) {
         try {
-          const invRes = await adapter.request({
+          const invRes = await adapter.requestWithMockFallback({
             path: "/erp/sc/data/fba/FbaStockLists",
             body: { sid: matchedSid, offset: 0, length: 200, search_field: "asin", search_value: keyword },
           });
@@ -683,7 +683,7 @@ export const productOpsRouter = router({
       // If v2 search returned nothing, fallback to full list with filtering
       if (invList.length === 0) {
         try {
-          const invRes = await adapter.request({
+          const invRes = await adapter.requestWithMockFallback({
             path: "/erp/sc/data/fba/FbaStockLists",
             body: { sid: matchedSid, offset: 0, length: 500 },
           });
@@ -781,7 +781,7 @@ export const productOpsRouter = router({
       let productAdData: any[] = [];
       let dataSourceMeta: { source: 'real' | 'mock_mode' | 'mock_fallback'; reason?: string } = { source: 'real' };
       try {
-        const productAdRes = await adapter.request({
+        const productAdRes = await adapter.requestWithMockFallback({
           path: "/pb/openapi/newad/spProductAdReports",
           body: { sid: matchedSid, report_date: getDateNDaysAgo(1), show_detail: 0, offset: 0, length: 200, asin: product.parentAsin },
           headers: { "X-API-VERSION": "2" },
@@ -799,7 +799,7 @@ export const productOpsRouter = router({
       }
 
       // Also fetch campaign-level data and filter by product name/ASIN in campaign name
-      const adRes = await adapter.request({
+      const adRes = await adapter.requestWithMockFallback({
         path: "/pb/openapi/newad/spCampaigns",
         body: { sid: matchedSid, start_date: getDateNDaysAgo(30), end_date: getToday(), asin: product.parentAsin },
         headers: { "X-API-VERSION": "2" },
@@ -2035,7 +2035,7 @@ export const productOpsRouter = router({
       const sid = seller.sid;
       const marketplace = marketplaceMap[seller.mid] || 'US';
       try {
-        const res = await adapter.request({
+        const res = await adapter.requestWithMockFallback({
           path: "/erp/sc/data/mws/listing",
           body: { sid: Number(sid), offset: 0, length: 200 },
         });
@@ -2262,7 +2262,7 @@ export const productOpsRouter = router({
       let profitData = { revenue: 0, cost: 0, profit: 0, profitMargin: 0, adSpend: 0, fbaFee: 0, orderCount: 0, unitCount: 0 };
       let prevProfitData = { revenue: 0, cost: 0, profit: 0, profitMargin: 0, adSpend: 0, fbaFee: 0, orderCount: 0, unitCount: 0 };
       try {
-        const profitRes = await adapter.request({
+        const profitRes = await adapter.requestWithMockFallback({
           path: "/bd/profit/report/open/report/msku/list",
           body: { offset: 0, length: 1000, startDate: startDate, endDate: endDate, monthlyQuery: false, orderStatus: "All" },
         });
@@ -2280,7 +2280,7 @@ export const productOpsRouter = router({
         profitData.profitMargin = profitData.revenue > 0 ? (profitData.profit / profitData.revenue) * 100 : 0;
         
         // Previous period
-        const prevProfitRes = await adapter.request({
+        const prevProfitRes = await adapter.requestWithMockFallback({
           path: "/bd/profit/report/open/report/msku/list",
           body: { offset: 0, length: 1000, startDate: prevStartDate, endDate: prevEndDate, monthlyQuery: false, orderStatus: "All" },
         });
@@ -2303,7 +2303,7 @@ export const productOpsRouter = router({
       // Fetch inventory data from Lingxing FBA v2 API
       let inventoryData = { totalStock: 0, inboundQty: 0, reservedQty: 0, totalValue: 0 };
       try {
-        const invRes = await adapter.request({
+        const invRes = await adapter.requestWithMockFallback({
           path: "/erp/sc/data/fba/FbaStockLists",
           body: { offset: 0, length: 500 },
         });
@@ -2326,7 +2326,7 @@ export const productOpsRouter = router({
       let adData = { totalSpend: 0, totalSales: 0, impressions: 0, clicks: 0, acos: 0, roas: 0, activeCampaigns: 0 };
       try {
         // Use SP广告商品小时数据 for per-ASIN ad metrics
-        const adRes = await adapter.request({
+        const adRes = await adapter.requestWithMockFallback({
           path: "/ph/openaps/newad/spAdvertiseHourData",
           body: { report_date: endDate, offset: 0, length: 1000 },
         });
@@ -2409,7 +2409,7 @@ export const productOpsRouter = router({
           const opVariants = await (await getDb())!.select().from(productVariants)
             .where(eq(productVariants.productId, input.productId));
           const opChildAsins = opVariants.map(v => v.childAsin).filter(Boolean);
-          const res = await adapter.request({
+          const res = await adapter.requestWithMockFallback({
             path: "/bd/profit/report/open/report/asin/list",
             body: {
               offset: 0,
@@ -2429,7 +2429,7 @@ export const productOpsRouter = router({
           // Try parent ASIN API if no data
           if (list.length === 0 && product.parentAsin) {
             try {
-              const parentRes = await adapter.request({
+              const parentRes = await adapter.requestWithMockFallback({
                 path: "/bd/profit/report/open/report/parent/asin/list",
                 body: {
                   offset: 0,
@@ -2453,7 +2453,7 @@ export const productOpsRouter = router({
           // Fallback to MSKU list if still no data
           if (list.length === 0) {
             try {
-              const mskuRes = await adapter.request({
+              const mskuRes = await adapter.requestWithMockFallback({
                 path: "/bd/profit/report/open/report/msku/list",
                 body: { startDate: start, endDate: end, length: 500, summaryEnabled: true },
               });
@@ -2569,7 +2569,7 @@ export const productOpsRouter = router({
 
       try {
         // Try ASIN-specific profit API first (use searchField/searchValue per API docs)
-        const res = await adapter.request({
+        const res = await adapter.requestWithMockFallback({
           path: "/bd/profit/report/open/report/asin/list",
           body: {
             offset: 0,
@@ -2589,7 +2589,7 @@ export const productOpsRouter = router({
         // Try parent ASIN API if no data
         if (list.length === 0 && product.parentAsin) {
           try {
-            const parentRes = await adapter.request({
+            const parentRes = await adapter.requestWithMockFallback({
               path: "/bd/profit/report/open/report/parent/asin/list",
               body: {
                 offset: 0,
@@ -2612,7 +2612,7 @@ export const productOpsRouter = router({
 
         // Fallback to MSKU list with product filtering
         if (list.length === 0) {
-          const mskuRes = await adapter.request({
+          const mskuRes = await adapter.requestWithMockFallback({
             path: "/bd/profit/report/open/report/msku/list",
             body: { startDate: start, endDate: end, length: 500, summaryEnabled: true },
           });
@@ -2718,7 +2718,7 @@ export const productOpsRouter = router({
         let sales = 0, profit = 0, orders = 0, units = 0, adSpend = 0, adSales = 0, sessions = 0;
         try {
           // Try ASIN-specific profit API first (use searchField/searchValue per API docs)
-          const res = await adapter.request({
+          const res = await adapter.requestWithMockFallback({
             path: "/bd/profit/report/open/report/asin/list",
             body: {
               offset: 0,
@@ -2738,7 +2738,7 @@ export const productOpsRouter = router({
           // Try parent ASIN API if no data
           if (list.length === 0 && product.parentAsin) {
             try {
-              const parentRes = await adapter.request({
+              const parentRes = await adapter.requestWithMockFallback({
                 path: "/bd/profit/report/open/report/parent/asin/list",
                 body: {
                   offset: 0,
@@ -2761,7 +2761,7 @@ export const productOpsRouter = router({
 
           // Fallback to MSKU list if still no data
           if (list.length === 0) {
-            const mskuRes = await adapter.request({
+            const mskuRes = await adapter.requestWithMockFallback({
               path: "/bd/profit/report/open/report/msku/list",
               body: { startDate: start, endDate: end, length: 500, summaryEnabled: true },
             });
