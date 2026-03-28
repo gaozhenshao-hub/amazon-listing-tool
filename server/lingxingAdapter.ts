@@ -1006,6 +1006,17 @@ class LingxingAdapter {
       "/erp/sc/data/fba/returnAnalysis": () => mockReturnAnalysis(body),
       // 亚马逊订单
       "/erp/sc/data/amazon/OrderLists": () => mockAmazonOrders(body),
+      // ============ 第四阶段 API ============
+      // 秒杀活动
+      "/erp/sc/data/mws/lightningDeal": () => mockLightningDeals(body),
+      // 优惠券列表
+      "/erp/sc/data/mws/coupon/list": () => mockCouponList(body),
+      // 竞品监控列表
+      "/erp/sc/data/mws/competitorMonitor": () => mockCompetitorMonitor(body),
+      // 商品预警消息
+      "/erp/sc/data/mws/warningMessage": () => mockWarningMessage(body),
+      // 产品属性列表
+      "/erp/sc/data/mws/productAttribute": () => mockProductAttribute(body),
     };
 
     const mockFn = mockMap[path];
@@ -1850,6 +1861,138 @@ function mockAmazonOrders(body: Record<string, any>) {
     });
   }
   return { total: 4567, list: orders };
+}
+
+// ============== Phase 4 Mock Functions ==============
+
+function mockLightningDeals(body: Record<string, any>) {
+  const deals = [];
+  const statuses = ['AVAILABLE', 'UPCOMING', 'ACTIVE', 'EXPIRED'];
+  const types = ['LIGHTNING_DEAL', 'BEST_DEAL', '7_DAY_DEAL'];
+  for (let i = 0; i < 8; i++) {
+    const start = new Date(); start.setDate(start.getDate() + i * 2 - 3);
+    const end = new Date(start); end.setHours(end.getHours() + (types[i % 3] === 'LIGHTNING_DEAL' ? 6 : 168));
+    deals.push({
+      deal_id: `D${100000 + i}`,
+      asin: `B0TEST${String(i).padStart(4, '0')}`,
+      sku: `SKU-${1000 + i}`,
+      title: `Test Product ${i + 1} - Lightning Deal`,
+      deal_type: types[i % 3],
+      status: statuses[i % 4],
+      start_time: start.toISOString(),
+      end_time: end.toISOString(),
+      deal_price: +(15 + Math.random() * 30).toFixed(2),
+      regular_price: +(30 + Math.random() * 50).toFixed(2),
+      units_sold: Math.floor(Math.random() * 200),
+      units_available: Math.floor(Math.random() * 500 + 100),
+      claimed_pct: +(Math.random() * 100).toFixed(1),
+      fee: +(150 + Math.random() * 200).toFixed(2),
+    });
+  }
+  return { total: deals.length, list: deals };
+}
+
+function mockCouponList(body: Record<string, any>) {
+  const coupons = [];
+  const couponStatuses = ['ACTIVE', 'SCHEDULED', 'EXPIRED', 'CANCELLED'];
+  const discountTypes = ['PERCENTAGE', 'FIXED_AMOUNT'];
+  for (let i = 0; i < 10; i++) {
+    const start = new Date(); start.setDate(start.getDate() - 5 + i * 3);
+    const end = new Date(start); end.setDate(end.getDate() + 14);
+    coupons.push({
+      coupon_id: `CPN${200000 + i}`,
+      asin: `B0TEST${String(i % 5).padStart(4, '0')}`,
+      title: `Test Product ${(i % 5) + 1} Coupon`,
+      discount_type: discountTypes[i % 2],
+      discount_value: discountTypes[i % 2] === 'PERCENTAGE' ? (5 + i * 2) : +(2 + Math.random() * 5).toFixed(2),
+      status: couponStatuses[i % 4],
+      start_time: start.toISOString(),
+      end_time: end.toISOString(),
+      budget: +(500 + Math.random() * 2000).toFixed(2),
+      budget_used: +(100 + Math.random() * 400).toFixed(2),
+      clips: Math.floor(Math.random() * 1000 + 50),
+      redemptions: Math.floor(Math.random() * 200 + 10),
+      orders: Math.floor(Math.random() * 150 + 5),
+      sales: +(500 + Math.random() * 5000).toFixed(2),
+    });
+  }
+  return { total: coupons.length, list: coupons };
+}
+
+function mockCompetitorMonitor(body: Record<string, any>) {
+  const competitors = [];
+  const changeTypes = ['price_drop', 'price_increase', 'rank_change', 'review_change', 'listing_change', 'new_seller'];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    competitors.push({
+      id: 5000 + i,
+      asin: `B0COMP${String(i).padStart(4, '0')}`,
+      title: `Competitor Product ${i + 1}`,
+      brand: ['BrandA', 'BrandB', 'BrandC', 'BrandD'][i % 4],
+      current_price: +(15 + Math.random() * 80).toFixed(2),
+      previous_price: +(15 + Math.random() * 80).toFixed(2),
+      bsr_rank: Math.floor(Math.random() * 50000 + 100),
+      bsr_rank_change: Math.floor(Math.random() * 2000 - 1000),
+      rating: +(3.5 + Math.random() * 1.5).toFixed(1),
+      review_count: Math.floor(Math.random() * 5000 + 50),
+      review_count_change: Math.floor(Math.random() * 50 - 10),
+      change_type: changeTypes[i % 6],
+      change_detail: `${changeTypes[i % 6]} detected on ${d.toISOString().slice(0, 10)}`,
+      last_updated: d.toISOString(),
+      image_url: '',
+      category: ['Electronics', 'Home & Kitchen', 'Sports', 'Beauty'][i % 4],
+      marketplace: body?.marketplace || 'US',
+    });
+  }
+  return { total: competitors.length, list: competitors };
+}
+
+function mockWarningMessage(body: Record<string, any>) {
+  const warnings = [];
+  const warnTypes = ['hijacker', 'price_change', 'listing_change', 'review_alert', 'stock_alert', 'buy_box_lost'];
+  const severities = ['critical', 'high', 'medium', 'low'];
+  for (let i = 0; i < 15; i++) {
+    const d = new Date(); d.setDate(d.getDate() - Math.floor(i / 2));
+    warnings.push({
+      id: 8000 + i,
+      asin: `B0TEST${String(i % 5).padStart(4, '0')}`,
+      title: `Warning: ${warnTypes[i % 6]} for ASIN B0TEST${String(i % 5).padStart(4, '0')}`,
+      warning_type: warnTypes[i % 6],
+      severity: severities[i % 4],
+      message: `Detected ${warnTypes[i % 6]} event. Please review and take action.`,
+      is_read: i > 5,
+      created_at: d.toISOString(),
+      related_competitor: i % 3 === 0 ? `B0COMP${String(i).padStart(4, '0')}` : null,
+      old_value: String(+(20 + Math.random() * 50).toFixed(2)),
+      new_value: String(+(15 + Math.random() * 50).toFixed(2)),
+    });
+  }
+  return { total: warnings.length, list: warnings };
+}
+
+function mockProductAttribute(body: Record<string, any>) {
+  const attributes = [];
+  for (let i = 0; i < 8; i++) {
+    attributes.push({
+      asin: body?.asin || `B0TEST${String(i).padStart(4, '0')}`,
+      title: `Test Product ${i + 1}`,
+      brand: ['BrandA', 'BrandB', 'BrandC', 'BrandD'][i % 4],
+      price: +(15 + Math.random() * 80).toFixed(2),
+      rating: +(3.5 + Math.random() * 1.5).toFixed(1),
+      review_count: Math.floor(Math.random() * 5000 + 50),
+      bsr_rank: Math.floor(Math.random() * 50000 + 100),
+      category: ['Electronics', 'Home & Kitchen', 'Sports', 'Beauty'][i % 4],
+      bullet_points: Array.from({ length: 5 }, (_, j) => `Feature ${j + 1} of product ${i + 1}`),
+      dimensions: `${(5 + Math.random() * 20).toFixed(1)} x ${(3 + Math.random() * 15).toFixed(1)} x ${(2 + Math.random() * 10).toFixed(1)} inches`,
+      weight: `${(0.5 + Math.random() * 5).toFixed(1)} pounds`,
+      color: ['Black', 'White', 'Blue', 'Red', 'Silver'][i % 5],
+      material: ['Plastic', 'Metal', 'Wood', 'Fabric', 'Glass'][i % 5],
+      fba: i % 3 !== 2,
+      variations: Math.floor(Math.random() * 8),
+      image_count: Math.floor(Math.random() * 7 + 3),
+    });
+  }
+  return { total: attributes.length, list: attributes };
 }
 
 // ============== Singleton Instance ==============

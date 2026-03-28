@@ -56,6 +56,8 @@ import {
   Clock,
   PieChart,
   Star,
+  Radar,
+  Layers,
   type LucideIcon,
 } from "lucide-react";
 import { ROLE_LABELS, ROLE_MODULE_ACCESS, ADMIN_ROLES } from "@shared/const";
@@ -137,12 +139,15 @@ const modules: ModuleDef[] = [
     enabled: true,
     items: [
       { icon: LayoutDashboard, label: "运营仪表盘", path: "/ops" },
+      { icon: Sparkles, label: "智能运营中心", path: "/ops/dashboard-upgrade" },
       { icon: ShoppingBag, label: "产品总览", path: "/ops/products" },
       { icon: BarChart3, label: "利润分析", path: "/ops/profit" },
+      { icon: PieChart, label: "利润深度分析", path: "/ops/profit-deep" },
       { icon: Package, label: "库存预警", path: "/ops/inventory" },
       { icon: Target, label: "广告优化", path: "/ops/ads" },
       { icon: Eye, label: "竞品监控", path: "/ops/competitor" },
-      { icon: PieChart, label: "利润深度分析", path: "/ops/profit-deep" },
+      { icon: Radar, label: "竞品深度监控", path: "/ops/competitor-monitor" },
+      { icon: Layers, label: "自定义看板", path: "/ops/custom-dashboard" },
       { icon: Bot, label: "爬虫引擎", path: "/ops/crawler" },
       { icon: Clock, label: "物流时效分析", path: "/ops/logistics" },
     ],
@@ -159,6 +164,7 @@ const modules: ModuleDef[] = [
       { icon: Star, label: "Review智能管理", path: "/service/reviews" },
       { icon: History, label: "退货分析", path: "/service/returns" },
       { icon: MessageSquareText, label: "邮件管理 & AI客服", path: "/service/emails" },
+      { icon: Users, label: "客户画像", path: "/service/profiles" },
     ],
   },
   {

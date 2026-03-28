@@ -2657,3 +2657,66 @@ export const serviceTasks = mysqlTable("service_tasks", {
 });
 export type ServiceTask = typeof serviceTasks.$inferSelect;
 export type InsertServiceTask = typeof serviceTasks.$inferInsert;
+
+// ============ Phase 4 Tables ============
+
+// Custom Dashboards (自定义看板)
+export const customDashboards = mysqlTable("custom_dashboards", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  name: varchar("name", { length: 200 }).notNull(),
+  description: varchar("description", { length: 500 }),
+  layout: json("layout"), // react-grid-layout JSON config
+  isDefault: boolean("is_default").default(false).notNull(),
+  template: varchar("template", { length: 50 }), // 'ad_manager' | 'ops_director' | 'inventory_manager' | null
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type CustomDashboard = typeof customDashboards.$inferSelect;
+export type InsertCustomDashboard = typeof customDashboards.$inferInsert;
+
+// Dashboard Widgets (看板组件)
+export const dashboardWidgets = mysqlTable("dashboard_widgets", {
+  id: int("id").autoincrement().primaryKey(),
+  dashboardId: int("dashboard_id").notNull(),
+  widgetType: mysqlEnum("widget_type", [
+    "kpi_card", "line_chart", "bar_chart", "pie_chart",
+    "heatmap", "table", "ai_summary", "calendar", "radar_chart"
+  ]).notNull(),
+  title: varchar("title", { length: 200 }).notNull(),
+  dataSource: varchar("data_source", { length: 100 }).notNull(), // e.g. 'sales', 'ads_sp', 'inventory', 'profit', 'reviews'
+  config: json("config"), // widget-specific config (filters, date range, metrics, etc.)
+  position: json("position"), // { x, y, w, h } for grid layout
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type DashboardWidget = typeof dashboardWidgets.$inferSelect;
+export type InsertDashboardWidget = typeof dashboardWidgets.$inferInsert;
+
+// Customer Profiles (客户画像)
+export const customerProfiles = mysqlTable("customer_profiles", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  customerId: varchar("customer_id", { length: 100 }).notNull(),
+  buyerName: varchar("buyer_name", { length: 200 }),
+  email: varchar("email", { length: 200 }),
+  sid: int("sid"),
+  totalOrders: int("total_orders").default(0),
+  totalSpent: decimal("total_spent", { precision: 12, scale: 2 }).default("0"),
+  firstOrderDate: varchar("first_order_date", { length: 10 }),
+  lastOrderDate: varchar("last_order_date", { length: 10 }),
+  avgOrderValue: decimal("avg_order_value", { precision: 10, scale: 2 }).default("0"),
+  reviewCount: int("review_count").default(0),
+  avgRating: decimal("avg_rating", { precision: 3, scale: 1 }),
+  returnCount: int("return_count").default(0),
+  returnRate: decimal("return_rate", { precision: 5, scale: 2 }).default("0"),
+  communicationCount: int("communication_count").default(0),
+  aiValueScore: decimal("ai_value_score", { precision: 5, scale: 2 }),
+  aiValueTag: mysqlEnum("ai_value_tag", ["high_value", "normal", "risk", "new"]),
+  aiAnalysis: json("ai_analysis"), // AI generated analysis JSON
+  lastSyncAt: timestamp("last_sync_at"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type CustomerProfile = typeof customerProfiles.$inferSelect;
+export type InsertCustomerProfile = typeof customerProfiles.$inferInsert;

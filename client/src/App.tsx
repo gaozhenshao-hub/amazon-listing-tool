@@ -55,6 +55,9 @@ import OpsCrawlerManager from "./pages/ops/OpsCrawlerManager";
 import OpsShippingBatchDetail from "./pages/ops/OpsShippingBatchDetail";
 import OpsLogistics from "./pages/ops/OpsLogistics";
 import OpsProfitDeep from "./pages/ops/OpsProfitDeep";
+import OpsDashboardUpgrade from "./pages/ops/OpsDashboardUpgrade";
+import OpsCustomDashboard from "./pages/ops/OpsCustomDashboard";
+import OpsCompetitorMonitor from "./pages/ops/OpsCompetitorMonitor";
 
 // ─── Module 4: After-sales Management ──────────────────────────
 import ComingSoonPage from "./pages/ComingSoonPage";
@@ -62,6 +65,7 @@ import ServiceDashboard from "./pages/service/ServiceDashboard";
 import ServiceReviews from "./pages/service/ServiceReviews";
 import ServiceReturns from "./pages/service/ServiceReturns";
 import ServiceEmails from "./pages/service/ServiceEmails";
+import ServiceProfiles from "./pages/service/ServiceProfiles";
 
 // ─── Platform Home ──────────────────────────────────────────────
 import PlatformHome from "./pages/PlatformHome";
@@ -148,12 +152,16 @@ function Router() {
         <Route path="/ops/shipping/:id">{() => <PermissionGuard><OpsShippingBatchDetail /></PermissionGuard>}</Route>
         <Route path="/ops/logistics">{() => <PermissionGuard><OpsLogistics /></PermissionGuard>}</Route>
         <Route path="/ops/profit-deep">{() => <PermissionGuard><OpsProfitDeep /></PermissionGuard>}</Route>
+        <Route path="/ops/dashboard-upgrade">{() => <PermissionGuard><OpsDashboardUpgrade /></PermissionGuard>}</Route>
+        <Route path="/ops/custom-dashboard">{() => <PermissionGuard><OpsCustomDashboard /></PermissionGuard>}</Route>
+        <Route path="/ops/competitor-monitor">{() => <PermissionGuard><OpsCompetitorMonitor /></PermissionGuard>}</Route>
 
         {/* ─── Module 4: After-sales Management ─── */}
         <Route path="/service">{() => <PermissionGuard><ServiceDashboard /></PermissionGuard>}</Route>
         <Route path="/service/reviews">{() => <PermissionGuard><ServiceReviews /></PermissionGuard>}</Route>
         <Route path="/service/returns">{() => <PermissionGuard><ServiceReturns /></PermissionGuard>}</Route>
         <Route path="/service/emails">{() => <PermissionGuard><ServiceEmails /></PermissionGuard>}</Route>
+        <Route path="/service/profiles">{() => <PermissionGuard><ServiceProfiles /></PermissionGuard>}</Route>
 
         {/* ─── System Settings ─── */}
         <Route path="/settings" component={SystemSettings} />

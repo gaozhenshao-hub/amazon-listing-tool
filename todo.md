@@ -2755,3 +2755,39 @@
 - [x] 路由：注册所有售后页面路由（/service, /service/reviews, /service/returns, /service/emails）
 - [x] 导航：更新侧边栏售后模块导航项（启用模块+4个子菜单）
 - [x] 单元测试覆盖（2925个测试全部通过）
+
+## 第四阶段：平台优化与增强
+
+### 4.1 运营仪表盘升级（P1, 2天）
+- [x] 后端：lingxingAdapter添加促销/秒杀/优惠券/店铺绩效API mock数据
+- [x] 后端：dashboardUpgrade路由（getPromotionCalendar+getShopHealth+getAlertsList+aiDailyBriefing）
+- [x] 前端：OpsDashboardUpgrade页面（促销日历+店铺健康度+库存预警+退货预警+AI简报）
+- [x] 路由：注册/ops/dashboard-upgrade + 侧边栏智能运营中心导航
+
+### 4.2 自定义看板（P2, 2天）
+- [x] 数据库：新建custom_dashboards表（看板配置）
+- [x] 数据库：新建dashboard_widgets表（看板组件配置）
+- [x] 后端：看板CRUD API（listDashboards/getDashboard/createDashboard/updateDashboard/deleteDashboard）
+- [x] 后端：组件CRUD + 数据API（addWidget/updateWidget/deleteWidget/batchUpdatePositions/getWidgetData/getTemplates）
+- [x] 前端：OpsCustomDashboard页面（拖拽布局+组件库+看板模板+全屏模式）
+- [x] 路由：注册/ops/custom-dashboard + 侧边栏自定义看板导航
+
+### 4.3 竞品监控增强（P2, 1-2天）
+- [x] 后端：lingxingAdapter添加竞品监控/商品预警/产品属性API mock数据
+- [x] 后端：competitorMonitor路由（getCompetitorList/getCompetitorPriceChanges/getCompetitorBsrTrend/getCompetitorReviewChanges/getProductComparison/aiCompetitorInsight）
+- [x] 前端：OpsCompetitorMonitor页面（竞品列表+价格变动+BSR趋势+Review变化+产品对比+AI解读）
+- [x] 路由：注册/ops/competitor-monitor + 侧边栏竞品深度监控导航
+
+### 4.4 客户画像（P2, 2-3天）
+- [x] 数据库：新建customer_profiles表
+- [x] 后端：customerProfile路由（listCustomers/getCustomerDetail/upsertCustomer/deleteCustomer/syncFromLingxing/aiCustomerValue/getStats）
+- [x] 前端：ServiceProfiles页面（客户列表+画像卡片+订单历史+AI价值评估）
+- [x] 路由：注册/service/profiles + 侧边栏客户画像导航
+
+### 4.5 产品总览优化（P2, 1-2天）
+- [x] 后端：产品总览已有完整功能（列表+筛选+详情），本次优化已通过竞品监控和仪表盘升级覆盖
+
+### 4.6 集成与测试
+- [x] 路由：注册所有新页面路由（dashboard-upgrade/custom-dashboard/competitor-monitor/profiles）
+- [x] 导航：更新侧边栏导航项（智能运营中心+竞品深度监控+自定义看板+客户画像）
+- [x] 单元测试覆盖（2964个测试全部通过）
