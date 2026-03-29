@@ -15,10 +15,18 @@ interface AdPlacementAnalysisProps {
   reportDate: string;
 }
 
+// Map real API placement_type values to display config
 const PLACEMENT_CONFIG: Record<string, { label: string; icon: any; color: string; fill: string }> = {
+  "TOP OF SEARCH ON-AMAZON": { label: "搜索结果顶部 (TOS)", icon: TrendingUp, color: "text-emerald-700", fill: "#10b981" },
+  "Top of Search on-Amazon": { label: "搜索结果顶部 (TOS)", icon: TrendingUp, color: "text-emerald-700", fill: "#10b981" },
   "Top of Search": { label: "搜索结果顶部 (TOS)", icon: TrendingUp, color: "text-emerald-700", fill: "#10b981" },
+  "REST OF SEARCH": { label: "搜索结果其余位置 (ROS)", icon: LayoutGrid, color: "text-blue-700", fill: "#3b82f6" },
   "Rest of Search": { label: "搜索结果其余位置 (ROS)", icon: LayoutGrid, color: "text-blue-700", fill: "#3b82f6" },
+  "PRODUCT PAGES": { label: "商品页面 (PP)", icon: Smartphone, color: "text-purple-700", fill: "#8b5cf6" },
   "Product Pages": { label: "商品页面 (PP)", icon: Smartphone, color: "text-purple-700", fill: "#8b5cf6" },
+  "Detail Page on-Amazon": { label: "商品页面 (PP)", icon: Smartphone, color: "text-purple-700", fill: "#8b5cf6" },
+  "Other on-Amazon": { label: "其他位置", icon: Monitor, color: "text-gray-700", fill: "#9ca3af" },
+  "Other": { label: "其他位置", icon: Monitor, color: "text-gray-700", fill: "#9ca3af" },
 };
 
 export default function AdPlacementAnalysis({ campaignId, marketplace, reportDate }: AdPlacementAnalysisProps) {
@@ -36,15 +44,16 @@ export default function AdPlacementAnalysis({ campaignId, marketplace, reportDat
     const metrics = [
       { metric: "曝光量", key: "impressions" },
       { metric: "点击率", key: "ctr" },
-      { metric: "转化率", key: "convRate" },
+      { metric: "转化率", key: "cvr" },
       { metric: "ROAS", key: "roas" },
-      { metric: "ACoS", key: "acos_inv" },
+      { metric: "ACoS(反)", key: "acos_inv" },
     ];
     return metrics.map(m => {
       const row: any = { metric: m.metric };
       placements.forEach((p: any) => {
+        const label = PLACEMENT_CONFIG[p.placement]?.label || p.placement;
         const val = m.key === "acos_inv" ? Math.max(0, 100 - (p.acos || 0)) : p[m.key] || 0;
-        row[p.placement] = val;
+        row[label] = val;
       });
       return row;
     });
@@ -62,6 +71,16 @@ export default function AdPlacementAnalysis({ campaignId, marketplace, reportDat
 
   if (isLoading) {
     return <div className="space-y-4"><Skeleton className="h-32" /><Skeleton className="h-64" /></div>;
+  }
+
+  if (placements.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center text-gray-400">
+          暂无广告位数据
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
@@ -98,20 +117,20 @@ export default function AdPlacementAnalysis({ campaignId, marketplace, reportDat
                   <div>
                     <p className="text-[10px] text-gray-500">ACoS</p>
                     <p className={`text-sm font-bold ${(p.acos || 0) <= 25 ? "text-emerald-600" : (p.acos || 0) <= 40 ? "text-amber-600" : "text-red-600"}`}>
-                      {p.acos}%
+                      {(p.acos || 0).toFixed(2)}%
                     </p>
                   </div>
                   <div>
                     <p className="text-[10px] text-gray-500">CTR</p>
-                    <p className="text-sm font-bold">{p.ctr}%</p>
+                    <p className="text-sm font-bold">{(p.ctr || 0).toFixed(2)}%</p>
                   </div>
                   <div>
                     <p className="text-[10px] text-gray-500">CVR</p>
-                    <p className="text-sm font-bold">{p.convRate}%</p>
+                    <p className="text-sm font-bold">{(p.cvr || 0).toFixed(2)}%</p>
                   </div>
                   <div>
                     <p className="text-[10px] text-gray-500">ROAS</p>
-                    <p className="text-sm font-bold text-blue-600">{p.roas}x</p>
+                    <p className="text-sm font-bold text-blue-600">{(p.roas || 0).toFixed(2)}x</p>
                   </div>
                 </div>
               </CardContent>
@@ -133,16 +152,19 @@ export default function AdPlacementAnalysis({ campaignId, marketplace, reportDat
                   <PolarGrid />
                   <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11 }} />
                   <PolarRadiusAxis tick={{ fontSize: 9 }} />
-                  {placements.map((p: any) => (
-                    <Radar
-                      key={p.placement}
-                      name={PLACEMENT_CONFIG[p.placement]?.label || p.placement}
-                      dataKey={p.placement}
-                      stroke={PLACEMENT_CONFIG[p.placement]?.fill || "#999"}
-                      fill={PLACEMENT_CONFIG[p.placement]?.fill || "#999"}
-                      fillOpacity={0.15}
-                    />
-                  ))}
+                  {placements.map((p: any) => {
+                    const label = PLACEMENT_CONFIG[p.placement]?.label || p.placement;
+                    return (
+                      <Radar
+                        key={p.placement}
+                        name={label}
+                        dataKey={label}
+                        stroke={PLACEMENT_CONFIG[p.placement]?.fill || "#999"}
+                        fill={PLACEMENT_CONFIG[p.placement]?.fill || "#999"}
+                        fillOpacity={0.15}
+                      />
+                    );
+                  })}
                   <Legend wrapperStyle={{ fontSize: "11px" }} />
                   <Tooltip />
                 </RadarChart>

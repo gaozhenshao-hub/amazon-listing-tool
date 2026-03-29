@@ -2913,3 +2913,11 @@
 - [x] 优化并行请求策略（并发数5，7.6秒完成）
 - [x] 修复CVR显示为14.879999999999999%的浮点精度问题（safePct加toFixed(2)）
 - [x] 检查所有百分比/金额字段的精度处理（ACoS/CTR/CVR/ROAS全部修复）
+
+## 投放对象+广告位API路径切换
+- [x] 投放对象Tab：从spTargetHourData切换到 /pb/openapi/newad/spKeywordReports（264个关键词数据正常）
+- [x] 广告位Tab：从spAdPlacementHourData切换到 /pb/openapi/newad/campaignPlacementReports（4个广告位数据正常）
+- [x] 更新lingxingAdapter.ts的mock数据（keyword_id/keyword_text/placement_type字段）
+- [x] 更新前端TargetingAnalysis.tsx字段映射（convRate→cvr）
+- [x] 更新前端AdPlacementAnalysis.tsx字段映射（placement_type key匹配真实API值）
+- [x] 验证两个Tab数据正常显示（投放对象264条+广告位4个位置）

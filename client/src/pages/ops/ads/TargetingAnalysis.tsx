@@ -69,7 +69,7 @@ export default function TargetingAnalysis({ campaignId, marketplace, reportDate 
   const scatterData = useMemo(() => {
     return targets.slice(0, 100).map((t: any) => ({
       x: t.clicks || 0,
-      y: t.convRate || 0,
+      y: t.cvr || 0,
       z: Math.max(t.cost || 1, 5),
       name: t.target,
       category: t.categoryId,
@@ -192,7 +192,7 @@ export default function TargetingAnalysis({ campaignId, marketplace, reportDate 
                             {t.acos}%
                           </span>
                         </td>
-                        <td className="p-2.5 text-right text-xs">{t.convRate}%</td>
+                        <td className="p-2.5 text-right text-xs">{(t.cvr || 0).toFixed(2)}%</td>
                       </tr>
                     );
                   })

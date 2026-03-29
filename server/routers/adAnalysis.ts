@@ -544,7 +544,7 @@ ${JSON.stringify(anonymizedTerms)}
     .input(z.object({
       marketplace: z.string().optional(),
       reportDate: z.string().optional(),
-      days: z.number().optional().default(7),
+      days: z.number().optional().default(3),
       campaignId: z.string().optional(),
     }))
     .query(async ({ input }) => {
@@ -552,40 +552,54 @@ ${JSON.stringify(anonymizedTerms)}
       const { sellers } = await getAllSellerSids();
       const sids = filterSidsByMarketplace(sellers, input.marketplace);
       const sidsToQuery = sids.map(Number).slice(0, 3);
-      const days = input.days || 7;
+      const days = input.days || 3;
 
       const placementAgg: Record<string, {
         placement: string; impressions: number; clicks: number;
         cost: number; sales: number; orders: number;
       }> = {};
 
+      // Build all tasks for parallel execution
+      const tasks: Array<{ sid: number; date: string }> = [];
       for (const sid of sidsToQuery) {
         for (let d = 1; d <= days; d++) {
-          const reportDate = getDateNDaysAgo(d);
-          try {
-           const res = await adapter.requestWithMockFallback({
-              path: "/pb/openapi/newad/spAdPlacementHourData",
-              body: {
-                ...(input.campaignId && !/^C\d+$/.test(input.campaignId) ? { campaign_id: Number(input.campaignId) } : { sid }),
-                report_date: reportDate,
-              },
-              headers: { "X-API-VERSION": "2" },
-            });
-            const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
-            for (const item of items) {
-              if (input.campaignId && !/^C\d+$/.test(input.campaignId) && String(item.campaign_id) !== input.campaignId) continue;
-              const placement = item.placement_type || item.placement || 'Other';
-              if (!placementAgg[placement]) {
-                placementAgg[placement] = { placement, impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0 };
-              }
-              placementAgg[placement].impressions += Number(item.impressions) || 0;
-              placementAgg[placement].clicks += Number(item.clicks) || 0;
-              placementAgg[placement].cost += Number(item.cost) || 0;
-              placementAgg[placement].sales += Number(item.sales) || 0;
-              placementAgg[placement].orders += Number(item.orders) || 0;
+          tasks.push({ sid, date: getDateNDaysAgo(d) });
+        }
+      }
+
+      // Execute in parallel with concurrency limit of 5
+      const CONCURRENCY = 5;
+      for (let i = 0; i < tasks.length; i += CONCURRENCY) {
+        const batch = tasks.slice(i, i + CONCURRENCY);
+        const results = await Promise.allSettled(batch.map(async ({ sid, date }) => {
+          const body: any = {
+            sid,
+            report_date: date,
+            show_detail: 1,
+            offset: 0,
+            length: 1000,
+          };
+          return adapter.requestWithMockFallback({
+            path: "/pb/openapi/newad/campaignPlacementReports",
+            body,
+          });
+        }));
+        for (const result of results) {
+          if (result.status !== 'fulfilled') continue;
+          const res = result.value;
+          const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
+          for (const item of items) {
+            // Skip campaign_id filtering for mock IDs (C001/C002 etc.)
+            if (input.campaignId && !/^C\d+$/.test(input.campaignId) && String(item.campaign_id) !== input.campaignId) continue;
+            const placement = item.placement_type || item.placement || 'Other';
+            if (!placementAgg[placement]) {
+              placementAgg[placement] = { placement, impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0 };
             }
-          } catch (err: any) {
-            // Skip
+            placementAgg[placement].impressions += Number(item.impressions) || 0;
+            placementAgg[placement].clicks += Number(item.clicks) || 0;
+            placementAgg[placement].cost += Number(item.cost) || 0;
+            placementAgg[placement].sales += Number(item.sales) || 0;
+            placementAgg[placement].orders += Number(item.orders) || 0;
           }
         }
       }
@@ -910,56 +924,72 @@ ${JSON.stringify(metrics)}
       campaignId: z.string().optional(),
       marketplace: z.string().optional(),
       reportDate: z.string().optional(),
-      days: z.number().optional().default(7),
+      days: z.number().optional().default(3),
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
       const { sellers } = await getAllSellerSids();
       const sids = filterSidsByMarketplace(sellers, input.marketplace);
       const sidsToQuery = sids.map(Number).slice(0, 3);
-      const days = input.days || 7;
+      const days = input.days || 3;
 
       const targetAgg: Record<string, {
         target_id: string; targeting_type: string; targeting_expression: string;
         impressions: number; clicks: number; cost: number; sales: number; orders: number;
       }> = {};
 
+      // Build all tasks for parallel execution
+      const tasks: Array<{ sid: number; date: string }> = [];
       for (const sid of sidsToQuery) {
         for (let d = 1; d <= days; d++) {
-          try {
-            const res = await adapter.requestWithMockFallback({
-              path: "/pb/openapi/newad/spTargetHourData",
-              body: {
-                ...(input.campaignId && !/^C\d+$/.test(input.campaignId) ? { campaign_id: Number(input.campaignId) } : { sid }),
-                report_date: getDateNDaysAgo(d),
-              },
-              headers: { "X-API-VERSION": "2" },
-            });
-            const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
-            for (const item of items) {
-              // Skip mock campaign_id filtering (C001/C002 etc.)
-              if (input.campaignId && !/^C\d+$/.test(input.campaignId) && item.campaign_id && String(item.campaign_id) !== input.campaignId) continue;
-              const key = `${item.targeting_id || item.target_id}||${item.targeting || item.targeting_expression}`;
-              if (targetAgg[key]) {
-                targetAgg[key].impressions += Number(item.impressions) || 0;
-                targetAgg[key].clicks += Number(item.clicks) || 0;
-                targetAgg[key].cost += Number(item.cost) || 0;
-                targetAgg[key].sales += Number(item.sales) || 0;
-                targetAgg[key].orders += Number(item.orders) || 0;
-              } else {
-                targetAgg[key] = {
-                  target_id: String(item.targeting_id || item.target_id || ''),
-                  targeting_type: item.match_type || item.targeting_type || '',
-                  targeting_expression: item.targeting || item.targeting_expression || '',
-                  impressions: Number(item.impressions) || 0,
-                  clicks: Number(item.clicks) || 0,
-                  cost: Number(item.cost) || 0,
-                  sales: Number(item.sales) || 0,
-                  orders: Number(item.orders) || 0,
-                };
-              }
+          tasks.push({ sid, date: getDateNDaysAgo(d) });
+        }
+      }
+
+      // Execute in parallel with concurrency limit of 5
+      const CONCURRENCY = 5;
+      for (let i = 0; i < tasks.length; i += CONCURRENCY) {
+        const batch = tasks.slice(i, i + CONCURRENCY);
+        const results = await Promise.allSettled(batch.map(async ({ sid, date }) => {
+          const body: any = {
+            sid,
+            report_date: date,
+            show_detail: 1,
+            offset: 0,
+            length: 1000,
+          };
+          return adapter.requestWithMockFallback({
+            path: "/pb/openapi/newad/spKeywordReports",
+            body,
+          });
+        }));
+        for (const result of results) {
+          if (result.status !== 'fulfilled') continue;
+          const res = result.value;
+          const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
+          for (const item of items) {
+            // Skip campaign_id filtering for mock IDs (C001/C002 etc.)
+            if (input.campaignId && !/^C\d+$/.test(input.campaignId) && item.campaign_id && String(item.campaign_id) !== input.campaignId) continue;
+            const key = `${item.keyword_id || item.targeting_id || item.target_id}||${item.keyword_text || item.targeting || item.targeting_expression}`;
+            if (targetAgg[key]) {
+              targetAgg[key].impressions += Number(item.impressions) || 0;
+              targetAgg[key].clicks += Number(item.clicks) || 0;
+              targetAgg[key].cost += Number(item.cost) || 0;
+              targetAgg[key].sales += Number(item.sales) || 0;
+              targetAgg[key].orders += Number(item.orders) || 0;
+            } else {
+              targetAgg[key] = {
+                target_id: String(item.keyword_id || item.targeting_id || item.target_id || ''),
+                targeting_type: item.match_type || item.targeting_type || '',
+                targeting_expression: item.keyword_text || item.targeting || item.targeting_expression || '',
+                impressions: Number(item.impressions) || 0,
+                clicks: Number(item.clicks) || 0,
+                cost: Number(item.cost) || 0,
+                sales: Number(item.sales) || 0,
+                orders: Number(item.orders) || 0,
+              };
             }
-          } catch {}
+          }
         }
       }
 

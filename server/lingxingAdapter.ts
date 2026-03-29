@@ -1020,6 +1020,10 @@ class LingxingAdapter {
       "/pb/openapi/newad/spAdPlacementHourData": () => mockPlacementHourData(body),
       // SP投放小时数据
       "/pb/openapi/newad/spTargetHourData": () => mockTargetHourData(body),
+      // SP关键词报表（投放对象分析）
+      "/pb/openapi/newad/spKeywordReports": () => mockKeywordReports(body),
+      // SP广告位报告
+      "/pb/openapi/newad/campaignPlacementReports": () => mockCampaignPlacementReports(body),
       // SB广告活动小时数据
       "/pb/openapi/newad/sbCampaignHourData": () => mockSbCampaignHourData(body),
       // SB广告组小时数据
@@ -1399,6 +1403,72 @@ function mockTargetHourData(body: Record<string, any>) {
         msku: 'SKU-A001',
       });
     }
+  }
+  return result;
+}
+
+function mockKeywordReports(body: Record<string, any>) {
+  const campaignId = body.campaign_id || 'C001';
+  const keywords = [
+    { keyword_id: 123103176635249, keyword_text: 'bluetooth earbuds', match_type: 'BROAD' },
+    { keyword_id: 123103176635250, keyword_text: 'wireless earphones', match_type: 'EXACT' },
+    { keyword_id: 123103176635251, keyword_text: 'noise cancelling headphones', match_type: 'PHRASE' },
+    { keyword_id: 123103176635252, keyword_text: 'earbuds for running', match_type: 'BROAD' },
+    { keyword_id: 123103176635253, keyword_text: 'tws earbuds 2026', match_type: 'EXACT' },
+    { keyword_id: 123103176635254, keyword_text: 'cheap bluetooth headphones', match_type: 'BROAD' },
+    { keyword_id: 123103176635255, keyword_text: 'sport earbuds waterproof', match_type: 'PHRASE' },
+    { keyword_id: 123103176635256, keyword_text: 'best earbuds under 50', match_type: 'BROAD' },
+  ];
+  const result: any[] = [];
+  for (const kw of keywords) {
+    const impressions = Math.floor(Math.random() * 1000 + 50);
+    const clicks = Math.floor(Math.random() * 30 + 1);
+    const cost = +(Math.random() * 15 + 0.5).toFixed(2);
+    const orders = Math.floor(Math.random() * 5);
+    const sales = +(orders * (Math.random() * 20 + 10)).toFixed(2);
+    result.push({
+      keyword_id: kw.keyword_id,
+      keyword_text: kw.keyword_text,
+      match_type: kw.match_type,
+      ad_group_id: 224579317070677,
+      campaign_id: campaignId,
+      profile_id: 121923590660074,
+      report_date: body.report_date || new Date().toISOString().slice(0, 10),
+      impressions, clicks, cost, sales, orders,
+      units: orders,
+      same_orders: Math.floor(orders * 0.7),
+      same_sales: +(sales * 0.7).toFixed(2),
+      same_units: Math.floor(orders * 0.7),
+    });
+  }
+  return result;
+}
+
+function mockCampaignPlacementReports(body: Record<string, any>) {
+  const campaignId = body.campaign_id || 'C001';
+  const placementTypes = [
+    'TOP OF SEARCH ON-AMAZON',
+    'REST OF SEARCH',
+    'PRODUCT PAGES',
+  ];
+  const result: any[] = [];
+  for (const pt of placementTypes) {
+    const impressions = Math.floor(Math.random() * 2000 + 100);
+    const clicks = Math.floor(Math.random() * 80 + 5);
+    const cost = +(Math.random() * 50 + 5).toFixed(2);
+    const orders = Math.floor(Math.random() * 10 + 1);
+    const sales = +(orders * (Math.random() * 25 + 10)).toFixed(2);
+    result.push({
+      placement_type: pt,
+      campaign_id: campaignId,
+      profile_id: 121923590660074,
+      report_date: body.report_date || new Date().toISOString().slice(0, 10),
+      impressions, clicks, cost, sales, orders,
+      units: orders,
+      same_orders: Math.floor(orders * 0.7),
+      same_sales: +(sales * 0.7).toFixed(2),
+      same_units: Math.floor(orders * 0.7),
+    });
   }
   return result;
 }
