@@ -175,6 +175,45 @@ function deAnonymizeResults(results: any[], asinMap: Map<string, string>): any[]
   });
 }
 
+// ─── In-Memory Cache (TTL-based) ──────────────────────────────
+const _queryCache = new Map<string, { data: any; ts: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCached<T>(key: string): T | null {
+  const entry = _queryCache.get(key);
+  if (entry && Date.now() - entry.ts < CACHE_TTL) return entry.data as T;
+  if (entry) _queryCache.delete(key);
+  return null;
+}
+
+function setCache(key: string, data: any): void {
+  _queryCache.set(key, { data, ts: Date.now() });
+  // Evict old entries if cache grows too large
+  if (_queryCache.size > 100) {
+    const now = Date.now();
+    Array.from(_queryCache.entries()).forEach(([k, v]) => {
+      if (now - v.ts > CACHE_TTL) _queryCache.delete(k);
+    });
+  }
+}
+
+// ─── Parallel batch helper (controls concurrency) ─────────────
+async function parallelBatch<T>(
+  tasks: (() => Promise<T>)[],
+  concurrency: number = 5
+): Promise<T[]> {
+  const results: T[] = [];
+  let idx = 0;
+  async function worker() {
+    while (idx < tasks.length) {
+      const i = idx++;
+      results[i] = await tasks[i]();
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, () => worker()));
+  return results;
+}
+
 // ─── Helper Functions ───────────────────────────────────────────
 function getDateNDaysAgo(n: number): string {
   const d = new Date();
@@ -275,7 +314,7 @@ export const adAnalysisRouter = router({
       campaignId: z.string().optional(),
       marketplace: z.string().optional(),
       reportDate: z.string().optional(), // YYYY-MM-DD, single day query
-      days: z.number().optional().default(7),
+      days: z.number().optional().default(3), // Reduced from 7 to 3 for performance
       thresholds: z.object({
         highImpressions: z.number().optional(),
         lowImpressions: z.number().optional(),
@@ -289,9 +328,19 @@ export const adAnalysisRouter = router({
       const adapter = getLingxingAdapter();
       const { sellers } = await getAllSellerSids();
       const sids = filterSidsByMarketplace(sellers, input.marketplace);
-      const sidsToQuery = sids.map(Number).slice(0, 5);
-      const days = input.days || 7;
+      const sidsToQuery = sids.map(Number).slice(0, 3); // Reduced from 5 to 3 stores
+      const days = Math.min(input.days || 3, 14); // Cap at 14 days max
       const thresholds = { ...DEFAULT_THRESHOLDS, ...input.thresholds };
+
+      // Check cache first (5-minute TTL)
+      const cacheKey = `searchTerms_${input.campaignId || 'all'}_${input.marketplace || 'ALL'}_${days}`;
+      const cached = getCached<any>(cacheKey);
+      if (cached) {
+        console.log(`[SearchTerms] Cache HIT for key: ${cacheKey}`);
+        return cached;
+      }
+      console.log(`[SearchTerms] Cache MISS, fetching ${sidsToQuery.length} stores x ${days} days (parallel)...`);
+      const startTime = Date.now();
 
       // Aggregate search terms over multiple days
       const termAggMap: Record<string, {
@@ -301,56 +350,66 @@ export const adAnalysisRouter = router({
         sales: number; orders: number; units: number; days_seen: number;
       }> = {};
 
+      // Helper to fetch one sid+date combination
+      const fetchSidDay = async (sid: number, reportDate: string): Promise<any[]> => {
+        const items: any[] = [];
+        try {
+          let offset = 0;
+          let hasMore = true;
+          while (hasMore && offset < 1000) {
+            const res = await adapter.requestWithMockFallback({
+              path: "/pb/openapi/newad/queryWordReports",
+              body: { sid, report_date: reportDate, show_detail: 1, target_type: "keyword", offset, length: 200, ...(input.campaignId && !/^C\d+$/.test(input.campaignId) ? { campaign_id: input.campaignId } : {}) },
+              headers: { "X-API-VERSION": "2" },
+            });
+            const rawData = res.data || [];
+            const batch = Array.isArray(rawData) ? rawData : (rawData as any).records || [];
+            items.push(...batch);
+            hasMore = batch.length >= 200;
+            offset += 200;
+          }
+        } catch (err: any) { /* skip */ }
+        return items;
+      };
+
+      // Build all tasks and run in parallel (concurrency = 5)
+      const tasks: (() => Promise<any[]>)[] = [];
       for (const sid of sidsToQuery) {
         for (let d = 1; d <= days; d++) {
           const reportDate = getDateNDaysAgo(d);
-          try {
-            let offset = 0;
-            let hasMore = true;
-            while (hasMore && offset < 2000) {
-              const res = await adapter.requestWithMockFallback({
-                path: "/pb/openapi/newad/queryWordReports",
-                body: { sid, report_date: reportDate, show_detail: 1, target_type: "keyword", offset, length: 200, ...(input.campaignId && !/^C\d+$/.test(input.campaignId) ? { campaign_id: input.campaignId } : {}) },
-                headers: { "X-API-VERSION": "2" },
-              });
-              const rawData = res.data || [];
-              const items = Array.isArray(rawData) ? rawData : (rawData as any).records || [];
-              
-              for (const item of items) {
-                // Only filter by real campaign_id (skip mock IDs like C001/C002)
-                if (input.campaignId && !/^C\d+$/.test(input.campaignId) && item.campaign_id && String(item.campaign_id) !== input.campaignId) continue;
-                
-                const key = `${item.query}||${item.campaign_id}||${item.match_type}`;
-                if (termAggMap[key]) {
-                  termAggMap[key].impressions += Number(item.impressions) || 0;
-                  termAggMap[key].clicks += Number(item.clicks) || 0;
-                  termAggMap[key].cost += Number(item.cost) || 0;
-                  termAggMap[key].sales += Number(item.sales) || 0;
-                  termAggMap[key].orders += Number(item.orders) || 0;
-                  termAggMap[key].units += Number(item.units) || 0;
-                  termAggMap[key].days_seen += 1;
-                } else {
-                  termAggMap[key] = {
-                    query: item.query || '',
-                    target_text: item.target_text || '',
-                    match_type: item.match_type || '',
-                    campaign_id: String(item.campaign_id || ''),
-                    ad_group_id: String(item.ad_group_id || ''),
-                    impressions: Number(item.impressions) || 0,
-                    clicks: Number(item.clicks) || 0,
-                    cost: Number(item.cost) || 0,
-                    sales: Number(item.sales) || 0,
-                    orders: Number(item.orders) || 0,
-                    units: Number(item.units) || 0,
-                    days_seen: 1,
-                  };
-                }
-              }
-              hasMore = items.length >= 200;
-              offset += 200;
-            }
-          } catch (err: any) {
-            // Skip failed days
+          tasks.push(() => fetchSidDay(sid, reportDate));
+        }
+      }
+      const allResults = await parallelBatch(tasks, 5);
+
+      // Merge all results into aggregation map
+      for (const items of allResults) {
+        for (const item of items) {
+          if (input.campaignId && !/^C\d+$/.test(input.campaignId) && item.campaign_id && String(item.campaign_id) !== input.campaignId) continue;
+          const key = `${item.query}||${item.campaign_id}||${item.match_type}`;
+          if (termAggMap[key]) {
+            termAggMap[key].impressions += Number(item.impressions) || 0;
+            termAggMap[key].clicks += Number(item.clicks) || 0;
+            termAggMap[key].cost += Number(item.cost) || 0;
+            termAggMap[key].sales += Number(item.sales) || 0;
+            termAggMap[key].orders += Number(item.orders) || 0;
+            termAggMap[key].units += Number(item.units) || 0;
+            termAggMap[key].days_seen += 1;
+          } else {
+            termAggMap[key] = {
+              query: item.query || '',
+              target_text: item.target_text || '',
+              match_type: item.match_type || '',
+              campaign_id: String(item.campaign_id || ''),
+              ad_group_id: String(item.ad_group_id || ''),
+              impressions: Number(item.impressions) || 0,
+              clicks: Number(item.clicks) || 0,
+              cost: Number(item.cost) || 0,
+              sales: Number(item.sales) || 0,
+              orders: Number(item.orders) || 0,
+              units: Number(item.units) || 0,
+              days_seen: 1,
+            };
           }
         }
       }
@@ -376,7 +435,7 @@ export const adAnalysisRouter = router({
       for (let i = 1; i <= 12; i++) categoryStats[i] = 0;
       for (const t of searchTerms) categoryStats[t.categoryId] = (categoryStats[t.categoryId] || 0) + 1;
 
-      return {
+      const result = {
         searchTerms,
         categoryStats,
         categories: TWELVE_CATEGORIES,
@@ -385,6 +444,11 @@ export const adAnalysisRouter = router({
         total: searchTerms.length,
         isMock: adapter.isMockMode(),
       };
+
+      // Cache the result for 5 minutes
+      setCache(cacheKey, result);
+      console.log(`[SearchTerms] Completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s, ${searchTerms.length} terms found`);
+      return result;
     }),
 
   // ─── AI-Enhanced Classification Advice ────────────────────────

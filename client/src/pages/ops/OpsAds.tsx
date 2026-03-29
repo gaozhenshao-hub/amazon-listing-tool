@@ -40,7 +40,10 @@ const safeDiv = (a: number, b: number, decimals = 2): number => {
   const result = a / b;
   return isFinite(result) ? Math.round(result * Math.pow(10, decimals)) / Math.pow(10, decimals) : 0;
 };
-const safePct = (a: number, b: number): number => safeDiv(a, b, 4) * 100;
+const safePct = (a: number, b: number): number => {
+  const raw = safeDiv(a, b, 4) * 100;
+  return Math.round(raw * 100) / 100; // Fix floating point precision (e.g., 14.879999999999999 → 14.88)
+};
 const fmtPct = (v: number): string => {
   if (!isFinite(v) || isNaN(v)) return '0';
   return Math.round(v * 100) / 100 + '';
@@ -249,8 +252,8 @@ export default function OpsAds() {
                 {[
                   { label: "总花费", value: `$${overviewMetrics.cost.toFixed(2)}`, icon: DollarSign, color: "text-red-600", bg: "bg-red-50" },
                   { label: "总销售额", value: `$${overviewMetrics.sales.toFixed(2)}`, icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50" },
-                  { label: "ACoS", value: `${overviewMetrics.acos}%`, icon: Target, color: overviewMetrics.acos <= 25 ? "text-emerald-600" : overviewMetrics.acos <= 40 ? "text-amber-600" : "text-red-600", bg: overviewMetrics.acos <= 25 ? "bg-emerald-50" : overviewMetrics.acos <= 40 ? "bg-amber-50" : "bg-red-50" },
-                  { label: "ROAS", value: `${overviewMetrics.roas}x`, icon: Zap, color: "text-blue-600", bg: "bg-blue-50" },
+                  { label: "ACoS", value: `${overviewMetrics.acos.toFixed(2)}%`, icon: Target, color: overviewMetrics.acos <= 25 ? "text-emerald-600" : overviewMetrics.acos <= 40 ? "text-amber-600" : "text-red-600", bg: overviewMetrics.acos <= 25 ? "bg-emerald-50" : overviewMetrics.acos <= 40 ? "bg-amber-50" : "bg-red-50" },
+                  { label: "ROAS", value: `${overviewMetrics.roas.toFixed(2)}x`, icon: Zap, color: "text-blue-600", bg: "bg-blue-50" },
                   { label: "总订单", value: overviewMetrics.orders.toLocaleString(), icon: Package, color: "text-purple-600", bg: "bg-purple-50" },
                 ].map((kpi) => (
                   <Card key={kpi.label} className={`${kpi.bg} border-none`}>
@@ -270,8 +273,8 @@ export default function OpsAds() {
                 {[
                   { label: "总曝光", value: overviewMetrics.impressions.toLocaleString() },
                   { label: "总点击", value: overviewMetrics.clicks.toLocaleString() },
-                  { label: "CTR", value: `${overviewMetrics.ctr}%` },
-                  { label: "CVR", value: `${overviewMetrics.cvr}%` },
+                  { label: "CTR", value: `${overviewMetrics.ctr.toFixed(2)}%` },
+                  { label: "CVR", value: `${overviewMetrics.cvr.toFixed(2)}%` },
                 ].map((m) => (
                   <Card key={m.label}>
                     <CardContent className="pt-3 pb-2.5 px-4">
@@ -565,7 +568,7 @@ function PortfolioRow({ portfolio, isExpanded, onToggle, selectedCampaignId, onS
             <td className="p-2.5 text-right text-xs">
               <span className={`font-medium ${cAcosColor}`}>{cAcos > 900 ? "∞" : `${fmtPct(cAcos)}%`}</span>
             </td>
-            <td className="p-2.5 text-right text-xs font-medium text-blue-600">{cRoas}x</td>
+            <td className="p-2.5 text-right text-xs font-medium text-blue-600">{cRoas.toFixed(2)}x</td>
             <td className="p-2.5 text-right text-xs">{fmtPct(cCtr)}%</td>
           </tr>
         );

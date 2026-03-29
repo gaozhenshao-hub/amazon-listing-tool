@@ -2905,3 +2905,11 @@
 - [x] 修改adAnalysis.ts中搜索词API路径从 /pb/openapi/newad/ad/queryWordReports 改为 /pb/openapi/newad/queryWordReports
 - [x] 确保campaign_id正确传入请求body（含show_detail:1参数）
 - [x] 验证搜索词Tab在选中广告活动后能正常显示数据（674个搜索词，7个分类）
+
+## 搜索词查询性能优化 + CVR精度修复
+- [x] 分析搜索词查询57秒的性能瓶颈（多店铺多天遍历）
+- [x] 实现服务端内存缓存机制（TTL 5分钟）
+- [x] 限制默认查询范围（3店铺×3天，减少不必要的API调用）
+- [x] 优化并行请求策略（并发数5，7.6秒完成）
+- [x] 修复CVR显示为14.879999999999999%的浮点精度问题（safePct加toFixed(2)）
+- [x] 检查所有百分比/金额字段的精度处理（ACoS/CTR/CVR/ROAS全部修复）

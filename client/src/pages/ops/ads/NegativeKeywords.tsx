@@ -68,7 +68,7 @@ export default function NegativeKeywords({ campaignId, marketplace, reportDate }
       negTab === "exact" ? "Negative Exact" : negTab === "phrase" ? "Negative Phrase" : "Negative Target",
       item.impressions, item.clicks, item.cost?.toFixed(2), item.orders, item.reason,
     ]);
-    const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const csv = [headers.join(","), ...rows.map((r: string[]) => r.join(","))].join("\n");
     const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
