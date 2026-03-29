@@ -44,10 +44,10 @@ const PIE_COLORS = [
 interface SearchTermClassificationProps {
   campaignId: string | null;
   marketplace?: string;
-  days: number;
+  reportDate: string;
 }
 
-export default function SearchTermClassification({ campaignId, marketplace, days }: SearchTermClassificationProps) {
+export default function SearchTermClassification({ campaignId, marketplace, reportDate }: SearchTermClassificationProps) {
   const [categoryFilter, setCategoryFilter] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<string>("cost");
@@ -60,7 +60,7 @@ export default function SearchTermClassification({ campaignId, marketplace, days
   const { data, isLoading, refetch } = trpc.adAnalysis.getSearchTerms12Category.useQuery({
     campaignId: campaignId || undefined,
     marketplace,
-    days,
+    reportDate,
   });
 
   const { data: categoryDefs } = trpc.adAnalysis.getCategoryDefinitions.useQuery();

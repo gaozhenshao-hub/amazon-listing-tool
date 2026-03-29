@@ -1093,6 +1093,7 @@ ${activeSkus.map((s, i) => `
   getAdCampaigns: protectedProcedure
     .input(z.object({
       sid: z.number().optional(),
+      reportDate: z.string().optional(), // Single date YYYY-MM-DD, matches Lingxing hour data API
       startDate: z.string().optional(),
       endDate: z.string().optional(),
       marketplace: z.string().optional(),
@@ -1143,19 +1144,9 @@ ${activeSkus.map((s, i) => `
       
       // 2. Get campaign hour data using spCampaignHourData API
       // This API returns hourly data per campaign_id per date, with cost/sales/clicks/etc.
-      const reportEndDate = input.endDate || getDateNDaysAgo(1);
-      const reportStartDate = input.startDate || getDateNDaysAgo(7);
-      // Build list of dates to query
-      const datesToQuery: string[] = [];
-      {
-        const start = new Date(reportStartDate + 'T00:00:00Z');
-        const end = new Date(reportEndDate + 'T00:00:00Z');
-        for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-          datesToQuery.push(d.toISOString().slice(0, 10));
-        }
-      }
-      // Limit to max 30 days to avoid excessive API calls
-      const queryDates = datesToQuery.slice(-30);
+      // Use single reportDate for efficient querying (1 date = 1 API call per campaign)
+      const queryDate = input.reportDate || getDateNDaysAgo(1);
+      const queryDates = [queryDate];
       console.log(`[AdCampaigns] Querying spCampaignHourData for ${queryDates.length} days: ${queryDates[0]} ~ ${queryDates[queryDates.length - 1]}`);
       const reportMap: Record<string, any> = {};
       const campaignProfileMap: Record<string, string> = {}; // campaign_id -> profile_id

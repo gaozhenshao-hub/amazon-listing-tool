@@ -15,10 +15,10 @@ import {
 interface NegativeKeywordsProps {
   campaignId: string | null;
   marketplace?: string;
-  days: number;
+  reportDate: string;
 }
 
-export default function NegativeKeywords({ campaignId, marketplace, days }: NegativeKeywordsProps) {
+export default function NegativeKeywords({ campaignId, marketplace, reportDate }: NegativeKeywordsProps) {
   const [negTab, setNegTab] = useState("exact");
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -26,7 +26,7 @@ export default function NegativeKeywords({ campaignId, marketplace, days }: Nega
   const { data: classData, isLoading } = trpc.adAnalysis.getSearchTerms12Category.useQuery({
     campaignId: campaignId || undefined,
     marketplace,
-    days,
+    reportDate,
   });
 
   // Derive negative keywords from categories that indicate waste

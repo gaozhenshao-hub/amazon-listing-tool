@@ -14,7 +14,7 @@ import { toast } from "sonner";
 interface HourlyBidStrategyProps {
   campaignId: string | null;
   marketplace?: string;
-  days: number;
+  reportDate?: string;
 }
 
 const HOUR_LABELS = Array.from({ length: 24 }, (_, i) => `${i}:00`);
@@ -32,18 +32,18 @@ function getHeatColor(value: number, max: number): string {
   return "#f3f4f6";
 }
 
-export default function HourlyBidStrategy({ campaignId, marketplace, days }: HourlyBidStrategyProps) {
+export default function HourlyBidStrategy({ campaignId, marketplace, reportDate }: HourlyBidStrategyProps) {
   const [heatmapMetric, setHeatmapMetric] = useState<"orders" | "sales" | "clicks" | "impressions">("orders");
 
   const { data, isLoading } = trpc.adAnalysis.getAdHourlyData.useQuery({
     marketplace,
-    days,
+    reportDate,
   });
 
   const { data: heatmapRawData } = trpc.adAnalysis.getOrderHourlyHeatmap.useQuery({
     campaignId: campaignId || undefined,
     marketplace,
-    days,
+    reportDate,
   });
 
   const aiBidStrategy = trpc.adAnalysis.aiDaypartingStrategy.useMutation({
@@ -188,7 +188,14 @@ export default function HourlyBidStrategy({ campaignId, marketplace, days }: Hou
             {/* Color legend */}
             <div className="flex items-center gap-2 mt-3 justify-end">
               <span className="text-[10px] text-gray-500">低</span>
-              {["#f3f4f6", "#a7f3d0", "#6ee7b7", "#34d399", "#10b981", "#059669"].map((c, i) => (
+              {[
+                "#f3f4f6",
+                "#a7f3d0",
+                "#6ee7b7",
+                "#34d399",
+                "#10b981",
+                "#059669",
+              ].map((c, i) => (
                 <div key={i} className="w-6 h-3 rounded-sm" style={{ backgroundColor: c }} />
               ))}
               <span className="text-[10px] text-gray-500">高</span>

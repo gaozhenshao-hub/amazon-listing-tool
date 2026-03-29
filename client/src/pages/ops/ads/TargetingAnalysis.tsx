@@ -15,7 +15,7 @@ import { toast } from "sonner";
 interface TargetingAnalysisProps {
   campaignId: string | null;
   marketplace?: string;
-  days: number;
+  reportDate: string;
 }
 
 const TARGET_CATEGORY_CONFIG: Record<number, { label: string; color: string; bg: string }> = {
@@ -30,14 +30,14 @@ const TARGET_CATEGORY_CONFIG: Record<number, { label: string; color: string; bg:
   9: { label: "低点击_低转化", color: "#ef4444", bg: "bg-red-50" },
 };
 
-export default function TargetingAnalysis({ campaignId, marketplace, days }: TargetingAnalysisProps) {
+export default function TargetingAnalysis({ campaignId, marketplace, reportDate }: TargetingAnalysisProps) {
   const [categoryFilter, setCategoryFilter] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
   const { data, isLoading } = trpc.adAnalysis.getTargetingAnalysis.useQuery({
     campaignId: campaignId || undefined,
     marketplace,
-    days,
+    reportDate,
   });
 
   const targets = (data?.targets || []).map((t: any, idx: number) => {
@@ -184,8 +184,8 @@ export default function TargetingAnalysis({ campaignId, marketplace, days }: Tar
                         </td>
                         <td className="p-2.5 text-right text-xs">{(t.impressions || 0).toLocaleString()}</td>
                         <td className="p-2.5 text-right text-xs">{t.clicks || 0}</td>
-                        <td className="p-2.5 text-right text-xs">${(t.cost || 0).toFixed(2)}</td>
-                        <td className="p-2.5 text-right text-xs font-medium">${(t.sales || 0).toFixed(2)}</td>
+                        <td className="p-2.5 text-right text-xs">S{(t.cost || 0).toFixed(2)}</td>
+                        <td className="p-2.5 text-right text-xs font-medium">S{(t.sales || 0).toFixed(2)}</td>
                         <td className="p-2.5 text-right text-xs">{t.orders || 0}</td>
                         <td className="p-2.5 text-right text-xs">
                           <span className={`font-medium ${(t.acos || 0) <= 25 ? "text-emerald-600" : (t.acos || 0) <= 40 ? "text-amber-600" : "text-red-600"}`}>

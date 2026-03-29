@@ -12,7 +12,7 @@ import { Monitor, Smartphone, LayoutGrid, TrendingUp, TrendingDown, DollarSign, 
 interface AdPlacementAnalysisProps {
   campaignId: string | null;
   marketplace?: string;
-  days: number;
+  reportDate: string;
 }
 
 const PLACEMENT_CONFIG: Record<string, { label: string; icon: any; color: string; fill: string }> = {
@@ -21,10 +21,10 @@ const PLACEMENT_CONFIG: Record<string, { label: string; icon: any; color: string
   "Product Pages": { label: "商品页面 (PP)", icon: Smartphone, color: "text-purple-700", fill: "#8b5cf6" },
 };
 
-export default function AdPlacementAnalysis({ campaignId, marketplace, days }: AdPlacementAnalysisProps) {
+export default function AdPlacementAnalysis({ campaignId, marketplace, reportDate }: AdPlacementAnalysisProps) {
   const { data, isLoading } = trpc.adAnalysis.getAdPlacementData.useQuery({
     marketplace,
-    days,
+    reportDate,
   });
 
   const placements = data?.placements || [];

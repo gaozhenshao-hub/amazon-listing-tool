@@ -18,17 +18,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 interface Props {
   campaignId: string | null;
   marketplace: string;
-  days: number;
+  reportDate: string;
 }
 
-export default function EffectiveSearchTerms({ campaignId, marketplace, days }: Props) {
+export default function EffectiveSearchTerms({ campaignId, marketplace, reportDate }: Props) {
   const [selectedTerms, setSelectedTerms] = useState<Set<string>>(new Set());
   const [editedBids, setEditedBids] = useState<Record<string, number>>({});
   const [editedMatchTypes, setEditedMatchTypes] = useState<Record<string, string>>({});
   const [filterMinOrders, setFilterMinOrders] = useState<string>("");
 
   const { data, isLoading } = trpc.adAnalysis.getEffectiveSearchTerms.useQuery(
-    { campaignId: campaignId || undefined, marketplace, days },
+    { campaignId: campaignId || undefined, marketplace, reportDate },
     { enabled: true }
   );
 
@@ -278,121 +278,84 @@ export default function EffectiveSearchTerms({ campaignId, marketplace, days }: 
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-xs">
               <thead>
-                <tr className="border-b bg-gray-50/50">
-                  <th className="p-2.5 w-8"><Checkbox checked={selectedTerms.size === filteredEffective.length && filteredEffective.length > 0} onCheckedChange={handleSelectAll} /></th>
-                  <th className="text-left p-2.5 font-medium text-gray-600">搜索词</th>
-                  <th className="text-right p-2.5 font-medium text-gray-600">订单</th>
-                  <th className="text-right p-2.5 font-medium text-gray-600">曝光</th>
-                  <th className="text-right p-2.5 font-medium text-gray-600">点击</th>
-                  <th className="text-right p-2.5 font-medium text-gray-600">CVR</th>
-                  <th className="text-right p-2.5 font-medium text-gray-600">花费</th>
-                  <th className="text-right p-2.5 font-medium text-gray-600">ACoS</th>
-                  <th className="text-center p-2.5 font-medium text-gray-600">价值评分</th>
-                  <th className="text-center p-2.5 font-medium text-gray-600">建议匹配</th>
-                  <th className="text-right p-2.5 font-medium text-gray-600">建议竞价</th>
+                <tr className="bg-gray-50">
+                  <th className="p-2 text-left font-medium"><Checkbox checked={selectedTerms.size === filteredEffective.length && filteredEffective.length > 0} onCheckedChange={handleSelectAll} /></th>
+                  <th className="p-2 text-left font-medium">搜索词</th>
+                  <th className="p-2 text-left font-medium">广告订单</th>
+                  <th className="p-2 text-left font-medium">自然订单</th>
+                  <th className="p-2 text-left font-medium">总订单</th>
+                  <th className="p-2 text-left font-medium">投放建议</th>
+                  <th className="p-2 text-left font-medium">建议竞价</th>
+                  <th className="p-2 text-left font-medium">建议匹配</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredEffective.length === 0 ? (
-                  <tr><td colSpan={11} className="text-center py-8 text-gray-400">暂无有效未投放搜索词</td></tr>
-                ) : (
-                  filteredEffective.slice(0, 100).map((term: any, i: number) => (
-                    <tr key={i} className={`border-b hover:bg-gray-50/50 ${selectedTerms.has(term.query) ? "bg-purple-50/30" : ""}`}>
-                      <td className="p-2.5">
-                        <Checkbox checked={selectedTerms.has(term.query)} onCheckedChange={() => handleToggleSelect(term.query)} />
-                      </td>
-                      <td className="p-2.5 text-xs font-medium max-w-[200px] truncate">{term.query}</td>
-                      <td className="p-2.5 text-right text-xs font-bold text-emerald-600">{term.orders}</td>
-                      <td className="p-2.5 text-right text-xs">{term.impressions.toLocaleString()}</td>
-                      <td className="p-2.5 text-right text-xs">{term.clicks}</td>
-                      <td className="p-2.5 text-right text-xs">
-                        <span className={`font-medium ${term.cvr >= 10 ? "text-emerald-600" : term.cvr >= 5 ? "text-blue-600" : "text-gray-500"}`}>
-                          {term.cvr}%
-                        </span>
-                      </td>
-                      <td className="p-2.5 text-right text-xs text-red-600">${term.cost.toFixed(2)}</td>
-                      <td className="p-2.5 text-right text-xs">
-                        <span className={`${term.acos <= 25 ? "text-emerald-600" : term.acos <= 40 ? "text-amber-600" : "text-red-600"}`}>
-                          {term.acos}%
-                        </span>
-                      </td>
-                      <td className="p-2.5 text-center">
-                        <div className="flex items-center justify-center gap-0.5">
-                          {Array.from({ length: 5 }).map((_, si) => (
-                            <Star key={si} className={`w-3 h-3 ${si < Math.round(term.valueScore / 2) ? "text-amber-400 fill-amber-400" : "text-gray-200"}`} />
-                          ))}
-                        </div>
-                      </td>
-                      <td className="p-2.5 text-center">
-                        <Select
-                          value={editedMatchTypes[term.query] || term.recommendedMatchType}
-                          onValueChange={(v) => setEditedMatchTypes(prev => ({ ...prev, [term.query]: v }))}
-                        >
-                          <SelectTrigger className="h-6 text-[10px] w-16 mx-auto">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="exact">精确</SelectItem>
-                            <SelectItem value="phrase">词组</SelectItem>
-                            <SelectItem value="broad">广泛</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </td>
-                      <td className="p-2.5 text-right">
-                        <Input
-                          type="number"
-                          step="0.01"
-                          className="h-6 w-16 text-[10px] text-right ml-auto"
-                          value={editedBids[term.query] ?? term.recommendedBid}
-                          onChange={(e) => setEditedBids(prev => ({ ...prev, [term.query]: parseFloat(e.target.value) || 0 }))}
-                        />
-                      </td>
-                    </tr>
-                  ))
-                )}
+                {filteredEffective.map((t: any, i: number) => (
+                  <tr key={i} className="border-b hover:bg-gray-50">
+                    <td className="p-2"><Checkbox checked={selectedTerms.has(t.query)} onCheckedChange={() => handleToggleSelect(t.query)} /></td>
+                    <td className="p-2 font-medium max-w-[200px] truncate">{t.query}</td>
+                    <td className="p-2">{t.adOrders}</td>
+                    <td className="p-2">{t.organicOrders}</td>
+                    <td className="p-2">{t.orders}</td>
+                    <td className="p-2 text-gray-500">{t.suggestion}</td>
+                    <td className="p-2">
+                      <Input
+                        type="number"
+                        step={0.01}
+                        className="h-7 w-20 text-xs"
+                        value={editedBids[t.query] ?? t.recommendedBid ?? ''}
+                        onChange={(e) => setEditedBids(prev => ({ ...prev, [t.query]: parseFloat(e.target.value) }))}
+                      />
+                    </td>
+                    <td className="p-2">
+                      <Select
+                        value={editedMatchTypes[t.query] ?? t.recommendedMatchType ?? 'broad'}
+                        onValueChange={(val) => setEditedMatchTypes(prev => ({ ...prev, [t.query]: val }))}
+                      >
+                        <SelectTrigger className="h-7 w-24 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="broad">Broad</SelectItem>
+                          <SelectItem value="phrase">Phrase</SelectItem>
+                          <SelectItem value="exact">Exact</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         </CardContent>
       </Card>
 
-      {/* Organic Only Terms */}
+      {/* Organic Only Terms Table */}
       {organicOnlyTerms.length > 0 && (
-        <Card className="border-emerald-200">
+        <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Zap className="w-4 h-4 text-emerald-600" />
-              纯自然出单搜索词（零广告花费）
-            </CardTitle>
+            <CardTitle className="text-sm">纯自然出单词 ({organicOnlyTerms.length})</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-xs">
                 <thead>
-                  <tr className="border-b bg-emerald-50/50">
-                    <th className="text-left p-2.5 font-medium text-gray-600">#</th>
-                    <th className="text-left p-2.5 font-medium text-gray-600">搜索词</th>
-                    <th className="text-right p-2.5 font-medium text-gray-600">自然订单</th>
-                    <th className="text-right p-2.5 font-medium text-gray-600">曝光</th>
-                    <th className="text-right p-2.5 font-medium text-gray-600">点击</th>
-                    <th className="text-right p-2.5 font-medium text-gray-600">CVR</th>
-                    <th className="text-center p-2.5 font-medium text-gray-600">价值评分</th>
+                  <tr className="bg-gray-50">
+                    <th className="p-2 text-left font-medium">搜索词</th>
+                    <th className="p-2 text-left font-medium">自然订单</th>
+                    <th className="p-2 text-left font-medium">自然点击</th>
+                    <th className="p-2 text-left font-medium">自然CVR</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {organicOnlyTerms.slice(0, 30).map((term: any, i: number) => (
-                    <tr key={i} className="border-b hover:bg-emerald-50/30">
-                      <td className="p-2.5 text-xs text-gray-400">{i + 1}</td>
-                      <td className="p-2.5 text-xs font-medium">{term.query}</td>
-                      <td className="p-2.5 text-right text-xs font-bold text-emerald-600">{term.orders}</td>
-                      <td className="p-2.5 text-right text-xs">{term.impressions.toLocaleString()}</td>
-                      <td className="p-2.5 text-right text-xs">{term.clicks}</td>
-                      <td className="p-2.5 text-right text-xs font-medium text-emerald-600">{term.cvr}%</td>
-                      <td className="p-2.5 text-center">
-                        <Badge className="text-[10px] bg-emerald-100 text-emerald-700">{term.valueScore}/10</Badge>
-                      </td>
+                  {organicOnlyTerms.map((t: any, i: number) => (
+                    <tr key={i} className="border-b hover:bg-gray-50">
+                      <td className="p-2 font-medium max-w-[200px] truncate">{t.query}</td>
+                      <td className="p-2">{t.orders}</td>
+                      <td className="p-2">{t.clicks}</td>
+                      <td className="p-2">{(t.cvr * 100).toFixed(2)}%</td>
                     </tr>
                   ))}
                 </tbody>

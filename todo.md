@@ -2873,3 +2873,11 @@
 - [x] 修复前端NaN%显示的边界保护（即使后端数据异常也不显示NaN）
 - [x] 将广告活动报表API从 spCampaignReports 切换为 spCampaignHourData（广告活动小时数据）
 - [x] 广告子Tab页面默认随机展示一个广告活动的数据（无需用户先选择）
+
+## 广告模块小时数据API全面对接
+- [x] 保存13个领星小时数据API字段映射文档
+- [x] 日期筛选器改为report_date日期选择器（与领星小时数据API一致）
+- [x] 后端修复：处理API返回的null值（cvr/acos/cpa/roas可能为null）
+- [x] 后端修复：acos是小数形式（0.0721=7.21%），需要*100转换为百分比
+- [x] 更新lingxingAdapter中所有广告小时数据API路径映射
+- [x] 前端修复：所有组件处理null值防止NaN显示

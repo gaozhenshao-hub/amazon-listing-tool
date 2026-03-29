@@ -16,23 +16,22 @@ import {
 
 interface Props {
   marketplace: string;
-  days: number;
+  reportDate: string;
 }
 
 const PIE_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#f97316", "#ec4899"];
 
-export default function DspAnalysis({ marketplace, days }: Props) {
+export default function DspAnalysis({ marketplace, reportDate }: Props) {
   const [aiAdvice, setAiAdvice] = useState<any>(null);
   const [isEditingAdvice, setIsEditingAdvice] = useState(false);
   const [editedAdvice, setEditedAdvice] = useState<any>(null);
 
-  const startDate = useMemo(() => new Date(Date.now() - days * 86400000).toISOString().slice(0, 10), [days]);
-  const endDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
 
   const { data, isLoading, refetch } = trpc.adAnalysisP2.getDspReport.useQuery({
     marketplace,
-    startDate,
-    endDate,
+    startDate: reportDate,
+    endDate: reportDate,
   });
 
   const aiMutation = trpc.adAnalysisP2.aiDspStrategy.useMutation({

@@ -17,8 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 interface Props {
   campaignId: string | null;
-  marketplace: string;
-  days: number;
+  marketplace?: string;
+  reportDate: string;
 }
 
 const CATEGORY_CONFIG: Record<number, { name: string; color: string; bgColor: string; icon: any; description: string; action: string }> = {
@@ -32,11 +32,11 @@ const CATEGORY_CONFIG: Record<number, { name: string; color: string; bgColor: st
 
 const PIE_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#9ca3af"];
 
-export default function WordFrequencyAnalysis({ campaignId, marketplace, days }: Props) {
+export default function WordFrequencyAnalysis({ campaignId, marketplace, reportDate }: Props) {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
 
   const { data, isLoading } = trpc.adAnalysis.getWordFrequencyAnalysis.useQuery(
-    { campaignId: campaignId || undefined, marketplace, days },
+    { campaignId: campaignId || undefined, marketplace, reportDate },
     { enabled: true }
   );
 

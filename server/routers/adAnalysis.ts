@@ -274,6 +274,7 @@ export const adAnalysisRouter = router({
     .input(z.object({
       campaignId: z.string().optional(),
       marketplace: z.string().optional(),
+      reportDate: z.string().optional(), // YYYY-MM-DD, single day query
       days: z.number().optional().default(7),
       thresholds: z.object({
         highImpressions: z.number().optional(),
@@ -478,6 +479,7 @@ ${JSON.stringify(anonymizedTerms)}
   getAdPlacementData: protectedProcedure
     .input(z.object({
       marketplace: z.string().optional(),
+      reportDate: z.string().optional(),
       days: z.number().optional().default(7),
       campaignId: z.string().optional(),
     }))
@@ -536,6 +538,7 @@ ${JSON.stringify(anonymizedTerms)}
   getAdHourlyData: protectedProcedure
     .input(z.object({
       marketplace: z.string().optional(),
+      reportDate: z.string().optional(),
       days: z.number().optional().default(7),
       campaignId: z.string().optional(),
     }))
@@ -601,6 +604,7 @@ ${JSON.stringify(anonymizedTerms)}
     .input(z.object({
       campaignId: z.string().optional(),
       marketplace: z.string().optional(),
+      reportDate: z.string().optional(),
       days: z.number().optional().default(7),
     }))
     .query(async ({ input }) => {
@@ -723,6 +727,7 @@ ${JSON.stringify(input.hourlyData)}
     .input(z.object({
       campaignId: z.string().optional(),
       marketplace: z.string().optional(),
+      reportDate: z.string().optional(),
       days: z.number().optional().default(30),
     }))
     .mutation(async ({ input }) => {
@@ -836,6 +841,7 @@ ${JSON.stringify(metrics)}
     .input(z.object({
       campaignId: z.string().optional(),
       marketplace: z.string().optional(),
+      reportDate: z.string().optional(),
       days: z.number().optional().default(7),
     }))
     .query(async ({ input }) => {
@@ -910,8 +916,9 @@ ${JSON.stringify(metrics)}
   // ─── Word Frequency Attribute 6-Category Analysis (Tab 4) ────
   getWordFrequencyAnalysis: protectedProcedure
     .input(z.object({
-        campaignId: z.string().optional(),
+      campaignId: z.string().optional(),
       marketplace: z.string().optional(),
+      reportDate: z.string().optional(),
       days: z.number().optional().default(7),
     }))
     .query(async ({ input }) => {
@@ -1024,6 +1031,7 @@ ${JSON.stringify(metrics)}
     .input(z.object({
       campaignId: z.string().optional(),
       marketplace: z.string().optional(),
+      reportDate: z.string().optional(),
       days: z.number().optional().default(30),
     }))
     .query(async ({ input }) => {

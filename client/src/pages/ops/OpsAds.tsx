@@ -49,7 +49,11 @@ const fmtPct = (v: number): string => {
 export default function OpsAds() {
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [selectedCampaignName, setSelectedCampaignName] = useState<string>("");
-  const [selectedDays, setSelectedDays] = useState(7);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1); // default to yesterday
+    return d.toISOString().slice(0, 10);
+  });
   const [activeTab, setActiveTab] = useState("overview");
   const [expandedPortfolios, setExpandedPortfolios] = useState<Set<string>>(new Set());
   const { marketplace } = useMarketplace();
@@ -147,17 +151,13 @@ export default function OpsAds() {
           <p className="text-sm text-gray-500 mt-0.5">以广告组合(Portfolio)+广告活动(Campaign)为核心维度的全方位广告数据分析</p>
         </div>
         <div className="flex items-center gap-3">
-          <Select value={String(selectedDays)} onValueChange={(v) => setSelectedDays(Number(v))}>
-            <SelectTrigger className="w-28 h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7">近7天</SelectItem>
-              <SelectItem value="14">近14天</SelectItem>
-              <SelectItem value="30">近30天</SelectItem>
-              <SelectItem value="60">近60天</SelectItem>
-            </SelectContent>
-          </Select>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="h-8 px-2 text-xs border rounded-md bg-white"
+            max={new Date().toISOString().slice(0, 10)}
+          />
           <Button variant="outline" size="sm" className="h-8" onClick={() => refetchCampaigns()}>
             <RefreshCw className="w-3.5 h-3.5 mr-1" />
             刷新
@@ -392,7 +392,7 @@ export default function OpsAds() {
           <SearchTermClassification
             campaignId={selectedCampaignId}
             marketplace={marketplace}
-            days={selectedDays}
+            reportDate={selectedDate}
           />
         </TabsContent>
 
@@ -401,7 +401,7 @@ export default function OpsAds() {
           <TargetingAnalysis
             campaignId={selectedCampaignId}
             marketplace={marketplace}
-            days={selectedDays}
+            reportDate={selectedDate}
           />
         </TabsContent>
 
@@ -410,7 +410,7 @@ export default function OpsAds() {
           <AdPlacementAnalysis
             campaignId={selectedCampaignId}
             marketplace={marketplace}
-            days={selectedDays}
+            reportDate={selectedDate}
           />
         </TabsContent>
 
@@ -419,7 +419,7 @@ export default function OpsAds() {
           <HourlyBidStrategy
             campaignId={selectedCampaignId}
             marketplace={marketplace}
-            days={selectedDays}
+            reportDate={selectedDate}
           />
         </TabsContent>
 
@@ -428,7 +428,7 @@ export default function OpsAds() {
           <NegativeKeywords
             campaignId={selectedCampaignId}
             marketplace={marketplace}
-            days={selectedDays}
+            reportDate={selectedDate}
           />
         </TabsContent>
 
@@ -437,7 +437,7 @@ export default function OpsAds() {
           <WordFrequencyAnalysis
             campaignId={selectedCampaignId}
             marketplace={marketplace}
-            days={selectedDays}
+            reportDate={selectedDate}
           />
         </TabsContent>
 
@@ -446,7 +446,7 @@ export default function OpsAds() {
           <EffectiveSearchTerms
             campaignId={selectedCampaignId}
             marketplace={marketplace}
-            days={selectedDays}
+            reportDate={selectedDate}
           />
         </TabsContent>
 
@@ -455,7 +455,7 @@ export default function OpsAds() {
           <AdDiagnostics
             campaignId={selectedCampaignId}
             marketplace={marketplace}
-            days={selectedDays}
+            reportDate={selectedDate}
           />
         </TabsContent>
 
@@ -463,7 +463,7 @@ export default function OpsAds() {
         <TabsContent value="dsp" className="mt-4">
           <DspAnalysis
             marketplace={marketplace}
-            days={selectedDays}
+            reportDate={selectedDate}
           />
         </TabsContent>
 
@@ -471,7 +471,7 @@ export default function OpsAds() {
         <TabsContent value="cross-channel" className="mt-4">
           <CrossChannelAnalysis
             marketplace={marketplace}
-            days={selectedDays}
+            reportDate={selectedDate}
           />
         </TabsContent>
 
