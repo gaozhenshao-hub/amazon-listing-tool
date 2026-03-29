@@ -23,6 +23,7 @@ const PLACEMENT_CONFIG: Record<string, { label: string; icon: any; color: string
 
 export default function AdPlacementAnalysis({ campaignId, marketplace, reportDate }: AdPlacementAnalysisProps) {
   const { data, isLoading } = trpc.adAnalysis.getAdPlacementData.useQuery({
+    campaignId: campaignId || undefined,
     marketplace,
     reportDate,
   });

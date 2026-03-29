@@ -976,6 +976,7 @@ class LingxingAdapter {
       "/pb/openapi/newad/spAdGroups": () => mockAdGroups(body),
       "/pb/openapi/newad/spKeywords": () => mockAdKeywords(body),
       "/pb/openapi/newad/queryWordReports": () => mockSearchTerms(body),
+      "/pb/openapi/newad/ad/queryWordReports": () => mockSearchTerms(body),
       // ASIN 360小时数据
       "/basicOpen/salesAnalysis/productPerformance/performanceTrendByHour": () => mockProfitDetail(body),
       // 产品列表
@@ -1016,9 +1017,9 @@ class LingxingAdapter {
       // 财务流水
       "/erp/finance/data/inventory/getInventoryStatementList": () => mockFinanceStatement(body),
       // SP广告位小时数据
-      "/pb/openapi/newad/spAdPlacementHourData": () => mockProductAdReports(body),
+      "/pb/openapi/newad/spAdPlacementHourData": () => mockPlacementHourData(body),
       // SP投放小时数据
-      "/pb/openapi/newad/spTargetHourData": () => mockProductAdReports(body),
+      "/pb/openapi/newad/spTargetHourData": () => mockTargetHourData(body),
       // SB广告活动小时数据
       "/pb/openapi/newad/sbCampaignHourData": () => mockSbCampaignHourData(body),
       // SB广告组小时数据
@@ -1327,13 +1328,97 @@ function mockAdKeywords(body: Record<string, any>) {
   ];
 }
 
-function mockSearchTerms(body: Record<string, any>) {
-  return [
-    { search_term: "bluetooth earbuds with microphone", impressions: 2000, clicks: 40, spend: 48, sales: 200, orders: 5, acos: 24, keyword: "bluetooth earbuds" },
-    { search_term: "wireless earbuds for iphone", impressions: 1500, clicks: 30, spend: 36, sales: 150, orders: 3, acos: 24, keyword: "wireless earphones" },
-    { search_term: "best noise cancelling earbuds 2026", impressions: 3000, clicks: 60, spend: 54, sales: 300, orders: 8, acos: 18, keyword: "noise cancelling earbuds" },
-    { search_term: "cheap bluetooth headphones", impressions: 5000, clicks: 80, spend: 64, sales: 100, orders: 2, acos: 64, keyword: "bluetooth earbuds" },
+function mockPlacementHourData(body: Record<string, any>) {
+  const campaignId = body.campaign_id || 'C001';
+  const placements = ['Top of Search on-Amazon', 'Detail Page on-Amazon', 'Other on-Amazon'];
+  const result: any[] = [];
+  for (const placement of placements) {
+    for (let hour = 0; hour < 24; hour++) {
+      const impressions = Math.floor(Math.random() * 500 + 50);
+      const clicks = Math.floor(Math.random() * 20 + 1);
+      const cost = +(Math.random() * 10 + 1).toFixed(2);
+      const sales = +(Math.random() * 50 + 5).toFixed(2);
+      const orders = Math.floor(Math.random() * 3);
+      result.push({
+        campaign_id: campaignId,
+        placement,
+        placement_type: placement,
+        hour,
+        report_date: body.report_date || new Date().toISOString().slice(0, 10),
+        impressions, clicks, cost, sales, orders,
+        units: orders,
+        ctr: impressions > 0 ? +(clicks / impressions).toFixed(4) : null,
+        cvr: clicks > 0 ? +(orders / clicks).toFixed(4) : null,
+        acos: sales > 0 ? +(cost / sales).toFixed(4) : null,
+        cpc: clicks > 0 ? +(cost / clicks).toFixed(2) : null,
+        roas: cost > 0 ? +(sales / cost).toFixed(2) : null,
+        cpa: orders > 0 ? +(cost / orders).toFixed(2) : null,
+      });
+    }
+  }
+  return result;
+}
+
+function mockTargetHourData(body: Record<string, any>) {
+  const campaignId = body.campaign_id || 'C001';
+  const targets = [
+    { targeting_id: 'T001', targeting: 'bluetooth earbuds', match_type: 'EXACT' },
+    { targeting_id: 'T002', targeting: 'wireless earphones', match_type: 'BROAD' },
+    { targeting_id: 'T003', targeting: 'noise cancelling headphones', match_type: 'PHRASE' },
+    { targeting_id: 'T004', targeting: 'asin="B0COMPETITOR1"', match_type: 'TARGETING_EXPRESSION_PREDEFINED' },
+    { targeting_id: 'T005', targeting: 'earbuds for running', match_type: 'BROAD' },
+    { targeting_id: 'T006', targeting: 'tws earbuds 2026', match_type: 'EXACT' },
+    { targeting_id: 'T007', targeting: 'cheap bluetooth headphones', match_type: 'BROAD' },
   ];
+  const result: any[] = [];
+  for (const target of targets) {
+    for (let hour = 0; hour < 24; hour++) {
+      const impressions = Math.floor(Math.random() * 300 + 20);
+      const clicks = Math.floor(Math.random() * 15 + 1);
+      const cost = +(Math.random() * 8 + 0.5).toFixed(2);
+      const sales = +(Math.random() * 40 + 3).toFixed(2);
+      const orders = Math.floor(Math.random() * 3);
+      result.push({
+        campaign_id: campaignId,
+        group_id: 'AG001',
+        ad_id: 'AD001',
+        asin: 'B009000000',
+        targeting_id: target.targeting_id,
+        targeting: target.targeting,
+        match_type: target.match_type,
+        hour,
+        report_date: body.report_date || new Date().toISOString().slice(0, 10),
+        impressions, clicks, cost, sales, orders,
+        units: orders,
+        ctr: impressions > 0 ? +(clicks / impressions).toFixed(4) : null,
+        cvr: clicks > 0 ? +(orders / clicks).toFixed(4) : null,
+        acos: sales > 0 ? +(cost / sales).toFixed(4) : null,
+        cpc: clicks > 0 ? +(cost / clicks).toFixed(2) : null,
+        roas: cost > 0 ? +(sales / cost).toFixed(2) : null,
+        cpa: orders > 0 ? +(cost / orders).toFixed(2) : null,
+        msku: 'SKU-A001',
+      });
+    }
+  }
+  return result;
+}
+
+function mockSearchTerms(body: Record<string, any>) {
+  // Generate mock search terms that include campaign_id so filtering works
+  const campaignId = body.campaign_id || 'C001';
+  const mockTerms = [
+    { query: "bluetooth earbuds with microphone", search_term: "bluetooth earbuds with microphone", target_text: "bluetooth earbuds", match_type: "BROAD", campaign_id: campaignId, ad_group_id: "AG001", impressions: 2000, clicks: 40, cost: 48, spend: 48, sales: 200, orders: 5, units: 5, acos: 0.24, keyword: "bluetooth earbuds" },
+    { query: "wireless earbuds for iphone", search_term: "wireless earbuds for iphone", target_text: "wireless earphones", match_type: "BROAD", campaign_id: campaignId, ad_group_id: "AG001", impressions: 1500, clicks: 30, cost: 36, spend: 36, sales: 150, orders: 3, units: 3, acos: 0.24, keyword: "wireless earphones" },
+    { query: "best noise cancelling earbuds 2026", search_term: "best noise cancelling earbuds 2026", target_text: "noise cancelling earbuds", match_type: "EXACT", campaign_id: campaignId, ad_group_id: "AG002", impressions: 3000, clicks: 60, cost: 54, spend: 54, sales: 300, orders: 8, units: 8, acos: 0.18, keyword: "noise cancelling earbuds" },
+    { query: "cheap bluetooth headphones", search_term: "cheap bluetooth headphones", target_text: "bluetooth earbuds", match_type: "BROAD", campaign_id: campaignId, ad_group_id: "AG001", impressions: 5000, clicks: 80, cost: 64, spend: 64, sales: 100, orders: 2, units: 2, acos: 0.64, keyword: "bluetooth earbuds" },
+    { query: "earbuds waterproof running", search_term: "earbuds waterproof running", target_text: "waterproof earbuds", match_type: "PHRASE", campaign_id: campaignId, ad_group_id: "AG002", impressions: 800, clicks: 15, cost: 18, spend: 18, sales: 90, orders: 2, units: 2, acos: 0.20, keyword: "waterproof earbuds" },
+    { query: "tws earbuds 2026", search_term: "tws earbuds 2026", target_text: "tws earbuds", match_type: "BROAD", campaign_id: campaignId, ad_group_id: "AG003", impressions: 1200, clicks: 25, cost: 30, spend: 30, sales: 180, orders: 4, units: 4, acos: 0.17, keyword: "tws earbuds" },
+    { query: "bluetooth headset for calls", search_term: "bluetooth headset for calls", target_text: "bluetooth headset", match_type: "BROAD", campaign_id: campaignId, ad_group_id: "AG001", impressions: 900, clicks: 12, cost: 15, spend: 15, sales: 0, orders: 0, units: 0, acos: 0, keyword: "bluetooth headset" },
+    { query: "earphone with long battery", search_term: "earphone with long battery", target_text: "long battery earphone", match_type: "PHRASE", campaign_id: campaignId, ad_group_id: "AG002", impressions: 600, clicks: 8, cost: 10, spend: 10, sales: 45, orders: 1, units: 1, acos: 0.22, keyword: "long battery earphone" },
+    { query: "noise canceling headphones cheap", search_term: "noise canceling headphones cheap", target_text: "noise cancelling earbuds", match_type: "BROAD", campaign_id: campaignId, ad_group_id: "AG002", impressions: 2500, clicks: 45, cost: 42, spend: 42, sales: 60, orders: 1, units: 1, acos: 0.70, keyword: "noise cancelling earbuds" },
+    { query: "wireless earbuds under 20", search_term: "wireless earbuds under 20", target_text: "wireless earbuds", match_type: "BROAD", campaign_id: campaignId, ad_group_id: "AG001", impressions: 4000, clicks: 70, cost: 56, spend: 56, sales: 120, orders: 3, units: 3, acos: 0.47, keyword: "wireless earbuds" },
+  ];
+  return mockTerms;
 }
 
 function mockMskuList(body: Record<string, any>) {

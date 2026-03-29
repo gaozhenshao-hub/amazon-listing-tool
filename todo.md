@@ -2892,3 +2892,16 @@
 - [x] 更新operations.ts中SD相关的API路径
 - [x] 修复前端$0.00花费显示问题（campaign_id匹配逻辑）- 根因：enabled活动不在TOP20中+mock活动ID不匹配
 - [x] 验证所有13个API路径正确性（openaps→openapi, /ph/→/pb/, 命名规范统一）
+
+## 广告组合→广告活动二级维度查询修复
+- [x] 确保广告总览Tab的Portfolio→Campaign二级展开结构正常工作
+- [x] 修复子Tab（搜索词/投放对象/广告位）接收选中campaign_id后正确查询数据
+- [x] 搜索词Tab：修复queryWordReports API的campaign_id过滤逻辑
+- [x] 投放对象Tab：切换到正确的领星API路径（spTargetHourData）
+- [x] 广告位Tab：切换到正确的领星API路径（spAdPlacementHourData）
+- [x] 验证选中广告活动后各子Tab数据正确加载
+
+## 搜索词API路径修复
+- [x] 修改adAnalysis.ts中搜索词API路径从 /pb/openapi/newad/ad/queryWordReports 改为 /pb/openapi/newad/queryWordReports
+- [x] 确保campaign_id正确传入请求body（含show_detail:1参数）
+- [x] 验证搜索词Tab在选中广告活动后能正常显示数据（674个搜索词，7个分类）

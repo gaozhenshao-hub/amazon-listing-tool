@@ -309,16 +309,16 @@ export const adAnalysisRouter = router({
             let hasMore = true;
             while (hasMore && offset < 2000) {
               const res = await adapter.requestWithMockFallback({
-                path: "/pb/openapi/newad/ad/queryWordReports",
-                body: { sid, report_date: reportDate, target_type: "keyword", offset, length: 200 },
+                path: "/pb/openapi/newad/queryWordReports",
+                body: { sid, report_date: reportDate, show_detail: 1, target_type: "keyword", offset, length: 200, ...(input.campaignId && !/^C\d+$/.test(input.campaignId) ? { campaign_id: input.campaignId } : {}) },
                 headers: { "X-API-VERSION": "2" },
               });
               const rawData = res.data || [];
               const items = Array.isArray(rawData) ? rawData : (rawData as any).records || [];
               
               for (const item of items) {
-                // Filter by ASIN if specified
-                if (input.campaignId && item.campaign_id && String(item.campaign_id) !== input.campaignId) continue;
+                // Only filter by real campaign_id (skip mock IDs like C001/C002)
+                if (input.campaignId && !/^C\d+$/.test(input.campaignId) && item.campaign_id && String(item.campaign_id) !== input.campaignId) continue;
                 
                 const key = `${item.query}||${item.campaign_id}||${item.match_type}`;
                 if (termAggMap[key]) {
@@ -500,12 +500,16 @@ ${JSON.stringify(anonymizedTerms)}
           const reportDate = getDateNDaysAgo(d);
           try {
            const res = await adapter.requestWithMockFallback({
-              path: "/pb/openapi/newad/Groups/placementReports",
-              body: { sid, report_date: reportDate, show_detail: 0, offset: 0, length: 200 },
+              path: "/pb/openapi/newad/spAdPlacementHourData",
+              body: {
+                ...(input.campaignId && !/^C\d+$/.test(input.campaignId) ? { campaign_id: Number(input.campaignId) } : { sid }),
+                report_date: reportDate,
+              },
+              headers: { "X-API-VERSION": "2" },
             });
             const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
             for (const item of items) {
-              if (input.campaignId && String(item.campaign_id) !== input.campaignId) continue;
+              if (input.campaignId && !/^C\d+$/.test(input.campaignId) && String(item.campaign_id) !== input.campaignId) continue;
               const placement = item.placement_type || item.placement || 'Other';
               if (!placementAgg[placement]) {
                 placementAgg[placement] = { placement, impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0 };
@@ -860,12 +864,18 @@ ${JSON.stringify(metrics)}
         for (let d = 1; d <= days; d++) {
           try {
             const res = await adapter.requestWithMockFallback({
-              path: "/erp/sp/api/v2/reports/targets",
-              body: { sid, report_date: getDateNDaysAgo(d), show_detail: 0, offset: 0, length: 200 },
+              path: "/pb/openapi/newad/spTargetHourData",
+              body: {
+                ...(input.campaignId && !/^C\d+$/.test(input.campaignId) ? { campaign_id: Number(input.campaignId) } : { sid }),
+                report_date: getDateNDaysAgo(d),
+              },
+              headers: { "X-API-VERSION": "2" },
             });
             const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
             for (const item of items) {
-              const key = `${item.target_id}||${item.targeting_expression}`;
+              // Skip mock campaign_id filtering (C001/C002 etc.)
+              if (input.campaignId && !/^C\d+$/.test(input.campaignId) && item.campaign_id && String(item.campaign_id) !== input.campaignId) continue;
+              const key = `${item.targeting_id || item.target_id}||${item.targeting || item.targeting_expression}`;
               if (targetAgg[key]) {
                 targetAgg[key].impressions += Number(item.impressions) || 0;
                 targetAgg[key].clicks += Number(item.clicks) || 0;
@@ -874,9 +884,9 @@ ${JSON.stringify(metrics)}
                 targetAgg[key].orders += Number(item.orders) || 0;
               } else {
                 targetAgg[key] = {
-                  target_id: String(item.target_id || ''),
-                  targeting_type: item.targeting_type || '',
-                  targeting_expression: item.targeting_expression || '',
+                  target_id: String(item.targeting_id || item.target_id || ''),
+                  targeting_type: item.match_type || item.targeting_type || '',
+                  targeting_expression: item.targeting || item.targeting_expression || '',
                   impressions: Number(item.impressions) || 0,
                   clicks: Number(item.clicks) || 0,
                   cost: Number(item.cost) || 0,
