@@ -1108,50 +1108,116 @@ ${activeSkus.map((s, i) => `
       const sidsToQuery = input.sid ? [input.sid] : filteredSids.map(Number).slice(0, 5);
       console.log(`[AdCampaigns] Querying ad campaigns across sids: ${sidsToQuery.join(',')}`);
       
-      // 1. Get campaign list from all stores (names, status, budget)
-      const campaignNameMap: Record<string, any> = {};
-      const allCampaignList: any[] = [];
+      // ─── Step 0: Fetch real portfolios from Lingxing API ───────────
+      const portfolioNameMap: Record<string, { name: string; budget: any; state: string; serving_status: string }> = {};
       for (const sid of sidsToQuery) {
         try {
-          const campaignListRes = await adapter.requestWithMockFallback({
-            path: "/pb/openapi/newad/spCampaigns",
-            body: { sid },
-            headers: { "X-API-VERSION": "2" },
-          });
-          const rawCampaigns = campaignListRes.data || [];
-          const campaigns = Array.isArray(rawCampaigns) ? rawCampaigns : (rawCampaigns as any).records || (rawCampaigns as any).list || [];
-          console.log(`[AdCampaigns] sid=${sid}: Got ${campaigns.length} campaigns`);
-          for (const c of campaigns) {
-            campaignNameMap[String(c.campaign_id)] = {
-              name: c.name || c.campaign_name || '',
-              daily_budget: c.daily_budget || 0,
-              state: c.state || c.status || 'unknown',
-              serving_status: c.serving_status || '',
-              targeting_type: c.targeting_type || '',
-              campaign_type: c.campaign_type || '',
-              start_date: c.start_date || '',
-              portfolio_id: c.portfolio_id || '',
-              portfolio_name: c.portfolio_name || '',
-              sid,
-            };
-            allCampaignList.push({ ...c, sid });
+          let offset = 0;
+          let hasMore = true;
+          while (hasMore) {
+            const portfolioRes = await adapter.requestWithMockFallback({
+              path: "/pb/openapi/newad/portfolios",
+              body: { sid, offset, length: 100 },
+            });
+            const rawPortfolios = portfolioRes.data || [];
+            const portfolioList = Array.isArray(rawPortfolios) ? rawPortfolios : (rawPortfolios as any).records || (rawPortfolios as any).list || [];
+            console.log(`[AdCampaigns] sid=${sid}: Got ${portfolioList.length} portfolios (offset=${offset})`);
+            for (const p of portfolioList) {
+              const pid = String(p.portfolio_id);
+              if (!portfolioNameMap[pid]) {
+                portfolioNameMap[pid] = {
+                  name: p.name || `Portfolio ${pid}`,
+                  budget: p.budget,
+                  state: p.state || 'enabled',
+                  serving_status: p.serving_status || '',
+                };
+              }
+            }
+            hasMore = portfolioList.length >= 100;
+            offset += 100;
           }
         } catch (err: any) {
-          console.warn(`[AdCampaigns] sid=${sid}: Failed to get campaigns: ${err.message}`);
+          console.warn(`[AdCampaigns] sid=${sid}: Failed to get portfolios: ${err.message}`);
         }
       }
-      console.log(`[AdCampaigns] Total campaigns from list API: ${allCampaignList.length}`);
+      console.log(`[AdCampaigns] Total portfolios found: ${Object.keys(portfolioNameMap).length}`);
       
-      // 2. Get campaign hour data using spCampaignHourData API
-      // This API returns hourly data per campaign_id per date, with cost/sales/clicks/etc.
-      // Use single reportDate for efficient querying (1 date = 1 API call per campaign)
+      // ─── Step 1: Fetch SP + SB + SD campaigns from all stores ──────
+      const campaignNameMap: Record<string, any> = {};
+      const allCampaignList: any[] = [];
+      
+      // Helper to fetch campaigns from one API path for all sids
+      const fetchCampaignsFromApi = async (
+        apiPath: string,
+        adType: string,
+        extraHeaders?: Record<string, string>,
+      ) => {
+        for (const sid of sidsToQuery) {
+          try {
+            let offset = 0;
+            let hasMore = true;
+            while (hasMore && offset < 500) {
+              const res = await adapter.requestWithMockFallback({
+                path: apiPath,
+                body: { sid, offset, length: 100 },
+                ...(extraHeaders ? { headers: extraHeaders } : {}),
+              });
+              const rawCampaigns = res.data || [];
+              const campaigns = Array.isArray(rawCampaigns) ? rawCampaigns : (rawCampaigns as any).records || (rawCampaigns as any).list || [];
+              console.log(`[AdCampaigns] ${adType} sid=${sid}: Got ${campaigns.length} campaigns (offset=${offset})`);
+              for (const c of campaigns) {
+                const cid = String(c.campaign_id);
+                // Determine budget: SP uses daily_budget, SB/SD use budget
+                const dailyBudget = c.daily_budget || c.budget || 0;
+                // Determine campaign_type label
+                let campaignType = c.campaign_type || '';
+                if (adType === 'SP') campaignType = campaignType || 'sponsoredProducts';
+                else if (adType === 'SB') campaignType = 'sponsoredBrands';
+                else if (adType === 'SD') campaignType = 'sponsoredDisplay';
+                
+                const portfolioId = c.portfolio_id ? String(c.portfolio_id) : '';
+                const portfolioInfo = portfolioId ? portfolioNameMap[portfolioId] : null;
+                
+                campaignNameMap[cid] = {
+                  name: c.name || c.campaign_name || '',
+                  daily_budget: dailyBudget,
+                  state: c.state || c.status || 'unknown',
+                  serving_status: c.serving_status || '',
+                  targeting_type: c.targeting_type || (adType === 'SD' ? c.tactic : '') || '',
+                  campaign_type: campaignType,
+                  start_date: c.start_date || '',
+                  portfolio_id: portfolioId,
+                  portfolio_name: portfolioInfo?.name || '',
+                  ad_type: adType,
+                  sid,
+                };
+                allCampaignList.push({ ...c, campaign_type: campaignType, ad_type: adType, sid });
+              }
+              hasMore = campaigns.length >= 100;
+              offset += 100;
+            }
+          } catch (err: any) {
+            console.warn(`[AdCampaigns] ${adType} sid=${sid}: Failed: ${err.message}`);
+          }
+        }
+      };
+      
+      // Fetch SP, SB, SD campaigns in parallel
+      await Promise.allSettled([
+        fetchCampaignsFromApi("/pb/openapi/newad/spCampaigns", "SP"),
+        fetchCampaignsFromApi("/pb/openapi/newad/hsaCampaigns", "SB"),
+        fetchCampaignsFromApi("/pb/openapi/newad/sdCampaigns", "SD", { "X-API-VERSION": "2" }),
+      ]);
+      
+      console.log(`[AdCampaigns] Total campaigns from SP+SB+SD: ${allCampaignList.length} (SP=${allCampaignList.filter(c=>c.ad_type==='SP').length}, SB=${allCampaignList.filter(c=>c.ad_type==='SB').length}, SD=${allCampaignList.filter(c=>c.ad_type==='SD').length})`);
+      
+      // ─── Step 2: Get campaign hour data using spCampaignHourData API ─
       const queryDate = input.reportDate || getDateNDaysAgo(1);
       const queryDates = [queryDate];
-      console.log(`[AdCampaigns] Querying spCampaignHourData for ${queryDates.length} days: ${queryDates[0]} ~ ${queryDates[queryDates.length - 1]}`);
+      console.log(`[AdCampaigns] Querying spCampaignHourData for ${queryDates.length} days: ${queryDates[0]}`);
       const reportMap: Record<string, any> = {};
-      const campaignProfileMap: Record<string, string> = {}; // campaign_id -> profile_id
+      const campaignProfileMap: Record<string, string> = {};
       
-      // Build tasks: campaign_id x date combos
       const allCampaignIdsForReport = allCampaignList.map((c: any) => String(c.campaign_id));
       const uniqueCampaignIds = Array.from(new Set(allCampaignIdsForReport));
       
@@ -1165,54 +1231,52 @@ ${activeSkus.map((s, i) => `
       ];
       const topCampaignIds = sortedCampaignIds.slice(0, TOP_N_CAMPAIGNS);
       console.log(`[AdCampaigns] TOP${TOP_N_CAMPAIGNS} optimization: querying ${topCampaignIds.length} of ${uniqueCampaignIds.length} total campaigns`);
-      console.log(`[AdCampaigns] TOP20 IDs: ${topCampaignIds.slice(0, 5).join(', ')}...`);
-      // Check which of the enabled campaigns are in TOP20
-      const enabledCampaignIds = allCampaignList.filter((c: any) => c.state === 'enabled').map((c: any) => String(c.campaign_id));
-      const enabledInTop20 = enabledCampaignIds.filter(id => topCampaignIds.includes(id));
-      console.log(`[AdCampaigns] Enabled campaigns: ${enabledCampaignIds.length}, of which ${enabledInTop20.length} are in TOP20`);
-      if (enabledCampaignIds.length > 0) console.log(`[AdCampaigns] Enabled IDs sample: ${enabledCampaignIds.slice(0, 5).join(', ')}...`);
       
-      // Batch by date (each call returns all hours for one campaign on one date)
+      // Batch by date
       const MAX_REPORT_TASKS = 100;
-      const reportTasks: { campaignId: string; reportDate: string }[] = [];
+      const reportTasks: { campaignId: string; reportDate: string; adType: string }[] = [];
       for (const cid of topCampaignIds) {
+        const info = campaignNameMap[cid];
+        const adType = info?.ad_type || 'SP';
         for (const reportDate of queryDates) {
-          reportTasks.push({ campaignId: cid, reportDate });
+          reportTasks.push({ campaignId: cid, reportDate, adType });
           if (reportTasks.length >= MAX_REPORT_TASKS) break;
         }
         if (reportTasks.length >= MAX_REPORT_TASKS) break;
       }
-      console.log(`[AdCampaigns] Fetching ${reportTasks.length} hour-data tasks in parallel (${topCampaignIds.length} of ${uniqueCampaignIds.length} campaigns x ${queryDates.length} days, capped at ${MAX_REPORT_TASKS})`);
+      console.log(`[AdCampaigns] Fetching ${reportTasks.length} hour-data tasks in parallel`);
       
       // Execute in batches of 30 to respect rate limits
       const BATCH_SIZE = 30;
       let rejectedCount = 0;
       let fulfilledCount = 0;
       let totalReportRows = 0;
-      
-      // DEBUG: Log first 3 requests in detail
       let debugCount = 0;
+      
+      // Map ad_type to hourly data API path
+      const hourDataApiPath = (adType: string) => {
+        if (adType === 'SB') return '/pb/openapi/newad/sbCampaignHourData';
+        if (adType === 'SD') return '/pb/openapi/newad/sdCampaignHourData';
+        return '/pb/openapi/newad/spCampaignHourData';
+      };
       
       for (let batchStart = 0; batchStart < reportTasks.length; batchStart += BATCH_SIZE) {
         const batch = reportTasks.slice(batchStart, batchStart + BATCH_SIZE);
         const reportResults = await Promise.allSettled(
-          batch.map(({ campaignId, reportDate }) => {
+          batch.map(({ campaignId, reportDate, adType }) => {
             const body = { campaign_id: Number(campaignId), report_date: reportDate };
+            const apiPath = hourDataApiPath(adType);
             if (debugCount < 3) {
               debugCount++;
-              console.log(`[AdCampaigns] DEBUG HourData request #${debugCount}: path=/pb/openapi/newad/spCampaignHourData, body=${JSON.stringify(body)}`);
+              console.log(`[AdCampaigns] DEBUG HourData request #${debugCount}: path=${apiPath}, body=${JSON.stringify(body)}`);
             }
             return adapter.requestWithMockFallback({
-              path: "/pb/openapi/newad/spCampaignHourData",
+              path: apiPath,
               body,
             }).then(res => {
-              if (debugCount <= 3) {
-                console.log(`[AdCampaigns] DEBUG HourData RAW response cid=${campaignId}: ${JSON.stringify(res).substring(0, 500)}`);
-                console.log(`[AdCampaigns] DEBUG HourData response cid=${campaignId}: code=${res.code}, total=${res.total}, dataType=${typeof res.data}, isArray=${Array.isArray(res.data)}, dataLen=${Array.isArray(res.data) ? res.data.length : 'not-array'}, rawKeys=${res.data && res.data[0] ? Object.keys(res.data[0]).join(',') : 'no-data'}`);
-              }
               return { campaignId, reportDate, res };
             }).catch(err => {
-              console.error(`[AdCampaigns] DEBUG HourData ERROR cid=${campaignId}: ${err.message}`);
+              console.error(`[AdCampaigns] HourData ERROR cid=${campaignId}: ${err.message}`);
               throw err;
             });
           })
@@ -1389,10 +1453,12 @@ ${activeSkus.map((s, i) => `
       filteredCampaigns.sort((a, b) => b.spend - a.spend);
       
       // Build Portfolio+Campaign two-level structure
+      // Use portfolioNameMap (from portfolios API) for authoritative names
       const portfolioMap: Record<string, { id: string; name: string; campaigns: any[]; impressions: number; clicks: number; spend: number; sales: number; orders: number }> = {};
       for (const c of filteredCampaigns) {
         const pid = c.portfolio_id || 'ungrouped';
-        const pname = c.portfolio_name || '未分组';
+        // Resolve portfolio name: 1) from portfolios API, 2) from campaign data, 3) fallback
+        const pname = (pid !== 'ungrouped' && portfolioNameMap[pid]?.name) || c.portfolio_name || (pid === 'ungrouped' ? '未分组' : `Portfolio ${pid}`);
         if (!portfolioMap[pid]) {
           portfolioMap[pid] = { id: pid, name: pname, campaigns: [], impressions: 0, clicks: 0, spend: 0, sales: 0, orders: 0 };
         }

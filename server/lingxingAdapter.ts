@@ -970,7 +970,10 @@ class LingxingAdapter {
         }));
       },
       "/pb/openapi/newad/spAdGroupHourData": () => mockAdGroups(body),
-      "/pb/openapi/newad/spCampaigns": () => mockAdCampaigns(body),
+      "/pb/openapi/newad/portfolios": () => mockPortfolios(body),
+      "/pb/openapi/newad/spCampaigns": () => mockSpCampaigns(body),
+      "/pb/openapi/newad/hsaCampaigns": () => mockSbCampaigns(body),
+      "/pb/openapi/newad/sdCampaigns": () => mockSdCampaigns(body),
       "/pb/openapi/newad/spCampaignReports": () => mockAdCampaigns(body),
       "/pb/openapi/newad/spProductAdReports": () => mockProductAdReports(body),
       "/pb/openapi/newad/spAdGroups": () => mockAdGroups(body),
@@ -1292,8 +1295,43 @@ function mockProductAdReports(body: Record<string, any>) {
   }];
 }
 
+// ─── Mock: Portfolios (matches /pb/openapi/newad/portfolios response) ────
+function mockPortfolios(body: Record<string, any>) {
+  return [
+    { portfolio_id: 10001, profile_id: 999, name: "蓝牙耳机系列", budget: null, in_budget: 1, state: "enabled", creation_date: 1700000000000, last_updated_date: 1710000000000, serving_status: "PORTFOLIO_STATUS_ENABLED" },
+    { portfolio_id: 10002, profile_id: 999, name: "数据线系列", budget: JSON.stringify({ amount: 5000, currencyCode: "USD", policy: "dateRange" }), in_budget: 1, state: "enabled", creation_date: 1700100000000, last_updated_date: 1710100000000, serving_status: "PORTFOLIO_STATUS_ENABLED" },
+    { portfolio_id: 10003, profile_id: 999, name: "品牌推广组合", budget: null, in_budget: 1, state: "enabled", creation_date: 1700200000000, last_updated_date: 1710200000000, serving_status: "PORTFOLIO_STATUS_ENABLED" },
+  ];
+}
+
+// ─── Mock: SP Campaigns (matches /pb/openapi/newad/spCampaigns response) ─
+function mockSpCampaigns(body: Record<string, any>) {
+  return [
+    { campaign_id: 100001, profile_id: 999, name: "SP-蓝牙耳机-自动广告", campaign_type: "sponsoredProducts", targeting_type: "auto", premium_bid_adjustment: 0, daily_budget: 50, start_date: "20240101", end_date: null, creation_date: 1700000000000, last_updated_date: 1710000000000, state: "enabled", serving_status: "CAMPAIGN_STATUS_ENABLED", bidding: JSON.stringify({ strategy: "legacyForSales" }), portfolio_id: 10001, tags: [] },
+    { campaign_id: 100002, profile_id: 999, name: "SP-蓝牙耳机-手动精准", campaign_type: "sponsoredProducts", targeting_type: "manual", premium_bid_adjustment: 50, daily_budget: 80, start_date: "20240115", end_date: null, creation_date: 1700100000000, last_updated_date: 1710100000000, state: "enabled", serving_status: "CAMPAIGN_STATUS_ENABLED", bidding: JSON.stringify({ strategy: "autoForSales" }), portfolio_id: 10001, tags: [] },
+    { campaign_id: 100003, profile_id: 999, name: "SP-数据线-自动广告", campaign_type: "sponsoredProducts", targeting_type: "auto", premium_bid_adjustment: 0, daily_budget: 30, start_date: "20240201", end_date: null, creation_date: 1700200000000, last_updated_date: 1710200000000, state: "enabled", serving_status: "CAMPAIGN_STATUS_ENABLED", bidding: JSON.stringify({ strategy: "legacyForSales" }), portfolio_id: 10002, tags: [] },
+    { campaign_id: 100004, profile_id: 999, name: "SP-数据线-手动广泛", campaign_type: "sponsoredProducts", targeting_type: "manual", premium_bid_adjustment: 0, daily_budget: 40, start_date: "20240210", end_date: null, creation_date: 1700300000000, last_updated_date: 1710300000000, state: "paused", serving_status: "CAMPAIGN_PAUSED", bidding: JSON.stringify({ strategy: "legacyForSales" }), portfolio_id: 10002, tags: [] },
+  ];
+}
+
+// ─── Mock: SB Campaigns (matches /pb/openapi/newad/hsaCampaigns response) ─
+function mockSbCampaigns(body: Record<string, any>) {
+  return [
+    { campaign_id: 200001, profile_id: 999, name: "SB-品牌旗舰店推广", budget: 100, budget_type: "daily", start_date: "2024-01-20", state: "enabled", serving_status: "running", bid_optimization: 1, creative: null, landing_page: JSON.stringify({ url: "https://www.amazon.com/stores/page/xxx", pageType: "Store" }), bid_multiplier: 0, end_date: null, portfolio_id: 10003, creative_type: "COLLECTION", tags: [] },
+    { campaign_id: 200002, profile_id: 999, name: "SB-视频广告-蓝牙耳机", budget: 60, budget_type: "daily", start_date: "2024-02-01", state: "enabled", serving_status: "running", bid_optimization: 0, creative: null, landing_page: JSON.stringify({ url: "https://www.amazon.com/dp/B0XXXXX", pageType: "ProductList" }), bid_multiplier: 0, end_date: null, portfolio_id: 10001, creative_type: "VIDEO", tags: [] },
+  ];
+}
+
+// ─── Mock: SD Campaigns (matches /pb/openapi/newad/sdCampaigns response) ─
+function mockSdCampaigns(body: Record<string, any>) {
+  return [
+    { campaign_id: 300001, profile_id: 999, name: "SD-再营销-蓝牙耳机", tactic: "T00020", cost_type: "cpc", budget_type: "daily", budget: 40, start_date: "2024-03-01", end_date: null, creation_date: 1700400000000, last_updated_date: 1710400000000, state: "enabled", serving_status: "CAMPAIGN_STATUS_ENABLED", portfolio_id: 10001, tags: [] },
+    { campaign_id: 300002, profile_id: 999, name: "SD-受众定向-数据线", tactic: "T00030", cost_type: "cpc", budget_type: "daily", budget: 25, start_date: "2024-03-15", end_date: null, creation_date: 1700500000000, last_updated_date: 1710500000000, state: "paused", serving_status: "CAMPAIGN_PAUSED", portfolio_id: 10002, tags: [] },
+  ];
+}
+
+// Legacy mock (kept for backward compatibility with spCampaignReports)
 function mockAdCampaigns(body: Record<string, any>) {
-  // Use ASIN from body context to make campaign names match product filtering
   const asin = body.asin || '';
   const campaigns = [
     { campaign_id: "C001", campaign_name: `SP - ${asin || '蓝牙耳机'} - 自动`, name: `SP - ${asin || '蓝牙耳机'} - 自动`, campaign_type: "sponsoredProducts", targeting_type: "auto", state: "enabled", status: "enabled", daily_budget: 50, portfolio_id: "P001", portfolio_name: "蓝牙耳机系列" },

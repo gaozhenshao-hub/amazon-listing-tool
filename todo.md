@@ -2921,3 +2921,13 @@
 - [x] 更新前端TargetingAnalysis.tsx字段映射（convRate→cvr）
 - [x] 更新前端AdPlacementAnalysis.tsx字段映射（placement_type key匹配真实API值）
 - [x] 验证两个Tab数据正常显示（投放对象264条+广告位4个位置）
+
+## 替换mock广告组合/活动数据为真实领星API数据
+- [x] 保存4个API文档（portfolios/spCampaigns/hsaCampaigns/sdCampaigns）
+- [x] 修改operations.ts中getAdCampaigns：调用真实portfolios API获取广告组合
+- [x] 修改operations.ts中getAdCampaigns：调用真实spCampaigns API获取SP广告活动
+- [x] 修改operations.ts中getAdCampaigns：调用真实hsaCampaigns API获取SB广告活动
+- [x] 修改operations.ts中getAdCampaigns：调用真实sdCampaigns API获取SD广告活动
+- [x] 通过portfolio_id正确关联广告活动到广告组合
+- [x] 更新lingxingAdapter.ts的mock回退数据（新增mockPortfolios/mockSpCampaigns/mockSbCampaigns/mockSdCampaigns）
+- [x] 验证真实数据显示完整的广告组合和活动列表（123个组合，487个活动，SP=382/SB=72/SD=33）
