@@ -51,7 +51,7 @@ export default function OpsAds() {
   const [selectedCampaignName, setSelectedCampaignName] = useState<string>("");
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();
-    d.setDate(d.getDate() - 1); // default to yesterday
+    d.setDate(d.getDate() - 2); // default to day before yesterday (hourly data has ~1 day delay)
     return d.toISOString().slice(0, 10);
   });
   const [activeTab, setActiveTab] = useState("overview");
@@ -62,6 +62,7 @@ export default function OpsAds() {
   const { data: campaignData, isLoading: campaignLoading, refetch: refetchCampaigns } = trpc.operations.getAdCampaigns.useQuery({
     marketplace,
     adState: "enabled",
+    reportDate: selectedDate,
   });
 
   const campaigns = campaignData?.campaigns || [];

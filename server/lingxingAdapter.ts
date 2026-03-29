@@ -950,10 +950,10 @@ class LingxingAdapter {
       "/bd/profit/report/open/report/msku/list": () => mockProfitList(body),
       "/bd/profit/report/open/report/asin/list": () => mockProfitDetail(body),
       // 广告数据 (小时数据 API)
-      "/ph/openaps/newad/spAdvertiseHourData": () => mockProductAdReports(body),
-      "/pb/openaps/newad/spCampaignHourData": () => {
+      "/pb/openapi/newad/spAdvertiseHourData": () => mockProductAdReports(body),
+      "/pb/openapi/newad/spCampaignHourData": () => {
         // Return hourly data for a campaign - generate 24 hours of mock data
-        const hours = Array.from({ length: 24 }, (_, h) => ({
+        return Array.from({ length: 24 }, (_, h) => ({
           campaign_id: body.campaign_id || 12345,
           profile_id: 121923590660074,
           report_date: body.report_date || '2025-03-27',
@@ -968,7 +968,6 @@ class LingxingAdapter {
           same_units: Math.floor(Math.random() * 5),
           units: Math.floor(Math.random() * 5),
         }));
-        return { code: '200', msg: 'ok', data: hours, total: 24 };
       },
       "/pb/openapi/newad/spAdGroupHourData": () => mockAdGroups(body),
       "/pb/openapi/newad/spCampaigns": () => mockAdCampaigns(body),
@@ -1016,10 +1015,26 @@ class LingxingAdapter {
       "/bd/profit/report/open/report/parent/asin/list": () => mockParentAsinProfit(body),
       // 财务流水
       "/erp/finance/data/inventory/getInventoryStatementList": () => mockFinanceStatement(body),
+      // SP广告位小时数据
+      "/pb/openapi/newad/spAdPlacementHourData": () => mockProductAdReports(body),
+      // SP投放小时数据
+      "/pb/openapi/newad/spTargetHourData": () => mockProductAdReports(body),
       // SB广告活动小时数据
-      "/pb/openaps/newad/sbCampaignHourData": () => mockSbCampaignHourData(body),
+      "/pb/openapi/newad/sbCampaignHourData": () => mockSbCampaignHourData(body),
+      // SB广告组小时数据
+      "/pb/openapi/newad/sbAdGroupHourData": () => mockSbCampaignHourData(body),
+      // SB投放小时数据
+      "/pb/openapi/newad/sbTargetHourData": () => mockSbCampaignHourData(body),
+      // SB广告位小时数据
+      "/pb/openapi/newad/sbAdPlacementHourData": () => mockSbCampaignHourData(body),
       // SD广告活动小时数据
-      "/pb/openaps/newad/sdCampaignHourData": () => mockSdCampaignHourData(body),
+      "/pb/openapi/newad/sdCampaignHourData": () => mockSdCampaignHourData(body),
+      // SD广告组小时数据
+      "/pb/openapi/newad/sdAdGroupHourData": () => mockSdCampaignHourData(body),
+      // SD广告小时数据
+      "/pb/openapi/newad/sdAdvertiseHourData": () => mockSdCampaignHourData(body),
+      // SD投放小时数据
+      "/pb/openapi/newad/sdTargetHourData": () => mockSdCampaignHourData(body),
       // ============ 售后模块 API ============
       // Review列表(新)
       "/erp/comment/data/review/listNewReview": () => mockReviewList(body),
@@ -1276,11 +1291,11 @@ function mockAdCampaigns(body: Record<string, any>) {
   // Use ASIN from body context to make campaign names match product filtering
   const asin = body.asin || '';
   const campaigns = [
-    { campaign_id: "C001", campaign_name: `SP - ${asin || '蓝牙耳机'} - 自动`, campaign_type: "SP", targeting_type: "auto", status: "enabled", daily_budget: 50, portfolio_id: "P001", portfolio_name: "蓝牙耳机系列" },
-    { campaign_id: "C002", campaign_name: `SP - ${asin || '蓝牙耳机'} - 手动精准`, campaign_type: "SP", targeting_type: "manual", status: "enabled", daily_budget: 80, portfolio_id: "P001", portfolio_name: "蓝牙耳机系列" },
-    { campaign_id: "C003", campaign_name: `SP - ${asin || '数据线'} - 自动`, campaign_type: "SP", targeting_type: "auto", status: "enabled", daily_budget: 30, portfolio_id: "P002", portfolio_name: "数据线系列" },
-    { campaign_id: "C004", campaign_name: "SB - 品牌推广", campaign_type: "SB", targeting_type: "manual", status: "enabled", daily_budget: 100, portfolio_id: "P003", portfolio_name: "品牌推广" },
-    { campaign_id: "C005", campaign_name: "SD - 再营销", campaign_type: "SD", targeting_type: "auto", status: "paused", daily_budget: 40, portfolio_id: "", portfolio_name: "" },
+    { campaign_id: "C001", campaign_name: `SP - ${asin || '蓝牙耳机'} - 自动`, name: `SP - ${asin || '蓝牙耳机'} - 自动`, campaign_type: "sponsoredProducts", targeting_type: "auto", state: "enabled", status: "enabled", daily_budget: 50, portfolio_id: "P001", portfolio_name: "蓝牙耳机系列" },
+    { campaign_id: "C002", campaign_name: `SP - ${asin || '蓝牙耳机'} - 手动精准`, name: `SP - ${asin || '蓝牙耳机'} - 手动精准`, campaign_type: "sponsoredProducts", targeting_type: "manual", state: "enabled", status: "enabled", daily_budget: 80, portfolio_id: "P001", portfolio_name: "蓝牙耳机系列" },
+    { campaign_id: "C003", campaign_name: `SP - ${asin || '数据线'} - 自动`, name: `SP - ${asin || '数据线'} - 自动`, campaign_type: "sponsoredProducts", targeting_type: "auto", state: "enabled", status: "enabled", daily_budget: 30, portfolio_id: "P002", portfolio_name: "数据线系列" },
+    { campaign_id: "C004", campaign_name: "SB - 品牌推广", name: "SB - 品牌推广", campaign_type: "sponsoredBrands", targeting_type: "manual", state: "enabled", status: "enabled", daily_budget: 100, portfolio_id: "P003", portfolio_name: "品牌推广" },
+    { campaign_id: "C005", campaign_name: "SD - 再营销", name: "SD - 再营销", campaign_type: "sponsoredDisplay", targeting_type: "auto", state: "paused", status: "paused", daily_budget: 40, portfolio_id: "", portfolio_name: "" },
   ];
   return campaigns.map(c => ({
     ...c,

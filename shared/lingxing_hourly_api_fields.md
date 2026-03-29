@@ -30,11 +30,11 @@
 ## SP广告（5个API）
 
 ### 1. SP广告活动小时数据
-- **路径**: `/pb/openaps/newad/spCampaignHourData`
+- **路径**: `/pb/openapi/newad/spCampaignHourData`
 - **独有字段**: 无（仅共有字段）
 
 ### 2. SP广告小时数据
-- **路径**: `/ph/openaps/newad/spAdvertiseHourData`
+- **路径**: `/pb/openapi/newad/spAdvertiseHourData`
 - **独有字段**:
 
 | 字段 | 类型 | 说明 |
@@ -48,7 +48,7 @@
 | msku | string/null | MSKU |
 
 ### 3. SP广告位小时数据
-- **路径**: `/pb/openaps/newad/spPlacementHourData`
+- **路径**: `/pb/openapi/newad/spAdPlacementHourData`
 - **独有字段**:
 
 | 字段 | 类型 | 说明 |
@@ -56,7 +56,7 @@
 | placement | string | 广告位 ("Top of Search on-Amazon", "Detail Page on-Amazon", "Other on-Amazon") |
 
 ### 4. SP投放小时数据
-- **路径**: `/pb/openaps/newad/spTargetingHourData`
+- **路径**: `/pb/openapi/newad/spTargetHourData`
 - **独有字段**:
 
 | 字段 | 类型 | 说明 |
@@ -70,7 +70,7 @@
 | msku | string/null | MSKU |
 
 ### 5. SP广告组小时数据
-- **路径**: `/pb/openaps/newad/spAdGroupHourData`
+- **路径**: `/pb/openapi/newad/spAdGroupHourData`
 - **独有字段**:
 
 | 字段 | 类型 | 说明 |
@@ -80,11 +80,11 @@
 ## SB品牌广告（4个API）
 
 ### 6. SB广告活动小时数据
-- **路径**: `/pb/openaps/newad/sbCampaignHourData`
+- **路径**: `/pb/openapi/newad/sbCampaignHourData`
 - **独有字段**: 无（仅共有字段）
 
 ### 7. SB广告组小时数据
-- **路径**: `/pb/openaps/newad/sbAdGroupHourData`
+- **路径**: `/pb/openapi/newad/sbAdGroupHourData`
 - **独有字段**:
 
 | 字段 | 类型 | 说明 |
@@ -92,7 +92,7 @@
 | group_id | number | 广告组ID |
 
 ### 8. SB投放小时数据
-- **路径**: `/pb/openaps/newad/sbTargetingHourData`
+- **路径**: `/pb/openapi/newad/sbTargetHourData`
 - **独有字段**:
 
 | 字段 | 类型 | 说明 |
@@ -102,7 +102,7 @@
 | targeting | string | 投放关键词/目标 |
 
 ### 9. SB广告位小时数据
-- **路径**: `/pb/openaps/newad/sbPlacementHourData`
+- **路径**: `/pb/openapi/newad/sbAdPlacementHourData`
 - **独有字段**:
 
 | 字段 | 类型 | 说明 |
@@ -112,11 +112,11 @@
 ## SD展示广告（4个API）
 
 ### 10. SD广告活动小时数据
-- **路径**: `/pb/openaps/newad/sdCampaignHourData`
+- **路径**: `/pb/openapi/newad/sdCampaignHourData`
 - **独有字段**: 无（仅共有字段）
 
 ### 11. SD广告组小时数据
-- **路径**: `/pb/openaps/newad/sdAdGroupHourData`
+- **路径**: `/pb/openapi/newad/sdAdGroupHourData`
 - **独有字段**:
 
 | 字段 | 类型 | 说明 |
@@ -124,7 +124,7 @@
 | group_id | number | 广告组ID |
 
 ### 12. SD广告小时数据
-- **路径**: `/pb/openaps/newad/sdAdvertiseHourData`
+- **路径**: `/pb/openapi/newad/sdAdvertiseHourData`
 - **独有字段**:
 
 | 字段 | 类型 | 说明 |
@@ -137,7 +137,7 @@
 | msku | string/null | MSKU（可能为null） |
 
 ### 13. SD投放小时数据
-- **路径**: `/pb/openaps/newad/sdTargetingHourData`
+- **路径**: `/pb/openapi/newad/sdTargetHourData`
 - **独有字段**:
 
 | 字段 | 类型 | 说明 |

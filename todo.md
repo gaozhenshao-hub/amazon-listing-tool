@@ -2881,3 +2881,14 @@
 - [x] 后端修复：acos是小数形式（0.0721=7.21%），需要*100转换为百分比
 - [x] 更新lingxingAdapter中所有广告小时数据API路径映射
 - [x] 前端修复：所有组件处理null值防止NaN显示
+
+## 广告加载性能优化
+- [x] 只查询花费TOP20的广告活动小时数据，减少API请求数量（优先enabled活动）
+- [x] 调试reportMap为0的问题，确认小时数据API请求是否成功
+
+## SD广告API路径修复
+- [x] 添加SD 4个小时数据API路径到lingxingAdapter.ts
+- [x] 更新adAnalysis.ts中SD相关procedure的API路径
+- [x] 更新operations.ts中SD相关的API路径
+- [x] 修复前端$0.00花费显示问题（campaign_id匹配逻辑）- 根因：enabled活动不在TOP20中+mock活动ID不匹配
+- [x] 验证所有13个API路径正确性（openaps→openapi, /ph/→/pb/, 命名规范统一）

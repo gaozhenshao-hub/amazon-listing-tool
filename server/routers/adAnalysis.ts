@@ -744,7 +744,7 @@ ${JSON.stringify(input.hourlyData)}
         for (let d = 1; d <= Math.min(input.days || 30, 30); d++) {
           try {
             const res = await adapter.requestWithMockFallback({
-            path: "/pb/openapi/newad/d/spCampaignReports",
+            path: "/pb/openapi/newad/spCampaignHourData",
               body: { sid, report_date: getDateNDaysAgo(d), show_detail: 0, offset: 0, length: 200 },
               headers: { "X-API-VERSION": "2" },
             });
