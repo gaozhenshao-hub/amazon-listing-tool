@@ -13,18 +13,18 @@ import {
 } from "lucide-react";
 
 interface NegativeKeywordsProps {
-  asin: string | null;
+  campaignId: string | null;
   marketplace?: string;
   days: number;
 }
 
-export default function NegativeKeywords({ asin, marketplace, days }: NegativeKeywordsProps) {
+export default function NegativeKeywords({ campaignId, marketplace, days }: NegativeKeywordsProps) {
   const [negTab, setNegTab] = useState("exact");
   const [searchQuery, setSearchQuery] = useState("");
 
   // Use the 12-category search term data to derive negative keyword suggestions
   const { data: classData, isLoading } = trpc.adAnalysis.getSearchTerms12Category.useQuery({
-    asin: asin || undefined,
+    campaignId: campaignId || undefined,
     marketplace,
     days,
   });

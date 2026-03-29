@@ -1122,13 +1122,15 @@ ${activeSkus.map((s, i) => `
           console.log(`[AdCampaigns] sid=${sid}: Got ${campaigns.length} campaigns`);
           for (const c of campaigns) {
             campaignNameMap[String(c.campaign_id)] = {
-              name: c.name || '',
+              name: c.name || c.campaign_name || '',
               daily_budget: c.daily_budget || 0,
-              state: c.state || 'unknown',
+              state: c.state || c.status || 'unknown',
               serving_status: c.serving_status || '',
               targeting_type: c.targeting_type || '',
               campaign_type: c.campaign_type || '',
               start_date: c.start_date || '',
+              portfolio_id: c.portfolio_id || '',
+              portfolio_name: c.portfolio_name || '',
               sid,
             };
             allCampaignList.push({ ...c, sid });
@@ -1139,8 +1141,8 @@ ${activeSkus.map((s, i) => `
       }
       console.log(`[AdCampaigns] Total campaigns from list API: ${allCampaignList.length}`);
       
-      // 2. Get campaign report data from all stores (also collect profile_ids)
-      // Support multi-day aggregation: query each day and sum up
+      // 2. Get campaign hour data using spCampaignHourData API
+      // This API returns hourly data per campaign_id per date, with cost/sales/clicks/etc.
       const reportEndDate = input.endDate || getDateNDaysAgo(1);
       const reportStartDate = input.startDate || getDateNDaysAgo(7);
       // Build list of dates to query
@@ -1154,50 +1156,93 @@ ${activeSkus.map((s, i) => `
       }
       // Limit to max 30 days to avoid excessive API calls
       const queryDates = datesToQuery.slice(-30);
-      console.log(`[AdCampaigns] Querying campaign reports for ${queryDates.length} days: ${queryDates[0]} ~ ${queryDates[queryDates.length - 1]}`);
+      console.log(`[AdCampaigns] Querying spCampaignHourData for ${queryDates.length} days: ${queryDates[0]} ~ ${queryDates[queryDates.length - 1]}`);
       const reportMap: Record<string, any> = {};
       const campaignProfileMap: Record<string, string> = {}; // campaign_id -> profile_id
-      // Parallel: build all sid+date combos and fetch concurrently
-      const reportTasks = sidsToQuery.flatMap(sid =>
-        queryDates.map(reportDate => ({ sid, reportDate }))
-      );
-      console.log(`[AdCampaigns] Fetching ${reportTasks.length} report tasks in parallel (${sidsToQuery.length} sids x ${queryDates.length} days)`);
-      const reportResults = await Promise.allSettled(
-        reportTasks.map(({ sid, reportDate }) =>
-          adapter.requestWithMockFallback({
-            path: "/pb/openapi/newad/spCampaignReports",
-            body: { sid, report_date: reportDate, show_detail: 0, offset: 0, length: 200 },
-            headers: { "X-API-VERSION": "2" },
-          }).then(res => ({ sid, reportDate, res }))
-        )
-      );
-      for (const result of reportResults) {
-        if (result.status === 'rejected') continue;
-        const { sid, reportDate, res } = result.value;
-        const rawReport = res.data || [];
-        const reportData = Array.isArray(rawReport) ? rawReport : (rawReport as any).records || (rawReport as any).list || [];
-        for (const r of reportData) {
-          const cid = String(r.campaign_id);
-          if (r.profile_id) campaignProfileMap[cid] = String(r.profile_id);
-          if (reportMap[cid]) {
-            reportMap[cid].impressions += Number(r.impressions) || 0;
-            reportMap[cid].clicks += Number(r.clicks) || 0;
-            reportMap[cid].cost += Number(r.cost) || 0;
-            reportMap[cid].sales += Number(r.sales) || 0;
-            reportMap[cid].orders += Number(r.orders) || 0;
-          } else {
-            reportMap[cid] = {
-              impressions: Number(r.impressions) || 0,
-              clicks: Number(r.clicks) || 0,
-              cost: Number(r.cost) || 0,
-              sales: Number(r.sales) || 0,
-              orders: Number(r.orders) || 0,
-              units: Number(r.units) || 0,
-            };
+      
+      // Build tasks: campaign_id x date combos
+      const allCampaignIdsForReport = allCampaignList.map((c: any) => String(c.campaign_id));
+      const uniqueCampaignIds = Array.from(new Set(allCampaignIdsForReport));
+      
+      // To avoid too many API calls, batch by date (each call returns all hours for one campaign on one date)
+      // Limit concurrent requests: max 50 campaigns x dates at a time
+      const MAX_REPORT_TASKS = 300;
+      const reportTasks: { campaignId: string; reportDate: string }[] = [];
+      for (const cid of uniqueCampaignIds) {
+        for (const reportDate of queryDates) {
+          reportTasks.push({ campaignId: cid, reportDate });
+          if (reportTasks.length >= MAX_REPORT_TASKS) break;
+        }
+        if (reportTasks.length >= MAX_REPORT_TASKS) break;
+      }
+      console.log(`[AdCampaigns] Fetching ${reportTasks.length} hour-data tasks in parallel (${uniqueCampaignIds.length} campaigns x ${queryDates.length} days, capped at ${MAX_REPORT_TASKS})`);
+      
+      // Execute in batches of 30 to respect rate limits
+      const BATCH_SIZE = 30;
+      let rejectedCount = 0;
+      let fulfilledCount = 0;
+      let totalReportRows = 0;
+      
+      for (let batchStart = 0; batchStart < reportTasks.length; batchStart += BATCH_SIZE) {
+        const batch = reportTasks.slice(batchStart, batchStart + BATCH_SIZE);
+        const reportResults = await Promise.allSettled(
+          batch.map(({ campaignId, reportDate }) =>
+            adapter.requestWithMockFallback({
+              path: "/pb/openaps/newad/spCampaignHourData",
+              body: { campaign_id: Number(campaignId), report_date: reportDate },
+            }).then(res => ({ campaignId, reportDate, res }))
+          )
+        );
+        
+        for (const result of reportResults) {
+          if (result.status === 'rejected') {
+            rejectedCount++;
+            continue;
+          }
+          fulfilledCount++;
+          const { campaignId, reportDate, res } = result.value;
+          const rawReport = res.data || [];
+          const reportData = Array.isArray(rawReport) ? rawReport : (rawReport as any).records || (rawReport as any).list || [];
+          
+          // Debug: log first successful response
+          if (fulfilledCount === 1 && reportData.length > 0) {
+            const sample = reportData[0];
+            console.log(`[AdCampaigns] HourData sample keys: ${Object.keys(sample).join(', ')}`);
+            console.log(`[AdCampaigns] HourData sample: cost=${sample.cost}, clicks=${sample.clicks}, impressions=${sample.impressions}, sales=${sample.sales}, orders=${sample.orders}`);
+          }
+          
+          // Aggregate hourly data into campaign totals
+          for (const r of reportData) {
+            const cid = String(r.campaign_id || campaignId);
+            if (r.profile_id) campaignProfileMap[cid] = String(r.profile_id);
+            totalReportRows++;
+            if (reportMap[cid]) {
+              reportMap[cid].impressions += Number(r.impressions) || 0;
+              reportMap[cid].clicks += Number(r.clicks) || 0;
+              reportMap[cid].cost += Number(r.cost) || 0;
+              reportMap[cid].sales += Number(r.sales) || 0;
+              reportMap[cid].orders += Number(r.orders) || 0;
+            } else {
+              reportMap[cid] = {
+                impressions: Number(r.impressions) || 0,
+                clicks: Number(r.clicks) || 0,
+                cost: Number(r.cost) || 0,
+                sales: Number(r.sales) || 0,
+                orders: Number(r.orders) || 0,
+                units: Number(r.units) || 0,
+              };
+            }
           }
         }
       }
-      console.log(`[AdCampaigns] Parallel report fetch complete: ${reportResults.filter(r => r.status === 'fulfilled').length}/${reportTasks.length} succeeded`);
+      
+      console.log(`[AdCampaigns] HourData fetch complete: fulfilled=${fulfilledCount}, rejected=${rejectedCount}, totalHourRows=${totalReportRows}`);
+      const reportMapEntries = Object.entries(reportMap);
+      console.log(`[AdCampaigns] reportMap has ${reportMapEntries.length} campaigns with data`);
+      if (reportMapEntries.length > 0) {
+        const [sampleCid, sampleData] = reportMapEntries[0];
+        console.log(`[AdCampaigns] reportMap sample cid=${sampleCid}: cost=${sampleData.cost}, sales=${sampleData.sales}, clicks=${sampleData.clicks}, impressions=${sampleData.impressions}`);
+      }
       
       // 2.5 Find campaigns in reports that are missing names, try to fetch by profile_id
       const missingCampaignIds = Object.keys(reportMap).filter(cid => !campaignNameMap[cid]);
@@ -1225,13 +1270,15 @@ ${activeSkus.map((s, i) => `
               const cid = String(c.campaign_id);
               if (!campaignNameMap[cid]) {
                 campaignNameMap[cid] = {
-                  name: c.name || '',
+                  name: c.name || c.campaign_name || '',
                   daily_budget: c.daily_budget || 0,
-                  state: c.state || 'unknown',
+                  state: c.state || c.status || 'unknown',
                   serving_status: c.serving_status || '',
                   targeting_type: c.targeting_type || '',
                   campaign_type: c.campaign_type || '',
                   start_date: c.start_date || '',
+                  portfolio_id: c.portfolio_id || '',
+                  portfolio_name: c.portfolio_name || '',
                   sid: 0,
                 };
               }
@@ -1272,6 +1319,8 @@ ${activeSkus.map((s, i) => `
           daily_budget: info.daily_budget || 0,
           state: info.state || 'unknown',
           serving_status: info.serving_status || '',
+          portfolio_id: info.portfolio_id || '',
+          portfolio_name: info.portfolio_name || '',
           impressions,
           clicks,
           spend,
@@ -1293,8 +1342,33 @@ ${activeSkus.map((s, i) => `
       // Sort by spend descending
       filteredCampaigns.sort((a, b) => b.spend - a.spend);
       
-      console.log(`[AdCampaigns] Final merged campaigns: ${filteredCampaigns.length} (filtered from ${campaigns.length}, state=${input.adState})`);
-      return { campaigns: filteredCampaigns, allCampaigns: campaigns, isMock: adapter.isMockMode() };
+      // Build Portfolio+Campaign two-level structure
+      const portfolioMap: Record<string, { id: string; name: string; campaigns: any[]; impressions: number; clicks: number; spend: number; sales: number; orders: number }> = {};
+      for (const c of filteredCampaigns) {
+        const pid = c.portfolio_id || 'ungrouped';
+        const pname = c.portfolio_name || '未分组';
+        if (!portfolioMap[pid]) {
+          portfolioMap[pid] = { id: pid, name: pname, campaigns: [], impressions: 0, clicks: 0, spend: 0, sales: 0, orders: 0 };
+        }
+        portfolioMap[pid].campaigns.push(c);
+        portfolioMap[pid].impressions += c.impressions;
+        portfolioMap[pid].clicks += c.clicks;
+        portfolioMap[pid].spend += c.spend;
+        portfolioMap[pid].sales += c.sales;
+        portfolioMap[pid].orders += c.orders;
+      }
+      // Convert to array and compute portfolio-level metrics
+      const portfolios = Object.values(portfolioMap).map(p => ({
+        ...p,
+        acos: p.sales > 0 ? Math.round(p.spend / p.sales * 10000) / 100 : 0,
+        roas: p.spend > 0 ? Math.round(p.sales / p.spend * 100) / 100 : 0,
+        ctr: p.impressions > 0 ? Math.round(p.clicks / p.impressions * 10000) / 100 : 0,
+        cpc: p.clicks > 0 ? Math.round(p.spend / p.clicks * 100) / 100 : 0,
+        campaignCount: p.campaigns.length,
+      })).sort((a, b) => b.spend - a.spend);
+      
+      console.log(`[AdCampaigns] Final: ${filteredCampaigns.length} campaigns in ${portfolios.length} portfolios (state=${input.adState})`);
+      return { campaigns: filteredCampaigns, allCampaigns: campaigns, portfolios, isMock: adapter.isMockMode() };
     }),
 
   getSearchTerms: protectedProcedure

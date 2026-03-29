@@ -10,7 +10,7 @@ import {
 import { Monitor, Smartphone, LayoutGrid, TrendingUp, TrendingDown, DollarSign, Eye, MousePointerClick } from "lucide-react";
 
 interface AdPlacementAnalysisProps {
-  asin: string | null;
+  campaignId: string | null;
   marketplace?: string;
   days: number;
 }
@@ -21,7 +21,7 @@ const PLACEMENT_CONFIG: Record<string, { label: string; icon: any; color: string
   "Product Pages": { label: "商品页面 (PP)", icon: Smartphone, color: "text-purple-700", fill: "#8b5cf6" },
 };
 
-export default function AdPlacementAnalysis({ asin, marketplace, days }: AdPlacementAnalysisProps) {
+export default function AdPlacementAnalysis({ campaignId, marketplace, days }: AdPlacementAnalysisProps) {
   const { data, isLoading } = trpc.adAnalysis.getAdPlacementData.useQuery({
     marketplace,
     days,

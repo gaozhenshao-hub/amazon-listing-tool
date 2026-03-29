@@ -16,7 +16,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface Props {
-  asin: string | null;
+  campaignId: string | null;
   marketplace: string;
   days: number;
 }
@@ -32,11 +32,11 @@ const CATEGORY_CONFIG: Record<number, { name: string; color: string; bgColor: st
 
 const PIE_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#9ca3af"];
 
-export default function WordFrequencyAnalysis({ asin, marketplace, days }: Props) {
+export default function WordFrequencyAnalysis({ campaignId, marketplace, days }: Props) {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
 
   const { data, isLoading } = trpc.adAnalysis.getWordFrequencyAnalysis.useQuery(
-    { asin: asin || undefined, marketplace, days },
+    { campaignId: campaignId || undefined, marketplace, days },
     { enabled: true }
   );
 

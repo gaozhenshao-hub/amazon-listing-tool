@@ -42,12 +42,12 @@ const PIE_COLORS = [
 ];
 
 interface SearchTermClassificationProps {
-  asin: string | null;
+  campaignId: string | null;
   marketplace?: string;
   days: number;
 }
 
-export default function SearchTermClassification({ asin, marketplace, days }: SearchTermClassificationProps) {
+export default function SearchTermClassification({ campaignId, marketplace, days }: SearchTermClassificationProps) {
   const [categoryFilter, setCategoryFilter] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<string>("cost");
@@ -58,7 +58,7 @@ export default function SearchTermClassification({ asin, marketplace, days }: Se
   const [userDecisions, setUserDecisions] = useState<Record<number, { decision: string; modifiedAction?: string; notes?: string }>>({});
 
   const { data, isLoading, refetch } = trpc.adAnalysis.getSearchTerms12Category.useQuery({
-    asin: asin || undefined,
+    campaignId: campaignId || undefined,
     marketplace,
     days,
   });
@@ -141,7 +141,7 @@ export default function SearchTermClassification({ asin, marketplace, days }: Se
         acos: t.acos, ctr: t.ctr, convRate: t.convRate,
       })),
       categoryId: catId,
-      asin: asin || undefined,
+      campaignId: campaignId || undefined,
     });
   };
 

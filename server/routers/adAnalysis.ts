@@ -272,7 +272,7 @@ export const adAnalysisRouter = router({
   // ─── 12-Category Search Term Classification ───────────────────
   getSearchTerms12Category: protectedProcedure
     .input(z.object({
-      asin: z.string().optional(),
+      campaignId: z.string().optional(),
       marketplace: z.string().optional(),
       days: z.number().optional().default(7),
       thresholds: z.object({
@@ -317,7 +317,7 @@ export const adAnalysisRouter = router({
               
               for (const item of items) {
                 // Filter by ASIN if specified
-                if (input.asin && item.advertised_asin && item.advertised_asin !== input.asin) continue;
+                if (input.campaignId && item.campaign_id && String(item.campaign_id) !== input.campaignId) continue;
                 
                 const key = `${item.query}||${item.campaign_id}||${item.match_type}`;
                 if (termAggMap[key]) {
@@ -391,7 +391,7 @@ export const adAnalysisRouter = router({
     .input(z.object({
       searchTerms: z.array(z.record(z.string(), z.unknown())).max(50),
       categoryId: z.number(),
-      asin: z.string().optional(),
+      campaignId: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const category = TWELVE_CATEGORIES.find(c => c.id === input.categoryId);
@@ -599,7 +599,7 @@ ${JSON.stringify(anonymizedTerms)}
   // ─── Order Hourly Heatmap (ASIN360) ───────────────────────────
   getOrderHourlyHeatmap: protectedProcedure
     .input(z.object({
-      asin: z.string().optional(),
+      campaignId: z.string().optional(),
       marketplace: z.string().optional(),
       days: z.number().optional().default(7),
     }))
@@ -610,15 +610,14 @@ ${JSON.stringify(anonymizedTerms)}
       const sidsStr = sids.slice(0, 5).join(',');
       const dateEnd = getDateNDaysAgo(1);
       const dateStart = getDateNDaysAgo(input.days || 7);
-
       try {
         const body: any = {
           sids: sidsStr,
           date_start: dateStart,
           date_end: dateEnd,
-          summary_field: "asin",
+          summary_field: "campaign",
         };
-        if (input.asin) body.summary_field_value = input.asin;
+        if (input.campaignId) body.summary_field_value = input.campaignId;;
 
         const res = await adapter.requestWithMockFallback({
           path: "/basicOpen/salesAnalysis/productPerformance/performanceTrendByHour",
@@ -722,7 +721,7 @@ ${JSON.stringify(input.hourlyData)}
   // ─── Ad Diagnosis (6-Dimension Health Score) ──────────────────
   getAdDiagnosis: protectedProcedure
     .input(z.object({
-      asin: z.string().optional(),
+      campaignId: z.string().optional(),
       marketplace: z.string().optional(),
       days: z.number().optional().default(30),
     }))
@@ -835,7 +834,7 @@ ${JSON.stringify(metrics)}
   // ─── Targeting Object 9-Category Analysis ─────────────────────
   getTargetingAnalysis: protectedProcedure
     .input(z.object({
-      asin: z.string().optional(),
+      campaignId: z.string().optional(),
       marketplace: z.string().optional(),
       days: z.number().optional().default(7),
     }))
@@ -911,18 +910,17 @@ ${JSON.stringify(metrics)}
   // ─── Word Frequency Attribute 6-Category Analysis (Tab 4) ────
   getWordFrequencyAnalysis: protectedProcedure
     .input(z.object({
-      asin: z.string().optional(),
+        campaignId: z.string().optional(),
       marketplace: z.string().optional(),
-      days: z.number().optional().default(30),
+      days: z.number().optional().default(7),
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
       const { sellers } = await getAllSellerSids();
       const sids = filterSidsByMarketplace(sellers, input.marketplace);
-      const sidsToQuery = sids.map(Number).slice(0, 3);
-      const days = input.days || 30;
-
-      // Collect all search terms for this ASIN
+      const sidsToQuery = sids.map(Number).slice(0, 5);
+      const days = input.days || 7;
+      // Collect all search terms for this campaign
       const allTerms: Array<{
         query: string; impressions: number; clicks: number;
         cost: number; sales: number; orders: number;
@@ -932,7 +930,7 @@ ${JSON.stringify(metrics)}
         for (let d = 1; d <= Math.min(days, 30); d++) {
           try {
             const body: any = { sid, report_date: getDateNDaysAgo(d), offset: 0, length: 500 };
-            if (input.asin) body.asin = input.asin;
+            if (input.campaignId) body.campaign_id = input.campaignId;
             const res = await adapter.requestWithMockFallback({
               path: "/erp/sp/query/queryUserSearchTerm",
               body,
@@ -1024,7 +1022,7 @@ ${JSON.stringify(metrics)}
   // ─── Effective Converting Search Terms Discovery (Tab 8) ─────
   getEffectiveSearchTerms: protectedProcedure
     .input(z.object({
-      asin: z.string().optional(),
+      campaignId: z.string().optional(),
       marketplace: z.string().optional(),
       days: z.number().optional().default(30),
     }))
@@ -1045,7 +1043,7 @@ ${JSON.stringify(metrics)}
         for (let d = 1; d <= Math.min(days, 30); d++) {
           try {
             const body: any = { sid, report_date: getDateNDaysAgo(d), offset: 0, length: 500 };
-            if (input.asin) body.asin = input.asin;
+            if (input.campaignId) body.campaign_id = input.campaignId;
             const res = await adapter.requestWithMockFallback({
               path: "/erp/sp/query/queryUserSearchTerm",
               body,

@@ -16,19 +16,19 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface Props {
-  asin: string | null;
+  campaignId: string | null;
   marketplace: string;
   days: number;
 }
 
-export default function EffectiveSearchTerms({ asin, marketplace, days }: Props) {
+export default function EffectiveSearchTerms({ campaignId, marketplace, days }: Props) {
   const [selectedTerms, setSelectedTerms] = useState<Set<string>>(new Set());
   const [editedBids, setEditedBids] = useState<Record<string, number>>({});
   const [editedMatchTypes, setEditedMatchTypes] = useState<Record<string, string>>({});
   const [filterMinOrders, setFilterMinOrders] = useState<string>("");
 
   const { data, isLoading } = trpc.adAnalysis.getEffectiveSearchTerms.useQuery(
-    { asin: asin || undefined, marketplace, days },
+    { campaignId: campaignId || undefined, marketplace, days },
     { enabled: true }
   );
 

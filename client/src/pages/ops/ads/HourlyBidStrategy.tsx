@@ -12,7 +12,7 @@ import { Clock, Sparkles, Loader2, TrendingUp, DollarSign, ShoppingCart, Downloa
 import { toast } from "sonner";
 
 interface HourlyBidStrategyProps {
-  asin: string | null;
+  campaignId: string | null;
   marketplace?: string;
   days: number;
 }
@@ -32,7 +32,7 @@ function getHeatColor(value: number, max: number): string {
   return "#f3f4f6";
 }
 
-export default function HourlyBidStrategy({ asin, marketplace, days }: HourlyBidStrategyProps) {
+export default function HourlyBidStrategy({ campaignId, marketplace, days }: HourlyBidStrategyProps) {
   const [heatmapMetric, setHeatmapMetric] = useState<"orders" | "sales" | "clicks" | "impressions">("orders");
 
   const { data, isLoading } = trpc.adAnalysis.getAdHourlyData.useQuery({
@@ -41,7 +41,7 @@ export default function HourlyBidStrategy({ asin, marketplace, days }: HourlyBid
   });
 
   const { data: heatmapRawData } = trpc.adAnalysis.getOrderHourlyHeatmap.useQuery({
-    asin: asin || undefined,
+    campaignId: campaignId || undefined,
     marketplace,
     days,
   });

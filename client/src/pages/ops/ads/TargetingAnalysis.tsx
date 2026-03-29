@@ -13,7 +13,7 @@ import { Target, Search, Download, Sparkles, Loader2, Filter } from "lucide-reac
 import { toast } from "sonner";
 
 interface TargetingAnalysisProps {
-  asin: string | null;
+  campaignId: string | null;
   marketplace?: string;
   days: number;
 }
@@ -30,12 +30,12 @@ const TARGET_CATEGORY_CONFIG: Record<number, { label: string; color: string; bg:
   9: { label: "低点击_低转化", color: "#ef4444", bg: "bg-red-50" },
 };
 
-export default function TargetingAnalysis({ asin, marketplace, days }: TargetingAnalysisProps) {
+export default function TargetingAnalysis({ campaignId, marketplace, days }: TargetingAnalysisProps) {
   const [categoryFilter, setCategoryFilter] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
   const { data, isLoading } = trpc.adAnalysis.getTargetingAnalysis.useQuery({
-    asin: asin || undefined,
+    campaignId: campaignId || undefined,
     marketplace,
     days,
   });

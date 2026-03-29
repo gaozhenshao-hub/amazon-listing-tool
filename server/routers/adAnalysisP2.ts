@@ -236,7 +236,7 @@ ${input.topOrders ? `TOP DSP订单:\n${input.topOrders.map(o => `- ${o.order_nam
   adChatBot: protectedProcedure
     .input(z.object({
       question: z.string().min(1).max(2000),
-      asin: z.string().optional(),
+      campaignId: z.string().optional(),
       marketplace: z.string().optional(),
       conversationHistory: z.array(z.object({
         role: z.enum(["user", "assistant"]),
@@ -244,9 +244,9 @@ ${input.topOrders ? `TOP DSP订单:\n${input.topOrders.map(o => `- ${o.order_nam
       })).optional(),
     }))
     .mutation(async ({ input }) => {
-      // Build context data if ASIN is provided
+      // Build context data if campaign is provided
       let contextData = "";
-      if (input.asin) {
+      if (input.campaignId) {
         try {
           const adapter = getLingxingAdapter();
           // Fetch recent ad data for context
@@ -254,7 +254,7 @@ ${input.topOrders ? `TOP DSP订单:\n${input.topOrders.map(o => `- ${o.order_nam
             path: "/ph/openaps/newad/spAdvertiseHourData",
             method: "POST",
             body: {
-              asin: input.asin,
+              campaign_id: input.campaignId,
               start_date: new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10),
               end_date: new Date().toISOString().slice(0, 10),
             },

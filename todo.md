@@ -2846,3 +2846,30 @@
 ### 第五轮优化
 - [x] 广告页面API并行化（getAdCampaigns和getSearchTerms改为Promise.allSettled批量并行）
 - [x] 广告页面默认美国站点
+
+## 广告模块维度重构：ASIN维度 → 广告组合(Portfolio)+广告活动(Campaign)二级维度
+- [x] 分析当前广告模块所有ASIN引用（后端API+前端页面+12个子Tab）
+- [x] 后端：getAdCampaigns改为返回Portfolio+Campaign二级结构
+- [x] 后端：getSearchTerms改为按Campaign维度返回
+- [x] 后端：所有广告分析API改为Portfolio+Campaign维度
+- [x] 前端：OpsAds主页面ASIN选择器改为Portfolio+Campaign二级选择
+- [x] 前端：广告总览Tab改为Portfolio+Campaign维度
+- [x] 前端：搜索词12分类Tab改为Campaign维度
+- [x] 前端：投放对象分析改为Campaign维度
+- [x] 前端：广告位分析改为Campaign维度
+- [x] 前端：分时竞价改为Campaign维度
+- [x] 前端：否定词管理改为Campaign维度
+- [x] 前端：词频属性改为Campaign维度
+- [x] 前端：有效出单词改为Campaign维度
+- [x] 前端：广告诊断改为Campaign维度
+- [x] 前端：DSP分析改为Campaign维度
+- [x] 前端：跨渠道分析改为Campaign维度
+- [x] 前端：AI广告助手改为Campaign维度
+- [x] 修复ACoS显示NaN%的问题
+
+- [x] BUG: 广告花费全部显示$0.00 - 改用spCampaignHourData API获取花费数据
+- [x] BUG: ACoS显示NaN% - 添加safeDiv/safePct/fmtPct边界保护
+- [x] 添加API响应字段调试日志，定位真实字段名
+- [x] 修复前端NaN%显示的边界保护（即使后端数据异常也不显示NaN）
+- [x] 将广告活动报表API从 spCampaignReports 切换为 spCampaignHourData（广告活动小时数据）
+- [x] 广告子Tab页面默认随机展示一个广告活动的数据（无需用户先选择）

@@ -16,7 +16,7 @@ import {
 import { toast } from "sonner";
 
 interface AdDiagnosticsProps {
-  asin: string | null;
+  campaignId: string | null;
   marketplace?: string;
   days: number;
 }
@@ -32,7 +32,7 @@ const HEALTH_LABELS: Record<string, string> = {
   excellent: "优秀", good: "良好", warning: "需关注", critical: "需改善",
 };
 
-export default function AdDiagnostics({ asin, marketplace, days }: AdDiagnosticsProps) {
+export default function AdDiagnostics({ campaignId, marketplace, days }: AdDiagnosticsProps) {
   const [diagnosisResult, setDiagnosisResult] = useState<any>(null);
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const isLoading = false;
@@ -57,7 +57,7 @@ export default function AdDiagnostics({ asin, marketplace, days }: AdDiagnostics
 
   const handleDiagnose = () => {
     aiDiagnosis.mutate({
-      asin: asin || undefined,
+      campaignId: campaignId || undefined,
       marketplace,
       days,
     });

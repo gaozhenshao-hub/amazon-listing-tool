@@ -11,7 +11,7 @@ import {
 import { Streamdown } from "streamdown";
 
 interface Props {
-  asin: string | null;
+  campaignId: string | null;
   marketplace: string;
 }
 
@@ -32,7 +32,7 @@ const QUICK_QUESTIONS = [
   "新品上架的广告投放策略是什么？",
 ];
 
-export default function AdChatBot({ asin, marketplace }: Props) {
+export default function AdChatBot({ campaignId, marketplace }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -72,7 +72,7 @@ export default function AdChatBot({ asin, marketplace }: Props) {
 
     chatMutation.mutate({
       question: q,
-      asin: asin || undefined,
+      campaignId: campaignId || undefined,
       marketplace,
       conversationHistory: messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
     });
@@ -86,7 +86,7 @@ export default function AdChatBot({ asin, marketplace }: Props) {
             <CardTitle className="text-sm flex items-center gap-2">
               <Bot className="w-4 h-4 text-blue-600" />
               AI广告问答助手
-              {asin && <Badge variant="outline" className="text-xs">当前ASIN: {asin}</Badge>}
+              {campaignId && <Badge variant="outline" className="text-xs">当前Campaign: {campaignId}</Badge>}
             </CardTitle>
             {messages.length > 0 && (
               <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setMessages([])}>
@@ -103,7 +103,7 @@ export default function AdChatBot({ asin, marketplace }: Props) {
               <h3 className="text-sm font-medium text-gray-600 mb-1">亚马逊广告AI助手</h3>
               <p className="text-xs text-gray-400 mb-4 max-w-sm">
                 我可以帮你分析广告数据、解答广告投放问题、提供优化建议。
-                {asin ? "已关联当前ASIN的广告数据。" : "选择一个ASIN后可获取实时数据分析。"}
+                {campaignId ? "已关联当前Campaign的广告数据。" : "选择一个Campaign后可获取实时数据分析。"}
               </p>
               <div className="grid grid-cols-2 gap-2 max-w-md">
                 {QUICK_QUESTIONS.map((q, i) => (
