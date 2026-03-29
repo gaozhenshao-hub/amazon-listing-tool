@@ -12,11 +12,13 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
   PieChart, Pie, Cell,
 } from "recharts";
+import { Input } from "@/components/ui/input";
 import {
   Target, RefreshCw, Search, DollarSign,
   Eye, TrendingUp, Zap, BarChart3, Clock, XCircle, Activity, Crosshair,
   Package, Type, Gem, MessageSquare, Layers, Monitor,
   ChevronDown, ChevronRight, FolderOpen, Folder,
+  ChevronLeft, ChevronsLeft, ChevronsRight, Filter,
 } from "lucide-react";
 
 // Sub-components
@@ -59,6 +61,10 @@ export default function OpsAds() {
   });
   const [activeTab, setActiveTab] = useState("overview");
   const [expandedPortfolios, setExpandedPortfolios] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const { marketplace } = useMarketplace();
 
   // Overview data - campaign summary with portfolio structure
@@ -123,6 +129,48 @@ export default function OpsAds() {
       roas: safeDiv(sales, cost),
     };
   }, [campaigns]);
+
+  // Filtered portfolios based on search and type filter
+  const filteredPortfolios = useMemo(() => {
+    let filtered = [...portfolios];
+    // Search filter - match portfolio name or campaign names
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      filtered = filtered.filter((p: any) => {
+        if ((p.name || "").toLowerCase().includes(q)) return true;
+        // Also match if any child campaign name matches
+        return p.campaigns?.some((c: any) =>
+          (c.campaign_name || "").toLowerCase().includes(q) ||
+          String(c.campaign_id).includes(q)
+        );
+      });
+    }
+    // Type filter - only show portfolios that have campaigns of the selected type
+    if (typeFilter !== "all") {
+      filtered = filtered.filter((p: any) =>
+        p.campaigns?.some((c: any) => (c.campaign_type || "SP") === typeFilter)
+      );
+    }
+    return filtered;
+  }, [portfolios, searchQuery, typeFilter]);
+
+  // Pagination
+  const totalFilteredPortfolios = filteredPortfolios.length;
+  const totalPages = Math.max(1, Math.ceil(totalFilteredPortfolios / pageSize));
+  const paginatedPortfolios = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredPortfolios.slice(start, start + pageSize);
+  }, [filteredPortfolios, currentPage, pageSize]);
+
+  // Reset page when search/filter/data changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, typeFilter, portfolios]);
+
+  // Total campaigns in filtered view
+  const filteredCampaignCount = useMemo(() => {
+    return filteredPortfolios.reduce((sum: number, p: any) => sum + (p.campaignCount || 0), 0);
+  }, [filteredPortfolios]);
 
   // Campaign type distribution
   const campaignTypeData = useMemo(() => {
@@ -342,10 +390,59 @@ export default function OpsAds() {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm flex items-center gap-2">
                     <FolderOpen className="w-4 h-4" />
-                    广告组合 → 广告活动 ({portfolios.length}个组合, {campaigns.length}个活动)
+                    广告组合 → 广告活动
+                    <Badge variant="secondary" className="text-[10px] font-normal">
+                      {searchQuery || typeFilter !== "all" ? `${totalFilteredPortfolios}/${portfolios.length}个组合, ${filteredCampaignCount}/${campaigns.length}个活动` : `${portfolios.length}个组合, ${campaigns.length}个活动`}
+                    </Badge>
                   </CardTitle>
                   <p className="text-xs text-gray-500 mt-1">点击广告组合展开查看其下的广告活动，点击广告活动名称可选中用于子Tab分析</p>
                 </CardHeader>
+
+                {/* Search & Filter Toolbar */}
+                <div className="px-4 pb-3 flex flex-wrap items-center gap-2">
+                  <div className="relative flex-1 min-w-[200px] max-w-xs">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                    <Input
+                      placeholder="搜索组合或活动名称..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="h-8 pl-8 text-xs"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Filter className="w-3.5 h-3.5 text-gray-400" />
+                    <div className="flex rounded-md border overflow-hidden">
+                      {["all", "sponsoredProducts", "sponsoredBrands", "sponsoredDisplay"].map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => setTypeFilter(t)}
+                          className={`px-2.5 py-1 text-xs transition-colors ${
+                            typeFilter === t
+                              ? "bg-blue-600 text-white"
+                              : "bg-white text-gray-600 hover:bg-gray-50"
+                          }`}
+                        >
+                          {t === "all" ? "全部" : t === "sponsoredProducts" ? "SP" : t === "sponsoredBrands" ? "SB" : "SD"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <span className="text-xs text-gray-500">每页</span>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                      className="h-8 px-2 text-xs border rounded-md bg-white"
+                    >
+                      <option value={10}>10</option>
+                      <option value={20}>20</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                    <span className="text-xs text-gray-500">个组合</span>
+                  </div>
+                </div>
+
                 <CardContent className="p-0">
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -365,10 +462,12 @@ export default function OpsAds() {
                         </tr>
                       </thead>
                       <tbody>
-                        {portfolios.length === 0 ? (
-                          <tr><td colSpan={11} className="text-center py-8 text-gray-400">暂无广告组合数据</td></tr>
+                        {paginatedPortfolios.length === 0 ? (
+                          <tr><td colSpan={11} className="text-center py-8 text-gray-400">
+                            {searchQuery || typeFilter !== "all" ? "没有匹配的广告组合" : "暂无广告组合数据"}
+                          </td></tr>
                         ) : (
-                          portfolios.map((p: any) => {
+                          paginatedPortfolios.map((p: any) => {
                             const isExpanded = expandedPortfolios.has(p.id);
                             return (
                               <PortfolioRow
@@ -378,6 +477,8 @@ export default function OpsAds() {
                                 onToggle={() => togglePortfolio(p.id)}
                                 selectedCampaignId={selectedCampaignId}
                                 onSelectCampaign={selectCampaign}
+                                typeFilter={typeFilter}
+                                searchQuery={searchQuery}
                               />
                             );
                           })
@@ -385,6 +486,78 @@ export default function OpsAds() {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Pagination Controls */}
+                  {totalFilteredPortfolios > 0 && (
+                    <div className="flex items-center justify-between px-4 py-3 border-t bg-gray-50/30">
+                      <div className="text-xs text-gray-500">
+                        显示第 {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, totalFilteredPortfolios)} 个组合，共 {totalFilteredPortfolios} 个
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          disabled={currentPage === 1}
+                          onClick={() => setCurrentPage(1)}
+                        >
+                          <ChevronsLeft className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          disabled={currentPage === 1}
+                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </Button>
+                        <div className="flex items-center gap-1 px-2">
+                          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                            let pageNum: number;
+                            if (totalPages <= 5) {
+                              pageNum = i + 1;
+                            } else if (currentPage <= 3) {
+                              pageNum = i + 1;
+                            } else if (currentPage >= totalPages - 2) {
+                              pageNum = totalPages - 4 + i;
+                            } else {
+                              pageNum = currentPage - 2 + i;
+                            }
+                            return (
+                              <Button
+                                key={pageNum}
+                                variant={currentPage === pageNum ? "default" : "outline"}
+                                size="sm"
+                                className={`h-7 w-7 p-0 text-xs ${currentPage === pageNum ? "" : ""}`}
+                                onClick={() => setCurrentPage(pageNum)}
+                              >
+                                {pageNum}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          disabled={currentPage === totalPages}
+                          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          disabled={currentPage === totalPages}
+                          onClick={() => setCurrentPage(totalPages)}
+                        >
+                          <ChevronsRight className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </>
@@ -492,12 +665,14 @@ export default function OpsAds() {
 }
 
 // ─── Portfolio Row Component ─────────────────────────────────────
-function PortfolioRow({ portfolio, isExpanded, onToggle, selectedCampaignId, onSelectCampaign }: {
+function PortfolioRow({ portfolio, isExpanded, onToggle, selectedCampaignId, onSelectCampaign, typeFilter = "all", searchQuery = "" }: {
   portfolio: any;
   isExpanded: boolean;
   onToggle: () => void;
   selectedCampaignId: string | null;
   onSelectCampaign: (id: string, name: string) => void;
+  typeFilter?: string;
+  searchQuery?: string;
 }) {
   const p = portfolio;
   const pAcos = isFinite(p.acos) ? p.acos : 0;
@@ -535,8 +710,18 @@ function PortfolioRow({ portfolio, isExpanded, onToggle, selectedCampaignId, onS
         <td className="p-2.5 text-right text-xs">{fmtPct(pCtr)}%</td>
       </tr>
 
-      {/* Campaign Rows (expanded) */}
-      {isExpanded && p.campaigns?.map((c: any, idx: number) => {
+      {/* Campaign Rows (expanded) - filtered by type and search */}
+      {isExpanded && p.campaigns?.filter((c: any) => {
+        if (typeFilter !== "all" && (c.campaign_type || "SP") !== typeFilter) return false;
+        if (searchQuery.trim()) {
+          const q = searchQuery.trim().toLowerCase();
+          // If portfolio name matches, show all campaigns; otherwise filter by campaign name
+          if (!(p.name || "").toLowerCase().includes(q)) {
+            if (!(c.campaign_name || "").toLowerCase().includes(q) && !String(c.campaign_id).includes(q)) return false;
+          }
+        }
+        return true;
+      }).map((c: any, idx: number) => {
         const isSelected = selectedCampaignId === c.campaign_id;
         const cAcos = safePct(c.spend || 0, c.sales || 0);
         const cRoas = safeDiv(c.sales || 0, c.spend || 0);

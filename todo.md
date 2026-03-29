@@ -2931,3 +2931,11 @@
 - [x] 通过portfolio_id正确关联广告活动到广告组合
 - [x] 更新lingxingAdapter.ts的mock回退数据（新增mockPortfolios/mockSpCampaigns/mockSbCampaigns/mockSdCampaigns）
 - [x] 验证真实数据显示完整的广告组合和活动列表（123个组合，487个活动，SP=382/SB=72/SD=33）
+
+## 广告活动分页加载优化
+- [x] 后端：getAdCampaigns返回完整portfolios结构但支持前端分页（保持一次性获取全量数据用于汇总KPI）
+- [x] 前端：Portfolio+Campaign二级表格添加分页控件（每页10/20/50/100个组合可选）
+- [x] 前端：添加广告活动搜索/筛选功能（按名称搜索、按类型SP/SB/SD筛选）
+- [x] 前端：优化大数据量渲染性能（折叠状态下不渲染子活动，展开时按类型/搜索过滤子活动）
+- [x] 前端：添加加载状态和空状态优化（搜索无结果提示、筛选后计数Badge）
+- [x] 验证分页功能在487个活动场景下的性能表现（23个组合/51个活动正确分页，搜索/筛选/分页联动正常）
