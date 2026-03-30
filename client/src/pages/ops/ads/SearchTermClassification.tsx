@@ -55,12 +55,14 @@ export default function SearchTermClassification({ campaignId, marketplace, repo
   const [expandedCategory, setExpandedCategory] = useState<number | null>(null);
   const [showAiDialog, setShowAiDialog] = useState(false);
   const [aiCategoryId, setAiCategoryId] = useState<number>(1);
-  const [userDecisions, setUserDecisions] = useState<Record<number, { decision: string; modifiedAction?: string; notes?: string }>>({});
+  const [userDecisions, setUserDecisions] = useState<Record<number, { decision: string; modifiedAction?: string; notes?: string }>>({}); 
+  const [adType, setAdType] = useState<"SP" | "SB">("SP");
 
   const { data, isLoading, refetch } = trpc.adAnalysis.getSearchTerms12Category.useQuery({
     campaignId: campaignId || undefined,
     marketplace,
     reportDate,
+    adType,
   });
 
   const { data: categoryDefs } = trpc.adAnalysis.getCategoryDefinitions.useQuery();
@@ -175,6 +177,31 @@ export default function SearchTermClassification({ campaignId, marketplace, repo
 
   return (
     <div className="space-y-4">
+      {/* Ad Type Switcher */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground font-medium">广告类型:</span>
+        <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+          {(["SP", "SB"] as const).map((type) => (
+            <button
+              key={type}
+              onClick={() => setAdType(type)}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                adType === type
+                  ? "bg-white text-blue-700 shadow-sm border border-blue-200"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {type === "SP" ? "SP 商品推广" : "SB 品牌推广"}
+            </button>
+          ))}
+        </div>
+        {adType === "SB" && (
+          <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+            SB搜索词含品牌新客指标
+          </Badge>
+        )}
+      </div>
+
       {/* Category Overview Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
         {Object.entries(categoryStats)

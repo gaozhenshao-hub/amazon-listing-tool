@@ -33,11 +33,13 @@ const TARGET_CATEGORY_CONFIG: Record<number, { label: string; color: string; bg:
 export default function TargetingAnalysis({ campaignId, marketplace, reportDate }: TargetingAnalysisProps) {
   const [categoryFilter, setCategoryFilter] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [adType, setAdType] = useState<"SP" | "SB" | "SD">("SP");
 
   const { data, isLoading } = trpc.adAnalysis.getTargetingAnalysis.useQuery({
     campaignId: campaignId || undefined,
     marketplace,
     reportDate,
+    adType,
   });
 
   const targets = (data?.targets || []).map((t: any, idx: number) => {
@@ -83,6 +85,31 @@ export default function TargetingAnalysis({ campaignId, marketplace, reportDate 
 
   return (
     <div className="space-y-4">
+      {/* Ad Type Switcher */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground font-medium">广告类型:</span>
+        <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+          {(["SP", "SB", "SD"] as const).map((type) => (
+            <button
+              key={type}
+              onClick={() => setAdType(type)}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                adType === type
+                  ? "bg-white text-blue-700 shadow-sm border border-blue-200"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {type === "SP" ? "SP 商品推广" : type === "SB" ? "SB 品牌推广" : "SD 展示型"}
+            </button>
+          ))}
+        </div>
+        {adType === "SD" && (
+          <Badge variant="outline" className="text-[10px] bg-violet-50 text-violet-700 border-violet-200">
+            SD含受众定向与再营销数据
+          </Badge>
+        )}
+      </div>
+
       {/* Category Filter Cards */}
       <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-2">
         {Object.entries(TARGET_CATEGORY_CONFIG).map(([id, config]) => {

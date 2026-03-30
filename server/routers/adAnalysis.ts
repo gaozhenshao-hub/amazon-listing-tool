@@ -315,6 +315,7 @@ export const adAnalysisRouter = router({
       marketplace: z.string().optional(),
       reportDate: z.string().optional(), // YYYY-MM-DD, single day query
       days: z.number().optional().default(3), // Reduced from 7 to 3 for performance
+      adType: z.enum(["SP", "SB"]).optional().default("SP"), // SP or SB (no SD search terms)
       thresholds: z.object({
         highImpressions: z.number().optional(),
         lowImpressions: z.number().optional(),
@@ -332,8 +333,13 @@ export const adAnalysisRouter = router({
       const days = Math.min(input.days || 3, 14); // Cap at 14 days max
       const thresholds = { ...DEFAULT_THRESHOLDS, ...input.thresholds };
 
+      const adType = input.adType || 'SP';
+      const searchTermApiPath = adType === 'SB'
+        ? '/pb/openapi/newad/hsaQueryWordReports'
+        : '/pb/openapi/newad/queryWordReports';
+
       // Check cache first (5-minute TTL)
-      const cacheKey = `searchTerms_${input.campaignId || 'all'}_${input.marketplace || 'ALL'}_${days}`;
+      const cacheKey = `searchTerms_${input.campaignId || 'all'}_${input.marketplace || 'ALL'}_${days}_${adType}`;
       const cached = getCached<any>(cacheKey);
       if (cached) {
         console.log(`[SearchTerms] Cache HIT for key: ${cacheKey}`);
@@ -358,7 +364,7 @@ export const adAnalysisRouter = router({
           let hasMore = true;
           while (hasMore && offset < 1000) {
             const res = await adapter.requestWithMockFallback({
-              path: "/pb/openapi/newad/queryWordReports",
+              path: searchTermApiPath,
               body: { sid, report_date: reportDate, show_detail: 1, target_type: "keyword", offset, length: 200, ...(input.campaignId && !/^C\d+$/.test(input.campaignId) ? { campaign_id: input.campaignId } : {}) },
               headers: { "X-API-VERSION": "2" },
             });
@@ -441,6 +447,7 @@ export const adAnalysisRouter = router({
         categories: TWELVE_CATEGORIES,
         thresholds,
         days,
+        adType,
         total: searchTerms.length,
         isMock: adapter.isMockMode(),
       };
@@ -546,6 +553,7 @@ ${JSON.stringify(anonymizedTerms)}
       reportDate: z.string().optional(),
       days: z.number().optional().default(3),
       campaignId: z.string().optional(),
+      adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
@@ -553,6 +561,12 @@ ${JSON.stringify(anonymizedTerms)}
       const sids = filterSidsByMarketplace(sellers, input.marketplace);
       const sidsToQuery = sids.map(Number).slice(0, 3);
       const days = input.days || 3;
+      const adType = input.adType || 'SP';
+      const placementApiPath = adType === 'SB'
+        ? '/pb/openapi/newad/hsaCampaignPlacementReports'
+        : adType === 'SD'
+          ? '/pb/openapi/newad/sdCampaignReports'
+          : '/pb/openapi/newad/campaignPlacementReports';
 
       const placementAgg: Record<string, {
         placement: string; impressions: number; clicks: number;
@@ -580,7 +594,7 @@ ${JSON.stringify(anonymizedTerms)}
             length: 1000,
           };
           return adapter.requestWithMockFallback({
-            path: "/pb/openapi/newad/campaignPlacementReports",
+            path: placementApiPath,
             body,
           });
         }));
@@ -613,7 +627,7 @@ ${JSON.stringify(anonymizedTerms)}
         roas: p.cost > 0 ? Math.round(p.sales / p.cost * 100) / 100 : 0,
       }));
 
-      return { placements, days, isMock: adapter.isMockMode() };
+      return { placements, days, adType, isMock: adapter.isMockMode() };
     }),
 
   // ─── Hourly Ad Data (for Dayparting Strategy) ─────────────────
@@ -623,6 +637,7 @@ ${JSON.stringify(anonymizedTerms)}
       reportDate: z.string().optional(),
       days: z.number().optional().default(7),
       campaignId: z.string().optional(),
+      adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
@@ -630,6 +645,12 @@ ${JSON.stringify(anonymizedTerms)}
       const sids = filterSidsByMarketplace(sellers, input.marketplace);
       const sidsToQuery = sids.map(Number).slice(0, 3);
       const days = input.days || 7;
+      const adType = input.adType || 'SP';
+      const hourlyApiPath = adType === 'SB'
+        ? '/pb/openapi/newad/sbCampaignHourData'
+        : adType === 'SD'
+          ? '/pb/openapi/newad/sdCampaignHourData'
+          : '/pb/openapi/newad/spCampaignHourData';
 
       // Aggregate hourly data
       const hourlyAgg: Record<number, {
@@ -649,7 +670,7 @@ ${JSON.stringify(anonymizedTerms)}
             else body.sid = sid;
             
             const res = await adapter.requestWithMockFallback({
-              path: "/pb/openapi/newad/spCampaignHourData",
+              path: hourlyApiPath,
               body,
               headers: { "X-API-VERSION": "2" },
             });
@@ -678,7 +699,7 @@ ${JSON.stringify(anonymizedTerms)}
         cpc: h.clicks > 0 ? Math.round(h.cost / h.clicks * 100) / 100 : 0,
       }));
 
-      return { hourlyData, days, isMock: adapter.isMockMode() };
+      return { hourlyData, days, adType, isMock: adapter.isMockMode() };
     }),
 
   // ─── Order Hourly Heatmap (ASIN360) ───────────────────────────
@@ -925,6 +946,7 @@ ${JSON.stringify(metrics)}
       marketplace: z.string().optional(),
       reportDate: z.string().optional(),
       days: z.number().optional().default(3),
+      adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
     }))
     .query(async ({ input }) => {
       const adapter = getLingxingAdapter();
@@ -932,6 +954,12 @@ ${JSON.stringify(metrics)}
       const sids = filterSidsByMarketplace(sellers, input.marketplace);
       const sidsToQuery = sids.map(Number).slice(0, 3);
       const days = input.days || 3;
+      const adType = input.adType || 'SP';
+      const targetingApiPath = adType === 'SB'
+        ? '/pb/openapi/newad/listHsaTargetingReport'
+        : adType === 'SD'
+          ? '/pb/openapi/newad/sdMatchTargetReports'
+          : '/pb/openapi/newad/spKeywordReports';
 
       const targetAgg: Record<string, {
         target_id: string; targeting_type: string; targeting_expression: string;
@@ -959,7 +987,7 @@ ${JSON.stringify(metrics)}
             length: 1000,
           };
           return adapter.requestWithMockFallback({
-            path: "/pb/openapi/newad/spKeywordReports",
+            path: targetingApiPath,
             body,
           });
         }));
@@ -1014,7 +1042,7 @@ ${JSON.stringify(metrics)}
       });
 
       targets.sort((a, b) => b.cost - a.cost);
-      return { targets, days, isMock: adapter.isMockMode() };
+      return { targets, days, adType, isMock: adapter.isMockMode() };
     }),
 
   // ─── Word Frequency Attribute 6-Category Analysis (Tab 4) ────

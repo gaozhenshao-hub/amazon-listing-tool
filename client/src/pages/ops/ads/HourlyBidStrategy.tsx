@@ -34,10 +34,13 @@ function getHeatColor(value: number, max: number): string {
 
 export default function HourlyBidStrategy({ campaignId, marketplace, reportDate }: HourlyBidStrategyProps) {
   const [heatmapMetric, setHeatmapMetric] = useState<"orders" | "sales" | "clicks" | "impressions">("orders");
+  const [adType, setAdType] = useState<"SP" | "SB" | "SD">("SP");
 
   const { data, isLoading } = trpc.adAnalysis.getAdHourlyData.useQuery({
+    campaignId: campaignId || undefined,
     marketplace,
     reportDate,
+    adType,
   });
 
   const { data: heatmapRawData } = trpc.adAnalysis.getOrderHourlyHeatmap.useQuery({
@@ -93,6 +96,26 @@ export default function HourlyBidStrategy({ campaignId, marketplace, reportDate 
 
   return (
     <div className="space-y-4">
+      {/* Ad Type Switcher */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground font-medium">广告类型:</span>
+        <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+          {(["SP", "SB", "SD"] as const).map((type) => (
+            <button
+              key={type}
+              onClick={() => setAdType(type)}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                adType === type
+                  ? "bg-white text-blue-700 shadow-sm border border-blue-200"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {type === "SP" ? "SP 商品推广" : type === "SB" ? "SB 品牌推广" : "SD 展示型"}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Hourly Performance Chart */}
       <Card>
         <CardHeader className="pb-2">

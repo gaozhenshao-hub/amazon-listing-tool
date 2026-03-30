@@ -1083,6 +1083,18 @@ class LingxingAdapter {
       "/erp/sc/data/mws/warningMessage": () => mockWarningMessage(body),
       // 产品属性列表
       "/erp/sc/data/mws/productAttribute": () => mockProductAttribute(body),
+      // SB搜索词报告
+      "/pb/openapi/newad/hsaQueryWordReports": () => mockSbSearchTerms(body),
+      // SB投放对象报告
+      "/pb/openapi/newad/listHsaTargetingReport": () => mockSbTargetingReports(body),
+      // SD投放对象报告
+      "/pb/openapi/newad/sdMatchTargetReports": () => mockSdTargetingReports(body),
+      // SP投放对象报告（target类型）
+      "/pb/openapi/newad/spTargetReports": () => mockSpTargetReports(body),
+      // SB广告位报告
+      "/pb/openapi/newad/hsaCampaignPlacementReports": () => mockSbPlacementReports(body),
+      // SD广告活动报告
+      "/pb/openapi/newad/sdCampaignReports": () => mockSdCampaignReportsData(body),
     };
 
     const mockFn = mockMap[path];
@@ -2348,6 +2360,100 @@ export async function initLingxingAdapterFromDb(): Promise<void> {
   } catch (err: any) {
     console.warn(`[LingxingAdapter] Failed to init from DB: ${err.message}`);
   }
+}
+
+// ============== SB/SD Mock Data Functions ==============
+
+function mockSbSearchTerms(body: Record<string, any>) {
+  const campaignId = body.campaign_id || 'C001';
+  return [
+    { query: "bluetooth earbuds brand", search_term: "bluetooth earbuds brand", target_text: "bluetooth earbuds", match_type: "BROAD", campaign_id: campaignId, ad_group_id: "AG001", impressions: 3000, clicks: 50, cost: 60, spend: 60, sales: 250, orders: 6, units: 6, acos: 0.24, keyword: "bluetooth earbuds", new_to_brand_orders: 4, new_to_brand_sales: 160, new_to_brand_units: 4, video_complete_views: 120, video_first_quartile_views: 400, video_midpoint_views: 250, video_third_quartile_views: 180 },
+    { query: "wireless earbuds premium", search_term: "wireless earbuds premium", target_text: "wireless earbuds", match_type: "EXACT", campaign_id: campaignId, ad_group_id: "AG001", impressions: 2000, clicks: 35, cost: 42, spend: 42, sales: 180, orders: 4, units: 4, acos: 0.23, keyword: "wireless earbuds", new_to_brand_orders: 3, new_to_brand_sales: 130, new_to_brand_units: 3, video_complete_views: 80, video_first_quartile_views: 300, video_midpoint_views: 180, video_third_quartile_views: 120 },
+    { query: "noise cancelling earbuds best", search_term: "noise cancelling earbuds best", target_text: "noise cancelling earbuds", match_type: "PHRASE", campaign_id: campaignId, ad_group_id: "AG002", impressions: 4000, clicks: 70, cost: 63, spend: 63, sales: 350, orders: 9, units: 9, acos: 0.18, keyword: "noise cancelling earbuds", new_to_brand_orders: 6, new_to_brand_sales: 230, new_to_brand_units: 6, video_complete_views: 200, video_first_quartile_views: 600, video_midpoint_views: 400, video_third_quartile_views: 280 },
+    { query: "cheap earbuds bluetooth", search_term: "cheap earbuds bluetooth", target_text: "bluetooth earbuds", match_type: "BROAD", campaign_id: campaignId, ad_group_id: "AG001", impressions: 5500, clicks: 90, cost: 72, spend: 72, sales: 110, orders: 2, units: 2, acos: 0.65, keyword: "bluetooth earbuds", new_to_brand_orders: 2, new_to_brand_sales: 110, new_to_brand_units: 2, video_complete_views: 50, video_first_quartile_views: 200, video_midpoint_views: 100, video_third_quartile_views: 70 },
+    { query: "earbuds waterproof sport", search_term: "earbuds waterproof sport", target_text: "waterproof earbuds", match_type: "PHRASE", campaign_id: campaignId, ad_group_id: "AG002", impressions: 900, clicks: 18, cost: 22, spend: 22, sales: 100, orders: 2, units: 2, acos: 0.22, keyword: "waterproof earbuds", new_to_brand_orders: 1, new_to_brand_sales: 50, new_to_brand_units: 1, video_complete_views: 30, video_first_quartile_views: 100, video_midpoint_views: 60, video_third_quartile_views: 40 },
+  ];
+}
+
+function mockSbTargetingReports(body: Record<string, any>) {
+  const campaignId = body.campaign_id || 'C001';
+  const targets = [
+    { keyword_id: 'SBT001', keyword_text: 'bluetooth earbuds', match_type: 'BROAD', targeting_type: 'keyword' },
+    { keyword_id: 'SBT002', keyword_text: 'wireless headphones', match_type: 'EXACT', targeting_type: 'keyword' },
+    { keyword_id: 'SBT003', keyword_text: 'asin=B09XYZ1234', match_type: 'TARGETING_EXPRESSION', targeting_type: 'product' },
+    { keyword_id: 'SBT004', keyword_text: 'noise cancelling earbuds', match_type: 'PHRASE', targeting_type: 'keyword' },
+  ];
+  return targets.map(t => {
+    const impressions = Math.floor(Math.random() * 2000 + 100);
+    const clicks = Math.floor(Math.random() * 40 + 2);
+    const cost = +(Math.random() * 20 + 1).toFixed(2);
+    const orders = Math.floor(Math.random() * 6);
+    const sales = +(orders * (Math.random() * 25 + 10)).toFixed(2);
+    return { ...t, campaign_id: campaignId, ad_group_id: 'SBAG001', profile_id: 121923590660074, report_date: body.report_date || new Date().toISOString().slice(0, 10), impressions, clicks, cost, sales, orders, units: orders, new_to_brand_orders: Math.floor(orders * 0.6), new_to_brand_sales: +(sales * 0.6).toFixed(2) };
+  });
+}
+
+function mockSdTargetingReports(body: Record<string, any>) {
+  const campaignId = body.campaign_id || 'C001';
+  const targets = [
+    { targeting_id: 'SDT001', targeting: 'asin=B09ABC1234', targeting_type: 'product', matched_target: 'B09ABC1234' },
+    { targeting_id: 'SDT002', targeting: 'category=Electronics', targeting_type: 'category', matched_target: 'Electronics' },
+    { targeting_id: 'SDT003', targeting: 'audience=InMarket_Headphones', targeting_type: 'audience', matched_target: 'InMarket_Headphones' },
+    { targeting_id: 'SDT004', targeting: 'views_remarketing', targeting_type: 'audience', matched_target: 'views_remarketing' },
+  ];
+  return targets.map(t => {
+    const impressions = Math.floor(Math.random() * 3000 + 200);
+    const view_impressions = impressions + Math.floor(Math.random() * 500);
+    const clicks = Math.floor(Math.random() * 50 + 3);
+    const cost = +(Math.random() * 25 + 2).toFixed(2);
+    const orders = Math.floor(Math.random() * 7);
+    const sales = +(orders * (Math.random() * 30 + 10)).toFixed(2);
+    return { ...t, campaign_id: campaignId, ad_group_id: 'SDAG001', profile_id: 121923590660074, report_date: body.report_date || new Date().toISOString().slice(0, 10), impressions, view_impressions, clicks, cost, sales, orders, units: orders };
+  });
+}
+
+function mockSpTargetReports(body: Record<string, any>) {
+  const campaignId = body.campaign_id || 'C001';
+  const targets = [
+    { targeting_id: 'SPT001', targeting_expression: 'asin=B09DEF5678', targeting_type: 'product' },
+    { targeting_id: 'SPT002', targeting_expression: 'category=Headphones', targeting_type: 'category' },
+    { targeting_id: 'SPT003', targeting_expression: 'brand=SoundCore', targeting_type: 'product' },
+  ];
+  return targets.map(t => {
+    const impressions = Math.floor(Math.random() * 1500 + 80);
+    const clicks = Math.floor(Math.random() * 35 + 2);
+    const cost = +(Math.random() * 18 + 1).toFixed(2);
+    const orders = Math.floor(Math.random() * 5);
+    const sales = +(orders * (Math.random() * 22 + 8)).toFixed(2);
+    return { ...t, campaign_id: campaignId, ad_group_id: 'SPAG001', profile_id: 121923590660074, report_date: body.report_date || new Date().toISOString().slice(0, 10), impressions, clicks, cost, sales, orders, units: orders };
+  });
+}
+
+function mockSbPlacementReports(body: Record<string, any>) {
+  const campaignId = body.campaign_id || 'C001';
+  const placements = ['TOP OF SEARCH ON-AMAZON (SB)', 'DETAIL PAGE (SB)', 'OTHER (SB)'];
+  return placements.map(pt => {
+    const impressions = Math.floor(Math.random() * 2500 + 150);
+    const clicks = Math.floor(Math.random() * 60 + 5);
+    const cost = +(Math.random() * 40 + 5).toFixed(2);
+    const orders = Math.floor(Math.random() * 8 + 1);
+    const sales = +(orders * (Math.random() * 25 + 10)).toFixed(2);
+    return { placement_type: pt, campaign_id: campaignId, profile_id: 121923590660074, report_date: body.report_date || new Date().toISOString().slice(0, 10), impressions, clicks, cost, sales, orders, units: orders, new_to_brand_orders: Math.floor(orders * 0.5), new_to_brand_sales: +(sales * 0.5).toFixed(2) };
+  });
+}
+
+function mockSdCampaignReportsData(body: Record<string, any>) {
+  const campaignId = body.campaign_id || 'C001';
+  const placements = ['PRODUCT DETAIL PAGE (SD)', 'OFF-AMAZON', 'REMARKETING'];
+  return placements.map(pt => {
+    const impressions = Math.floor(Math.random() * 4000 + 300);
+    const view_impressions = impressions + Math.floor(Math.random() * 1000);
+    const clicks = Math.floor(Math.random() * 70 + 8);
+    const cost = +(Math.random() * 45 + 8).toFixed(2);
+    const orders = Math.floor(Math.random() * 10 + 1);
+    const sales = +(orders * (Math.random() * 30 + 12)).toFixed(2);
+    return { placement_type: pt, campaign_id: campaignId, profile_id: 121923590660074, report_date: body.report_date || new Date().toISOString().slice(0, 10), impressions, view_impressions, clicks, cost, sales, orders, units: orders };
+  });
 }
 
 export { LingxingAdapter };

@@ -2939,3 +2939,17 @@
 - [x] 前端：优化大数据量渲染性能（折叠状态下不渲染子活动，展开时按类型/搜索过滤子活动）
 - [x] 前端：添加加载状态和空状态优化（搜索无结果提示、筛选后计数Badge）
 - [x] 验证分页功能在487个活动场景下的性能表现（23个组合/51个活动正确分页，搜索/筛选/分页联动正常）
+
+## 广告子Tab SP/SB/SD广告类型切换器
+- [x] 后端：getSearchTerms12Category添加adType参数，支持SP/SB/SD API路径切换
+- [x] 后端：getTargetingAnalysis添加adType参数，支持SP/SB/SD API路径切换
+- [x] 后端：getAdPlacementData添加adType参数，支持SP/SB/SD API路径切换
+- [x] 后端：getAdHourlyData添加adType参数，支持SP/SB/SD API路径切换
+- [x] 后端：lingxingAdapter新增SB/SD mock数据路径和mock函数（搜索词/投放对象/广告位）
+- [x] 前端：SearchTermClassification组件添加SP/SB广告类型切换器UI
+- [x] 前端：TargetingAnalysis组件添加SP/SB/SD广告类型切换器UI
+- [x] 前端：AdPlacementAnalysis组件添加SP/SB/SD广告类型切换器UI
+- [x] 前端：HourlyBidStrategy组件添加SP/SB/SD广告类型切换器UI
+- [x] 修复：HourlyBidStrategy传递campaignId到getAdHourlyData查询（解决campaign_id null错误）
+- [x] 单元测试：adType参数验证和mock数据结构测试
+- [x] 浏览器测试：4个子Tab的SP/SB/SD切换功能验证通过
