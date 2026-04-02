@@ -367,7 +367,16 @@ export default function DevProjectDetail() {
 
         {/* Scoring + Approval */}
         <TabsContent value="scoring" className="space-y-4">
-          <ScoringEditor score={score} project={project} projectId={projectId} isPhase2={isPhase2} />
+          <ScoringEditor
+            score={score}
+            project={project}
+            projectId={projectId}
+            isPhase2={isPhase2}
+            onApprove={() => {
+              // Auto-switch to landing phase after approval
+              setTimeout(() => setActiveTab("profile"), 800);
+            }}
+          />
         </TabsContent>
 
         {/* ═══════════════════════════════════════════════════════ */}

@@ -54,6 +54,14 @@ export async function updateDevProject(id: number, userId: number, data: Partial
   return { id, ...data };
 }
 
+// Admin-level update: bypasses userId constraint (for approval/revocation by admins)
+export async function updateDevProjectAdmin(id: number, data: Partial<InsertDevProject>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(devProjects).set(data).where(eq(devProjects.id, id));
+  return { id, ...data };
+}
+
 export async function deleteDevProject(id: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

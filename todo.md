@@ -2953,3 +2953,15 @@
 - [x] 修复：HourlyBidStrategy传递campaignId到getAdHourlyData查询（解决campaign_id null错误）
 - [x] 单元测试：adType参数验证和mock数据结构测试
 - [x] 浏览器测试：4个子Tab的SP/SB/SD切换功能验证通过
+
+## Bug修复：确认立项后无法进入落地阶段
+- [x] 排查confirmProject流程：确认立项按钮点击后stage字段是否正确更新为'landing'
+- [x] 检查项目落地阶段路由/页面解锁逻辑（stage判断条件）
+- [x] 修复立项后页面跳转或状态刷新问题
+- [x] 验证修复：确认立项 → 自动跳转到落地阶段页面
+
+## 广告优化：三项功能优化
+- [ ] 跨渠道分析Tab：实现getCrossChannelData API（SP/SB/SD/DSP四渠道汇总对比）
+- [ ] 跨渠道分析Tab：前端图表展示（渠道对比柱状图、趋势折线图、渠道占比饼图）
+- [ ] SB/SD空数据提示：添加空状态组件（友好提示+领星授权引导链接）
+- [ ] 广告类型联动：选中广告活动时根据活动类型(SP/SB/SD)自动设置子Tab默认adType

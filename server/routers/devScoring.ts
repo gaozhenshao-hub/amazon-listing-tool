@@ -131,13 +131,15 @@ ${products.slice(0, 10).map(p => `${p.asin} | ${p.title} | $${p.price} | ${p.rat
     }),
 
   // Approve project: move from market_analysis to project_execution phase
+  // Uses admin-level update to bypass userId constraint (admins can approve any project)
   approveProject: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const score = await devDb.getDevProjectScore(input.projectId);
       if (!score) throw new Error("请先完成AI评分");
 
-      await devDb.updateDevProject(input.projectId, ctx.user.id, {
+      // Use admin-level update: allows super_admin/admin to approve projects they don't own
+      await devDb.updateDevProjectAdmin(input.projectId, {
         phase: "project_execution" as any,
         approvedAt: new Date() as any,
         approvedScore: score.totalScore as any,
@@ -151,7 +153,8 @@ ${products.slice(0, 10).map(p => `${p.asin} | ${p.title} | $${p.price} | ${p.rat
   revokeApproval: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await devDb.updateDevProject(input.projectId, ctx.user.id, {
+      // Use admin-level update: allows super_admin/admin to revoke any project
+      await devDb.updateDevProjectAdmin(input.projectId, {
         phase: "market_analysis" as any,
         approvedAt: null as any,
         approvedScore: null as any,

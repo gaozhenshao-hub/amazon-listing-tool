@@ -47,11 +47,13 @@ export default function ScoringEditor({
   project,
   projectId,
   isPhase2,
+  onApprove,
 }: {
   score: any;
   project: any;
   projectId: number;
   isPhase2: boolean;
+  onApprove?: () => void;
 }) {
   const utils = trpc.useUtils();
 
@@ -65,9 +67,11 @@ export default function ScoringEditor({
 
   const approveMutation = trpc.devScoring.approveProject.useMutation({
     onSuccess: () => {
-      toast.success("项目已立项");
+      toast.success("🎉 项目已立项！正在跳转到落地阶段...");
       utils.devScoring.getScore.invalidate({ projectId });
       utils.devProject.getById.invalidate({ id: projectId });
+      // Callback to parent to auto-navigate to landing phase
+      if (onApprove) onApprove();
     },
     onError: (err: any) => toast.error(`立项失败: ${err.message}`),
   });
