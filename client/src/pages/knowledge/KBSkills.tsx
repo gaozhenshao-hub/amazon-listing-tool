@@ -348,7 +348,9 @@ export default function KBSkills() {
       }
       if (!searchQuery) return true;
       const q = searchQuery.toLowerCase();
-      return (item.title || "").toLowerCase().includes(q) || (item.tags || "").toLowerCase().includes(q) || (item.sourceType || "").toLowerCase().includes(q) || (item.aiSummary || "").toLowerCase().includes(q);
+      let summaryText = item.aiSummary || "";
+      try { const p = JSON.parse(summaryText); summaryText = (p.briefSummary || "") + " " + (p.summary || ""); } catch {}
+      return (item.title || "").toLowerCase().includes(q) || (item.tags || "").toLowerCase().includes(q) || (item.sourceType || "").toLowerCase().includes(q) || summaryText.toLowerCase().includes(q);
     });
   }, [items, searchQuery, filterCategory]);
 
@@ -554,7 +556,16 @@ export default function KBSkills() {
                           </Badge>
                         )}
                       </div>
-                      {item.aiSummary && <p className="text-xs text-muted-foreground line-clamp-2">{item.aiSummary}</p>}
+                      {item.aiSummary && (() => {
+                        try {
+                          const parsed = JSON.parse(item.aiSummary);
+                          const text = parsed.briefSummary || parsed.summary || "";
+                          return text ? <p className="text-xs text-muted-foreground line-clamp-2">{text}</p> : null;
+                        } catch {
+                          // Fallback: show raw text if not valid JSON (legacy data)
+                          return <p className="text-xs text-muted-foreground line-clamp-2">{item.aiSummary}</p>;
+                        }
+                      })()}
                       <div className="flex flex-wrap gap-1 mt-2">
                         {item.sourceType && <Badge variant="outline" className="text-[10px]">{item.sourceType}</Badge>}
                         {item.tags && (item.tags as string).split(",").filter(Boolean).map((tag: string) => (
