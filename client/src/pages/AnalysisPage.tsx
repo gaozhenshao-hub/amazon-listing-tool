@@ -52,7 +52,7 @@ interface BatchItem {
   error?: string;
 }
 
-type InputMode = "auto" | "manual" | "import";
+type InputMode = "auto" | "sellersprite" | "import";
 
 interface FilePreview {
   filename?: string;
@@ -81,8 +81,41 @@ export default function AnalysisPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const abortRef = useRef(false);
 
-  // Manual input mode state
+  // Input mode state
   const [inputMode, setInputMode] = useState<InputMode>("auto");
+  const [failedAsin, setFailedAsin] = useState<string | null>(null);
+
+  // SellerSprite upload mode state
+  interface SSProduct {
+    asin: string;
+    title?: string;
+    brand?: string;
+    price?: number;
+    rating?: number;
+    reviewCount?: number;
+    monthlySales?: number;
+    monthlyRevenue?: number;
+    bsrRank?: number;
+    subCategoryRank?: number;
+    launchDate?: string;
+    fulfillment?: string;
+    grossMargin?: number;
+    hasSPAd?: boolean;
+    hasAplus?: boolean;
+    hasBestSeller?: boolean;
+    hasAmazonChoice?: boolean;
+    category?: string;
+    selected?: boolean;
+  }
+  const [ssFileBase64, setSsFileBase64] = useState<string | null>(null);
+  const [ssFilename, setSsFilename] = useState("");
+  const [ssProducts, setSsProducts] = useState<SSProduct[]>([]);
+  const [ssIsPreviewing, setSsIsPreviewing] = useState(false);
+  const [ssIsAnalyzing, setSsIsAnalyzing] = useState(false);
+  const [ssDragOver, setSsDragOver] = useState(false);
+  const ssFileRef = useRef<HTMLInputElement | null>(null);
+
+  // Legacy manual input state (kept for fallback)
   const [manualAsin, setManualAsin] = useState("");
   const [manualTitle, setManualTitle] = useState("");
   const [manualBulletPoints, setManualBulletPoints] = useState("");
@@ -91,7 +124,6 @@ export default function AnalysisPage() {
   const [manualReviews, setManualReviews] = useState("");
   const [manualBrand, setManualBrand] = useState("");
   const [manualDescription, setManualDescription] = useState("");
-  const [failedAsin, setFailedAsin] = useState<string | null>(null);
 
   // Import mode state - multi-ASIN batch import
   interface ImportItem {
@@ -122,6 +154,8 @@ export default function AnalysisPage() {
   const analyzeManual = trpc.analysis.analyzeManual.useMutation();
   const importReviews = trpc.analysis.importReviews.useMutation();
   const previewReviewFile = trpc.analysis.previewReviewFile.useMutation();
+  const previewSellerSprite = trpc.analysis.previewSellerSpriteFile.useMutation();
+  const analyzeFromSellerSprite = trpc.analysis.analyzeFromSellerSprite.useMutation();
 
   const deleteAnalysis = trpc.analysis.delete.useMutation({
     onSuccess: () => {
@@ -142,13 +176,10 @@ export default function AnalysisPage() {
   const parsedAsins = parseAsins(asinInput);
   const uniqueAsins = Array.from(new Set(parsedAsins));
 
-  // Switch to manual mode with failed ASIN pre-filled
-  const switchToManualMode = useCallback((asin?: string) => {
-    setInputMode("manual");
-    if (asin) {
-      setManualAsin(asin);
-      setFailedAsin(asin);
-    }
+  // Switch to sellersprite mode
+  const switchToManualMode = useCallback((_asin?: string) => {
+    setInputMode("sellersprite");
+    setFailedAsin(null);
   }, []);
 
   // Switch back to auto mode
@@ -162,6 +193,80 @@ export default function AnalysisPage() {
     setInputMode("import");
     setFailedAsin(null);
   }, []);
+
+  // Switch to sellersprite mode
+  const switchToSellerSpriteMode = useCallback(() => {
+    setInputMode("sellersprite");
+    setFailedAsin(null);
+  }, []);
+
+  // SellerSprite file handler
+  const handleSsFileSelect = useCallback(async (file: File) => {
+    const validExt = [".xlsx", ".xls", ".csv"];
+    const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
+    if (!validExt.includes(ext)) {
+      toast.error("不支持的文件格式", { description: "请上传卖家精灵导出的 .xlsx/.xls/.csv 文件" });
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      toast.error("文件过大", { description: "文件大小不能超过 20MB" });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const ab = e.target?.result as ArrayBuffer;
+      const bytes = new Uint8Array(ab);
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      const b64 = btoa(binary);
+      setSsFileBase64(b64);
+      setSsFilename(file.name);
+      setSsProducts([]);
+      setSsIsPreviewing(true);
+      try {
+        const result = await previewSellerSprite.mutateAsync({ fileBase64: b64, filename: file.name });
+        if (result.success && result.products.length > 0) {
+          setSsProducts(result.products.map(p => ({ ...p, selected: true })));
+          toast.success(`解析成功：共 ${result.products.length} 条竞品数据`);
+        } else {
+          toast.error("解析失败", { description: result.errors?.[0] || "未找到有效产品数据" });
+        }
+      } catch (err: any) {
+        toast.error("解析失败", { description: err.message });
+      } finally {
+        setSsIsPreviewing(false);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }, [previewSellerSprite]);
+
+  // SellerSprite batch analyze
+  const handleSsAnalyze = useCallback(async () => {
+    if (!ssFileBase64 || !selectedProjectId) return;
+    const selected = ssProducts.filter(p => p.selected);
+    if (selected.length === 0) {
+      toast.error("请至少选择一条竞品数据");
+      return;
+    }
+    setSsIsAnalyzing(true);
+    try {
+      const result = await analyzeFromSellerSprite.mutateAsync({
+        projectId: selectedProjectId,
+        fileBase64: ssFileBase64,
+        filename: ssFilename,
+        selectedAsins: selected.map(p => p.asin),
+      });
+      toast.success(`分析完成：${result.succeeded} 成功，${result.failed} 失败`);
+      utils.analysis.listByProject.invalidate({ projectId: selectedProjectId });
+      setSsFileBase64(null);
+      setSsFilename("");
+      setSsProducts([]);
+    } catch (err: any) {
+      toast.error("批量分析失败", { description: err.message });
+    } finally {
+      setSsIsAnalyzing(false);
+    }
+  }, [ssFileBase64, ssFilename, ssProducts, selectedProjectId, analyzeFromSellerSprite, utils]);
 
   // Reset manual form
   const resetManualForm = useCallback(() => {
@@ -631,15 +736,15 @@ export default function AnalysisPage() {
               </button>
               <button
                 className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors ${
-                  inputMode === "manual"
+                  inputMode === "sellersprite"
                     ? "bg-primary text-primary-foreground"
                     : "bg-background text-muted-foreground hover:bg-muted/50"
                 }`}
-                onClick={() => switchToManualMode()}
+                onClick={switchToSellerSpriteMode}
                 disabled={isProcessing}
               >
-                <PenLine className="h-3.5 w-3.5" />
-                手动输入
+                <Upload className="h-3.5 w-3.5" />
+                卖家精灵
               </button>
             </div>
 
@@ -1029,176 +1134,176 @@ export default function AnalysisPage() {
               </Card>
             )}
 
-            {/* ═══════════════ Manual Input Mode ═══════════════ */}
-            {inputMode === "manual" && (
+            {/* ═══════════════ SellerSprite Upload Mode ═══════════════ */}
+            {inputMode === "sellersprite" && (
               <Card>
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base flex items-center gap-2">
-                      <PenLine className="h-4 w-4" />
-                      手动输入产品数据
+                      <Upload className="h-4 w-4" />
+                      卖家精灵数据导入
                     </CardTitle>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs h-7"
-                      onClick={resetManualForm}
-                      disabled={isProcessing}
-                    >
-                      <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                      重置
-                    </Button>
+                    {ssProducts.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs h-7"
+                        onClick={() => { setSsFileBase64(null); setSsFilename(""); setSsProducts([]); }}
+                        disabled={ssIsAnalyzing}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                        重新上传
+                      </Button>
+                    )}
                   </div>
                   <CardDescription>
-                    从亚马逊产品页面复制粘贴产品信息，工具将基于您提供的数据进行AI分析。
+                    上传卖家精灵导出的搜索结果 Excel，批量导入竞品数据并进行AI深度分析。
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {failedAsin && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                      <p className="text-xs text-amber-700">
-                        <AlertTriangle className="h-3.5 w-3.5 inline mr-1" />
-                        ASIN <span className="font-mono font-bold">{failedAsin}</span> 自动爬取失败，请手动粘贴该产品的信息。
-                      </p>
+                  {/* File Upload Area */}
+                  {!ssProducts.length && (
+                    <div
+                      className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
+                        ssDragOver ? "border-primary bg-primary/5" : "border-muted-foreground/30 hover:border-primary/50"
+                      }`}
+                      onDragOver={(e) => { e.preventDefault(); setSsDragOver(true); }}
+                      onDragLeave={() => setSsDragOver(false)}
+                      onDrop={(e) => { e.preventDefault(); setSsDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleSsFileSelect(f); }}
+                      onClick={() => ssFileRef.current?.click()}
+                    >
+                      <input
+                        ref={ssFileRef}
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        className="hidden"
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleSsFileSelect(f); }}
+                      />
+                      {ssIsPreviewing ? (
+                        <div className="flex flex-col items-center gap-2">
+                          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                          <p className="text-sm text-muted-foreground">正在解析文件...</p>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center gap-3">
+                          <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+                            <Upload className="h-6 w-6 text-muted-foreground" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium">拖放文件到此处，或点击选择</p>
+                            <p className="text-xs text-muted-foreground mt-1">支持 .xlsx / .xls / .csv 格式，最大 20MB</p>
+                          </div>
+                          <div className="text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-2">
+                            在卖家精灵搜索页 → 导出搜索结果 → 上传此处
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  <div className="space-y-1.5">
-                    <Label className="text-sm">竞品ASIN *</Label>
-                    <Input
-                      placeholder="例如: B0XXXXXXXXX"
-                      value={manualAsin}
-                      onChange={(e) => setManualAsin(e.target.value.toUpperCase())}
-                      disabled={isProcessing}
-                      className="font-mono text-base tracking-wider"
-                    />
-                    <p className="text-xs text-muted-foreground">10位亚马逊产品标识码</p>
-                  </div>
-
-                  <Separator />
-
-                  <div className="space-y-1.5">
-                    <Label className="text-sm">品牌名称</Label>
-                    <Input
-                      placeholder="例如: Anker"
-                      value={manualBrand}
-                      onChange={(e) => setManualBrand(e.target.value)}
-                      disabled={isProcessing}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-sm">竞品标题</Label>
-                    <Textarea
-                      placeholder="粘贴竞品的产品标题..."
-                      value={manualTitle}
-                      onChange={(e) => setManualTitle(e.target.value)}
-                      disabled={isProcessing}
-                      rows={3}
-                    />
-                    {manualTitle && (
-                      <p className="text-xs text-muted-foreground">{manualTitle.length} 字符</p>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-sm">五点描述（Bullet Points）</Label>
-                    <Textarea
-                      placeholder={"粘贴竞品的五点描述，每条一行...\n\n例如:\n【PREMIUM QUALITY】High-grade material...\n【EASY TO USE】Simply plug in and...\n【VERSATILE DESIGN】Works with..."}
-                      value={manualBulletPoints}
-                      onChange={(e) => setManualBulletPoints(e.target.value)}
-                      disabled={isProcessing}
-                      rows={6}
-                      className="text-sm"
-                    />
-                    {manualBulletPoints && (
-                      <p className="text-xs text-muted-foreground">
-                        {manualBulletPoints.split("\n").filter(l => l.trim()).length} 条描述
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <Label className="text-sm">价格</Label>
-                      <Input
-                        placeholder="$29.99"
-                        value={manualPrice}
-                        onChange={(e) => setManualPrice(e.target.value)}
-                        disabled={isProcessing}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-sm">评分</Label>
-                      <Input
-                        placeholder="4.5"
-                        value={manualRating}
-                        onChange={(e) => setManualRating(e.target.value)}
-                        disabled={isProcessing}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-sm">产品描述</Label>
-                    <Textarea
-                      placeholder="粘贴产品详情页的描述内容（可选）..."
-                      value={manualDescription}
-                      onChange={(e) => setManualDescription(e.target.value)}
-                      disabled={isProcessing}
-                      rows={3}
-                      className="text-sm"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-sm">客户评论内容</Label>
-                    <Textarea
-                      placeholder={"粘贴客户评论内容，用于痛点/痒点/爽点分析...\n\n建议粘贴10-20条有代表性的评论，包含好评和差评"}
-                      value={manualReviews}
-                      onChange={(e) => setManualReviews(e.target.value)}
-                      disabled={isProcessing}
-                      rows={6}
-                      className="text-sm"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      建议粘贴10-20条有代表性的评论，包含好评和差评
-                    </p>
-                  </div>
-
-                  {/* Progress */}
-                  {isProcessing && batchItems.length > 0 && (
-                    <div className="space-y-3 p-4 bg-muted/30 rounded-lg border">
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                        <span className="text-sm font-medium">AI分析中...</span>
+                  {/* Product Preview Table */}
+                  {ssProducts.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium">
+                          共 {ssProducts.length} 条竞品，已选 {ssProducts.filter(p => p.selected).length} 条
+                        </p>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" className="text-xs h-7"
+                            onClick={() => setSsProducts(prev => prev.map(p => ({ ...p, selected: true })))}
+                          >全选</Button>
+                          <Button variant="outline" size="sm" className="text-xs h-7"
+                            onClick={() => setSsProducts(prev => prev.map(p => ({ ...p, selected: false })))}
+                          >全不选</Button>
+                        </div>
                       </div>
-                      <Progress value={50} className="h-2" />
+                      <div className="border rounded-lg overflow-hidden">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead className="bg-muted/50">
+                              <tr>
+                                <th className="p-2 text-left w-8">
+                                  <input type="checkbox"
+                                    checked={ssProducts.every(p => p.selected)}
+                                    onChange={(e) => setSsProducts(prev => prev.map(p => ({ ...p, selected: e.target.checked })))}
+                                    className="rounded"
+                                  />
+                                </th>
+                                <th className="p-2 text-left font-medium">ASIN</th>
+                                <th className="p-2 text-left font-medium">标题</th>
+                                <th className="p-2 text-right font-medium">价格</th>
+                                <th className="p-2 text-right font-medium">评分</th>
+                                <th className="p-2 text-right font-medium">月销量</th>
+                                <th className="p-2 text-right font-medium">BSR</th>
+                                <th className="p-2 text-center font-medium">标记</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {ssProducts.map((p, idx) => (
+                                <tr key={p.asin} className={`border-t transition-colors ${
+                                  p.selected ? "bg-background" : "bg-muted/20 opacity-60"
+                                }`}>
+                                  <td className="p-2">
+                                    <input type="checkbox" checked={!!p.selected}
+                                      onChange={(e) => setSsProducts(prev => prev.map((item, i) => i === idx ? { ...item, selected: e.target.checked } : item))}
+                                      className="rounded"
+                                    />
+                                  </td>
+                                  <td className="p-2 font-mono text-primary">{p.asin}</td>
+                                  <td className="p-2 max-w-[140px] truncate" title={p.title}>{p.title || "-"}</td>
+                                  <td className="p-2 text-right">{p.price ? `$${p.price}` : "-"}</td>
+                                  <td className="p-2 text-right">{p.rating ? `★${p.rating}` : "-"}</td>
+                                  <td className="p-2 text-right">{p.monthlySales ? p.monthlySales.toLocaleString() : "-"}</td>
+                                  <td className="p-2 text-right">{p.bsrRank ? `#${p.bsrRank}` : "-"}</td>
+                                  <td className="p-2 text-center">
+                                    <div className="flex items-center justify-center gap-0.5">
+                                      {p.hasBestSeller && <span className="text-amber-500" title="Best Seller">🏆</span>}
+                                      {p.hasAmazonChoice && <span className="text-blue-500" title="Amazon's Choice">💙</span>}
+                                      {p.hasAplus && <span className="text-green-500" title="A+">A+</span>}
+                                      {p.hasSPAd && <span className="text-purple-500" title="SP广告">📊</span>}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Analyze Button */}
+                      {ssIsAnalyzing && (
+                        <div className="space-y-2 p-3 bg-muted/30 rounded-lg border">
+                          <div className="flex items-center gap-2">
+                            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                            <span className="text-sm font-medium">正在对 {ssProducts.filter(p => p.selected).length} 条竞品进行AI分析...</span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">这可能需要几分钟，请耐心等待</p>
+                        </div>
+                      )}
+
+                      <Button
+                        className="w-full"
+                        size="lg"
+                        onClick={handleSsAnalyze}
+                        disabled={ssIsAnalyzing || ssProducts.filter(p => p.selected).length === 0}
+                      >
+                        {ssIsAnalyzing ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            AI分析中...
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="h-4 w-4 mr-2" />
+                            批量导入 & AI分析 ({ssProducts.filter(p => p.selected).length} 条)
+                          </>
+                        )}
+                      </Button>
+                      <p className="text-xs text-muted-foreground text-center">
+                        将导入并分析已选竞品，结果展示在右侧面板
+                      </p>
                     </div>
                   )}
-
-                  <Button
-                    className="w-full"
-                    size="lg"
-                    onClick={handleManualAnalyze}
-                    disabled={isProcessing || !manualAsin.trim()}
-                  >
-                    {isProcessing ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        AI分析中...
-                      </>
-                    ) : (
-                      <>
-                        <Search className="h-4 w-4 mr-2" />
-                        提交手动数据 & 分析
-                      </>
-                    )}
-                  </Button>
-
-                  <p className="text-xs text-muted-foreground text-center">
-                    至少填写标题、五点描述或评论中的一项即可进行分析
-                  </p>
                 </CardContent>
               </Card>
             )}

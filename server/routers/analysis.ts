@@ -737,14 +737,212 @@ export const analysisRouter = router({
         analysisData = { raw: analysisContent };
       }
 
-      // Update the review import status
+       // Update the review import status
       await db.updateReviewImport(input.id, { status: "completed" });
-
       return {
         success: true,
         importId: input.id,
         analysisId: record.analysisId,
         asin: record.asin,
+      };
+    }),
+
+  // ─── Analyze from SellerSprite Excel (产品搜索结果文件) ───────────────
+  analyzeFromSellerSprite: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      fileBase64: z.string(),
+      filename: z.string(),
+      // Optional: only import selected ASINs (empty = import all)
+      selectedAsins: z.array(z.string()).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+
+      // Decode base64 and convert Excel → CSV text for SellerSprite parser
+      const buffer = Buffer.from(input.fileBase64, "base64");
+      const { parseSellerSpriteData } = await import("./sellerSpriteImporter");
+      let csvText: string;
+      const lowerName = input.filename.toLowerCase();
+      if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+        const XLSX = await import("xlsx");
+        const wb = XLSX.read(buffer, { type: "buffer", cellText: true, raw: false });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        csvText = XLSX.utils.sheet_to_csv(ws, { forceQuotes: true });
+      } else {
+        csvText = buffer.toString("utf-8");
+      }
+      const parseResult = parseSellerSpriteData(csvText, undefined);
+
+      if (!parseResult.success || parseResult.products.length === 0) {
+        throw new Error(`文件解析失败: ${parseResult.errors.join("; ") || "未找到有效产品数据"}`);
+      }
+
+      // Filter by selected ASINs if provided
+      const productsToProcess = input.selectedAsins && input.selectedAsins.length > 0
+        ? parseResult.products.filter(p => input.selectedAsins!.includes(p.asin))
+        : parseResult.products;
+
+      if (productsToProcess.length === 0) {
+        throw new Error("没有选中的产品数据可导入");
+      }
+
+      const results: Array<{
+        asin: string;
+        status: "success" | "failed";
+        analysisId?: number;
+        title?: string;
+        error?: string;
+      }> = [];
+
+      for (const product of productsToProcess) {
+        try {
+          // Build context for LLM analysis from SellerSprite data
+          const contextParts: string[] = [];
+          contextParts.push(`ASIN: ${product.asin}`);
+          if (product.title) contextParts.push(`Title: ${product.title}`);
+          if (product.brand) contextParts.push(`Brand: ${product.brand}`);
+          if (product.bulletPoints && product.bulletPoints.length > 0) {
+            contextParts.push(`Bullet Points:\n${product.bulletPoints.map((bp, i) => `${i + 1}. ${bp}`).join("\n")}`);
+          }
+          if (product.price) contextParts.push(`Price: $${product.price}`);
+          if (product.rating) contextParts.push(`Rating: ${product.rating}/5 (${product.reviewCount || 0} reviews)`);
+          if (product.monthlySales) contextParts.push(`Monthly Sales: ${product.monthlySales} units`);
+          if (product.monthlyRevenue) contextParts.push(`Monthly Revenue: $${product.monthlyRevenue}`);
+          if (product.bsrRank) contextParts.push(`BSR: #${product.bsrRank} in ${product.category || "main category"}`);
+          if (product.subCategoryRank) contextParts.push(`Sub-category BSR: #${product.subCategoryRank}`);
+          if (product.launchDate) contextParts.push(`Launch Date: ${product.launchDate}`);
+          if (product.variationCount) contextParts.push(`Variations: ${product.variationCount}`);
+          if (product.fulfillment) contextParts.push(`Fulfillment: ${product.fulfillment}`);
+          if (product.grossMargin) contextParts.push(`Gross Margin: ${(product.grossMargin * 100).toFixed(1)}%`);
+          if (product.hasSPAd) contextParts.push(`SP Ads: Yes`);
+          if (product.hasBrandAd) contextParts.push(`Brand Ads: Yes`);
+          if (product.hasAplus) contextParts.push(`A+ Content: Yes`);
+          if (product.hasBestSeller) contextParts.push(`Badge: Best Seller`);
+          if (product.hasAmazonChoice) contextParts.push(`Badge: Amazon's Choice`);
+          if (product.imageCount) contextParts.push(`Image Count: ${product.imageCount}`);
+
+          const analysisResponse = await invokeLLM({
+            messages: [
+              { role: "system", content: COMPETITOR_ANALYSIS_PROMPT },
+              { role: "user", content: `Analyze this competitor product from SellerSprite data:\n\n${contextParts.join("\n\n")}` },
+            ],
+            response_format: { type: "json_object" },
+          });
+
+          const analysisContent = typeof analysisResponse.choices[0].message.content === "string"
+            ? analysisResponse.choices[0].message.content
+            : JSON.stringify(analysisResponse.choices[0].message.content);
+
+          let analysisData: any = {};
+          try { analysisData = JSON.parse(analysisContent); } catch { analysisData = { raw: analysisContent }; }
+
+          const bulletPointsArray = product.bulletPoints || [];
+
+          const saved = await db.createCompetitorAnalysis({
+            projectId: input.projectId,
+            asin: product.asin,
+            title: product.title ?? null,
+            bulletPoints: bulletPointsArray.length > 0 ? JSON.stringify(bulletPointsArray) : null,
+            price: product.price ? String(product.price) : null,
+            rating: product.rating ? String(product.rating) : null,
+            reviewCount: product.reviewCount ? String(product.reviewCount) : null,
+            reviewAnalysis: null,
+            keywords: analysisData.keywords ? JSON.stringify(analysisData.keywords) : null,
+            imageUrls: null,
+            rawData: JSON.stringify({
+              ...analysisData,
+              sellerSpriteData: {
+                monthlySales: product.monthlySales,
+                monthlyRevenue: product.monthlyRevenue,
+                bsrRank: product.bsrRank,
+                subCategoryRank: product.subCategoryRank,
+                launchDate: product.launchDate,
+                variationCount: product.variationCount,
+                fulfillment: product.fulfillment,
+                grossMargin: product.grossMargin,
+                fbaFee: product.fbaFee,
+                sellerCount: product.sellerCount,
+                hasSPAd: product.hasSPAd,
+                hasBrandAd: product.hasBrandAd,
+                hasAplus: product.hasAplus,
+                hasBestSeller: product.hasBestSeller,
+                hasAmazonChoice: product.hasAmazonChoice,
+                brand: product.brand,
+                category: product.category,
+                imageCount: product.imageCount,
+              },
+              importSource: "sellersprite_search",
+            }),
+          });
+
+          results.push({ asin: product.asin, status: "success", analysisId: saved.id, title: product.title });
+        } catch (err: any) {
+          results.push({ asin: product.asin, status: "failed", error: err.message });
+        }
+      }
+
+      return {
+        success: true,
+        totalParsed: parseResult.products.length,
+        processed: results.length,
+        succeeded: results.filter(r => r.status === "success").length,
+        failed: results.filter(r => r.status === "failed").length,
+        results,
+        warnings: parseResult.warnings,
+      };
+    }),
+
+  // Preview SellerSprite Excel file before import (no DB write)
+  previewSellerSpriteFile: protectedProcedure
+    .input(z.object({
+      fileBase64: z.string(),
+      filename: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const buffer = Buffer.from(input.fileBase64, "base64");
+      const { parseSellerSpriteData } = await import("./sellerSpriteImporter");
+      let csvText: string;
+      const lowerName = input.filename.toLowerCase();
+      if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {
+        const XLSX = await import("xlsx");
+        const wb = XLSX.read(buffer, { type: "buffer", cellText: true, raw: false });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        csvText = XLSX.utils.sheet_to_csv(ws, { forceQuotes: true });
+      } else {
+        csvText = buffer.toString("utf-8");
+      }
+      const parseResult = parseSellerSpriteData(csvText, undefined);
+
+      return {
+        success: parseResult.success,
+        fileType: parseResult.fileType,
+        totalRows: parseResult.totalRows,
+        parsedRows: parseResult.parsedRows,
+        warnings: parseResult.warnings,
+        errors: parseResult.errors,
+        // Return preview of first 60 products with key fields only
+        products: parseResult.products.slice(0, 60).map(p => ({
+          asin: p.asin,
+          title: p.title,
+          brand: p.brand,
+          price: p.price,
+          rating: p.rating,
+          reviewCount: p.reviewCount,
+          monthlySales: p.monthlySales,
+          monthlyRevenue: p.monthlyRevenue,
+          bsrRank: p.bsrRank,
+          subCategoryRank: p.subCategoryRank,
+          launchDate: p.launchDate,
+          fulfillment: p.fulfillment,
+          grossMargin: p.grossMargin,
+          hasSPAd: p.hasSPAd,
+          hasAplus: p.hasAplus,
+          hasBestSeller: p.hasBestSeller,
+          hasAmazonChoice: p.hasAmazonChoice,
+          category: p.category,
+        })),
       };
     }),
 });
