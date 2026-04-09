@@ -449,15 +449,29 @@ export const kbIntelRouter = router({
 
       // Insert into the target knowledge base
       if (input.targetKbType === "sop") {
+        // Build a human-readable summary from the SOP content
+        const sopSummaryText = [
+          content.applicableScenarios ? `适用场景：${content.applicableScenarios}` : "",
+          content.preconditions?.length ? `前置条件：${Array.isArray(content.preconditions) ? content.preconditions.join("；") : content.preconditions}` : "",
+          content.steps?.length ? `操作步骤（共${content.steps.length}步）：${content.steps.map((s: { title?: string; action?: string }, i: number) => `${i+1}.${s.title || s.action || ""}`).join("；")}` : "",
+        ].filter(Boolean).join("\n");
+
         const [result] = await _d.insert(kbOperationSkills).values({
           userId: ctx.user!.id,
           title: content.title,
           sourceType: "url",
           sourceUrl: item.originalUrl,
+          // Store the full SOP JSON in extractedContent for structured rendering
           extractedContent: JSON.stringify(content),
-          aiSummary: JSON.stringify({ summary: item.aiSummary, formatted: content }),
+          // Store human-readable summary in aiSummary for quick preview
+          aiSummary: sopSummaryText || item.aiSummary || "",
           categories: JSON.stringify([content.businessModule || "其他"]),
-          tags: JSON.stringify([content.businessModule, content.level, "外部采集"]),
+          tags: JSON.stringify([
+            content.businessModule,
+            content.level,
+            "外部采集",
+            ...(content.tags || []),
+          ].filter(Boolean)),
           status: "pending_review",
           visibility: "private",
         });

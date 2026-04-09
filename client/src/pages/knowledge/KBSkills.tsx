@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { TagEditor } from "@/components/TagEditor";
 import { usePermissions } from "@/hooks/usePermissions";
 import { KBScopeToggle, type KBScope } from "@/components/KBScopeToggle";
+import { SopContentRenderer, isSopContent } from "@/components/SopContentRenderer";
 
 const SOP_TAG_SUGGESTIONS = [
   "广告投放", "库存管理", "Listing优化", "财务分析", "选品方法",
@@ -448,8 +449,12 @@ export default function KBSkills() {
                       </CardContent>
                     </Card>
                   )}
-                  {/* Content preview */}
-                  {d.extractedText && (
+                  {/* SOP Structured Content - rendered when extractedContent contains SOP JSON */}
+                  {isSopContent(d.extractedContent) && (
+                    <SopContentRenderer extractedContent={d.extractedContent} />
+                  )}
+                  {/* Content preview - only shown for non-SOP content */}
+                  {d.extractedText && !isSopContent(d.extractedContent) && (
                     <Card>
                       <CardHeader className="pb-2"><CardTitle className="text-sm">原文内容</CardTitle></CardHeader>
                       <CardContent>
