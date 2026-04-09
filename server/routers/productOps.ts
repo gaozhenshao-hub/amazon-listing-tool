@@ -31,7 +31,12 @@ export const productOpsRouter = router({
 
   // ─── Product Profiles CRUD ───
 
-  listProducts: protectedProcedure.query(async ({ ctx }) => {
+  listProducts: protectedProcedure
+    .input(z.object({
+      period: z.enum(["day", "week", "month"]).default("month"),
+    }).optional())
+    .query(async ({ ctx, input }) => {
+    const period = input?.period || "month";
     const db = await getDb();
     const products = await db!.select().from(productProfiles)
       .where(eq(productProfiles.userId, ctx.user.id))
@@ -51,7 +56,50 @@ export const productOpsRouter = router({
         pendingTodoCount: Number(todos[0]?.count ?? 0),
       };
     }));
-    return enriched;
+
+    // Fetch profit data from Lingxing to enrich with sales/revenue/profit per ASIN
+    const adapter = getLingxingAdapter();
+    const now = new Date();
+    const periodDays = period === 'day' ? 1 : period === 'week' ? 7 : 30;
+    const startDate = new Date(now.getTime() - periodDays * 86400000).toISOString().split('T')[0];
+    const endDate = now.toISOString().split('T')[0];
+
+    // Build a map of parentAsin -> sales data from Lingxing profit API
+    type SalesInfo = { sales: number; revenue: number; profit: number };
+    const salesMap = new Map<string, SalesInfo>();
+    try {
+      const profitRes = await adapter.requestWithMockFallback({
+        path: "/bd/profit/report/open/report/msku/list",
+        body: { offset: 0, length: 2000, startDate, endDate, monthlyQuery: false, orderStatus: "All" },
+      });
+      const profitRaw = profitRes.data || [];
+      const profitList = Array.isArray(profitRaw) ? profitRaw : (profitRaw as any).records || (profitRaw as any).list || [];
+      for (const item of profitList) {
+        const asin = String(item.parent_asin || item.parentAsin || item.asin || "").toUpperCase();
+        if (!asin) continue;
+        const existing = salesMap.get(asin) || { sales: 0, revenue: 0, profit: 0 };
+        existing.sales += Number(item.totalSalesQuantity || item.totalFbaAndFbmQuantity || 0);
+        existing.revenue += Number(item.totalSalesAmount || item.totalFbaAndFbmAmount || 0);
+        existing.profit += Number(item.grossProfit || 0);
+        salesMap.set(asin, existing);
+      }
+      console.log(`[listProducts] Fetched profit data: ${profitList.length} items, mapped ${salesMap.size} ASINs`);
+    } catch (err: any) {
+      console.warn(`[listProducts] Profit fetch error: ${err.message}`);
+    }
+
+    // Merge sales data into enriched products
+    const withSales = enriched.map(p => {
+      const key = (p.parentAsin || "").toUpperCase();
+      const info = salesMap.get(key) || { sales: 0, revenue: 0, profit: 0 };
+      return {
+        ...p,
+        salesQty: info.sales,
+        salesRevenue: Math.round(info.revenue * 100) / 100,
+        salesProfit: Math.round(info.profit * 100) / 100,
+      };
+    });
+    return withSales;
   }),
 
   getProduct: protectedProcedure

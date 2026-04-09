@@ -3054,3 +3054,9 @@
 - [x] 前端：HourlyBidStrategy组件接收startDate/endDate props
 - [x] 前端：OpsAds传递日期范围给所有4个子Tab组件（dateMode=range时传startDate/endDate）
 - [x] 验证：TypeScript编译0错误
+
+## 产品总览改为表格列式展示
+- [x] 前端：将产品总览从卡片网格布局改为表格列式展示（含排序、全选、合计行）
+- [x] 前端：表格列包含状态、站点、店铺、产品名称(含ASIN)、备注、销量、销售额、利润、操作
+- [x] 后端：listProducts增加period参数，从领星利润API获取每个产品的salesQty/salesRevenue/salesProfit
+- [x] 验证：TypeScript编译0错误，页面正常渲染

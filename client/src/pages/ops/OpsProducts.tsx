@@ -18,8 +18,10 @@ import {
   Plus, Search, Package, ShoppingBag, AlertCircle, CheckCircle2, Trash2, Loader2, Download,
   Store, User, Globe, Users, CheckSquare,
   DollarSign, TrendingUp, TrendingDown, BarChart3, Boxes, Megaphone, ArrowUpRight, ArrowDownRight, Minus,
+  ChevronUp, ChevronDown, ExternalLink,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const MARKETPLACE_OPTIONS = [
   { value: "ALL", label: "全部站点" },
@@ -62,12 +64,15 @@ function formatNumber(val: number) {
   return val.toLocaleString();
 }
 
+type SortField = "marketplace" | "storeName" | "title" | "salesQty" | "salesRevenue" | "salesProfit" | "status";
+type SortDir = "asc" | "desc";
+
 export default function OpsProducts() {
   const [, navigate] = useLocation();
   const [dashboardPeriod, setDashboardPeriod] = useState<"day" | "week" | "month">("month");
   const [marketplaceFilter, setMarketplaceFilter] = useState("ALL");
 
-  const { data: products, isLoading, refetch } = trpc.productOps.listProducts.useQuery();
+  const { data: products, isLoading, refetch } = trpc.productOps.listProducts.useQuery({ period: dashboardPeriod });
   const { data: dashboard, isLoading: dashLoading } = trpc.productOps.getProductDashboard.useQuery({
     marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : undefined,
     period: dashboardPeriod,
@@ -107,6 +112,8 @@ export default function OpsProducts() {
   const [operatorFilter, setOperatorFilter] = useState("ALL");
   const [storeFilter, setStoreFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [sortField, setSortField] = useState<SortField>("salesRevenue");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [form, setForm] = useState({
     parentAsin: "", title: "", brand: "", category: "", marketplace: "US",
     budgetRevenue: "", budgetProfit: "", budgetAcos: "", notes: "",
@@ -133,8 +140,26 @@ export default function OpsProducts() {
         (p.storeName || "").toLowerCase().includes(q)
       );
     }
-    return list;
-  }, [products, marketplaceFilter, operatorFilter, storeFilter, statusFilter, searchTerm]);
+    // Sort
+    const sorted = [...list].sort((a, b) => {
+      let va: any, vb: any;
+      switch (sortField) {
+        case "marketplace": va = a.marketplace || ""; vb = b.marketplace || ""; break;
+        case "storeName": va = a.storeName || ""; vb = b.storeName || ""; break;
+        case "title": va = a.title || ""; vb = b.title || ""; break;
+        case "salesQty": va = a.salesQty || 0; vb = b.salesQty || 0; break;
+        case "salesRevenue": va = a.salesRevenue || 0; vb = b.salesRevenue || 0; break;
+        case "salesProfit": va = a.salesProfit || 0; vb = b.salesProfit || 0; break;
+        case "status": va = a.status; vb = b.status; break;
+        default: va = 0; vb = 0;
+      }
+      if (typeof va === "string") {
+        return sortDir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
+      }
+      return sortDir === "asc" ? va - vb : vb - va;
+    });
+    return sorted;
+  }, [products, marketplaceFilter, operatorFilter, storeFilter, statusFilter, searchTerm, sortField, sortDir]);
 
   const availableMarketplaces = useMemo(() => {
     const set = new Set((products || []).map(p => p.marketplace || "US"));
@@ -162,6 +187,25 @@ export default function OpsProducts() {
 
   const activeCount = filtered.filter(p => p.status === "active").length;
   const inactiveCount = filtered.filter(p => p.status === "inactive").length;
+
+  function handleSort(field: SortField) {
+    if (sortField === field) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDir("desc");
+    }
+  }
+
+  function SortIcon({ field }: { field: SortField }) {
+    if (sortField !== field) return <ChevronDown className="h-3 w-3 text-muted-foreground/40" />;
+    return sortDir === "asc" ? <ChevronUp className="h-3 w-3 text-blue-600" /> : <ChevronDown className="h-3 w-3 text-blue-600" />;
+  }
+
+  // Totals for footer
+  const totalSalesQty = filtered.reduce((s, p) => s + (p.salesQty || 0), 0);
+  const totalRevenue = filtered.reduce((s, p) => s + (p.salesRevenue || 0), 0);
+  const totalProfit = filtered.reduce((s, p) => s + (p.salesProfit || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -463,15 +507,26 @@ export default function OpsProducts() {
         )}
       </div>
 
-      {/* Product List */}
+      {/* ═══ Product Table ═══ */}
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3].map(i => (
-            <Card key={i} className="animate-pulse">
-              <CardContent className="pt-6 h-40" />
-            </Card>
-          ))}
-        </div>
+        <Card>
+          <CardContent className="p-0">
+            <div className="space-y-0">
+              {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="flex items-center gap-4 px-4 py-3 border-b last:border-b-0 animate-pulse">
+                  <Skeleton className="h-4 w-4 rounded" />
+                  <Skeleton className="h-4 w-10" />
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-4 flex-1" />
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-4 w-20" />
+                  <Skeleton className="h-4 w-20" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
@@ -482,110 +537,156 @@ export default function OpsProducts() {
           </CardContent>
         </Card>
       ) : (
-        <>
-        <div className="mb-2 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Checkbox
-              checked={selectedIds.size === filtered.length && filtered.length > 0}
-              onCheckedChange={(checked) => {
-                if (checked) {
-                  setSelectedIds(new Set(filtered.map(p => p.id)));
-                } else {
-                  setSelectedIds(new Set());
-                }
-              }}
-            />
-            <span className="text-sm text-muted-foreground">全选当前页 ({filtered.length})</span>
-          </div>
-          <span className="text-xs text-muted-foreground">
-            在售 {activeCount} / 暂停 {inactiveCount} / 共 {filtered.length}
-          </span>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map(product => (
-            <Card
-              key={product.id}
-              className={`cursor-pointer hover:shadow-md transition-shadow group ${selectedIds.has(product.id) ? 'ring-2 ring-blue-400' : ''}`}
-              onClick={() => navigate(`/ops/products/${product.id}`)}
-            >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-2 flex-1 min-w-0">
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="px-3 py-3 text-left w-10">
                     <Checkbox
-                      checked={selectedIds.has(product.id)}
+                      checked={selectedIds.size === filtered.length && filtered.length > 0}
                       onCheckedChange={(checked) => {
-                        const next = new Set(selectedIds);
-                        if (checked) next.add(product.id); else next.delete(product.id);
-                        setSelectedIds(next);
+                        if (checked) {
+                          setSelectedIds(new Set(filtered.map(p => p.id)));
+                        } else {
+                          setSelectedIds(new Set());
+                        }
                       }}
-                      onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                      className="mt-1"
                     />
-                    <div className="flex-1 min-w-0">
-                      <CardTitle className="text-base truncate">{product.title}</CardTitle>
-                      <p className="text-sm text-muted-foreground mt-1 font-mono">{product.parentAsin}</p>
-                    </div>
-                  </div>
-                  <Badge variant="secondary" className={statusColors[product.status] || ""}>
-                    {statusLabels[product.status] || product.status}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-1.5 text-sm">
-                  {product.brand && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">品牌</span>
-                      <span>{product.brand}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">站点</span>
-                    <span>{product.marketplace}</span>
-                  </div>
-                  {product.storeName && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground flex items-center gap-1"><Store className="h-3 w-3" />店铺</span>
-                      <span className="truncate max-w-[160px]">{product.storeName}</span>
-                    </div>
-                  )}
-                  {product.operator && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground flex items-center gap-1"><User className="h-3 w-3" />运营</span>
-                      <span>{product.operator}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">变体数</span>
-                    <span>{product.variantCount}</span>
-                  </div>
-                  {product.pendingTodoCount > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">待办任务</span>
-                      <Badge variant="destructive" className="text-xs">{product.pendingTodoCount}</Badge>
-                    </div>
-                  )}
-                </div>
-                <div className="mt-3 flex justify-end">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm("确定删除该产品及其所有关联数据？")) {
-                        deleteMut.mutate({ id: product.id });
-                      }
-                    }}
+                  </th>
+                  <th className="px-3 py-3 text-left w-14">
+                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => handleSort("status")}>
+                      状态 <SortIcon field="status" />
+                    </button>
+                  </th>
+                  <th className="px-3 py-3 text-left w-16">
+                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => handleSort("marketplace")}>
+                      站点 <SortIcon field="marketplace" />
+                    </button>
+                  </th>
+                  <th className="px-3 py-3 text-left">
+                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => handleSort("storeName")}>
+                      店铺 <SortIcon field="storeName" />
+                    </button>
+                  </th>
+                  <th className="px-3 py-3 text-left min-w-[200px]">
+                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => handleSort("title")}>
+                      产品名称 <SortIcon field="title" />
+                    </button>
+                  </th>
+                  <th className="px-3 py-3 text-left min-w-[120px]">
+                    <span className="text-xs font-medium text-muted-foreground">备注</span>
+                  </th>
+                  <th className="px-3 py-3 text-right w-20">
+                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground ml-auto" onClick={() => handleSort("salesQty")}>
+                      销量 <SortIcon field="salesQty" />
+                    </button>
+                  </th>
+                  <th className="px-3 py-3 text-right w-24">
+                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground ml-auto" onClick={() => handleSort("salesRevenue")}>
+                      销售额 <SortIcon field="salesRevenue" />
+                    </button>
+                  </th>
+                  <th className="px-3 py-3 text-right w-24">
+                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground ml-auto" onClick={() => handleSort("salesProfit")}>
+                      利润 <SortIcon field="salesProfit" />
+                    </button>
+                  </th>
+                  <th className="px-3 py-3 text-center w-16">
+                    <span className="text-xs font-medium text-muted-foreground">操作</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((product) => (
+                  <tr
+                    key={product.id}
+                    className={`border-b last:border-b-0 hover:bg-muted/30 cursor-pointer transition-colors ${selectedIds.has(product.id) ? 'bg-blue-50/50' : ''}`}
+                    onClick={() => navigate(`/ops/products/${product.id}`)}
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        </>
+                    <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedIds.has(product.id)}
+                        onCheckedChange={(checked) => {
+                          const next = new Set(selectedIds);
+                          if (checked) next.add(product.id); else next.delete(product.id);
+                          setSelectedIds(next);
+                        }}
+                      />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${statusColors[product.status] || ""}`}>
+                        {statusLabels[product.status] || product.status}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">
+                        {product.marketplace || "US"}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span className="text-xs text-muted-foreground truncate max-w-[120px] block">
+                        {product.storeName || "-"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-medium text-sm truncate max-w-[280px] block">{product.title}</span>
+                        <span className="text-[11px] text-muted-foreground font-mono">{product.parentAsin}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span className="text-xs text-muted-foreground truncate max-w-[150px] block">
+                        {product.notes || "-"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <span className="font-medium tabular-nums">{formatNumber(product.salesQty || 0)}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <span className="font-medium tabular-nums">{formatCurrency(product.salesRevenue || 0)}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <span className={`font-medium tabular-nums ${(product.salesProfit || 0) >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                        {formatCurrency(product.salesProfit || 0)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-center" onClick={e => e.stopPropagation()}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-red-400 hover:text-red-600 hover:bg-red-50"
+                        onClick={() => {
+                          if (confirm("确定删除该产品及其所有关联数据？")) {
+                            deleteMut.mutate({ id: product.id });
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              {/* Footer with totals */}
+              <tfoot>
+                <tr className="border-t-2 bg-muted/30 font-medium">
+                  <td colSpan={6} className="px-3 py-2.5 text-xs text-muted-foreground">
+                    合计 {filtered.length} 个产品 &nbsp;|&nbsp; 在售 {activeCount} &nbsp;/&nbsp; 暂停 {inactiveCount}
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-sm tabular-nums">{formatNumber(totalSalesQty)}</td>
+                  <td className="px-3 py-2.5 text-right text-sm tabular-nums">{formatCurrency(totalRevenue)}</td>
+                  <td className="px-3 py-2.5 text-right text-sm tabular-nums">
+                    <span className={totalProfit >= 0 ? "text-emerald-600" : "text-red-500"}>
+                      {formatCurrency(totalProfit)}
+                    </span>
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </Card>
       )}
 
       {/* Create Product Dialog */}
@@ -618,6 +719,7 @@ export default function OpsProducts() {
                     <SelectItem value="IT">IT</SelectItem>
                     <SelectItem value="ES">ES</SelectItem>
                     <SelectItem value="AU">AU</SelectItem>
+                    <SelectItem value="MX">MX</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
