@@ -9,15 +9,18 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   PieChart, Pie, Cell,
+  LineChart, Line, Area, AreaChart,
 } from "recharts";
 import {
   Sparkles, Loader2, Layers, DollarSign, TrendingUp, Target,
-  BarChart3, AlertTriangle, Info, ShieldAlert, CheckCircle2,
+  BarChart3, AlertTriangle, Info, ShieldAlert, CheckCircle2, CalendarDays,
 } from "lucide-react";
 
 interface Props {
   marketplace: string;
   reportDate: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 const CHANNEL_COLORS: Record<string, string> = {
@@ -71,15 +74,20 @@ function EmptyChannelHint({ channel }: { channel: string }) {
   );
 }
 
-export default function CrossChannelAnalysis({ marketplace, reportDate }: Props) {
+export default function CrossChannelAnalysis({ marketplace, reportDate, startDate, endDate }: Props) {
   const [aiAdvice, setAiAdvice] = useState<any>(null);
   const [isEditingAdvice, setIsEditingAdvice] = useState(false);
   const [editedAdvice, setEditedAdvice] = useState<string>("");
+  const [trendMetric, setTrendMetric] = useState<"cost" | "sales" | "orders">("cost");
+
+  const effectiveStartDate = startDate || reportDate;
+  const effectiveEndDate = endDate || reportDate;
+  const isMultiDay = effectiveStartDate !== effectiveEndDate;
 
   const { data, isLoading } = trpc.adAnalysisP2.getCrossChannelData.useQuery({
     marketplace,
-    startDate: reportDate,
-    endDate: reportDate,
+    startDate: effectiveStartDate,
+    endDate: effectiveEndDate,
   });
 
   const aiMutation = trpc.adAnalysisP2.aiChannelStrategy.useMutation({
@@ -129,23 +137,47 @@ export default function CrossChannelAnalysis({ marketplace, reportDate }: Props)
 
   const radarData = useMemo(() => {
     if (!data?.channels) return [];
-    const activeChannels = data.channels.filter(c => c.cost > 0);
-    if (activeChannels.length === 0) return [];
-    const maxRoas = Math.max(...activeChannels.map(c => c.roas), 1);
-    const maxCtr = Math.max(...activeChannels.map(c => c.ctr), 0.01);
-    const maxCvr = Math.max(...activeChannels.map(c => c.cvr), 1);
-    const maxOrders = Math.max(...activeChannels.map(c => c.orders), 1);
+    const active = data.channels.filter(c => c.cost > 0);
+    if (active.length === 0) return [];
+    const maxRoas = Math.max(...active.map(c => c.roas), 1);
+    const maxCtr = Math.max(...active.map(c => c.ctr), 0.01);
+    const maxCvr = Math.max(...active.map(c => c.cvr), 1);
+    const maxOrders = Math.max(...active.map(c => c.orders), 1);
 
     return [
-      { metric: "ROAS", ...Object.fromEntries(activeChannels.map(c => [c.channel, Math.round((c.roas / maxRoas) * 100)])) },
-      { metric: "CTR", ...Object.fromEntries(activeChannels.map(c => [c.channel, Math.round((c.ctr / maxCtr) * 100)])) },
-      { metric: "CVR", ...Object.fromEntries(activeChannels.map(c => [c.channel, Math.round((c.cvr / maxCvr) * 100)])) },
-      { metric: "订单量", ...Object.fromEntries(activeChannels.map(c => [c.channel, Math.round((c.orders / maxOrders) * 100)])) },
-      { metric: "花费效率", ...Object.fromEntries(activeChannels.map(c => [c.channel, Math.round(Math.min(c.roas * 20, 100))])) },
+      { metric: "ROAS", ...Object.fromEntries(active.map(c => [c.channel, Math.round((c.roas / maxRoas) * 100)])) },
+      { metric: "CTR", ...Object.fromEntries(active.map(c => [c.channel, Math.round((c.ctr / maxCtr) * 100)])) },
+      { metric: "CVR", ...Object.fromEntries(active.map(c => [c.channel, Math.round((c.cvr / maxCvr) * 100)])) },
+      { metric: "订单量", ...Object.fromEntries(active.map(c => [c.channel, Math.round((c.orders / maxOrders) * 100)])) },
+      { metric: "花费效率", ...Object.fromEntries(active.map(c => [c.channel, Math.round(Math.min(c.roas * 20, 100))])) },
     ];
   }, [data]);
 
-  // Identify empty channels
+  // Daily trend data for line chart
+  const dailyTrendData = useMemo(() => {
+    if (!data?.dailyBreakdown || data.dailyBreakdown.length <= 1) return [];
+    return data.dailyBreakdown.map((day: any) => ({
+      date: day.date.slice(5), // MM-DD format
+      fullDate: day.date,
+      SP_cost: +(day.SP?.cost || 0).toFixed(2),
+      SB_cost: +(day.SB?.cost || 0).toFixed(2),
+      SD_cost: +(day.SD?.cost || 0).toFixed(2),
+      DSP_cost: +(day.DSP?.cost || 0).toFixed(2),
+      total_cost: +(day.total?.cost || 0).toFixed(2),
+      SP_sales: +(day.SP?.sales || 0).toFixed(2),
+      SB_sales: +(day.SB?.sales || 0).toFixed(2),
+      SD_sales: +(day.SD?.sales || 0).toFixed(2),
+      DSP_sales: +(day.DSP?.sales || 0).toFixed(2),
+      total_sales: +(day.total?.sales || 0).toFixed(2),
+      SP_orders: day.SP?.orders || 0,
+      SB_orders: day.SB?.orders || 0,
+      SD_orders: day.SD?.orders || 0,
+      DSP_orders: day.DSP?.orders || 0,
+      total_orders: day.total?.orders || 0,
+    }));
+  }, [data]);
+
+  // Identify empty/active channels
   const emptyChannels = useMemo(() => {
     if (!data?.channels) return [];
     return data.channels.filter(c => c.cost === 0 && c.sales === 0 && c.orders === 0);
@@ -170,8 +202,23 @@ export default function CrossChannelAnalysis({ marketplace, reportDate }: Props)
   const channels = data?.channels || [];
   const total = data?.total;
 
+  const metricLabels: Record<string, string> = { cost: "花费", sales: "销售额", orders: "订单量" };
+  const metricColors: Record<string, string> = { cost: "#ef4444", sales: "#10b981", orders: "#3b82f6" };
+  const metricPrefix: Record<string, string> = { cost: "$", sales: "$", orders: "" };
+
   return (
     <div className="space-y-4">
+      {/* Date Range Banner */}
+      {isMultiDay && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
+          <CalendarDays className="w-3.5 h-3.5" />
+          <span>跨渠道数据范围: <strong>{effectiveStartDate}</strong> 至 <strong>{effectiveEndDate}</strong></span>
+          <Badge variant="secondary" className="text-[10px] h-4 bg-blue-100 text-blue-700">
+            {data?.dailyBreakdown?.length || 0}天汇总
+          </Badge>
+        </div>
+      )}
+
       {/* Channel Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {channels.map((ch) => {
@@ -245,6 +292,119 @@ export default function CrossChannelAnalysis({ marketplace, reportDate }: Props)
           {emptyChannels.map(ch => (
             <EmptyChannelHint key={ch.channel} channel={ch.channel} />
           ))}
+        </div>
+      )}
+
+      {/* Daily Trend Chart - only show when multi-day */}
+      {isMultiDay && dailyTrendData.length > 1 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-blue-600" />
+                每日渠道趋势
+                <Badge variant="secondary" className="text-[10px]">
+                  {dailyTrendData.length}天
+                </Badge>
+              </CardTitle>
+              <div className="flex items-center gap-1">
+                {(["cost", "sales", "orders"] as const).map(m => (
+                  <Button
+                    key={m}
+                    variant={trendMetric === m ? "default" : "outline"}
+                    size="sm"
+                    className="h-6 text-[10px] px-2"
+                    onClick={() => setTrendMetric(m)}
+                  >
+                    {metricLabels[m]}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={dailyTrendData}>
+                  <defs>
+                    {Object.entries(CHANNEL_COLORS).map(([ch, color]) => (
+                      <linearGradient key={ch} id={`grad_${ch}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={color} stopOpacity={0.2} />
+                        <stop offset="95%" stopColor={color} stopOpacity={0.02} />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10 }}
+                    interval={dailyTrendData.length > 14 ? Math.floor(dailyTrendData.length / 7) : 0}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 10 }}
+                    tickFormatter={(v) => trendMetric === "orders" ? v : `$${v >= 1000 ? `${(v/1000).toFixed(1)}k` : v}`}
+                  />
+                  <Tooltip
+                    contentStyle={{ fontSize: "11px" }}
+                    formatter={(value: any, name: string) => {
+                      const ch = name.replace(`_${trendMetric}`, "");
+                      const prefix = metricPrefix[trendMetric];
+                      return [`${prefix}${Number(value).toLocaleString()}`, ch];
+                    }}
+                    labelFormatter={(label: string) => {
+                      const item = dailyTrendData.find((d: any) => d.date === label);
+                      return item?.fullDate || label;
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: "11px" }} formatter={(value: string) => value.replace(`_${trendMetric}`, "")} />
+                  {activeChannels.map(ch => (
+                    <Area
+                      key={ch.channel}
+                      type="monotone"
+                      dataKey={`${ch.channel}_${trendMetric}`}
+                      name={`${ch.channel}_${trendMetric}`}
+                      stroke={CHANNEL_COLORS[ch.channel]}
+                      fill={`url(#grad_${ch.channel})`}
+                      strokeWidth={2}
+                      dot={{ r: dailyTrendData.length <= 14 ? 3 : 0 }}
+                      activeDot={{ r: 5 }}
+                    />
+                  ))}
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            {/* Daily summary stats below chart */}
+            <div className="mt-3 grid grid-cols-4 gap-2">
+              {activeChannels.map(ch => {
+                const values = dailyTrendData.map((d: any) => d[`${ch.channel}_${trendMetric}`] || 0);
+                const avg = values.length > 0 ? values.reduce((a: number, b: number) => a + b, 0) / values.length : 0;
+                const max = Math.max(...values, 0);
+                const min = Math.min(...values.filter((v: number) => v > 0), max);
+                const prefix = metricPrefix[trendMetric];
+                return (
+                  <div key={ch.channel} className="text-center p-2 bg-gray-50 rounded-lg">
+                    <div className="flex items-center justify-center gap-1 mb-1">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: CHANNEL_COLORS[ch.channel] }} />
+                      <span className="text-[10px] font-medium">{ch.channel}</span>
+                    </div>
+                    <div className="text-[10px] text-gray-500 space-y-0.5">
+                      <div>日均: <span className="font-medium text-gray-700">{prefix}{avg.toFixed(trendMetric === "orders" ? 0 : 2)}</span></div>
+                      <div>最高: <span className="font-medium text-gray-700">{prefix}{max.toFixed(trendMetric === "orders" ? 0 : 2)}</span></div>
+                      <div>最低: <span className="font-medium text-gray-700">{prefix}{min.toFixed(trendMetric === "orders" ? 0 : 2)}</span></div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Single day notice */}
+      {!isMultiDay && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-500">
+          <Info className="w-3.5 h-3.5" />
+          <span>当前为单日模式（{reportDate}），切换到日期范围模式可查看每日趋势折线图</span>
         </div>
       )}
 

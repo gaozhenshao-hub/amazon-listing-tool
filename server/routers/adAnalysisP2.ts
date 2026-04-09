@@ -433,6 +433,53 @@ ${AD_KNOWLEDGE_BASE}
         };
       }
 
+      // Build daily breakdown per channel
+      function buildDailyBreakdown(data: any[], channelName: string): Record<string, { cost: number; sales: number; orders: number; clicks: number; impressions: number }> {
+        const items = Array.isArray(data) ? data : [];
+        const daily: Record<string, { cost: number; sales: number; orders: number; clicks: number; impressions: number }> = {};
+        items.forEach((d: any) => {
+          const date = d.date || d.report_date || d.queryDate || "";
+          if (!date) return;
+          const dateKey = date.slice(0, 10);
+          if (!daily[dateKey]) daily[dateKey] = { cost: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
+          daily[dateKey].cost += d.cost || d.spends || d.spend || 0;
+          daily[dateKey].sales += d.sales || 0;
+          daily[dateKey].orders += d.orders || 0;
+          daily[dateKey].clicks += d.clicks || 0;
+          daily[dateKey].impressions += d.impressions || 0;
+        });
+        return daily;
+      }
+
+      const spDaily = buildDailyBreakdown(spRes.data, "SP");
+      const sbDaily = buildDailyBreakdown(sbRes.data, "SB");
+      const sdDaily = buildDailyBreakdown(sdRes.data, "SD");
+      const dspDaily = buildDailyBreakdown(dspRes.data, "DSP");
+
+      // Merge all dates
+      const allDates = new Set<string>();
+      [spDaily, sbDaily, sdDaily, dspDaily].forEach(d => Object.keys(d).forEach(k => allDates.add(k)));
+      // Also fill in missing dates from the range
+      const sd = new Date(startDate);
+      const ed = new Date(endDate);
+      for (let d = new Date(sd); d <= ed; d.setDate(d.getDate() + 1)) {
+        allDates.add(d.toISOString().slice(0, 10));
+      }
+      const sortedDates = Array.from(allDates).sort();
+      const emptyDay = { cost: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
+      const dailyBreakdown = sortedDates.map(date => ({
+        date,
+        SP: spDaily[date] || { ...emptyDay },
+        SB: sbDaily[date] || { ...emptyDay },
+        SD: sdDaily[date] || { ...emptyDay },
+        DSP: dspDaily[date] || { ...emptyDay },
+        total: {
+          cost: +((spDaily[date]?.cost || 0) + (sbDaily[date]?.cost || 0) + (sdDaily[date]?.cost || 0) + (dspDaily[date]?.cost || 0)).toFixed(2),
+          sales: +((spDaily[date]?.sales || 0) + (sbDaily[date]?.sales || 0) + (sdDaily[date]?.sales || 0) + (dspDaily[date]?.sales || 0)).toFixed(2),
+          orders: (spDaily[date]?.orders || 0) + (sbDaily[date]?.orders || 0) + (sdDaily[date]?.orders || 0) + (dspDaily[date]?.orders || 0),
+        },
+      }));
+
       const channels = [
         aggregateChannel(spRes.data, "SP"),
         aggregateChannel(sbRes.data, "SB"),
@@ -458,6 +505,8 @@ ${AD_KNOWLEDGE_BASE}
           acos: totalSales > 0 ? +((totalCost / totalSales) * 100).toFixed(2) : 0,
           roas: totalCost > 0 ? +(totalSales / totalCost).toFixed(2) : 0,
         },
+        dailyBreakdown,
+        dateRange: { startDate, endDate },
       };
     }),
 

@@ -3035,3 +3035,10 @@
 - [x] 前端：跨渠道分析Tab重写（渠道对比表格+占比饼图+趋势折线图+SB/SD空状态提示）
 - [x] 前端：AdEmptyState共享组件，4个子Tab均集成SB/SD空数据友好提示
 - [x] 前端：广告类型联动优化（selectedCampaignType+defaultAdType prop+useEffect同步）
+
+## 跨渠道分析趋势图与主日期选择器联动
+- [x] 前端：OpsAds 将日期范围参数传递给 CrossChannelAnalysis 组件（dateMode=range时传startDate/endDate，否则传selectedDate）
+- [x] 后端：getCrossChannelData 返回每日明细数据（dailyBreakdown，按日期分组的SP/SB/SD/DSP各渠道花费/销售/订单）
+- [x] 前端：CrossChannelAnalysis 趋势图使用真实每日数据（AreaChart，支持花费/销售额/订单量切换，含日均/最高/最低统计）
+- [x] 前端：单日模式下显示提示引导切换到日期范围模式查看趋势图
+- [x] 前端：多日模式下显示日期范围Banner和天数汇总Badge

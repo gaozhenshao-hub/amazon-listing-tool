@@ -778,6 +778,8 @@ export default function OpsAds() {
           <CrossChannelAnalysis
             marketplace={marketplace}
             reportDate={selectedDate}
+            startDate={dateMode === "range" ? startDate : selectedDate}
+            endDate={dateMode === "range" ? endDate : selectedDate}
           />
         </TabsContent>
 
