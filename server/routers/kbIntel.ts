@@ -284,6 +284,7 @@ export const kbIntelRouter = router({
       status: z.enum(["pending", "recommended", "adopted", "ignored", "expired", "bookmarked"]).optional(),
       page: z.number().min(1).default(1),
       pageSize: z.number().min(1).max(50).default(20),
+      dedup: z.boolean().default(false), // Deduplicate by URL — keep highest-score item per URL
     }))
     .query(async ({ ctx, input }) => {
       const _d = await db();
@@ -293,16 +294,21 @@ export const kbIntelRouter = router({
         .from(kbIntelSources)
         .where(eq(kbIntelSources.userId, ctx.user!.id));
       const sourceIds = userSources.map(s => s.id);
-      if (sourceIds.length === 0) return { items: [], total: 0 };
+      if (sourceIds.length === 0) return { items: [], total: 0, dedupRemoved: 0 };
 
       conditions.push(inArray(kbIntelItems.sourceId, sourceIds));
       if (input.sourceId) conditions.push(eq(kbIntelItems.sourceId, input.sourceId));
       if (input.status) conditions.push(eq(kbIntelItems.status, input.status));
 
       const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+      // Fetch all items for dedup (fetch more to allow client-side dedup)
+      const fetchLimit = input.dedup ? Math.min(input.pageSize * 5, 200) : input.pageSize;
+      const fetchOffset = input.dedup ? 0 : (input.page - 1) * input.pageSize;
+
       const [countResult] = await _d.select({ count: sql<number>`count(*)` })
         .from(kbIntelItems).where(where);
-      const items = await _d.select({
+      const rawItems = await _d.select({
         item: kbIntelItems,
         sourceName: kbIntelSources.name,
         sourceType: kbIntelSources.sourceType,
@@ -311,12 +317,45 @@ export const kbIntelRouter = router({
         .leftJoin(kbIntelSources, eq(kbIntelItems.sourceId, kbIntelSources.id))
         .where(where)
         .orderBy(desc(kbIntelItems.createdAt))
-        .limit(input.pageSize)
-        .offset((input.page - 1) * input.pageSize);
+        .limit(fetchLimit)
+        .offset(fetchOffset);
+
+      const allItems = rawItems.map(r => ({ ...r.item, sourceName: r.sourceName, sourceType: r.sourceType }));
+
+      if (!input.dedup) {
+        return {
+          items: allItems,
+          total: countResult?.count ?? 0,
+          dedupRemoved: 0,
+        };
+      }
+
+      // Dedup by originalUrl — keep the item with highest aiQualityScore per URL
+      const urlMap = new Map<string, typeof allItems[0]>();
+      for (const item of allItems) {
+        const url = (item.originalUrl as string) || `__no_url_${item.id}`;
+        const existing = urlMap.get(url);
+        if (!existing) {
+          urlMap.set(url, item);
+        } else {
+          // Keep the one with higher quality score
+          const existingScore = parseFloat((existing.aiQualityScore as string) || "0");
+          const newScore = parseFloat((item.aiQualityScore as string) || "0");
+          if (newScore > existingScore) urlMap.set(url, item);
+        }
+      }
+      const dedupedItems = Array.from(urlMap.values());
+      const dedupRemoved = allItems.length - dedupedItems.length;
+
+      // Apply pagination on deduped results
+      const pageStart = (input.page - 1) * input.pageSize;
+      const pageEnd = pageStart + input.pageSize;
+      const pagedItems = dedupedItems.slice(pageStart, pageEnd);
 
       return {
-        items: items.map(r => ({ ...r.item, sourceName: r.sourceName, sourceType: r.sourceType })),
-        total: countResult?.count ?? 0,
+        items: pagedItems,
+        total: dedupedItems.length,
+        dedupRemoved,
       };
     }),
 

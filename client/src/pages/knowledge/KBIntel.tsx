@@ -95,6 +95,7 @@ export default function KBIntel() {
   const [statusFilter, setStatusFilter] = useState<ItemStatus | "all">("recommended");
   const [selectedSourceId, setSelectedSourceId] = useState<number | undefined>();
   const [page, setPage] = useState(1);
+  const [dedup, setDedup] = useState(true); // Dedup enabled by default
 
   // Dialogs
   const [showAddSource, setShowAddSource] = useState(false);
@@ -122,6 +123,7 @@ export default function KBIntel() {
     status: statusFilter === "all" ? undefined : statusFilter,
     page,
     pageSize: 20,
+    dedup,
   });
   const statsQuery = trpc.kbIntel.getStats.useQuery();
   const detailQuery = trpc.kbIntel.getItemDetail.useQuery(
@@ -257,7 +259,21 @@ export default function KBIntel() {
                 </SelectContent>
               </Select>
             )}
-            <div className="ml-auto flex gap-2">
+            <div className="ml-auto flex items-center gap-2">
+              {/* Dedup toggle */}
+              <div className="flex items-center gap-1.5 border rounded-md px-2 py-1.5">
+                <span className="text-xs text-muted-foreground">去重显示</span>
+                <Switch
+                  checked={dedup}
+                  onCheckedChange={(v) => { setDedup(v); setPage(1); }}
+                  className="scale-75"
+                />
+                {dedup && (itemsQuery.data?.dedupRemoved ?? 0) > 0 && (
+                  <Badge variant="secondary" className="text-[10px] h-5 px-1.5">
+                    已过滤 {itemsQuery.data?.dedupRemoved} 条重复
+                  </Badge>
+                )}
+              </div>
               <Button size="sm" variant="outline" onClick={() => setShowAddArticle(true)} disabled={!sourcesQuery.data?.length}>
                 <Upload className="w-4 h-4 mr-1" /> 手动添加文章
               </Button>

@@ -324,7 +324,113 @@ export const kbSkillsRouter = router({
       return { id: Number(id) };
     }),
 
-  // Enrich existing entry with supplemental images (batch OCR)
+  // Step 1: OCR only - returns recognized text for user review before merging
+  ocrImages: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      images: z.array(z.object({
+        base64: z.string(),
+        mimeType: z.string().default("image/jpeg"),
+        fileName: z.string().optional(),
+      })).min(1).max(20),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const item = await kbDb.getOperationSkill(input.id, ctx.user.id);
+      if (!item) throw new Error("条目不存在或无权限");
+
+      // OCR all images in parallel, return results for user review
+      const ocrResults = await Promise.allSettled(
+        input.images.map(async (img, idx) => {
+          const dataUrl = `data:${img.mimeType};base64,${img.base64}`;
+          const ocrResp = await invokeLLM({
+            messages: [{
+              role: "user",
+              content: [
+                { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
+                { type: "text", text: "请提取这张图片中的所有文字内容和关键信息。如果是流程图/表格/数据图，请详细描述其结构和所有数据。如果是截图，请完整转录所有可见文字。如果图片没有有价值的文字内容，回复'无文字内容'。" }
+              ]
+            }]
+          });
+          const ocrText = String(ocrResp.choices?.[0]?.message?.content || "");
+          return {
+            index: idx,
+            fileName: img.fileName || `图片${idx + 1}`,
+            ocrText: ocrText.includes("无文字内容") ? "" : ocrText,
+          };
+        })
+      );
+
+      const results = ocrResults.map((r, idx) => {
+        if (r.status === "fulfilled") return r.value;
+        return { index: idx, fileName: input.images[idx].fileName || `图片${idx + 1}`, ocrText: "" };
+      });
+
+      return {
+        success: true,
+        results, // Return full OCR text for user to review/edit
+        recognizedCount: results.filter(r => r.ocrText).length,
+      };
+    }),
+
+  // Step 2: Merge user-confirmed OCR texts into the entry content
+  mergeOcrTexts: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      confirmedTexts: z.array(z.object({
+        fileName: z.string(),
+        ocrText: z.string(), // User-edited OCR text
+      })).min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const item = await kbDb.getOperationSkill(input.id, ctx.user.id);
+      if (!item) throw new Error("条目不存在或无权限");
+
+      const validTexts = input.confirmedTexts.filter(t => t.ocrText.trim());
+      if (validTexts.length === 0) throw new Error("没有有效的图片内容可合并");
+
+      const ocrSection = "\n\n=== 补充图片内容（AI识别）===\n" +
+        validTexts.map(t => `[${t.fileName}]: ${t.ocrText}`).join("\n\n");
+      const existingContent = item.extractedContent || "";
+      const newContent = (existingContent + ocrSection).slice(0, 50000);
+
+      await kbDb.updateOperationSkill(input.id, ctx.user.id, {
+        extractedContent: newContent,
+        status: "analyzing",
+      });
+
+      // Re-run AI analysis with enriched content
+      (async () => {
+        try {
+          const aiResponse = await invokeLLM({
+            messages: [
+              { role: "system", content: `你是亚马逊运营专家。对运营知识内容进行智能摘要（包含图片识别内容），返回JSON: { title, summary, keyPoints, actionSteps, applicableScenarios, difficultyLevel, categories, tags, practicalityScore(1-10), briefSummary }` },
+              { role: "user", content: `标题: ${item.title}\n内容（含图片识别）:\n${newContent.slice(0, 8000)}` }
+            ],
+            response_format: { type: "json_object" as const },
+          });
+          const summary = String(aiResponse.choices?.[0]?.message?.content || "{}");
+          const parsed = JSON.parse(summary);
+          await kbDb.updateOperationSkill(input.id, ctx.user.id, {
+            aiSummary: summary,
+            categories: JSON.stringify(parsed.categories || []),
+            tags: JSON.stringify(parsed.tags || []),
+            practicalityScore: parsed.practicalityScore || 7,
+            status: "pending_review",
+          });
+        } catch (err: any) {
+          console.error("[KB Skills] Re-analysis after image merge failed:", err.message);
+          await kbDb.updateOperationSkill(input.id, ctx.user.id, { status: "pending_review" });
+        }
+      })();
+
+      return {
+        success: true,
+        mergedCount: validTexts.length,
+        message: `已合并 ${validTexts.length} 张图片内容，正在重新分析...`,
+      };
+    }),
+
+  // Step 1+2 combined (legacy): OCR and merge in one step
   enrichWithImages: protectedProcedure
     .input(z.object({
       id: z.number(),

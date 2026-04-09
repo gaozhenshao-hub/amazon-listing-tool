@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, PlusCircle, Link2, Upload, BookOpen, CheckCircle, Edit3, Trash2, Sparkles, Search, FileText, FileSpreadsheet, Presentation, Image as ImageIcon, File, AlertCircle, FolderOpen, Tag, Send } from "lucide-react";
+import { Loader2, PlusCircle, Link2, Upload, BookOpen, CheckCircle, Edit3, Trash2, Sparkles, Search, FileText, FileSpreadsheet, Presentation, Image as ImageIcon, File, AlertCircle, FolderOpen, Tag, Send, Camera, X, Check } from "lucide-react";
 import { toast } from "sonner";
 import { TagEditor } from "@/components/TagEditor";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -57,6 +57,28 @@ const CATEGORY_OPTIONS = [
   { value: "other", label: "其他" },
 ];
 
+/** Count how many OCR image sections exist in extractedContent */
+function countOcrImages(extractedContent: string | null | undefined): number {
+  if (!extractedContent) return 0;
+  const matches = extractedContent.match(/=== 补充图片内容（AI识别）===/g);
+  if (matches) return matches.length; // each merge appends one section
+  // Also count individual image entries within sections
+  const imgMatches = extractedContent.match(/\[图片\d+\]:|^\[.+?\]:/gm);
+  return imgMatches ? imgMatches.length : 0;
+}
+
+/** Count images from a single OCR section more accurately */
+function countOcrImagesAccurate(extractedContent: string | null | undefined): number {
+  if (!extractedContent) return 0;
+  // Count lines matching "[filename]: text" pattern inside OCR sections
+  const sectionStart = extractedContent.indexOf("=== 补充图片内容（AI识别）===");
+  if (sectionStart === -1) return 0;
+  const ocrSection = extractedContent.slice(sectionStart);
+  // Count entries like "[图片1]: " or "[filename.jpg]: "
+  const entries = ocrSection.match(/^\[.+?\]:/gm);
+  return entries ? entries.length : 0;
+}
+
 export default function KBSkills() {
   const { canEdit, canDelete } = usePermissions();
   const allowEdit = canEdit('knowledge', 'kb_skills');
@@ -79,12 +101,18 @@ export default function KBSkills() {
   const [selectedFiles, setSelectedFiles] = useState<globalThis.File[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Image enrichment state
+
+  // Image enrichment state — two-step OCR flow
   const [showImageUpload, setShowImageUpload] = useState(false);
   const [enrichImages, setEnrichImages] = useState<{ file: File; preview: string }[]>([]);
-  const [isEnriching, setIsEnriching] = useState(false);
+  const [isOcring, setIsOcring] = useState(false);
   const [enrichDragOver, setEnrichDragOver] = useState(false);
   const enrichFileRef = useRef<HTMLInputElement>(null);
+
+  // Step 2: OCR result review state
+  const [ocrResults, setOcrResults] = useState<{ index: number; fileName: string; ocrText: string }[]>([]);
+  const [showOcrReview, setShowOcrReview] = useState(false);
+  const [isMerging, setIsMerging] = useState(false);
 
   const { data: detail } = trpc.kbSkills.getById.useQuery({ id: detailId! }, { enabled: !!detailId });
 
@@ -116,16 +144,35 @@ export default function KBSkills() {
     onSuccess: () => { toast.success("已删除"); utils.kbSkills.list.invalidate(); setDetailId(null); },
     onError: (e: any) => toast.error(e.message),
   });
-  const enrichWithImages = trpc.kbSkills.enrichWithImages.useMutation({
+
+  // Step 1: OCR only — returns results for user review
+  const ocrImagesMutation = trpc.kbSkills.ocrImages.useMutation({
     onSuccess: (r: any) => {
-      toast.success(r.message || `已识别 ${r.enriched} 张图片，正在重新AI分析...`);
+      setIsOcring(false);
+      if (!r.results || r.results.length === 0) {
+        toast.warning("所有图片均未识别到有效文字内容");
+        return;
+      }
+      setOcrResults(r.results);
+      setShowOcrReview(true);
+      toast.success(`已识别 ${r.recognizedCount}/${r.results.length} 张图片，请确认后合并`);
+    },
+    onError: (e: any) => { toast.error(e.message); setIsOcring(false); },
+  });
+
+  // Step 2: Merge confirmed OCR texts
+  const mergeOcrMutation = trpc.kbSkills.mergeOcrTexts.useMutation({
+    onSuccess: (r: any) => {
+      toast.success(r.message || `已合并 ${r.mergedCount} 张图片内容，正在重新分析...`);
       utils.kbSkills.getById.invalidate({ id: detailId! });
       utils.kbSkills.list.invalidate();
       setEnrichImages([]);
+      setOcrResults([]);
+      setShowOcrReview(false);
       setShowImageUpload(false);
-      setIsEnriching(false);
+      setIsMerging(false);
     },
-    onError: (e: any) => { toast.error(e.message); setIsEnriching(false); },
+    onError: (e: any) => { toast.error(e.message); setIsMerging(false); },
   });
 
   const addEnrichImages = (files: File[]) => {
@@ -135,15 +182,17 @@ export default function KBSkills() {
     }));
     setEnrichImages(prev => [...prev, ...newImgs].slice(0, 20));
   };
+
   const removeEnrichImage = (idx: number) => {
     setEnrichImages(prev => {
       URL.revokeObjectURL(prev[idx].preview);
       return prev.filter((_, i) => i !== idx);
     });
   };
-  const handleEnrichSubmit = async () => {
+
+  const handleOcrSubmit = async () => {
     if (!enrichImages.length || !detailId) return;
-    setIsEnriching(true);
+    setIsOcring(true);
     const images = await Promise.all(enrichImages.map(({ file }) =>
       new Promise<{ base64: string; mimeType: string; fileName: string }>((resolve) => {
         const reader = new FileReader();
@@ -155,7 +204,21 @@ export default function KBSkills() {
         reader.readAsDataURL(file);
       })
     ));
-    enrichWithImages.mutate({ id: detailId, images });
+    ocrImagesMutation.mutate({ id: detailId, images });
+  };
+
+  const handleMergeConfirm = () => {
+    if (!detailId) return;
+    const validTexts = ocrResults.filter(r => r.ocrText.trim());
+    if (validTexts.length === 0) {
+      toast.warning("没有有效的图片内容可合并，请编辑识别文本后再确认");
+      return;
+    }
+    setIsMerging(true);
+    mergeOcrMutation.mutate({
+      id: detailId,
+      confirmedTexts: validTexts.map(r => ({ fileName: r.fileName, ocrText: r.ocrText })),
+    });
   };
 
   const updateTagsMutation = trpc.kbSkills.updateTags?.useMutation?.({
@@ -186,7 +249,6 @@ export default function KBSkills() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
-    // Validate file sizes
     const oversized = files.filter(f => f.size > 10 * 1024 * 1024);
     if (oversized.length > 0) {
       toast.error(`${oversized.length} 个文件超过10MB限制: ${oversized.map(f => f.name).join(", ")}`);
@@ -244,7 +306,7 @@ export default function KBSkills() {
       if (filterCategory !== "all") {
         const tags = (item.tags || "").toLowerCase();
         const category = (item.category || "").toLowerCase();
-        if (!tags.includes(filterCategory) && category !== filterCategory) return true; // show all if no match
+        if (!tags.includes(filterCategory) && category !== filterCategory) return true;
       }
       if (!searchQuery) return true;
       const q = searchQuery.toLowerCase();
@@ -282,7 +344,7 @@ export default function KBSkills() {
         <Badge variant="secondary" className="h-9 px-3 flex items-center">{filtered.length} 条</Badge>
       </div>
 
-      {/* Supported formats info - enhanced */}
+      {/* Supported formats info */}
       <div className="flex flex-wrap gap-4 items-center text-xs">
         {FORMAT_GROUPS.map(group => (
           <div key={group.label} className="flex items-center gap-1">
@@ -309,15 +371,23 @@ export default function KBSkills() {
         <div className="space-y-3">
           {filtered.map((item: any) => {
             const status = statusMap[item.status] || { label: item.status, variant: "secondary" as const };
+            const ocrCount = countOcrImagesAccurate(item.extractedContent);
             return (
               <Card key={item.id} className="cursor-pointer hover:shadow-md transition-all" onClick={() => { setDetailId(item.id); setEditingAnalysis(""); }}>
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
                     <div className="mt-0.5 text-muted-foreground">{getFileIcon(item.originalFilename || item.title || "")}</div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <h3 className="font-medium text-sm truncate">{item.title}</h3>
                         <Badge variant={status.variant} className="text-xs shrink-0">{status.label}</Badge>
+                        {/* Image OCR badge */}
+                        {ocrCount > 0 && (
+                          <Badge variant="outline" className="text-[10px] shrink-0 gap-1 border-amber-300 text-amber-700 bg-amber-50">
+                            <Camera className="h-3 w-3" />
+                            {ocrCount}张图片已识别
+                          </Badge>
+                        )}
                       </div>
                       {item.aiSummary && <p className="text-xs text-muted-foreground line-clamp-2">{item.aiSummary}</p>}
                       <div className="flex flex-wrap gap-1 mt-2">
@@ -336,7 +406,7 @@ export default function KBSkills() {
         </div>
       )}
 
-      {/* Import Dialog - Enhanced */}
+      {/* Import Dialog */}
       <Dialog open={showImport} onOpenChange={setShowImport}>
         <DialogContent className="max-w-lg">
           <DialogHeader><DialogTitle>添加SOP文档</DialogTitle></DialogHeader>
@@ -380,7 +450,6 @@ export default function KBSkills() {
                     </div>
                   </div>
                 )}
-                {/* Upload progress */}
                 {uploading && (
                   <div className="space-y-2">
                     <Progress value={uploadProgress} className="h-2" />
@@ -432,6 +501,7 @@ export default function KBSkills() {
           {detail ? (() => {
             const d = detail as any;
             const status = statusMap[d.status] || { label: d.status, variant: "secondary" as const };
+            const ocrCount = countOcrImagesAccurate(d.extractedContent);
             return (
               <>
                 <DialogHeader>
@@ -439,6 +509,12 @@ export default function KBSkills() {
                     {getFileIcon(d.originalFilename || d.title || "")}
                     <span>{d.title}</span>
                     <Badge variant={status.variant}>{status.label}</Badge>
+                    {ocrCount > 0 && (
+                      <Badge variant="outline" className="gap-1 border-amber-300 text-amber-700 bg-amber-50 text-xs">
+                        <Camera className="h-3 w-3" />
+                        {ocrCount}张图片已识别
+                      </Badge>
+                    )}
                   </DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4">
@@ -497,7 +573,7 @@ export default function KBSkills() {
                       </CardContent>
                     </Card>
                   )}
-                  {/* SOP Structured Content - rendered when extractedContent contains SOP JSON */}
+                  {/* SOP Structured Content */}
                   {isSopContent(d.extractedContent) && (
                     <SopContentRenderer extractedContent={d.extractedContent} />
                   )}
@@ -511,13 +587,13 @@ export default function KBSkills() {
                     </Card>
                   )}
 
-                  {/* Image Enrichment Panel */}
+                  {/* ── Image Enrichment Panel (Two-step OCR) ── */}
                   <Card className="border-dashed border-2 border-amber-200 bg-amber-50/30">
                     <CardHeader className="pb-2 pt-3 px-4">
                       <CardTitle className="text-sm flex items-center gap-2">
                         <ImageIcon className="h-4 w-4 text-amber-500" />
                         补充图片内容（OCR识别）
-                        <span className="text-xs font-normal text-muted-foreground ml-1">— 将图片中的文字内容提取并合并到知识库</span>
+                        <span className="text-xs font-normal text-muted-foreground ml-1">— 识别后可编辑确认再合并</span>
                         <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-xs" onClick={() => setShowImageUpload(v => !v)}>
                           {showImageUpload ? "收起" : "展开上传"}
                         </Button>
@@ -525,44 +601,131 @@ export default function KBSkills() {
                     </CardHeader>
                     {showImageUpload && (
                       <CardContent className="px-4 pb-4 space-y-3">
-                        <div
-                          className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
-                            enrichDragOver ? "border-amber-400 bg-amber-50" : "border-muted-foreground/30 hover:border-amber-300"
-                          }`}
-                          onDragOver={(e) => { e.preventDefault(); setEnrichDragOver(true); }}
-                          onDragLeave={() => setEnrichDragOver(false)}
-                          onDrop={(e) => { e.preventDefault(); setEnrichDragOver(false); addEnrichImages(Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("image/"))); }}
-                          onClick={() => enrichFileRef.current?.click()}
-                        >
-                          <ImageIcon className="h-8 w-8 mx-auto mb-2 text-amber-400" />
-                          <p className="text-sm font-medium">拖拽或点击上传图片</p>
-                          <p className="text-xs text-muted-foreground mt-1">支持 JPG、PNG、WebP，最多20张</p>
-                          <input ref={enrichFileRef} type="file" accept="image/*" multiple className="hidden"
-                            onChange={(e) => addEnrichImages(Array.from(e.target.files || []))}
-                          />
+                        {/* Step indicator */}
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full ${!showOcrReview ? "bg-amber-100 text-amber-700 font-medium" : "bg-muted"}`}>
+                            <span className="w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] flex items-center justify-center">1</span>
+                            上传图片
+                          </span>
+                          <span className="text-muted-foreground/50">→</span>
+                          <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full ${showOcrReview ? "bg-amber-100 text-amber-700 font-medium" : "bg-muted"}`}>
+                            <span className="w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] flex items-center justify-center">2</span>
+                            确认识别结果
+                          </span>
+                          <span className="text-muted-foreground/50">→</span>
+                          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted">
+                            <span className="w-4 h-4 rounded-full bg-green-500 text-white text-[10px] flex items-center justify-center">3</span>
+                            合并入库
+                          </span>
                         </div>
-                        {enrichImages.length > 0 && (
-                          <div className="grid grid-cols-4 gap-2">
-                            {enrichImages.map((img, idx) => (
-                              <div key={idx} className="relative group">
-                                <img src={img.preview} alt={img.file.name} className="w-full h-20 object-cover rounded border" />
-                                <button
-                                  className="absolute top-0.5 right-0.5 bg-red-500 text-white rounded-full w-4 h-4 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                                  onClick={() => removeEnrichImage(idx)}
-                                >×</button>
-                                <p className="text-xs text-muted-foreground truncate mt-0.5">{img.file.name}</p>
+
+                        {/* Step 1: Image upload area */}
+                        {!showOcrReview && (
+                          <>
+                            <div
+                              className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
+                                enrichDragOver ? "border-amber-400 bg-amber-50" : "border-muted-foreground/30 hover:border-amber-300"
+                              }`}
+                              onDragOver={(e) => { e.preventDefault(); setEnrichDragOver(true); }}
+                              onDragLeave={() => setEnrichDragOver(false)}
+                              onDrop={(e) => { e.preventDefault(); setEnrichDragOver(false); addEnrichImages(Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("image/"))); }}
+                              onClick={() => enrichFileRef.current?.click()}
+                            >
+                              <ImageIcon className="h-8 w-8 mx-auto mb-2 text-amber-400" />
+                              <p className="text-sm font-medium">拖拽或点击上传图片</p>
+                              <p className="text-xs text-muted-foreground mt-1">支持 JPG、PNG、WebP，最多20张</p>
+                              <input ref={enrichFileRef} type="file" accept="image/*" multiple className="hidden"
+                                onChange={(e) => addEnrichImages(Array.from(e.target.files || []))}
+                              />
+                            </div>
+                            {enrichImages.length > 0 && (
+                              <div className="grid grid-cols-4 gap-2">
+                                {enrichImages.map((img, idx) => (
+                                  <div key={idx} className="relative group">
+                                    <img src={img.preview} alt={img.file.name} className="w-full h-20 object-cover rounded border" />
+                                    <button
+                                      className="absolute top-0.5 right-0.5 bg-red-500 text-white rounded-full w-4 h-4 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                      onClick={() => removeEnrichImage(idx)}
+                                    >×</button>
+                                    <p className="text-xs text-muted-foreground truncate mt-0.5">{img.file.name}</p>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
-                          </div>
+                            )}
+                            {enrichImages.length > 0 && (
+                              <div className="flex items-center gap-2">
+                                <Button size="sm" className="gap-1.5 bg-amber-500 hover:bg-amber-600" onClick={handleOcrSubmit} disabled={isOcring}>
+                                  {isOcring ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+                                  {isOcring ? `识别中 (${enrichImages.length}张)...` : `AI识别 ${enrichImages.length} 张图片`}
+                                </Button>
+                                <Button variant="ghost" size="sm" onClick={() => setEnrichImages([])} disabled={isOcring}>清空</Button>
+                                <span className="text-xs text-muted-foreground">识别后可逐张编辑确认</span>
+                              </div>
+                            )}
+                          </>
                         )}
-                        {enrichImages.length > 0 && (
-                          <div className="flex items-center gap-2">
-                            <Button size="sm" className="gap-1.5 bg-amber-500 hover:bg-amber-600" onClick={handleEnrichSubmit} disabled={isEnriching}>
-                              {isEnriching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                              {isEnriching ? `识别中 (${enrichImages.length}张)...` : `AI识别 ${enrichImages.length} 张图片`}
-                            </Button>
-                            <Button variant="ghost" size="sm" onClick={() => setEnrichImages([])} disabled={isEnriching}>清空</Button>
-                            <span className="text-xs text-muted-foreground">识别完成后将自动重新AI分析</span>
+
+                        {/* Step 2: OCR result review and edit */}
+                        {showOcrReview && ocrResults.length > 0 && (
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm font-medium text-amber-700">
+                                已识别 {ocrResults.filter(r => r.ocrText.trim()).length}/{ocrResults.length} 张图片，请检查并编辑识别结果
+                              </p>
+                              <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => { setShowOcrReview(false); setOcrResults([]); }}>
+                                <X className="h-3.5 w-3.5 mr-1" /> 重新上传
+                              </Button>
+                            </div>
+                            <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                              {ocrResults.map((result, idx) => (
+                                <div key={idx} className="border rounded-lg p-3 space-y-2 bg-background">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-medium flex items-center gap-1.5">
+                                      <Camera className="h-3.5 w-3.5 text-amber-500" />
+                                      {result.fileName}
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                      {result.ocrText.trim() ? (
+                                        <Badge variant="outline" className="text-[10px] border-green-300 text-green-700 bg-green-50">已识别</Badge>
+                                      ) : (
+                                        <Badge variant="outline" className="text-[10px] border-gray-300 text-gray-500">无文字</Badge>
+                                      )}
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 w-6 p-0 text-red-400 hover:text-red-600"
+                                        title="删除此图片识别结果"
+                                        onClick={() => setOcrResults(prev => prev.map((r, i) => i === idx ? { ...r, ocrText: "" } : r))}
+                                      >
+                                        <X className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                  <Textarea
+                                    value={result.ocrText}
+                                    onChange={(e) => setOcrResults(prev => prev.map((r, i) => i === idx ? { ...r, ocrText: e.target.value } : r))}
+                                    placeholder="识别结果为空，可手动输入内容..."
+                                    rows={3}
+                                    className="text-xs resize-none"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                            <div className="flex items-center gap-2 pt-1">
+                              <Button
+                                size="sm"
+                                className="gap-1.5 bg-green-600 hover:bg-green-700"
+                                onClick={handleMergeConfirm}
+                                disabled={isMerging || ocrResults.every(r => !r.ocrText.trim())}
+                              >
+                                {isMerging ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                                {isMerging ? "合并中..." : `确认合并 ${ocrResults.filter(r => r.ocrText.trim()).length} 张图片内容`}
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => { setShowOcrReview(false); setOcrResults([]); setEnrichImages([]); }} disabled={isMerging}>
+                                取消
+                              </Button>
+                              <span className="text-xs text-muted-foreground ml-auto">合并后将触发重新AI分析</span>
+                            </div>
                           </div>
                         )}
                       </CardContent>
