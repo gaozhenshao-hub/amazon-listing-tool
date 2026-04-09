@@ -13,6 +13,45 @@ import {
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, gte, lte } from "drizzle-orm";
 
+// ─── Ad Data Memory Cache ─────────────────────────────────────────────
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+  ttl: number;
+}
+const adCache = new Map<string, CacheEntry<any>>();
+
+function cacheGet<T>(key: string): T | null {
+  const entry = adCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > entry.ttl) {
+    adCache.delete(key);
+    return null;
+  }
+  return entry.data as T;
+}
+
+function cacheSet<T>(key: string, data: T, ttlMs: number): void {
+  adCache.set(key, { data, timestamp: Date.now(), ttl: ttlMs });
+}
+
+function getCacheAge(key: string): number | null {
+  const entry = adCache.get(key);
+  if (!entry) return null;
+  return Math.floor((Date.now() - entry.timestamp) / 1000);
+}
+
+// Helper: generate date range array
+function getDateRange(startDate: string, endDate: string): string[] {
+  const dates: string[] = [];
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    dates.push(d.toISOString().split('T')[0]);
+  }
+  return dates;
+}
+
 // Marketplace ID mapping (Lingxing mid -> country code)
 const MARKETPLACE_MAP: Record<number, { code: string; name: string; region: string }> = {
   1: { code: 'US', name: '美国', region: 'NA' },
@@ -1106,7 +1145,19 @@ ${activeSkus.map((s, i) => `
       const filteredSids = filterSidsByMarketplace(sellers, input.marketplace);
       let realSid = input.sid || (filteredSids.length > 0 ? Number(filteredSids[0]) : 1);
       const sidsToQuery = input.sid ? [input.sid] : filteredSids.map(Number);
-      console.log(`[AdCampaigns] Querying ad campaigns across sids: ${sidsToQuery.join(',')}`);
+      const marketplaceKey = input.marketplace || 'ALL';
+      console.log(`[AdCampaigns] Querying ad campaigns across ${sidsToQuery.length} sids, marketplace=${marketplaceKey}`);
+      
+      // ─── Cache: Check campaign list cache ─────────────────────────
+      const campaignListCacheKey = `ad_campaigns_list_${marketplaceKey}_${input.adState}`;
+      const cachedCampaignData = cacheGet<{
+        portfolioNameMap: Record<string, any>;
+        campaignNameMap: Record<string, any>;
+        allCampaignList: any[];
+        uniqueCampaignIds: string[];
+      }>(campaignListCacheKey);
+      const campaignListCacheAge = getCacheAge(campaignListCacheKey);
+      let usedCampaignCache = false;
       
       // ─── Step 0: Fetch real portfolios from Lingxing API ───────────
       const portfolioNameMap: Record<string, { name: string; budget: any; state: string; serving_status: string }> = {};
@@ -1202,19 +1253,42 @@ ${activeSkus.map((s, i) => `
         }
       };
       
-      // Fetch SP, SB, SD campaigns in parallel
-      await Promise.allSettled([
-        fetchCampaignsFromApi("/pb/openapi/newad/spCampaigns", "SP"),
-        fetchCampaignsFromApi("/pb/openapi/newad/hsaCampaigns", "SB"),
-        fetchCampaignsFromApi("/pb/openapi/newad/sdCampaigns", "SD", { "X-API-VERSION": "2" }),
-      ]);
+      // Fetch SP, SB, SD campaigns in parallel (or use cache)
+      if (cachedCampaignData) {
+        usedCampaignCache = true;
+        Object.assign(portfolioNameMap, cachedCampaignData.portfolioNameMap);
+        Object.assign(campaignNameMap, cachedCampaignData.campaignNameMap);
+        allCampaignList.push(...cachedCampaignData.allCampaignList);
+        console.log(`[AdCampaigns] Using cached campaign list (age=${campaignListCacheAge}s): ${allCampaignList.length} campaigns`);
+      } else {
+        await Promise.allSettled([
+          fetchCampaignsFromApi("/pb/openapi/newad/spCampaigns", "SP"),
+          fetchCampaignsFromApi("/pb/openapi/newad/hsaCampaigns", "SB"),
+          fetchCampaignsFromApi("/pb/openapi/newad/sdCampaigns", "SD", { "X-API-VERSION": "2" }),
+        ]);
+        // Cache the campaign list for 10 minutes
+        cacheSet(campaignListCacheKey, {
+          portfolioNameMap: { ...portfolioNameMap },
+          campaignNameMap: { ...campaignNameMap },
+          allCampaignList: [...allCampaignList],
+          uniqueCampaignIds: Array.from(new Set(allCampaignList.map((c: any) => String(c.campaign_id)))),
+        }, 10 * 60 * 1000);
+        console.log(`[AdCampaigns] Fetched & cached campaign list: ${allCampaignList.length} campaigns`);
+      }
       
       console.log(`[AdCampaigns] Total campaigns from SP+SB+SD: ${allCampaignList.length} (SP=${allCampaignList.filter(c=>c.ad_type==='SP').length}, SB=${allCampaignList.filter(c=>c.ad_type==='SB').length}, SD=${allCampaignList.filter(c=>c.ad_type==='SD').length})`);
       
-      // ─── Step 2: Get campaign hour data using spCampaignHourData API ─
-      const queryDate = input.reportDate || getDateNDaysAgo(1);
-      const queryDates = [queryDate];
-      console.log(`[AdCampaigns] Querying spCampaignHourData for ${queryDates.length} days: ${queryDates[0]}`);
+      // ─── Step 2: Get campaign hour data with multi-date range support ─
+      let queryDates: string[];
+      if (input.startDate && input.endDate) {
+        queryDates = getDateRange(input.startDate, input.endDate);
+      } else {
+        const queryDate = input.reportDate || getDateNDaysAgo(1);
+        queryDates = [queryDate];
+      }
+      // Limit to max 31 days to avoid excessive API calls
+      if (queryDates.length > 31) queryDates = queryDates.slice(-31);
+      console.log(`[AdCampaigns] Querying hour data for ${queryDates.length} day(s): ${queryDates[0]}${queryDates.length > 1 ? ` to ${queryDates[queryDates.length-1]}` : ''}`);
       const reportMap: Record<string, any> = {};
       const campaignProfileMap: Record<string, string> = {};
       
@@ -1232,19 +1306,39 @@ ${activeSkus.map((s, i) => `
       const topCampaignIds = sortedCampaignIds.slice(0, TOP_N_CAMPAIGNS);
       console.log(`[AdCampaigns] TOP${TOP_N_CAMPAIGNS} optimization: querying ${topCampaignIds.length} of ${uniqueCampaignIds.length} total campaigns`);
       
-      // Batch by date
-      const MAX_REPORT_TASKS = 100;
+      // Batch by date - scale MAX_REPORT_TASKS with date range
+      const MAX_REPORT_TASKS = Math.min(topCampaignIds.length * queryDates.length, 2000);
       const reportTasks: { campaignId: string; reportDate: string; adType: string }[] = [];
+      let hourCacheHits = 0;
       for (const cid of topCampaignIds) {
         const info = campaignNameMap[cid];
         const adType = info?.ad_type || 'SP';
         for (const reportDate of queryDates) {
-          reportTasks.push({ campaignId: cid, reportDate, adType });
+          // Check hour data cache first
+          const hourCacheKey = `ad_hour_${cid}_${reportDate}`;
+          const cachedHour = cacheGet<any>(hourCacheKey);
+          if (cachedHour) {
+            // Merge cached hour data directly into reportMap
+            hourCacheHits++;
+            const cid2 = String(cachedHour.campaign_id || cid);
+            if (cachedHour.profile_id) campaignProfileMap[cid2] = String(cachedHour.profile_id);
+            if (reportMap[cid2]) {
+              reportMap[cid2].impressions += cachedHour.impressions || 0;
+              reportMap[cid2].clicks += cachedHour.clicks || 0;
+              reportMap[cid2].cost += cachedHour.cost || 0;
+              reportMap[cid2].sales += cachedHour.sales || 0;
+              reportMap[cid2].orders += cachedHour.orders || 0;
+            } else {
+              reportMap[cid2] = { ...cachedHour };
+            }
+          } else {
+            reportTasks.push({ campaignId: cid, reportDate, adType });
+          }
           if (reportTasks.length >= MAX_REPORT_TASKS) break;
         }
         if (reportTasks.length >= MAX_REPORT_TASKS) break;
       }
-      console.log(`[AdCampaigns] Fetching ${reportTasks.length} hour-data tasks in parallel`);
+      console.log(`[AdCampaigns] Hour data: ${hourCacheHits} cache hits, ${reportTasks.length} API tasks needed`);
       
       // Execute in batches of 30 to respect rate limits
       const BATCH_SIZE = 30;
@@ -1303,7 +1397,8 @@ ${activeSkus.map((s, i) => `
             console.log(`[AdCampaigns] HourData sample: cost=${sample.cost}, clicks=${sample.clicks}, impressions=${sample.impressions}, sales=${sample.sales}, orders=${sample.orders}`);
           }
           
-          // Aggregate hourly data into campaign totals
+          // Aggregate hourly data into campaign totals per date
+          const perDateAgg: Record<string, any> = {};
           for (const r of reportData) {
             const cid = String(r.campaign_id || campaignId);
             if (r.profile_id) campaignProfileMap[cid] = String(r.profile_id);
@@ -1324,6 +1419,21 @@ ${activeSkus.map((s, i) => `
                 units: Number(r.units) || 0,
               };
             }
+            // Track per-date aggregation for caching
+            if (!perDateAgg[cid]) {
+              perDateAgg[cid] = { impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0, units: 0, profile_id: '' };
+            }
+            perDateAgg[cid].impressions += Number(r.impressions) || 0;
+            perDateAgg[cid].clicks += Number(r.clicks) || 0;
+            perDateAgg[cid].cost += Number(r.cost) || 0;
+            perDateAgg[cid].sales += Number(r.sales) || 0;
+            perDateAgg[cid].orders += Number(r.orders) || 0;
+            if (r.profile_id) perDateAgg[cid].profile_id = String(r.profile_id);
+          }
+          // Cache per-campaign per-date aggregated data (30 min TTL)
+          for (const [cid, agg] of Object.entries(perDateAgg)) {
+            const hourCacheKey = `ad_hour_${cid}_${reportDate}`;
+            cacheSet(hourCacheKey, { campaign_id: cid, ...agg }, 30 * 60 * 1000);
           }
         }
       }
@@ -1340,7 +1450,7 @@ ${activeSkus.map((s, i) => `
       // Campaigns without hourly data will show $0 (which is accurate for the queried date)
       const campaignsWithoutData = uniqueCampaignIds.filter(cid => !reportMap[cid]);
       if (campaignsWithoutData.length > 0) {
-        console.log(`[AdCampaigns] ${campaignsWithoutData.length} campaigns have no hourly data for ${queryDate} (of ${uniqueCampaignIds.length} total)`);
+        console.log(`[AdCampaigns] ${campaignsWithoutData.length} campaigns have no hourly data for ${queryDates.join(',')} (of ${uniqueCampaignIds.length} total)`);
         for (const cid of campaignsWithoutData) {
           reportMap[cid] = {
             impressions: 0,
@@ -1491,7 +1601,19 @@ ${activeSkus.map((s, i) => `
         const sampleCid = withoutData[0].campaign_id;
         console.log(`[AdCampaigns] reportMap[${sampleCid}] = ${JSON.stringify(reportMap[sampleCid])}`);
       }
-      return { campaigns: filteredCampaigns, allCampaigns: campaigns, portfolios, isMock: adapter.isMockMode() };
+      return {
+        campaigns: filteredCampaigns,
+        allCampaigns: campaigns,
+        portfolios,
+        isMock: adapter.isMockMode(),
+        dateRange: { startDate: queryDates[0], endDate: queryDates[queryDates.length - 1], days: queryDates.length },
+        cacheInfo: {
+          campaignListCached: usedCampaignCache,
+          campaignListCacheAge: campaignListCacheAge,
+          hourDataCacheHits: hourCacheHits,
+          hourDataApiCalls: reportTasks.length,
+        },
+      };
     }),
 
   getSearchTerms: protectedProcedure

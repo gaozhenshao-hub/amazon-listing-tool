@@ -66,14 +66,29 @@ export default function OpsAds() {
   const [adStateFilter, setAdStateFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  const [dateMode, setDateMode] = useState<'single' | 'range'>('single');
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 8);
+    return d.toISOString().slice(0, 10);
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 2);
+    return d.toISOString().slice(0, 10);
+  });
   const { marketplace } = useMarketplace();
 
   // Overview data - campaign summary with portfolio structure
-  const { data: campaignData, isLoading: campaignLoading, refetch: refetchCampaigns } = trpc.operations.getAdCampaigns.useQuery({
-    marketplace,
-    adState: adStateFilter as any,
-    reportDate: selectedDate,
-  });
+  const queryParams = useMemo(() => {
+    if (dateMode === 'range') {
+      return { marketplace, adState: adStateFilter as any, startDate, endDate };
+    }
+    return { marketplace, adState: adStateFilter as any, reportDate: selectedDate };
+  }, [marketplace, adStateFilter, dateMode, selectedDate, startDate, endDate]);
+  const { data: campaignData, isLoading: campaignLoading, isFetching: campaignFetching, refetch: refetchCampaigns } = trpc.operations.getAdCampaigns.useQuery(queryParams);
+  const dateRange = (campaignData as any)?.dateRange;
+  const cacheInfo = (campaignData as any)?.cacheInfo;
 
   const campaigns = campaignData?.campaigns || [];
   const portfolios = (campaignData as any)?.portfolios || [];
@@ -204,15 +219,62 @@ export default function OpsAds() {
           <p className="text-sm text-gray-500 mt-0.5">以广告组合(Portfolio)+广告活动(Campaign)为核心维度的全方位广告数据分析</p>
         </div>
         <div className="flex items-center gap-3">
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="h-8 px-2 text-xs border rounded-md bg-white"
-            max={new Date().toISOString().slice(0, 10)}
-          />
+          <div className="flex items-center gap-1.5">
+            <div className="flex rounded-md border overflow-hidden">
+              <button
+                onClick={() => setDateMode('single')}
+                className={`px-2 py-1 text-xs transition-colors ${dateMode === 'single' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              >单日</button>
+              <button
+                onClick={() => setDateMode('range')}
+                className={`px-2 py-1 text-xs transition-colors ${dateMode === 'range' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+              >日期范围</button>
+            </div>
+            {dateMode === 'single' ? (
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="h-8 px-2 text-xs border rounded-md bg-white"
+                max={new Date().toISOString().slice(0, 10)}
+              />
+            ) : (
+              <div className="flex items-center gap-1">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="h-8 px-2 text-xs border rounded-md bg-white"
+                  max={endDate}
+                />
+                <span className="text-xs text-gray-400">至</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="h-8 px-2 text-xs border rounded-md bg-white"
+                  min={startDate}
+                  max={new Date().toISOString().slice(0, 10)}
+                />
+                <div className="flex rounded-md border overflow-hidden ml-1">
+                  {[{ label: '近7天', days: 7 }, { label: '近14天', days: 14 }, { label: '近30天', days: 30 }].map(({ label, days }) => (
+                    <button
+                      key={days}
+                      onClick={() => {
+                        const end = new Date(); end.setDate(end.getDate() - 2);
+                        const start = new Date(end); start.setDate(start.getDate() - days + 1);
+                        setStartDate(start.toISOString().slice(0, 10));
+                        setEndDate(end.toISOString().slice(0, 10));
+                      }}
+                      className="px-2 py-1 text-xs bg-white text-gray-600 hover:bg-gray-50 transition-colors"
+                    >{label}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           <Button variant="outline" size="sm" className="h-8" onClick={() => refetchCampaigns()}>
-            <RefreshCw className="w-3.5 h-3.5 mr-1" />
+            <RefreshCw className={`w-3.5 h-3.5 mr-1 ${campaignFetching ? 'animate-spin' : ''}`} />
             刷新
           </Button>
         </div>
@@ -233,6 +295,39 @@ export default function OpsAds() {
             </Button>
           </CardContent>
         </Card>
+      )}
+
+      {/* Loading Progress Bar */}
+      {campaignFetching && !campaignLoading && (
+        <div className="relative w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-blue-400 to-blue-500 animate-pulse rounded-full" />
+          <div className="absolute inset-0 bg-blue-500 rounded-full animate-[loading_2s_ease-in-out_infinite]" style={{ width: '40%' }} />
+        </div>
+      )}
+
+      {/* Cache & Date Range Info */}
+      {cacheInfo && (
+        <div className="flex items-center gap-3 text-xs text-gray-500 bg-gray-50 rounded-md px-3 py-1.5">
+          {dateRange && dateRange.days > 1 && (
+            <span className="flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              数据范围: {dateRange.startDate} 至 {dateRange.endDate} ({dateRange.days}天汇总)
+            </span>
+          )}
+          {cacheInfo.campaignListCached && (
+            <Badge variant="outline" className="text-[10px] h-5 bg-green-50 text-green-700 border-green-200">
+              ✓ 广告列表缓存 ({cacheInfo.campaignListCacheAge}s前)
+            </Badge>
+          )}
+          {cacheInfo.hourDataCacheHits > 0 && (
+            <Badge variant="outline" className="text-[10px] h-5 bg-blue-50 text-blue-700 border-blue-200">
+              ✓ 小时数据缓存命中 {cacheInfo.hourDataCacheHits}条
+            </Badge>
+          )}
+          <span className="text-gray-400">
+            API调用: {cacheInfo.hourDataApiCalls}次
+          </span>
+        </div>
       )}
 
       {/* Main Tabs */}
