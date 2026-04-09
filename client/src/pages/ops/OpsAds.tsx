@@ -63,6 +63,7 @@ export default function OpsAds() {
   const [expandedPortfolios, setExpandedPortfolios] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [adStateFilter, setAdStateFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const { marketplace } = useMarketplace();
@@ -70,7 +71,7 @@ export default function OpsAds() {
   // Overview data - campaign summary with portfolio structure
   const { data: campaignData, isLoading: campaignLoading, refetch: refetchCampaigns } = trpc.operations.getAdCampaigns.useQuery({
     marketplace,
-    adState: "enabled",
+    adState: adStateFilter as any,
     reportDate: selectedDate,
   });
 
@@ -423,6 +424,24 @@ export default function OpsAds() {
                           }`}
                         >
                           {t === "all" ? "全部" : t === "sponsoredProducts" ? "SP" : t === "sponsoredBrands" ? "SB" : "SD"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-gray-400">状态</span>
+                    <div className="flex rounded-md border overflow-hidden">
+                      {["all", "enabled", "paused", "archived"].map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => setAdStateFilter(s)}
+                          className={`px-2.5 py-1 text-xs transition-colors ${
+                            adStateFilter === s
+                              ? "bg-green-600 text-white"
+                              : "bg-white text-gray-600 hover:bg-gray-50"
+                          }`}
+                        >
+                          {s === "all" ? "全部" : s === "enabled" ? "启用" : s === "paused" ? "暂停" : "归档"}
                         </button>
                       ))}
                     </div>

@@ -1105,7 +1105,7 @@ ${activeSkus.map((s, i) => `
       const { sids: allSids, sellers } = await getAllSellerSids();
       const filteredSids = filterSidsByMarketplace(sellers, input.marketplace);
       let realSid = input.sid || (filteredSids.length > 0 ? Number(filteredSids[0]) : 1);
-      const sidsToQuery = input.sid ? [input.sid] : filteredSids.map(Number).slice(0, 5);
+      const sidsToQuery = input.sid ? [input.sid] : filteredSids.map(Number);
       console.log(`[AdCampaigns] Querying ad campaigns across sids: ${sidsToQuery.join(',')}`);
       
       // ─── Step 0: Fetch real portfolios from Lingxing API ───────────
@@ -1156,7 +1156,7 @@ ${activeSkus.map((s, i) => `
           try {
             let offset = 0;
             let hasMore = true;
-            while (hasMore && offset < 500) {
+            while (hasMore && offset < 2000) {
               const res = await adapter.requestWithMockFallback({
                 path: apiPath,
                 body: { sid, offset, length: 100 },
@@ -1221,9 +1221,9 @@ ${activeSkus.map((s, i) => `
       const allCampaignIdsForReport = allCampaignList.map((c: any) => String(c.campaign_id));
       const uniqueCampaignIds = Array.from(new Set(allCampaignIdsForReport));
       
-      // TOP20 optimization: only query hourly data for the first 20 campaigns
+      // Query hourly data for top campaigns
       // Prioritize enabled campaigns so they always have data
-      const TOP_N_CAMPAIGNS = 20;
+      const TOP_N_CAMPAIGNS = 100;
       const enabledIds = new Set(allCampaignList.filter((c: any) => c.state === 'enabled').map((c: any) => String(c.campaign_id)));
       const sortedCampaignIds = [
         ...uniqueCampaignIds.filter(id => enabledIds.has(id)),
@@ -1336,20 +1336,19 @@ ${activeSkus.map((s, i) => `
         console.log(`[AdCampaigns] reportMap sample cid=${sampleCid}: cost=${sampleData.cost}, sales=${sampleData.sales}, clicks=${sampleData.clicks}, impressions=${sampleData.impressions}`);
       }
       
-      // Fallback: generate mock data for campaigns that have no hourly data
-      // This handles: 1) data delay (yesterday's data not yet available)
-      //               2) mock campaigns from unauthorized stores (C001, C002 etc.)
+      // No mock data fallback - only show real data
+      // Campaigns without hourly data will show $0 (which is accurate for the queried date)
       const campaignsWithoutData = uniqueCampaignIds.filter(cid => !reportMap[cid]);
       if (campaignsWithoutData.length > 0) {
-        console.log(`[AdCampaigns] Generating mock data for ${campaignsWithoutData.length} campaigns without hourly data (of ${uniqueCampaignIds.length} total)`);
+        console.log(`[AdCampaigns] ${campaignsWithoutData.length} campaigns have no hourly data for ${queryDate} (of ${uniqueCampaignIds.length} total)`);
         for (const cid of campaignsWithoutData) {
           reportMap[cid] = {
-            impressions: Math.floor(Math.random() * 5000) + 500,
-            clicks: Math.floor(Math.random() * 200) + 20,
-            cost: Math.round((Math.random() * 500 + 50) * 100) / 100,
-            sales: Math.round((Math.random() * 2000 + 200) * 100) / 100,
-            orders: Math.floor(Math.random() * 30) + 2,
-            units: Math.floor(Math.random() * 40) + 3,
+            impressions: 0,
+            clicks: 0,
+            cost: 0,
+            sales: 0,
+            orders: 0,
+            units: 0,
           };
         }
       }
@@ -1508,7 +1507,7 @@ ${activeSkus.map((s, i) => `
       const adapter = getLingxingAdapter();
       const { sids: allSids, sellers } = await getAllSellerSids();
       const filteredSids = filterSidsByMarketplace(sellers, input.marketplace);
-      const sidsToQuery = input.sid ? [input.sid] : filteredSids.map(Number).slice(0, 5);
+      const sidsToQuery = input.sid ? [input.sid] : filteredSids.map(Number);
       const days = input.days || 7;
       
       // Aggregate search terms over multiple days for more reliable data
