@@ -215,7 +215,7 @@ export const kbSkillsRouter = router({
       return { imported: results.length, items: results };
     }),
 
-  // Import by URL
+  // Import by URL (with automatic image OCR extraction)
   importByUrl: protectedProcedure
     .input(z.object({ url: z.string().url(), title: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
@@ -228,23 +228,83 @@ export const kbSkillsRouter = router({
       });
       (async () => {
         try {
-          // Try to fetch content from URL
           const axios = (await import("axios")).default;
-          const response = await axios.get(input.url, { timeout: 15000, headers: { "User-Agent": "Mozilla/5.0" } });
+          const response = await axios.get(input.url, { timeout: 15000, headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" } });
           const html = typeof response.data === "string" ? response.data : JSON.stringify(response.data);
-          // Simple HTML to text extraction
           const cheerio = await import("cheerio");
           const $ = cheerio.load(html);
+
+          // Extract image URLs from article body (exclude icons/logos/ads)
+          const baseUrl = new URL(input.url);
+          const imageUrls: string[] = [];
+          $("article img, .content img, .post img, .article img, main img, #content img, .rich_media_content img, [data-src]").each((_, el) => {
+            const src = $(el).attr("src") || $(el).attr("data-src") || $(el).attr("data-original") || "";
+            if (!src) return;
+            try {
+              const fullUrl = src.startsWith("http") ? src : new URL(src, baseUrl.origin).href;
+              // Filter out tiny icons (width/height hints in URL or attributes)
+              const w = parseInt($(el).attr("width") || "999");
+              const h = parseInt($(el).attr("height") || "999");
+              if (w < 50 || h < 50) return;
+              if (fullUrl.match(/\/icon|logo|avatar|emoji|gif/i)) return;
+              if (!imageUrls.includes(fullUrl) && imageUrls.length < 20) imageUrls.push(fullUrl);
+            } catch {}
+          });
+
+          // Extract text content
           $("script, style, nav, footer, header").remove();
           const text = $("body").text().replace(/\s+/g, " ").trim();
 
+          // OCR images in parallel (max 8 to avoid timeout)
+          let imageOcrText = "";
+          if (imageUrls.length > 0) {
+            const imagesToProcess = imageUrls.slice(0, 8);
+            console.log(`[KB Skills] Auto OCR: ${imagesToProcess.length} images from ${input.url}`);
+            const ocrResults = await Promise.allSettled(
+              imagesToProcess.map(async (imgUrl, idx) => {
+                try {
+                  const imgResp = await axios.get(imgUrl, { responseType: "arraybuffer", timeout: 10000 });
+                  const contentType = imgResp.headers["content-type"] || "image/jpeg";
+                  const base64 = Buffer.from(imgResp.data).toString("base64");
+                  const dataUrl = `data:${contentType};base64,${base64}`;
+                  const ocrResp = await invokeLLM({
+                    messages: [{
+                      role: "user",
+                      content: [
+                        { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
+                        { type: "text", text: "请提取这张图片中的所有文字内容和关键信息。如果是流程图/表格/数据图，请描述其结构和内容。如果图片没有有价值的文字内容，回复'无文字内容'。" }
+                      ]
+                    }]
+                  });
+                  const ocrText = String(ocrResp.choices?.[0]?.message?.content || "");
+                  if (ocrText && !ocrText.includes("无文字内容")) {
+                    return `[图片${idx + 1}内容]: ${ocrText}`;
+                  }
+                  return null;
+                } catch {
+                  return null;
+                }
+              })
+            );
+            const validOcrTexts = ocrResults
+              .filter(r => r.status === "fulfilled" && r.value)
+              .map(r => (r as PromiseFulfilledResult<string>).value);
+            if (validOcrTexts.length > 0) {
+              imageOcrText = "\n\n=== 文章图片内容（AI识别）===\n" + validOcrTexts.join("\n\n");
+              console.log(`[KB Skills] OCR extracted ${validOcrTexts.length}/${imagesToProcess.length} images`);
+            }
+          }
+
+          const fullContent = text.slice(0, 40000) + imageOcrText;
           await kbDb.updateOperationSkill(Number(id), ctx.user.id, {
-            extractedContent: text.slice(0, 50000), status: "analyzing",
+            extractedContent: fullContent.slice(0, 50000),
+            status: "analyzing",
           });
+
           const aiResponse = await invokeLLM({
             messages: [
               { role: "system", content: `你是亚马逊运营专家。对运营知识内容进行智能摘要，返回JSON: { title, summary, keyPoints, actionSteps, applicableScenarios, difficultyLevel, categories, tags, practicalityScore(1-10), briefSummary }` },
-              { role: "user", content: `URL: ${input.url}\n内容:\n${text.slice(0, 8000)}` }
+              { role: "user", content: `URL: ${input.url}\n文章文字内容:\n${text.slice(0, 5000)}${imageOcrText ? "\n\n" + imageOcrText.slice(0, 3000) : ""}` }
             ],
             response_format: { type: "json_object" as const },
           });
@@ -262,6 +322,94 @@ export const kbSkillsRouter = router({
         }
       })();
       return { id: Number(id) };
+    }),
+
+  // Enrich existing entry with supplemental images (batch OCR)
+  enrichWithImages: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      images: z.array(z.object({
+        base64: z.string(),
+        mimeType: z.string().default("image/jpeg"),
+        fileName: z.string().optional(),
+      })).min(1).max(20),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const item = await kbDb.getOperationSkill(input.id, ctx.user.id);
+      if (!item) throw new Error("条目不存在或无权限");
+
+      // OCR all uploaded images in parallel
+      const ocrResults = await Promise.allSettled(
+        input.images.map(async (img, idx) => {
+          const dataUrl = `data:${img.mimeType};base64,${img.base64}`;
+          const ocrResp = await invokeLLM({
+            messages: [{
+              role: "user",
+              content: [
+                { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
+                { type: "text", text: "请提取这张图片中的所有文字内容和关键信息。如果是流程图/表格/数据图，请详细描述其结构和所有数据。如果是截图，请完整转录所有可见文字。如果图片没有有价值的文字内容，回复'无文字内容'。" }
+              ]
+            }]
+          });
+          const ocrText = String(ocrResp.choices?.[0]?.message?.content || "");
+          return {
+            index: idx + 1,
+            fileName: img.fileName || `图片${idx + 1}`,
+            ocrText: ocrText.includes("无文字内容") ? "" : ocrText,
+          };
+        })
+      );
+
+      const validResults = ocrResults
+        .filter(r => r.status === "fulfilled" && (r as PromiseFulfilledResult<any>).value.ocrText)
+        .map(r => (r as PromiseFulfilledResult<any>).value);
+
+      if (validResults.length === 0) {
+        return { success: true, enriched: 0, ocrResults: [], message: "所有图片均未识别到有效文字内容" };
+      }
+
+      // Append OCR results to extractedContent
+      const ocrSection = "\n\n=== 补充图片内容（AI识别）===\n" +
+        validResults.map(r => `[${r.fileName}]: ${r.ocrText}`).join("\n\n");
+      const existingContent = item.extractedContent || "";
+      const newContent = (existingContent + ocrSection).slice(0, 50000);
+
+      await kbDb.updateOperationSkill(input.id, ctx.user.id, {
+        extractedContent: newContent,
+        status: "analyzing",
+      });
+
+      // Re-run AI analysis with enriched content
+      (async () => {
+        try {
+          const aiResponse = await invokeLLM({
+            messages: [
+              { role: "system", content: `你是亚马逊运营专家。对运营知识内容进行智能摘要（包含图片识别内容），返回JSON: { title, summary, keyPoints, actionSteps, applicableScenarios, difficultyLevel, categories, tags, practicalityScore(1-10), briefSummary }` },
+              { role: "user", content: `标题: ${item.title}\n内容（含图片识别）:\n${newContent.slice(0, 8000)}` }
+            ],
+            response_format: { type: "json_object" as const },
+          });
+          const summary = String(aiResponse.choices?.[0]?.message?.content || "{}");
+          const parsed = JSON.parse(summary);
+          await kbDb.updateOperationSkill(input.id, ctx.user.id, {
+            aiSummary: summary,
+            categories: JSON.stringify(parsed.categories || []),
+            tags: JSON.stringify(parsed.tags || []),
+            practicalityScore: parsed.practicalityScore || 7,
+            status: "pending_review",
+          });
+        } catch (err: any) {
+          console.error("[KB Skills] Re-analysis after image enrichment failed:", err.message);
+          await kbDb.updateOperationSkill(input.id, ctx.user.id, { status: "pending_review" });
+        }
+      })();
+
+      return {
+        success: true,
+        enriched: validResults.length,
+        ocrResults: validResults.map(r => ({ fileName: r.fileName, preview: r.ocrText.slice(0, 200) })),
+        message: `已识别 ${validResults.length}/${input.images.length} 张图片内容，正在重新分析...`,
+      };
     }),
 
   // Manual entry

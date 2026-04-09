@@ -79,6 +79,12 @@ export default function KBSkills() {
   const [selectedFiles, setSelectedFiles] = useState<globalThis.File[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Image enrichment state
+  const [showImageUpload, setShowImageUpload] = useState(false);
+  const [enrichImages, setEnrichImages] = useState<{ file: File; preview: string }[]>([]);
+  const [isEnriching, setIsEnriching] = useState(false);
+  const [enrichDragOver, setEnrichDragOver] = useState(false);
+  const enrichFileRef = useRef<HTMLInputElement>(null);
 
   const { data: detail } = trpc.kbSkills.getById.useQuery({ id: detailId! }, { enabled: !!detailId });
 
@@ -110,6 +116,48 @@ export default function KBSkills() {
     onSuccess: () => { toast.success("已删除"); utils.kbSkills.list.invalidate(); setDetailId(null); },
     onError: (e: any) => toast.error(e.message),
   });
+  const enrichWithImages = trpc.kbSkills.enrichWithImages.useMutation({
+    onSuccess: (r: any) => {
+      toast.success(r.message || `已识别 ${r.enriched} 张图片，正在重新AI分析...`);
+      utils.kbSkills.getById.invalidate({ id: detailId! });
+      utils.kbSkills.list.invalidate();
+      setEnrichImages([]);
+      setShowImageUpload(false);
+      setIsEnriching(false);
+    },
+    onError: (e: any) => { toast.error(e.message); setIsEnriching(false); },
+  });
+
+  const addEnrichImages = (files: File[]) => {
+    const newImgs = files.slice(0, 20).map(file => ({
+      file,
+      preview: URL.createObjectURL(file),
+    }));
+    setEnrichImages(prev => [...prev, ...newImgs].slice(0, 20));
+  };
+  const removeEnrichImage = (idx: number) => {
+    setEnrichImages(prev => {
+      URL.revokeObjectURL(prev[idx].preview);
+      return prev.filter((_, i) => i !== idx);
+    });
+  };
+  const handleEnrichSubmit = async () => {
+    if (!enrichImages.length || !detailId) return;
+    setIsEnriching(true);
+    const images = await Promise.all(enrichImages.map(({ file }) =>
+      new Promise<{ base64: string; mimeType: string; fileName: string }>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve({
+          base64: (e.target?.result as string).split(",")[1],
+          mimeType: file.type,
+          fileName: file.name,
+        });
+        reader.readAsDataURL(file);
+      })
+    ));
+    enrichWithImages.mutate({ id: detailId, images });
+  };
+
   const updateTagsMutation = trpc.kbSkills.updateTags?.useMutation?.({
     onSuccess: () => { toast.success("标签已更新"); utils.kbSkills.getById.invalidate({ id: detailId! }); utils.kbSkills.list.invalidate(); },
     onError: (e: any) => toast.error(e.message),
@@ -454,14 +502,73 @@ export default function KBSkills() {
                     <SopContentRenderer extractedContent={d.extractedContent} />
                   )}
                   {/* Content preview - only shown for non-SOP content */}
-                  {d.extractedText && !isSopContent(d.extractedContent) && (
+                  {!isSopContent(d.extractedContent) && d.extractedContent && (
                     <Card>
                       <CardHeader className="pb-2"><CardTitle className="text-sm">原文内容</CardTitle></CardHeader>
                       <CardContent>
-                        <div className="text-xs text-muted-foreground whitespace-pre-wrap max-h-48 overflow-y-auto">{d.extractedText}</div>
+                        <div className="text-xs text-muted-foreground whitespace-pre-wrap max-h-48 overflow-y-auto">{d.extractedContent.slice(0, 2000)}{d.extractedContent.length > 2000 ? '...' : ''}</div>
                       </CardContent>
                     </Card>
                   )}
+
+                  {/* Image Enrichment Panel */}
+                  <Card className="border-dashed border-2 border-amber-200 bg-amber-50/30">
+                    <CardHeader className="pb-2 pt-3 px-4">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <ImageIcon className="h-4 w-4 text-amber-500" />
+                        补充图片内容（OCR识别）
+                        <span className="text-xs font-normal text-muted-foreground ml-1">— 将图片中的文字内容提取并合并到知识库</span>
+                        <Button variant="ghost" size="sm" className="ml-auto h-6 px-2 text-xs" onClick={() => setShowImageUpload(v => !v)}>
+                          {showImageUpload ? "收起" : "展开上传"}
+                        </Button>
+                      </CardTitle>
+                    </CardHeader>
+                    {showImageUpload && (
+                      <CardContent className="px-4 pb-4 space-y-3">
+                        <div
+                          className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
+                            enrichDragOver ? "border-amber-400 bg-amber-50" : "border-muted-foreground/30 hover:border-amber-300"
+                          }`}
+                          onDragOver={(e) => { e.preventDefault(); setEnrichDragOver(true); }}
+                          onDragLeave={() => setEnrichDragOver(false)}
+                          onDrop={(e) => { e.preventDefault(); setEnrichDragOver(false); addEnrichImages(Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("image/"))); }}
+                          onClick={() => enrichFileRef.current?.click()}
+                        >
+                          <ImageIcon className="h-8 w-8 mx-auto mb-2 text-amber-400" />
+                          <p className="text-sm font-medium">拖拽或点击上传图片</p>
+                          <p className="text-xs text-muted-foreground mt-1">支持 JPG、PNG、WebP，最多20张</p>
+                          <input ref={enrichFileRef} type="file" accept="image/*" multiple className="hidden"
+                            onChange={(e) => addEnrichImages(Array.from(e.target.files || []))}
+                          />
+                        </div>
+                        {enrichImages.length > 0 && (
+                          <div className="grid grid-cols-4 gap-2">
+                            {enrichImages.map((img, idx) => (
+                              <div key={idx} className="relative group">
+                                <img src={img.preview} alt={img.file.name} className="w-full h-20 object-cover rounded border" />
+                                <button
+                                  className="absolute top-0.5 right-0.5 bg-red-500 text-white rounded-full w-4 h-4 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                  onClick={() => removeEnrichImage(idx)}
+                                >×</button>
+                                <p className="text-xs text-muted-foreground truncate mt-0.5">{img.file.name}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {enrichImages.length > 0 && (
+                          <div className="flex items-center gap-2">
+                            <Button size="sm" className="gap-1.5 bg-amber-500 hover:bg-amber-600" onClick={handleEnrichSubmit} disabled={isEnriching}>
+                              {isEnriching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                              {isEnriching ? `识别中 (${enrichImages.length}张)...` : `AI识别 ${enrichImages.length} 张图片`}
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => setEnrichImages([])} disabled={isEnriching}>清空</Button>
+                            <span className="text-xs text-muted-foreground">识别完成后将自动重新AI分析</span>
+                          </div>
+                        )}
+                      </CardContent>
+                    )}
+                  </Card>
+
                   <Separator />
 
                   <div className="flex gap-2 justify-end">
