@@ -574,4 +574,130 @@ export const kbSkillsRouter = router({
       await kbDb.deleteOperationSkill(input.id, ctx.user.id);
       return { success: true };
     }),
+
+  // ── 批量重新生成 aiSummary（历史数据迁移） ─────────────────────────────────────────────
+  getSummaryMigrationStats: protectedProcedure
+    .query(async ({ ctx }) => {
+      const allSkills = await kbDb.listOperationSkills(ctx.user.id, "mine");
+      const total = allSkills.length;
+      // Old format: missing briefSummary or actionSteps fields
+      const needsMigration = allSkills.filter(s => {
+        if (!s.aiSummary) return true;
+        try {
+          const parsed = JSON.parse(s.aiSummary as string);
+          return !parsed.briefSummary || !parsed.actionSteps || !parsed.applicableScenarios;
+        } catch {
+          return true; // Unparseable JSON — needs regeneration
+        }
+      });
+      return {
+        total,
+        needsMigration: needsMigration.length,
+        alreadyMigrated: total - needsMigration.length,
+        items: needsMigration.map(s => ({ id: s.id, title: s.title, status: s.status })),
+      };
+    }),
+
+  regenerateSummaries: protectedProcedure
+    .input(z.object({
+      ids: z.array(z.number()).optional(), // If omitted, regenerate all that need migration
+      forceAll: z.boolean().default(false), // Force regenerate even if already has new format
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const allSkills = await kbDb.listOperationSkills(ctx.user.id, "mine");
+
+      // Determine which items to process
+      let toProcess = allSkills;
+      if (input.ids && input.ids.length > 0) {
+        toProcess = allSkills.filter(s => input.ids!.includes(s.id));
+      } else if (!input.forceAll) {
+        // Only process items with old/missing format
+        toProcess = allSkills.filter(s => {
+          if (!s.aiSummary) return true;
+          try {
+            const parsed = JSON.parse(s.aiSummary as string);
+            return !parsed.briefSummary || !parsed.actionSteps || !parsed.applicableScenarios;
+          } catch {
+            return true;
+          }
+        });
+      }
+
+      if (toProcess.length === 0) {
+        return { total: 0, processed: 0, succeeded: 0, failed: 0, results: [] };
+      }
+
+      const results: Array<{ id: number; title: string; success: boolean; error?: string }> = [];
+      let succeeded = 0;
+      let failed = 0;
+
+      // Process sequentially to avoid rate limits (max 20 at a time)
+      const batch = toProcess.slice(0, 20);
+
+      for (const skill of batch) {
+        try {
+          const content = (skill.extractedContent as string) || "";
+          if (!content || content.startsWith("[")) {
+            // Skip items with no extractable text (image-only, parse failures)
+            results.push({ id: skill.id, title: skill.title, success: false, error: "无可用文本内容" });
+            failed++;
+            continue;
+          }
+
+          const response = await invokeLLM({
+            messages: [
+              {
+                role: "system",
+                content: `你是亚马逊运营专家。对运营知识内容进行智能摘要，返回JSON格式：
+{
+  "title": "条目标题（精简，20字以内）",
+  "briefSummary": "一句话摘要（不超过50字）",
+  "summary": "核心内容摘要（200字以内）",
+  "keyPoints": ["关键要点3-5条"],
+  "actionSteps": ["可执行操作步3-5条"],
+  "applicableScenarios": ["适用场景2-3个"],
+  "difficultyLevel": "初级|中级|高级",
+  "categories": ["分类1", "分类2"],
+  "tags": ["标签1", "标签2"],
+  "practicalityScore": 8
+}
+必须返回所有字段，不得省略。`,
+              },
+              {
+                role: "user",
+                content: `条目: ${skill.title}\n内容:\n${content.slice(0, 6000)}`,
+              },
+            ],
+            response_format: { type: "json_object" as const },
+          });
+
+          const summaryStr = String(response.choices?.[0]?.message?.content || "{}");
+          const parsed = JSON.parse(summaryStr);
+
+          await kbDb.updateOperationSkill(skill.id, ctx.user.id, {
+            aiSummary: summaryStr,
+            categories: JSON.stringify(parsed.categories || []),
+            tags: JSON.stringify(parsed.tags || []),
+            practicalityScore: parsed.practicalityScore || 7,
+          });
+
+          results.push({ id: skill.id, title: skill.title, success: true });
+          succeeded++;
+        } catch (err: any) {
+          console.error(`[KB Skills] regenerateSummary failed for id=${skill.id}:`, err.message);
+          results.push({ id: skill.id, title: skill.title, success: false, error: err.message });
+          failed++;
+        }
+      }
+
+      return {
+        total: toProcess.length,
+        processed: batch.length,
+        succeeded,
+        failed,
+        hasMore: toProcess.length > batch.length,
+        remainingCount: Math.max(0, toProcess.length - batch.length),
+        results,
+      };
+    }),
 });

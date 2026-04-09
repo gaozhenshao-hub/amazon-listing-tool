@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, PlusCircle, Link2, Upload, BookOpen, CheckCircle, Edit3, Trash2, Sparkles, Search, FileText, FileSpreadsheet, Presentation, Image as ImageIcon, File, AlertCircle, FolderOpen, Tag, Send, Camera, X, Check } from "lucide-react";
+import { Loader2, PlusCircle, Link2, Upload, BookOpen, CheckCircle, Edit3, Trash2, Sparkles, Search, FileText, FileSpreadsheet, Presentation, Image as ImageIcon, File, AlertCircle, FolderOpen, Tag, Send, Camera, X, Check, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 import { TagEditor } from "@/components/TagEditor";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -114,7 +114,20 @@ export default function KBSkills() {
   const [showOcrReview, setShowOcrReview] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
 
+  // Regenerate summaries state
+  const [showRegenDialog, setShowRegenDialog] = useState(false);
+  const [regenForceAll, setRegenForceAll] = useState(false);
+  const [regenProgress, setRegenProgress] = useState<null | { total: number; processed: number; succeeded: number; failed: number; hasMore: boolean; remainingCount: number; results: { id: number; title: string; success: boolean; error?: string }[] }>(null);
+  const [isRegenerating, setIsRegenerating] = useState(false);
+  const [regenRound, setRegenRound] = useState(0); // increments to trigger next batch
+
   const { data: detail } = trpc.kbSkills.getById.useQuery({ id: detailId! }, { enabled: !!detailId });
+
+  // Migration stats query
+  const migrationStatsQuery = trpc.kbSkills.getSummaryMigrationStats.useQuery(undefined, {
+    enabled: showRegenDialog,
+    refetchOnWindowFocus: false,
+  });
 
   const importUrl = trpc.kbSkills.importByUrl.useMutation({
     onSuccess: () => { toast.success("已导入链接，AI正在分析..."); utils.kbSkills.list.invalidate(); setShowImport(false); setUrlInput(""); },
@@ -144,6 +157,31 @@ export default function KBSkills() {
     onSuccess: () => { toast.success("已删除"); utils.kbSkills.list.invalidate(); setDetailId(null); },
     onError: (e: any) => toast.error(e.message),
   });
+
+  const regenerateMutation = trpc.kbSkills.regenerateSummaries.useMutation({
+    onSuccess: (r: any) => {
+      setRegenProgress(r);
+      setIsRegenerating(false);
+      if (r.succeeded > 0) {
+        utils.kbSkills.list.invalidate();
+        migrationStatsQuery.refetch();
+      }
+      if (r.hasMore) {
+        // Auto-continue next batch after short delay
+        setTimeout(() => setRegenRound(prev => prev + 1), 800);
+      } else {
+        toast.success(`摘要重新生成完成：成功 ${r.succeeded} 条，失败 ${r.failed} 条`);
+      }
+    },
+    onError: (e: any) => { toast.error(e.message); setIsRegenerating(false); },
+  });
+
+  // Auto-continue batches
+  useEffect(() => {
+    if (regenRound === 0) return;
+    if (!isRegenerating) return;
+    regenerateMutation.mutate({ forceAll: regenForceAll });
+  }, [regenRound]);
 
   // Step 1: OCR only — returns results for user review
   const ocrImagesMutation = trpc.kbSkills.ocrImages.useMutation({
@@ -324,7 +362,12 @@ export default function KBSkills() {
           </h1>
           <p className="text-muted-foreground text-sm mt-1">支持文档/表格/PPT/PDF/思维导图/图片批量导入，AI自动提取摘要和关键步骤</p>
         </div>
-        <Button onClick={() => setShowImport(true)} className="gap-2"><PlusCircle className="h-4 w-4" /> 添加SOP</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowRegenDialog(true)} className="gap-2 text-amber-700 border-amber-300 hover:bg-amber-50">
+            <RefreshCw className="h-4 w-4" /> 重新生成摘要
+          </Button>
+          <Button onClick={() => setShowImport(true)} className="gap-2"><PlusCircle className="h-4 w-4" /> 添加SOP</Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3 items-center">
@@ -343,6 +386,128 @@ export default function KBSkills() {
         </Select>
         <Badge variant="secondary" className="h-9 px-3 flex items-center">{filtered.length} 条</Badge>
       </div>
+
+      {/* ── Regenerate Summaries Dialog ───────────────────────────────────── */}
+      <Dialog open={showRegenDialog} onOpenChange={(v) => { if (!isRegenerating) setShowRegenDialog(v); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5 text-amber-600" />
+              批量重新生成AI摘要
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Stats */}
+            {migrationStatsQuery.isLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> 正在检测旧格式条目...
+              </div>
+            ) : migrationStatsQuery.data ? (
+              <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div>
+                    <div className="text-2xl font-bold">{migrationStatsQuery.data.total}</div>
+                    <div className="text-xs text-muted-foreground">总条目</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-amber-600">{migrationStatsQuery.data.needsMigration}</div>
+                    <div className="text-xs text-muted-foreground">需更新</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-green-600">{migrationStatsQuery.data.alreadyMigrated}</div>
+                    <div className="text-xs text-muted-foreground">已是新格式</div>
+                  </div>
+                </div>
+                {migrationStatsQuery.data.needsMigration > 0 && (
+                  <p className="text-xs text-muted-foreground text-center">
+                    旧格式条目缺少 briefSummary、actionSteps、applicableScenarios 等字段
+                  </p>
+                )}
+              </div>
+            ) : null}
+
+            {/* Options */}
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={regenForceAll}
+                  onChange={e => setRegenForceAll(e.target.checked)}
+                  className="rounded"
+                  disabled={isRegenerating}
+                />
+                <span className="text-sm">强制重新生成所有条目（包括已是新格式的）</span>
+              </label>
+              <p className="text-xs text-muted-foreground pl-6">
+                默认只更新旧格式条目，每批最多处理20条，有更多时自动继续
+              </p>
+            </div>
+
+            {/* Progress */}
+            {regenProgress && (
+              <div className="rounded-lg border p-4 space-y-3">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">处理进度</span>
+                  <span className="text-muted-foreground">
+                    {regenProgress.succeeded + regenProgress.failed} / {regenProgress.total}
+                  </span>
+                </div>
+                <Progress
+                  value={regenProgress.total > 0 ? ((regenProgress.succeeded + regenProgress.failed) / regenProgress.total) * 100 : 0}
+                  className="h-2"
+                />
+                <div className="flex gap-4 text-xs">
+                  <span className="text-green-600">✓ 成功 {regenProgress.succeeded}</span>
+                  <span className="text-red-500">✗ 失败 {regenProgress.failed}</span>
+                  {regenProgress.hasMore && (
+                    <span className="text-amber-600 flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      还剩 {regenProgress.remainingCount} 条...
+                    </span>
+                  )}
+                </div>
+                {/* Result details */}
+                {regenProgress.results.length > 0 && (
+                  <div className="max-h-40 overflow-y-auto space-y-1">
+                    {regenProgress.results.map(r => (
+                      <div key={r.id} className="flex items-center gap-2 text-xs">
+                        {r.success
+                          ? <CheckCircle className="h-3 w-3 text-green-500 shrink-0" />
+                          : <AlertCircle className="h-3 w-3 text-red-400 shrink-0" />}
+                        <span className="truncate flex-1">{r.title}</span>
+                        {!r.success && r.error && <span className="text-red-400 shrink-0">{r.error}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => { setShowRegenDialog(false); setRegenProgress(null); }} disabled={isRegenerating}>
+                {regenProgress && !regenProgress.hasMore ? "关闭" : "取消"}
+              </Button>
+              <Button
+                onClick={() => {
+                  setIsRegenerating(true);
+                  setRegenProgress(null);
+                  setRegenRound(0);
+                  regenerateMutation.mutate({ forceAll: regenForceAll });
+                }}
+                disabled={isRegenerating || (migrationStatsQuery.data?.needsMigration === 0 && !regenForceAll)}
+                className="gap-2"
+              >
+                {isRegenerating ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> 生成中...</>
+                ) : (
+                  <><RefreshCw className="h-4 w-4" /> 开始生成</>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Supported formats info */}
       <div className="flex flex-wrap gap-4 items-center text-xs">
