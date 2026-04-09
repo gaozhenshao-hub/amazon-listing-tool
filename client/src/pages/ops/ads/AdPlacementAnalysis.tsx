@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import AdEmptyState from "./AdEmptyState";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +14,7 @@ interface AdPlacementAnalysisProps {
   campaignId: string | null;
   marketplace?: string;
   reportDate: string;
+  defaultAdType?: "SP" | "SB" | "SD";
 }
 
 // Map real API placement_type values to display config
@@ -29,8 +31,15 @@ const PLACEMENT_CONFIG: Record<string, { label: string; icon: any; color: string
   "Other": { label: "其他位置", icon: Monitor, color: "text-gray-700", fill: "#9ca3af" },
 };
 
-export default function AdPlacementAnalysis({ campaignId, marketplace, reportDate }: AdPlacementAnalysisProps) {
-  const [adType, setAdType] = useState<"SP" | "SB" | "SD">("SP");
+export default function AdPlacementAnalysis({ campaignId, marketplace, reportDate, defaultAdType }: AdPlacementAnalysisProps) {
+  const [adType, setAdType] = useState<"SP" | "SB" | "SD">(defaultAdType === "SB" ? "SB" : defaultAdType === "SD" ? "SD" : "SP");
+
+  useEffect(() => {
+    if (defaultAdType) {
+      const mapped = defaultAdType === "SB" ? "SB" : defaultAdType === "SD" ? "SD" : "SP";
+      setAdType(mapped as any);
+    }
+  }, [defaultAdType]);
 
   const { data, isLoading } = trpc.adAnalysis.getAdPlacementData.useQuery({
     campaignId: campaignId || undefined,
@@ -77,10 +86,13 @@ export default function AdPlacementAnalysis({ campaignId, marketplace, reportDat
   }
 
   if (placements.length === 0) {
+    if (adType === "SB" || adType === "SD") {
+      return <AdEmptyState adType={adType} featureName="广告位分析" />;
+    }
     return (
       <Card>
         <CardContent className="py-12 text-center text-gray-400">
-          暂无广告位数据
+          暂无广告位数据，请尝试更换日期范围或选择其他广告活动
         </CardContent>
       </Card>
     );

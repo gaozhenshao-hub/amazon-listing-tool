@@ -54,6 +54,7 @@ const fmtPct = (v: number): string => {
 export default function OpsAds() {
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [selectedCampaignName, setSelectedCampaignName] = useState<string>("");
+  const [selectedCampaignType, setSelectedCampaignType] = useState<string>("SP");
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 2); // default to day before yesterday (hourly data has ~1 day delay)
@@ -101,6 +102,7 @@ export default function OpsAds() {
       if (randomCampaign) {
         setSelectedCampaignId(String(randomCampaign.campaign_id));
         setSelectedCampaignName(randomCampaign.name || randomCampaign.campaign_name || `Campaign ${randomCampaign.campaign_id}`);
+        setSelectedCampaignType(mapCampaignTypeToAdType(randomCampaign.campaign_type));
       }
     }
   }, [campaigns]);
@@ -115,14 +117,23 @@ export default function OpsAds() {
     });
   };
 
+  // Map campaign_type to short ad type
+  const mapCampaignTypeToAdType = (type?: string): string => {
+    if (!type) return "SP";
+    if (type === "sponsoredBrands" || type === "SB" || type.toLowerCase().includes("brand") || type.toLowerCase().includes("hsa")) return "SB";
+    if (type === "sponsoredDisplay" || type === "SD" || type.toLowerCase().includes("display")) return "SD";
+    return "SP";
+  };
+
   // Select a campaign for sub-tab analysis
-  const selectCampaign = (campaignId: string, campaignName: string) => {
+  const selectCampaign = (campaignId: string, campaignName: string, campaignType?: string) => {
     if (selectedCampaignId === campaignId) {
       setSelectedCampaignId(null);
       setSelectedCampaignName("");
     } else {
       setSelectedCampaignId(campaignId);
       setSelectedCampaignName(campaignName);
+      setSelectedCampaignType(mapCampaignTypeToAdType(campaignType));
     }
   };
 
@@ -684,6 +695,7 @@ export default function OpsAds() {
             campaignId={selectedCampaignId}
             marketplace={marketplace}
             reportDate={selectedDate}
+            defaultAdType={selectedCampaignType as any}
           />
         </TabsContent>
 
@@ -693,6 +705,7 @@ export default function OpsAds() {
             campaignId={selectedCampaignId}
             marketplace={marketplace}
             reportDate={selectedDate}
+            defaultAdType={selectedCampaignType as any}
           />
         </TabsContent>
 
@@ -702,6 +715,7 @@ export default function OpsAds() {
             campaignId={selectedCampaignId}
             marketplace={marketplace}
             reportDate={selectedDate}
+            defaultAdType={selectedCampaignType as any}
           />
         </TabsContent>
 
@@ -711,6 +725,7 @@ export default function OpsAds() {
             campaignId={selectedCampaignId}
             marketplace={marketplace}
             reportDate={selectedDate}
+            defaultAdType={selectedCampaignType as any}
           />
         </TabsContent>
 
@@ -784,7 +799,7 @@ function PortfolioRow({ portfolio, isExpanded, onToggle, selectedCampaignId, onS
   isExpanded: boolean;
   onToggle: () => void;
   selectedCampaignId: string | null;
-  onSelectCampaign: (id: string, name: string) => void;
+  onSelectCampaign: (id: string, name: string, type?: string) => void;
   typeFilter?: string;
   searchQuery?: string;
 }) {
@@ -846,7 +861,7 @@ function PortfolioRow({ portfolio, isExpanded, onToggle, selectedCampaignId, onS
           <tr
             key={c.campaign_id}
             className={`border-b hover:bg-blue-50/50 cursor-pointer transition-colors ${isSelected ? "bg-blue-50 ring-1 ring-inset ring-blue-200" : ""}`}
-            onClick={() => onSelectCampaign(c.campaign_id, c.campaign_name)}
+            onClick={() => onSelectCampaign(c.campaign_id, c.campaign_name, c.campaign_type)}
           >
             <td className="p-2.5"></td>
             <td className="p-2.5 pl-10">

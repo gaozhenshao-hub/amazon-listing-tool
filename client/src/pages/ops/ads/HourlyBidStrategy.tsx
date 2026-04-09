@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import AdEmptyState from "./AdEmptyState";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -15,6 +16,7 @@ interface HourlyBidStrategyProps {
   campaignId: string | null;
   marketplace?: string;
   reportDate?: string;
+  defaultAdType?: "SP" | "SB" | "SD";
 }
 
 const HOUR_LABELS = Array.from({ length: 24 }, (_, i) => `${i}:00`);
@@ -32,9 +34,16 @@ function getHeatColor(value: number, max: number): string {
   return "#f3f4f6";
 }
 
-export default function HourlyBidStrategy({ campaignId, marketplace, reportDate }: HourlyBidStrategyProps) {
+export default function HourlyBidStrategy({ campaignId, marketplace, reportDate, defaultAdType }: HourlyBidStrategyProps) {
   const [heatmapMetric, setHeatmapMetric] = useState<"orders" | "sales" | "clicks" | "impressions">("orders");
-  const [adType, setAdType] = useState<"SP" | "SB" | "SD">("SP");
+  const [adType, setAdType] = useState<"SP" | "SB" | "SD">(defaultAdType === "SB" ? "SB" : defaultAdType === "SD" ? "SD" : "SP");
+
+  useEffect(() => {
+    if (defaultAdType) {
+      const mapped = defaultAdType === "SB" ? "SB" : defaultAdType === "SD" ? "SD" : "SP";
+      setAdType(mapped as any);
+    }
+  }, [defaultAdType]);
 
   const { data, isLoading } = trpc.adAnalysis.getAdHourlyData.useQuery({
     campaignId: campaignId || undefined,
@@ -92,6 +101,11 @@ export default function HourlyBidStrategy({ campaignId, marketplace, reportDate 
 
   if (isLoading) {
     return <div className="space-y-4"><Skeleton className="h-32" /><Skeleton className="h-64" /></div>;
+  }
+
+  const hasData = data?.hourlyData && data.hourlyData.length > 0;
+  if (!hasData && (adType === "SB" || adType === "SD")) {
+    return <AdEmptyState adType={adType} featureName="分时竞价分析" />;
   }
 
   return (

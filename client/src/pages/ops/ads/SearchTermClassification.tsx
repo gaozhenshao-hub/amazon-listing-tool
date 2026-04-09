@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import AdEmptyState from "./AdEmptyState";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -45,9 +46,10 @@ interface SearchTermClassificationProps {
   campaignId: string | null;
   marketplace?: string;
   reportDate: string;
+  defaultAdType?: "SP" | "SB";
 }
 
-export default function SearchTermClassification({ campaignId, marketplace, reportDate }: SearchTermClassificationProps) {
+export default function SearchTermClassification({ campaignId, marketplace, reportDate, defaultAdType }: SearchTermClassificationProps) {
   const [categoryFilter, setCategoryFilter] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<string>("cost");
@@ -56,7 +58,12 @@ export default function SearchTermClassification({ campaignId, marketplace, repo
   const [showAiDialog, setShowAiDialog] = useState(false);
   const [aiCategoryId, setAiCategoryId] = useState<number>(1);
   const [userDecisions, setUserDecisions] = useState<Record<number, { decision: string; modifiedAction?: string; notes?: string }>>({}); 
-  const [adType, setAdType] = useState<"SP" | "SB">("SP");
+  const [adType, setAdType] = useState<"SP" | "SB">(defaultAdType === "SB" ? "SB" : "SP");
+
+  // Sync adType when parent campaign selection changes
+  useEffect(() => {
+    if (defaultAdType) setAdType(defaultAdType === "SB" ? "SB" : "SP");
+  }, [defaultAdType]);
 
   const { data, isLoading, refetch } = trpc.adAnalysis.getSearchTerms12Category.useQuery({
     campaignId: campaignId || undefined,
@@ -173,6 +180,11 @@ export default function SearchTermClassification({ campaignId, marketplace, repo
         <Skeleton className="h-64" />
       </div>
     );
+  }
+
+  const hasData = data?.terms && data.terms.length > 0;
+  if (!hasData && (adType === "SB")) {
+    return <AdEmptyState adType={adType} featureName="搜索词分析" />;
   }
 
   return (

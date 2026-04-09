@@ -3029,3 +3029,9 @@
 - [x] 前端：日期范围选择器（单日/日期范围切换，近7天/14天/30天快捷按钮）
 - [x] 前端：加载进度条（数据加载时显示动画进度条 + 刷新按钮旋转动画）
 - [x] 前端：缓存命中提示栏（显示广告列表缓存年龄、小时数据缓存命中数、API调用次数）
+
+## 广告优化三项改进
+- [x] 后端：crossChannelAnalysis API已完善（SP/SB/SD/DSP四渠道汇总对比）
+- [x] 前端：跨渠道分析Tab重写（渠道对比表格+占比饼图+趋势折线图+SB/SD空状态提示）
+- [x] 前端：AdEmptyState共享组件，4个子Tab均集成SB/SD空数据友好提示
+- [x] 前端：广告类型联动优化（selectedCampaignType+defaultAdType prop+useEffect同步）

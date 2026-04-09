@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import AdEmptyState from "./AdEmptyState";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ interface TargetingAnalysisProps {
   campaignId: string | null;
   marketplace?: string;
   reportDate: string;
+  defaultAdType?: "SP" | "SB" | "SD";
 }
 
 const TARGET_CATEGORY_CONFIG: Record<number, { label: string; color: string; bg: string }> = {
@@ -30,10 +32,18 @@ const TARGET_CATEGORY_CONFIG: Record<number, { label: string; color: string; bg:
   9: { label: "低点击_低转化", color: "#ef4444", bg: "bg-red-50" },
 };
 
-export default function TargetingAnalysis({ campaignId, marketplace, reportDate }: TargetingAnalysisProps) {
+export default function TargetingAnalysis({ campaignId, marketplace, reportDate, defaultAdType }: TargetingAnalysisProps) {
   const [categoryFilter, setCategoryFilter] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [adType, setAdType] = useState<"SP" | "SB" | "SD">("SP");
+  const [adType, setAdType] = useState<"SP" | "SB" | "SD">(defaultAdType === "SB" ? "SB" : defaultAdType === "SD" ? "SD" : "SP");
+
+  // Sync adType when parent campaign selection changes
+  useEffect(() => {
+    if (defaultAdType) {
+      const mapped = defaultAdType === "SB" ? "SB" : defaultAdType === "SD" ? "SD" : "SP";
+      setAdType(mapped as any);
+    }
+  }, [defaultAdType]);
 
   const { data, isLoading } = trpc.adAnalysis.getTargetingAnalysis.useQuery({
     campaignId: campaignId || undefined,
@@ -81,6 +91,11 @@ export default function TargetingAnalysis({ campaignId, marketplace, reportDate 
 
   if (isLoading) {
     return <div className="space-y-4"><Skeleton className="h-32" /><Skeleton className="h-64" /></div>;
+  }
+
+  const hasData = data?.targets && data.targets.length > 0;
+  if (!hasData && (adType === "SB" || adType === "SD")) {
+    return <AdEmptyState adType={adType} featureName="投放分析" />;
   }
 
   return (
