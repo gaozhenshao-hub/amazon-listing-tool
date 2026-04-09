@@ -973,28 +973,66 @@ function MarketOverviewResult({ result, productCount }: { result: any; productCo
 
 /* ─── 3. Attribute Cross Result ─── */
 function AttributeCrossResult({ result }: { result: any }) {
-  const singleDimStats = result.singleDimStats || {};
-  const crossResult = result.crossResult || {};
-  const dimensionNames = result.dimensionNames || [];
+  // Backend returns: singleDimStats as array of { dimensionName, values: [...] }
+  // crossResult as { dim1Name, dim2Name, dim1Values, dim2Values, matrix: [...], hotCombinations, blueOcean }
+  const singleDimStatsRaw = result.singleDimStats || [];
+  const crossResult = result.crossResult;
   const ai = result.ai || {};
+  const selectedDims = result.selectedDims || {};
+
+  // Normalize singleDimStats: could be array (new format) or object (old format)
+  const singleDimStats: Array<{ dimensionName: string; values: any[] }> = Array.isArray(singleDimStatsRaw)
+    ? singleDimStatsRaw
+    : Object.entries(singleDimStatsRaw).map(([dim, data]: any) => ({
+        dimensionName: dim,
+        values: typeof data === "object" && !Array.isArray(data)
+          ? Object.entries(data).map(([val, stats]: any) => ({ value: val, asinCount: stats.count || 0, avgPrice: stats.avgPrice || 0, avgRating: stats.avgRating || 0, salesShare: stats.pct ? stats.pct / 100 : 0, totalSales: stats.avgMonthlySales || 0, totalRevenue: 0 }))
+          : data?.values || [],
+      }));
 
   // Build heatmap data from cross matrix
-  const heatmapEntries: Array<{ combo: string; count: number; avgSales: number; avgPrice: number }> = [];
-  Object.entries(crossResult).forEach(([, matrix]: any) => {
-    Object.entries(matrix).forEach(([combo, data]: any) => {
-      heatmapEntries.push({ combo, count: data.count || 0, avgSales: data.avgMonthlySales || 0, avgPrice: data.avgPrice || 0 });
+  const heatmapEntries: Array<{ combo: string; count: number; totalSales: number; avgPrice: number; totalRevenue: number }> = [];
+  if (crossResult?.matrix && Array.isArray(crossResult.matrix)) {
+    // New format: matrix is an array of CrossAnalysisCell
+    for (const cell of crossResult.matrix) {
+      if (cell.asinCount > 0) {
+        heatmapEntries.push({
+          combo: `${cell.dim1Value} × ${cell.dim2Value}`,
+          count: cell.asinCount,
+          totalSales: cell.totalSales || 0,
+          avgPrice: cell.avgPrice || 0,
+          totalRevenue: cell.totalRevenue || 0,
+        });
+      }
+    }
+  } else if (crossResult && typeof crossResult === "object") {
+    // Old format: nested object
+    Object.entries(crossResult).forEach(([, matrix]: any) => {
+      if (typeof matrix === "object" && !Array.isArray(matrix)) {
+        Object.entries(matrix).forEach(([combo, data]: any) => {
+          if (typeof data === "object") {
+            heatmapEntries.push({ combo, count: data.count || 0, totalSales: data.avgMonthlySales || 0, avgPrice: data.avgPrice || 0, totalRevenue: 0 });
+          }
+        });
+      }
     });
-  });
-  const topCombos = heatmapEntries.sort((a, b) => b.avgSales - a.avgSales).slice(0, 15);
+  }
+  const topCombos = heatmapEntries.sort((a, b) => b.totalSales - a.totalSales).slice(0, 15);
+
+  // Hot combinations from crossResult
+  const hotCombinations = crossResult?.hotCombinations || [];
+  const blueOcean = crossResult?.blueOcean || [];
 
   return (
     <div className="space-y-4">
       {/* Single Dimension Stats with Bar Charts */}
-      {dimensionNames.length > 0 && dimensionNames.map((dim: string) => {
-        const dimData = singleDimStats[dim] || {};
-        const entries = Object.entries(dimData).sort((a: any, b: any) => (b[1]?.count || 0) - (a[1]?.count || 0));
-        if (entries.length === 0) return null;
-        const chartData = entries.map(([val, data]: any) => ({ name: val, count: data.count, avgPrice: data.avgPrice, avgSales: data.avgMonthlySales || 0 }));
+      {singleDimStats.length > 0 && singleDimStats.map((dimStat: any) => {
+        const dim = dimStat.dimensionName;
+        const values = dimStat.values || [];
+        if (values.length === 0) return null;
+        const sortedValues = [...values].sort((a: any, b: any) => (b.asinCount || 0) - (a.asinCount || 0));
+        const chartData = sortedValues.map((v: any) => ({ name: v.value, count: v.asinCount, avgPrice: v.avgPrice, avgSales: v.totalSales || 0 }));
+        const totalCount = sortedValues.reduce((s: number, v: any) => s + (v.asinCount || 0), 0);
         return (
           <Card key={dim}>
             <CardHeader className="pb-2"><CardTitle className="text-sm">{dim} 分布</CardTitle></CardHeader>
@@ -1021,13 +1059,13 @@ function AttributeCrossResult({ result }: { result: any }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {entries.map(([val, data]: any) => (
-                        <tr key={val} className="border-b last:border-0">
-                          <td className="p-1.5 font-medium">{val}</td>
-                          <td className="p-1.5 text-right">{data.count}</td>
-                          <td className="p-1.5 text-right">{data.pct}%</td>
-                          <td className="p-1.5 text-right">${data.avgPrice?.toFixed(2) ?? "--"}</td>
-                          <td className="p-1.5 text-right">{data.avgRating?.toFixed(1) ?? "--"}</td>
+                      {sortedValues.map((v: any) => (
+                        <tr key={v.value} className="border-b last:border-0">
+                          <td className="p-1.5 font-medium">{v.value}</td>
+                          <td className="p-1.5 text-right">{v.asinCount}</td>
+                          <td className="p-1.5 text-right">{totalCount > 0 ? ((v.asinCount / totalCount) * 100).toFixed(1) : 0}%</td>
+                          <td className="p-1.5 text-right">${v.avgPrice?.toFixed(2) ?? "--"}</td>
+                          <td className="p-1.5 text-right">{v.avgRating?.toFixed(1) ?? "--"}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1044,60 +1082,110 @@ function AttributeCrossResult({ result }: { result: any }) {
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Grid3X3 className="h-4 w-4" />属性交叉热力图 (TOP15 按月销排序)</CardTitle></CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={320}>
+            <ResponsiveContainer width="100%" height={Math.max(320, topCombos.length * 28)}>
               <BarChart data={topCombos} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                 <XAxis type="number" tick={{ fontSize: 11 }} />
-                <YAxis type="category" dataKey="combo" tick={{ fontSize: 9 }} width={120} />
-                <Tooltip />
-                <Bar dataKey="avgSales" fill="#10b981" name="均月销" radius={[0, 4, 4, 0]} />
+                <YAxis type="category" dataKey="combo" tick={{ fontSize: 9 }} width={140} />
+                <Tooltip formatter={(value: any, name: string) => [typeof value === 'number' ? value.toLocaleString() : value, name]} />
+                <Bar dataKey="totalSales" fill="#10b981" name="总月销" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
         </Card>
       )}
 
-      {/* Full Cross Matrix Table */}
-      {Object.keys(crossResult).length > 0 && (
+      {/* Hot Combinations */}
+      {hotCombinations.length > 0 && (
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">属性交叉矩阵详表</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><TrendingUp className="h-4 w-4 text-orange-500" />热门属性组合 TOP10</CardTitle></CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {Object.entries(crossResult).map(([crossKey, matrix]: any) => {
-                const cells = Object.entries(matrix).sort((a: any, b: any) => (b[1]?.count || 0) - (a[1]?.count || 0));
-                if (cells.length === 0) return null;
-                return (
-                  <div key={crossKey}>
-                    <p className="text-xs font-semibold mb-2">{crossKey.replace("×", " × ")}</p>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="border-b bg-muted/50">
-                            <th className="text-left p-2 font-medium">组合</th>
-                            <th className="text-right p-2 font-medium">产品数</th>
-                            <th className="text-right p-2 font-medium">均价</th>
-                            <th className="text-right p-2 font-medium">均评分</th>
-                            <th className="text-right p-2 font-medium">均评论</th>
-                            <th className="text-right p-2 font-medium">均月销</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {cells.slice(0, 20).map(([combo, data]: any) => (
-                            <tr key={combo} className="border-b last:border-0">
-                              <td className="p-2 font-medium">{combo}</td>
-                              <td className="p-2 text-right">{data.count}</td>
-                              <td className="p-2 text-right">${data.avgPrice?.toFixed(2) ?? "--"}</td>
-                              <td className="p-2 text-right">{data.avgRating?.toFixed(1) ?? "--"}</td>
-                              <td className="p-2 text-right">{data.avgReviews ?? "--"}</td>
-                              <td className="p-2 text-right">{data.avgMonthlySales ?? "--"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left p-2 font-medium">排名</th>
+                    <th className="text-left p-2 font-medium">属性组合</th>
+                    <th className="text-right p-2 font-medium">产品数</th>
+                    <th className="text-right p-2 font-medium">总月销</th>
+                    <th className="text-right p-2 font-medium">总月销额</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hotCombinations.map((h: any, i: number) => (
+                    <tr key={i} className="border-b last:border-0">
+                      <td className="p-2"><Badge variant="secondary" className="text-xs">#{i + 1}</Badge></td>
+                      <td className="p-2 font-medium">{h.combo}</td>
+                      <td className="p-2 text-right">{h.asinCount}</td>
+                      <td className="p-2 text-right">{h.sales?.toLocaleString() ?? "--"}</td>
+                      <td className="p-2 text-right">${h.revenue?.toLocaleString() ?? "--"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Blue Ocean Opportunities */}
+      {blueOcean.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Sparkles className="h-4 w-4 text-blue-500" />蓝海机会（低竞争高潜力）</CardTitle></CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {blueOcean.map((b: any, i: number) => (
+                <div key={i} className="flex items-center gap-3 p-2.5 bg-blue-50 dark:bg-blue-900/10 rounded-lg">
+                  <span className="text-blue-500 font-bold">#{i + 1}</span>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{b.combo}</p>
+                    <div className="flex gap-2 mt-1">
+                      <Badge variant="outline" className="text-xs">产品数: {b.asinCount}</Badge>
+                      <Badge variant="outline" className="text-xs">均月销: {b.avgSales?.toLocaleString()}</Badge>
+                      <Badge className={`text-xs ${b.opportunity === '高机会' ? 'bg-emerald-100 text-emerald-700' : b.opportunity === '中机会' ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-700'}`}>{b.opportunity}</Badge>
                     </div>
                   </div>
-                );
-              })}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Full Cross Matrix Table */}
+      {crossResult?.matrix && crossResult.matrix.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">属性交叉矩阵详表 ({selectedDims?.dim1 || crossResult.dim1Name} × {selectedDims?.dim2 || crossResult.dim2Name})</CardTitle></CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left p-2 font-medium">{selectedDims?.dim1 || crossResult.dim1Name || "维度1"}</th>
+                    <th className="text-left p-2 font-medium">{selectedDims?.dim2 || crossResult.dim2Name || "维度2"}</th>
+                    <th className="text-right p-2 font-medium">产品数</th>
+                    <th className="text-right p-2 font-medium">均价</th>
+                    <th className="text-right p-2 font-medium">总月销</th>
+                    <th className="text-right p-2 font-medium">总月销额</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...crossResult.matrix]
+                    .filter((c: any) => c.asinCount > 0)
+                    .sort((a: any, b: any) => (b.totalRevenue || 0) - (a.totalRevenue || 0))
+                    .slice(0, 30)
+                    .map((cell: any, i: number) => (
+                    <tr key={i} className="border-b last:border-0">
+                      <td className="p-2 font-medium">{cell.dim1Value}</td>
+                      <td className="p-2">{cell.dim2Value}</td>
+                      <td className="p-2 text-right">{cell.asinCount}</td>
+                      <td className="p-2 text-right">${cell.avgPrice?.toFixed(2) ?? "--"}</td>
+                      <td className="p-2 text-right">{cell.totalSales?.toLocaleString() ?? "--"}</td>
+                      <td className="p-2 text-right">${cell.totalRevenue?.toLocaleString() ?? "--"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </CardContent>
         </Card>

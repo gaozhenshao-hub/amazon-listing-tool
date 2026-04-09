@@ -1586,13 +1586,15 @@ export const devAnalysisRouter = router({
       // Build category name map
       const catNameMap = new Map(confirmedCats.map((c: any) => [c.id, c.categoryName]));
 
-      // Also get old product-level tags to merge
+      // Get product-level tags (from devProductTags table, populated by AI tagging)
       const oldTags = await devDb.getDevProductTags(input.projectId);
       const oldTagData: TagData[] = oldTags.map((t: any) => ({
         asin: t.asin ?? "",
         dimensionName: t.dimensionName ?? "",
         dimensionValue: t.dimensionValue ?? "",
       }));
+
+      console.log(`[CrossAnalysis] Project ${input.projectId}: ${products.length} products, ${oldTags.length} product tags, ${confirmedCats.length} confirmed categories, ${allItems.length} tag items`);
 
       // Build project-level tag summary for AI context
       const projectTagSummary = confirmedCats.map((cat: any) => {
@@ -1607,15 +1609,18 @@ export const devAnalysisRouter = router({
         };
       });
 
-      // Get dimension names from old tags
+      // Get dimension names from product-level tags
       const dimensionNames = Array.from(new Set(oldTagData.map(t => t.dimensionName)));
+      const categoryNames = Array.from(catNameMap.values());
+      console.log(`[CrossAnalysis] dimensionNames from product tags: [${dimensionNames.join(", ")}]`);
+      console.log(`[CrossAnalysis] categoryNames from confirmed cats: [${categoryNames.join(", ")}]`);
 
-      // Single dimension stats using old product-level tags
+      // Single dimension stats using product-level tags
       const singleDimStats = dimensionNames.map(dim =>
         calcSingleDimensionStats(productData, oldTagData, dim)
       );
 
-      // Determine cross dimensions: prefer user-selected, then auto-select from confirmed categories that have matching product tags
+      // Determine cross dimensions: prefer user-selected, then auto-select
       let dim1Name = "";
       let dim2Name = "";
 
@@ -1628,15 +1633,20 @@ export const devAnalysisRouter = router({
 
       // If not specified, auto-select the first 2 dimensions that exist in product tags
       if (!dim1Name || !dim2Name) {
+        // Match confirmed category names to dimension names in product tags
         const matchingDims = dimensionNames.filter(d =>
-          Array.from(catNameMap.values()).some(cn => cn === d || d.includes(cn) || cn.includes(d))
+          categoryNames.some(cn => cn === d || d.includes(cn) || cn.includes(d))
         );
+        console.log(`[CrossAnalysis] matchingDims: [${matchingDims.join(", ")}]`);
         if (!dim1Name) dim1Name = matchingDims[0] || dimensionNames[0] || "";
         if (!dim2Name) dim2Name = matchingDims[1] || matchingDims[0] || dimensionNames[1] || dimensionNames[0] || "";
       }
 
+      console.log(`[CrossAnalysis] Selected dims: dim1="${dim1Name}", dim2="${dim2Name}"`);
+
       // Cross analysis
       const crossResult = dim1Name && dim2Name ? calcCrossAnalysis(productData, oldTagData, dim1Name, dim2Name) : null;
+      console.log(`[CrossAnalysis] crossResult: matrix=${crossResult?.matrix?.length || 0} cells, hot=${crossResult?.hotCombinations?.length || 0}, blue=${crossResult?.blueOcean?.length || 0}`);
 
       // AI interpretation with project-level tag context
       const response = await invokeLLM({
