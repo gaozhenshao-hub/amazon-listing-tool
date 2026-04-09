@@ -64,19 +64,13 @@ function formatNumber(val: number) {
   return val.toLocaleString();
 }
 
-type SortField = "marketplace" | "storeName" | "title" | "salesQty" | "salesRevenue" | "salesProfit" | "status";
+type SortField = "marketplace" | "storeName" | "title" | "salesQty" | "salesRevenue" | "salesProfit" | "profitRate" | "status" | "operator" | "chineseName";
 type SortDir = "asc" | "desc";
 
 export default function OpsProducts() {
   const [, navigate] = useLocation();
   const [dashboardPeriod, setDashboardPeriod] = useState<"day" | "week" | "month">("month");
-  const [marketplaceFilter, setMarketplaceFilter] = useState("ALL");
-
-  const { data: products, isLoading, refetch } = trpc.productOps.listProducts.useQuery({ period: dashboardPeriod });
-  const { data: dashboard, isLoading: dashLoading } = trpc.productOps.getProductDashboard.useQuery({
-    marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : undefined,
-    period: dashboardPeriod,
-  });
+  const [marketplaceFilter, setMarketplaceFilter] = useState("US");
 
   const createMut = trpc.productOps.createProduct.useMutation({
     onSuccess: () => { refetch(); setShowCreate(false); resetForm(); toast.success("产品创建成功"); },
@@ -111,7 +105,19 @@ export default function OpsProducts() {
   const [searchTerm, setSearchTerm] = useState("");
   const [operatorFilter, setOperatorFilter] = useState("ALL");
   const [storeFilter, setStoreFilter] = useState("ALL");
-  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("active");
+
+  // Queries - placed after all state declarations
+  const { data: products, isLoading, refetch } = trpc.productOps.listProducts.useQuery({
+    period: dashboardPeriod,
+    marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "all",
+    statusFilter: statusFilter !== "ALL" ? statusFilter as any : "all",
+  });
+  const { data: dashboard, isLoading: dashLoading } = trpc.productOps.getProductDashboard.useQuery({
+    marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : undefined,
+    period: dashboardPeriod,
+  });
+
   const [sortField, setSortField] = useState<SortField>("salesRevenue");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [form, setForm] = useState({
@@ -126,10 +132,9 @@ export default function OpsProducts() {
 
   const filtered = useMemo(() => {
     let list = products || [];
-    if (marketplaceFilter !== "ALL") list = list.filter(p => p.marketplace === marketplaceFilter);
+    // Note: marketplace and status filtering now done server-side, but keep client-side for additional filtering
     if (operatorFilter !== "ALL") list = list.filter(p => (p.operator || "") === operatorFilter);
     if (storeFilter !== "ALL") list = list.filter(p => (p.storeName || "") === storeFilter);
-    if (statusFilter !== "ALL") list = list.filter(p => p.status === statusFilter);
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
       list = list.filter(p =>
@@ -137,7 +142,8 @@ export default function OpsProducts() {
         p.parentAsin.toLowerCase().includes(q) ||
         (p.brand || "").toLowerCase().includes(q) ||
         (p.operator || "").toLowerCase().includes(q) ||
-        (p.storeName || "").toLowerCase().includes(q)
+        (p.storeName || "").toLowerCase().includes(q) ||
+        ((p as any).chineseName || "").toLowerCase().includes(q)
       );
     }
     // Sort
@@ -147,9 +153,12 @@ export default function OpsProducts() {
         case "marketplace": va = a.marketplace || ""; vb = b.marketplace || ""; break;
         case "storeName": va = a.storeName || ""; vb = b.storeName || ""; break;
         case "title": va = a.title || ""; vb = b.title || ""; break;
+        case "chineseName": va = (a as any).chineseName || ""; vb = (b as any).chineseName || ""; break;
+        case "operator": va = a.operator || ""; vb = b.operator || ""; break;
         case "salesQty": va = a.salesQty || 0; vb = b.salesQty || 0; break;
         case "salesRevenue": va = a.salesRevenue || 0; vb = b.salesRevenue || 0; break;
         case "salesProfit": va = a.salesProfit || 0; vb = b.salesProfit || 0; break;
+        case "profitRate": va = (a as any).profitRate || 0; vb = (b as any).profitRate || 0; break;
         case "status": va = a.status; vb = b.status; break;
         default: va = 0; vb = 0;
       }
@@ -159,7 +168,7 @@ export default function OpsProducts() {
       return sortDir === "asc" ? va - vb : vb - va;
     });
     return sorted;
-  }, [products, marketplaceFilter, operatorFilter, storeFilter, statusFilter, searchTerm, sortField, sortDir]);
+  }, [products, operatorFilter, storeFilter, searchTerm, sortField, sortDir]);
 
   const availableMarketplaces = useMemo(() => {
     const set = new Set((products || []).map(p => p.marketplace || "US"));
@@ -206,6 +215,7 @@ export default function OpsProducts() {
   const totalSalesQty = filtered.reduce((s, p) => s + (p.salesQty || 0), 0);
   const totalRevenue = filtered.reduce((s, p) => s + (p.salesRevenue || 0), 0);
   const totalProfit = filtered.reduce((s, p) => s + (p.salesProfit || 0), 0);
+  const avgProfitRate = totalRevenue > 0 ? Math.round((totalProfit / totalRevenue) * 10000) / 100 : 0;
 
   return (
     <div className="space-y-6">
@@ -542,7 +552,7 @@ export default function OpsProducts() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="px-3 py-3 text-left w-10">
+                  <th className="px-2 py-3 text-left w-10">
                     <Checkbox
                       checked={selectedIds.size === filtered.length && filtered.length > 0}
                       onCheckedChange={(checked) => {
@@ -554,57 +564,78 @@ export default function OpsProducts() {
                       }}
                     />
                   </th>
-                  <th className="px-3 py-3 text-left w-14">
+                  <th className="px-2 py-3 text-left w-14">
                     <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => handleSort("status")}>
                       状态 <SortIcon field="status" />
                     </button>
                   </th>
-                  <th className="px-3 py-3 text-left w-16">
+                  <th className="px-2 py-3 text-left w-14">
                     <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => handleSort("marketplace")}>
                       站点 <SortIcon field="marketplace" />
                     </button>
                   </th>
-                  <th className="px-3 py-3 text-left">
+                  <th className="px-2 py-3 text-left">
                     <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => handleSort("storeName")}>
                       店铺 <SortIcon field="storeName" />
                     </button>
                   </th>
-                  <th className="px-3 py-3 text-left min-w-[200px]">
+                  <th className="px-2 py-3 text-left min-w-[120px]">
+                    <span className="text-xs font-medium text-muted-foreground">ASIN</span>
+                  </th>
+                  <th className="px-2 py-3 text-left min-w-[200px]">
                     <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => handleSort("title")}>
                       产品名称 <SortIcon field="title" />
                     </button>
                   </th>
-                  <th className="px-3 py-3 text-left min-w-[120px]">
+                  <th className="px-2 py-3 text-left min-w-[100px]">
+                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => handleSort("chineseName")}>
+                      中文名称 <SortIcon field="chineseName" />
+                    </button>
+                  </th>
+                  <th className="px-2 py-3 text-left min-w-[80px]">
+                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => handleSort("operator")}>
+                      运营 <SortIcon field="operator" />
+                    </button>
+                  </th>
+                  <th className="px-2 py-3 text-left min-w-[100px]">
                     <span className="text-xs font-medium text-muted-foreground">备注</span>
                   </th>
-                  <th className="px-3 py-3 text-right w-20">
+                  <th className="px-2 py-3 text-right w-16">
                     <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground ml-auto" onClick={() => handleSort("salesQty")}>
                       销量 <SortIcon field="salesQty" />
                     </button>
                   </th>
-                  <th className="px-3 py-3 text-right w-24">
+                  <th className="px-2 py-3 text-right w-20">
                     <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground ml-auto" onClick={() => handleSort("salesRevenue")}>
                       销售额 <SortIcon field="salesRevenue" />
                     </button>
                   </th>
-                  <th className="px-3 py-3 text-right w-24">
+                  <th className="px-2 py-3 text-right w-20">
                     <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground ml-auto" onClick={() => handleSort("salesProfit")}>
                       利润 <SortIcon field="salesProfit" />
                     </button>
                   </th>
-                  <th className="px-3 py-3 text-center w-16">
+                  <th className="px-2 py-3 text-right w-16">
+                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground ml-auto" onClick={() => handleSort("profitRate")}>
+                      利润率 <SortIcon field="profitRate" />
+                    </button>
+                  </th>
+                  <th className="px-2 py-3 text-center w-14">
                     <span className="text-xs font-medium text-muted-foreground">操作</span>
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((product) => (
+                {filtered.map((product) => {
+                  const p = product as any;
+                  const profitRate = (p.salesRevenue || 0) > 0 ? ((p.salesProfit || 0) / (p.salesRevenue || 1)) * 100 : 0;
+                  return (
                   <tr
                     key={product.id}
                     className={`border-b last:border-b-0 hover:bg-muted/30 cursor-pointer transition-colors ${selectedIds.has(product.id) ? 'bg-blue-50/50' : ''}`}
                     onClick={() => navigate(`/ops/products/${product.id}`)}
                   >
-                    <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                    <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
                       <Checkbox
                         checked={selectedIds.has(product.id)}
                         onCheckedChange={(checked) => {
@@ -614,44 +645,64 @@ export default function OpsProducts() {
                         }}
                       />
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="px-2 py-2">
                       <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${statusColors[product.status] || ""}`}>
                         {statusLabels[product.status] || product.status}
                       </Badge>
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="px-2 py-2">
                       <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">
                         {product.marketplace || "US"}
                       </Badge>
                     </td>
-                    <td className="px-3 py-2.5">
-                      <span className="text-xs text-muted-foreground truncate max-w-[120px] block">
+                    <td className="px-2 py-2">
+                      <span className="text-xs text-muted-foreground truncate max-w-[100px] block">
                         {product.storeName || "-"}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="px-2 py-2">
                       <div className="flex flex-col gap-0.5">
-                        <span className="font-medium text-sm truncate max-w-[280px] block">{product.title}</span>
-                        <span className="text-[11px] text-muted-foreground font-mono">{product.parentAsin}</span>
+                        <span className="text-[11px] font-mono text-foreground">{product.parentAsin}</span>
+                        {p.childAsin && p.childAsin !== product.parentAsin && (
+                          <span className="text-[10px] text-muted-foreground font-mono">父: {p.childAsin}</span>
+                        )}
                       </div>
                     </td>
-                    <td className="px-3 py-2.5">
-                      <span className="text-xs text-muted-foreground truncate max-w-[150px] block">
+                    <td className="px-2 py-2">
+                      <span className="font-medium text-xs truncate max-w-[220px] block">{product.title}</span>
+                    </td>
+                    <td className="px-2 py-2">
+                      <span className="text-xs text-muted-foreground truncate max-w-[120px] block">
+                        {p.chineseName || "-"}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2">
+                      <span className="text-xs truncate max-w-[80px] block">
+                        {product.operator || <span className="text-muted-foreground/50">未分配</span>}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2">
+                      <span className="text-xs text-muted-foreground truncate max-w-[100px] block">
                         {product.notes || "-"}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 text-right">
-                      <span className="font-medium tabular-nums">{formatNumber(product.salesQty || 0)}</span>
+                    <td className="px-2 py-2 text-right">
+                      <span className="font-medium tabular-nums text-xs">{formatNumber(product.salesQty || 0)}</span>
                     </td>
-                    <td className="px-3 py-2.5 text-right">
-                      <span className="font-medium tabular-nums">{formatCurrency(product.salesRevenue || 0)}</span>
+                    <td className="px-2 py-2 text-right">
+                      <span className="font-medium tabular-nums text-xs">{formatCurrency(product.salesRevenue || 0)}</span>
                     </td>
-                    <td className="px-3 py-2.5 text-right">
-                      <span className={`font-medium tabular-nums ${(product.salesProfit || 0) >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                    <td className="px-2 py-2 text-right">
+                      <span className={`font-medium tabular-nums text-xs ${(product.salesProfit || 0) >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                         {formatCurrency(product.salesProfit || 0)}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 text-center" onClick={e => e.stopPropagation()}>
+                    <td className="px-2 py-2 text-right">
+                      <span className={`font-medium tabular-nums text-xs ${profitRate >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                        {profitRate.toFixed(1)}%
+                      </span>
+                    </td>
+                    <td className="px-2 py-2 text-center" onClick={e => e.stopPropagation()}>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -666,19 +717,25 @@ export default function OpsProducts() {
                       </Button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
               {/* Footer with totals */}
               <tfoot>
                 <tr className="border-t-2 bg-muted/30 font-medium">
-                  <td colSpan={6} className="px-3 py-2.5 text-xs text-muted-foreground">
+                  <td colSpan={9} className="px-2 py-2.5 text-xs text-muted-foreground">
                     合计 {filtered.length} 个产品 &nbsp;|&nbsp; 在售 {activeCount} &nbsp;/&nbsp; 暂停 {inactiveCount}
                   </td>
-                  <td className="px-3 py-2.5 text-right text-sm tabular-nums">{formatNumber(totalSalesQty)}</td>
-                  <td className="px-3 py-2.5 text-right text-sm tabular-nums">{formatCurrency(totalRevenue)}</td>
-                  <td className="px-3 py-2.5 text-right text-sm tabular-nums">
+                  <td className="px-2 py-2.5 text-right text-xs tabular-nums font-semibold">{formatNumber(totalSalesQty)}</td>
+                  <td className="px-2 py-2.5 text-right text-xs tabular-nums font-semibold">{formatCurrency(totalRevenue)}</td>
+                  <td className="px-2 py-2.5 text-right text-xs tabular-nums font-semibold">
                     <span className={totalProfit >= 0 ? "text-emerald-600" : "text-red-500"}>
                       {formatCurrency(totalProfit)}
+                    </span>
+                  </td>
+                  <td className="px-2 py-2.5 text-right text-xs tabular-nums font-semibold">
+                    <span className={avgProfitRate >= 0 ? "text-emerald-600" : "text-red-500"}>
+                      {avgProfitRate.toFixed(1)}%
                     </span>
                   </td>
                   <td />

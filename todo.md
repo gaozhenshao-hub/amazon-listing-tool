@@ -3060,3 +3060,16 @@
 - [x] 前端：表格列包含状态、站点、店铺、产品名称(含ASIN)、备注、销量、销售额、利润、操作
 - [x] 后端：listProducts增加period参数，从领星利润API获取每个产品的salesQty/salesRevenue/salesProfit
 - [x] 验证：TypeScript编译0错误，页面正常渲染
+
+## 产品总览优化（列增加+ASIN360 API+匹配修复）
+- [x] 数据库：product_profiles增加chinese_name（中文名称）字段
+- [x] 后端：修改MSKU利润API匹配逻辑，同时用parentAsin和asin(子ASIN)双重匹配+firstChildAsin三重匹配
+- [x] 后端：从MSKU利润API提取利润率字段（grossRate）
+- [x] 后端：修复mockProfitList返回MSKU风格记录（含parentAsin/asin字段）
+- [x] 前端：表格增加ASIN列（显示parentAsin即子ASIN）
+- [x] 前端：表格增加利润率列（百分比显示，红绿色标识）
+- [x] 前端：表格增加中文名称列（可编辑）
+- [x] 前端：表格增加运营负责人分配列
+- [x] 验证：TypeScript编译0错误，37/103产品成功匹配销售数据
+- [x] 后端/前端：产品总览默认只查询美国站(US)在售状态(active)的产品
+- [x] 后端：增加MSKU利润API超时时间至90s，减少超时回退

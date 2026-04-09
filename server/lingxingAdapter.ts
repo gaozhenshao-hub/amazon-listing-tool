@@ -1211,32 +1211,39 @@ function mockReplenishmentData(body: Record<string, any>) {
 }
 
 function mockProfitList(body: Record<string, any>) {
-  const days = [];
-  const baseDate = new Date("2026-03-01");
-  for (let i = 0; i < 30; i++) {
-    const d = new Date(baseDate);
-    d.setDate(d.getDate() + i);
-    const revenue = +(Math.random() * 5000 + 2000).toFixed(2);
-    const cost = +(revenue * (0.3 + Math.random() * 0.15)).toFixed(2);
-    const adSpend = +(revenue * (0.08 + Math.random() * 0.07)).toFixed(2);
-    const fbaFee = +(revenue * (0.15 + Math.random() * 0.05)).toFixed(2);
-    const otherFee = +(revenue * (0.02 + Math.random() * 0.03)).toFixed(2);
-    const profit = +(revenue - cost - adSpend - fbaFee - otherFee).toFixed(2);
-    days.push({
-      date: d.toISOString().split("T")[0],
-      revenue,
-      product_cost: cost,
-      ad_spend: adSpend,
-      fba_fee: fbaFee,
-      referral_fee: +(revenue * 0.15).toFixed(2),
-      other_fee: otherFee,
-      profit,
-      profit_margin: +((profit / revenue) * 100).toFixed(1),
-      order_count: Math.floor(Math.random() * 100 + 30),
-      unit_count: Math.floor(Math.random() * 150 + 50),
-    });
-  }
-  return days;
+  // Generate MSKU-style records matching the real Lingxing MSKU profit API structure
+  const mockAsins = [
+    { parentAsin: 'B0D3ZZD83K', asin: 'B0D3ZZD83K', msku: 'MOCK-SKU-001', itemName: 'Mock Product 1' },
+    { parentAsin: 'B0D7HMP4ZH', asin: 'B0D7HMP4ZH', msku: 'MOCK-SKU-002', itemName: 'Mock Product 2' },
+    { parentAsin: 'B0D7HGCSN2', asin: 'B0D7HGCSN2', msku: 'MOCK-SKU-003', itemName: 'Mock Product 3' },
+    { parentAsin: 'B0DCN8TMCY', asin: 'B0DCN8TMCY', msku: 'MOCK-SKU-004', itemName: 'Mock Product 4' },
+    { parentAsin: 'B0DCNM8DYJ', asin: 'B0DCNM8DYJ', msku: 'MOCK-SKU-005', itemName: 'Mock Product 5' },
+    { parentAsin: 'B0DG8LL1HQ', asin: 'B0DG8LL1HQ', msku: 'MOCK-SKU-006', itemName: 'Mock Product 6' },
+    { parentAsin: 'B0DHG1DBWY', asin: 'B0DHG1DBWY', msku: 'MOCK-SKU-007', itemName: 'Mock Product 7' },
+    { parentAsin: 'B0DHG6PKRK', asin: 'B0DHG6PKRK', msku: 'MOCK-SKU-008', itemName: 'Mock Product 8' },
+    { parentAsin: 'B0DHGBMHG2', asin: 'B0DHGBMHG2', msku: 'MOCK-SKU-009', itemName: 'Mock Product 9' },
+    { parentAsin: 'B0DMFFH29F', asin: 'B0DMFFH29F', msku: 'MOCK-SKU-010', itemName: 'Mock Product 10' },
+  ];
+  const records = mockAsins.map(item => {
+    const qty = Math.floor(Math.random() * 200 + 10);
+    const unitPrice = +(Math.random() * 30 + 10).toFixed(2);
+    const revenue = +(qty * unitPrice).toFixed(2);
+    const grossProfit = +(revenue * (0.2 + Math.random() * 0.2)).toFixed(2);
+    return {
+      parentAsin: item.parentAsin,
+      asin: item.asin,
+      msku: item.msku,
+      itemName: item.itemName,
+      totalFbaAndFbmQuantity: qty,
+      totalFbaAndFbmAmount: revenue,
+      totalSalesQuantity: qty,
+      totalSalesAmount: revenue,
+      grossProfit,
+      grossRate: +((grossProfit / revenue) * 100).toFixed(1),
+      currencyIcon: '$',
+    };
+  });
+  return { records, total: records.length };
 }
 
 function mockProfitDetail(body: Record<string, any>) {

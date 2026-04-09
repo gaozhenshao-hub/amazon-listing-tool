@@ -34,71 +34,127 @@ export const productOpsRouter = router({
   listProducts: protectedProcedure
     .input(z.object({
       period: z.enum(["day", "week", "month"]).default("month"),
+      marketplace: z.string().default("US"),
+      statusFilter: z.enum(["active", "inactive", "discontinued", "all"]).default("active"),
     }).optional())
     .query(async ({ ctx, input }) => {
     const period = input?.period || "month";
+    const marketplace = input?.marketplace || "US";
+    const statusFilter = input?.statusFilter || "active";
     const db = await getDb();
+
+    // Build where conditions: always filter by user, optionally by marketplace and status
+    const conditions = [eq(productProfiles.userId, ctx.user.id)];
+    if (marketplace !== "all") {
+      conditions.push(eq(productProfiles.marketplace, marketplace));
+    }
+    if (statusFilter !== "all") {
+      conditions.push(eq(productProfiles.status, statusFilter as any));
+    }
+
     const products = await db!.select().from(productProfiles)
-      .where(eq(productProfiles.userId, ctx.user.id))
+      .where(and(...conditions))
       .orderBy(desc(productProfiles.updatedAt));
 
-    // For each product, get variant count, pending todo count
+    // For each product, get variant count, pending todo count, and first child ASIN
     const enriched = await Promise.all(products.map(async (p) => {
-      const [variants, todos] = await Promise.all([
+      const [variants, todos, firstVariant] = await Promise.all([
         db!.select({ count: sql<number>`count(*)` }).from(productVariants)
           .where(eq(productVariants.productId, p.id)),
         db!.select({ count: sql<number>`count(*)` }).from(productTodos)
           .where(and(eq(productTodos.productId, p.id), sql`${productTodos.status} != 'completed'`)),
+        db!.select({ childAsin: productVariants.childAsin }).from(productVariants)
+          .where(eq(productVariants.productId, p.id))
+          .limit(1),
       ]);
       return {
         ...p,
         variantCount: Number(variants[0]?.count ?? 0),
         pendingTodoCount: Number(todos[0]?.count ?? 0),
+        firstChildAsin: firstVariant[0]?.childAsin || null,
       };
     }));
 
-    // Fetch profit data from Lingxing to enrich with sales/revenue/profit per ASIN
+    // Fetch profit data from Lingxing MSKU profit API
     const adapter = getLingxingAdapter();
     const now = new Date();
     const periodDays = period === 'day' ? 1 : period === 'week' ? 7 : 30;
     const startDate = new Date(now.getTime() - periodDays * 86400000).toISOString().split('T')[0];
     const endDate = now.toISOString().split('T')[0];
 
-    // Build a map of parentAsin -> sales data from Lingxing profit API
-    type SalesInfo = { sales: number; revenue: number; profit: number };
-    const salesMap = new Map<string, SalesInfo>();
+    // Build dual maps: parentAsin -> sales, asin (child) -> sales
+    type SalesInfo = { sales: number; revenue: number; profit: number; profitRate: number };
+    const parentAsinMap = new Map<string, SalesInfo>();
+    const childAsinMap = new Map<string, SalesInfo>();
     try {
       const profitRes = await adapter.requestWithMockFallback({
         path: "/bd/profit/report/open/report/msku/list",
         body: { offset: 0, length: 2000, startDate, endDate, monthlyQuery: false, orderStatus: "All" },
+        timeout: 60_000, // Large response (~6MB), needs more time
       });
       const profitRaw = profitRes.data || [];
       const profitList = Array.isArray(profitRaw) ? profitRaw : (profitRaw as any).records || (profitRaw as any).list || [];
+
       for (const item of profitList) {
-        const asin = String(item.parent_asin || item.parentAsin || item.asin || "").toUpperCase();
-        if (!asin) continue;
-        const existing = salesMap.get(asin) || { sales: 0, revenue: 0, profit: 0 };
-        existing.sales += Number(item.totalSalesQuantity || item.totalFbaAndFbmQuantity || 0);
-        existing.revenue += Number(item.totalSalesAmount || item.totalFbaAndFbmAmount || 0);
-        existing.profit += Number(item.grossProfit || 0);
-        salesMap.set(asin, existing);
+        const pAsin = String(item.parentAsin || item.parent_asin || "").toUpperCase();
+        const cAsin = String(item.asin || "").toUpperCase();
+        const qty = Number(item.totalSalesQuantity || item.totalFbaAndFbmQuantity || 0);
+        const rev = Number(item.totalSalesAmount || item.totalFbaAndFbmAmount || 0);
+        const profit = Number(item.grossProfit || 0);
+        const rate = rev > 0 ? Math.round((profit / rev) * 10000) / 100 : 0;
+
+        // Map by parent ASIN (aggregate)
+        if (pAsin) {
+          const existing = parentAsinMap.get(pAsin) || { sales: 0, revenue: 0, profit: 0, profitRate: 0 };
+          existing.sales += qty;
+          existing.revenue += rev;
+          existing.profit += profit;
+          parentAsinMap.set(pAsin, existing);
+        }
+        // Map by child ASIN (aggregate)
+        if (cAsin) {
+          const existing = childAsinMap.get(cAsin) || { sales: 0, revenue: 0, profit: 0, profitRate: 0 };
+          existing.sales += qty;
+          existing.revenue += rev;
+          existing.profit += profit;
+          childAsinMap.set(cAsin, existing);
+        }
       }
-      console.log(`[listProducts] Fetched profit data: ${profitList.length} items, mapped ${salesMap.size} ASINs`);
+
+      // Recalculate profit rates after aggregation
+      parentAsinMap.forEach((info) => {
+        info.profitRate = info.revenue > 0 ? Math.round((info.profit / info.revenue) * 10000) / 100 : 0;
+      });
+      childAsinMap.forEach((info) => {
+        info.profitRate = info.revenue > 0 ? Math.round((info.profit / info.revenue) * 10000) / 100 : 0;
+      });
+
+      console.log(`[listProducts] Fetched profit data: ${profitList.length} items, parentAsinMap=${parentAsinMap.size}, childAsinMap=${childAsinMap.size}`);
     } catch (err: any) {
       console.warn(`[listProducts] Profit fetch error: ${err.message}`);
     }
 
-    // Merge sales data into enriched products
+    // Merge sales data: triple matching strategy
+    const emptyInfo: SalesInfo = { sales: 0, revenue: 0, profit: 0, profitRate: 0 };
+    let matchedCount = 0;
     const withSales = enriched.map(p => {
-      const key = (p.parentAsin || "").toUpperCase();
-      const info = salesMap.get(key) || { sales: 0, revenue: 0, profit: 0 };
+      const dbAsin = (p.parentAsin || "").toUpperCase();
+      const childAsin = (p.firstChildAsin || "").toUpperCase();
+      // Strategy: 1) parentAsinMap by DB parentAsin, 2) childAsinMap by DB parentAsin,
+      // 3) parentAsinMap by firstChildAsin, 4) childAsinMap by firstChildAsin
+      const info = parentAsinMap.get(dbAsin) || childAsinMap.get(dbAsin)
+        || (childAsin ? (parentAsinMap.get(childAsin) || childAsinMap.get(childAsin)) : null)
+        || emptyInfo;
+      if (info !== emptyInfo) matchedCount++;
       return {
         ...p,
         salesQty: info.sales,
         salesRevenue: Math.round(info.revenue * 100) / 100,
         salesProfit: Math.round(info.profit * 100) / 100,
+        profitRate: info.profitRate,
       };
     });
+    console.log(`[listProducts] Matched ${matchedCount}/${withSales.length} products with sales data (parentAsinMap=${parentAsinMap.size}, childAsinMap=${childAsinMap.size})`);
     return withSales;
   }),
 
@@ -186,6 +242,7 @@ export const productOpsRouter = router({
       budgetProfit: z.string().optional(),
       budgetAcos: z.string().optional(),
       notes: z.string().optional(),
+      chineseName: z.string().optional(),
       operator: z.string().optional(),
       storeName: z.string().optional(),
     }))

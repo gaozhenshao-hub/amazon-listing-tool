@@ -1736,6 +1736,7 @@ export const productProfiles = mysqlTable("product_profiles", {
   budgetProfit: decimal("budget_profit", { precision: 12, scale: 2 }),
   budgetAcos: decimal("budget_acos", { precision: 5, scale: 1 }),
    notes: text("notes"),
+  chineseName: varchar("chinese_name", { length: 500 }),
   operator: varchar("operator", { length: 200 }),
   storeName: varchar("store_name", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
