@@ -695,6 +695,8 @@ export default function OpsAds() {
             campaignId={selectedCampaignId}
             marketplace={marketplace}
             reportDate={selectedDate}
+            startDate={dateMode === 'range' ? startDate : undefined}
+            endDate={dateMode === 'range' ? endDate : undefined}
             defaultAdType={selectedCampaignType as any}
           />
         </TabsContent>
@@ -705,6 +707,8 @@ export default function OpsAds() {
             campaignId={selectedCampaignId}
             marketplace={marketplace}
             reportDate={selectedDate}
+            startDate={dateMode === 'range' ? startDate : undefined}
+            endDate={dateMode === 'range' ? endDate : undefined}
             defaultAdType={selectedCampaignType as any}
           />
         </TabsContent>
@@ -715,6 +719,8 @@ export default function OpsAds() {
             campaignId={selectedCampaignId}
             marketplace={marketplace}
             reportDate={selectedDate}
+            startDate={dateMode === 'range' ? startDate : undefined}
+            endDate={dateMode === 'range' ? endDate : undefined}
             defaultAdType={selectedCampaignType as any}
           />
         </TabsContent>
@@ -725,6 +731,8 @@ export default function OpsAds() {
             campaignId={selectedCampaignId}
             marketplace={marketplace}
             reportDate={selectedDate}
+            startDate={dateMode === 'range' ? startDate : undefined}
+            endDate={dateMode === 'range' ? endDate : undefined}
             defaultAdType={selectedCampaignType as any}
           />
         </TabsContent>

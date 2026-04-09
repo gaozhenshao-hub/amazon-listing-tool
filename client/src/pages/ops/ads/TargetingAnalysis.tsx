@@ -17,6 +17,8 @@ interface TargetingAnalysisProps {
   campaignId: string | null;
   marketplace?: string;
   reportDate: string;
+  startDate?: string;
+  endDate?: string;
   defaultAdType?: "SP" | "SB" | "SD";
 }
 
@@ -32,7 +34,7 @@ const TARGET_CATEGORY_CONFIG: Record<number, { label: string; color: string; bg:
   9: { label: "低点击_低转化", color: "#ef4444", bg: "bg-red-50" },
 };
 
-export default function TargetingAnalysis({ campaignId, marketplace, reportDate, defaultAdType }: TargetingAnalysisProps) {
+export default function TargetingAnalysis({ campaignId, marketplace, reportDate, startDate, endDate, defaultAdType }: TargetingAnalysisProps) {
   const [categoryFilter, setCategoryFilter] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [adType, setAdType] = useState<"SP" | "SB" | "SD">(defaultAdType === "SB" ? "SB" : defaultAdType === "SD" ? "SD" : "SP");
@@ -49,6 +51,8 @@ export default function TargetingAnalysis({ campaignId, marketplace, reportDate,
     campaignId: campaignId || undefined,
     marketplace,
     reportDate,
+    startDate,
+    endDate,
     adType,
   });
 

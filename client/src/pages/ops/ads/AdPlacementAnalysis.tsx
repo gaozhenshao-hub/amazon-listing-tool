@@ -14,6 +14,8 @@ interface AdPlacementAnalysisProps {
   campaignId: string | null;
   marketplace?: string;
   reportDate: string;
+  startDate?: string;
+  endDate?: string;
   defaultAdType?: "SP" | "SB" | "SD";
 }
 
@@ -31,7 +33,7 @@ const PLACEMENT_CONFIG: Record<string, { label: string; icon: any; color: string
   "Other": { label: "其他位置", icon: Monitor, color: "text-gray-700", fill: "#9ca3af" },
 };
 
-export default function AdPlacementAnalysis({ campaignId, marketplace, reportDate, defaultAdType }: AdPlacementAnalysisProps) {
+export default function AdPlacementAnalysis({ campaignId, marketplace, reportDate, startDate, endDate, defaultAdType }: AdPlacementAnalysisProps) {
   const [adType, setAdType] = useState<"SP" | "SB" | "SD">(defaultAdType === "SB" ? "SB" : defaultAdType === "SD" ? "SD" : "SP");
 
   useEffect(() => {
@@ -45,6 +47,8 @@ export default function AdPlacementAnalysis({ campaignId, marketplace, reportDat
     campaignId: campaignId || undefined,
     marketplace,
     reportDate,
+    startDate,
+    endDate,
     adType,
   });
 

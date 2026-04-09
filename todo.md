@@ -3042,3 +3042,15 @@
 - [x] 前端：CrossChannelAnalysis 趋势图使用真实每日数据（AreaChart，支持花费/销售额/订单量切换，含日均/最高/最低统计）
 - [x] 前端：单日模式下显示提示引导切换到日期范围模式查看趋势图
 - [x] 前端：多日模式下显示日期范围Banner和天数汇总Badge
+
+## 广告子页面全局日期联动
+- [x] 后端：搜索词分析API支持startDate/endDate日期范围参数（resolveDateRange统一处理）
+- [x] 后端：投放分析API支持startDate/endDate日期范围参数（resolveDateRange统一处理）
+- [x] 后端：广告位分析API支持startDate/endDate日期范围参数（resolveDateRange统一处理）
+- [x] 后端：分时竞价API（getAdHourlyData+getOrderHourlyHeatmap）支持startDate/endDate
+- [x] 前端：SearchTermClassification组件接收startDate/endDate props
+- [x] 前端：TargetingAnalysis组件接收startDate/endDate props
+- [x] 前端：AdPlacementAnalysis组件接收startDate/endDate props
+- [x] 前端：HourlyBidStrategy组件接收startDate/endDate props
+- [x] 前端：OpsAds传递日期范围给所有4个子Tab组件（dateMode=range时传startDate/endDate）
+- [x] 验证：TypeScript编译0错误

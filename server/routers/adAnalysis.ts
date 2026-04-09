@@ -221,6 +221,30 @@ function getDateNDaysAgo(n: number): string {
   return d.toISOString().split("T")[0];
 }
 
+/** Generate array of YYYY-MM-DD dates from startDate to endDate (inclusive) */
+function getDatesInRange(startDate: string, endDate: string): string[] {
+  const dates: string[] = [];
+  const sd = new Date(startDate);
+  const ed = new Date(endDate);
+  for (let d = new Date(sd); d <= ed; d.setDate(d.getDate() + 1)) {
+    dates.push(d.toISOString().split("T")[0]);
+  }
+  return dates;
+}
+
+/** Resolve date range from input: prefer startDate/endDate, fallback to days-ago logic */
+function resolveDateRange(input: { startDate?: string; endDate?: string; days?: number }): string[] {
+  if (input.startDate && input.endDate) {
+    return getDatesInRange(input.startDate, input.endDate);
+  }
+  const days = Math.min(input.days || 3, 31);
+  const dates: string[] = [];
+  for (let d = 1; d <= days; d++) {
+    dates.push(getDateNDaysAgo(d));
+  }
+  return dates;
+}
+
 // Get all seller SIDs (reuse from operations)
 let _sellerCache2: { sids: string[], sellers: any[], ts: number } | null = null;
 async function getAllSellerSids(): Promise<{sids: string[], sellers: any[]}> {
@@ -313,7 +337,9 @@ export const adAnalysisRouter = router({
     .input(z.object({
       campaignId: z.string().optional(),
       marketplace: z.string().optional(),
-      reportDate: z.string().optional(), // YYYY-MM-DD, single day query
+      reportDate: z.string().optional(), // YYYY-MM-DD, single day query (legacy)
+      startDate: z.string().optional(), // YYYY-MM-DD, date range start
+      endDate: z.string().optional(), // YYYY-MM-DD, date range end
       days: z.number().optional().default(3), // Reduced from 7 to 3 for performance
       adType: z.enum(["SP", "SB"]).optional().default("SP"), // SP or SB (no SD search terms)
       thresholds: z.object({
@@ -330,7 +356,11 @@ export const adAnalysisRouter = router({
       const { sellers } = await getAllSellerSids();
       const sids = filterSidsByMarketplace(sellers, input.marketplace);
       const sidsToQuery = sids.map(Number).slice(0, 3); // Reduced from 5 to 3 stores
-      const days = Math.min(input.days || 3, 14); // Cap at 14 days max
+      const datesToQuery = resolveDateRange({
+        startDate: input.startDate,
+        endDate: input.endDate,
+        days: Math.min(input.days || 3, 14),
+      });
       const thresholds = { ...DEFAULT_THRESHOLDS, ...input.thresholds };
 
       const adType = input.adType || 'SP';
@@ -339,13 +369,13 @@ export const adAnalysisRouter = router({
         : '/pb/openapi/newad/queryWordReports';
 
       // Check cache first (5-minute TTL)
-      const cacheKey = `searchTerms_${input.campaignId || 'all'}_${input.marketplace || 'ALL'}_${days}_${adType}`;
+      const cacheKey = `searchTerms_${input.campaignId || 'all'}_${input.marketplace || 'ALL'}_${datesToQuery.length}_${datesToQuery[0] || ''}_${adType}`;
       const cached = getCached<any>(cacheKey);
       if (cached) {
         console.log(`[SearchTerms] Cache HIT for key: ${cacheKey}`);
         return cached;
       }
-      console.log(`[SearchTerms] Cache MISS, fetching ${sidsToQuery.length} stores x ${days} days (parallel)...`);
+      console.log(`[SearchTerms] Cache MISS, fetching ${sidsToQuery.length} stores x ${datesToQuery.length} days (parallel)...`);
       const startTime = Date.now();
 
       // Aggregate search terms over multiple days
@@ -381,8 +411,7 @@ export const adAnalysisRouter = router({
       // Build all tasks and run in parallel (concurrency = 5)
       const tasks: (() => Promise<any[]>)[] = [];
       for (const sid of sidsToQuery) {
-        for (let d = 1; d <= days; d++) {
-          const reportDate = getDateNDaysAgo(d);
+        for (const reportDate of datesToQuery) {
           tasks.push(() => fetchSidDay(sid, reportDate));
         }
       }
@@ -446,7 +475,7 @@ export const adAnalysisRouter = router({
         categoryStats,
         categories: TWELVE_CATEGORIES,
         thresholds,
-        days,
+        days: datesToQuery.length,
         adType,
         total: searchTerms.length,
         isMock: adapter.isMockMode(),
@@ -551,6 +580,8 @@ ${JSON.stringify(anonymizedTerms)}
     .input(z.object({
       marketplace: z.string().optional(),
       reportDate: z.string().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
       days: z.number().optional().default(3),
       campaignId: z.string().optional(),
       adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
@@ -560,7 +591,11 @@ ${JSON.stringify(anonymizedTerms)}
       const { sellers } = await getAllSellerSids();
       const sids = filterSidsByMarketplace(sellers, input.marketplace);
       const sidsToQuery = sids.map(Number).slice(0, 3);
-      const days = input.days || 3;
+      const datesToQuery = resolveDateRange({
+        startDate: input.startDate,
+        endDate: input.endDate,
+        days: input.days || 3,
+      });
       const adType = input.adType || 'SP';
       const placementApiPath = adType === 'SB'
         ? '/pb/openapi/newad/hsaCampaignPlacementReports'
@@ -576,8 +611,8 @@ ${JSON.stringify(anonymizedTerms)}
       // Build all tasks for parallel execution
       const tasks: Array<{ sid: number; date: string }> = [];
       for (const sid of sidsToQuery) {
-        for (let d = 1; d <= days; d++) {
-          tasks.push({ sid, date: getDateNDaysAgo(d) });
+        for (const date of datesToQuery) {
+          tasks.push({ sid, date });
         }
       }
 
@@ -627,7 +662,7 @@ ${JSON.stringify(anonymizedTerms)}
         roas: p.cost > 0 ? Math.round(p.sales / p.cost * 100) / 100 : 0,
       }));
 
-      return { placements, days, adType, isMock: adapter.isMockMode() };
+      return { placements, days: datesToQuery.length, adType, isMock: adapter.isMockMode() };
     }),
 
   // ─── Hourly Ad Data (for Dayparting Strategy) ─────────────────
@@ -635,6 +670,8 @@ ${JSON.stringify(anonymizedTerms)}
     .input(z.object({
       marketplace: z.string().optional(),
       reportDate: z.string().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
       days: z.number().optional().default(7),
       campaignId: z.string().optional(),
       adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
@@ -644,7 +681,11 @@ ${JSON.stringify(anonymizedTerms)}
       const { sellers } = await getAllSellerSids();
       const sids = filterSidsByMarketplace(sellers, input.marketplace);
       const sidsToQuery = sids.map(Number).slice(0, 3);
-      const days = input.days || 7;
+      const datesToQuery = resolveDateRange({
+        startDate: input.startDate,
+        endDate: input.endDate,
+        days: input.days || 7,
+      });
       const adType = input.adType || 'SP';
       const hourlyApiPath = adType === 'SB'
         ? '/pb/openapi/newad/sbCampaignHourData'
@@ -662,8 +703,7 @@ ${JSON.stringify(anonymizedTerms)}
       }
 
       for (const sid of sidsToQuery) {
-        for (let d = 1; d <= days; d++) {
-          const reportDate = getDateNDaysAgo(d);
+        for (const reportDate of datesToQuery) {
           try {
             const body: any = { report_date: reportDate };
             if (input.campaignId) body.campaign_id = Number(input.campaignId);
@@ -699,7 +739,7 @@ ${JSON.stringify(anonymizedTerms)}
         cpc: h.clicks > 0 ? Math.round(h.cost / h.clicks * 100) / 100 : 0,
       }));
 
-      return { hourlyData, days, adType, isMock: adapter.isMockMode() };
+      return { hourlyData, days: datesToQuery.length, adType, isMock: adapter.isMockMode() };
     }),
 
   // ─── Order Hourly Heatmap (ASIN360) ───────────────────────────
@@ -708,6 +748,8 @@ ${JSON.stringify(anonymizedTerms)}
       campaignId: z.string().optional(),
       marketplace: z.string().optional(),
       reportDate: z.string().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
       days: z.number().optional().default(7),
     }))
     .query(async ({ input }) => {
@@ -715,8 +757,8 @@ ${JSON.stringify(anonymizedTerms)}
       const { sellers } = await getAllSellerSids();
       const sids = filterSidsByMarketplace(sellers, input.marketplace);
       const sidsStr = sids.slice(0, 5).join(',');
-      const dateEnd = getDateNDaysAgo(1);
-      const dateStart = getDateNDaysAgo(input.days || 7);
+      const dateEnd = input.endDate || getDateNDaysAgo(1);
+      const dateStart = input.startDate || getDateNDaysAgo(input.days || 7);
       try {
         const body: any = {
           sids: sidsStr,
@@ -945,6 +987,8 @@ ${JSON.stringify(metrics)}
       campaignId: z.string().optional(),
       marketplace: z.string().optional(),
       reportDate: z.string().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
       days: z.number().optional().default(3),
       adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
     }))
@@ -953,7 +997,11 @@ ${JSON.stringify(metrics)}
       const { sellers } = await getAllSellerSids();
       const sids = filterSidsByMarketplace(sellers, input.marketplace);
       const sidsToQuery = sids.map(Number).slice(0, 3);
-      const days = input.days || 3;
+      const datesToQuery = resolveDateRange({
+        startDate: input.startDate,
+        endDate: input.endDate,
+        days: input.days || 3,
+      });
       const adType = input.adType || 'SP';
       const targetingApiPath = adType === 'SB'
         ? '/pb/openapi/newad/listHsaTargetingReport'
@@ -969,8 +1017,8 @@ ${JSON.stringify(metrics)}
       // Build all tasks for parallel execution
       const tasks: Array<{ sid: number; date: string }> = [];
       for (const sid of sidsToQuery) {
-        for (let d = 1; d <= days; d++) {
-          tasks.push({ sid, date: getDateNDaysAgo(d) });
+        for (const date of datesToQuery) {
+          tasks.push({ sid, date });
         }
       }
 
@@ -1042,7 +1090,7 @@ ${JSON.stringify(metrics)}
       });
 
       targets.sort((a, b) => b.cost - a.cost);
-      return { targets, days, adType, isMock: adapter.isMockMode() };
+      return { targets, days: datesToQuery.length, adType, isMock: adapter.isMockMode() };
     }),
 
   // ─── Word Frequency Attribute 6-Category Analysis (Tab 4) ────

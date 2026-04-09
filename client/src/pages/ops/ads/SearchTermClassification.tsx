@@ -46,10 +46,12 @@ interface SearchTermClassificationProps {
   campaignId: string | null;
   marketplace?: string;
   reportDate: string;
+  startDate?: string;
+  endDate?: string;
   defaultAdType?: "SP" | "SB";
 }
 
-export default function SearchTermClassification({ campaignId, marketplace, reportDate, defaultAdType }: SearchTermClassificationProps) {
+export default function SearchTermClassification({ campaignId, marketplace, reportDate, startDate, endDate, defaultAdType }: SearchTermClassificationProps) {
   const [categoryFilter, setCategoryFilter] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<string>("cost");
@@ -69,6 +71,8 @@ export default function SearchTermClassification({ campaignId, marketplace, repo
     campaignId: campaignId || undefined,
     marketplace,
     reportDate,
+    startDate,
+    endDate,
     adType,
   });
 

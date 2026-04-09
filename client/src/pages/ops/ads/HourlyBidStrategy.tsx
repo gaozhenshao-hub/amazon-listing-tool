@@ -16,6 +16,8 @@ interface HourlyBidStrategyProps {
   campaignId: string | null;
   marketplace?: string;
   reportDate?: string;
+  startDate?: string;
+  endDate?: string;
   defaultAdType?: "SP" | "SB" | "SD";
 }
 
@@ -34,7 +36,7 @@ function getHeatColor(value: number, max: number): string {
   return "#f3f4f6";
 }
 
-export default function HourlyBidStrategy({ campaignId, marketplace, reportDate, defaultAdType }: HourlyBidStrategyProps) {
+export default function HourlyBidStrategy({ campaignId, marketplace, reportDate, startDate, endDate, defaultAdType }: HourlyBidStrategyProps) {
   const [heatmapMetric, setHeatmapMetric] = useState<"orders" | "sales" | "clicks" | "impressions">("orders");
   const [adType, setAdType] = useState<"SP" | "SB" | "SD">(defaultAdType === "SB" ? "SB" : defaultAdType === "SD" ? "SD" : "SP");
 
@@ -49,6 +51,8 @@ export default function HourlyBidStrategy({ campaignId, marketplace, reportDate,
     campaignId: campaignId || undefined,
     marketplace,
     reportDate,
+    startDate,
+    endDate,
     adType,
   });
 
@@ -56,6 +60,8 @@ export default function HourlyBidStrategy({ campaignId, marketplace, reportDate,
     campaignId: campaignId || undefined,
     marketplace,
     reportDate,
+    startDate,
+    endDate,
   });
 
   const aiBidStrategy = trpc.adAnalysis.aiDaypartingStrategy.useMutation({
