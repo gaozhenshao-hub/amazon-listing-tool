@@ -16,12 +16,15 @@ import {
 } from "@/components/ui/select";
 import {
   Plus, Search, Package, ShoppingBag, AlertCircle, CheckCircle2, Trash2, Loader2, Download,
-  Store, User, Globe, Users, CheckSquare,
+  Store, User, Globe, Users, CheckSquare, UserPlus, UserCheck,
   DollarSign, TrendingUp, TrendingDown, BarChart3, Boxes, Megaphone, ArrowUpRight, ArrowDownRight, Minus,
   ChevronUp, ChevronDown, ExternalLink,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from "@/components/ui/popover";
 
 const MARKETPLACE_OPTIONS = [
   { value: "ALL", label: "全部站点" },
@@ -97,11 +100,21 @@ export default function OpsProducts() {
     },
     onError: (e: any) => toast.error(e.message),
   });
+  const singleAssignMut = trpc.productOps.batchAssignOperator.useMutation({
+    onSuccess: (data) => {
+      refetch();
+      toast.success(`已分配给 ${data.operator}`);
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const { data: operatorList } = trpc.productOps.listOperators.useQuery();
 
   const [showCreate, setShowCreate] = useState(false);
   const [showBatchAssign, setShowBatchAssign] = useState(false);
   const [batchOperator, setBatchOperator] = useState("");
+  const [newOperatorName, setNewOperatorName] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [inlineAssignId, setInlineAssignId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [operatorFilter, setOperatorFilter] = useState("ALL");
   const [storeFilter, setStoreFilter] = useState("ALL");
@@ -676,10 +689,74 @@ export default function OpsProducts() {
                         {p.chineseName || "-"}
                       </span>
                     </td>
-                    <td className="px-2 py-2">
-                      <span className="text-xs truncate max-w-[80px] block">
-                        {product.operator || <span className="text-muted-foreground/50">未分配</span>}
-                      </span>
+                    <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
+                      <Popover open={inlineAssignId === product.id} onOpenChange={(open) => {
+                        if (open) { setInlineAssignId(product.id); setNewOperatorName(""); }
+                        else setInlineAssignId(null);
+                      }}>
+                        <PopoverTrigger asChild>
+                          <button className={`text-xs truncate max-w-[100px] block rounded px-1.5 py-0.5 transition-colors ${
+                            product.operator
+                              ? "text-foreground hover:bg-blue-50 hover:text-blue-700 cursor-pointer"
+                              : "text-muted-foreground/50 hover:bg-orange-50 hover:text-orange-600 cursor-pointer italic"
+                          }`}>
+                            {product.operator || "+ 分配"}
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-56 p-2" align="start">
+                          <div className="space-y-2">
+                            <p className="text-xs font-medium text-muted-foreground">分配运营负责人</p>
+                            {(operatorList || []).length > 0 && (
+                              <div className="max-h-32 overflow-y-auto space-y-0.5">
+                                {(operatorList || []).map(name => (
+                                  <button
+                                    key={name}
+                                    className={`w-full text-left text-xs px-2 py-1.5 rounded transition-colors flex items-center gap-1.5 ${
+                                      product.operator === name
+                                        ? "bg-blue-100 text-blue-700 font-medium"
+                                        : "hover:bg-muted"
+                                    }`}
+                                    onClick={() => {
+                                      singleAssignMut.mutate({ productIds: [product.id], operator: name });
+                                      setInlineAssignId(null);
+                                    }}
+                                  >
+                                    {product.operator === name ? <UserCheck className="h-3 w-3" /> : <User className="h-3 w-3 text-muted-foreground" />}
+                                    {name}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            <div className="flex gap-1 pt-1 border-t">
+                              <Input
+                                placeholder="新运营名称..."
+                                value={newOperatorName}
+                                onChange={e => setNewOperatorName(e.target.value)}
+                                className="h-7 text-xs"
+                                onKeyDown={e => {
+                                  if (e.key === "Enter" && newOperatorName.trim()) {
+                                    singleAssignMut.mutate({ productIds: [product.id], operator: newOperatorName.trim() });
+                                    setInlineAssignId(null);
+                                    setNewOperatorName("");
+                                  }
+                                }}
+                              />
+                              <Button
+                                size="sm"
+                                className="h-7 px-2 text-xs"
+                                disabled={!newOperatorName.trim()}
+                                onClick={() => {
+                                  singleAssignMut.mutate({ productIds: [product.id], operator: newOperatorName.trim() });
+                                  setInlineAssignId(null);
+                                  setNewOperatorName("");
+                                }}
+                              >
+                                <UserPlus className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     </td>
                     <td className="px-2 py-2">
                       <span className="text-xs text-muted-foreground truncate max-w-[100px] block">
@@ -878,7 +955,7 @@ export default function OpsProducts() {
 
       {/* 批量分配运营 Dialog */}
       <Dialog open={showBatchAssign} onOpenChange={setShowBatchAssign}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Users className="h-5 w-5 text-blue-500" />
@@ -886,37 +963,50 @@ export default function OpsProducts() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">将 {selectedIds.size} 个产品分配给指定运营负责人</p>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+              <p className="text-sm text-blue-700">已选择 <span className="font-bold">{selectedIds.size}</span> 个产品，将统一分配给指定运营负责人</p>
+            </div>
             <div>
-              <Label>运营负责人</Label>
-              <div className="mt-1 space-y-2">
-                {availableOperators.length > 0 && (
-                  <Select value={batchOperator} onValueChange={setBatchOperator}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="选择已有运营..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {availableOperators.map(o => (
-                        <SelectItem key={o} value={o}>{o}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              <Label className="text-sm font-medium">选择团队成员</Label>
+              <div className="mt-2 max-h-48 overflow-y-auto space-y-1 border rounded-lg p-2">
+                {(operatorList || []).length > 0 ? (
+                  (operatorList || []).map(name => (
+                    <button
+                      key={name}
+                      className={`w-full text-left text-sm px-3 py-2 rounded-md transition-colors flex items-center gap-2 ${
+                        batchOperator === name
+                          ? "bg-blue-100 text-blue-700 font-medium ring-1 ring-blue-300"
+                          : "hover:bg-muted"
+                      }`}
+                      onClick={() => setBatchOperator(name)}
+                    >
+                      {batchOperator === name ? <UserCheck className="h-4 w-4" /> : <User className="h-4 w-4 text-muted-foreground" />}
+                      {name}
+                    </button>
+                  ))
+                ) : (
+                  <p className="text-xs text-muted-foreground text-center py-4">暂无团队成员，请在下方输入新名称</p>
                 )}
-                <Input
-                  placeholder="或输入新的运营名称..."
-                  value={batchOperator}
-                  onChange={e => setBatchOperator(e.target.value)}
-                />
               </div>
+            </div>
+            <div>
+              <Label className="text-sm font-medium">或输入新运营名称</Label>
+              <Input
+                className="mt-1"
+                placeholder="输入新的运营名称..."
+                value={batchOperator}
+                onChange={e => setBatchOperator(e.target.value)}
+              />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowBatchAssign(false)}>取消</Button>
+            <Button variant="outline" onClick={() => { setShowBatchAssign(false); setBatchOperator(""); }}>取消</Button>
             <Button
               onClick={() => batchAssignMut.mutate({ productIds: Array.from(selectedIds), operator: batchOperator })}
               disabled={!batchOperator || batchAssignMut.isPending}
+              className="gap-1"
             >
-              {batchAssignMut.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              {batchAssignMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
               确认分配
             </Button>
           </DialogFooter>

@@ -13,7 +13,7 @@ import {
   competitorMonitors, competitorSnapshots,
   opsPlans, opsPlanActions, opsPlanSummaries,
   conversionComparisons, conversionCheckItems, conversionScores, conversionSuggestions, checkItemOverrides,
-  executionReviews, teamTasks,
+  executionReviews, teamTasks, users,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, asc, isNull, inArray } from "drizzle-orm";
 
@@ -2311,16 +2311,40 @@ export const productOpsRouter = router({
       return { updated, operator: input.operator };
     }),
 
-  // ─── 获取所有运营人员列表 ───
+  // ─── 获取所有运营人员列表（已分配过的 + 团队成员） ───
   listOperators: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
-    const results = await db!.selectDistinct({ operator: productProfiles.operator })
+    // 1. 已分配过的运营名称
+    const assigned = await db!.selectDistinct({ operator: productProfiles.operator })
       .from(productProfiles)
       .where(and(
         eq(productProfiles.userId, ctx.user.id),
         sql`${productProfiles.operator} IS NOT NULL AND ${productProfiles.operator} != ''`
       ));
-    return results.map(r => r.operator).filter(Boolean) as string[];
+    const assignedNames = assigned.map(r => r.operator).filter(Boolean) as string[];
+    
+    // 2. 团队成员名称（活跃用户）
+    const teamMembers = await db!.select({ id: users.id, name: users.name, role: users.role })
+      .from(users)
+      .where(eq(users.status, 'active'));
+    const memberNames = teamMembers.map(u => u.name).filter(Boolean) as string[];
+    
+    // 3. 合并去重
+    const allNames = Array.from(new Set([...memberNames, ...assignedNames]));
+    return allNames;
+  }),
+
+  // ─── 获取团队成员详情列表 ───
+  listTeamMembers: protectedProcedure.query(async () => {
+    const db = await getDb();
+    const members = await db!.select({
+      id: users.id,
+      name: users.name,
+      role: users.role,
+      department: users.department,
+      jobTitle: users.jobTitle,
+    }).from(users).where(eq(users.status, 'active'));
+    return members;
   }),
 
   // ─── 产品数据看板（库存/利润/广告汇总从领星抓取） ───
