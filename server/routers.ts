@@ -73,6 +73,8 @@ import { offOutreachRouter } from "./routers/offOutreach";
 import { offContentRouter } from "./routers/offContent";
 import { offSocialRouter } from "./routers/offSocial";
 import { offAnalyticsRouter } from "./routers/offAnalytics";
+// Module 2 Extension: Video Script Generation
+import { videoScriptRouter } from "./routers/videoScript";
 
 export const appRouter = router({
   system: systemRouter,
@@ -158,6 +160,8 @@ export const appRouter = router({
   offContent: offContentRouter,
   offSocial: offSocialRouter,
   offAnalytics: offAnalyticsRouter,
+  // Module 2 Extension: Video Script Generation
+  videoScript: videoScriptRouter,
 });
 
 export type AppRouter = typeof appRouter;

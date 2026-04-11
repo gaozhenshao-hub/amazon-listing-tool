@@ -135,6 +135,7 @@ const modules: ModuleDef[] = [
       { icon: FileText, label: "结果预览", path: "/listing/preview" },
       { icon: Gauge, label: "Listing评分", path: "/listing/score" },
       { icon: Image, label: "智能图片建议", path: "/listing/image-workflow" },
+      { icon: Video, label: "视频脚本生成", path: "/listing/video-script" },
     ],
   },
   {

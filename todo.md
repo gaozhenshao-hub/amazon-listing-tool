@@ -3085,3 +3085,24 @@
 - [x] 前端：运营人员筛选框始终显示（不再受availableOperators是否为空限制）
 - [x] 前端：支持“全部运营”“未分配”+ 从listOperators API和产品数据合并的运营列表
 - [x] 验证：TypeScript编译0错误
+
+## 视频脚本生成模块（集成到模块二Listing中）
+- [x] 数据库：新增video_scripts（脚本主表）、video_script_sections（段落表）、video_script_subtopics（子主题表）、video_script_shots（镜头表）、video_edit_scripts（剪辑脚本表）、video_competitor_scripts（竞品脚本表）
+- [x] 数据库：执行SQL迁移
+- [x] 后端：新增videoScript tRPC路由（CRUD + 六阶段流程API）
+- [x] 后端：阶段0A - 竞品脚本上传/从模块二提取/从知识库提取 + AI分析
+- [x] 后端：阶段0B - 产品信息自动提取（从projects/listings/keywords/reviewAggregations等表）
+- [x] 后端：阶段1 - 卖点分析与段落规划（LLM生成）
+- [x] 后端：阶段2 - 子主题展开与镜头数量规划（LLM生成）
+- [x] 后端：阶段3 - 逐镜头明细生成（14字段完整表格，LLM生成）
+- [x] 后端：阶段4 - 剪辑脚本生成（多视频组合方案，LLM生成）
+- [x] 前端：VideoScriptPage主页面（项目选择 + 六阶段步骤导航）
+- [x] 前端：阶段0A - 竞品脚本上传/选择界面 + AI分析结果展示（可编辑）
+- [x] 前端：阶段0B - 产品信息摘要展示（卖点排序、痛点、关键词，可编辑）
+- [x] 前端：阶段1 - 段落规划卡片（拖拽排序、时长调整、拍摄方式选择）
+- [x] 前端：阶段2 - 子主题树形展开（编辑子主题、确认复用关系）
+- [x] 前端：阶段3 - 镜头明细表格（类Excel编辑，14字段）
+- [x] 前端：阶段4 - 剪辑脚本方案（多视频输出卡片、段落组合映射）
+- [x] 前端：侧边栏新增"视频脚本"导航入口
+- [x] 前端：App.tsx新增路由 /listing/video-script
+- [x] 单元测试：视频脚本后端API测试（10个测试全部通过）
