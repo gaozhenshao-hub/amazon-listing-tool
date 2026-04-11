@@ -3,6 +3,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import * as vsDb from "../videoScriptDb";
 import * as db from "../db";
+import { getL1Index, getL2Summary, formatForPrompt, logKbCallBatch } from "../kbContextEngine";
 import {
   COMPETITOR_SCRIPT_ANALYSIS_PROMPT,
   COMPETITOR_SUMMARY_PROMPT,
@@ -11,6 +12,11 @@ import {
   SUBTOPIC_EXPANSION_PROMPT,
   SHOT_DETAIL_PROMPT,
   EDIT_SCRIPT_PROMPT,
+  VIDEO_TYPE_SPECS,
+  STYLE_PRESETS,
+  getVideoTypeTemplate,
+  getVideoTypeSpec,
+  buildStylePresetPrompt,
 } from "../videoScriptPrompts";
 
 // Helper: safely parse LLM JSON response
@@ -90,13 +96,18 @@ export const videoScriptRouter = router({
       scriptName: z.string().min(1),
       productName: z.string().optional(),
       videoType: z.enum(["main_video", "ad_spv", "ad_sbv", "aplus_video", "social_media", "other"]).optional(),
+      stylePreset: z.string().optional(),
       targetDuration: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      const videoType = input.videoType || "main_video";
+      const spec = getVideoTypeSpec(videoType);
+      const targetDuration = input.targetDuration || spec.recommendedDuration[1];
       const id = await vsDb.createVideoScript({
         ...input,
         userId: ctx.user!.id,
-        targetDuration: input.targetDuration?.toString(),
+        targetDuration: targetDuration.toString(),
+        stylePreset: input.stylePreset || "minimal_white",
         status: "draft",
         currentStage: "stage_0a",
         stageStatus: JSON.stringify({
@@ -105,7 +116,7 @@ export const videoScriptRouter = router({
           stage_3: "pending", stage_4: "pending",
         }),
       });
-      return { id };
+      return { id, spec };
     }),
 
   list: protectedProcedure
@@ -126,6 +137,7 @@ export const videoScriptRouter = router({
       scriptName: z.string().optional(),
       productName: z.string().optional(),
       videoType: z.enum(["main_video", "ad_spv", "ad_sbv", "aplus_video", "social_media", "other"]).optional(),
+      stylePreset: z.string().optional(),
       targetDuration: z.number().optional(),
       currentStage: z.enum(["stage_0a", "stage_0b", "stage_1", "stage_2", "stage_3", "stage_4", "completed"]).optional(),
       status: z.enum(["draft", "in_progress", "completed", "archived"]).optional(),
@@ -347,11 +359,47 @@ export const videoScriptRouter = router({
         differentiableOpportunities: summary.differentiableOpportunities,
       }) : "无竞品参考";
 
+      const videoType = script?.videoType || "main_video";
+      const stylePreset = (script as any)?.stylePreset || "minimal_white";
+
+      // ─── Knowledge Base Injection: fetch relevant video examples ───
+      let kbExamplesText = "暂无知识库案例";
+      try {
+        const kbL1 = await getL1Index({
+          userId: ctx.user.id,
+          types: ["video"],
+          keyword: script?.scriptName || "",
+          scope: "all",
+          limit: 10,
+        });
+        if (kbL1.length > 0) {
+          // Load L2 summaries for top results
+          const topIds = kbL1.slice(0, 5).map(item => item.id);
+          const kbL2 = await getL2Summary(topIds, ["video"]);
+          kbExamplesText = formatForPrompt(kbL2.length > 0 ? kbL2 : kbL1, kbL2.length > 0 ? "L2" : "L1");
+          // Log KB call for tracking
+          await logKbCallBatch(topIds.map(id => ({
+            userId: ctx.user.id,
+            callerModule: "video_script",
+            callerAction: "generateSections",
+            kbItemId: id,
+            kbItemType: "video",
+            loadLevel: kbL2.length > 0 ? "L2" as const : "L1" as const,
+          })));
+        }
+      } catch (e) {
+        console.warn("[VideoScript] KB injection failed, continuing without KB context:", e);
+      }
+
       const prompt = SECTION_PLANNING_PROMPT
         .replace("{product_info}", productInfo)
         .replace("{competitor_reference}", competitorRef)
-        .replace("{video_type}", script?.videoType || "main_video")
-        .replace("{target_duration}", script?.targetDuration?.toString() || "60");
+        .replace("{knowledge_base_examples}", kbExamplesText)
+        .replace("{video_type}", videoType)
+        .replace("{video_type_template}", getVideoTypeTemplate(videoType))
+        .replace("{style_preset}", buildStylePresetPrompt(stylePreset))
+        .replace("{target_duration}", script?.targetDuration?.toString() || "60")
+        .replace("{spv_segment_index}", "N/A");
 
       const response = await invokeLLM({
         messages: [
@@ -368,12 +416,15 @@ export const videoScriptRouter = router({
         const savedSections = await vsDb.saveSections(input.videoScriptId, result.sections.map((s: any, i: number) => ({
           videoScriptId: input.videoScriptId,
           sectionCode: s.section_code || `MBP${i + 1}`,
-          sectionName: s.section_name,
+          sectionName: s.section_name || s.scene_name,
           sectionNameEn: s.section_name_en,
           shootingMethod: s.shooting_method || "live_action",
           durationBudget: s.duration_budget?.toString(),
           sellingPointRefs: JSON.stringify(s.selling_point_refs || []),
           painPointRefs: JSON.stringify(s.pain_point_refs || []),
+          description: s.description || "",
+          shotTypeSuggestion: s.shot_type_suggestion || "",
+          propsSuggestion: JSON.stringify(s.props_suggestion || []),
           sortOrder: i,
         })));
         return { sections: savedSections, raw: content };
@@ -488,6 +539,37 @@ export const videoScriptRouter = router({
         });
       }
 
+      const script = await vsDb.getVideoScriptById(input.videoScriptId);
+      const videoType = script?.videoType || "main_video";
+      const stylePreset = (script as any)?.stylePreset || "minimal_white";
+
+      // ─── Knowledge Base Injection for shot details ───
+      let kbShotRef = "";
+      try {
+        const kbL1 = await getL1Index({
+          userId: ctx.user.id,
+          types: ["video"],
+          keyword: script?.scriptName || "",
+          scope: "all",
+          limit: 5,
+        });
+        if (kbL1.length > 0) {
+          const topIds = kbL1.slice(0, 3).map(item => item.id);
+          const kbL2 = await getL2Summary(topIds, ["video"]);
+          kbShotRef = kbL2.length > 0 ? `\n\n--- 知识库视频参考（镜头语言参考） ---\n${formatForPrompt(kbL2, "L2")}` : "";
+          await logKbCallBatch(topIds.map(id => ({
+            userId: ctx.user.id,
+            callerModule: "video_script",
+            callerAction: "generateShots",
+            kbItemId: id,
+            kbItemType: "video",
+            loadLevel: "L2" as const,
+          })));
+        }
+      } catch (e) {
+        console.warn("[VideoScript] KB injection for shots failed:", e);
+      }
+
       const prompt = SHOT_DETAIL_PROMPT
         .replace("{subtopics_structure}", JSON.stringify(subtopicsStructure, null, 2))
         .replace("{product_info}", snapshot ? JSON.stringify({
@@ -495,9 +577,12 @@ export const videoScriptRouter = router({
           sellingPoints: snapshot.sellingPointsHierarchy,
           specs: snapshot.productSpecs,
         }) : "无产品信息")
-        .replace("{competitor_reference}", summary ? JSON.stringify({
+        .replace("{competitor_reference}", (summary ? JSON.stringify({
           recommendedStructure: summary.recommendedStructure,
-        }) : "无竞品参考");
+        }) : "无竞品参考") + kbShotRef)
+        .replace("{video_type}", videoType)
+        .replace("{video_type_template}", getVideoTypeTemplate(videoType))
+        .replace("{style_preset}", buildStylePresetPrompt(stylePreset));
 
       const response = await invokeLLM({
         messages: [
@@ -533,10 +618,14 @@ export const videoScriptRouter = router({
                 overlayTextCn: s.overlay_text_cn,
                 narrationEn: s.narration_en,
                 narrationCn: s.narration_cn,
+                subtitleEn: s.subtitle_en || "",
+                subtitleCn: s.subtitle_cn || "",
                 narratorType: s.narrator_type || "voiceover",
                 generationStrategy: s.generation_strategy || "real_shoot",
                 reuseFromShotCode: s.reuse_from_shot_code,
                 colorScheme: s.color_scheme,
+                props: JSON.stringify(s.props || []),
+                notes: s.notes || "",
                 sortOrder: i,
               })));
             }
@@ -564,16 +653,21 @@ export const videoScriptRouter = router({
       overlayTextCn: z.string().optional(),
       narrationEn: z.string().optional(),
       narrationCn: z.string().optional(),
+      subtitleEn: z.string().optional(),
+      subtitleCn: z.string().optional(),
       narratorType: z.enum(["voiceover", "model_narration", "text_only", "none"]).optional(),
       generationStrategy: z.enum(["real_shoot", "ai_image", "ai_video", "stock_footage", "screen_record", "mixed"]).optional(),
       duration: z.number().optional(),
       colorScheme: z.string().optional(),
+      props: z.any().optional(),
+      notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const { id, duration, ...rest } = input;
+      const { id, duration, props, ...rest } = input;
       await vsDb.updateShot(id, {
         ...rest,
         ...(duration !== undefined ? { duration: duration.toString() } : {}),
+        ...(props !== undefined ? { props: JSON.stringify(props) } : {}),
       });
       return { success: true };
     }),
@@ -681,6 +775,157 @@ export const videoScriptRouter = router({
       return { success: true };
     }),
 
+  // ─── Video Type Specs & Style Presets (Static Data) ──────────
+
+  getVideoTypeSpecs: protectedProcedure
+    .query(async () => {
+      return { specs: VIDEO_TYPE_SPECS, presets: STYLE_PRESETS };
+    }),
+
+  getVideoTypeSpec: protectedProcedure
+    .input(z.object({ videoType: z.string() }))
+    .query(async ({ input }) => {
+      return getVideoTypeSpec(input.videoType);
+    }),
+
+  // ─── Version Management ──────────────────────────────────────
+
+  createVersion: protectedProcedure
+    .input(z.object({
+      videoScriptId: z.number(),
+      versionNote: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const script = await vsDb.getVideoScriptById(input.videoScriptId);
+      if (!script) throw new Error("Video script not found");
+      const sections = await vsDb.getSections(input.videoScriptId);
+      const subtopics = await vsDb.getSubtopicsByVideoScript(input.videoScriptId);
+      const shots = await vsDb.getAllShotsByVideoScript(input.videoScriptId);
+      const editScripts = await vsDb.getEditScripts(input.videoScriptId);
+      const currentVersion = (script as any).version || 1;
+      const snapshotData = { script, sections, subtopics, shots, editScripts };
+      const id = await vsDb.createVersion({
+        videoScriptId: input.videoScriptId,
+        version: currentVersion,
+        versionNote: input.versionNote || `版本 ${currentVersion}`,
+        snapshotData: JSON.stringify(snapshotData),
+        createdBy: ctx.user!.id,
+      });
+      await vsDb.updateVideoScript(input.videoScriptId, {
+        version: currentVersion + 1,
+        versionNote: input.versionNote,
+      } as any);
+      return { id, version: currentVersion };
+    }),
+
+  getVersions: protectedProcedure
+    .input(z.object({ videoScriptId: z.number() }))
+    .query(async ({ input }) => {
+      return vsDb.getVersionsByVideoScript(input.videoScriptId);
+    }),
+
+  rollbackVersion: protectedProcedure
+    .input(z.object({ versionId: z.number() }))
+    .mutation(async ({ input }) => {
+      const version = await vsDb.getVersionById(input.versionId);
+      if (!version) throw new Error("Version not found");
+      const snapshot = typeof version.snapshotData === "string"
+        ? JSON.parse(version.snapshotData)
+        : version.snapshotData;
+      if (snapshot.sections) {
+        await vsDb.saveSections(version.videoScriptId, snapshot.sections);
+      }
+      return { success: true, restoredVersion: version.version };
+    }),
+
+  // ─── SPV Segments ────────────────────────────────────────────
+
+  saveSpvSegments: protectedProcedure
+    .input(z.object({
+      videoScriptId: z.number(),
+      segments: z.array(z.object({
+        segmentName: z.string(),
+        focusDimension: z.string().optional(),
+        descriptionText: z.string().optional(),
+        maxDuration: z.number().optional(),
+      })),
+    }))
+    .mutation(async ({ input }) => {
+      const saved = await vsDb.saveSpvSegments(input.videoScriptId, input.segments.map((s, i) => ({
+        videoScriptId: input.videoScriptId,
+        segmentIndex: i + 1,
+        segmentName: s.segmentName,
+        focusDimension: s.focusDimension,
+        descriptionText: s.descriptionText,
+        maxDuration: s.maxDuration?.toString() || "25.0",
+        sortOrder: i,
+      })));
+      return { segments: saved };
+    }),
+
+  getSpvSegments: protectedProcedure
+    .input(z.object({ videoScriptId: z.number() }))
+    .query(async ({ input }) => {
+      return vsDb.getSpvSegments(input.videoScriptId);
+    }),
+
+  // ─── Reorder Operations ──────────────────────────────────────
+
+  reorderSections: protectedProcedure
+    .input(z.object({
+      videoScriptId: z.number(),
+      sectionIds: z.array(z.number()),
+    }))
+    .mutation(async ({ input }) => {
+      await vsDb.reorderSections(input.videoScriptId, input.sectionIds);
+      return { success: true };
+    }),
+
+  reorderShots: protectedProcedure
+    .input(z.object({
+      subtopicId: z.number(),
+      shotIds: z.array(z.number()),
+    }))
+    .mutation(async ({ input }) => {
+      await vsDb.reorderShots(input.subtopicId, input.shotIds);
+      return { success: true };
+    }),
+
+  addShot: protectedProcedure
+    .input(z.object({
+      subtopicId: z.number(),
+      sectionId: z.number(),
+      shotDescription: z.string().optional(),
+      duration: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const id = await vsDb.addShotToSubtopic(input.subtopicId, input.sectionId, {
+        shotDescription: input.shotDescription || "新镜头",
+        duration: input.duration?.toString() || "3.0",
+      });
+      return { id };
+    }),
+
+  // ─── Stage Confirmation ──────────────────────────────────────
+
+  confirmStage: protectedProcedure
+    .input(z.object({
+      videoScriptId: z.number(),
+      stage: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const script = await vsDb.getVideoScriptById(input.videoScriptId);
+      if (!script) throw new Error("Video script not found");
+      const stageStatus = typeof script.stageStatus === "string"
+        ? JSON.parse(script.stageStatus)
+        : script.stageStatus || {};
+      stageStatus[input.stage] = "confirmed";
+      await vsDb.updateVideoScript(input.videoScriptId, {
+        stageStatus: JSON.stringify(stageStatus),
+      });
+      return { success: true };
+    }),
+
   // ─── Full Data Export ─────────────────────────────────────────
 
   getFullScript: protectedProcedure
@@ -694,6 +939,8 @@ export const videoScriptRouter = router({
       const subtopics = await vsDb.getSubtopicsByVideoScript(input.videoScriptId);
       const shots = await vsDb.getAllShotsByVideoScript(input.videoScriptId);
       const editScripts = await vsDb.getEditScripts(input.videoScriptId);
-      return { script, competitors, summary, snapshot, sections, subtopics, shots, editScripts };
+      const spvSegments = await vsDb.getSpvSegments(input.videoScriptId);
+      const versions = await vsDb.getVersionsByVideoScript(input.videoScriptId);
+      return { script, competitors, summary, snapshot, sections, subtopics, shots, editScripts, spvSegments, versions };
     }),
 });

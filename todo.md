@@ -3106,3 +3106,38 @@
 - [x] 前端：侧边栏新增"视频脚本"导航入口
 - [x] 前端：App.tsx新增路由 /listing/video-script
 - [x] 单元测试：视频脚本后端API测试（10个测试全部通过）
+
+## 视频脚本模块优化（基于差距分析报告）
+
+### P0 - 严重差距修复
+- [x] P0: 四种视频类型差异化提示词模板（主图6幕/SPV单功能4幕×N/SBV品牌5幕/A+教育7幕）
+- [x] P0: 视频类型技术规范约束常量（时长/分辨率/宽高比/文件大小）
+- [x] P0: 后端generateSections根据videoType注入差异化结构模板
+- [x] P0: 后端generateSubtopics/generateShots根据videoType适配提示词
+- [x] P0: 前端创建脚本时展示视频类型规范说明卡片
+
+### P1 - 重要功能补全
+- [x] P1: SPV多段视频支持（数据库扩展+后端路由+前端标签页管理）
+- [x] P1: 风格预设功能（数据库字段+提示词注入+前端选择器）
+- [x] P1: 镜头增删功能（addShot后端路由+前端插入按钮）
+- [x] P1: 镜头排序功能（reorderShots后端路由+前端上下移动按钮）
+- [x] P1: 段落排序功能（reorderSections后端路由+前端上下移动按钮）
+
+### P2 - 版本管理与数据完整性
+- [x] P2: 数据库新增video_script_versions表
+- [x] P2: 数据库shots表补充props/notes/subtitle_en/subtitle_cn字段
+- [x] P2: 数据库videoScripts表补充style_preset/version字段
+- [x] P2: 后端confirm路由（confirmStage生成版本快照）
+- [x] P2: 后端getVersions/rollback路由
+- [x] P2: 知识库案例注入提示词（段落规划和镜头生成阶段）
+- [x] P2: 前端版本管理界面（版本列表+回滚按钮）
+
+### 前端交互优化
+- [x] 前端：时长规范校验（DurationValidator组件+超时红色标记）
+- [x] 前端：镜头卡片视图（表格内展开中文字段+备注）
+- [x] 前端：排序实现（段落+镜头上下移动按钮）
+- [x] 前端：SPV多段标签页管理
+- [x] 前端：风格预设选择器
+
+### 测试
+- [x] 更新vitest测试覆盖新增功能（16个测试全部通过）

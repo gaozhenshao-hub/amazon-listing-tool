@@ -24,6 +24,14 @@ vi.mock("./_core/llm", () => ({
   }),
 }));
 
+// Mock kbContextEngine to avoid real DB calls in KB injection
+vi.mock("./kbContextEngine", () => ({
+  getL1Index: vi.fn().mockResolvedValue([]),
+  getL2Summary: vi.fn().mockResolvedValue([]),
+  formatForPrompt: vi.fn().mockReturnValue(""),
+  logKbCallBatch: vi.fn().mockResolvedValue(undefined),
+}));
+
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
 function createAuthContext(): TrpcContext {
@@ -70,18 +78,34 @@ describe("videoScript router", () => {
 
       expect(result).toBeDefined();
       expect(result.id).toBeGreaterThan(0);
+      expect(result.spec).toBeDefined();
+    });
+
+    it("should create with style preset", async () => {
+      const result = await caller.videoScript.create({
+        projectId: 1,
+        scriptName: "Styled Script",
+        videoType: "ad_spv",
+        stylePreset: "tech_dark",
+        targetDuration: 30,
+      });
+
+      expect(result.id).toBeGreaterThan(0);
+
+      const script = await caller.videoScript.getById({ id: result.id });
+      expect(script).toBeDefined();
+      expect((script as any).stylePreset).toBe("tech_dark");
     });
 
     it("should list video scripts by project", async () => {
-      // Create one first
       await caller.videoScript.create({
-        projectId: 999,
+        projectId: 998,
         scriptName: "List Test Script",
         videoType: "ad_spv",
         targetDuration: 30,
       });
 
-      const list = await caller.videoScript.list({ projectId: 999 });
+      const list = await caller.videoScript.list({ projectId: 998 });
       expect(Array.isArray(list)).toBe(true);
       expect(list.length).toBeGreaterThanOrEqual(1);
       expect(list[0].scriptName).toBe("List Test Script");
@@ -113,6 +137,7 @@ describe("videoScript router", () => {
         id: created.id,
         scriptName: "Updated Name",
         videoType: "ad_sbv",
+        stylePreset: "lifestyle_warm",
       });
 
       expect(result.success).toBe(true);
@@ -120,6 +145,7 @@ describe("videoScript router", () => {
       const updated = await caller.videoScript.getById({ id: created.id });
       expect(updated!.scriptName).toBe("Updated Name");
       expect(updated!.videoType).toBe("ad_sbv");
+      expect((updated as any).stylePreset).toBe("lifestyle_warm");
     });
 
     it("should delete a video script", async () => {
@@ -203,7 +229,7 @@ describe("videoScript router", () => {
     });
   });
 
-  describe("Stage advancement", () => {
+  describe("Stage advancement & confirmation", () => {
     it("should advance from stage_0a to stage_0b", async () => {
       const script = await caller.videoScript.create({
         projectId: 1,
@@ -232,14 +258,12 @@ describe("videoScript router", () => {
         targetDuration: 60,
       });
 
-      // Advance 0a -> 0b
       await caller.videoScript.advanceStage({
         videoScriptId: script.id,
         fromStage: "stage_0a",
         toStage: "stage_0b",
       });
 
-      // Advance 0b -> 1
       await caller.videoScript.advanceStage({
         videoScriptId: script.id,
         fromStage: "stage_0b",
@@ -248,6 +272,88 @@ describe("videoScript router", () => {
 
       const updated = await caller.videoScript.getById({ id: script.id });
       expect(updated!.currentStage).toBe("stage_1");
+    });
+
+    it("should confirm a stage", async () => {
+      const script = await caller.videoScript.create({
+        projectId: 1,
+        scriptName: "Confirm Stage Test",
+        videoType: "main_video",
+        targetDuration: 60,
+      });
+
+      const result = await caller.videoScript.confirmStage({
+        videoScriptId: script.id,
+        stage: "stage_0a",
+      });
+
+      expect(result.success).toBe(true);
+
+      const updated = await caller.videoScript.getById({ id: script.id });
+      const stageStatus = JSON.parse((updated as any).stageStatus || "{}");
+      expect(stageStatus.stage_0a).toBe("confirmed");
+    });
+  });
+
+  describe("Video type specs & style presets", () => {
+    it("should return video type specs", async () => {
+      const result = await caller.videoScript.getVideoTypeSpecs();
+      expect(result).toBeDefined();
+      expect(result.specs).toBeDefined();
+      expect(result.presets).toBeDefined();
+      expect(result.specs.main_video).toBeDefined();
+      expect(result.specs.ad_spv).toBeDefined();
+      expect(result.specs.ad_sbv).toBeDefined();
+      expect(result.specs.aplus_video).toBeDefined();
+    });
+
+    it("should return a specific video type spec", async () => {
+      const spec = await caller.videoScript.getVideoTypeSpec({ videoType: "main_video" });
+      expect(spec).toBeDefined();
+      expect(spec.maxDuration).toBeDefined();
+      expect(spec.recommendedDuration).toBeDefined();
+    });
+  });
+
+  describe("Version management", () => {
+    it("should create a version snapshot", async () => {
+      const script = await caller.videoScript.create({
+        projectId: 1,
+        scriptName: "Version Test",
+        videoType: "main_video",
+        targetDuration: 60,
+      });
+
+      const version = await caller.videoScript.createVersion({
+        videoScriptId: script.id,
+        versionNote: "Initial version",
+      });
+
+      expect(version).toBeDefined();
+      expect(version.version).toBe(1);
+    });
+
+    it("should list versions for a script", async () => {
+      const script = await caller.videoScript.create({
+        projectId: 1,
+        scriptName: "List Versions Test",
+        videoType: "main_video",
+        targetDuration: 60,
+      });
+
+      await caller.videoScript.createVersion({
+        videoScriptId: script.id,
+        versionNote: "v1",
+      });
+
+      await caller.videoScript.createVersion({
+        videoScriptId: script.id,
+        versionNote: "v2",
+      });
+
+      const versions = await caller.videoScript.getVersions({ videoScriptId: script.id });
+      expect(Array.isArray(versions)).toBe(true);
+      expect(versions.length).toBeGreaterThanOrEqual(2);
     });
   });
 });

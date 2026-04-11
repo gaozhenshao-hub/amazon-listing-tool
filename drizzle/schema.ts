@@ -3007,11 +3007,14 @@ export const videoScripts = mysqlTable("video_scripts", {
   scriptName: varchar("scriptName", { length: 255 }).notNull(),
   productName: varchar("productName", { length: 255 }),
   videoType: mysqlEnum("videoType", ["main_video", "ad_spv", "ad_sbv", "aplus_video", "social_media", "other"]).default("main_video"),
+  stylePreset: varchar("style_preset", { length: 50 }).default("minimal_white"),
   targetDuration: decimal("targetDuration", { precision: 5, scale: 1 }),
   currentStage: mysqlEnum("currentStage", [
     "stage_0a", "stage_0b", "stage_1", "stage_2", "stage_3", "stage_4", "completed"
   ]).default("stage_0a").notNull(),
   stageStatus: json("stageStatus"), // JSON: { stage_0a: "completed", stage_0b: "editing", ... }
+  version: int("version").default(1),
+  versionNote: text("version_note"),
   status: mysqlEnum("status", ["draft", "in_progress", "completed", "archived"]).default("draft").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -3093,6 +3096,9 @@ export const videoScriptSections = mysqlTable("video_script_sections", {
   durationBudget: decimal("durationBudget", { precision: 5, scale: 1 }),
   sellingPointRefs: json("sellingPointRefs"),
   painPointRefs: json("painPointRefs"),
+  description: text("description"),
+  shotTypeSuggestion: varchar("shotTypeSuggestion", { length: 100 }),
+  propsSuggestion: json("propsSuggestion"),
   sortOrder: int("sortOrder").default(0),
   userConfirmed: int("userConfirmed").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -3132,11 +3138,15 @@ export const videoScriptShots = mysqlTable("video_script_shots", {
   overlayTextCn: text("overlayTextCn"),
   narrationEn: text("narrationEn"),
   narrationCn: text("narrationCn"),
+  subtitleEn: text("subtitleEn"),
+  subtitleCn: text("subtitleCn"),
   narratorType: mysqlEnum("narratorType", ["voiceover", "model_narration", "text_only", "none"]).default("voiceover"),
   generationStrategy: mysqlEnum("generationStrategy", ["real_shoot", "ai_image", "ai_video", "stock_footage", "screen_record", "mixed"]).default("real_shoot"),
   reuseFromShotCode: varchar("reuseFromShotCode", { length: 20 }),
   designatedAssets: json("designatedAssets"),
   colorScheme: varchar("colorScheme", { length: 200 }),
+  props: json("props"),
+  notes: text("notes"),
   referenceImageUrl: text("referenceImageUrl"),
   sortOrder: int("sortOrder").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -3162,3 +3172,33 @@ export const videoEditScripts = mysqlTable("video_edit_scripts", {
 });
 export type VideoEditScript = typeof videoEditScripts.$inferSelect;
 export type InsertVideoEditScript = typeof videoEditScripts.$inferInsert;
+
+// 版本快照表
+export const videoScriptVersions = mysqlTable("video_script_versions", {
+  id: int("id").autoincrement().primaryKey(),
+  videoScriptId: int("videoScriptId").notNull(),
+  version: int("version").notNull().default(1),
+  versionNote: text("versionNote"),
+  snapshotData: json("snapshotData").notNull(),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type VideoScriptVersion = typeof videoScriptVersions.$inferSelect;
+export type InsertVideoScriptVersion = typeof videoScriptVersions.$inferInsert;
+
+// SPV多段视频管理表
+export const videoSpvSegments = mysqlTable("video_spv_segments", {
+  id: int("id").autoincrement().primaryKey(),
+  videoScriptId: int("videoScriptId").notNull(),
+  segmentIndex: int("segmentIndex").notNull().default(1),
+  segmentName: varchar("segmentName", { length: 200 }).notNull(),
+  focusDimension: varchar("focusDimension", { length: 100 }),
+  descriptionText: text("descriptionText"),
+  maxDuration: decimal("maxDuration", { precision: 5, scale: 1 }).default("25.0"),
+  status: varchar("status", { length: 20 }).default("draft"),
+  sortOrder: int("sortOrder").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type VideoSpvSegment = typeof videoSpvSegments.$inferSelect;
+export type InsertVideoSpvSegment = typeof videoSpvSegments.$inferInsert;

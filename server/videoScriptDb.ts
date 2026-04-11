@@ -9,6 +9,8 @@ import {
   videoScriptSubtopics, InsertVideoScriptSubtopic,
   videoScriptShots, InsertVideoScriptShot,
   videoEditScripts, InsertVideoEditScript,
+  videoScriptVersions, InsertVideoScriptVersion,
+  videoSpvSegments, InsertVideoSpvSegment,
 } from "../drizzle/schema";
 
 // ─── Video Scripts CRUD ─────────────────────────────────────────
@@ -302,4 +304,98 @@ export async function updateEditScript(id: number, data: Partial<InsertVideoEdit
   const db = await getDb();
   if (!db) return;
   await db.update(videoEditScripts).set(data).where(eq(videoEditScripts.id, id));
+}
+
+// ─── Version Management ────────────────────────────────────────
+
+export async function createVersion(data: InsertVideoScriptVersion) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(videoScriptVersions).values(data);
+  return result.insertId;
+}
+
+export async function getVersionsByVideoScript(videoScriptId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(videoScriptVersions)
+    .where(eq(videoScriptVersions.videoScriptId, videoScriptId))
+    .orderBy(desc(videoScriptVersions.version));
+}
+
+export async function getVersionById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(videoScriptVersions).where(eq(videoScriptVersions.id, id));
+  return rows[0] ?? null;
+}
+
+// ─── SPV Segments ──────────────────────────────────────────────
+
+export async function saveSpvSegments(videoScriptId: number, segments: InsertVideoSpvSegment[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(videoSpvSegments).where(eq(videoSpvSegments.videoScriptId, videoScriptId));
+  if (segments.length === 0) return [];
+  const insertData = segments.map((s, i) => ({ ...s, videoScriptId, sortOrder: i }));
+  await db.insert(videoSpvSegments).values(insertData);
+  return db.select().from(videoSpvSegments)
+    .where(eq(videoSpvSegments.videoScriptId, videoScriptId))
+    .orderBy(asc(videoSpvSegments.sortOrder));
+}
+
+export async function getSpvSegments(videoScriptId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(videoSpvSegments)
+    .where(eq(videoSpvSegments.videoScriptId, videoScriptId))
+    .orderBy(asc(videoSpvSegments.sortOrder));
+}
+
+export async function updateSpvSegment(id: number, data: Partial<InsertVideoSpvSegment>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(videoSpvSegments).set(data).where(eq(videoSpvSegments.id, id));
+}
+
+export async function deleteSpvSegment(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(videoSpvSegments).where(eq(videoSpvSegments.id, id));
+}
+
+// ─── Reorder Helpers ───────────────────────────────────────────
+
+export async function reorderSections(videoScriptId: number, sectionIds: number[]) {
+  const db = await getDb();
+  if (!db) return;
+  for (let i = 0; i < sectionIds.length; i++) {
+    await db.update(videoScriptSections)
+      .set({ sortOrder: i })
+      .where(and(eq(videoScriptSections.id, sectionIds[i]), eq(videoScriptSections.videoScriptId, videoScriptId)));
+  }
+}
+
+export async function reorderShots(subtopicId: number, shotIds: number[]) {
+  const db = await getDb();
+  if (!db) return;
+  for (let i = 0; i < shotIds.length; i++) {
+    await db.update(videoScriptShots)
+      .set({ sortOrder: i })
+      .where(and(eq(videoScriptShots.id, shotIds[i]), eq(videoScriptShots.subtopicId, subtopicId)));
+  }
+}
+
+export async function addShotToSubtopic(subtopicId: number, sectionId: number, data: Partial<InsertVideoScriptShot>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await getShotsBySubtopic(subtopicId);
+  const maxOrder = existing.length > 0 ? Math.max(...existing.map(s => s.sortOrder ?? 0)) + 1 : 0;
+  const [result] = await db.insert(videoScriptShots).values({
+    ...data,
+    subtopicId,
+    sectionId,
+    sortOrder: maxOrder,
+  } as InsertVideoScriptShot);
+  return result.insertId;
 }
