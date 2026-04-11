@@ -146,7 +146,11 @@ export default function OpsProducts() {
   const filtered = useMemo(() => {
     let list = products || [];
     // Note: marketplace and status filtering now done server-side, but keep client-side for additional filtering
-    if (operatorFilter !== "ALL") list = list.filter(p => (p.operator || "") === operatorFilter);
+    if (operatorFilter === "__UNASSIGNED__") {
+      list = list.filter(p => !p.operator);
+    } else if (operatorFilter !== "ALL") {
+      list = list.filter(p => (p.operator || "") === operatorFilter);
+    }
     if (storeFilter !== "ALL") list = list.filter(p => (p.storeName || "") === storeFilter);
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
@@ -512,22 +516,26 @@ export default function OpsProducts() {
             </Select>
           </div>
         )}
-        {availableOperators.length > 0 && (
-          <div className="flex items-center gap-1">
-            <User className="h-4 w-4 text-muted-foreground" />
-            <Select value={operatorFilter} onValueChange={setOperatorFilter}>
-              <SelectTrigger className="w-[130px]">
-                <SelectValue placeholder="运营" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">全部运营</SelectItem>
-                {availableOperators.map(o => (
+        <div className="flex items-center gap-1">
+          <User className="h-4 w-4 text-muted-foreground" />
+          <Select value={operatorFilter} onValueChange={setOperatorFilter}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="运营" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">全部运营</SelectItem>
+              <SelectItem value="__UNASSIGNED__">未分配</SelectItem>
+              {(() => {
+                const allOps = new Set<string>();
+                availableOperators.forEach(o => allOps.add(o));
+                (operatorList || []).forEach((o: string) => allOps.add(o));
+                return Array.from(allOps).sort().map(o => (
                   <SelectItem key={o} value={o}>{o}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+                ));
+              })()}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* ═══ Product Table ═══ */}
