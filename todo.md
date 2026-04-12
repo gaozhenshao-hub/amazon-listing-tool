@@ -3268,3 +3268,17 @@
 - [x] 新增 ASIN360 performanceTrendByHour Mock 数据（含 sessions/page_views/unit_session_percentage）
 - [x] 新增 spProductAdReports Daily Mock 数据（含 impressions/clicks/cost/orders/report_date）
 - [x] 18个 vitest 测试全部通过
+
+## 产品总览页重构（参考表格对照）
+- [x] 分析参考表格结构，确定缺失字段
+- [x] 产品总览统一按父ASIN维度展示
+- [x] 显示最近四周的周度数据行
+- [x] 每周数据行显示上周同比变化
+- [x] 月度汇总行（务实际利润、订单利润额）
+- [x] 产品信息区：产品序号、产品名称、店铺、SKU、上架时间、品类/品牌信息、售价/平手价/毛利润/毛利率/退货率/评分
+- [x] 总体情况列：时间、销量趋势、销量、订单量、销售额、订单利润、订单利润率
+- [x] 广告情况列：毛利毛利率、Session-total、化率(CV)、广告CVR、自然CVR、广告订单、自订单、广告点击、自然点击率(CTR)、广告曝光%、CPC、广告花费、ACOS
+- [x] 产品质量情况列：评分、评论数、退货率%
+- [x] 后端新增四周数据聚合查询接口
+- [x] 后端计算同比数据（与上周对比）
+- [x] 前端表格重构为参考表格样式

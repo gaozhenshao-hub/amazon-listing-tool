@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -15,16 +15,19 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Plus, Search, Package, ShoppingBag, AlertCircle, CheckCircle2, Trash2, Loader2, Download,
+  Plus, Search, Package, Loader2, Download,
   Store, User, Globe, Users, CheckSquare, UserPlus, UserCheck,
-  DollarSign, TrendingUp, TrendingDown, BarChart3, Boxes, Megaphone, ArrowUpRight, ArrowDownRight, Minus,
-  ChevronUp, ChevronDown, ExternalLink,
+  BarChart3, ChevronDown, ChevronRight, ExternalLink,
+  TrendingUp, TrendingDown, Minus, Trash2, RefreshCw,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip, TooltipContent, TooltipTrigger, TooltipProvider,
+} from "@/components/ui/tooltip";
 
 const MARKETPLACE_OPTIONS = [
   { value: "ALL", label: "全部站点" },
@@ -40,59 +43,504 @@ const MARKETPLACE_OPTIONS = [
   { value: "AU", label: "AU" },
 ];
 
-const PERIOD_OPTIONS = [
-  { value: "day", label: "近1天" },
-  { value: "week", label: "近7天" },
-  { value: "month", label: "近30天" },
-];
-
-function ChangeIndicator({ value, suffix = "%" }: { value: number; suffix?: string }) {
-  if (Math.abs(value) < 0.01) return <span className="text-xs text-muted-foreground flex items-center gap-0.5"><Minus className="h-3 w-3" /> 持平</span>;
-  const isUp = value > 0;
-  return (
-    <span className={`text-xs flex items-center gap-0.5 ${isUp ? "text-emerald-600" : "text-red-500"}`}>
-      {isUp ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-      {isUp ? "+" : ""}{value.toFixed(1)}{suffix}
-    </span>
-  );
-}
-
-function formatCurrency(val: number) {
-  if (val >= 10000) return `$${(val / 1000).toFixed(1)}K`;
+// ─── Utility functions ───
+function fmtCurrency(val: number) {
+  if (Math.abs(val) >= 10000) return `$${(val / 1000).toFixed(1)}K`;
   return `$${val.toFixed(2)}`;
 }
-
-function formatNumber(val: number) {
+function fmtNum(val: number) {
   if (val >= 10000) return `${(val / 1000).toFixed(1)}K`;
   return val.toLocaleString();
 }
+function fmtPct(val: number, digits = 2) {
+  return `${val.toFixed(digits)}%`;
+}
+function fmtWeekDate(dateStr: string) {
+  // "2026-04-07" -> "4月7日"
+  const d = new Date(dateStr + "T00:00:00");
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
+}
 
-type SortField = "marketplace" | "storeName" | "title" | "salesQty" | "salesRevenue" | "salesProfit" | "profitRate" | "status" | "operator" | "chineseName" | "weeklySalesQty" | "weeklyProfit" | "weeklyAcos" | "weeklyAdSpend";
-type SortDir = "asc" | "desc";
+function TrendBadge({ trend }: { trend: string | null }) {
+  if (trend === "up") return <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-emerald-50 text-emerald-700 border-emerald-200">上升</Badge>;
+  if (trend === "down") return <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-red-50 text-red-700 border-red-200">下降</Badge>;
+  return <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-gray-50 text-gray-600 border-gray-200">平稳</Badge>;
+}
 
+function WowArrow({ pct }: { pct: number | null | undefined }) {
+  if (pct === null || pct === undefined) return null;
+  if (Math.abs(pct) < 0.5) return <span className="text-[9px] text-gray-400 ml-0.5">-</span>;
+  if (pct > 0) return <span className="text-[9px] text-emerald-600 ml-0.5 whitespace-nowrap">↑{Math.abs(pct).toFixed(0)}%</span>;
+  return <span className="text-[9px] text-red-500 ml-0.5 whitespace-nowrap">↓{Math.abs(pct).toFixed(0)}%</span>;
+}
+
+function ProfitCell({ val }: { val: number }) {
+  if (val < 0) return <span className="text-red-500 font-medium tabular-nums">({fmtCurrency(Math.abs(val))})</span>;
+  return <span className="text-emerald-600 font-medium tabular-nums">{fmtCurrency(val)}</span>;
+}
+
+// ─── Types ───
+type ProductOverview = {
+  id: number;
+  parentAsin: string;
+  title: string;
+  chineseName: string | null;
+  brand: string | null;
+  category: string | null;
+  marketplace: string | null;
+  imageUrl: string | null;
+  status: string;
+  operator: string | null;
+  storeName: string | null;
+  variantCount: number;
+  skus: string[];
+  basicInfo: {
+    sellingPrice: string | null;
+    breakEvenPrice: string | null;
+    grossProfit: string | null;
+    grossMargin: string | null;
+    returnRate: string | null;
+    rating: string | null;
+    reviewCount: number | null;
+    listingDate: string | null;
+    currentStock: number | null;
+    inTransitStock: number | null;
+  } | null;
+  weeks: Array<{
+    id: number;
+    weekStartDate: string;
+    weekEndDate: string;
+    salesTrend: string | null;
+    salesQty: number;
+    orderQty: number;
+    salesAmount: number;
+    orderProfit: number;
+    profitMargin: number;
+    sessionTotal: number;
+    totalCvr: number;
+    adCvr: number;
+    organicCvr: number;
+    adOrders: number;
+    organicOrders: number;
+    adClicks: number;
+    ctr: number;
+    adImpressions: number;
+    cpc: number;
+    adSpend: number;
+    acos: number;
+    rating: number;
+    reviewCount: number;
+    returnRate: number;
+    wow: {
+      salesQty: { value: number; pct: number | null };
+      salesAmount: { value: number; pct: number | null };
+      orderProfit: { value: number; pct: number | null };
+      sessionTotal: { value: number; pct: number | null };
+      adSpend: { value: number; pct: number | null };
+      acos: { value: number; pct: number | null };
+    } | null;
+  }>;
+  monthlySummaries: Array<{
+    yearMonth: string;
+    financialProfit: string | null;
+    orderProfitTotal: string | null;
+    totalSalesQty: number | null;
+    totalOrderQty: number | null;
+    totalSalesAmount: string | null;
+    totalAdSpend: string | null;
+    avgAcos: string | null;
+  }>;
+};
+
+// ─── Column header definitions for the weekly data table ───
+const WEEKLY_COLS = [
+  { key: "date", label: "时间", w: "w-[70px]", align: "left" as const },
+  { key: "trend", label: "趋势", w: "w-[50px]", align: "center" as const },
+  { key: "salesQty", label: "销量", w: "w-[55px]", align: "right" as const },
+  { key: "orderQty", label: "订单", w: "w-[50px]", align: "right" as const },
+  { key: "salesAmount", label: "销售额", w: "w-[80px]", align: "right" as const },
+  { key: "orderProfit", label: "订单利润", w: "w-[80px]", align: "right" as const },
+  { key: "profitMargin", label: "利润率", w: "w-[55px]", align: "right" as const },
+  { key: "sessionTotal", label: "Session", w: "w-[65px]", align: "right" as const },
+  { key: "totalCvr", label: "总CVR", w: "w-[55px]", align: "right" as const },
+  { key: "adCvr", label: "广告CVR", w: "w-[60px]", align: "right" as const },
+  { key: "organicCvr", label: "自然CVR", w: "w-[60px]", align: "right" as const },
+  { key: "adOrders", label: "广告订单", w: "w-[60px]", align: "right" as const },
+  { key: "organicOrders", label: "自然订单", w: "w-[60px]", align: "right" as const },
+  { key: "adClicks", label: "广告点击", w: "w-[65px]", align: "right" as const },
+  { key: "ctr", label: "CTR", w: "w-[50px]", align: "right" as const },
+  { key: "adImpressions", label: "曝光", w: "w-[65px]", align: "right" as const },
+  { key: "cpc", label: "CPC", w: "w-[55px]", align: "right" as const },
+  { key: "adSpend", label: "广告花费", w: "w-[75px]", align: "right" as const },
+  { key: "acos", label: "ACOS", w: "w-[55px]", align: "right" as const },
+  { key: "rating", label: "评分", w: "w-[45px]", align: "right" as const },
+  { key: "reviewCount", label: "评论", w: "w-[50px]", align: "right" as const },
+  { key: "returnRate", label: "退货率", w: "w-[55px]", align: "right" as const },
+];
+
+// ─── Product Row Component ───
+function ProductBlock({ product, onNavigate, onDelete, operatorList, onAssign }: {
+  product: ProductOverview;
+  onNavigate: (id: number) => void;
+  onDelete: (id: number) => void;
+  operatorList: string[];
+  onAssign: (productId: number, operator: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [newOp, setNewOp] = useState("");
+  const bi = product.basicInfo;
+
+  const statusColors: Record<string, string> = {
+    active: "bg-emerald-100 text-emerald-700",
+    inactive: "bg-gray-100 text-gray-600",
+    discontinued: "bg-red-100 text-red-700",
+  };
+  const statusLabels: Record<string, string> = {
+    active: "在售", inactive: "暂停", discontinued: "停售",
+  };
+
+  return (
+    <div className="border rounded-lg mb-3 overflow-hidden bg-card">
+      {/* ═══ Product Info Header ═══ */}
+      <div className="flex items-center gap-3 px-3 py-2.5 bg-muted/30 border-b cursor-pointer hover:bg-muted/50 transition-colors"
+        onClick={() => setExpanded(!expanded)}>
+        <button className="shrink-0">
+          {expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+        </button>
+
+        {/* Image */}
+        {product.imageUrl ? (
+          <img src={product.imageUrl} alt="" className="h-10 w-10 rounded object-cover shrink-0 border" />
+        ) : (
+          <div className="h-10 w-10 rounded bg-muted flex items-center justify-center shrink-0 border">
+            <Package className="h-5 w-5 text-muted-foreground/50" />
+          </div>
+        )}
+
+        {/* Title & ASIN */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-sm truncate">{product.chineseName || product.title}</span>
+            <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 shrink-0 ${statusColors[product.status] || ""}`}>
+              {statusLabels[product.status] || product.status}
+            </Badge>
+            <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0 shrink-0">
+              {product.marketplace || "US"}
+            </Badge>
+          </div>
+          <div className="flex items-center gap-3 mt-0.5 text-[11px] text-muted-foreground">
+            <span className="font-mono">{product.parentAsin}</span>
+            {product.skus.length > 0 && <span>SKU: {product.skus.slice(0, 2).join(", ")}{product.skus.length > 2 ? ` +${product.skus.length - 2}` : ""}</span>}
+            {product.storeName && <span className="flex items-center gap-0.5"><Store className="h-3 w-3" />{product.storeName}</span>}
+            {bi?.listingDate && <span>上架: {bi.listingDate}</span>}
+          </div>
+        </div>
+
+        {/* Basic Info Pills */}
+        <div className="flex items-center gap-4 shrink-0 text-xs" onClick={e => e.stopPropagation()}>
+          {bi && (
+            <>
+              <div className="text-center">
+                <div className="text-[10px] text-muted-foreground">售价</div>
+                <div className="font-semibold">${parseFloat(bi.sellingPrice || "0").toFixed(2)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] text-muted-foreground">平手价</div>
+                <div className="font-semibold">${parseFloat(bi.breakEvenPrice || "0").toFixed(2)}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] text-muted-foreground">毛利润</div>
+                <div className={`font-semibold ${parseFloat(bi.grossProfit || "0") >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                  ${parseFloat(bi.grossProfit || "0").toFixed(2)}
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] text-muted-foreground">毛利率</div>
+                <div className={`font-semibold ${parseFloat(bi.grossMargin || "0") >= 20 ? "text-emerald-600" : parseFloat(bi.grossMargin || "0") >= 10 ? "text-amber-600" : "text-red-500"}`}>
+                  {parseFloat(bi.grossMargin || "0").toFixed(1)}%
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] text-muted-foreground">退货率</div>
+                <div className="font-semibold">{parseFloat(bi.returnRate || "0").toFixed(1)}%</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] text-muted-foreground">评分</div>
+                <div className="font-semibold">{parseFloat(bi.rating || "0").toFixed(1)}/{bi.reviewCount || 0}</div>
+              </div>
+            </>
+          )}
+
+          {/* Operator */}
+          <Popover open={assignOpen} onOpenChange={setAssignOpen}>
+            <PopoverTrigger asChild>
+              <button className={`text-xs rounded px-2 py-1 transition-colors border ${
+                product.operator
+                  ? "text-foreground bg-blue-50 border-blue-200 hover:bg-blue-100"
+                  : "text-muted-foreground/60 bg-orange-50 border-orange-200 hover:bg-orange-100 italic"
+              }`}>
+                <User className="h-3 w-3 inline mr-1" />
+                {product.operator || "分配运营"}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-2" align="end">
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">分配运营</p>
+                <div className="max-h-32 overflow-y-auto space-y-0.5">
+                  {operatorList.map(name => (
+                    <button key={name}
+                      className={`w-full text-left text-xs px-2 py-1.5 rounded flex items-center gap-1.5 ${
+                        product.operator === name ? "bg-blue-100 text-blue-700 font-medium" : "hover:bg-muted"
+                      }`}
+                      onClick={() => { onAssign(product.id, name); setAssignOpen(false); }}
+                    >
+                      {product.operator === name ? <UserCheck className="h-3 w-3" /> : <User className="h-3 w-3 text-muted-foreground" />}
+                      {name}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-1 pt-1 border-t">
+                  <Input placeholder="新名称..." value={newOp} onChange={e => setNewOp(e.target.value)}
+                    className="h-7 text-xs"
+                    onKeyDown={e => { if (e.key === "Enter" && newOp.trim()) { onAssign(product.id, newOp.trim()); setAssignOpen(false); setNewOp(""); } }}
+                  />
+                  <Button size="sm" className="h-7 px-2" disabled={!newOp.trim()}
+                    onClick={() => { onAssign(product.id, newOp.trim()); setAssignOpen(false); setNewOp(""); }}>
+                    <UserPlus className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+                    onClick={(e) => { e.stopPropagation(); onNavigate(product.id); }}>
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>查看详情</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-400 hover:text-red-600 hover:bg-red-50"
+                    onClick={(e) => { e.stopPropagation(); if (confirm("确定删除该产品及其所有关联数据？")) onDelete(product.id); }}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>删除产品</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
+        </div>
+      </div>
+
+      {/* ═══ Weekly Data Table ═══ */}
+      {expanded && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr className="bg-muted/20 border-b">
+                {WEEKLY_COLS.map(col => (
+                  <th key={col.key} className={`px-1.5 py-1.5 ${col.w} text-${col.align} font-medium text-muted-foreground whitespace-nowrap`}>
+                    {col.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {/* Monthly summary rows (if available) */}
+              {product.monthlySummaries.length > 0 && product.weeks.length > 0 && (() => {
+                // Group weeks by month
+                const monthGroups = new Map<string, typeof product.weeks>();
+                product.weeks.forEach(w => {
+                  const ym = w.weekStartDate.substring(0, 7); // "2026-04"
+                  if (!monthGroups.has(ym)) monthGroups.set(ym, []);
+                  monthGroups.get(ym)!.push(w);
+                });
+
+                const rows: React.ReactNode[] = [];
+                const sortedMonths = Array.from(monthGroups.keys()).sort();
+
+                sortedMonths.forEach(ym => {
+                  const monthWeeks = monthGroups.get(ym)!;
+                  const summary = product.monthlySummaries.find(m => m.yearMonth === ym);
+
+                  // Month header row
+                  const ymLabel = (() => {
+                    const [y, m] = ym.split("-");
+                    return `${parseInt(m)}月度汇总`;
+                  })();
+                  const fp = parseFloat(summary?.financialProfit || "0");
+                  const op = parseFloat(summary?.orderProfitTotal || "0");
+
+                  rows.push(
+                    <tr key={`month-${ym}`} className="bg-emerald-50/60 border-b font-medium">
+                      <td colSpan={5} className="px-1.5 py-1.5 text-left whitespace-nowrap">
+                        <span className="text-emerald-800 font-semibold">{ymLabel}</span>
+                        <span className="text-[10px] text-muted-foreground ml-2">务实际利润</span>
+                        <span className={`ml-1 font-semibold ${fp >= 0 ? "text-emerald-700" : "text-red-600"}`}>{fmtCurrency(fp)}</span>
+                      </td>
+                      <td colSpan={3} className="px-1.5 py-1.5 text-left whitespace-nowrap">
+                        <span className="text-[10px] text-muted-foreground">订单利润额</span>
+                        <span className={`ml-1 font-semibold ${op >= 0 ? "text-emerald-700" : "text-red-600"}`}>{fmtCurrency(op)}</span>
+                      </td>
+                      <td colSpan={14} />
+                    </tr>
+                  );
+
+                  // Weekly data rows for this month
+                  monthWeeks.sort((a, b) => a.weekStartDate.localeCompare(b.weekStartDate)).forEach(w => {
+                    rows.push(
+                      <tr key={`week-${w.id}`} className="border-b hover:bg-muted/20 transition-colors">
+                        <td className="px-1.5 py-1 text-left whitespace-nowrap">{fmtWeekDate(w.weekStartDate)}</td>
+                        <td className="px-1.5 py-1 text-center"><TrendBadge trend={w.salesTrend} /></td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">
+                          {w.salesQty}
+                          <WowArrow pct={w.wow?.salesQty.pct} />
+                        </td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">{w.orderQty}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">
+                          {fmtCurrency(w.salesAmount)}
+                          <WowArrow pct={w.wow?.salesAmount.pct} />
+                        </td>
+                        <td className="px-1.5 py-1 text-right"><ProfitCell val={w.orderProfit} /></td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">
+                          <span className={w.profitMargin >= 0 ? "text-emerald-600" : "text-red-500"}>{fmtPct(w.profitMargin, 1)}</span>
+                        </td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">{w.sessionTotal}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.totalCvr, 1)}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.adCvr, 1)}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.organicCvr, 1)}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">{w.adOrders}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">{w.organicOrders}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">{fmtNum(w.adClicks)}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.ctr, 2)}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">{fmtNum(w.adImpressions)}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">{fmtCurrency(w.cpc)}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">
+                          {fmtCurrency(w.adSpend)}
+                          <WowArrow pct={w.wow?.adSpend.pct} />
+                        </td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">
+                          <span className={w.acos > 30 ? "text-red-500" : w.acos > 20 ? "text-amber-600" : "text-emerald-600"}>
+                            {fmtPct(w.acos, 1)}
+                          </span>
+                        </td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">{w.rating.toFixed(1)}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">{w.reviewCount}</td>
+                        <td className="px-1.5 py-1 text-right tabular-nums">
+                          <span className={w.returnRate > 5 ? "text-red-500" : ""}>{fmtPct(w.returnRate, 1)}</span>
+                        </td>
+                      </tr>
+                    );
+                  });
+                });
+
+                return rows;
+              })()}
+
+              {/* If no monthly grouping, just show weeks directly */}
+              {product.monthlySummaries.length === 0 && product.weeks.map(w => (
+                <tr key={`week-${w.id}`} className="border-b hover:bg-muted/20 transition-colors">
+                  <td className="px-1.5 py-1 text-left whitespace-nowrap">{fmtWeekDate(w.weekStartDate)}</td>
+                  <td className="px-1.5 py-1 text-center"><TrendBadge trend={w.salesTrend} /></td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">
+                    {w.salesQty}
+                    <WowArrow pct={w.wow?.salesQty.pct} />
+                  </td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">{w.orderQty}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">
+                    {fmtCurrency(w.salesAmount)}
+                    <WowArrow pct={w.wow?.salesAmount.pct} />
+                  </td>
+                  <td className="px-1.5 py-1 text-right"><ProfitCell val={w.orderProfit} /></td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">
+                    <span className={w.profitMargin >= 0 ? "text-emerald-600" : "text-red-500"}>{fmtPct(w.profitMargin, 1)}</span>
+                  </td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">{w.sessionTotal}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.totalCvr, 1)}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.adCvr, 1)}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.organicCvr, 1)}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">{w.adOrders}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">{w.organicOrders}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">{fmtNum(w.adClicks)}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.ctr, 2)}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">{fmtNum(w.adImpressions)}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">{fmtCurrency(w.cpc)}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">
+                    {fmtCurrency(w.adSpend)}
+                    <WowArrow pct={w.wow?.adSpend.pct} />
+                  </td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">
+                    <span className={w.acos > 30 ? "text-red-500" : w.acos > 20 ? "text-amber-600" : "text-emerald-600"}>
+                      {fmtPct(w.acos, 1)}
+                    </span>
+                  </td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">{w.rating.toFixed(1)}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">{w.reviewCount}</td>
+                  <td className="px-1.5 py-1 text-right tabular-nums">
+                    <span className={w.returnRate > 5 ? "text-red-500" : ""}>{fmtPct(w.returnRate, 1)}</span>
+                  </td>
+                </tr>
+              ))}
+
+              {/* Empty state */}
+              {product.weeks.length === 0 && (
+                <tr>
+                  <td colSpan={WEEKLY_COLS.length} className="px-4 py-6 text-center text-muted-foreground text-xs">
+                    暂无周度数据，请先同步数据
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Component ───
 export default function OpsProducts() {
   const [, navigate] = useLocation();
-  const [dashboardPeriod, setDashboardPeriod] = useState<"day" | "week" | "month">("month");
   const [marketplaceFilter, setMarketplaceFilter] = useState("US");
+  const [statusFilter, setStatusFilter] = useState("active");
 
+  // Mutations
+  const utils = trpc.useUtils();
   const createMut = trpc.productOps.createProduct.useMutation({
-    onSuccess: () => { refetch(); setShowCreate(false); resetForm(); toast.success("产品创建成功"); },
+    onSuccess: () => { utils.productOps.getProductOverviewWithWeeks.invalidate(); setShowCreate(false); resetForm(); toast.success("产品创建成功"); },
     onError: (e: any) => toast.error(e.message),
   });
   const deleteMut = trpc.productOps.deleteProduct.useMutation({
-    onSuccess: () => { refetch(); toast.success("产品已删除"); },
+    onSuccess: () => { utils.productOps.getProductOverviewWithWeeks.invalidate(); toast.success("产品已删除"); },
     onError: (e: any) => toast.error(e.message),
   });
   const syncMut = trpc.productOps.syncFromLingxing.useMutation({
     onSuccess: (data) => {
-      refetch();
+      utils.productOps.getProductOverviewWithWeeks.invalidate();
       toast.success(`同步完成：新增${data.synced}个，更新${data.updated}个，共${data.total}个产品`);
     },
     onError: (e: any) => toast.error("同步失败", { description: e.message }),
   });
+  const batchSyncWeeklyMut = trpc.productOps.batchSyncWeeklyOps.useMutation({
+    onSuccess: (data) => {
+      utils.productOps.getProductOverviewWithWeeks.invalidate();
+      toast.success(`批量同步完成：${data.total}个产品，${data.synced}周数据已同步${data.errors > 0 ? `，${data.errors}个失败` : ""}`);
+    },
+    onError: (e: any) => toast.error("批量同步失败", { description: e.message }),
+  });
   const batchAssignMut = trpc.productOps.batchAssignOperator.useMutation({
     onSuccess: (data) => {
-      refetch();
+      utils.productOps.getProductOverviewWithWeeks.invalidate();
       setSelectedIds(new Set());
       setShowBatchAssign(false);
       setBatchOperator("");
@@ -102,69 +550,42 @@ export default function OpsProducts() {
   });
   const singleAssignMut = trpc.productOps.batchAssignOperator.useMutation({
     onSuccess: (data) => {
-      refetch();
+      utils.productOps.getProductOverviewWithWeeks.invalidate();
       toast.success(`已分配给 ${data.operator}`);
     },
     onError: (e: any) => toast.error(e.message),
   });
-  const batchSyncWeeklyMut = trpc.productOps.batchSyncWeeklyOps.useMutation({
-    onSuccess: (data) => {
-      refetch();
-      toast.success(`批量同步完成：${data.total}个产品，${data.synced}周数据已同步${data.errors > 0 ? `，${data.errors}个失败` : ''}`);
-    },
-    onError: (e: any) => toast.error("批量同步失败", { description: e.message }),
-  });
   const { data: operatorList } = trpc.productOps.listOperators.useQuery();
 
+  // State
   const [showCreate, setShowCreate] = useState(false);
   const [showBatchAssign, setShowBatchAssign] = useState(false);
   const [batchOperator, setBatchOperator] = useState("");
-  const [newOperatorName, setNewOperatorName] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [inlineAssignId, setInlineAssignId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [operatorFilter, setOperatorFilter] = useState("ALL");
   const [storeFilter, setStoreFilter] = useState("ALL");
-  const [statusFilter, setStatusFilter] = useState("active");
+  const [newOperatorName, setNewOperatorName] = useState("");
 
-  // Queries - placed after all state declarations
-  const { data: products, isLoading, refetch } = trpc.productOps.listProducts.useQuery({
-    period: dashboardPeriod,
+  // Main query - 4-week overview data
+  const { data: products, isLoading } = trpc.productOps.getProductOverviewWithWeeks.useQuery({
     marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "all",
     statusFilter: statusFilter !== "ALL" ? statusFilter as any : "all",
-  });
-  const { data: dashboard, isLoading: dashLoading } = trpc.productOps.getProductDashboard.useQuery({
-    marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : undefined,
-    period: dashboardPeriod,
+    weeks: 4,
   });
 
-  // Fetch weekly ops summary for all products
-  const productIds = useMemo(() => (products || []).map(p => p.id), [products]);
-  const { data: weeklySummary } = trpc.productOps.getProductsWeeklySummary.useQuery(
-    { productIds },
-    { enabled: productIds.length > 0 }
-  );
-  const weeklyMap = useMemo(() => {
-    const m = new Map<number, { weekStartDate: string | null; salesQty: number; orderProfit: string; acos: string; salesAmount: string; adSpend: string; salesTrend: string }>();
-    (weeklySummary || []).forEach(w => m.set(w.productId, w));
-    return m;
-  }, [weeklySummary]);
-
-  const [sortField, setSortField] = useState<SortField>("salesRevenue");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [form, setForm] = useState({
     parentAsin: "", title: "", brand: "", category: "", marketplace: "US",
     budgetRevenue: "", budgetProfit: "", budgetAcos: "", notes: "",
     operator: "", storeName: "",
   });
-
   function resetForm() {
     setForm({ parentAsin: "", title: "", brand: "", category: "", marketplace: "US", budgetRevenue: "", budgetProfit: "", budgetAcos: "", notes: "", operator: "", storeName: "" });
   }
 
+  // Filtering
   const filtered = useMemo(() => {
-    let list = products || [];
-    // Note: marketplace and status filtering now done server-side, but keep client-side for additional filtering
+    let list = (products || []) as ProductOverview[];
     if (operatorFilter === "__UNASSIGNED__") {
       list = list.filter(p => !p.operator);
     } else if (operatorFilter !== "ALL") {
@@ -179,41 +600,12 @@ export default function OpsProducts() {
         (p.brand || "").toLowerCase().includes(q) ||
         (p.operator || "").toLowerCase().includes(q) ||
         (p.storeName || "").toLowerCase().includes(q) ||
-        ((p as any).chineseName || "").toLowerCase().includes(q)
+        (p.chineseName || "").toLowerCase().includes(q) ||
+        p.skus.some(s => s.toLowerCase().includes(q))
       );
     }
-    // Sort
-    const sorted = [...list].sort((a, b) => {
-      let va: any, vb: any;
-      switch (sortField) {
-        case "marketplace": va = a.marketplace || ""; vb = b.marketplace || ""; break;
-        case "storeName": va = a.storeName || ""; vb = b.storeName || ""; break;
-        case "title": va = a.title || ""; vb = b.title || ""; break;
-        case "chineseName": va = (a as any).chineseName || ""; vb = (b as any).chineseName || ""; break;
-        case "operator": va = a.operator || ""; vb = b.operator || ""; break;
-        case "salesQty": va = a.salesQty || 0; vb = b.salesQty || 0; break;
-        case "salesRevenue": va = a.salesRevenue || 0; vb = b.salesRevenue || 0; break;
-        case "salesProfit": va = a.salesProfit || 0; vb = b.salesProfit || 0; break;
-        case "profitRate": va = (a as any).profitRate || 0; vb = (b as any).profitRate || 0; break;
-        case "weeklySalesQty": va = Number(weeklyMap.get(a.id)?.salesQty || 0); vb = Number(weeklyMap.get(b.id)?.salesQty || 0); break;
-        case "weeklyProfit": va = parseFloat(weeklyMap.get(a.id)?.orderProfit || "0"); vb = parseFloat(weeklyMap.get(b.id)?.orderProfit || "0"); break;
-        case "weeklyAcos": va = parseFloat(weeklyMap.get(a.id)?.acos || "0"); vb = parseFloat(weeklyMap.get(b.id)?.acos || "0"); break;
-        case "weeklyAdSpend": va = parseFloat(weeklyMap.get(a.id)?.adSpend || "0"); vb = parseFloat(weeklyMap.get(b.id)?.adSpend || "0"); break;
-        case "status": va = a.status; vb = b.status; break;
-        default: va = 0; vb = 0;
-      }
-      if (typeof va === "string") {
-        return sortDir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
-      }
-      return sortDir === "asc" ? va - vb : vb - va;
-    });
-    return sorted;
-  }, [products, operatorFilter, storeFilter, searchTerm, sortField, sortDir]);
-
-  const availableMarketplaces = useMemo(() => {
-    const set = new Set((products || []).map(p => p.marketplace || "US"));
-    return Array.from(set).sort();
-  }, [products]);
+    return list;
+  }, [products, operatorFilter, storeFilter, searchTerm]);
 
   const availableOperators = useMemo(() => {
     const set = new Set((products || []).map(p => p.operator || "").filter(Boolean));
@@ -225,45 +617,17 @@ export default function OpsProducts() {
     return Array.from(set).sort();
   }, [products]);
 
-  const statusColors: Record<string, string> = {
-    active: "bg-emerald-100 text-emerald-700",
-    inactive: "bg-gray-100 text-gray-600",
-    discontinued: "bg-red-100 text-red-700",
-  };
-  const statusLabels: Record<string, string> = {
-    active: "在售", inactive: "暂停", discontinued: "停售",
-  };
-
-  const activeCount = filtered.filter(p => p.status === "active").length;
-  const inactiveCount = filtered.filter(p => p.status === "inactive").length;
-
-  function handleSort(field: SortField) {
-    if (sortField === field) {
-      setSortDir(d => d === "asc" ? "desc" : "asc");
-    } else {
-      setSortField(field);
-      setSortDir("desc");
-    }
-  }
-
-  function SortIcon({ field }: { field: SortField }) {
-    if (sortField !== field) return <ChevronDown className="h-3 w-3 text-muted-foreground/40" />;
-    return sortDir === "asc" ? <ChevronUp className="h-3 w-3 text-blue-600" /> : <ChevronDown className="h-3 w-3 text-blue-600" />;
-  }
-
-  // Totals for footer
-  const totalSalesQty = filtered.reduce((s, p) => s + (p.salesQty || 0), 0);
-  const totalRevenue = filtered.reduce((s, p) => s + (p.salesRevenue || 0), 0);
-  const totalProfit = filtered.reduce((s, p) => s + (p.salesProfit || 0), 0);
-  const avgProfitRate = totalRevenue > 0 ? Math.round((totalProfit / totalRevenue) * 10000) / 100 : 0;
+  // Summary stats
+  const totalProducts = filtered.length;
+  const activeProducts = filtered.filter(p => p.status === "active").length;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">产品运营总览</h1>
-          <p className="text-muted-foreground mt-1">以父ASIN为维度管理产品，查看库存、利润、广告和竞品数据</p>
+          <p className="text-muted-foreground mt-1 text-sm">按父ASIN维度管理，展示最近4周周度数据及同比变化</p>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -272,7 +636,7 @@ export default function OpsProducts() {
             disabled={batchSyncWeeklyMut.isPending}
             className="gap-2"
           >
-            {batchSyncWeeklyMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
+            {batchSyncWeeklyMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             {batchSyncWeeklyMut.isPending ? "同步中..." : "批量同步周度数据"}
           </Button>
           <Button
@@ -290,219 +654,24 @@ export default function OpsProducts() {
         </div>
       </div>
 
-      {/* ═══ 数据看板 ═══ */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <BarChart3 className="h-5 w-5 text-blue-600" />
-            运营数据看板
-          </h2>
-          <div className="flex items-center gap-2">
-            <Select value={dashboardPeriod} onValueChange={(v: any) => setDashboardPeriod(v)}>
-              <SelectTrigger className="w-[120px] h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {PERIOD_OPTIONS.map(o => (
-                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {/* Product Stats Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Card className="border-l-4 border-l-blue-500">
-            <CardContent className="pt-4 pb-3 px-4">
-              <div className="flex items-center gap-2">
-                <ShoppingBag className="h-4 w-4 text-blue-600" />
-                <span className="text-xs text-muted-foreground">总产品数</span>
-              </div>
-              <p className="text-xl font-bold mt-1">{dashboard?.products?.total ?? filtered.length}</p>
-            </CardContent>
-          </Card>
-          <Card className="border-l-4 border-l-emerald-500">
-            <CardContent className="pt-4 pb-3 px-4">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                <span className="text-xs text-muted-foreground">在售产品</span>
-              </div>
-              <p className="text-xl font-bold mt-1">{dashboard?.products?.active ?? activeCount}</p>
-            </CardContent>
-          </Card>
-          <Card className="border-l-4 border-l-gray-400">
-            <CardContent className="pt-4 pb-3 px-4">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-gray-500" />
-                <span className="text-xs text-muted-foreground">暂停/停售</span>
-              </div>
-              <p className="text-xl font-bold mt-1">{dashboard?.products?.inactive ?? inactiveCount}</p>
-            </CardContent>
-          </Card>
-          <Card className="border-l-4 border-l-orange-500">
-            <CardContent className="pt-4 pb-3 px-4">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-orange-600" />
-                <span className="text-xs text-muted-foreground">待办任务</span>
-              </div>
-              <p className="text-xl font-bold mt-1">{filtered.reduce((s, p) => s + p.pendingTodoCount, 0)}</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Financial & Inventory & Ad Row */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {/* 利润数据 */}
-          <Card>
-            <CardContent className="pt-4 pb-3 px-4">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-medium flex items-center gap-1.5">
-                  <DollarSign className="h-4 w-4 text-green-600" /> 利润数据
-                </span>
-                {dashboard?.profit?.changes && (
-                  <ChangeIndicator value={dashboard.profit.changes.revenue} />
-                )}
-              </div>
-              {dashLoading ? (
-                <div className="space-y-2 animate-pulse">
-                  <div className="h-4 bg-muted rounded w-3/4" />
-                  <div className="h-4 bg-muted rounded w-1/2" />
-                </div>
-              ) : (
-                <div className="space-y-1.5 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">销售额</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{formatCurrency(dashboard?.profit?.current?.revenue || 0)}</span>
-                      {dashboard?.profit?.changes && <ChangeIndicator value={dashboard.profit.changes.revenue} />}
-                    </div>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">利润</span>
-                    <div className="flex items-center gap-2">
-                      <span className={`font-medium ${(dashboard?.profit?.current?.profit || 0) >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-                        {formatCurrency(dashboard?.profit?.current?.profit || 0)}
-                      </span>
-                      {dashboard?.profit?.changes && <ChangeIndicator value={dashboard.profit.changes.profit} />}
-                    </div>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">利润率</span>
-                    <span className="font-medium">{(dashboard?.profit?.current?.profitMargin || 0).toFixed(1)}%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">订单数</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{formatNumber(dashboard?.profit?.current?.orderCount || 0)}</span>
-                      {dashboard?.profit?.changes && <ChangeIndicator value={dashboard.profit.changes.orderCount} />}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* 库存数据 */}
-          <Card>
-            <CardContent className="pt-4 pb-3 px-4">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-medium flex items-center gap-1.5">
-                  <Boxes className="h-4 w-4 text-blue-600" /> 库存数据
-                </span>
-              </div>
-              {dashLoading ? (
-                <div className="space-y-2 animate-pulse">
-                  <div className="h-4 bg-muted rounded w-3/4" />
-                  <div className="h-4 bg-muted rounded w-1/2" />
-                </div>
-              ) : (
-                <div className="space-y-1.5 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">FBA可售库存</span>
-                    <span className="font-medium">{formatNumber(dashboard?.inventory?.totalStock || 0)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">在途数量</span>
-                    <span className="font-medium">{formatNumber(dashboard?.inventory?.inboundQty || 0)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">预留数量</span>
-                    <span className="font-medium">{formatNumber(dashboard?.inventory?.reservedQty || 0)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">库存货值</span>
-                    <span className="font-medium">{formatCurrency(dashboard?.inventory?.totalValue || 0)}</span>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* 广告数据 */}
-          <Card>
-            <CardContent className="pt-4 pb-3 px-4">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-medium flex items-center gap-1.5">
-                  <Megaphone className="h-4 w-4 text-purple-600" /> 广告数据
-                </span>
-              </div>
-              {dashLoading ? (
-                <div className="space-y-2 animate-pulse">
-                  <div className="h-4 bg-muted rounded w-3/4" />
-                  <div className="h-4 bg-muted rounded w-1/2" />
-                </div>
-              ) : (
-                <div className="space-y-1.5 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">广告花费</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{formatCurrency(dashboard?.advertising?.totalSpend || 0)}</span>
-                      {dashboard?.profit?.changes && <ChangeIndicator value={dashboard.profit.changes.adSpend} />}
-                    </div>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">广告销售额</span>
-                    <span className="font-medium">{formatCurrency(dashboard?.advertising?.totalSales || 0)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">ACoS</span>
-                    <span className={`font-medium ${(dashboard?.advertising?.acos || 0) > 30 ? "text-red-500" : "text-emerald-600"}`}>
-                      {(dashboard?.advertising?.acos || 0).toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">ROAS</span>
-                    <span className="font-medium">{(dashboard?.advertising?.roas || 0).toFixed(2)}</span>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+      {/* Summary Bar */}
+      <div className="flex items-center gap-4 text-sm">
+        <div className="flex items-center gap-1.5 bg-muted/50 rounded-lg px-3 py-1.5">
+          <Package className="h-4 w-4 text-blue-600" />
+          <span className="text-muted-foreground">总计</span>
+          <span className="font-semibold">{totalProducts}</span>
+          <span className="text-muted-foreground">个产品</span>
+          <span className="text-muted-foreground mx-1">|</span>
+          <span className="text-emerald-600 font-medium">{activeProducts} 在售</span>
         </div>
       </div>
-
-      {/* Batch Action Bar */}
-      {selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
-          <CheckSquare className="h-4 w-4 text-blue-600" />
-          <span className="text-sm text-blue-700 font-medium">已选择 {selectedIds.size} 个产品</span>
-          <Button variant="outline" size="sm" onClick={() => setShowBatchAssign(true)} className="gap-1">
-            <Users className="h-3 w-3" />
-            批量分配运营
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
-            取消选择
-          </Button>
-        </div>
-      )}
 
       {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="搜索ASIN、标题、品牌、运营或店铺..."
+            placeholder="搜索ASIN、标题、SKU、品牌、运营或店铺..."
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             className="pl-10"
@@ -515,7 +684,7 @@ export default function OpsProducts() {
               <SelectValue placeholder="站点" />
             </SelectTrigger>
             <SelectContent>
-              {MARKETPLACE_OPTIONS.filter(o => o.value === "ALL" || availableMarketplaces.includes(o.value)).map(o => (
+              {MARKETPLACE_OPTIONS.map(o => (
                 <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
               ))}
             </SelectContent>
@@ -570,387 +739,66 @@ export default function OpsProducts() {
         </div>
       </div>
 
-      {/* ═══ Product Table ═══ */}
+      {/* Batch Action Bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+          <CheckSquare className="h-4 w-4 text-blue-600" />
+          <span className="text-sm text-blue-700 font-medium">已选择 {selectedIds.size} 个产品</span>
+          <Button variant="outline" size="sm" onClick={() => setShowBatchAssign(true)} className="gap-1">
+            <Users className="h-3 w-3" />
+            批量分配运营
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+            取消选择
+          </Button>
+        </div>
+      )}
+
+      {/* ═══ Product Blocks ═══ */}
       {isLoading ? (
-        <Card>
-          <CardContent className="p-0">
-            <div className="space-y-0">
-              {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className="flex items-center gap-4 px-4 py-3 border-b last:border-b-0 animate-pulse">
-                  <Skeleton className="h-4 w-4 rounded" />
-                  <Skeleton className="h-4 w-10" />
-                  <Skeleton className="h-4 w-20" />
-                  <Skeleton className="h-4 flex-1" />
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-4 w-16" />
-                  <Skeleton className="h-4 w-20" />
-                  <Skeleton className="h-4 w-20" />
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => (
+            <Card key={i}>
+              <CardContent className="p-4 space-y-3 animate-pulse">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="h-10 w-10 rounded" />
+                  <div className="flex-1 space-y-1.5">
+                    <Skeleton className="h-4 w-1/3" />
+                    <Skeleton className="h-3 w-1/4" />
+                  </div>
+                  <Skeleton className="h-8 w-16" />
+                  <Skeleton className="h-8 w-16" />
+                  <Skeleton className="h-8 w-16" />
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+                <Skeleton className="h-24 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <Package className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
             <p className="text-muted-foreground">
-              {searchTerm || marketplaceFilter !== "ALL" || statusFilter !== "ALL" ? "没有找到匹配的产品" : "还没有添加产品，点击\"从领星同步\"或\"添加产品\"开始"}
+              {searchTerm || marketplaceFilter !== "ALL" || statusFilter !== "ALL"
+                ? "没有找到匹配的产品"
+                : "还没有添加产品，点击\"从领星同步\"或\"添加产品\"开始"}
             </p>
           </CardContent>
         </Card>
       ) : (
-        <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="px-2 py-3 text-left w-10">
-                    <Checkbox
-                      checked={selectedIds.size === filtered.length && filtered.length > 0}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setSelectedIds(new Set(filtered.map(p => p.id)));
-                        } else {
-                          setSelectedIds(new Set());
-                        }
-                      }}
-                    />
-                  </th>
-                  <th className="px-2 py-3 text-left w-14">
-                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => handleSort("status")}>
-                      状态 <SortIcon field="status" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-left w-14">
-                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => handleSort("marketplace")}>
-                      站点 <SortIcon field="marketplace" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-left">
-                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => handleSort("storeName")}>
-                      店铺 <SortIcon field="storeName" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-left min-w-[120px]">
-                    <span className="text-xs font-medium text-muted-foreground">ASIN</span>
-                  </th>
-                  <th className="px-2 py-3 text-left min-w-[200px]">
-                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => handleSort("title")}>
-                      产品名称 <SortIcon field="title" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-left min-w-[100px]">
-                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => handleSort("chineseName")}>
-                      中文名称 <SortIcon field="chineseName" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-left min-w-[80px]">
-                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground" onClick={() => handleSort("operator")}>
-                      运营 <SortIcon field="operator" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-left min-w-[100px]">
-                    <span className="text-xs font-medium text-muted-foreground">备注</span>
-                  </th>
-                  <th className="px-2 py-3 text-right w-16">
-                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground ml-auto" onClick={() => handleSort("salesQty")}>
-                      销量 <SortIcon field="salesQty" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-right w-20">
-                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground ml-auto" onClick={() => handleSort("salesRevenue")}>
-                      销售额 <SortIcon field="salesRevenue" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-right w-20">
-                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground ml-auto" onClick={() => handleSort("salesProfit")}>
-                      利润 <SortIcon field="salesProfit" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-right w-16">
-                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground ml-auto" onClick={() => handleSort("profitRate")}>
-                      利润率 <SortIcon field="profitRate" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-right w-16">
-                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground ml-auto" onClick={() => handleSort("weeklySalesQty")}>
-                      周销量 <SortIcon field="weeklySalesQty" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-right w-20">
-                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground ml-auto" onClick={() => handleSort("weeklyProfit")}>
-                      周利润 <SortIcon field="weeklyProfit" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-right w-16">
-                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground ml-auto" onClick={() => handleSort("weeklyAcos")}>
-                      ACOS <SortIcon field="weeklyAcos" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-right w-20">
-                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground ml-auto" onClick={() => handleSort("weeklyAdSpend")}>
-                      广告费 <SortIcon field="weeklyAdSpend" />
-                    </button>
-                  </th>
-                  <th className="px-2 py-3 text-center w-14">
-                    <span className="text-xs font-medium text-muted-foreground">操作</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((product) => {
-                  const p = product as any;
-                  const profitRate = (p.salesRevenue || 0) > 0 ? ((p.salesProfit || 0) / (p.salesRevenue || 1)) * 100 : 0;
-                  return (
-                  <tr
-                    key={product.id}
-                    className={`border-b last:border-b-0 hover:bg-muted/30 cursor-pointer transition-colors ${selectedIds.has(product.id) ? 'bg-blue-50/50' : ''}`}
-                    onClick={() => navigate(`/ops/products/${product.id}`)}
-                  >
-                    <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                      <Checkbox
-                        checked={selectedIds.has(product.id)}
-                        onCheckedChange={(checked) => {
-                          const next = new Set(selectedIds);
-                          if (checked) next.add(product.id); else next.delete(product.id);
-                          setSelectedIds(next);
-                        }}
-                      />
-                    </td>
-                    <td className="px-2 py-2">
-                      <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${statusColors[product.status] || ""}`}>
-                        {statusLabels[product.status] || product.status}
-                      </Badge>
-                    </td>
-                    <td className="px-2 py-2">
-                      <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0">
-                        {product.marketplace || "US"}
-                      </Badge>
-                    </td>
-                    <td className="px-2 py-2">
-                      <span className="text-xs text-muted-foreground truncate max-w-[100px] block">
-                        {product.storeName || "-"}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-[11px] font-mono text-foreground">{product.parentAsin}</span>
-                        {p.childAsin && p.childAsin !== product.parentAsin && (
-                          <span className="text-[10px] text-muted-foreground font-mono">父: {p.childAsin}</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-2 py-2">
-                      <span className="font-medium text-xs truncate max-w-[220px] block">{product.title}</span>
-                    </td>
-                    <td className="px-2 py-2">
-                      <span className="text-xs text-muted-foreground truncate max-w-[120px] block">
-                        {p.chineseName || "-"}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2" onClick={e => e.stopPropagation()}>
-                      <Popover open={inlineAssignId === product.id} onOpenChange={(open) => {
-                        if (open) { setInlineAssignId(product.id); setNewOperatorName(""); }
-                        else setInlineAssignId(null);
-                      }}>
-                        <PopoverTrigger asChild>
-                          <button className={`text-xs truncate max-w-[100px] block rounded px-1.5 py-0.5 transition-colors ${
-                            product.operator
-                              ? "text-foreground hover:bg-blue-50 hover:text-blue-700 cursor-pointer"
-                              : "text-muted-foreground/50 hover:bg-orange-50 hover:text-orange-600 cursor-pointer italic"
-                          }`}>
-                            {product.operator || "+ 分配"}
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-56 p-2" align="start">
-                          <div className="space-y-2">
-                            <p className="text-xs font-medium text-muted-foreground">分配运营负责人</p>
-                            {(operatorList || []).length > 0 && (
-                              <div className="max-h-32 overflow-y-auto space-y-0.5">
-                                {(operatorList || []).map(name => (
-                                  <button
-                                    key={name}
-                                    className={`w-full text-left text-xs px-2 py-1.5 rounded transition-colors flex items-center gap-1.5 ${
-                                      product.operator === name
-                                        ? "bg-blue-100 text-blue-700 font-medium"
-                                        : "hover:bg-muted"
-                                    }`}
-                                    onClick={() => {
-                                      singleAssignMut.mutate({ productIds: [product.id], operator: name });
-                                      setInlineAssignId(null);
-                                    }}
-                                  >
-                                    {product.operator === name ? <UserCheck className="h-3 w-3" /> : <User className="h-3 w-3 text-muted-foreground" />}
-                                    {name}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                            <div className="flex gap-1 pt-1 border-t">
-                              <Input
-                                placeholder="新运营名称..."
-                                value={newOperatorName}
-                                onChange={e => setNewOperatorName(e.target.value)}
-                                className="h-7 text-xs"
-                                onKeyDown={e => {
-                                  if (e.key === "Enter" && newOperatorName.trim()) {
-                                    singleAssignMut.mutate({ productIds: [product.id], operator: newOperatorName.trim() });
-                                    setInlineAssignId(null);
-                                    setNewOperatorName("");
-                                  }
-                                }}
-                              />
-                              <Button
-                                size="sm"
-                                className="h-7 px-2 text-xs"
-                                disabled={!newOperatorName.trim()}
-                                onClick={() => {
-                                  singleAssignMut.mutate({ productIds: [product.id], operator: newOperatorName.trim() });
-                                  setInlineAssignId(null);
-                                  setNewOperatorName("");
-                                }}
-                              >
-                                <UserPlus className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </div>
-                        </PopoverContent>
-                      </Popover>
-                    </td>
-                    <td className="px-2 py-2">
-                      <span className="text-xs text-muted-foreground truncate max-w-[100px] block">
-                        {product.notes || "-"}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      <span className="font-medium tabular-nums text-xs">{formatNumber(product.salesQty || 0)}</span>
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      <span className="font-medium tabular-nums text-xs">{formatCurrency(product.salesRevenue || 0)}</span>
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      <span className={`font-medium tabular-nums text-xs ${(product.salesProfit || 0) >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-                        {formatCurrency(product.salesProfit || 0)}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      <span className={`font-medium tabular-nums text-xs ${profitRate >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-                        {profitRate.toFixed(1)}%
-                      </span>
-                    </td>
-                    {/* Weekly ops columns */}
-                    {(() => {
-                      const w = weeklyMap.get(product.id);
-                      const wp = parseFloat(w?.orderProfit || "0");
-                      const wa = parseFloat(w?.acos || "0");
-                      const wad = parseFloat(w?.adSpend || "0");
-                      const wsq = Number(w?.salesQty || 0);
-                      const trend = w?.salesTrend || "stable";
-                      return (
-                        <>
-                          <td className="px-2 py-2 text-right">
-                            {w?.weekStartDate ? (
-                              <div className="flex items-center justify-end gap-1">
-                                {trend === "up" ? <TrendingUp className="h-3 w-3 text-emerald-500" /> : trend === "down" ? <TrendingDown className="h-3 w-3 text-red-500" /> : <Minus className="h-3 w-3 text-gray-400" />}
-                                <span className="font-medium tabular-nums text-xs">{wsq}</span>
-                              </div>
-                            ) : <span className="text-xs text-muted-foreground">-</span>}
-                          </td>
-                          <td className="px-2 py-2 text-right">
-                            {w?.weekStartDate ? (
-                              <div className="flex items-center justify-end gap-1">
-                                <span className={`font-medium tabular-nums text-xs ${wp >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-                                  {formatCurrency(wp)}
-                                </span>
-                              </div>
-                            ) : <span className="text-xs text-muted-foreground">-</span>}
-                          </td>
-                          <td className="px-2 py-2 text-right">
-                            {w?.weekStartDate ? (
-                              <span className={`font-medium tabular-nums text-xs ${wa > 30 ? "text-red-500" : wa > 20 ? "text-amber-600" : "text-emerald-600"}`}>
-                                {wa.toFixed(1)}%
-                              </span>
-                            ) : <span className="text-xs text-muted-foreground">-</span>}
-                          </td>
-                          <td className="px-2 py-2 text-right">
-                            {w?.weekStartDate ? (
-                              <span className="font-medium tabular-nums text-xs text-muted-foreground">
-                                {formatCurrency(wad)}
-                              </span>
-                            ) : <span className="text-xs text-muted-foreground">-</span>}
-                          </td>
-                        </>
-                      );
-                    })()}
-                    <td className="px-2 py-2 text-center" onClick={e => e.stopPropagation()}>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0 text-red-400 hover:text-red-600 hover:bg-red-50"
-                        onClick={() => {
-                          if (confirm("确定删除该产品及其所有关联数据？")) {
-                            deleteMut.mutate({ id: product.id });
-                          }
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </td>
-                  </tr>
-                  );
-                })}
-              </tbody>
-              {/* Footer with totals */}
-              <tfoot>
-                <tr className="border-t-2 bg-muted/30 font-medium">
-                  <td colSpan={9} className="px-2 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
-                    合计 {filtered.length} 个产品 &nbsp;|&nbsp; 在售 {activeCount} &nbsp;/&nbsp; 暂停 {inactiveCount}
-                  </td>
-                  <td className="px-2 py-2.5 text-right text-xs tabular-nums font-semibold">{formatNumber(totalSalesQty)}</td>
-                  <td className="px-2 py-2.5 text-right text-xs tabular-nums font-semibold">{formatCurrency(totalRevenue)}</td>
-                  <td className="px-2 py-2.5 text-right text-xs tabular-nums font-semibold">
-                    <span className={totalProfit >= 0 ? "text-emerald-600" : "text-red-500"}>
-                      {formatCurrency(totalProfit)}
-                    </span>
-                  </td>
-                  <td className="px-2 py-2.5 text-right text-xs tabular-nums font-semibold">
-                    <span className={avgProfitRate >= 0 ? "text-emerald-600" : "text-red-500"}>
-                      {avgProfitRate.toFixed(1)}%
-                    </span>
-                  </td>
-                  {/* Weekly totals */}
-                  {(() => {
-                    let twp = 0, twad = 0, twSales = 0, twSalesQty = 0;
-                    filtered.forEach(p => {
-                      const w = weeklyMap.get(p.id);
-                      if (w?.weekStartDate) {
-                        twp += parseFloat(w.orderProfit || "0");
-                        twad += parseFloat(w.adSpend || "0");
-                        twSales += parseFloat(w.salesAmount || "0");
-                        twSalesQty += Number(w.salesQty || 0);
-                      }
-                    });
-                    const twAcos = twSales > 0 ? (twad / twSales * 100) : 0;
-                    return (
-                      <>
-                        <td className="px-2 py-2.5 text-right text-xs tabular-nums font-semibold">{twSalesQty}</td>
-                        <td className="px-2 py-2.5 text-right text-xs tabular-nums font-semibold">
-                          <span className={twp >= 0 ? "text-emerald-600" : "text-red-500"}>{formatCurrency(twp)}</span>
-                        </td>
-                        <td className="px-2 py-2.5 text-right text-xs tabular-nums font-semibold">
-                          <span className={twAcos > 30 ? "text-red-500" : twAcos > 20 ? "text-amber-600" : "text-emerald-600"}>{twAcos.toFixed(1)}%</span>
-                        </td>
-                        <td className="px-2 py-2.5 text-right text-xs tabular-nums font-semibold text-muted-foreground">{formatCurrency(twad)}</td>
-                      </>
-                    );
-                  })()}
-                  <td />
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </Card>
+        <div className="space-y-3">
+          {filtered.map(product => (
+            <ProductBlock
+              key={product.id}
+              product={product}
+              onNavigate={(id) => navigate(`/ops/products/${id}`)}
+              onDelete={(id) => deleteMut.mutate({ id })}
+              operatorList={[...(operatorList || [])]}
+              onAssign={(pid, op) => singleAssignMut.mutate({ productIds: [pid], operator: op })}
+            />
+          ))}
+        </div>
       )}
 
       {/* Create Product Dialog */}
@@ -963,120 +811,66 @@ export default function OpsProducts() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>父ASIN *</Label>
-                <Input
-                  placeholder="B0XXXXXXXX"
-                  value={form.parentAsin}
-                  onChange={e => setForm(f => ({ ...f, parentAsin: e.target.value }))}
-                />
+                <Input placeholder="B0XXXXXXXX" value={form.parentAsin} onChange={e => setForm(f => ({ ...f, parentAsin: e.target.value }))} />
               </div>
               <div>
                 <Label>站点</Label>
                 <Select value={form.marketplace} onValueChange={v => setForm(f => ({ ...f, marketplace: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="US">US</SelectItem>
-                    <SelectItem value="UK">UK</SelectItem>
-                    <SelectItem value="DE">DE</SelectItem>
-                    <SelectItem value="JP">JP</SelectItem>
-                    <SelectItem value="CA">CA</SelectItem>
-                    <SelectItem value="FR">FR</SelectItem>
-                    <SelectItem value="IT">IT</SelectItem>
-                    <SelectItem value="ES">ES</SelectItem>
-                    <SelectItem value="AU">AU</SelectItem>
-                    <SelectItem value="MX">MX</SelectItem>
+                    {["US","UK","DE","JP","CA","FR","IT","ES","AU","MX"].map(m => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div>
               <Label>产品标题 *</Label>
-              <Input
-                placeholder="输入产品标题"
-                value={form.title}
-                onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-              />
+              <Input placeholder="输入产品标题" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>品牌</Label>
-                <Input
-                  placeholder="品牌名称"
-                  value={form.brand}
-                  onChange={e => setForm(f => ({ ...f, brand: e.target.value }))}
-                />
+                <Input placeholder="品牌名称" value={form.brand} onChange={e => setForm(f => ({ ...f, brand: e.target.value }))} />
               </div>
               <div>
                 <Label>类目</Label>
-                <Input
-                  placeholder="产品类目"
-                  value={form.category}
-                  onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
-                />
+                <Input placeholder="产品类目" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>店铺名称</Label>
-                <Input
-                  placeholder="所属店铺"
-                  value={form.storeName}
-                  onChange={e => setForm(f => ({ ...f, storeName: e.target.value }))}
-                />
+                <Input placeholder="所属店铺" value={form.storeName} onChange={e => setForm(f => ({ ...f, storeName: e.target.value }))} />
               </div>
               <div>
                 <Label>运营负责人</Label>
-                <Input
-                  placeholder="负责人姓名"
-                  value={form.operator}
-                  onChange={e => setForm(f => ({ ...f, operator: e.target.value }))}
-                />
+                <Input placeholder="负责人姓名" value={form.operator} onChange={e => setForm(f => ({ ...f, operator: e.target.value }))} />
               </div>
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label>预算收入</Label>
-                <Input
-                  type="number"
-                  placeholder="$"
-                  value={form.budgetRevenue}
-                  onChange={e => setForm(f => ({ ...f, budgetRevenue: e.target.value }))}
-                />
+                <Input type="number" placeholder="$" value={form.budgetRevenue} onChange={e => setForm(f => ({ ...f, budgetRevenue: e.target.value }))} />
               </div>
               <div>
                 <Label>预算利润</Label>
-                <Input
-                  type="number"
-                  placeholder="$"
-                  value={form.budgetProfit}
-                  onChange={e => setForm(f => ({ ...f, budgetProfit: e.target.value }))}
-                />
+                <Input type="number" placeholder="$" value={form.budgetProfit} onChange={e => setForm(f => ({ ...f, budgetProfit: e.target.value }))} />
               </div>
               <div>
                 <Label>目标ACoS%</Label>
-                <Input
-                  type="number"
-                  placeholder="%"
-                  value={form.budgetAcos}
-                  onChange={e => setForm(f => ({ ...f, budgetAcos: e.target.value }))}
-                />
+                <Input type="number" placeholder="%" value={form.budgetAcos} onChange={e => setForm(f => ({ ...f, budgetAcos: e.target.value }))} />
               </div>
             </div>
             <div>
               <Label>备注</Label>
-              <Textarea
-                placeholder="产品备注..."
-                value={form.notes}
-                onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                rows={2}
-              />
+              <Textarea placeholder="产品备注..." value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)}>取消</Button>
-            <Button
-              onClick={() => createMut.mutate(form)}
-              disabled={!form.parentAsin || !form.title || createMut.isPending}
-            >
+            <Button onClick={() => createMut.mutate(form)} disabled={!form.parentAsin || !form.title || createMut.isPending}>
               {createMut.isPending ? "创建中..." : "创建"}
             </Button>
           </DialogFooter>
@@ -1094,19 +888,16 @@ export default function OpsProducts() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-              <p className="text-sm text-blue-700">已选择 <span className="font-bold">{selectedIds.size}</span> 个产品，将统一分配给指定运营负责人</p>
+              <p className="text-sm text-blue-700">已选择 <span className="font-bold">{selectedIds.size}</span> 个产品</p>
             </div>
             <div>
               <Label className="text-sm font-medium">选择团队成员</Label>
               <div className="mt-2 max-h-48 overflow-y-auto space-y-1 border rounded-lg p-2">
                 {(operatorList || []).length > 0 ? (
                   (operatorList || []).map(name => (
-                    <button
-                      key={name}
+                    <button key={name}
                       className={`w-full text-left text-sm px-3 py-2 rounded-md transition-colors flex items-center gap-2 ${
-                        batchOperator === name
-                          ? "bg-blue-100 text-blue-700 font-medium ring-1 ring-blue-300"
-                          : "hover:bg-muted"
+                        batchOperator === name ? "bg-blue-100 text-blue-700 font-medium ring-1 ring-blue-300" : "hover:bg-muted"
                       }`}
                       onClick={() => setBatchOperator(name)}
                     >
@@ -1115,18 +906,13 @@ export default function OpsProducts() {
                     </button>
                   ))
                 ) : (
-                  <p className="text-xs text-muted-foreground text-center py-4">暂无团队成员，请在下方输入新名称</p>
+                  <p className="text-xs text-muted-foreground text-center py-4">暂无团队成员</p>
                 )}
               </div>
             </div>
             <div>
               <Label className="text-sm font-medium">或输入新运营名称</Label>
-              <Input
-                className="mt-1"
-                placeholder="输入新的运营名称..."
-                value={batchOperator}
-                onChange={e => setBatchOperator(e.target.value)}
-              />
+              <Input className="mt-1" placeholder="输入新的运营名称..." value={batchOperator} onChange={e => setBatchOperator(e.target.value)} />
             </div>
           </div>
           <DialogFooter>
