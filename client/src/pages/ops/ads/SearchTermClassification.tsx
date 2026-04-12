@@ -18,7 +18,7 @@ import {
   Sparkles, Loader2, Search, Filter, Download, ChevronDown, ChevronRight,
   CheckCircle2, XCircle, Edit3, ThumbsUp, ThumbsDown, RotateCcw,
   AlertTriangle, TrendingUp, TrendingDown, Zap, Eye, Target,
-  ArrowUpRight, ArrowDownRight, Minus as MinusIcon, Plus,
+  ArrowUpRight, ArrowDownRight, Minus as MinusIcon, Plus, Layers,
 } from "lucide-react";
 
 // 12-Category color and icon mapping
@@ -44,6 +44,8 @@ const PIE_COLORS = [
 
 interface SearchTermClassificationProps {
   campaignId: string | null;
+  campaignIds?: string[];
+  campaignNames?: Record<string, string>;
   marketplace?: string;
   reportDate: string;
   startDate?: string;
@@ -51,7 +53,9 @@ interface SearchTermClassificationProps {
   defaultAdType?: "SP" | "SB";
 }
 
-export default function SearchTermClassification({ campaignId, marketplace, reportDate, startDate, endDate, defaultAdType }: SearchTermClassificationProps) {
+export default function SearchTermClassification({ campaignId, campaignIds, campaignNames, marketplace, reportDate, startDate, endDate, defaultAdType }: SearchTermClassificationProps) {
+  const isMultiMode = (campaignIds?.length || 0) > 1;
+  const [sourceCampaignFilter, setSourceCampaignFilter] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<string>("cost");
@@ -67,14 +71,30 @@ export default function SearchTermClassification({ campaignId, marketplace, repo
     if (defaultAdType) setAdType(defaultAdType === "SB" ? "SB" : "SP");
   }, [defaultAdType]);
 
-  const { data, isLoading, refetch } = trpc.adAnalysis.getSearchTerms12Category.useQuery({
+  // Single campaign query (backward compatible)
+  const singleQuery = trpc.adAnalysis.getSearchTerms12Category.useQuery({
     campaignId: campaignId || undefined,
     marketplace,
     reportDate,
     startDate,
     endDate,
     adType,
-  });
+  }, { enabled: !isMultiMode });
+
+  // Multi-campaign aggregated query
+  const multiQuery = trpc.adAnalysis.getSearchTermsMultiCampaign.useQuery({
+    campaignIds: campaignIds || [],
+    marketplace,
+    reportDate,
+    startDate,
+    endDate,
+    adType,
+  }, { enabled: isMultiMode && (campaignIds?.length || 0) > 0 });
+
+  // Unified data access
+  const data = isMultiMode ? multiQuery.data : singleQuery.data;
+  const isLoading = isMultiMode ? multiQuery.isLoading : singleQuery.isLoading;
+  const refetch = isMultiMode ? multiQuery.refetch : singleQuery.refetch;
 
   const { data: categoryDefs } = trpc.adAnalysis.getCategoryDefinitions.useQuery();
 
@@ -86,6 +106,19 @@ export default function SearchTermClassification({ campaignId, marketplace, repo
   const searchTerms = data?.searchTerms || [];
   const categoryStats = data?.categoryStats || {};
   const categories = categoryDefs?.categories || [];
+  // Multi-mode: extract unique source campaigns for filter
+  const sourceCampaigns = useMemo(() => {
+    if (!isMultiMode) return [];
+    const map = new Map<string, string>();
+    searchTerms.forEach((t: any) => {
+      if (t.sourceCampaignIds) {
+        (t.sourceCampaignIds as string[]).forEach((cid: string) => {
+          if (!map.has(cid)) map.set(cid, campaignNames?.[cid] || `活动 ${cid}`);
+        });
+      }
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [searchTerms, isMultiMode, campaignNames]);
 
   // Filter and sort
   const filteredTerms = useMemo(() => {
@@ -97,13 +130,19 @@ export default function SearchTermClassification({ campaignId, marketplace, repo
       const q = searchQuery.toLowerCase();
       result = result.filter((t: any) => (t.query || "").toLowerCase().includes(q));
     }
+    // Multi-mode: filter by source campaign
+    if (isMultiMode && sourceCampaignFilter) {
+      result = result.filter((t: any) => 
+        t.sourceCampaignIds && (t.sourceCampaignIds as string[]).includes(sourceCampaignFilter)
+      );
+    }
     result.sort((a: any, b: any) => {
       const aVal = a[sortField] || 0;
       const bVal = b[sortField] || 0;
       return sortDir === "desc" ? bVal - aVal : aVal - bVal;
     });
     return result;
-  }, [searchTerms, categoryFilter, searchQuery, sortField, sortDir]);
+  }, [searchTerms, categoryFilter, searchQuery, sortField, sortDir, isMultiMode, sourceCampaignFilter]);
 
   // Pie chart data
   const pieData = useMemo(() => {
@@ -159,19 +198,33 @@ export default function SearchTermClassification({ campaignId, marketplace, repo
   };
 
   const handleExportCSV = () => {
-    const headers = ["搜索词", "分类", "曝光", "点击", "花费", "销售额", "订单", "ACoS", "CTR", "CVR"];
-    const rows = filteredTerms.map((t: any) => [
-      t.query, CATEGORY_COLORS[t.categoryId]?.shortLabel || "",
-      t.impressions, t.clicks, t.cost?.toFixed(2), t.sales?.toFixed(2),
-      t.orders, `${t.acos}%`, `${t.ctr}%`, `${t.convRate}%`,
-    ]);
+    const headers = isMultiMode
+      ? ["搜索词", "分类", "来源活动", "活动数", "曝光", "点击", "花费", "销售额", "订单", "ACoS", "CTR", "CVR"]
+      : ["搜索词", "分类", "曝光", "点击", "花费", "销售额", "订单", "ACoS", "CTR", "CVR"];
+    const rows = filteredTerms.map((t: any) => {
+      const base = [
+        `"${(t.query || '').replace(/"/g, '""')}"`,
+        CATEGORY_COLORS[t.categoryId]?.shortLabel || "",
+      ];
+      if (isMultiMode) {
+        const sources = (t.sourceCampaignIds || []).map((cid: string) => campaignNames?.[cid] || cid).join('; ');
+        base.push(`"${sources}"`, String((t.sourceCampaignIds || []).length));
+      }
+      base.push(
+        String(t.impressions || 0), String(t.clicks || 0),
+        (t.cost || 0).toFixed(2), (t.sales || 0).toFixed(2),
+        String(t.orders || 0), `${t.acos}%`, `${t.ctr}%`, `${t.convRate}%`,
+      );
+      return base;
+    });
     const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
     const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `search_terms_12cat_${new Date().toISOString().slice(0, 10)}.csv`;
+    const suffix = isMultiMode ? `multi_${campaignIds?.length || 0}campaigns` : '12cat';
+    a.href = url; a.download = `search_terms_${suffix}_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click(); URL.revokeObjectURL(url);
-    toast.success("已导出CSV文件");
+    toast.success(isMultiMode ? `已导出${filteredTerms.length}条聚合搜索词` : "已导出CSV文件");
   };
 
   if (isLoading) {
@@ -193,6 +246,45 @@ export default function SearchTermClassification({ campaignId, marketplace, repo
 
   return (
     <div className="space-y-4">
+      {/* Multi-campaign aggregation banner */}
+      {isMultiMode && (
+        <Card className="border-blue-200 bg-blue-50/50">
+          <CardContent className="p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-medium text-blue-800">
+                  多活动聚合模式 · 已选 {campaignIds?.length || 0} 个活动
+                </span>
+                <Badge variant="outline" className="text-[10px] bg-blue-100 text-blue-700 border-blue-300">
+                  相同搜索词数据已合并
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                {sourceCampaigns.length > 0 && (
+                  <Select value={sourceCampaignFilter || 'all'} onValueChange={(v) => setSourceCampaignFilter(v === 'all' ? null : v)}>
+                    <SelectTrigger className="h-7 text-xs w-[200px] bg-white">
+                      <SelectValue placeholder="按来源活动筛选" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">全部活动</SelectItem>
+                      {sourceCampaigns.map(c => (
+                        <SelectItem key={c.id} value={c.id}>
+                          <span className="truncate max-w-[180px] block">{c.name}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <Badge className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-300 border">
+                  {searchTerms.length} 个聚合搜索词
+                </Badge>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Ad Type Switcher */}
       <div className="flex items-center gap-2">
         <span className="text-xs text-muted-foreground font-medium">广告类型:</span>
@@ -411,6 +503,9 @@ export default function SearchTermClassification({ campaignId, marketplace, repo
                   <th className="text-left p-3 font-medium text-gray-600 w-10">#</th>
                   <th className="text-left p-3 font-medium text-gray-600">搜索词</th>
                   <th className="text-center p-3 font-medium text-gray-600 w-24">分类</th>
+                  {isMultiMode && (
+                    <th className="text-center p-3 font-medium text-gray-600 w-32">来源活动</th>
+                  )}
                   {["impressions", "clicks", "cost", "sales", "orders", "acos", "ctr", "convRate"].map(field => (
                     <th
                       key={field}
@@ -433,7 +528,7 @@ export default function SearchTermClassification({ campaignId, marketplace, repo
               </thead>
               <tbody>
                 {filteredTerms.length === 0 ? (
-                  <tr><td colSpan={11} className="text-center py-12 text-gray-400">暂无搜索词数据</td></tr>
+                  <tr><td colSpan={isMultiMode ? 12 : 11} className="text-center py-12 text-gray-400">暂无搜索词数据</td></tr>
                 ) : (
                   filteredTerms.slice(0, 200).map((t: any, i: number) => {
                     const config = CATEGORY_COLORS[t.categoryId] || CATEGORY_COLORS[12];
@@ -451,6 +546,23 @@ export default function SearchTermClassification({ campaignId, marketplace, repo
                             {config.shortLabel}
                           </Badge>
                         </td>
+                        {isMultiMode && (
+                          <td className="p-3 text-center">
+                            <div className="flex flex-wrap gap-0.5 justify-center">
+                              {(t.sourceCampaignIds as string[] || []).length > 2 ? (
+                                <Badge variant="outline" className="text-[9px]">
+                                  {(t.sourceCampaignIds as string[]).length}个活动
+                                </Badge>
+                              ) : (
+                                (t.sourceCampaignIds as string[] || []).map((cid: string) => (
+                                  <Badge key={cid} variant="outline" className="text-[9px] max-w-[120px] truncate">
+                                    {campaignNames?.[cid]?.slice(0, 15) || cid}
+                                  </Badge>
+                                ))
+                              )}
+                            </div>
+                          </td>
+                        )}
                         <td className="p-3 text-right text-xs">{(t.impressions || 0).toLocaleString()}</td>
                         <td className="p-3 text-right text-xs">{(t.clicks || 0).toLocaleString()}</td>
                         <td className="p-3 text-right text-xs">${(t.cost || 0).toFixed(2)}</td>

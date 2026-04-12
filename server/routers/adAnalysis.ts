@@ -1373,4 +1373,226 @@ ${JSON.stringify(input.terms.slice(0, 20))}
       const content = response.choices?.[0]?.message?.content as string;
       return JSON.parse(content);
     }),
+
+  // ─── Multi-Campaign Search Terms Aggregation ──────────────────
+  getSearchTermsMultiCampaign: protectedProcedure
+    .input(z.object({
+      campaignIds: z.array(z.string()).min(1).max(100),
+      campaignNames: z.record(z.string(), z.string()).optional(), // campaignId -> name mapping
+      marketplace: z.string().optional(),
+      reportDate: z.string().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      days: z.number().optional().default(3),
+      adType: z.enum(["SP", "SB"]).optional().default("SP"),
+      thresholds: z.object({
+        highImpressions: z.number().optional(),
+        lowImpressions: z.number().optional(),
+        highCTR: z.number().optional(),
+        lowCTR: z.number().optional(),
+        highCVR: z.number().optional(),
+        lowCVR: z.number().optional(),
+      }).optional(),
+    }))
+    .query(async ({ input }) => {
+      const adapter = getLingxingAdapter();
+      const { sellers } = await getAllSellerSids();
+      const sids = filterSidsByMarketplace(sellers, input.marketplace);
+      const sidsToQuery = sids.map(Number).slice(0, 3);
+      const datesToQuery = resolveDateRange({
+        startDate: input.startDate,
+        endDate: input.endDate,
+        days: Math.min(input.days || 3, 14),
+      });
+      const thresholds = { ...DEFAULT_THRESHOLDS, ...input.thresholds };
+      const adType = input.adType || 'SP';
+      const searchTermApiPath = adType === 'SB'
+        ? '/pb/openapi/newad/hsaQueryWordReports'
+        : '/pb/openapi/newad/queryWordReports';
+
+      // Cache key includes sorted campaign IDs
+      const sortedIds = [...input.campaignIds].sort().join(',');
+      const cacheKey = `searchTermsMulti_${sortedIds}_${input.marketplace || 'ALL'}_${datesToQuery.length}_${datesToQuery[0] || ''}_${adType}`;
+      const cached = getCached<any>(cacheKey);
+      if (cached) {
+        console.log(`[SearchTermsMulti] Cache HIT for ${input.campaignIds.length} campaigns`);
+        return cached;
+      }
+      console.log(`[SearchTermsMulti] Fetching search terms for ${input.campaignIds.length} campaigns, ${sidsToQuery.length} stores x ${datesToQuery.length} days`);
+      const startTime = Date.now();
+
+      // Per-search-term aggregation with source campaign tracking
+      const termAggMap: Record<string, {
+        query: string; target_text: string; match_type: string;
+        impressions: number; clicks: number; cost: number;
+        sales: number; orders: number; units: number; days_seen: number;
+        sourceCampaigns: Map<string, {
+          campaignId: string; campaignName: string;
+          impressions: number; clicks: number; cost: number;
+          sales: number; orders: number;
+        }>;
+      }> = {};
+
+      const campaignNameMap = input.campaignNames || {};
+
+      // Fetch for each campaign in parallel
+      const fetchSidDayCampaign = async (sid: number, reportDate: string, campaignId: string): Promise<any[]> => {
+        const items: any[] = [];
+        try {
+          let offset = 0;
+          let hasMore = true;
+          while (hasMore && offset < 1000) {
+            const res = await adapter.requestWithMockFallback({
+              path: searchTermApiPath,
+              body: { sid, report_date: reportDate, show_detail: 1, target_type: "keyword", offset, length: 200, campaign_id: campaignId },
+              headers: { "X-API-VERSION": "2" },
+            });
+            const rawData = res.data || [];
+            const batch = Array.isArray(rawData) ? rawData : (rawData as any).records || [];
+            items.push(...batch.map((b: any) => ({ ...b, _campaignId: campaignId })));
+            hasMore = batch.length >= 200;
+            offset += 200;
+          }
+        } catch (err: any) { /* skip */ }
+        return items;
+      };
+
+      // Build tasks: for each campaign x sid x date
+      const tasks: (() => Promise<any[]>)[] = [];
+      for (const campaignId of input.campaignIds) {
+        for (const sid of sidsToQuery) {
+          for (const reportDate of datesToQuery) {
+            tasks.push(() => fetchSidDayCampaign(sid, reportDate, campaignId));
+          }
+        }
+      }
+
+      // Run with concurrency limit
+      const allResults = await parallelBatch(tasks, 8);
+
+      // Merge all results
+      for (const items of allResults) {
+        for (const item of items) {
+          const campaignId = String(item._campaignId || item.campaign_id || '');
+          // Aggregate by search term query (across all campaigns)
+          const key = `${item.query}||${item.match_type}`;
+          const imp = Number(item.impressions) || 0;
+          const clk = Number(item.clicks) || 0;
+          const cst = Number(item.cost) || 0;
+          const sls = Number(item.sales) || 0;
+          const ord = Number(item.orders) || 0;
+          const unt = Number(item.units) || 0;
+
+          if (!termAggMap[key]) {
+            termAggMap[key] = {
+              query: item.query || '',
+              target_text: item.target_text || '',
+              match_type: item.match_type || '',
+              impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0, units: 0, days_seen: 0,
+              sourceCampaigns: new Map(),
+            };
+          }
+          const agg = termAggMap[key];
+          agg.impressions += imp;
+          agg.clicks += clk;
+          agg.cost += cst;
+          agg.sales += sls;
+          agg.orders += ord;
+          agg.units += unt;
+          agg.days_seen += 1;
+
+          // Track per-campaign contribution
+          const existing = agg.sourceCampaigns.get(campaignId);
+          if (existing) {
+            existing.impressions += imp;
+            existing.clicks += clk;
+            existing.cost += cst;
+            existing.sales += sls;
+            existing.orders += ord;
+          } else {
+            agg.sourceCampaigns.set(campaignId, {
+              campaignId,
+              campaignName: campaignNameMap[campaignId] || `Campaign ${campaignId}`,
+              impressions: imp, clicks: clk, cost: cst, sales: sls, orders: ord,
+            });
+          }
+        }
+      }
+
+      // Classify and build result
+      const searchTerms = Object.values(termAggMap).map(t => {
+        const acos = t.sales > 0 ? Math.round(t.cost / t.sales * 10000) / 100 : (t.cost > 0 ? 999 : 0);
+        const ctr = t.impressions > 0 ? Math.round(t.clicks / t.impressions * 10000) / 100 : 0;
+        const cpc = t.clicks > 0 ? Math.round(t.cost / t.clicks * 100) / 100 : 0;
+        const convRate = t.clicks > 0 ? Math.round(t.orders / t.clicks * 10000) / 100 : 0;
+        const { categoryId, categoryKey } = classifySearchTerm(t.impressions, t.clicks, t.orders, thresholds);
+
+        // Convert sourceCampaigns Map to array for serialization
+        const sources = Array.from(t.sourceCampaigns.values());
+
+        return {
+          query: t.query, target_text: t.target_text, match_type: t.match_type,
+          impressions: t.impressions, clicks: t.clicks, cost: t.cost,
+          sales: t.sales, orders: t.orders, units: t.units, days_seen: t.days_seen,
+          acos, ctr, cpc, convRate, categoryId, categoryKey,
+          sourceCampaigns: sources,
+          campaignCount: sources.length,
+        };
+      });
+
+      searchTerms.sort((a, b) => b.cost - a.cost);
+
+      // Category stats
+      const categoryStats: Record<number, number> = {};
+      for (let i = 1; i <= 12; i++) categoryStats[i] = 0;
+      for (const t of searchTerms) categoryStats[t.categoryId] = (categoryStats[t.categoryId] || 0) + 1;
+
+      // Per-campaign summary
+      const campaignSummaries: Record<string, { campaignId: string; campaignName: string; termCount: number; totalCost: number; totalSales: number; totalOrders: number }> = {};
+      for (const t of searchTerms) {
+        for (const src of t.sourceCampaigns) {
+          if (!campaignSummaries[src.campaignId]) {
+            campaignSummaries[src.campaignId] = {
+              campaignId: src.campaignId,
+              campaignName: src.campaignName,
+              termCount: 0, totalCost: 0, totalSales: 0, totalOrders: 0,
+            };
+          }
+          campaignSummaries[src.campaignId].termCount += 1;
+          campaignSummaries[src.campaignId].totalCost += src.cost;
+          campaignSummaries[src.campaignId].totalSales += src.sales;
+          campaignSummaries[src.campaignId].totalOrders += src.orders;
+        }
+      }
+
+      // Cross-campaign overlap stats
+      const overlapTerms = searchTerms.filter(t => t.campaignCount > 1);
+      const uniqueTerms = searchTerms.filter(t => t.campaignCount === 1);
+
+      const result = {
+        searchTerms,
+        categoryStats,
+        categories: TWELVE_CATEGORIES,
+        thresholds,
+        days: datesToQuery.length,
+        adType,
+        total: searchTerms.length,
+        isMock: adapter.isMockMode(),
+        // Multi-campaign specific fields
+        isMultiCampaign: true,
+        campaignCount: input.campaignIds.length,
+        campaignSummaries: Object.values(campaignSummaries),
+        overlapStats: {
+          overlapCount: overlapTerms.length,
+          uniqueCount: uniqueTerms.length,
+          overlapCost: overlapTerms.reduce((s, t) => s + t.cost, 0),
+          overlapSales: overlapTerms.reduce((s, t) => s + t.sales, 0),
+        },
+        terms: searchTerms, // alias for compatibility
+      };
+
+      setCache(cacheKey, result);
+      console.log(`[SearchTermsMulti] Completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s, ${searchTerms.length} terms from ${input.campaignIds.length} campaigns`);
+      return result;
+    }),
 });

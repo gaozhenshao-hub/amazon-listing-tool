@@ -59,11 +59,37 @@ interface SelectedCampaignInfo {
   type: string;
 }
 
+const LS_KEY_SELECTED = 'opsAds_selectedCampaigns';
+const LS_KEY_PRIMARY = 'opsAds_primaryCampaignId';
+
+function loadSavedSelection(): { campaigns: Map<string, SelectedCampaignInfo>; primaryId: string | null } {
+  try {
+    const raw = localStorage.getItem(LS_KEY_SELECTED);
+    const primaryId = localStorage.getItem(LS_KEY_PRIMARY);
+    if (raw) {
+      const arr: SelectedCampaignInfo[] = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.length > 0) {
+        const map = new Map(arr.map(c => [c.id, c]));
+        return { campaigns: map, primaryId: primaryId && map.has(primaryId) ? primaryId : arr[0].id };
+      }
+    }
+  } catch { /* ignore */ }
+  return { campaigns: new Map(), primaryId: null };
+}
+
+function saveSelection(campaigns: Map<string, SelectedCampaignInfo>, primaryId: string | null) {
+  try {
+    const arr = Array.from(campaigns.values());
+    localStorage.setItem(LS_KEY_SELECTED, JSON.stringify(arr));
+    localStorage.setItem(LS_KEY_PRIMARY, primaryId || '');
+  } catch { /* ignore */ }
+}
+
 export default function OpsAds() {
-  // Multi-select state: Map of campaignId -> campaign info
-  const [selectedCampaigns, setSelectedCampaigns] = useState<Map<string, SelectedCampaignInfo>>(new Map());
+  // Multi-select state: Map of campaignId -> campaign info (restored from localStorage)
+  const [selectedCampaigns, setSelectedCampaigns] = useState<Map<string, SelectedCampaignInfo>>(() => loadSavedSelection().campaigns);
   // Primary campaign for sub-tab analysis (first selected or explicitly chosen)
-  const [primaryCampaignId, setPrimaryCampaignId] = useState<string | null>(null);
+  const [primaryCampaignId, setPrimaryCampaignId] = useState<string | null>(() => loadSavedSelection().primaryId);
 
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = new Date();
@@ -113,6 +139,11 @@ export default function OpsAds() {
   const selectedCampaignName = primaryCampaignId ? (selectedCampaigns.get(primaryCampaignId)?.name || "") : "";
   const selectedCampaignType = primaryCampaignId ? (selectedCampaigns.get(primaryCampaignId)?.type || "SP") : "SP";
 
+  // Persist selection to localStorage whenever it changes
+  useEffect(() => {
+    saveSelection(selectedCampaigns, primaryCampaignId);
+  }, [selectedCampaigns, primaryCampaignId]);
+
   // Auto-select a random campaign when data loads and no campaign is selected
   useEffect(() => {
     if (campaigns.length > 0 && selectedCampaigns.size === 0) {
@@ -127,6 +158,13 @@ export default function OpsAds() {
       }
     }
   }, [campaigns]);
+
+  // Build campaignNames map for multi-campaign search terms
+  const selectedCampaignNames = useMemo(() => {
+    const names: Record<string, string> = {};
+    selectedCampaigns.forEach((info, id) => { names[id] = info.name; });
+    return names;
+  }, [selectedCampaigns]);
 
   // Toggle portfolio expansion
   const togglePortfolio = (pid: string) => {
@@ -837,6 +875,8 @@ export default function OpsAds() {
         <TabsContent value="search-terms" className="mt-4">
           <SearchTermClassification
             campaignId={selectedCampaignId}
+            campaignIds={selectedCampaignIds}
+            campaignNames={selectedCampaignNames}
             marketplace={marketplace}
             reportDate={selectedDate}
             startDate={dateMode === 'range' ? startDate : undefined}
