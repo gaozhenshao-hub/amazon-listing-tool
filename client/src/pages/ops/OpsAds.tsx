@@ -889,6 +889,7 @@ export default function OpsAds() {
         <TabsContent value="targeting" className="mt-4">
           <TargetingAnalysis
             campaignId={selectedCampaignId}
+            campaignIds={selectedCampaignIds}
             marketplace={marketplace}
             reportDate={selectedDate}
             startDate={dateMode === 'range' ? startDate : undefined}
@@ -901,6 +902,7 @@ export default function OpsAds() {
         <TabsContent value="placement" className="mt-4">
           <AdPlacementAnalysis
             campaignId={selectedCampaignId}
+            campaignIds={selectedCampaignIds}
             marketplace={marketplace}
             reportDate={selectedDate}
             startDate={dateMode === 'range' ? startDate : undefined}
@@ -913,6 +915,7 @@ export default function OpsAds() {
         <TabsContent value="hourly" className="mt-4">
           <HourlyBidStrategy
             campaignId={selectedCampaignId}
+            campaignIds={selectedCampaignIds}
             marketplace={marketplace}
             reportDate={selectedDate}
             startDate={dateMode === 'range' ? startDate : undefined}
@@ -925,6 +928,7 @@ export default function OpsAds() {
         <TabsContent value="negative" className="mt-4">
           <NegativeKeywords
             campaignId={selectedCampaignId}
+            campaignIds={selectedCampaignIds}
             marketplace={marketplace}
             reportDate={selectedDate}
           />
@@ -934,6 +938,7 @@ export default function OpsAds() {
         <TabsContent value="word-freq" className="mt-4">
           <WordFrequencyAnalysis
             campaignId={selectedCampaignId}
+            campaignIds={selectedCampaignIds}
             marketplace={marketplace}
             reportDate={selectedDate}
           />
@@ -943,6 +948,7 @@ export default function OpsAds() {
         <TabsContent value="effective-terms" className="mt-4">
           <EffectiveSearchTerms
             campaignId={selectedCampaignId}
+            campaignIds={selectedCampaignIds}
             marketplace={marketplace}
             reportDate={selectedDate}
           />
@@ -952,6 +958,7 @@ export default function OpsAds() {
         <TabsContent value="diagnostics" className="mt-4">
           <AdDiagnostics
             campaignId={selectedCampaignId}
+            campaignIds={selectedCampaignIds}
             marketplace={marketplace}
             reportDate={selectedDate}
           />
@@ -979,6 +986,7 @@ export default function OpsAds() {
         <TabsContent value="ai-bot" className="mt-4">
           <AdChatBot
             campaignId={selectedCampaignId}
+            campaignIds={selectedCampaignIds}
             marketplace={marketplace}
           />
         </TabsContent>

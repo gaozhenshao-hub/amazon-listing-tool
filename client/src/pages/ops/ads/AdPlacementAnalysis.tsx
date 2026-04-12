@@ -12,6 +12,7 @@ import { Monitor, Smartphone, LayoutGrid, TrendingUp, TrendingDown, DollarSign, 
 
 interface AdPlacementAnalysisProps {
   campaignId: string | null;
+  campaignIds?: string[];
   marketplace?: string;
   reportDate: string;
   startDate?: string;
@@ -33,7 +34,7 @@ const PLACEMENT_CONFIG: Record<string, { label: string; icon: any; color: string
   "Other": { label: "其他位置", icon: Monitor, color: "text-gray-700", fill: "#9ca3af" },
 };
 
-export default function AdPlacementAnalysis({ campaignId, marketplace, reportDate, startDate, endDate, defaultAdType }: AdPlacementAnalysisProps) {
+export default function AdPlacementAnalysis({ campaignId, campaignIds, marketplace, reportDate, startDate, endDate, defaultAdType }: AdPlacementAnalysisProps) {
   const [adType, setAdType] = useState<"SP" | "SB" | "SD">(defaultAdType === "SB" ? "SB" : defaultAdType === "SD" ? "SD" : "SP");
 
   useEffect(() => {
@@ -45,6 +46,7 @@ export default function AdPlacementAnalysis({ campaignId, marketplace, reportDat
 
   const { data, isLoading } = trpc.adAnalysis.getAdPlacementData.useQuery({
     campaignId: campaignId || undefined,
+    campaignIds: campaignIds && campaignIds.length > 0 ? campaignIds : undefined,
     marketplace,
     reportDate,
     startDate,

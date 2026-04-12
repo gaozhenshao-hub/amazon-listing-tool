@@ -14,6 +14,7 @@ import { toast } from "sonner";
 
 interface HourlyBidStrategyProps {
   campaignId: string | null;
+  campaignIds?: string[];
   marketplace?: string;
   reportDate?: string;
   startDate?: string;
@@ -36,7 +37,7 @@ function getHeatColor(value: number, max: number): string {
   return "#f3f4f6";
 }
 
-export default function HourlyBidStrategy({ campaignId, marketplace, reportDate, startDate, endDate, defaultAdType }: HourlyBidStrategyProps) {
+export default function HourlyBidStrategy({ campaignId, campaignIds, marketplace, reportDate, startDate, endDate, defaultAdType }: HourlyBidStrategyProps) {
   const [heatmapMetric, setHeatmapMetric] = useState<"orders" | "sales" | "clicks" | "impressions">("orders");
   const [adType, setAdType] = useState<"SP" | "SB" | "SD">(defaultAdType === "SB" ? "SB" : defaultAdType === "SD" ? "SD" : "SP");
 
@@ -49,6 +50,7 @@ export default function HourlyBidStrategy({ campaignId, marketplace, reportDate,
 
   const { data, isLoading } = trpc.adAnalysis.getAdHourlyData.useQuery({
     campaignId: campaignId || undefined,
+    campaignIds: campaignIds && campaignIds.length > 0 ? campaignIds : undefined,
     marketplace,
     reportDate,
     startDate,
@@ -58,6 +60,7 @@ export default function HourlyBidStrategy({ campaignId, marketplace, reportDate,
 
   const { data: heatmapRawData } = trpc.adAnalysis.getOrderHourlyHeatmap.useQuery({
     campaignId: campaignId || undefined,
+    campaignIds: campaignIds && campaignIds.length > 0 ? campaignIds : undefined,
     marketplace,
     reportDate,
     startDate,

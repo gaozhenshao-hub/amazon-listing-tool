@@ -336,6 +336,7 @@ export const adAnalysisRouter = router({
   getSearchTerms12Category: protectedProcedure
     .input(z.object({
       campaignId: z.string().optional(),
+      campaignIds: z.array(z.string()).optional(), // Multi-campaign filter
       marketplace: z.string().optional(),
       reportDate: z.string().optional(), // YYYY-MM-DD, single day query (legacy)
       startDate: z.string().optional(), // YYYY-MM-DD, date range start
@@ -368,8 +369,15 @@ export const adAnalysisRouter = router({
         ? '/pb/openapi/newad/hsaQueryWordReports'
         : '/pb/openapi/newad/queryWordReports';
 
+      // Resolve effective campaign IDs (prefer campaignIds array over single campaignId)
+      const effectiveCampaignIds = (input.campaignIds && input.campaignIds.length > 0)
+        ? input.campaignIds
+        : (input.campaignId ? [input.campaignId] : []);
+      const campaignIdSet = new Set(effectiveCampaignIds);
+      const hasCampaignFilter = effectiveCampaignIds.length > 0;
+
       // Check cache first (5-minute TTL)
-      const cacheKey = `searchTerms_${input.campaignId || 'all'}_${input.marketplace || 'ALL'}_${datesToQuery.length}_${datesToQuery[0] || ''}_${adType}`;
+      const cacheKey = `searchTerms_${effectiveCampaignIds.sort().join(',') || 'all'}_${input.marketplace || 'ALL'}_${datesToQuery.length}_${datesToQuery[0] || ''}_${adType}`;
       const cached = getCached<any>(cacheKey);
       if (cached) {
         console.log(`[SearchTerms] Cache HIT for key: ${cacheKey}`);
@@ -395,7 +403,7 @@ export const adAnalysisRouter = router({
           while (hasMore && offset < 1000) {
             const res = await adapter.requestWithMockFallback({
               path: searchTermApiPath,
-              body: { sid, report_date: reportDate, show_detail: 1, target_type: "keyword", offset, length: 200, ...(input.campaignId && !/^C\d+$/.test(input.campaignId) ? { campaign_id: input.campaignId } : {}) },
+              body: { sid, report_date: reportDate, show_detail: 1, target_type: "keyword", offset, length: 200, ...(hasCampaignFilter && effectiveCampaignIds.length === 1 && !/^C\d+$/.test(effectiveCampaignIds[0]) ? { campaign_id: effectiveCampaignIds[0] } : {}) },
               headers: { "X-API-VERSION": "2" },
             });
             const rawData = res.data || [];
@@ -420,7 +428,7 @@ export const adAnalysisRouter = router({
       // Merge all results into aggregation map
       for (const items of allResults) {
         for (const item of items) {
-          if (input.campaignId && !/^C\d+$/.test(input.campaignId) && item.campaign_id && String(item.campaign_id) !== input.campaignId) continue;
+          if (hasCampaignFilter && item.campaign_id && !campaignIdSet.has(String(item.campaign_id))) continue;
           const key = `${item.query}||${item.campaign_id}||${item.match_type}`;
           if (termAggMap[key]) {
             termAggMap[key].impressions += Number(item.impressions) || 0;
@@ -584,6 +592,7 @@ ${JSON.stringify(anonymizedTerms)}
       endDate: z.string().optional(),
       days: z.number().optional().default(3),
       campaignId: z.string().optional(),
+      campaignIds: z.array(z.string()).optional(), // Multi-campaign filter
       adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
     }))
     .query(async ({ input }) => {
@@ -602,6 +611,13 @@ ${JSON.stringify(anonymizedTerms)}
         : adType === 'SD'
           ? '/pb/openapi/newad/sdCampaignReports'
           : '/pb/openapi/newad/campaignPlacementReports';
+
+      // Resolve effective campaign IDs
+      const effectiveCampaignIds_p = (input.campaignIds && input.campaignIds.length > 0)
+        ? input.campaignIds
+        : (input.campaignId ? [input.campaignId] : []);
+      const campaignIdSet_p = new Set(effectiveCampaignIds_p);
+      const hasCampaignFilter_p = effectiveCampaignIds_p.length > 0;
 
       const placementAgg: Record<string, {
         placement: string; impressions: number; clicks: number;
@@ -638,8 +654,8 @@ ${JSON.stringify(anonymizedTerms)}
           const res = result.value;
           const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
           for (const item of items) {
-            // Skip campaign_id filtering for mock IDs (C001/C002 etc.)
-            if (input.campaignId && !/^C\d+$/.test(input.campaignId) && String(item.campaign_id) !== input.campaignId) continue;
+            // Filter by selected campaign IDs
+            if (hasCampaignFilter_p && item.campaign_id && !campaignIdSet_p.has(String(item.campaign_id))) continue;
             const placement = item.placement_type || item.placement || 'Other';
             if (!placementAgg[placement]) {
               placementAgg[placement] = { placement, impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0 };
@@ -674,6 +690,7 @@ ${JSON.stringify(anonymizedTerms)}
       endDate: z.string().optional(),
       days: z.number().optional().default(7),
       campaignId: z.string().optional(),
+      campaignIds: z.array(z.string()).optional(), // Multi-campaign filter
       adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
     }))
     .query(async ({ input }) => {
@@ -693,6 +710,13 @@ ${JSON.stringify(anonymizedTerms)}
           ? '/pb/openapi/newad/sdCampaignHourData'
           : '/pb/openapi/newad/spCampaignHourData';
 
+      // Resolve effective campaign IDs
+      const effectiveCampaignIds_h = (input.campaignIds && input.campaignIds.length > 0)
+        ? input.campaignIds
+        : (input.campaignId ? [input.campaignId] : []);
+      const campaignIdSet_h = new Set(effectiveCampaignIds_h);
+      const hasCampaignFilter_h = effectiveCampaignIds_h.length > 0;
+
       // Aggregate hourly data
       const hourlyAgg: Record<number, {
         hour: number; impressions: number; clicks: number;
@@ -706,7 +730,8 @@ ${JSON.stringify(anonymizedTerms)}
         for (const reportDate of datesToQuery) {
           try {
             const body: any = { report_date: reportDate };
-            if (input.campaignId) body.campaign_id = Number(input.campaignId);
+            // For single campaign, pass campaign_id directly to API; for multi, fetch all and filter
+            if (hasCampaignFilter_h && effectiveCampaignIds_h.length === 1) body.campaign_id = Number(effectiveCampaignIds_h[0]);
             else body.sid = sid;
             
             const res = await adapter.requestWithMockFallback({
@@ -716,6 +741,8 @@ ${JSON.stringify(anonymizedTerms)}
             });
             const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
             for (const item of items) {
+              // Filter by campaign IDs when multiple selected
+              if (hasCampaignFilter_h && effectiveCampaignIds_h.length > 1 && item.campaign_id && !campaignIdSet_h.has(String(item.campaign_id))) continue;
               const hour = Number(item.hour) || 0;
               if (hour >= 0 && hour < 24) {
                 hourlyAgg[hour].impressions += Number(item.impressions) || 0;
@@ -746,6 +773,7 @@ ${JSON.stringify(anonymizedTerms)}
   getOrderHourlyHeatmap: protectedProcedure
     .input(z.object({
       campaignId: z.string().optional(),
+      campaignIds: z.array(z.string()).optional(), // Multi-campaign filter
       marketplace: z.string().optional(),
       reportDate: z.string().optional(),
       startDate: z.string().optional(),
@@ -766,7 +794,11 @@ ${JSON.stringify(anonymizedTerms)}
           date_end: dateEnd,
           summary_field: "campaign",
         };
-        if (input.campaignId) body.summary_field_value = input.campaignId;;
+        // Use first campaignId from campaignIds array, or single campaignId
+        const heatmapCampaignId = (input.campaignIds && input.campaignIds.length > 0)
+          ? input.campaignIds[0]
+          : input.campaignId;
+        if (heatmapCampaignId) body.summary_field_value = heatmapCampaignId;
 
         const res = await adapter.requestWithMockFallback({
           path: "/basicOpen/salesAnalysis/productPerformance/performanceTrendByHour",
@@ -871,6 +903,7 @@ ${JSON.stringify(input.hourlyData)}
   getAdDiagnosis: protectedProcedure
     .input(z.object({
       campaignId: z.string().optional(),
+      campaignIds: z.array(z.string()).optional(), // Multi-campaign filter
       marketplace: z.string().optional(),
       reportDate: z.string().optional(),
       days: z.number().optional().default(30),
@@ -985,6 +1018,7 @@ ${JSON.stringify(metrics)}
   getTargetingAnalysis: protectedProcedure
     .input(z.object({
       campaignId: z.string().optional(),
+      campaignIds: z.array(z.string()).optional(), // Multi-campaign filter
       marketplace: z.string().optional(),
       reportDate: z.string().optional(),
       startDate: z.string().optional(),
@@ -1008,6 +1042,13 @@ ${JSON.stringify(metrics)}
         : adType === 'SD'
           ? '/pb/openapi/newad/sdMatchTargetReports'
           : '/pb/openapi/newad/spKeywordReports';
+
+      // Resolve effective campaign IDs
+      const effectiveCampaignIds_t = (input.campaignIds && input.campaignIds.length > 0)
+        ? input.campaignIds
+        : (input.campaignId ? [input.campaignId] : []);
+      const campaignIdSet_t = new Set(effectiveCampaignIds_t);
+      const hasCampaignFilter_t = effectiveCampaignIds_t.length > 0;
 
       const targetAgg: Record<string, {
         target_id: string; targeting_type: string; targeting_expression: string;
@@ -1044,8 +1085,8 @@ ${JSON.stringify(metrics)}
           const res = result.value;
           const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
           for (const item of items) {
-            // Skip campaign_id filtering for mock IDs (C001/C002 etc.)
-            if (input.campaignId && !/^C\d+$/.test(input.campaignId) && item.campaign_id && String(item.campaign_id) !== input.campaignId) continue;
+            // Filter by selected campaign IDs
+            if (hasCampaignFilter_t && item.campaign_id && !campaignIdSet_t.has(String(item.campaign_id))) continue;
             const key = `${item.keyword_id || item.targeting_id || item.target_id}||${item.keyword_text || item.targeting || item.targeting_expression}`;
             if (targetAgg[key]) {
               targetAgg[key].impressions += Number(item.impressions) || 0;
@@ -1097,6 +1138,7 @@ ${JSON.stringify(metrics)}
   getWordFrequencyAnalysis: protectedProcedure
     .input(z.object({
       campaignId: z.string().optional(),
+      campaignIds: z.array(z.string()).optional(), // Multi-campaign filter
       marketplace: z.string().optional(),
       reportDate: z.string().optional(),
       days: z.number().optional().default(7),
@@ -1108,6 +1150,13 @@ ${JSON.stringify(metrics)}
       const sidsToQuery = sids.map(Number).slice(0, 5);
       const days = input.days || 7;
       // Collect all search terms for this campaign
+      // Resolve effective campaign IDs
+      const effectiveCampaignIds_w = (input.campaignIds && input.campaignIds.length > 0)
+        ? input.campaignIds
+        : (input.campaignId ? [input.campaignId] : []);
+      const campaignIdSet_w = new Set(effectiveCampaignIds_w);
+      const hasCampaignFilter_w = effectiveCampaignIds_w.length > 0;
+
       const allTerms: Array<{
         query: string; impressions: number; clicks: number;
         cost: number; sales: number; orders: number;
@@ -1117,13 +1166,16 @@ ${JSON.stringify(metrics)}
         for (let d = 1; d <= Math.min(days, 30); d++) {
           try {
             const body: any = { sid, report_date: getDateNDaysAgo(d), offset: 0, length: 500 };
-            if (input.campaignId) body.campaign_id = input.campaignId;
+            // For single campaign, pass campaign_id to API; for multi, fetch all and filter
+            if (hasCampaignFilter_w && effectiveCampaignIds_w.length === 1) body.campaign_id = effectiveCampaignIds_w[0];
             const res = await adapter.requestWithMockFallback({
               path: "/erp/sp/query/queryUserSearchTerm",
               body,
             });
             const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
             for (const item of items) {
+              // Filter by campaign IDs when multiple selected
+              if (hasCampaignFilter_w && effectiveCampaignIds_w.length > 1 && item.campaign_id && !campaignIdSet_w.has(String(item.campaign_id))) continue;
               allTerms.push({
                 query: item.query || item.search_term || '',
                 impressions: Number(item.impressions) || 0,
@@ -1210,6 +1262,7 @@ ${JSON.stringify(metrics)}
   getEffectiveSearchTerms: protectedProcedure
     .input(z.object({
       campaignId: z.string().optional(),
+      campaignIds: z.array(z.string()).optional(), // Multi-campaign filter
       marketplace: z.string().optional(),
       reportDate: z.string().optional(),
       days: z.number().optional().default(30),
@@ -1221,6 +1274,13 @@ ${JSON.stringify(metrics)}
       const sidsToQuery = sids.map(Number).slice(0, 3);
       const days = input.days || 30;
 
+      // Resolve effective campaign IDs
+      const effectiveCampaignIds_e = (input.campaignIds && input.campaignIds.length > 0)
+        ? input.campaignIds
+        : (input.campaignId ? [input.campaignId] : []);
+      const campaignIdSet_e = new Set(effectiveCampaignIds_e);
+      const hasCampaignFilter_e = effectiveCampaignIds_e.length > 0;
+
       // Step 1: Get all search terms with ad data
       const adTerms: Record<string, {
         query: string; impressions: number; clicks: number;
@@ -1231,13 +1291,15 @@ ${JSON.stringify(metrics)}
         for (let d = 1; d <= Math.min(days, 30); d++) {
           try {
             const body: any = { sid, report_date: getDateNDaysAgo(d), offset: 0, length: 500 };
-            if (input.campaignId) body.campaign_id = input.campaignId;
+            if (hasCampaignFilter_e && effectiveCampaignIds_e.length === 1) body.campaign_id = effectiveCampaignIds_e[0];
             const res = await adapter.requestWithMockFallback({
               path: "/erp/sp/query/queryUserSearchTerm",
               body,
             });
             const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
             for (const item of items) {
+              // Filter by campaign IDs when multiple selected
+              if (hasCampaignFilter_e && effectiveCampaignIds_e.length > 1 && item.campaign_id && !campaignIdSet_e.has(String(item.campaign_id))) continue;
               const q = (item.query || item.search_term || '').toLowerCase().trim();
               if (!q) continue;
               if (!adTerms[q]) {
@@ -1248,7 +1310,6 @@ ${JSON.stringify(metrics)}
               adTerms[q].cost += Number(item.cost) || 0;
               adTerms[q].sales += Number(item.sales) || 0;
               adTerms[q].orders += Number(item.orders) || 0;
-              // If it has cost > 0, it's an advertised term
               if ((Number(item.cost) || 0) > 0) adTerms[q].isAdvertised = true;
             }
           } catch {}
