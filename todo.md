@@ -3155,3 +3155,24 @@
 - [x] 在videoScript router中添加 exportToExcel tRPC接口（生成Excel→上传S3→返回URL）
 - [x] 前端Stage4和编辑器顶部导出按钮替换stub，联通真实mutation
 - [x] 编写9个vitest测试用例验证Excel生成逻辑
+
+### 产品详情页优化（按Excel格式重构）
+- [ ] 分析当前产品详情页代码结构和数据接口
+- [ ] 设计周度运营数据表结构（sales_weekly_data）
+- [ ] 实现后端接口：周度数据查询、月度汇总计算
+- [ ] 重构前端UI：产品信息卡片（售价/平手价/毛利润/毛利率/退货率/评分）
+- [ ] 重构前端UI：周度运营数据表格（23列：销量/广告/质量）
+- [ ] 重构前端UI：月度汇总行（绿色高亮，财务实际利润+订单利润总）
+- [ ] 重构前端UI：趋势图表（销量/利润/广告ACOS趋势）
+- [ ] 负利润红色括号显示、趋势箭头标识
+- [ ] 编写vitest测试
+
+### 产品详情页周度运营数据优化 (已完成)
+- [x] 创建 product_weekly_ops 数据库表（23列运营数据）
+- [x] 创建 product_monthly_summary 数据库表（月度汇总）
+- [x] 创建 product_basic_info 数据库表（产品利润信息）
+- [x] 实现 8 个后端 tRPC 接口（CRUD + 领星同步）
+- [x] 创建 ProductWeeklyOpsTable 前端组件（产品信息卡片 + 周度表格 + 月度汇总 + 图表）
+- [x] 集成到 OpsProductDetail.tsx 数据看板 Tab
+- [x] 编写 weeklyOps.test.ts 测试（10 tests passed）
+- [x] 更新 productOps.test.ts 和 newFeatures4.test.ts 的 procedure 计数（78→86）

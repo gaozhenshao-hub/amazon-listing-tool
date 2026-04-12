@@ -3202,3 +3202,92 @@ export const videoSpvSegments = mysqlTable("video_spv_segments", {
 });
 export type VideoSpvSegment = typeof videoSpvSegments.$inferSelect;
 export type InsertVideoSpvSegment = typeof videoSpvSegments.$inferInsert;
+
+// ═══════════════════════════════════════════════════════
+// Product Weekly Operations Data (产品周度运营数据)
+// ═══════════════════════════════════════════════════════
+export const productWeeklyOps = mysqlTable("product_weekly_ops", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("product_id").notNull(),
+  userId: int("user_id").notNull(),
+  weekStartDate: varchar("week_start_date", { length: 10 }).notNull(),
+  weekEndDate: varchar("week_end_date", { length: 10 }).notNull(),
+  salesTrend: mysqlEnum("sales_trend", ["up", "down", "stable"]).default("stable"),
+  salesQty: int("sales_qty").default(0),
+  orderQty: int("order_qty").default(0),
+  salesAmount: decimal("sales_amount", { precision: 12, scale: 2 }).default("0"),
+  orderProfit: decimal("order_profit", { precision: 12, scale: 2 }).default("0"),
+  orderProfitMargin: decimal("order_profit_margin", { precision: 6, scale: 2 }).default("0"),
+  sessionTotal: int("session_total").default(0),
+  totalCvr: decimal("total_cvr", { precision: 6, scale: 2 }).default("0"),
+  adCvr: decimal("ad_cvr", { precision: 6, scale: 2 }).default("0"),
+  organicCvr: decimal("organic_cvr", { precision: 6, scale: 2 }).default("0"),
+  adOrders: int("ad_orders").default(0),
+  organicOrders: int("organic_orders").default(0),
+  adClicks: int("ad_clicks").default(0),
+  organicClicks: int("organic_clicks").default(0),
+  ctr: decimal("ctr", { precision: 6, scale: 4 }).default("0"),
+  adImpressions: int("ad_impressions").default(0),
+  cpc: decimal("cpc", { precision: 8, scale: 2 }).default("0"),
+  adSpend: decimal("ad_spend", { precision: 12, scale: 2 }).default("0"),
+  acos: decimal("acos", { precision: 6, scale: 2 }).default("0"),
+  rating: decimal("rating", { precision: 3, scale: 1 }).default("0"),
+  reviewCount: int("review_count").default(0),
+  returnRate: decimal("return_rate", { precision: 6, scale: 2 }).default("0"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ProductWeeklyOps = typeof productWeeklyOps.$inferSelect;
+export type InsertProductWeeklyOps = typeof productWeeklyOps.$inferInsert;
+
+// Product Monthly Summary (产品月度汇总)
+export const productMonthlySummary = mysqlTable("product_monthly_summary", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("product_id").notNull(),
+  userId: int("user_id").notNull(),
+  yearMonth: varchar("year_month", { length: 7 }).notNull(),
+  financialProfit: decimal("financial_profit", { precision: 12, scale: 2 }).default("0"),
+  orderProfitTotal: decimal("order_profit_total", { precision: 12, scale: 2 }).default("0"),
+  totalSalesQty: int("total_sales_qty").default(0),
+  totalOrderQty: int("total_order_qty").default(0),
+  totalSalesAmount: decimal("total_sales_amount", { precision: 12, scale: 2 }).default("0"),
+  totalAdSpend: decimal("total_ad_spend", { precision: 12, scale: 2 }).default("0"),
+  avgAcos: decimal("avg_acos", { precision: 6, scale: 2 }).default("0"),
+  avgRating: decimal("avg_rating", { precision: 3, scale: 1 }).default("0"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ProductMonthlySummary = typeof productMonthlySummary.$inferSelect;
+export type InsertProductMonthlySummary = typeof productMonthlySummary.$inferInsert;
+
+// Product Basic Info (产品基础信息 - 售价/平手价/毛利润等)
+export const productBasicInfo = mysqlTable("product_basic_info", {
+  id: int("id").autoincrement().primaryKey(),
+  productId: int("product_id").notNull(),
+  userId: int("user_id").notNull(),
+  sellingPrice: decimal("selling_price", { precision: 10, scale: 2 }),
+  breakEvenPrice: decimal("break_even_price", { precision: 10, scale: 2 }),
+  grossProfit: decimal("gross_profit", { precision: 10, scale: 2 }),
+  grossMargin: decimal("gross_margin", { precision: 6, scale: 2 }),
+  returnRate: decimal("return_rate", { precision: 6, scale: 2 }).default("0"),
+  rating: decimal("rating", { precision: 3, scale: 1 }),
+  reviewCount: int("review_count").default(0),
+  productCost: decimal("product_cost", { precision: 10, scale: 2 }),
+  shippingCost: decimal("shipping_cost", { precision: 10, scale: 2 }),
+  fbaFee: decimal("fba_fee", { precision: 10, scale: 2 }),
+  referralFee: decimal("referral_fee", { precision: 10, scale: 2 }),
+  currentStock: int("current_stock").default(0),
+  inTransitStock: int("in_transit_stock").default(0),
+  packingQty: int("packing_qty"),
+  weightKg: decimal("weight_kg", { precision: 8, scale: 2 }),
+  shippingUnitPrice: decimal("shipping_unit_price", { precision: 8, scale: 2 }),
+  lastMonthProfit: decimal("last_month_profit", { precision: 12, scale: 2 }),
+  trackingSheetUrl: text("tracking_sheet_url"),
+  listingDate: varchar("listing_date", { length: 10 }),
+  asin: varchar("asin", { length: 20 }),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ProductBasicInfo = typeof productBasicInfo.$inferSelect;
+export type InsertProductBasicInfo = typeof productBasicInfo.$inferInsert;

@@ -14,6 +14,7 @@ import {
   opsPlans, opsPlanActions, opsPlanSummaries,
   conversionComparisons, conversionCheckItems, conversionScores, conversionSuggestions, checkItemOverrides,
   executionReviews, teamTasks, users,
+  productWeeklyOps, productMonthlySummary, productBasicInfo,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, asc, isNull, inArray } from "drizzle-orm";
 
@@ -3264,6 +3265,341 @@ export const productOpsRouter = router({
       }));
       const result = await analyzeImages(images, input.maxImages);
       return result;
+    }),
+
+  // ═══════════════════════════════════════════════════════
+  // Product Weekly Ops & Monthly Summary & Basic Info
+  // ═══════════════════════════════════════════════════════
+
+  // Get product basic info (售价/平手价/毛利润等)
+  getProductBasicInfo: protectedProcedure
+    .input(z.object({ productId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      const [info] = await db!.select().from(productBasicInfo)
+        .where(and(eq(productBasicInfo.productId, input.productId), eq(productBasicInfo.userId, ctx.user.id)));
+      return info || null;
+    }),
+
+  // Upsert product basic info
+  upsertProductBasicInfo: protectedProcedure
+    .input(z.object({
+      productId: z.number(),
+      sellingPrice: z.string().optional(),
+      breakEvenPrice: z.string().optional(),
+      grossProfit: z.string().optional(),
+      grossMargin: z.string().optional(),
+      returnRate: z.string().optional(),
+      rating: z.string().optional(),
+      reviewCount: z.number().optional(),
+      productCost: z.string().optional(),
+      shippingCost: z.string().optional(),
+      fbaFee: z.string().optional(),
+      referralFee: z.string().optional(),
+      currentStock: z.number().optional(),
+      inTransitStock: z.number().optional(),
+      packingQty: z.number().optional(),
+      weightKg: z.string().optional(),
+      shippingUnitPrice: z.string().optional(),
+      lastMonthProfit: z.string().optional(),
+      trackingSheetUrl: z.string().optional(),
+      listingDate: z.string().optional(),
+      asin: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const [existing] = await db!.select().from(productBasicInfo)
+        .where(and(eq(productBasicInfo.productId, input.productId), eq(productBasicInfo.userId, ctx.user.id)));
+      const { productId, ...data } = input;
+      if (existing) {
+        await db!.update(productBasicInfo).set(data as any).where(eq(productBasicInfo.id, existing.id));
+        return { id: existing.id };
+      } else {
+        const [result] = await db!.insert(productBasicInfo).values({ ...data as any, productId, userId: ctx.user.id });
+        return { id: result.insertId };
+      }
+    }),
+
+  // Get weekly ops data for a product (paginated, sorted by date desc)
+  getWeeklyOpsData: protectedProcedure
+    .input(z.object({
+      productId: z.number(),
+      limit: z.number().default(52),
+      offset: z.number().default(0),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      const rows = await db!.select().from(productWeeklyOps)
+        .where(and(eq(productWeeklyOps.productId, input.productId), eq(productWeeklyOps.userId, ctx.user.id)))
+        .orderBy(desc(productWeeklyOps.weekStartDate))
+        .limit(input.limit)
+        .offset(input.offset);
+      return rows;
+    }),
+
+  // Upsert a weekly ops record
+  upsertWeeklyOps: protectedProcedure
+    .input(z.object({
+      productId: z.number(),
+      weekStartDate: z.string(),
+      weekEndDate: z.string(),
+      salesTrend: z.enum(["up", "down", "stable"]).optional(),
+      salesQty: z.number().optional(),
+      orderQty: z.number().optional(),
+      salesAmount: z.string().optional(),
+      orderProfit: z.string().optional(),
+      orderProfitMargin: z.string().optional(),
+      sessionTotal: z.number().optional(),
+      totalCvr: z.string().optional(),
+      adCvr: z.string().optional(),
+      organicCvr: z.string().optional(),
+      adOrders: z.number().optional(),
+      organicOrders: z.number().optional(),
+      adClicks: z.number().optional(),
+      organicClicks: z.number().optional(),
+      ctr: z.string().optional(),
+      adImpressions: z.number().optional(),
+      cpc: z.string().optional(),
+      adSpend: z.string().optional(),
+      acos: z.string().optional(),
+      rating: z.string().optional(),
+      reviewCount: z.number().optional(),
+      returnRate: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const [existing] = await db!.select().from(productWeeklyOps)
+        .where(and(
+          eq(productWeeklyOps.productId, input.productId),
+          eq(productWeeklyOps.userId, ctx.user.id),
+          eq(productWeeklyOps.weekStartDate, input.weekStartDate),
+        ));
+      const { productId, ...data } = input;
+      if (existing) {
+        await db!.update(productWeeklyOps).set(data as any).where(eq(productWeeklyOps.id, existing.id));
+        return { id: existing.id };
+      } else {
+        const [result] = await db!.insert(productWeeklyOps).values({ ...data as any, productId, userId: ctx.user.id });
+        return { id: result.insertId };
+      }
+    }),
+
+  // Delete a weekly ops record
+  deleteWeeklyOps: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      await db!.delete(productWeeklyOps)
+        .where(and(eq(productWeeklyOps.id, input.id), eq(productWeeklyOps.userId, ctx.user.id)));
+      return { success: true };
+    }),
+
+  // Get monthly summaries for a product
+  getMonthlySummaries: protectedProcedure
+    .input(z.object({
+      productId: z.number(),
+      limit: z.number().default(12),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      const rows = await db!.select().from(productMonthlySummary)
+        .where(and(eq(productMonthlySummary.productId, input.productId), eq(productMonthlySummary.userId, ctx.user.id)))
+        .orderBy(desc(productMonthlySummary.yearMonth))
+        .limit(input.limit);
+      return rows;
+    }),
+
+  // Upsert a monthly summary
+  upsertMonthlySummary: protectedProcedure
+    .input(z.object({
+      productId: z.number(),
+      yearMonth: z.string(),
+      financialProfit: z.string().optional(),
+      orderProfitTotal: z.string().optional(),
+      totalSalesQty: z.number().optional(),
+      totalOrderQty: z.number().optional(),
+      totalSalesAmount: z.string().optional(),
+      totalAdSpend: z.string().optional(),
+      avgAcos: z.string().optional(),
+      avgRating: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const [existing] = await db!.select().from(productMonthlySummary)
+        .where(and(
+          eq(productMonthlySummary.productId, input.productId),
+          eq(productMonthlySummary.userId, ctx.user.id),
+          eq(productMonthlySummary.yearMonth, input.yearMonth),
+        ));
+      const { productId, ...data } = input;
+      if (existing) {
+        await db!.update(productMonthlySummary).set(data as any).where(eq(productMonthlySummary.id, existing.id));
+        return { id: existing.id };
+      } else {
+        const [result] = await db!.insert(productMonthlySummary).values({ ...data as any, productId, userId: ctx.user.id });
+        return { id: result.insertId };
+      }
+    }),
+
+  // Sync weekly ops from Lingxing API (auto-populate from profit + ads data)
+  syncWeeklyOpsFromLingxing: protectedProcedure
+    .input(z.object({
+      productId: z.number(),
+      months: z.number().default(6), // how many months back to sync
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const [product] = await db!.select().from(productProfiles)
+        .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
+      if (!product) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const adapter = getLingxingAdapter();
+      const variants = await db!.select().from(productVariants)
+        .where(eq(productVariants.productId, input.productId));
+      const childAsins = variants.map(v => v.childAsin).filter(Boolean);
+      const parentAsin = product.parentAsin;
+
+      // Calculate date range
+      const now = new Date();
+      const startDate = new Date(now.getTime() - input.months * 30 * 86400000).toISOString().split('T')[0];
+      const endDate = now.toISOString().split('T')[0];
+
+      // Fetch profit data from Lingxing
+      let profitItems: any[] = [];
+      try {
+        const res = await adapter.requestWithMockFallback({
+          path: "/bd/profit/report/open/report/asin/list",
+          body: {
+            offset: 0, length: 2000,
+            startDate, endDate,
+            searchField: "asin",
+            searchValue: childAsins.length > 0 ? childAsins : [parentAsin],
+            monthlyQuery: false,
+            orderStatus: "All",
+          },
+        });
+        const raw = res.data || [];
+        profitItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
+      } catch (err: any) {
+        console.warn(`[syncWeeklyOps] Profit fetch error: ${err.message}`);
+      }
+
+      // Group profit items by week
+      const weekMap = new Map<string, any[]>();
+      for (const item of profitItems) {
+        const date = item.statDate || item.date || '';
+        if (!date) continue;
+        // Calculate week start (Monday)
+        const d = new Date(date);
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        const weekStart = new Date(d.setDate(diff));
+        const weekKey = weekStart.toISOString().split('T')[0];
+        if (!weekMap.has(weekKey)) weekMap.set(weekKey, []);
+        weekMap.get(weekKey)!.push(item);
+      }
+
+      // Upsert weekly records
+      let synced = 0;
+      for (const [weekStart, items] of Array.from(weekMap.entries())) {
+        const ws = new Date(weekStart);
+        const we = new Date(ws.getTime() + 6 * 86400000);
+        const weekEnd = we.toISOString().split('T')[0];
+
+        // Aggregate data
+        let totalSales = 0, totalOrders = 0, totalRevenue = 0, totalProfit = 0;
+        let totalAdSpend = 0, totalAdOrders = 0, totalSessions = 0;
+        for (const item of items) {
+          totalSales += Number(item.totalSalesQuantity || item.totalFbaAndFbmQuantity || 0);
+          totalOrders += Number(item.totalSalesQuantity || 0);
+          totalRevenue += Number(item.totalSalesAmount || item.totalFbaAndFbmAmount || 0);
+          totalProfit += Number(item.grossProfit || 0);
+          totalAdSpend += Math.abs(Number(item.totalAdsCost || 0));
+        }
+
+        const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
+        const prevWeekStart = new Date(ws.getTime() - 7 * 86400000).toISOString().split('T')[0];
+        const prevItems = weekMap.get(prevWeekStart) || [];
+        const prevSales = prevItems.reduce((s: number, i: any) => s + Number(i.totalSalesQuantity || 0), 0);
+        const trend = totalSales > prevSales ? 'up' : totalSales < prevSales ? 'down' : 'stable';
+
+        // Upsert
+        const [existing] = await db!.select().from(productWeeklyOps)
+          .where(and(
+            eq(productWeeklyOps.productId, input.productId),
+            eq(productWeeklyOps.userId, ctx.user.id),
+            eq(productWeeklyOps.weekStartDate, weekStart),
+          ));
+
+        const record = {
+          salesTrend: trend as any,
+          salesQty: totalSales,
+          orderQty: totalOrders,
+          salesAmount: totalRevenue.toFixed(2),
+          orderProfit: totalProfit.toFixed(2),
+          orderProfitMargin: profitMargin.toFixed(2),
+          adSpend: totalAdSpend.toFixed(2),
+          acos: totalRevenue > 0 ? (totalAdSpend / totalRevenue * 100).toFixed(2) : '0',
+        };
+
+        if (existing) {
+          await db!.update(productWeeklyOps).set(record as any).where(eq(productWeeklyOps.id, existing.id));
+        } else {
+          await db!.insert(productWeeklyOps).values({
+            ...record as any,
+            productId: input.productId,
+            userId: ctx.user.id,
+            weekStartDate: weekStart,
+            weekEndDate: weekEnd,
+          });
+        }
+        synced++;
+      }
+
+      // Also auto-generate monthly summaries
+      const monthMap = new Map<string, { profit: number; orders: number; revenue: number; adSpend: number }>();
+      for (const item of profitItems) {
+        const date = item.statDate || item.date || '';
+        if (!date) continue;
+        const ym = date.substring(0, 7);
+        if (!monthMap.has(ym)) monthMap.set(ym, { profit: 0, orders: 0, revenue: 0, adSpend: 0 });
+        const m = monthMap.get(ym)!;
+        m.orders += Number(item.totalSalesQuantity || 0);
+        m.revenue += Number(item.totalSalesAmount || item.totalFbaAndFbmAmount || 0);
+        m.profit += Number(item.grossProfit || 0);
+        m.adSpend += Math.abs(Number(item.totalAdsCost || 0));
+      }
+
+      for (const [ym, data] of Array.from(monthMap.entries())) {
+        const [existing] = await db!.select().from(productMonthlySummary)
+          .where(and(
+            eq(productMonthlySummary.productId, input.productId),
+            eq(productMonthlySummary.userId, ctx.user.id),
+            eq(productMonthlySummary.yearMonth, ym),
+          ));
+        const record = {
+          financialProfit: data.profit.toFixed(2),
+          orderProfitTotal: data.profit.toFixed(2),
+          totalSalesQty: data.orders,
+          totalOrderQty: data.orders,
+          totalSalesAmount: data.revenue.toFixed(2),
+          totalAdSpend: data.adSpend.toFixed(2),
+          avgAcos: data.revenue > 0 ? (data.adSpend / data.revenue * 100).toFixed(2) : '0',
+        };
+        if (existing) {
+          await db!.update(productMonthlySummary).set(record as any).where(eq(productMonthlySummary.id, existing.id));
+        } else {
+          await db!.insert(productMonthlySummary).values({
+            ...record as any,
+            productId: input.productId,
+            userId: ctx.user.id,
+            yearMonth: ym,
+          });
+        }
+      }
+
+      return { syncedWeeks: synced, syncedMonths: monthMap.size };
     }),
 
 });

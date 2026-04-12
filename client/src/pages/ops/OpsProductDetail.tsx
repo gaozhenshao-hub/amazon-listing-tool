@@ -6,6 +6,7 @@ import OpsProductPlan from "./OpsProductPlan";
 import OpsProductConversion from "./OpsProductConversion";
 import OpsProductReview from "./OpsProductReview";
 import OpsProductTeam from "./OpsProductTeam";
+import ProductWeeklyOpsTable from "./ProductWeeklyOpsTable";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -162,8 +163,11 @@ export default function OpsProductDetail() {
         </TabsList>
 
         <TabsContent value="dashboard" className="mt-4">
+      {/* Weekly Ops Table (Excel-style) - Full Width */}
+      <ProductWeeklyOpsTable productId={productId} parentAsin={product.parentAsin} />
+
       {/* Main Layout: Left (data) + Right (todos & logs) */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mt-6">
         {/* ─── Left: Data Area (3 cols) ─── */}
         <div className="lg:col-span-3 space-y-6">
 

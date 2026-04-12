@@ -223,10 +223,10 @@ describe("ProductOps Router - New Procedures", () => {
     expect(procedures).toContain("analyzeProductImages");
   });
 
-  it("should have correct total procedure count (78)", async () => {
+  it("should have correct total procedure count (86)", async () => {
     const { productOpsRouter } = await import("./routers/productOps");
     const procedures = Object.keys((productOpsRouter as any)._def.procedures || {});
-    expect(procedures.length).toBe(78);
+    expect(procedures.length).toBe(86);
   });
 });
 
