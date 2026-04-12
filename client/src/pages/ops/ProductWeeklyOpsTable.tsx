@@ -15,9 +15,10 @@ import {
 import {
   TrendingUp, TrendingDown, Minus, RefreshCw, Plus, Download,
   Loader2, Edit2, Save, X, ChevronDown, ChevronUp, BarChart3,
+  AlertTriangle, AlertCircle, CheckCircle2,
 } from "lucide-react";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, ComposedChart, Area,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, ComposedChart, Area, ReferenceLine,
 } from "recharts";
 
 interface Props {
@@ -25,17 +26,67 @@ interface Props {
   parentAsin: string;
 }
 
-// Format number with $ prefix and handle negatives with red parentheses
+/* ─── Alert Thresholds ─── */
+const ALERT_THRESHOLDS = {
+  acos: { warn: 25, danger: 30, label: "ACOS", unit: "%" },
+  profitMargin: { warn: 15, danger: 10, label: "利润率", unit: "%" },
+  returnRate: { warn: 3, danger: 5, label: "退货率", unit: "%" },
+  ctr: { warn: 0.3, danger: 0.2, label: "CTR", unit: "%", reverse: true },
+  totalCvr: { warn: 8, danger: 5, label: "总CVR", unit: "%", reverse: true },
+};
+
+type AlertLevel = "normal" | "warn" | "danger";
+
+function getAlertLevel(key: string, value: number | null | undefined): AlertLevel {
+  if (value == null || isNaN(value)) return "normal";
+  const threshold = ALERT_THRESHOLDS[key as keyof typeof ALERT_THRESHOLDS];
+  if (!threshold) return "normal";
+
+  if ((threshold as any).reverse) {
+    // Lower is worse (CTR, CVR)
+    if (value < threshold.danger) return "danger";
+    if (value < threshold.warn) return "warn";
+  } else {
+    // Higher is worse (ACOS, returnRate) or lower is worse (profitMargin)
+    if (key === "profitMargin") {
+      if (value < threshold.danger) return "danger";
+      if (value < threshold.warn) return "warn";
+    } else {
+      if (value > threshold.danger) return "danger";
+      if (value > threshold.warn) return "warn";
+    }
+  }
+  return "normal";
+}
+
+function alertCellClass(level: AlertLevel): string {
+  if (level === "danger") return "bg-red-100 text-red-700 font-semibold";
+  if (level === "warn") return "bg-amber-50 text-amber-700";
+  return "";
+}
+
+function alertBadge(level: AlertLevel, label: string) {
+  if (level === "danger") return (
+    <span className="inline-flex items-center gap-0.5 text-[9px] text-red-600 bg-red-100 px-1 py-0.5 rounded">
+      <AlertCircle className="h-2.5 w-2.5" />{label}
+    </span>
+  );
+  if (level === "warn") return (
+    <span className="inline-flex items-center gap-0.5 text-[9px] text-amber-600 bg-amber-100 px-1 py-0.5 rounded">
+      <AlertTriangle className="h-2.5 w-2.5" />{label}
+    </span>
+  );
+  return null;
+}
+
+/* ─── Helpers ─── */
 function formatMoney(val: string | number | null | undefined, prefix = "$"): { text: string; isNeg: boolean } {
   if (val == null || val === "") return { text: "-", isNeg: false };
   const num = typeof val === "string" ? parseFloat(val) : val;
   if (isNaN(num)) return { text: "-", isNeg: false };
   const isNeg = num < 0;
   const abs = Math.abs(num).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return {
-    text: isNeg ? `(${prefix}${abs})` : `${prefix}${abs}`,
-    isNeg,
-  };
+  return { text: isNeg ? `(${prefix}${abs})` : `${prefix}${abs}`, isNeg };
 }
 
 function formatPct(val: string | number | null | undefined): string {
@@ -62,12 +113,46 @@ const trendLabel = (trend: string | null) => {
   return "平稳";
 };
 
+/* ─── Chart Metric Definitions ─── */
+type ChartTab = "sales" | "profit" | "acos" | "ads" | "session" | "orders";
+
+const CHART_TABS: { key: ChartTab; label: string }[] = [
+  { key: "sales", label: "销量趋势" },
+  { key: "profit", label: "利润趋势" },
+  { key: "acos", label: "ACOS趋势" },
+  { key: "ads", label: "广告数据" },
+  { key: "session", label: "Session/CVR" },
+  { key: "orders", label: "订单结构" },
+];
+
+/* ─── Row Alert Summary ─── */
+function getRowAlerts(w: any): { level: AlertLevel; alerts: string[] } {
+  const alerts: string[] = [];
+  let maxLevel: AlertLevel = "normal";
+
+  const acosVal = parseFloat(String(w.acos || 0));
+  const acosLevel = getAlertLevel("acos", acosVal);
+  if (acosLevel !== "normal") { alerts.push(`ACOS ${acosVal.toFixed(1)}%`); maxLevel = acosLevel === "danger" ? "danger" : maxLevel === "danger" ? "danger" : "warn"; }
+
+  const profitVal = parseFloat(String(w.orderProfitMargin || 0));
+  const profitLevel = getAlertLevel("profitMargin", profitVal);
+  if (profitLevel !== "normal") { alerts.push(`利润率 ${profitVal.toFixed(1)}%`); maxLevel = profitLevel === "danger" ? "danger" : maxLevel === "danger" ? "danger" : "warn"; }
+
+  const returnVal = parseFloat(String(w.returnRate || 0));
+  const returnLevel = getAlertLevel("returnRate", returnVal);
+  if (returnLevel !== "normal") { alerts.push(`退货率 ${returnVal.toFixed(1)}%`); maxLevel = returnLevel === "danger" ? "danger" : maxLevel === "danger" ? "danger" : "warn"; }
+
+  return { level: maxLevel, alerts };
+}
+
+/* ─── Main Component ─── */
 export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) {
   const [showAddRow, setShowAddRow] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editData, setEditData] = useState<Record<string, string>>({});
-  const [showChart, setShowChart] = useState(false);
-  const [chartMetric, setChartMetric] = useState<"sales" | "profit" | "acos" | "ads">("sales");
+  const [showChart, setShowChart] = useState(true);
+  const [chartTab, setChartTab] = useState<ChartTab>("sales");
+  const [showAlertOnly, setShowAlertOnly] = useState(false);
 
   // Queries
   const { data: weeklyData, isLoading: loadingWeekly, refetch: refetchWeekly } = trpc.productOps.getWeeklyOpsData.useQuery(
@@ -132,7 +217,6 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
   // Group weekly data by month and insert monthly summary rows
   const tableRows = useMemo(() => {
     if (!weeklyData || weeklyData.length === 0) return [];
-    // Sort by date ascending for display
     const sorted = [...weeklyData].sort((a, b) => a.weekStartDate.localeCompare(b.weekStartDate));
     const monthlyMap = new Map((monthlyData || []).map(m => [m.yearMonth, m]));
 
@@ -142,24 +226,43 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
     for (const week of sorted) {
       const ym = week.weekStartDate.substring(0, 7);
       if (ym !== currentMonth && currentMonth !== "") {
-        // Insert monthly summary for previous month
         const ms = monthlyMap.get(currentMonth);
-        if (ms) {
-          rows.push({ type: "month", data: ms, yearMonth: currentMonth });
-        }
+        if (ms) rows.push({ type: "month", data: ms, yearMonth: currentMonth });
       }
       currentMonth = ym;
       rows.push({ type: "week", data: week });
     }
-    // Last month summary
     if (currentMonth) {
       const ms = monthlyMap.get(currentMonth);
-      if (ms) {
-        rows.push({ type: "month", data: ms, yearMonth: currentMonth });
-      }
+      if (ms) rows.push({ type: "month", data: ms, yearMonth: currentMonth });
     }
     return rows;
   }, [weeklyData, monthlyData]);
+
+  // Alert summary for the entire product (based on latest week)
+  const productAlertSummary = useMemo(() => {
+    if (!weeklyData || weeklyData.length === 0) return { level: "normal" as AlertLevel, alerts: [], badges: [] as JSX.Element[] };
+    const latest = [...weeklyData].sort((a, b) => b.weekStartDate.localeCompare(a.weekStartDate))[0];
+    const { level, alerts } = getRowAlerts(latest);
+    const badges: JSX.Element[] = [];
+
+    const acosVal = parseFloat(String(latest.acos || 0));
+    const acosLevel = getAlertLevel("acos", acosVal);
+    const b1 = alertBadge(acosLevel, `ACOS ${acosVal.toFixed(0)}%`);
+    if (b1) badges.push(b1);
+
+    const profitVal = parseFloat(String(latest.orderProfitMargin || 0));
+    const profitLevel = getAlertLevel("profitMargin", profitVal);
+    const b2 = alertBadge(profitLevel, `利润率 ${profitVal.toFixed(0)}%`);
+    if (b2) badges.push(b2);
+
+    const returnVal = parseFloat(String(latest.returnRate || 0));
+    const returnLevel = getAlertLevel("returnRate", returnVal);
+    const b3 = alertBadge(returnLevel, `退货率 ${returnVal.toFixed(1)}%`);
+    if (b3) badges.push(b3);
+
+    return { level, alerts, badges };
+  }, [weeklyData]);
 
   // Chart data
   const chartData = useMemo(() => {
@@ -167,7 +270,7 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
     return [...weeklyData]
       .sort((a, b) => a.weekStartDate.localeCompare(b.weekStartDate))
       .map(w => ({
-        date: w.weekStartDate.substring(5), // MM-DD
+        date: w.weekStartDate.substring(5),
         salesQty: w.salesQty || 0,
         orderQty: w.orderQty || 0,
         salesAmount: parseFloat(String(w.salesAmount || "0")),
@@ -178,6 +281,15 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
         cpc: parseFloat(String(w.cpc || "0")),
         sessionTotal: w.sessionTotal || 0,
         totalCvr: parseFloat(String(w.totalCvr || "0")),
+        adCvr: parseFloat(String(w.adCvr || "0")),
+        organicCvr: parseFloat(String(w.organicCvr || "0")),
+        adOrders: w.adOrders || 0,
+        organicOrders: w.organicOrders || 0,
+        adClicks: w.adClicks || 0,
+        adImpressions: w.adImpressions || 0,
+        ctr: parseFloat(String(w.ctr || "0")),
+        returnRate: parseFloat(String(w.returnRate || "0")),
+        rating: parseFloat(String(w.rating || "0")),
       }));
   }, [weeklyData]);
 
@@ -242,7 +354,7 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
     });
   };
 
-  // New row form
+  // New row state
   const [newRow, setNewRow] = useState({
     weekStartDate: "", weekEndDate: "", salesTrend: "stable",
     salesQty: "0", orderQty: "0", salesAmount: "0", orderProfit: "0", orderProfitMargin: "0",
@@ -301,7 +413,7 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
     setEditingBasicInfo(false);
   };
 
-  // Column headers matching the Excel template
+  // Column headers
   const columns = [
     { key: "date", label: "时间", width: "w-20" },
     { key: "trend", label: "趋势", width: "w-14" },
@@ -328,13 +440,137 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
     { key: "returnRate", label: "退货%", width: "w-14" },
   ];
 
+  /* ─── Render Chart ─── */
+  const renderChart = () => {
+    if (chartData.length === 0) return null;
+
+    const commonProps = { margin: { top: 10, right: 15, left: 0, bottom: 5 } };
+    const tooltipStyle = { fontSize: 11, borderRadius: 8 };
+    const legendStyle = { fontSize: 11 };
+
+    switch (chartTab) {
+      case "sales":
+        return (
+          <ResponsiveContainer width="100%" height={260}>
+            <ComposedChart data={chartData} {...commonProps}>
+              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+              <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+              <YAxis yAxisId="left" tick={{ fontSize: 10 }} label={{ value: "销量", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} label={{ value: "CVR%", angle: 90, position: "insideRight", style: { fontSize: 10 } }} />
+              <Tooltip contentStyle={tooltipStyle} />
+              <Legend wrapperStyle={legendStyle} />
+              <Bar yAxisId="left" dataKey="salesQty" name="销量" fill="#3b82f6" opacity={0.7} radius={[2, 2, 0, 0]} />
+              <Line yAxisId="left" type="monotone" dataKey="orderQty" name="订单量" stroke="#8b5cf6" strokeWidth={1.5} dot={{ r: 2 }} />
+              <Line yAxisId="right" type="monotone" dataKey="totalCvr" name="总CVR%" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+              <ReferenceLine yAxisId="right" y={5} stroke="#ef4444" strokeDasharray="5 5" label={{ value: "CVR预警线 5%", position: "right", style: { fontSize: 9, fill: "#ef4444" } }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        );
+
+      case "profit":
+        return (
+          <ResponsiveContainer width="100%" height={260}>
+            <ComposedChart data={chartData} {...commonProps}>
+              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+              <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+              <YAxis yAxisId="left" tick={{ fontSize: 10 }} label={{ value: "$", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} domain={[0, 'auto']} label={{ value: "%", angle: 90, position: "insideRight", style: { fontSize: 10 } }} />
+              <Tooltip contentStyle={tooltipStyle} />
+              <Legend wrapperStyle={legendStyle} />
+              <Area yAxisId="left" type="monotone" dataKey="salesAmount" name="销售额" fill="#6366f1" fillOpacity={0.15} stroke="#6366f1" strokeWidth={1} />
+              <Bar yAxisId="left" dataKey="orderProfit" name="订单利润" fill="#10b981" opacity={0.7} radius={[2, 2, 0, 0]} />
+              <Line yAxisId="right" type="monotone" dataKey="profitMargin" name="利润率%" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} />
+              <ReferenceLine yAxisId="right" y={10} stroke="#ef4444" strokeDasharray="5 5" label={{ value: "利润率预警线 10%", position: "right", style: { fontSize: 9, fill: "#ef4444" } }} />
+              <ReferenceLine yAxisId="right" y={15} stroke="#f59e0b" strokeDasharray="3 3" label={{ value: "关注线 15%", position: "right", style: { fontSize: 9, fill: "#f59e0b" } }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        );
+
+      case "acos":
+        return (
+          <ResponsiveContainer width="100%" height={260}>
+            <ComposedChart data={chartData} {...commonProps}>
+              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+              <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+              <YAxis tick={{ fontSize: 10 }} domain={[0, 'auto']} label={{ value: "%", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} />
+              <Tooltip contentStyle={tooltipStyle} />
+              <Legend wrapperStyle={legendStyle} />
+              <Area type="monotone" dataKey="acos" name="ACOS%" fill="#ef4444" fillOpacity={0.1} stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="totalCvr" name="总CVR%" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="returnRate" name="退货率%" stroke="#a855f7" strokeWidth={1.5} dot={{ r: 2 }} />
+              <ReferenceLine y={30} stroke="#ef4444" strokeDasharray="5 5" label={{ value: "ACOS危险线 30%", position: "right", style: { fontSize: 9, fill: "#ef4444" } }} />
+              <ReferenceLine y={25} stroke="#f59e0b" strokeDasharray="3 3" label={{ value: "ACOS关注线 25%", position: "right", style: { fontSize: 9, fill: "#f59e0b" } }} />
+              <ReferenceLine y={5} stroke="#a855f7" strokeDasharray="3 3" label={{ value: "退货率预警 5%", position: "left", style: { fontSize: 9, fill: "#a855f7" } }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        );
+
+      case "ads":
+        return (
+          <ResponsiveContainer width="100%" height={260}>
+            <ComposedChart data={chartData} {...commonProps}>
+              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+              <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+              <YAxis yAxisId="left" tick={{ fontSize: 10 }} label={{ value: "$", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
+              <Tooltip contentStyle={tooltipStyle} />
+              <Legend wrapperStyle={legendStyle} />
+              <Bar yAxisId="left" dataKey="adSpend" name="广告费" fill="#ef4444" opacity={0.6} radius={[2, 2, 0, 0]} />
+              <Line yAxisId="right" type="monotone" dataKey="cpc" name="CPC $" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
+              <Line yAxisId="right" type="monotone" dataKey="ctr" name="CTR%" stroke="#06b6d4" strokeWidth={1.5} dot={{ r: 2 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        );
+
+      case "session":
+        return (
+          <ResponsiveContainer width="100%" height={260}>
+            <ComposedChart data={chartData} {...commonProps}>
+              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+              <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+              <YAxis yAxisId="left" tick={{ fontSize: 10 }} label={{ value: "Session", angle: -90, position: "insideLeft", style: { fontSize: 10 } }} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} label={{ value: "%", angle: 90, position: "insideRight", style: { fontSize: 10 } }} />
+              <Tooltip contentStyle={tooltipStyle} />
+              <Legend wrapperStyle={legendStyle} />
+              <Bar yAxisId="left" dataKey="sessionTotal" name="Session" fill="#0ea5e9" opacity={0.7} radius={[2, 2, 0, 0]} />
+              <Line yAxisId="right" type="monotone" dataKey="totalCvr" name="总CVR%" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+              <Line yAxisId="right" type="monotone" dataKey="adCvr" name="广告CVR%" stroke="#f59e0b" strokeWidth={1.5} dot={{ r: 2 }} />
+              <Line yAxisId="right" type="monotone" dataKey="organicCvr" name="自然CVR%" stroke="#8b5cf6" strokeWidth={1.5} dot={{ r: 2 }} />
+              <ReferenceLine yAxisId="right" y={5} stroke="#ef4444" strokeDasharray="5 5" label={{ value: "CVR预警线 5%", position: "right", style: { fontSize: 9, fill: "#ef4444" } }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        );
+
+      case "orders":
+        return (
+          <ResponsiveContainer width="100%" height={260}>
+            <ComposedChart data={chartData} {...commonProps}>
+              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+              <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+              <YAxis tick={{ fontSize: 10 }} />
+              <Tooltip contentStyle={tooltipStyle} />
+              <Legend wrapperStyle={legendStyle} />
+              <Bar dataKey="adOrders" name="广告订单" stackId="orders" fill="#f59e0b" opacity={0.8} radius={[0, 0, 0, 0]} />
+              <Bar dataKey="organicOrders" name="自然订单" stackId="orders" fill="#10b981" opacity={0.8} radius={[2, 2, 0, 0]} />
+              <Line type="monotone" dataKey="adClicks" name="广告点击" stroke="#ef4444" strokeWidth={1.5} dot={{ r: 2 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        );
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* ─── Product Basic Info Card ─── */}
       <Card>
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-base">产品利润情况</CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base">产品利润情况</CardTitle>
+              {productAlertSummary.badges.length > 0 && (
+                <div className="flex items-center gap-1">{productAlertSummary.badges.map((b, i) => <span key={i}>{b}</span>)}</div>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               {editingBasicInfo ? (
                 <>
@@ -401,7 +637,6 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
               ))}
             </div>
           )}
-          {/* Additional info row */}
           {!editingBasicInfo && basicInfo && (
             <div className="mt-3 pt-3 border-t grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs text-muted-foreground">
               {basicInfo.productCost && <span>采购: ${String(basicInfo.productCost)}</span>}
@@ -414,6 +649,52 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
         </CardContent>
       </Card>
 
+      {/* ─── Trend Chart Card ─── */}
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-blue-600" />
+              <CardTitle className="text-base">数据趋势分析</CardTitle>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => setShowChart(!showChart)}>
+              {showChart ? <ChevronUp className="h-3.5 w-3.5 mr-1" /> : <ChevronDown className="h-3.5 w-3.5 mr-1" />}
+              {showChart ? "收起图表" : "展开图表"}
+            </Button>
+          </div>
+        </CardHeader>
+        {showChart && (
+          <CardContent>
+            <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+              {CHART_TABS.map(tab => (
+                <Button
+                  key={tab.key}
+                  size="sm"
+                  variant={chartTab === tab.key ? "default" : "outline"}
+                  className="h-7 text-xs"
+                  onClick={() => setChartTab(tab.key)}
+                >
+                  {tab.label}
+                </Button>
+              ))}
+            </div>
+            {chartData.length > 0 ? (
+              <div className="border rounded-lg p-3 bg-muted/10">
+                {renderChart()}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-sm text-muted-foreground">暂无数据，请先同步周度运营数据</div>
+            )}
+            {/* Alert Legend */}
+            <div className="mt-3 flex items-center gap-4 text-[10px] text-muted-foreground">
+              <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-red-500 inline-block" style={{ borderTop: "2px dashed #ef4444" }} /> 危险预警线</span>
+              <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-amber-500 inline-block" style={{ borderTop: "2px dashed #f59e0b" }} /> 关注线</span>
+              <span className="text-muted-foreground/60">| ACOS &gt; 30% 危险, &gt; 25% 关注 | 利润率 &lt; 10% 危险, &lt; 15% 关注 | 退货率 &gt; 5% 危险</span>
+            </div>
+          </CardContent>
+        )}
+      </Card>
+
       {/* ─── Weekly Ops Data Table ─── */}
       <Card>
         <CardHeader className="pb-2">
@@ -422,14 +703,21 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
               <BarChart3 className="h-5 w-5 text-blue-600" />
               <CardTitle className="text-base">周度运营数据</CardTitle>
               <Badge variant="secondary" className="text-xs">{weeklyData?.length || 0} 周</Badge>
+              {productAlertSummary.level !== "normal" && (
+                <Badge variant={productAlertSummary.level === "danger" ? "destructive" : "outline"} className="text-xs">
+                  {productAlertSummary.level === "danger" ? <AlertCircle className="h-3 w-3 mr-0.5" /> : <AlertTriangle className="h-3 w-3 mr-0.5" />}
+                  {productAlertSummary.alerts.length} 项预警
+                </Badge>
+              )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Button
-                size="sm" variant="outline"
-                onClick={() => setShowChart(!showChart)}
+                size="sm" variant={showAlertOnly ? "default" : "outline"}
+                className="h-7 text-xs"
+                onClick={() => setShowAlertOnly(!showAlertOnly)}
               >
-                <BarChart3 className="h-3.5 w-3.5 mr-1" />
-                {showChart ? "隐藏图表" : "显示图表"}
+                <AlertTriangle className="h-3 w-3 mr-1" />
+                {showAlertOnly ? "显示全部" : "仅预警周"}
               </Button>
               <Button
                 size="sm" variant="outline"
@@ -446,73 +734,6 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
           </div>
         </CardHeader>
         <CardContent>
-          {/* Chart Section */}
-          {showChart && chartData.length > 0 && (
-            <div className="mb-4 border rounded-lg p-3 bg-muted/20">
-              <div className="flex items-center gap-2 mb-3">
-                {(["sales", "profit", "acos", "ads"] as const).map(m => (
-                  <Button
-                    key={m}
-                    size="sm"
-                    variant={chartMetric === m ? "default" : "outline"}
-                    className="h-7 text-xs"
-                    onClick={() => setChartMetric(m)}
-                  >
-                    {m === "sales" ? "销量趋势" : m === "profit" ? "利润趋势" : m === "acos" ? "ACOS趋势" : "广告数据"}
-                  </Button>
-                ))}
-              </div>
-              <ResponsiveContainer width="100%" height={220}>
-                {chartMetric === "sales" ? (
-                  <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                    <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                    <YAxis yAxisId="left" tick={{ fontSize: 10 }} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
-                    <Tooltip contentStyle={{ fontSize: 11 }} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar yAxisId="left" dataKey="salesQty" name="销量" fill="#3b82f6" opacity={0.7} />
-                    <Line yAxisId="right" type="monotone" dataKey="totalCvr" name="CVR%" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                  </ComposedChart>
-                ) : chartMetric === "profit" ? (
-                  <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                    <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                    <YAxis yAxisId="left" tick={{ fontSize: 10 }} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
-                    <Tooltip contentStyle={{ fontSize: 11 }} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar yAxisId="left" dataKey="salesAmount" name="销售额" fill="#6366f1" opacity={0.5} />
-                    <Line yAxisId="left" type="monotone" dataKey="orderProfit" name="利润" stroke="#10b981" strokeWidth={2} dot={false} />
-                    <Line yAxisId="right" type="monotone" dataKey="profitMargin" name="利润率%" stroke="#f97316" strokeWidth={1.5} dot={false} />
-                  </ComposedChart>
-                ) : chartMetric === "acos" ? (
-                  <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                    <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip contentStyle={{ fontSize: 11 }} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Line type="monotone" dataKey="acos" name="ACOS%" stroke="#ef4444" strokeWidth={2} dot={false} />
-                    <Line type="monotone" dataKey="totalCvr" name="CVR%" stroke="#3b82f6" strokeWidth={2} dot={false} />
-                  </LineChart>
-                ) : (
-                  <ComposedChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                    <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                    <YAxis yAxisId="left" tick={{ fontSize: 10 }} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
-                    <Tooltip contentStyle={{ fontSize: 11 }} />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar yAxisId="left" dataKey="adSpend" name="广告费" fill="#ef4444" opacity={0.6} />
-                    <Line yAxisId="right" type="monotone" dataKey="cpc" name="CPC" stroke="#8b5cf6" strokeWidth={2} dot={false} />
-                  </ComposedChart>
-                )}
-              </ResponsiveContainer>
-            </div>
-          )}
-
-          {/* Data Table */}
           {loadingWeekly ? (
             <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div>
           ) : !weeklyData || weeklyData.length === 0 ? (
@@ -533,7 +754,7 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
               <table className="w-full text-xs border-collapse min-w-[1400px]">
                 <thead>
                   <tr className="bg-muted/50">
-                    {/* Group headers */}
+                    <th className="border border-border px-1 py-1 w-6 text-center text-[10px] text-muted-foreground">!</th>
                     <th colSpan={2} className="border border-border px-1.5 py-1.5 text-center font-semibold text-muted-foreground bg-muted/70">总体情况</th>
                     <th colSpan={5} className="border border-border px-1.5 py-1.5 text-center font-semibold text-muted-foreground bg-blue-50">销售数据</th>
                     <th colSpan={4} className="border border-border px-1.5 py-1.5 text-center font-semibold text-muted-foreground bg-emerald-50">转化数据</th>
@@ -542,6 +763,9 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
                     <th className="border border-border px-1.5 py-1 w-16"></th>
                   </tr>
                   <tr className="bg-muted/30">
+                    <th className="border border-border px-1 py-1 text-center text-[10px]">
+                      <AlertTriangle className="h-3 w-3 mx-auto text-muted-foreground" />
+                    </th>
                     {columns.map(col => (
                       <th key={col.key} className="border border-border px-1.5 py-1.5 text-center font-medium text-muted-foreground whitespace-nowrap text-[11px]">
                         {col.label}
@@ -553,13 +777,14 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
                 <tbody>
                   {tableRows.map((row, idx) => {
                     if (row.type === "month") {
-                      // Monthly summary row (green background)
+                      if (showAlertOnly) return null;
                       const m = row.data;
                       const monthNum = row.yearMonth!.split("-")[1];
                       const profitVal = formatMoney(m.financialProfit);
                       const orderProfitVal = formatMoney(m.orderProfitTotal);
                       return (
                         <tr key={`month-${row.yearMonth}`} className="bg-emerald-100/70 font-semibold">
+                          <td className="border border-border px-1 py-1"></td>
                           <td colSpan={5} className="border border-border px-2 py-1.5 text-[11px]">
                             <span className="text-emerald-800">{parseInt(monthNum)}月度汇总</span>
                             <span className="ml-2 text-muted-foreground">财务实际利润</span>
@@ -583,10 +808,20 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
                     const w = row.data;
                     const isEditing = editingId === w.id;
                     const profitVal = formatMoney(w.orderProfit);
+                    const rowAlert = getRowAlerts(w);
+
+                    // Filter: show only alert rows
+                    if (showAlertOnly && rowAlert.level === "normal") return null;
+
+                    // Alert cell levels
+                    const acosLevel = getAlertLevel("acos", parseFloat(String(w.acos || 0)));
+                    const profitMarginLevel = getAlertLevel("profitMargin", parseFloat(String(w.orderProfitMargin || 0)));
+                    const returnRateLevel = getAlertLevel("returnRate", parseFloat(String(w.returnRate || 0)));
 
                     if (isEditing) {
                       return (
                         <tr key={w.id} className="bg-blue-50/50">
+                          <td className="border border-border px-1 py-0.5"></td>
                           <td className="border border-border px-1 py-0.5">
                             <Input className="h-6 text-[11px] w-20" value={editData.weekStartDate} onChange={e => setEditData(d => ({ ...d, weekStartDate: e.target.value }))} />
                           </td>
@@ -623,8 +858,33 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
                       );
                     }
 
+                    // Row border highlight for alerts
+                    const rowBorderClass = rowAlert.level === "danger" ? "border-l-2 border-l-red-500" : rowAlert.level === "warn" ? "border-l-2 border-l-amber-400" : "";
+
                     return (
-                      <tr key={w.id} className="hover:bg-muted/30 transition-colors">
+                      <tr key={w.id} className={`hover:bg-muted/30 transition-colors ${rowBorderClass}`}>
+                        {/* Alert indicator column */}
+                        <td className="border border-border px-0.5 py-0.5 text-center">
+                          {rowAlert.level === "danger" && (
+                            <div className="relative group">
+                              <AlertCircle className="h-3.5 w-3.5 text-red-500 mx-auto" />
+                              <div className="absolute z-50 left-6 top-0 hidden group-hover:block bg-white border border-red-200 rounded-lg shadow-lg p-2 min-w-[140px]">
+                                <p className="text-[10px] font-semibold text-red-600 mb-1">异常预警</p>
+                                {rowAlert.alerts.map((a, i) => <p key={i} className="text-[10px] text-red-500">{a}</p>)}
+                              </div>
+                            </div>
+                          )}
+                          {rowAlert.level === "warn" && (
+                            <div className="relative group">
+                              <AlertTriangle className="h-3.5 w-3.5 text-amber-500 mx-auto" />
+                              <div className="absolute z-50 left-6 top-0 hidden group-hover:block bg-white border border-amber-200 rounded-lg shadow-lg p-2 min-w-[140px]">
+                                <p className="text-[10px] font-semibold text-amber-600 mb-1">关注提醒</p>
+                                {rowAlert.alerts.map((a, i) => <p key={i} className="text-[10px] text-amber-500">{a}</p>)}
+                              </div>
+                            </div>
+                          )}
+                          {rowAlert.level === "normal" && <CheckCircle2 className="h-3 w-3 text-emerald-400 mx-auto opacity-30" />}
+                        </td>
                         <td className="border border-border px-1.5 py-1 text-center font-mono text-[11px] whitespace-nowrap">{w.weekStartDate.substring(5)}</td>
                         <td className="border border-border px-1 py-1 text-center">
                           <div className="flex items-center justify-center gap-0.5">
@@ -636,7 +896,9 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
                         <td className="border border-border px-1 py-1 text-center font-mono text-[11px]">{formatInt(w.orderQty)}</td>
                         <td className="border border-border px-1 py-1 text-center font-mono text-[11px]">{formatMoney(w.salesAmount).text}</td>
                         <td className={`border border-border px-1 py-1 text-center font-mono text-[11px] ${profitVal.isNeg ? "text-red-600" : ""}`}>{profitVal.text}</td>
-                        <td className="border border-border px-1 py-1 text-center font-mono text-[11px]">{formatPct(w.orderProfitMargin)}</td>
+                        <td className={`border border-border px-1 py-1 text-center font-mono text-[11px] ${alertCellClass(profitMarginLevel)}`}>
+                          {formatPct(w.orderProfitMargin)}
+                        </td>
                         <td className="border border-border px-1 py-1 text-center font-mono text-[11px]">{formatInt(w.sessionTotal)}</td>
                         <td className="border border-border px-1 py-1 text-center font-mono text-[11px]">{formatPct(w.totalCvr)}</td>
                         <td className="border border-border px-1 py-1 text-center font-mono text-[11px]">{formatPct(w.adCvr)}</td>
@@ -649,10 +911,14 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
                         <td className="border border-border px-1 py-1 text-center font-mono text-[11px]">{formatInt(w.adImpressions)}</td>
                         <td className="border border-border px-1 py-1 text-center font-mono text-[11px]">{formatMoney(w.cpc).text}</td>
                         <td className="border border-border px-1 py-1 text-center font-mono text-[11px]">{formatMoney(w.adSpend).text}</td>
-                        <td className={`border border-border px-1 py-1 text-center font-mono text-[11px] ${parseFloat(String(w.acos || 0)) > 30 ? "text-red-600" : ""}`}>{formatPct(w.acos)}</td>
+                        <td className={`border border-border px-1 py-1 text-center font-mono text-[11px] ${alertCellClass(acosLevel)}`}>
+                          {formatPct(w.acos)}
+                        </td>
                         <td className="border border-border px-1 py-1 text-center font-mono text-[11px]">{w.rating ? String(w.rating) : "-"}</td>
                         <td className="border border-border px-1 py-1 text-center font-mono text-[11px]">{formatInt(w.reviewCount)}</td>
-                        <td className="border border-border px-1 py-1 text-center font-mono text-[11px]">{formatPct(w.returnRate)}</td>
+                        <td className={`border border-border px-1 py-1 text-center font-mono text-[11px] ${alertCellClass(returnRateLevel)}`}>
+                          {formatPct(w.returnRate)}
+                        </td>
                         <td className="border border-border px-1 py-0.5 text-center">
                           <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => startEdit(w)}>
                             <Edit2 className="h-3 w-3 text-muted-foreground" />
@@ -663,6 +929,28 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Alert Threshold Legend */}
+          {weeklyData && weeklyData.length > 0 && (
+            <div className="mt-3 pt-3 border-t flex items-center gap-4 flex-wrap text-[10px]">
+              <span className="font-medium text-muted-foreground">预警阈值:</span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-red-500" /> ACOS &gt; 30%
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-amber-500" /> ACOS &gt; 25%
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-red-500" /> 利润率 &lt; 10%
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-amber-500" /> 利润率 &lt; 15%
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-red-500" /> 退货率 &gt; 5%
+              </span>
             </div>
           )}
         </CardContent>

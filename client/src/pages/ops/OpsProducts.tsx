@@ -20,6 +20,7 @@ import {
   BarChart3, ChevronDown, ChevronRight, ExternalLink,
   TrendingUp, TrendingDown, Minus, Trash2, RefreshCw,
   ArrowUpDown, ArrowUp, ArrowDown, Calendar,
+  AlertTriangle, AlertCircle,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -78,6 +79,44 @@ function WowArrow({ pct }: { pct: number | null | undefined }) {
 function ProfitCell({ val }: { val: number }) {
   if (val < 0) return <span className="text-red-500 font-medium tabular-nums">({fmtCurrency(Math.abs(val))})</span>;
   return <span className="text-emerald-600 font-medium tabular-nums">{fmtCurrency(val)}</span>;
+}
+
+// ─── Alert Thresholds for Overview ───
+type AlertLevel = "normal" | "warn" | "danger";
+
+function getAlertLevel(key: string, value: number): AlertLevel {
+  if (isNaN(value)) return "normal";
+  if (key === "acos") {
+    if (value > 30) return "danger";
+    if (value > 25) return "warn";
+  } else if (key === "profitMargin") {
+    if (value < 10 && value !== 0) return "danger";
+    if (value < 15 && value !== 0) return "warn";
+  } else if (key === "returnRate") {
+    if (value > 5) return "danger";
+    if (value > 3) return "warn";
+  }
+  return "normal";
+}
+
+function alertCellBg(level: AlertLevel): string {
+  if (level === "danger") return "bg-red-100 text-red-700 font-semibold";
+  if (level === "warn") return "bg-amber-50 text-amber-700";
+  return "";
+}
+
+function getProductAlerts(product: { weeks: Array<{ acos: number; profitMargin: number; returnRate: number }> }): { level: AlertLevel; count: number; labels: string[] } {
+  if (!product.weeks.length) return { level: "normal", count: 0, labels: [] };
+  const latest = [...product.weeks].sort((a: any, b: any) => (b.weekStartDate || "").localeCompare(a.weekStartDate || ""))[0];
+  const labels: string[] = [];
+  let maxLevel: AlertLevel = "normal";
+  const acosL = getAlertLevel("acos", latest.acos);
+  if (acosL !== "normal") { labels.push(`ACOS ${latest.acos.toFixed(0)}%`); maxLevel = acosL === "danger" ? "danger" : maxLevel === "danger" ? "danger" : "warn"; }
+  const profitL = getAlertLevel("profitMargin", latest.profitMargin);
+  if (profitL !== "normal") { labels.push(`利润率 ${latest.profitMargin.toFixed(0)}%`); maxLevel = profitL === "danger" ? "danger" : maxLevel === "danger" ? "danger" : "warn"; }
+  const returnL = getAlertLevel("returnRate", latest.returnRate);
+  if (returnL !== "normal") { labels.push(`退货率 ${latest.returnRate.toFixed(1)}%`); maxLevel = returnL === "danger" ? "danger" : maxLevel === "danger" ? "danger" : "warn"; }
+  return { level: maxLevel, count: labels.length, labels };
 }
 
 // ─── Types ───
@@ -242,6 +281,20 @@ function ProductBlock({ product, onNavigate, onDelete, operatorList, onAssign, s
             <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 shrink-0 ${statusColors[product.status] || ""}`}>
               {statusLabels[product.status] || product.status}
             </Badge>
+            {(() => {
+              const alerts = getProductAlerts(product);
+              if (alerts.level === "danger") return (
+                <Badge variant="destructive" className="text-[10px] px-1.5 py-0 shrink-0 gap-0.5">
+                  <AlertCircle className="h-2.5 w-2.5" />{alerts.count}项预警
+                </Badge>
+              );
+              if (alerts.level === "warn") return (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0 gap-0.5 border-amber-300 text-amber-600 bg-amber-50">
+                  <AlertTriangle className="h-2.5 w-2.5" />{alerts.count}项关注
+                </Badge>
+              );
+              return null;
+            })()}
             <Badge variant="outline" className="text-[10px] font-mono px-1.5 py-0 shrink-0">
               {product.marketplace || "US"}
             </Badge>
@@ -442,8 +495,8 @@ function ProductBlock({ product, onNavigate, onDelete, operatorList, onAssign, s
                           <WowArrow pct={w.wow?.salesAmount.pct} />
                         </td>
                         <td className="px-1.5 py-1 text-right"><ProfitCell val={w.orderProfit} /></td>
-                        <td className="px-1.5 py-1 text-right tabular-nums">
-                          <span className={w.profitMargin >= 0 ? "text-emerald-600" : "text-red-500"}>{fmtPct(w.profitMargin, 1)}</span>
+                        <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("profitMargin", w.profitMargin))}`}>
+                          {fmtPct(w.profitMargin, 1)}
                         </td>
                         <td className="px-1.5 py-1 text-right tabular-nums">{w.sessionTotal}</td>
                         <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.totalCvr, 1)}</td>
@@ -459,15 +512,13 @@ function ProductBlock({ product, onNavigate, onDelete, operatorList, onAssign, s
                           {fmtCurrency(w.adSpend)}
                           <WowArrow pct={w.wow?.adSpend.pct} />
                         </td>
-                        <td className="px-1.5 py-1 text-right tabular-nums">
-                          <span className={w.acos > 30 ? "text-red-500" : w.acos > 20 ? "text-amber-600" : "text-emerald-600"}>
-                            {fmtPct(w.acos, 1)}
-                          </span>
+                        <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("acos", w.acos))}`}>
+                          {fmtPct(w.acos, 1)}
                         </td>
                         <td className="px-1.5 py-1 text-right tabular-nums">{w.rating.toFixed(1)}</td>
                         <td className="px-1.5 py-1 text-right tabular-nums">{w.reviewCount}</td>
-                        <td className="px-1.5 py-1 text-right tabular-nums">
-                          <span className={w.returnRate > 5 ? "text-red-500" : ""}>{fmtPct(w.returnRate, 1)}</span>
+                        <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("returnRate", w.returnRate))}`}>
+                          {fmtPct(w.returnRate, 1)}
                         </td>
                       </tr>
                     );
@@ -492,8 +543,8 @@ function ProductBlock({ product, onNavigate, onDelete, operatorList, onAssign, s
                     <WowArrow pct={w.wow?.salesAmount.pct} />
                   </td>
                   <td className="px-1.5 py-1 text-right"><ProfitCell val={w.orderProfit} /></td>
-                  <td className="px-1.5 py-1 text-right tabular-nums">
-                    <span className={w.profitMargin >= 0 ? "text-emerald-600" : "text-red-500"}>{fmtPct(w.profitMargin, 1)}</span>
+                  <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("profitMargin", w.profitMargin))}`}>
+                    {fmtPct(w.profitMargin, 1)}
                   </td>
                   <td className="px-1.5 py-1 text-right tabular-nums">{w.sessionTotal}</td>
                   <td className="px-1.5 py-1 text-right tabular-nums">{fmtPct(w.totalCvr, 1)}</td>
@@ -509,15 +560,13 @@ function ProductBlock({ product, onNavigate, onDelete, operatorList, onAssign, s
                     {fmtCurrency(w.adSpend)}
                     <WowArrow pct={w.wow?.adSpend.pct} />
                   </td>
-                  <td className="px-1.5 py-1 text-right tabular-nums">
-                    <span className={w.acos > 30 ? "text-red-500" : w.acos > 20 ? "text-amber-600" : "text-emerald-600"}>
-                      {fmtPct(w.acos, 1)}
-                    </span>
+                  <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("acos", w.acos))}`}>
+                    {fmtPct(w.acos, 1)}
                   </td>
                   <td className="px-1.5 py-1 text-right tabular-nums">{w.rating.toFixed(1)}</td>
                   <td className="px-1.5 py-1 text-right tabular-nums">{w.reviewCount}</td>
-                  <td className="px-1.5 py-1 text-right tabular-nums">
-                    <span className={w.returnRate > 5 ? "text-red-500" : ""}>{fmtPct(w.returnRate, 1)}</span>
+                  <td className={`px-1.5 py-1 text-right tabular-nums ${alertCellBg(getAlertLevel("returnRate", w.returnRate))}`}>
+                    {fmtPct(w.returnRate, 1)}
                   </td>
                 </tr>
               ))}
