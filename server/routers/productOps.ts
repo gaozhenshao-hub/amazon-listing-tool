@@ -3456,11 +3456,12 @@ export const productOpsRouter = router({
       }
     }),
 
-  // Sync weekly ops from Lingxing API (auto-populate from profit + ads data)
+  // ─── Helper: split date range into <=31-day chunks (Lingxing API limit) ───
+  // Sync weekly ops from Lingxing API (profit + ads + session + review data)
   syncWeeklyOpsFromLingxing: protectedProcedure
     .input(z.object({
       productId: z.number(),
-      months: z.number().default(6), // how many months back to sync
+      months: z.number().default(6),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -3471,72 +3472,219 @@ export const productOpsRouter = router({
       const adapter = getLingxingAdapter();
       const variants = await db!.select().from(productVariants)
         .where(eq(productVariants.productId, input.productId));
+      const skus = variants.map(v => v.sku).filter(Boolean) as string[];
       const childAsins = variants.map(v => v.childAsin).filter(Boolean);
       const parentAsin = product.parentAsin;
 
       // Calculate date range
       const now = new Date();
-      const startDate = new Date(now.getTime() - input.months * 30 * 86400000).toISOString().split('T')[0];
-      const endDate = now.toISOString().split('T')[0];
+      const globalStart = new Date(now.getTime() - input.months * 30 * 86400000);
+      const globalEnd = now;
 
-      // Fetch profit data from Lingxing
+      // Split into <=31-day chunks
+      function splitDateRange(start: Date, end: Date): Array<{ startDate: string; endDate: string }> {
+        const chunks: Array<{ startDate: string; endDate: string }> = [];
+        let cur = new Date(start);
+        while (cur < end) {
+          const chunkEnd = new Date(Math.min(cur.getTime() + 30 * 86400000, end.getTime()));
+          chunks.push({
+            startDate: cur.toISOString().split('T')[0],
+            endDate: chunkEnd.toISOString().split('T')[0],
+          });
+          cur = new Date(chunkEnd.getTime() + 86400000);
+        }
+        return chunks;
+      }
+      const dateChunks = splitDateRange(globalStart, globalEnd);
+
+      // ── 1. Fetch MSKU profit data (by SKU or ASIN) ──
       let profitItems: any[] = [];
-      try {
-        const res = await adapter.requestWithMockFallback({
-          path: "/bd/profit/report/open/report/asin/list",
-          body: {
-            offset: 0, length: 2000,
-            startDate, endDate,
-            searchField: "asin",
-            searchValue: childAsins.length > 0 ? childAsins : [parentAsin],
-            monthlyQuery: false,
-            orderStatus: "All",
-          },
-        });
-        const raw = res.data || [];
-        profitItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
-      } catch (err: any) {
-        console.warn(`[syncWeeklyOps] Profit fetch error: ${err.message}`);
+      for (const chunk of dateChunks) {
+        try {
+          const searchField = skus.length > 0 ? 'seller_sku' : 'asin';
+          const searchValue = skus.length > 0 ? skus : (childAsins.length > 0 ? childAsins : [parentAsin]);
+          const res = await adapter.requestWithMockFallback({
+            path: "/bd/profit/report/open/report/msku/list",
+            body: {
+              offset: 0, length: 5000,
+              startDate: chunk.startDate,
+              endDate: chunk.endDate,
+              searchField,
+              searchValue,
+              monthlyQuery: false,
+              summaryEnabled: false,
+              orderStatus: "All",
+            },
+          });
+          const raw = res.data || [];
+          const items = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
+          profitItems.push(...items);
+        } catch (err: any) {
+          console.warn(`[syncWeeklyOps] Profit chunk ${chunk.startDate}~${chunk.endDate} error: ${err.message}`);
+        }
       }
 
-      // Group profit items by week
-      const weekMap = new Map<string, any[]>();
-      for (const item of profitItems) {
-        const date = item.statDate || item.date || '';
-        if (!date) continue;
-        // Calculate week start (Monday)
-        const d = new Date(date);
+      // ── 2. Fetch SP ad report data ──
+      let adItems: any[] = [];
+      for (const chunk of dateChunks) {
+        try {
+          const res = await adapter.requestWithMockFallback({
+            path: "/pb/openapi/newad/spProductAdReports",
+            body: {
+              start_date: chunk.startDate,
+              end_date: chunk.endDate,
+              asin: childAsins.length > 0 ? childAsins[0] : parentAsin,
+            },
+          });
+          const raw = res.data || res || [];
+          const items = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
+          adItems.push(...items);
+        } catch (err: any) {
+          console.warn(`[syncWeeklyOps] Ad data chunk error: ${err.message}`);
+        }
+      }
+
+      // ── 3. Fetch ASIN360 session/performance data ──
+      let sessionItems: any[] = [];
+      try {
+        const startStr = globalStart.toISOString().split('T')[0];
+        const endStr = globalEnd.toISOString().split('T')[0];
+        const res = await adapter.requestWithMockFallback({
+          path: "/basicOpen/salesAnalysis/productPerformance/performanceTrendByHour",
+          body: {
+            sids: 'all',
+            date_start: startStr,
+            date_end: endStr,
+            summary_field: 'asin',
+            summary_field_value: childAsins.length > 0 ? childAsins[0] : parentAsin,
+          },
+        });
+        const raw = res.data || res || {};
+        sessionItems = (raw as any).list || (Array.isArray(raw) ? raw : []);
+      } catch (err: any) {
+        console.warn(`[syncWeeklyOps] Session data error: ${err.message}`);
+      }
+
+      // ── 4. Fetch review stats ──
+      let reviewData: any = null;
+      try {
+        const startStr = globalStart.toISOString().split('T')[0];
+        const endStr = globalEnd.toISOString().split('T')[0];
+        const res = await adapter.requestWithMockFallback({
+          path: "/erp/sc/v2/ca/reviewReport/lists",
+          body: { start_date: startStr, end_date: endStr, offset: 0, length: 100 },
+          method: 'GET',
+        });
+        const raw = res.data || res || {};
+        // Find matching ASIN in review data
+        const reviewList = Array.isArray(raw) ? raw : (raw as any).list || (raw as any).data || [];
+        reviewData = reviewList.find((r: any) =>
+          r.asin === parentAsin || childAsins.includes(r.asin)
+        ) || (reviewList.length > 0 ? reviewList[0] : null);
+      } catch (err: any) {
+        console.warn(`[syncWeeklyOps] Review data error: ${err.message}`);
+      }
+
+      // ── Helper: get Monday of a date ──
+      function getWeekMonday(dateStr: string): string {
+        const d = new Date(dateStr);
         const day = d.getDay();
         const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-        const weekStart = new Date(d.setDate(diff));
-        const weekKey = weekStart.toISOString().split('T')[0];
+        return new Date(d.setDate(diff)).toISOString().split('T')[0];
+      }
+
+      // ── Group profit items by week ──
+      const weekMap = new Map<string, any[]>();
+      for (const item of profitItems) {
+        const date = item.postedDateLocale || item.statDate || item.date || '';
+        if (!date) continue;
+        const weekKey = getWeekMonday(date);
         if (!weekMap.has(weekKey)) weekMap.set(weekKey, []);
         weekMap.get(weekKey)!.push(item);
       }
 
-      // Upsert weekly records
+      // ── Group ad items by week ──
+      const adWeekMap = new Map<string, any[]>();
+      for (const item of adItems) {
+        const date = item.report_date || item.date || '';
+        if (!date) continue;
+        const weekKey = getWeekMonday(date);
+        if (!adWeekMap.has(weekKey)) adWeekMap.set(weekKey, []);
+        adWeekMap.get(weekKey)!.push(item);
+      }
+
+      // ── Group session items by week ──
+      const sessionWeekMap = new Map<string, any[]>();
+      for (const item of sessionItems) {
+        const date = item.r_date || item.date || '';
+        if (!date) continue;
+        const weekKey = getWeekMonday(date);
+        if (!sessionWeekMap.has(weekKey)) sessionWeekMap.set(weekKey, []);
+        sessionWeekMap.get(weekKey)!.push(item);
+      }
+
+      // ── Upsert weekly records ──
       let synced = 0;
-      for (const [weekStart, items] of Array.from(weekMap.entries())) {
+      const allWeeks = new Set([...weekMap.keys(), ...adWeekMap.keys(), ...sessionWeekMap.keys()]);
+
+      for (const weekStart of Array.from(allWeeks).sort()) {
         const ws = new Date(weekStart);
         const we = new Date(ws.getTime() + 6 * 86400000);
         const weekEnd = we.toISOString().split('T')[0];
 
-        // Aggregate data
+        // Aggregate profit data
+        const items = weekMap.get(weekStart) || [];
         let totalSales = 0, totalOrders = 0, totalRevenue = 0, totalProfit = 0;
-        let totalAdSpend = 0, totalAdOrders = 0, totalSessions = 0;
+        let totalAdSpend = 0, totalRefundsRate = 0, refundsCount = 0;
         for (const item of items) {
           totalSales += Number(item.totalSalesQuantity || item.totalFbaAndFbmQuantity || 0);
           totalOrders += Number(item.totalSalesQuantity || 0);
           totalRevenue += Number(item.totalSalesAmount || item.totalFbaAndFbmAmount || 0);
           totalProfit += Number(item.grossProfit || 0);
           totalAdSpend += Math.abs(Number(item.totalAdsCost || 0));
+          if (item.refundsRate != null || item.fbaReturnsQuantityRate != null) {
+            totalRefundsRate += Number(item.refundsRate || item.fbaReturnsQuantityRate || 0);
+            refundsCount++;
+          }
+        }
+
+        // Aggregate ad data
+        const adDayItems = adWeekMap.get(weekStart) || [];
+        let weekAdImpressions = 0, weekAdClicks = 0, weekAdOrders = 0, weekAdSpendFromReport = 0;
+        for (const ad of adDayItems) {
+          weekAdImpressions += Number(ad.impressions || 0);
+          weekAdClicks += Number(ad.clicks || 0);
+          weekAdOrders += Number(ad.orders || ad.attributed_orders || 0);
+          weekAdSpendFromReport += Number(ad.cost || ad.spend || 0);
+        }
+        // Use ad report spend if profit API ad spend is 0
+        if (totalAdSpend === 0 && weekAdSpendFromReport > 0) {
+          totalAdSpend = weekAdSpendFromReport;
+        }
+
+        // Aggregate session data
+        const sessDayItems = sessionWeekMap.get(weekStart) || [];
+        let weekSessions = 0;
+        for (const sess of sessDayItems) {
+          weekSessions += Number(sess.sessions || sess.page_views || 0);
         }
 
         const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
         const prevWeekStart = new Date(ws.getTime() - 7 * 86400000).toISOString().split('T')[0];
         const prevItems = weekMap.get(prevWeekStart) || [];
-        const prevSales = prevItems.reduce((s: number, i: any) => s + Number(i.totalSalesQuantity || 0), 0);
+        const prevSales = prevItems.reduce((s: number, i: any) => s + Number(i.totalSalesQuantity || i.totalFbaAndFbmQuantity || 0), 0);
         const trend = totalSales > prevSales ? 'up' : totalSales < prevSales ? 'down' : 'stable';
+
+        // Calculate CVR and CTR
+        const totalCvr = weekSessions > 0 ? (totalOrders / weekSessions * 100) : 0;
+        const adCvr = weekAdClicks > 0 ? (weekAdOrders / weekAdClicks * 100) : 0;
+        const organicOrders = Math.max(0, totalOrders - weekAdOrders);
+        const organicClicks = Math.max(0, weekSessions - weekAdClicks);
+        const organicCvr = organicClicks > 0 ? (organicOrders / organicClicks * 100) : 0;
+        const ctr = weekAdImpressions > 0 ? (weekAdClicks / weekAdImpressions) : 0;
+        const cpc = weekAdClicks > 0 ? (totalAdSpend / weekAdClicks) : 0;
+        const acos = totalRevenue > 0 ? (totalAdSpend / totalRevenue * 100) : 0;
+        const avgReturnRate = refundsCount > 0 ? (totalRefundsRate / refundsCount) : 0;
 
         // Upsert
         const [existing] = await db!.select().from(productWeeklyOps)
@@ -3553,8 +3701,22 @@ export const productOpsRouter = router({
           salesAmount: totalRevenue.toFixed(2),
           orderProfit: totalProfit.toFixed(2),
           orderProfitMargin: profitMargin.toFixed(2),
+          sessionTotal: weekSessions,
+          totalCvr: totalCvr.toFixed(2),
+          adCvr: adCvr.toFixed(2),
+          organicCvr: organicCvr.toFixed(2),
+          adOrders: weekAdOrders,
+          organicOrders,
+          adClicks: weekAdClicks,
+          organicClicks,
+          ctr: ctr.toFixed(4),
+          adImpressions: weekAdImpressions,
+          cpc: cpc.toFixed(2),
           adSpend: totalAdSpend.toFixed(2),
-          acos: totalRevenue > 0 ? (totalAdSpend / totalRevenue * 100).toFixed(2) : '0',
+          acos: acos.toFixed(2),
+          rating: reviewData?.score?.toString() || reviewData?.ratings?.toString() || '0',
+          reviewCount: reviewData?.review_num || reviewData?.total_reviews || 0,
+          returnRate: avgReturnRate.toFixed(2),
         };
 
         if (existing) {
@@ -3571,10 +3733,10 @@ export const productOpsRouter = router({
         synced++;
       }
 
-      // Also auto-generate monthly summaries
+      // ── Auto-generate monthly summaries ──
       const monthMap = new Map<string, { profit: number; orders: number; revenue: number; adSpend: number }>();
       for (const item of profitItems) {
-        const date = item.statDate || item.date || '';
+        const date = item.postedDateLocale || item.statDate || item.date || '';
         if (!date) continue;
         const ym = date.substring(0, 7);
         if (!monthMap.has(ym)) monthMap.set(ym, { profit: 0, orders: 0, revenue: 0, adSpend: 0 });
@@ -3600,6 +3762,7 @@ export const productOpsRouter = router({
           totalSalesAmount: data.revenue.toFixed(2),
           totalAdSpend: data.adSpend.toFixed(2),
           avgAcos: data.revenue > 0 ? (data.adSpend / data.revenue * 100).toFixed(2) : '0',
+          avgRating: reviewData?.score?.toString() || reviewData?.ratings?.toString() || '0',
         };
         if (existing) {
           await db!.update(productMonthlySummary).set(record as any).where(eq(productMonthlySummary.id, existing.id));
@@ -3613,7 +3776,7 @@ export const productOpsRouter = router({
         }
       }
 
-      return { syncedWeeks: synced, syncedMonths: monthMap.size };
+      return { syncedWeeks: synced, syncedMonths: monthMap.size, profitItemCount: profitItems.length, adItemCount: adItems.length, sessionItemCount: sessionItems.length };
     }),
 
   // Auto-fill product basic info from Lingxing profit API
@@ -3771,6 +3934,154 @@ export const productOpsRouter = router({
       }
 
       return results;
+    }),
+
+  // ─── Batch sync weekly ops for all active products ───
+  batchSyncWeeklyOps: protectedProcedure
+    .input(z.object({
+      weeks: z.number().default(1), // how many weeks back to sync (default: last 1 week)
+    }).optional())
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const weeks = input?.weeks || 1;
+      const months = Math.max(1, Math.ceil(weeks * 7 / 30));
+
+      // Get all active products for this user
+      const products = await db!.select({ id: productProfiles.id, parentAsin: productProfiles.parentAsin })
+        .from(productProfiles)
+        .where(and(
+          eq(productProfiles.userId, ctx.user.id),
+          eq(productProfiles.status, 'active'),
+        ));
+
+      if (products.length === 0) {
+        return { total: 0, synced: 0, errors: 0, details: [] };
+      }
+
+      const adapter = getLingxingAdapter();
+      const results: Array<{ productId: number; parentAsin: string; syncedWeeks: number; error?: string }> = [];
+      let totalSynced = 0;
+      let totalErrors = 0;
+
+      for (const product of products) {
+        try {
+          // Reuse the same logic as syncWeeklyOpsFromLingxing but inline
+          const variants = await db!.select().from(productVariants)
+            .where(eq(productVariants.productId, product.id));
+          const skus = variants.map(v => v.sku).filter(Boolean) as string[];
+          const childAsins = variants.map(v => v.childAsin).filter(Boolean);
+
+          const now = new Date();
+          const globalStart = new Date(now.getTime() - months * 30 * 86400000);
+          const startDate = globalStart.toISOString().split('T')[0];
+          const endDate = now.toISOString().split('T')[0];
+
+          // Fetch MSKU profit data
+          const searchField = skus.length > 0 ? 'seller_sku' : 'asin';
+          const searchValue = skus.length > 0 ? skus : (childAsins.length > 0 ? childAsins : [product.parentAsin]);
+          const res = await adapter.requestWithMockFallback({
+            path: "/bd/profit/report/open/report/msku/list",
+            body: {
+              offset: 0, length: 5000,
+              startDate, endDate,
+              searchField, searchValue,
+              monthlyQuery: false,
+              summaryEnabled: false,
+              orderStatus: "All",
+            },
+          });
+          const raw = res.data || [];
+          const profitItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
+
+          // Group by week and upsert
+          function getWeekMonday(dateStr: string): string {
+            const d = new Date(dateStr);
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+            return new Date(d.setDate(diff)).toISOString().split('T')[0];
+          }
+
+          const weekMap = new Map<string, any[]>();
+          for (const item of profitItems) {
+            const date = item.postedDateLocale || item.statDate || item.date || '';
+            if (!date) continue;
+            const weekKey = getWeekMonday(date);
+            if (!weekMap.has(weekKey)) weekMap.set(weekKey, []);
+            weekMap.get(weekKey)!.push(item);
+          }
+
+          let productSynced = 0;
+          for (const [weekStart, items] of Array.from(weekMap.entries())) {
+            const ws = new Date(weekStart);
+            const weekEnd = new Date(ws.getTime() + 6 * 86400000).toISOString().split('T')[0];
+
+            let totalSales = 0, totalRevenue = 0, totalProfit = 0, totalAdSpend = 0;
+            for (const item of items) {
+              totalSales += Number(item.totalSalesQuantity || item.totalFbaAndFbmQuantity || 0);
+              totalRevenue += Number(item.totalSalesAmount || item.totalFbaAndFbmAmount || 0);
+              totalProfit += Number(item.grossProfit || 0);
+              totalAdSpend += Math.abs(Number(item.totalAdsCost || 0));
+            }
+
+            const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
+            const prevWeekStart = new Date(ws.getTime() - 7 * 86400000).toISOString().split('T')[0];
+            const prevItems = weekMap.get(prevWeekStart) || [];
+            const prevSales = prevItems.reduce((s: number, i: any) => s + Number(i.totalSalesQuantity || i.totalFbaAndFbmQuantity || 0), 0);
+            const trend = totalSales > prevSales ? 'up' : totalSales < prevSales ? 'down' : 'stable';
+
+            const [existing] = await db!.select().from(productWeeklyOps)
+              .where(and(
+                eq(productWeeklyOps.productId, product.id),
+                eq(productWeeklyOps.userId, ctx.user.id),
+                eq(productWeeklyOps.weekStartDate, weekStart),
+              ));
+
+            const record = {
+              salesTrend: trend as any,
+              salesQty: totalSales,
+              orderQty: totalSales,
+              salesAmount: totalRevenue.toFixed(2),
+              orderProfit: totalProfit.toFixed(2),
+              orderProfitMargin: profitMargin.toFixed(2),
+              adSpend: totalAdSpend.toFixed(2),
+              acos: totalRevenue > 0 ? (totalAdSpend / totalRevenue * 100).toFixed(2) : '0',
+            };
+
+            if (existing) {
+              await db!.update(productWeeklyOps).set(record as any).where(eq(productWeeklyOps.id, existing.id));
+            } else {
+              await db!.insert(productWeeklyOps).values({
+                ...record as any,
+                productId: product.id,
+                userId: ctx.user.id,
+                weekStartDate: weekStart,
+                weekEndDate: weekEnd,
+              });
+            }
+            productSynced++;
+          }
+
+          results.push({ productId: product.id, parentAsin: product.parentAsin, syncedWeeks: productSynced });
+          totalSynced += productSynced;
+        } catch (err: any) {
+          results.push({ productId: product.id, parentAsin: product.parentAsin, syncedWeeks: 0, error: err.message });
+          totalErrors++;
+        }
+      }
+
+      return { total: products.length, synced: totalSynced, errors: totalErrors, details: results };
+    }),
+
+  // ─── Trigger manual auto-sync (admin only) ───
+  triggerAutoSync: protectedProcedure
+    .mutation(async ({ ctx }) => {
+      // Only allow admin/super_admin to trigger manual sync
+      if (ctx.user.role !== 'admin' && ctx.user.role !== 'super_admin') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: '仅管理员可触发自动同步' });
+      }
+      const { triggerManualSync } = await import('../cronJobs');
+      await triggerManualSync();
+      return { success: true, message: '自动同步已触发' };
     }),
 
 });

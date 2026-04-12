@@ -107,6 +107,13 @@ export default function OpsProducts() {
     },
     onError: (e: any) => toast.error(e.message),
   });
+  const batchSyncWeeklyMut = trpc.productOps.batchSyncWeeklyOps.useMutation({
+    onSuccess: (data) => {
+      refetch();
+      toast.success(`批量同步完成：${data.total}个产品，${data.synced}周数据已同步${data.errors > 0 ? `，${data.errors}个失败` : ''}`);
+    },
+    onError: (e: any) => toast.error("批量同步失败", { description: e.message }),
+  });
   const { data: operatorList } = trpc.productOps.listOperators.useQuery();
 
   const [showCreate, setShowCreate] = useState(false);
@@ -259,6 +266,15 @@ export default function OpsProducts() {
           <p className="text-muted-foreground mt-1">以父ASIN为维度管理产品，查看库存、利润、广告和竞品数据</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => batchSyncWeeklyMut.mutate({ weeks: 1 })}
+            disabled={batchSyncWeeklyMut.isPending}
+            className="gap-2"
+          >
+            {batchSyncWeeklyMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
+            {batchSyncWeeklyMut.isPending ? "同步中..." : "批量同步周度数据"}
+          </Button>
           <Button
             variant="outline"
             onClick={() => syncMut.mutate()}

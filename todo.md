@@ -3252,3 +3252,19 @@
 - [x] 条件渲染：对比模式时隐藏聚合视图
 - [x] localStorage 选择状态持久化
 - [x] 9个vitest测试通过
+
+## 领星周度数据同步功能增强
+- [x] 重写 syncWeeklyOpsFromLingxing：日期分段请求（<=31天/段）、SKU匹配MSKU利润API
+- [x] 字段映射修正：totalSalesQuantity/grossProfit/totalAdsCost 等核心字段
+- [x] 广告细分数据：调用 spProductAdReports 获取 impressions/clicks/orders/cpc/ctr
+- [x] Session/CVR数据：调用 ASIN360 performanceTrendByHour 获取 sessions/page_views/unit_session_percentage
+- [x] 评论数据：调用 Review统计接口获取 rating/review_count
+- [x] 退款率：从利润报表获取 refundsRate/fbaReturnsQuantityRate
+- [x] 新增 batchSyncWeeklyOps 接口：一键为所有在售产品拉取最新一周运营数据
+- [x] 产品总览页新增"批量同步周度数据"按钮
+- [x] 新增 cronJobs.ts 自动定时同步模块（每周一凌晨2:00 Asia/Shanghai）
+- [x] 服务器启动时自动初始化 cron job
+- [x] 新增 triggerAutoSync 管理员手动触发接口
+- [x] 新增 ASIN360 performanceTrendByHour Mock 数据（含 sessions/page_views/unit_session_percentage）
+- [x] 新增 spProductAdReports Daily Mock 数据（含 impressions/clicks/cost/orders/report_date）
+- [x] 18个 vitest 测试全部通过

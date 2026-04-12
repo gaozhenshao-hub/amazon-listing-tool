@@ -74,6 +74,8 @@ async function startServer() {
     import("../lingxingAdapter").then(m => m.initLingxingAdapterFromDb()).catch(err => console.error("[LingxingAdapter] Failed to init:", err));
     // Initialize NextSLS logistics API adapter from DB settings
     import("../nextsls/adapter").then(m => m.initNextSlsAdapterFromDb()).catch(err => console.error("[NextSLS] Failed to init:", err));
+    // Initialize weekly auto-sync cron job (every Monday 02:00 Asia/Shanghai)
+    import("../cronJobs").then(m => m.initCronJobs()).catch(err => console.error("[AutoSync] Failed to init:", err));
   });
 }
 
