@@ -3176,3 +3176,15 @@
 - [x] 集成到 OpsProductDetail.tsx 数据看板 Tab
 - [x] 编写 weeklyOps.test.ts 测试（10 tests passed）
 - [x] 更新 productOps.test.ts 和 newFeatures4.test.ts 的 procedure 计数（78→86）
+
+### 产品详情页三项优化
+- [ ] 填充测试数据验证周度表格和图表显示效果
+- [ ] 产品利润卡片与领星利润接口打通，首次访问自动填充
+- [ ] 产品总览页增加关键指标列（本周利润、ACOS等）
+- [x] 后端 autoFillBasicInfo 接口：从领星利润API自动计算并填充产品基本信息
+- [x] 前端首次访问时自动触发 autoFillBasicInfo
+- [x] 后端 getProductsWeeklySummary 接口：批量获取产品最新周度数据
+- [x] 产品总览页增加"周利润"、"ACOS"、"广告费"三列
+- [x] 产品总览页新增列支持排序
+- [x] 产品总览页 footer 合计行增加周度数据汇总
+- [x] 更新测试用例和 procedure 计数（86→88）

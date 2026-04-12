@@ -3602,6 +3602,163 @@ export const productOpsRouter = router({
       return { syncedWeeks: synced, syncedMonths: monthMap.size };
     }),
 
+  // Auto-fill product basic info from Lingxing profit API
+  autoFillBasicInfo: protectedProcedure
+    .input(z.object({ productId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const [product] = await db!.select().from(productProfiles)
+        .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
+      if (!product) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const adapter = getLingxingAdapter();
+      const variants = await db!.select().from(productVariants)
+        .where(eq(productVariants.productId, input.productId));
+      const childAsins = variants.map(v => v.childAsin).filter(Boolean);
+      const parentAsin = product.parentAsin;
+
+      // Fetch 30-day profit data to compute averages
+      let profitItems: any[] = [];
+      try {
+        const res = await adapter.requestWithMockFallback({
+          path: "/bd/profit/report/open/report/asin/list",
+          body: {
+            offset: 0, length: 2000,
+            startDate: getDateNDaysAgo(30),
+            endDate: getYesterday(),
+            searchField: "asin",
+            searchValue: childAsins.length > 0 ? childAsins : [parentAsin],
+            monthlyQuery: false,
+            orderStatus: "All",
+          },
+        });
+        const raw = res.data || [];
+        profitItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
+      } catch (err: any) {
+        console.warn(`[autoFillBasicInfo] Profit fetch error: ${err.message}`);
+      }
+
+      // If no data from ASIN API, try parent ASIN
+      if (profitItems.length === 0 && parentAsin) {
+        try {
+          const parentRes = await adapter.requestWithMockFallback({
+            path: "/bd/profit/report/open/report/parent/asin/list",
+            body: {
+              offset: 0, length: 2000,
+              startDate: getDateNDaysAgo(30), endDate: getYesterday(),
+              searchField: "parent_asin", searchValue: [parentAsin],
+              monthlyQuery: false, orderStatus: "All",
+            },
+          });
+          const raw = parentRes.data || [];
+          profitItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
+        } catch (err: any) {
+          console.warn(`[autoFillBasicInfo] Parent ASIN fetch error: ${err.message}`);
+        }
+      }
+
+      if (profitItems.length === 0) {
+        return { filled: false, reason: "no_data" };
+      }
+
+      // Aggregate profit data
+      let totalRevenue = 0, totalCost = 0, totalProfit = 0, totalUnits = 0;
+      let totalFbaFee = 0, totalReferralFee = 0, totalShipping = 0;
+      for (const item of profitItems) {
+        totalRevenue += Number(item.totalSalesAmount || item.totalFbaAndFbmAmount || 0);
+        totalCost += Math.abs(Number(item.cgPriceTotal || item.cgPriceAbsTotal || 0));
+        totalProfit += Number(item.grossProfit || 0);
+        totalUnits += Number(item.totalSalesQuantity || item.totalFbaAndFbmQuantity || 0);
+        totalFbaFee += Math.abs(Number(item.totalFbaDeliveryFee || item.fbaDeliveryFee || 0));
+        totalReferralFee += Math.abs(Number(item.platformExpense || item.platformFee || 0));
+        totalShipping += Math.abs(Number(item.cgTransportCostsTotal || 0));
+      }
+
+      // Calculate per-unit metrics
+      const avgPrice = totalUnits > 0 ? (totalRevenue / totalUnits) : 0;
+      const avgCost = totalUnits > 0 ? (totalCost / totalUnits) : 0;
+      const avgFba = totalUnits > 0 ? (totalFbaFee / totalUnits) : 0;
+      const avgReferral = totalUnits > 0 ? (totalReferralFee / totalUnits) : 0;
+      const avgShipping = totalUnits > 0 ? (totalShipping / totalUnits) : 0;
+      const avgProfit = totalUnits > 0 ? (totalProfit / totalUnits) : 0;
+      const grossMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
+      // Break-even price = cost + fba + referral + shipping (per unit)
+      const breakEven = avgCost + avgFba + avgReferral + avgShipping;
+
+      // Get variant price as selling price
+      const variantPrice = variants.length > 0 ? Number(variants[0].price || 0) : 0;
+      const sellingPrice = variantPrice > 0 ? variantPrice : avgPrice;
+
+      // Upsert basic info
+      const data = {
+        sellingPrice: sellingPrice.toFixed(2),
+        breakEvenPrice: breakEven.toFixed(2),
+        grossProfit: avgProfit.toFixed(2),
+        grossMargin: grossMargin.toFixed(2),
+        productCost: avgCost.toFixed(2),
+        shippingCost: avgShipping.toFixed(2),
+        fbaFee: avgFba.toFixed(2),
+        referralFee: avgReferral.toFixed(2),
+        asin: childAsins[0] || parentAsin || "",
+        listingDate: "",
+      };
+
+      const [existing] = await db!.select().from(productBasicInfo)
+        .where(and(eq(productBasicInfo.productId, input.productId), eq(productBasicInfo.userId, ctx.user.id)));
+      if (existing) {
+        await db!.update(productBasicInfo).set(data as any).where(eq(productBasicInfo.id, existing.id));
+      } else {
+        await db!.insert(productBasicInfo).values({ ...data as any, productId: input.productId, userId: ctx.user.id });
+      }
+
+      return { filled: true, data };
+    }),
+
+  // Get weekly ops summary for product list (for product overview page)
+  getProductsWeeklySummary: protectedProcedure
+    .input(z.object({
+      productIds: z.array(z.number()),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (input.productIds.length === 0) return [];
+
+      // For each product, get the latest weekly ops record
+      const results: Array<{
+        productId: number;
+        weekStartDate: string | null;
+        salesQty: number;
+        orderProfit: string;
+        acos: string;
+        salesAmount: string;
+        adSpend: string;
+        salesTrend: string;
+      }> = [];
+
+      for (const pid of input.productIds) {
+        const [latest] = await db!.select().from(productWeeklyOps)
+          .where(and(
+            eq(productWeeklyOps.productId, pid),
+            eq(productWeeklyOps.userId, ctx.user.id),
+          ))
+          .orderBy(desc(productWeeklyOps.weekStartDate))
+          .limit(1);
+
+        results.push({
+          productId: pid,
+          weekStartDate: latest?.weekStartDate || null,
+          salesQty: latest?.salesQty || 0,
+          orderProfit: String(latest?.orderProfit || "0"),
+          acos: String(latest?.acos || "0"),
+          salesAmount: String(latest?.salesAmount || "0"),
+          adSpend: String(latest?.adSpend || "0"),
+          salesTrend: latest?.salesTrend || "stable",
+        });
+      }
+
+      return results;
+    }),
+
 });
 
 // ═══════════════════════════════════════════════════════

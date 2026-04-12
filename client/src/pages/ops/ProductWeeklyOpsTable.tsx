@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -109,6 +109,25 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
     onSuccess: () => { toast.success("产品信息已保存"); refetchBasicInfo(); },
     onError: (err) => toast.error(`保存失败: ${err.message}`),
   });
+
+  const autoFillBasicInfo = trpc.productOps.autoFillBasicInfo.useMutation({
+    onSuccess: (data) => {
+      if (data.filled) {
+        toast.success("已从领星自动填充产品利润信息");
+        refetchBasicInfo();
+      }
+    },
+    onError: () => { /* silent fail for auto-fill */ },
+  });
+
+  // Auto-fill basic info on first visit if empty
+  const autoFillTriggered = useRef(false);
+  useEffect(() => {
+    if (basicInfo === null && !autoFillTriggered.current && productId) {
+      autoFillTriggered.current = true;
+      autoFillBasicInfo.mutate({ productId });
+    }
+  }, [basicInfo, productId]);
 
   // Group weekly data by month and insert monthly summary rows
   const tableRows = useMemo(() => {
