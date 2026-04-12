@@ -4,11 +4,12 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+  RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Cell,
 } from "recharts";
-import { Monitor, Smartphone, LayoutGrid, TrendingUp, TrendingDown, DollarSign, Eye, MousePointerClick } from "lucide-react";
+import { Monitor, Smartphone, LayoutGrid, TrendingUp, Search, ArrowUpDown, ArrowUp, ArrowDown, ChevronDown, ChevronRight } from "lucide-react";
 
 interface AdPlacementAnalysisProps {
   campaignId: string | null;
@@ -21,30 +22,39 @@ interface AdPlacementAnalysisProps {
 }
 
 // Map real API placement_type values to display config
-const PLACEMENT_CONFIG: Record<string, { label: string; icon: any; color: string; fill: string }> = {
-  "TOP OF SEARCH ON-AMAZON": { label: "搜索结果顶部 (TOS)", icon: TrendingUp, color: "text-emerald-700", fill: "#10b981" },
-  "Top of Search on-Amazon": { label: "搜索结果顶部 (TOS)", icon: TrendingUp, color: "text-emerald-700", fill: "#10b981" },
-  "Top of Search": { label: "搜索结果顶部 (TOS)", icon: TrendingUp, color: "text-emerald-700", fill: "#10b981" },
-  "REST OF SEARCH": { label: "搜索结果其余位置 (ROS)", icon: LayoutGrid, color: "text-blue-700", fill: "#3b82f6" },
-  "Rest of Search": { label: "搜索结果其余位置 (ROS)", icon: LayoutGrid, color: "text-blue-700", fill: "#3b82f6" },
-  "PRODUCT PAGES": { label: "商品页面 (PP)", icon: Smartphone, color: "text-purple-700", fill: "#8b5cf6" },
-  "Product Pages": { label: "商品页面 (PP)", icon: Smartphone, color: "text-purple-700", fill: "#8b5cf6" },
-  "Detail Page on-Amazon": { label: "商品页面 (PP)", icon: Smartphone, color: "text-purple-700", fill: "#8b5cf6" },
-  "Other on-Amazon": { label: "其他位置", icon: Monitor, color: "text-gray-700", fill: "#9ca3af" },
-  "Other": { label: "其他位置", icon: Monitor, color: "text-gray-700", fill: "#9ca3af" },
+const PLACEMENT_CONFIG: Record<string, { label: string; shortLabel: string; icon: any; color: string; fill: string }> = {
+  "TOP OF SEARCH ON-AMAZON": { label: "搜索结果顶部 (TOS)", shortLabel: "TOS", icon: TrendingUp, color: "text-emerald-700", fill: "#10b981" },
+  "Top of Search on-Amazon": { label: "搜索结果顶部 (TOS)", shortLabel: "TOS", icon: TrendingUp, color: "text-emerald-700", fill: "#10b981" },
+  "Top of Search": { label: "搜索结果顶部 (TOS)", shortLabel: "TOS", icon: TrendingUp, color: "text-emerald-700", fill: "#10b981" },
+  "REST OF SEARCH": { label: "搜索结果其余位置 (ROS)", shortLabel: "ROS", icon: LayoutGrid, color: "text-blue-700", fill: "#3b82f6" },
+  "Rest of Search": { label: "搜索结果其余位置 (ROS)", shortLabel: "ROS", icon: LayoutGrid, color: "text-blue-700", fill: "#3b82f6" },
+  "PRODUCT PAGES": { label: "商品页面 (PP)", shortLabel: "PP", icon: Smartphone, color: "text-purple-700", fill: "#8b5cf6" },
+  "Product Pages": { label: "商品页面 (PP)", shortLabel: "PP", icon: Smartphone, color: "text-purple-700", fill: "#8b5cf6" },
+  "Detail Page on-Amazon": { label: "商品页面 (PP)", shortLabel: "PP", icon: Smartphone, color: "text-purple-700", fill: "#8b5cf6" },
+  "Other on-Amazon": { label: "其他位置", shortLabel: "Other", icon: Monitor, color: "text-gray-700", fill: "#9ca3af" },
+  "Other": { label: "其他位置", shortLabel: "Other", icon: Monitor, color: "text-gray-700", fill: "#9ca3af" },
 };
+
+const getPlacementConfig = (name: string) => PLACEMENT_CONFIG[name] || { label: name, shortLabel: name.slice(0, 10), icon: Monitor, color: "text-gray-700", fill: "#9ca3af" };
+
+type SortKey = "impressions" | "clicks" | "cost" | "sales" | "acos" | "ctr" | "cvr" | "orders";
 
 export default function AdPlacementAnalysis({ campaignId, campaignIds, marketplace, reportDate, startDate, endDate, defaultAdType }: AdPlacementAnalysisProps) {
   const [adType, setAdType] = useState<"SP" | "SB" | "SD">(defaultAdType === "SB" ? "SB" : defaultAdType === "SD" ? "SD" : "SP");
+  const [viewMode, setViewMode] = useState<"overview" | "keyword">("overview");
+  const [searchKw, setSearchKw] = useState("");
+  const [sortBy, setSortBy] = useState<SortKey>("impressions");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [expandedKw, setExpandedKw] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (defaultAdType) {
-      const mapped = defaultAdType === "SB" ? "SB" : defaultAdType === "SD" ? "SD" : "SP";
-      setAdType(mapped as any);
+      setAdType(defaultAdType === "SB" ? "SB" : defaultAdType === "SD" ? "SD" : "SP");
     }
   }, [defaultAdType]);
 
-  const { data, isLoading } = trpc.adAnalysis.getAdPlacementData.useQuery({
+  // Overview data (existing)
+  const { data: overviewData, isLoading: overviewLoading } = trpc.adAnalysis.getAdPlacementData.useQuery({
     campaignId: campaignId || undefined,
     campaignIds: campaignIds && campaignIds.length > 0 ? campaignIds : undefined,
     marketplace,
@@ -54,7 +64,25 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, marketpla
     adType,
   });
 
-  const placements = data?.placements || [];
+  // Keyword dimension data (new)
+  const { data: kwData, isLoading: kwLoading } = trpc.adAnalysis.getAdPlacementByKeyword.useQuery({
+    campaignId: campaignId || undefined,
+    campaignIds: campaignIds && campaignIds.length > 0 ? campaignIds : undefined,
+    marketplace,
+    startDate,
+    endDate,
+    days: 7,
+    adType,
+    searchKeyword: searchKw || undefined,
+    sortBy,
+    sortDir,
+  }, {
+    enabled: viewMode === "keyword",
+  });
+
+  const placements = overviewData?.placements || [];
+  const keywords = kwData?.keywords || [];
+  const placementNames = kwData?.placementNames || [];
 
   // Radar chart data
   const radarData = useMemo(() => {
@@ -69,7 +97,7 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, marketpla
     return metrics.map(m => {
       const row: any = { metric: m.metric };
       placements.forEach((p: any) => {
-        const label = PLACEMENT_CONFIG[p.placement]?.label || p.placement;
+        const label = getPlacementConfig(p.placement).label;
         const val = m.key === "acos_inv" ? Math.max(0, 100 - (p.acos || 0)) : p[m.key] || 0;
         row[label] = val;
       });
@@ -80,18 +108,43 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, marketpla
   // Bar chart comparison
   const barData = useMemo(() => {
     return placements.map((p: any) => ({
-      name: PLACEMENT_CONFIG[p.placement]?.label || p.placement,
+      name: getPlacementConfig(p.placement).label,
       花费: p.cost,
       销售额: p.sales,
-      fill: PLACEMENT_CONFIG[p.placement]?.fill || "#999",
+      fill: getPlacementConfig(p.placement).fill,
     }));
   }, [placements]);
+
+  const toggleSort = (key: SortKey) => {
+    if (sortBy === key) {
+      setSortDir(d => d === "desc" ? "asc" : "desc");
+    } else {
+      setSortBy(key);
+      setSortDir("desc");
+    }
+  };
+
+  const toggleExpand = (kwText: string) => {
+    setExpandedKw(prev => {
+      const next = new Set(prev);
+      if (next.has(kwText)) next.delete(kwText);
+      else next.add(kwText);
+      return next;
+    });
+  };
+
+  const SortIcon = ({ col }: { col: SortKey }) => {
+    if (sortBy !== col) return <ArrowUpDown className="w-3 h-3 text-gray-300" />;
+    return sortDir === "desc" ? <ArrowDown className="w-3 h-3 text-blue-600" /> : <ArrowUp className="w-3 h-3 text-blue-600" />;
+  };
+
+  const isLoading = viewMode === "overview" ? overviewLoading : kwLoading;
 
   if (isLoading) {
     return <div className="space-y-4"><Skeleton className="h-32" /><Skeleton className="h-64" /></div>;
   }
 
-  if (placements.length === 0) {
+  if (viewMode === "overview" && placements.length === 0) {
     if (adType === "SB" || adType === "SD") {
       return <AdEmptyState adType={adType} featureName="广告位分析" />;
     }
@@ -106,140 +159,337 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, marketpla
 
   return (
     <div className="space-y-4">
-      {/* Ad Type Switcher */}
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground font-medium">广告类型:</span>
-        <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
-          {(["SP", "SB", "SD"] as const).map((type) => (
+      {/* Ad Type Switcher + View Mode */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground font-medium">广告类型:</span>
+          <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+            {(["SP", "SB", "SD"] as const).map((type) => (
+              <button
+                key={type}
+                onClick={() => setAdType(type)}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                  adType === type
+                    ? "bg-white text-blue-700 shadow-sm border border-blue-200"
+                    : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {type === "SP" ? "SP 商品推广" : type === "SB" ? "SB 品牌推广" : "SD 展示型"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground font-medium">视图:</span>
+          <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
             <button
-              key={type}
-              onClick={() => setAdType(type)}
+              onClick={() => setViewMode("overview")}
               className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
-                adType === type
+                viewMode === "overview"
                   ? "bg-white text-blue-700 shadow-sm border border-blue-200"
                   : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              {type === "SP" ? "SP 商品推广" : type === "SB" ? "SB 品牌推广" : "SD 展示型"}
+              广告位总览
             </button>
-          ))}
+            <button
+              onClick={() => setViewMode("keyword")}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                viewMode === "keyword"
+                  ? "bg-white text-blue-700 shadow-sm border border-blue-200"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              关键词维度
+            </button>
+          </div>
         </div>
-        {adType !== "SP" && (
-          <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200">
-            {adType === "SB" ? "SB广告位含品牌新客指标" : "SD广告位含展示量数据"}
-          </Badge>
-        )}
       </div>
 
-      {/* Placement KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {placements.map((p: any) => {
-          const config = PLACEMENT_CONFIG[p.placement] || { label: p.placement, icon: Monitor, color: "text-gray-700", fill: "#999" };
-          const Icon = config.icon;
-          return (
-            <Card key={p.placement} className="border-l-4" style={{ borderLeftColor: config.fill }}>
-              <CardContent className="pt-4 pb-3 px-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Icon className={`w-4 h-4 ${config.color}`} />
-                  <span className={`text-sm font-medium ${config.color}`}>{config.label}</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-[10px] text-gray-500">曝光</p>
-                    <p className="text-sm font-bold">{(p.impressions || 0).toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-gray-500">点击</p>
-                    <p className="text-sm font-bold">{(p.clicks || 0).toLocaleString()}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-gray-500">花费</p>
-                    <p className="text-sm font-bold">${(p.cost || 0).toFixed(2)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-gray-500">销售额</p>
-                    <p className="text-sm font-bold text-emerald-600">${(p.sales || 0).toFixed(2)}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-gray-500">ACoS</p>
-                    <p className={`text-sm font-bold ${(p.acos || 0) <= 25 ? "text-emerald-600" : (p.acos || 0) <= 40 ? "text-amber-600" : "text-red-600"}`}>
-                      {(p.acos || 0).toFixed(2)}%
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-gray-500">CTR</p>
-                    <p className="text-sm font-bold">{(p.ctr || 0).toFixed(2)}%</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-gray-500">CVR</p>
-                    <p className="text-sm font-bold">{(p.cvr || 0).toFixed(2)}%</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-gray-500">ROAS</p>
-                    <p className="text-sm font-bold text-blue-600">{(p.roas || 0).toFixed(2)}x</p>
-                  </div>
+      {/* ===== OVERVIEW MODE ===== */}
+      {viewMode === "overview" && (
+        <>
+          {/* Placement KPI Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {placements.map((p: any) => {
+              const config = getPlacementConfig(p.placement);
+              const Icon = config.icon;
+              return (
+                <Card key={p.placement} className="border-l-4" style={{ borderLeftColor: config.fill }}>
+                  <CardContent className="pt-4 pb-3 px-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Icon className={`w-4 h-4 ${config.color}`} />
+                      <span className={`text-sm font-medium ${config.color}`}>{config.label}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div><p className="text-[10px] text-gray-500">曝光</p><p className="text-sm font-bold">{(p.impressions || 0).toLocaleString()}</p></div>
+                      <div><p className="text-[10px] text-gray-500">点击</p><p className="text-sm font-bold">{(p.clicks || 0).toLocaleString()}</p></div>
+                      <div><p className="text-[10px] text-gray-500">花费</p><p className="text-sm font-bold">${(p.cost || 0).toFixed(2)}</p></div>
+                      <div><p className="text-[10px] text-gray-500">销售额</p><p className="text-sm font-bold text-emerald-600">${(p.sales || 0).toFixed(2)}</p></div>
+                      <div><p className="text-[10px] text-gray-500">ACoS</p><p className={`text-sm font-bold ${(p.acos || 0) <= 25 ? "text-emerald-600" : (p.acos || 0) <= 40 ? "text-amber-600" : "text-red-600"}`}>{(p.acos || 0).toFixed(2)}%</p></div>
+                      <div><p className="text-[10px] text-gray-500">CTR</p><p className="text-sm font-bold">{(p.ctr || 0).toFixed(2)}%</p></div>
+                      <div><p className="text-[10px] text-gray-500">CVR</p><p className="text-sm font-bold">{(p.cvr || 0).toFixed(2)}%</p></div>
+                      <div><p className="text-[10px] text-gray-500">ROAS</p><p className="text-sm font-bold text-blue-600">{(p.roas || 0).toFixed(2)}x</p></div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* Charts */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">广告位综合对比</CardTitle></CardHeader>
+              <CardContent>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RadarChart data={radarData}>
+                      <PolarGrid />
+                      <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11 }} />
+                      <PolarRadiusAxis tick={{ fontSize: 9 }} />
+                      {placements.map((p: any) => {
+                        const label = getPlacementConfig(p.placement).label;
+                        return (
+                          <Radar key={p.placement} name={label} dataKey={label}
+                            stroke={getPlacementConfig(p.placement).fill}
+                            fill={getPlacementConfig(p.placement).fill}
+                            fillOpacity={0.15} />
+                        );
+                      })}
+                      <Legend wrapperStyle={{ fontSize: "11px" }} />
+                      <Tooltip />
+                    </RadarChart>
+                  </ResponsiveContainer>
                 </div>
               </CardContent>
             </Card>
-          );
-        })}
-      </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">广告位综合对比</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <RadarChart data={radarData}>
-                  <PolarGrid />
-                  <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11 }} />
-                  <PolarRadiusAxis tick={{ fontSize: 9 }} />
-                  {placements.map((p: any) => {
-                    const label = PLACEMENT_CONFIG[p.placement]?.label || p.placement;
-                    return (
-                      <Radar
-                        key={p.placement}
-                        name={label}
-                        dataKey={label}
-                        stroke={PLACEMENT_CONFIG[p.placement]?.fill || "#999"}
-                        fill={PLACEMENT_CONFIG[p.placement]?.fill || "#999"}
-                        fillOpacity={0.15}
-                      />
-                    );
-                  })}
-                  <Legend wrapperStyle={{ fontSize: "11px" }} />
-                  <Tooltip />
-                </RadarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">花费 vs 销售额</CardTitle></CardHeader>
+              <CardContent>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={barData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <Tooltip />
+                      <Legend wrapperStyle={{ fontSize: "11px" }} />
+                      <Bar dataKey="花费" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="销售额" fill="#10b981" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">花费 vs 销售额</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                  <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip />
-                  <Legend wrapperStyle={{ fontSize: "11px" }} />
-                  <Bar dataKey="花费" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="销售额" fill="#10b981" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+      {/* ===== KEYWORD DIMENSION MODE ===== */}
+      {viewMode === "keyword" && (
+        <>
+          {/* Search bar */}
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Input
+                placeholder="搜索关键词..."
+                value={searchKw}
+                onChange={(e) => setSearchKw(e.target.value)}
+                className="pl-9 h-8 text-sm"
+              />
             </div>
-          </CardContent>
-        </Card>
-      </div>
+            <Badge variant="outline" className="text-[10px]">
+              共 {keywords.length} 个关键词 | {placementNames.length} 个广告位
+            </Badge>
+          </div>
+
+          {/* Keyword Table */}
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 border-b">
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 sticky left-0 bg-gray-50 z-10 min-w-[200px]">关键词</th>
+                      <th className="text-center px-2 py-2 font-medium text-gray-600 w-16">匹配类型</th>
+                      {(["impressions", "clicks", "cost", "sales", "orders", "acos", "ctr", "cvr"] as SortKey[]).map(col => (
+                        <th key={col}
+                          className="text-right px-2 py-2 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 whitespace-nowrap"
+                          onClick={() => toggleSort(col)}
+                        >
+                          <span className="inline-flex items-center gap-1">
+                            {col === "impressions" ? "曝光" : col === "clicks" ? "点击" : col === "cost" ? "花费" :
+                              col === "sales" ? "销售额" : col === "orders" ? "订单" : col === "acos" ? "ACoS" :
+                              col === "ctr" ? "CTR" : "CVR"}
+                            <SortIcon col={col} />
+                          </span>
+                        </th>
+                      ))}
+                      <th className="text-right px-2 py-2 font-medium text-gray-600">CPC</th>
+                      <th className="text-right px-2 py-2 font-medium text-gray-600">ROAS</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {keywords.length === 0 && (
+                      <tr><td colSpan={12} className="text-center py-8 text-gray-400">暂无关键词数据</td></tr>
+                    )}
+                    {keywords.map((kw: any, idx: number) => {
+                      const isExpanded = expandedKw.has(kw.keyword_text);
+                      const kwPlacements = kw.placements || [];
+                      return (
+                        <tbody key={kw.keyword_text}>
+                          {/* Main keyword row */}
+                          <tr className={`border-b hover:bg-blue-50/30 cursor-pointer ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}
+                            onClick={() => toggleExpand(kw.keyword_text)}
+                          >
+                            <td className="px-3 py-2 sticky left-0 bg-inherit z-10">
+                              <div className="flex items-center gap-1.5">
+                                {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />}
+                                <span className="font-medium text-gray-800 truncate max-w-[180px]" title={kw.keyword_text}>{kw.keyword_text}</span>
+                              </div>
+                            </td>
+                            <td className="text-center px-2 py-2">
+                              <Badge variant="outline" className={`text-[9px] px-1 py-0 ${
+                                kw.match_type === "EXACT" ? "border-emerald-300 text-emerald-700 bg-emerald-50" :
+                                kw.match_type === "PHRASE" ? "border-blue-300 text-blue-700 bg-blue-50" :
+                                "border-gray-300 text-gray-600"
+                              }`}>
+                                {kw.match_type === "EXACT" ? "精确" : kw.match_type === "PHRASE" ? "词组" : "广泛"}
+                              </Badge>
+                            </td>
+                            <td className="text-right px-2 py-2 font-mono">{(kw.impressions || 0).toLocaleString()}</td>
+                            <td className="text-right px-2 py-2 font-mono">{(kw.clicks || 0).toLocaleString()}</td>
+                            <td className="text-right px-2 py-2 font-mono">${(kw.cost || 0).toFixed(2)}</td>
+                            <td className="text-right px-2 py-2 font-mono text-emerald-600">${(kw.sales || 0).toFixed(2)}</td>
+                            <td className="text-right px-2 py-2 font-mono">{kw.orders || 0}</td>
+                            <td className={`text-right px-2 py-2 font-mono font-semibold ${
+                              (kw.acos || 0) <= 25 ? "text-emerald-600" : (kw.acos || 0) <= 40 ? "text-amber-600" : "text-red-600"
+                            }`}>{(kw.acos || 0).toFixed(1)}%</td>
+                            <td className="text-right px-2 py-2 font-mono">{(kw.ctr || 0).toFixed(2)}%</td>
+                            <td className="text-right px-2 py-2 font-mono">{(kw.cvr || 0).toFixed(1)}%</td>
+                            <td className="text-right px-2 py-2 font-mono">${(kw.cpc || 0).toFixed(2)}</td>
+                            <td className="text-right px-2 py-2 font-mono text-blue-600">{(kw.roas || 0).toFixed(2)}x</td>
+                          </tr>
+
+                          {/* Expanded: placement breakdown */}
+                          {isExpanded && kwPlacements.map((p: any) => {
+                            const pConfig = getPlacementConfig(p.placement);
+                            return (
+                              <tr key={`${kw.keyword_text}-${p.placement}`} className="bg-blue-50/20 border-b border-dashed">
+                                <td className="px-3 py-1.5 sticky left-0 bg-blue-50/20 z-10">
+                                  <div className="flex items-center gap-1.5 pl-5">
+                                    <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: pConfig.fill }} />
+                                    <span className="text-gray-600 text-[11px]">{pConfig.label}</span>
+                                  </div>
+                                </td>
+                                <td className="text-center px-2 py-1.5"><span className="text-[9px] text-gray-400">-</span></td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">{(p.impressions || 0).toLocaleString()}</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">{(p.clicks || 0).toLocaleString()}</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">${(p.cost || 0).toFixed(2)}</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">${(p.sales || 0).toFixed(2)}</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">{p.orders || 0}</td>
+                                <td className={`text-right px-2 py-1.5 font-mono ${
+                                  (p.acos || 0) <= 25 ? "text-emerald-600" : (p.acos || 0) <= 40 ? "text-amber-600" : "text-red-600"
+                                }`}>{(p.acos || 0).toFixed(1)}%</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">{(p.ctr || 0).toFixed(2)}%</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">{(p.cvr || 0).toFixed(1)}%</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">${(p.cpc || 0).toFixed(2)}</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">-</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Keyword Placement Comparison Chart - Top 10 keywords */}
+          {keywords.length > 0 && placementNames.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Top 10 关键词广告位花费分布</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={keywords.slice(0, 10).map((kw: any) => {
+                        const row: any = { name: kw.keyword_text.length > 20 ? kw.keyword_text.slice(0, 20) + "..." : kw.keyword_text };
+                        (kw.placements || []).forEach((p: any) => {
+                          const pConfig = getPlacementConfig(p.placement);
+                          row[pConfig.shortLabel] = p.cost || 0;
+                        });
+                        return row;
+                      })}
+                      layout="vertical"
+                      margin={{ left: 10, right: 20 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis type="number" tick={{ fontSize: 10 }} />
+                      <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={140} />
+                      <Tooltip formatter={(val: number) => `$${val.toFixed(2)}`} />
+                      <Legend wrapperStyle={{ fontSize: "11px" }} />
+                      {placementNames.map((pName: string) => {
+                        const pConfig = getPlacementConfig(pName);
+                        return (
+                          <Bar key={pName} dataKey={pConfig.shortLabel} stackId="a" fill={pConfig.fill} />
+                        );
+                      })}
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Keyword Placement ACoS Comparison */}
+          {keywords.length > 0 && placementNames.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Top 10 关键词各广告位 ACoS 对比</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={keywords.slice(0, 10).map((kw: any) => {
+                        const row: any = { name: kw.keyword_text.length > 20 ? kw.keyword_text.slice(0, 20) + "..." : kw.keyword_text };
+                        (kw.placements || []).forEach((p: any) => {
+                          const pConfig = getPlacementConfig(p.placement);
+                          row[pConfig.shortLabel] = p.acos || 0;
+                        });
+                        return row;
+                      })}
+                      layout="vertical"
+                      margin={{ left: 10, right: 20 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis type="number" tick={{ fontSize: 10 }} domain={[0, 'auto']} />
+                      <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={140} />
+                      <Tooltip formatter={(val: number) => `${val.toFixed(1)}%`} />
+                      <Legend wrapperStyle={{ fontSize: "11px" }} />
+                      {placementNames.map((pName: string) => {
+                        const pConfig = getPlacementConfig(pName);
+                        return (
+                          <Bar key={pName} dataKey={pConfig.shortLabel} fill={pConfig.fill} radius={[0, 4, 4, 0]} />
+                        );
+                      })}
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
     </div>
   );
 }

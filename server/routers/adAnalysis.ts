@@ -681,6 +681,205 @@ ${JSON.stringify(anonymizedTerms)}
       return { placements, days: datesToQuery.length, adType, isMock: adapter.isMockMode() };
     }),
 
+  // ─── Ad Placement by Keyword Dimension ─────────────────
+  getAdPlacementByKeyword: protectedProcedure
+    .input(z.object({
+      marketplace: z.string().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      days: z.number().optional().default(7),
+      campaignId: z.string().optional(),
+      campaignIds: z.array(z.string()).optional(),
+      adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
+      searchKeyword: z.string().optional(),
+      sortBy: z.enum(["impressions", "clicks", "cost", "sales", "acos", "ctr", "cvr", "orders"]).optional().default("impressions"),
+      sortDir: z.enum(["asc", "desc"]).optional().default("desc"),
+    }))
+    .query(async ({ input }) => {
+      const adapter = getLingxingAdapter();
+      const { sellers } = await getAllSellerSids();
+      const sids = filterSidsByMarketplace(sellers, input.marketplace);
+      const sidsToQuery = sids.map(Number).slice(0, 3);
+      const datesToQuery = resolveDateRange({
+        startDate: input.startDate,
+        endDate: input.endDate,
+        days: input.days || 7,
+      });
+
+      const effectiveCampaignIds = (input.campaignIds && input.campaignIds.length > 0)
+        ? input.campaignIds
+        : (input.campaignId ? [input.campaignId] : []);
+      const campaignIdSet = new Set(effectiveCampaignIds);
+      const hasCampaignFilter = effectiveCampaignIds.length > 0;
+
+      // Step 1: Fetch keyword reports to get keyword-level data
+      const keywordApiPath = input.adType === 'SB'
+        ? '/pb/openapi/newad/hsaKeywordReports'
+        : '/pb/openapi/newad/spKeywordReports';
+
+      // Aggregate: keyword_text -> { placement -> metrics }
+      type KwPlacementMetrics = {
+        impressions: number; clicks: number; cost: number;
+        sales: number; orders: number;
+      };
+      const kwMap: Record<string, {
+        keyword_text: string; match_type: string;
+        total: KwPlacementMetrics;
+        byPlacement: Record<string, KwPlacementMetrics>;
+      }> = {};
+
+      // Step 2: Fetch search term reports which may have placement info
+      const searchTermApiPath = '/pb/openapi/newad/spSearchTermReports';
+
+      const tasks: Array<{ sid: number; date: string }> = [];
+      for (const sid of sidsToQuery) {
+        for (const date of datesToQuery) {
+          tasks.push({ sid, date });
+        }
+      }
+
+      // Fetch keyword reports
+      const CONCURRENCY = 5;
+      for (let i = 0; i < tasks.length; i += CONCURRENCY) {
+        const batch = tasks.slice(i, i + CONCURRENCY);
+        const results = await Promise.allSettled(batch.map(async ({ sid, date }) => {
+          return adapter.requestWithMockFallback({
+            path: keywordApiPath,
+            body: { sid, report_date: date, offset: 0, length: 1000 },
+          });
+        }));
+        for (const result of results) {
+          if (result.status !== 'fulfilled') continue;
+          const res = result.value;
+          const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
+          for (const item of items) {
+            if (hasCampaignFilter && item.campaign_id && !campaignIdSet.has(String(item.campaign_id))) continue;
+            const kwText = item.keyword_text || item.targeting || 'Unknown';
+            const matchType = item.match_type || 'BROAD';
+            if (!kwMap[kwText]) {
+              kwMap[kwText] = {
+                keyword_text: kwText,
+                match_type: matchType,
+                total: { impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0 },
+                byPlacement: {},
+              };
+            }
+            const kw = kwMap[kwText];
+            kw.total.impressions += Number(item.impressions) || 0;
+            kw.total.clicks += Number(item.clicks) || 0;
+            kw.total.cost += Number(item.cost) || 0;
+            kw.total.sales += Number(item.sales) || 0;
+            kw.total.orders += Number(item.orders) || 0;
+          }
+        }
+      }
+
+      // Step 3: Fetch placement reports to get placement-level data per campaign
+      // Then distribute keyword metrics proportionally across placements
+      const placementApiPath = input.adType === 'SB'
+        ? '/pb/openapi/newad/hsaCampaignPlacementReports'
+        : '/pb/openapi/newad/campaignPlacementReports';
+
+      const placementTotals: Record<string, KwPlacementMetrics> = {};
+      let totalPlacementImpressions = 0;
+
+      for (let i = 0; i < tasks.length; i += CONCURRENCY) {
+        const batch = tasks.slice(i, i + CONCURRENCY);
+        const results = await Promise.allSettled(batch.map(async ({ sid, date }) => {
+          return adapter.requestWithMockFallback({
+            path: placementApiPath,
+            body: { sid, report_date: date, show_detail: 1, offset: 0, length: 1000 },
+          });
+        }));
+        for (const result of results) {
+          if (result.status !== 'fulfilled') continue;
+          const res = result.value;
+          const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
+          for (const item of items) {
+            if (hasCampaignFilter && item.campaign_id && !campaignIdSet.has(String(item.campaign_id))) continue;
+            const placement = item.placement_type || item.placement || 'Other';
+            if (!placementTotals[placement]) {
+              placementTotals[placement] = { impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0 };
+            }
+            placementTotals[placement].impressions += Number(item.impressions) || 0;
+            placementTotals[placement].clicks += Number(item.clicks) || 0;
+            placementTotals[placement].cost += Number(item.cost) || 0;
+            placementTotals[placement].sales += Number(item.sales) || 0;
+            placementTotals[placement].orders += Number(item.orders) || 0;
+            totalPlacementImpressions += Number(item.impressions) || 0;
+          }
+        }
+      }
+
+      // Step 4: Distribute keyword metrics across placements proportionally
+      const placementNames = Object.keys(placementTotals);
+      for (const kwText of Object.keys(kwMap)) {
+        const kw = kwMap[kwText];
+        for (const pName of placementNames) {
+          const pTotal = placementTotals[pName];
+          const ratio = totalPlacementImpressions > 0 ? pTotal.impressions / totalPlacementImpressions : 0;
+          kw.byPlacement[pName] = {
+            impressions: Math.round(kw.total.impressions * ratio),
+            clicks: Math.round(kw.total.clicks * ratio),
+            cost: Math.round(kw.total.cost * ratio * 100) / 100,
+            sales: Math.round(kw.total.sales * ratio * 100) / 100,
+            orders: Math.round(kw.total.orders * ratio),
+          };
+        }
+      }
+
+      // Step 5: Build result array with computed metrics
+      let keywords = Object.values(kwMap).map(kw => {
+        const t = kw.total;
+        const placementDetails = Object.entries(kw.byPlacement).map(([pName, m]) => ({
+          placement: pName,
+          ...m,
+          acos: m.sales > 0 ? Math.round(m.cost / m.sales * 10000) / 100 : 0,
+          ctr: m.impressions > 0 ? Math.round(m.clicks / m.impressions * 10000) / 100 : 0,
+          cvr: m.clicks > 0 ? Math.round(m.orders / m.clicks * 10000) / 100 : 0,
+          cpc: m.clicks > 0 ? Math.round(m.cost / m.clicks * 100) / 100 : 0,
+        }));
+        return {
+          keyword_text: kw.keyword_text,
+          match_type: kw.match_type,
+          impressions: t.impressions,
+          clicks: t.clicks,
+          cost: Math.round(t.cost * 100) / 100,
+          sales: Math.round(t.sales * 100) / 100,
+          orders: t.orders,
+          acos: t.sales > 0 ? Math.round(t.cost / t.sales * 10000) / 100 : 0,
+          ctr: t.impressions > 0 ? Math.round(t.clicks / t.impressions * 10000) / 100 : 0,
+          cvr: t.clicks > 0 ? Math.round(t.orders / t.clicks * 10000) / 100 : 0,
+          cpc: t.clicks > 0 ? Math.round(t.cost / t.clicks * 100) / 100 : 0,
+          roas: t.cost > 0 ? Math.round(t.sales / t.cost * 100) / 100 : 0,
+          placements: placementDetails,
+        };
+      });
+
+      // Filter by search keyword
+      if (input.searchKeyword) {
+        const kw = input.searchKeyword.toLowerCase();
+        keywords = keywords.filter(k => k.keyword_text.toLowerCase().includes(kw));
+      }
+
+      // Sort
+      const sortKey = input.sortBy || 'impressions';
+      const sortDir = input.sortDir || 'desc';
+      keywords.sort((a, b) => {
+        const va = (a as any)[sortKey] || 0;
+        const vb = (b as any)[sortKey] || 0;
+        return sortDir === 'desc' ? vb - va : va - vb;
+      });
+
+      return {
+        keywords,
+        placementNames,
+        days: datesToQuery.length,
+        adType: input.adType,
+        isMock: adapter.isMockMode(),
+      };
+    }),
+
   // ─── Hourly Ad Data (for Dayparting Strategy) ─────────────────
   getAdHourlyData: protectedProcedure
     .input(z.object({

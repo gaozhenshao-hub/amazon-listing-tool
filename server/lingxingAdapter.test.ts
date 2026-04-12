@@ -122,10 +122,10 @@ describe("Lingxing Adapter - Mock Mode", () => {
     const items = (res.data as any)?.records || res.data;
     expect(Array.isArray(items)).toBe(true);
     expect(items.length).toBeGreaterThan(0);
-    // Mock returns daily profit data with date/revenue/profit fields
-    expect(items[0]).toHaveProperty("date");
-    expect(items[0]).toHaveProperty("revenue");
-    expect(items[0]).toHaveProperty("profit");
+    // Mock returns MSKU profit data with parentAsin/totalSalesAmount/grossProfit fields
+    expect(items[0]).toHaveProperty("parentAsin");
+    expect(items[0]).toHaveProperty("totalSalesAmount");
+    expect(items[0]).toHaveProperty("grossProfit");
   });
 
   it("should return mock ad campaigns", async () => {
