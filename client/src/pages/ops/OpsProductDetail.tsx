@@ -492,22 +492,33 @@ export default function OpsProductDetail() {
                         <thead>
                           <tr className="border-b text-muted-foreground">
                             <th className="text-left py-2 font-medium">广告活动</th>
+                            <th className="text-center py-2 font-medium">状态</th>
                             <th className="text-right py-2 font-medium">花费</th>
                             <th className="text-right py-2 font-medium">销售额</th>
                             <th className="text-right py-2 font-medium">ACoS</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {adsData.campaigns.slice(0, 5).map((c, idx) => (
-                            <tr key={idx} className="border-b last:border-0">
+                          {adsData.campaigns.slice(0, 8).map((c, idx) => {
+                            const isPaused = ['paused', 'archived', 'suspended'].includes((c.status || '').toLowerCase());
+                            return (
+                            <tr key={idx} className={`border-b last:border-0 ${isPaused ? 'opacity-50' : ''}`}>
                               <td className="py-1.5 max-w-[200px] truncate">{c.name}</td>
+                              <td className="py-1.5 text-center">
+                                <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${
+                                  isPaused ? 'bg-gray-100 text-gray-500' : 'bg-emerald-50 text-emerald-700'
+                                }`}>
+                                  {isPaused ? '已暂停' : '投放中'}
+                                </span>
+                              </td>
                               <td className="py-1.5 text-right font-mono">${c.spend}</td>
                               <td className="py-1.5 text-right font-mono">${c.sales}</td>
                               <td className="py-1.5 text-right">
-                                <span className={c.acos > 30 ? "text-red-600" : "text-emerald-600"}>{c.acos}%</span>
+                                <span className={c.acos > 30 ? "text-red-600" : c.acos > 0 ? "text-emerald-600" : "text-muted-foreground"}>{c.acos}%</span>
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

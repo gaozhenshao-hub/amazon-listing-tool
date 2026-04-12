@@ -914,17 +914,29 @@ export const productOpsRouter = router({
       const rawAd = adRes.data || [];
       const allCampaigns = Array.isArray(rawAd) ? rawAd : (rawAd as any).records || (rawAd as any).list || [];
 
-      // Filter campaigns that contain product ASIN or related keywords in name
+      // Filter campaigns: 1) match product ASIN/keywords 2) exclude paused/archived
+      const activeCampaignStates = ['enabled', 'active', 'running'];
       const campaigns = allCampaigns.filter((c: any) => {
         const name = String(c.campaign_name || c.name || '').toLowerCase();
-        // Check if campaign name contains any of the product's ASINs
+        const state = String(c.state || c.status || '').toLowerCase();
+        // First: only include active campaigns (exclude paused/archived)
+        const isActive = activeCampaignStates.includes(state) || state === '';
+        // Second: match by ASIN or product title keywords
+        const matchesProduct = allAsins.some(asin => name.includes(asin.toLowerCase())) ||
+               (product.title && product.title.split(' ').slice(0, 3).some((word: string) =>
+                 word.length > 3 && name.includes(word.toLowerCase())
+               ));
+        return isActive && matchesProduct;
+      });
+      // Also keep a separate list of all matching campaigns (including paused) for display
+      const allMatchingCampaigns = allCampaigns.filter((c: any) => {
+        const name = String(c.campaign_name || c.name || '').toLowerCase();
         return allAsins.some(asin => name.includes(asin.toLowerCase())) ||
-               // If no ASIN in name, check for product title keywords
                (product.title && product.title.split(' ').slice(0, 3).some((word: string) =>
                  word.length > 3 && name.includes(word.toLowerCase())
                ));
       });
-      console.log(`[AdsSummary] Campaigns: ${allCampaigns.length} total, ${campaigns.length} matched for ${product.parentAsin}`);
+      console.log(`[AdsSummary] Campaigns: ${allCampaigns.length} total, ${allMatchingCampaigns.length} matched, ${campaigns.length} active for ${product.parentAsin}`);
 
       let totalSpend = 0, totalSales = 0, totalClicks = 0, totalImpressions = 0, totalOrders = 0;
       const campaignList: Array<{
@@ -943,8 +955,8 @@ export const productOpsRouter = router({
         }
       }
 
-      // Build campaign list from filtered campaigns
-      for (const c of (campaigns.length > 0 ? campaigns : allCampaigns.slice(0, 5))) {
+      // Build campaign list from all matching campaigns (show paused ones too, but mark status)
+      for (const c of (allMatchingCampaigns.length > 0 ? allMatchingCampaigns : allCampaigns.slice(0, 5))) {
         const camp = c as Record<string, unknown>;
         const spend = Number(camp.cost || camp.spend || 0);
         const sales = Number(camp.sales || camp.attributed_sales || 0);
@@ -952,8 +964,10 @@ export const productOpsRouter = router({
         const impressions = Number(camp.impressions || 0);
         const orders = Number(camp.orders || camp.attributed_orders || 0);
 
-        // If no product-level data, accumulate from campaigns
-        if (productAdData.length === 0) {
+        // If no product-level data, accumulate from ACTIVE campaigns only
+        const campState = String((camp as any).state || (camp as any).status || '').toLowerCase();
+        const isCampActive = activeCampaignStates.includes(campState) || campState === '';
+        if (productAdData.length === 0 && isCampActive) {
           totalSpend += spend;
           totalSales += sales;
           totalClicks += clicks;

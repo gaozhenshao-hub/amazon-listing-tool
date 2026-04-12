@@ -67,7 +67,7 @@ function formatNumber(val: number) {
   return val.toLocaleString();
 }
 
-type SortField = "marketplace" | "storeName" | "title" | "salesQty" | "salesRevenue" | "salesProfit" | "profitRate" | "status" | "operator" | "chineseName" | "weeklyProfit" | "weeklyAcos" | "weeklyAdSpend";
+type SortField = "marketplace" | "storeName" | "title" | "salesQty" | "salesRevenue" | "salesProfit" | "profitRate" | "status" | "operator" | "chineseName" | "weeklySalesQty" | "weeklyProfit" | "weeklyAcos" | "weeklyAdSpend";
 type SortDir = "asc" | "desc";
 
 export default function OpsProducts() {
@@ -188,6 +188,7 @@ export default function OpsProducts() {
         case "salesRevenue": va = a.salesRevenue || 0; vb = b.salesRevenue || 0; break;
         case "salesProfit": va = a.salesProfit || 0; vb = b.salesProfit || 0; break;
         case "profitRate": va = (a as any).profitRate || 0; vb = (b as any).profitRate || 0; break;
+        case "weeklySalesQty": va = Number(weeklyMap.get(a.id)?.salesQty || 0); vb = Number(weeklyMap.get(b.id)?.salesQty || 0); break;
         case "weeklyProfit": va = parseFloat(weeklyMap.get(a.id)?.orderProfit || "0"); vb = parseFloat(weeklyMap.get(b.id)?.orderProfit || "0"); break;
         case "weeklyAcos": va = parseFloat(weeklyMap.get(a.id)?.acos || "0"); vb = parseFloat(weeklyMap.get(b.id)?.acos || "0"); break;
         case "weeklyAdSpend": va = parseFloat(weeklyMap.get(a.id)?.adSpend || "0"); vb = parseFloat(weeklyMap.get(b.id)?.adSpend || "0"); break;
@@ -656,6 +657,11 @@ export default function OpsProducts() {
                       利润率 <SortIcon field="profitRate" />
                     </button>
                   </th>
+                  <th className="px-2 py-3 text-right w-16">
+                    <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground ml-auto" onClick={() => handleSort("weeklySalesQty")}>
+                      周销量 <SortIcon field="weeklySalesQty" />
+                    </button>
+                  </th>
                   <th className="px-2 py-3 text-right w-20">
                     <button className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground ml-auto" onClick={() => handleSort("weeklyProfit")}>
                       周利润 <SortIcon field="weeklyProfit" />
@@ -823,6 +829,7 @@ export default function OpsProducts() {
                       const wp = parseFloat(w?.orderProfit || "0");
                       const wa = parseFloat(w?.acos || "0");
                       const wad = parseFloat(w?.adSpend || "0");
+                      const wsq = Number(w?.salesQty || 0);
                       const trend = w?.salesTrend || "stable";
                       return (
                         <>
@@ -830,6 +837,13 @@ export default function OpsProducts() {
                             {w?.weekStartDate ? (
                               <div className="flex items-center justify-end gap-1">
                                 {trend === "up" ? <TrendingUp className="h-3 w-3 text-emerald-500" /> : trend === "down" ? <TrendingDown className="h-3 w-3 text-red-500" /> : <Minus className="h-3 w-3 text-gray-400" />}
+                                <span className="font-medium tabular-nums text-xs">{wsq}</span>
+                              </div>
+                            ) : <span className="text-xs text-muted-foreground">-</span>}
+                          </td>
+                          <td className="px-2 py-2 text-right">
+                            {w?.weekStartDate ? (
+                              <div className="flex items-center justify-end gap-1">
                                 <span className={`font-medium tabular-nums text-xs ${wp >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                                   {formatCurrency(wp)}
                                 </span>
@@ -891,18 +905,20 @@ export default function OpsProducts() {
                   </td>
                   {/* Weekly totals */}
                   {(() => {
-                    let twp = 0, twad = 0, twSales = 0;
+                    let twp = 0, twad = 0, twSales = 0, twSalesQty = 0;
                     filtered.forEach(p => {
                       const w = weeklyMap.get(p.id);
                       if (w?.weekStartDate) {
                         twp += parseFloat(w.orderProfit || "0");
                         twad += parseFloat(w.adSpend || "0");
                         twSales += parseFloat(w.salesAmount || "0");
+                        twSalesQty += Number(w.salesQty || 0);
                       }
                     });
                     const twAcos = twSales > 0 ? (twad / twSales * 100) : 0;
                     return (
                       <>
+                        <td className="px-2 py-2.5 text-right text-xs tabular-nums font-semibold">{twSalesQty}</td>
                         <td className="px-2 py-2.5 text-right text-xs tabular-nums font-semibold">
                           <span className={twp >= 0 ? "text-emerald-600" : "text-red-500"}>{formatCurrency(twp)}</span>
                         </td>
