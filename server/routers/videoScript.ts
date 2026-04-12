@@ -31,6 +31,18 @@ function parseLLMJson(content: string): any {
   }
 }
 
+// Helper: sanitize shooting method to valid enum value
+const VALID_SHOOTING_METHODS = ["model_narration", "live_action", "ai_generated", "mixed", "screen_recording"] as const;
+function sanitizeShootingMethod(value: string | undefined | null): string {
+  if (!value) return "live_action";
+  // If the value contains pipe separator (e.g. "live_action|mixed"), take the first one
+  const firstVal = value.split("|")[0].trim().toLowerCase();
+  if (VALID_SHOOTING_METHODS.includes(firstVal as any)) return firstVal;
+  // Try to find a partial match
+  const match = VALID_SHOOTING_METHODS.find(m => firstVal.includes(m));
+  return match || "live_action";
+}
+
 // Helper: build product context from project data
 async function buildProductContext(projectId: number): Promise<string> {
   const parts: string[] = [];
@@ -342,7 +354,7 @@ export const videoScriptRouter = router({
       videoScriptId: z.number(),
       projectId: z.number(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const script = await vsDb.getVideoScriptById(input.videoScriptId);
       const snapshot = await vsDb.getProductSnapshot(input.videoScriptId);
       const summary = await vsDb.getCompetitorSummary(input.videoScriptId);
@@ -418,7 +430,7 @@ export const videoScriptRouter = router({
           sectionCode: s.section_code || `MBP${i + 1}`,
           sectionName: s.section_name || s.scene_name,
           sectionNameEn: s.section_name_en,
-          shootingMethod: s.shooting_method || "live_action",
+          shootingMethod: sanitizeShootingMethod(s.shooting_method),
           durationBudget: s.duration_budget?.toString(),
           sellingPointRefs: JSON.stringify(s.selling_point_refs || []),
           painPointRefs: JSON.stringify(s.pain_point_refs || []),
@@ -517,7 +529,7 @@ export const videoScriptRouter = router({
 
   generateShots: protectedProcedure
     .input(z.object({ videoScriptId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const sections = await vsDb.getSections(input.videoScriptId);
       const snapshot = await vsDb.getProductSnapshot(input.videoScriptId);
       const summary = await vsDb.getCompetitorSummary(input.videoScriptId);
