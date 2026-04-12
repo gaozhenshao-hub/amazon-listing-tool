@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import SearchTermCompareMode from "./SearchTermCompareMode";
 import AdEmptyState from "./AdEmptyState";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -65,6 +66,7 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
   const [aiCategoryId, setAiCategoryId] = useState<number>(1);
   const [userDecisions, setUserDecisions] = useState<Record<number, { decision: string; modifiedAction?: string; notes?: string }>>({}); 
   const [adType, setAdType] = useState<"SP" | "SB">(defaultAdType === "SB" ? "SB" : "SP");
+  const [viewMode, setViewMode] = useState<"aggregate" | "compare">("aggregate");
 
   // Sync adType when parent campaign selection changes
   useEffect(() => {
@@ -279,12 +281,49 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
                 <Badge className="text-[10px] bg-emerald-100 text-emerald-700 border-emerald-300 border">
                   {searchTerms.length} 个聚合搜索词
                 </Badge>
+                {/* View mode toggle */}
+                <div className="inline-flex rounded-lg border border-blue-200 bg-white p-0.5 ml-2">
+                  <button
+                    onClick={() => setViewMode("aggregate")}
+                    className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-all ${
+                      viewMode === "aggregate"
+                        ? "bg-blue-100 text-blue-700 shadow-sm"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    聚合模式
+                  </button>
+                  <button
+                    onClick={() => setViewMode("compare")}
+                    className={`px-2.5 py-1 text-[10px] font-medium rounded-md transition-all ${
+                      viewMode === "compare"
+                        ? "bg-purple-100 text-purple-700 shadow-sm"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    对比模式
+                  </button>
+                </div>
               </div>
             </div>
           </CardContent>
         </Card>
       )}
 
+      {/* Compare Mode - render SearchTermCompareMode instead of default view */}
+      {isMultiMode && viewMode === "compare" && data && (
+        <SearchTermCompareMode
+          searchTerms={(data as any).searchTerms || []}
+          campaignNames={campaignNames || {}}
+          campaignSummaries={(data as any).campaignSummaries || []}
+          overlapStats={(data as any).overlapStats || { overlapCount: 0, uniqueCount: 0, overlapCost: 0, overlapSales: 0 }}
+          campaignIds={campaignIds || []}
+        />
+      )}
+
+      {/* Default aggregate view - hide when in compare mode */}
+      {(!isMultiMode || viewMode === "aggregate") && (
+      <>
       {/* Ad Type Switcher */}
       <div className="flex items-center gap-2">
         <span className="text-xs text-muted-foreground font-medium">广告类型:</span>
@@ -589,6 +628,9 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
           )}
         </CardContent>
       </Card>
+
+      </>
+      )}
 
       {/* AI Advice Dialog */}
       <Dialog open={showAiDialog} onOpenChange={setShowAiDialog}>
