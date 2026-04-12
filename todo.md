@@ -3147,3 +3147,11 @@
 - [x] 将 exportToExcel 未实现的 mutation 替换为占位 stub
 - [x] 修复 targetDuration decimal 类型转换（string → number）
 - [x] 更新 productOps/newFeatures4/phase4 测试中的 procedure 计数断言
+
+### Excel导出功能完善
+- [x] 分析实际业务拍摄脚本Excel模板格式（14列结构+合并单元格）
+- [x] 安装exceljs依赖
+- [x] 创建 server/videoScriptExcel.ts 导出模块（拍摄脚本Sheet + 剪辑脚本Sheet）
+- [x] 在videoScript router中添加 exportToExcel tRPC接口（生成Excel→上传S3→返回URL）
+- [x] 前端Stage4和编辑器顶部导出按钮替换stub，联通真实mutation
+- [x] 编写9个vitest测试用例验证Excel生成逻辑

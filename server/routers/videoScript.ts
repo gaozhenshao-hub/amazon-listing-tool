@@ -3,6 +3,8 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import * as vsDb from "../videoScriptDb";
 import * as db from "../db";
+import { generateVideoScriptExcel } from "../videoScriptExcel";
+import { storagePut } from "../storage";
 import { getL1Index, getL2Summary, formatForPrompt, logKbCallBatch } from "../kbContextEngine";
 import {
   COMPETITOR_SCRIPT_ANALYSIS_PROMPT,
@@ -952,5 +954,33 @@ export const videoScriptRouter = router({
       const spvSegments = await vsDb.getSpvSegments(input.videoScriptId);
       const versions = await vsDb.getVersionsByVideoScript(input.videoScriptId);
       return { script, competitors, summary, snapshot, sections, subtopics, shots, editScripts, spvSegments, versions };
+    }),
+
+  // ═══════════════════════════════════════════════════════
+  // Excel 导出
+  // ═══════════════════════════════════════════════════════
+  exportToExcel: protectedProcedure
+    .input(z.object({ videoScriptId: z.number() }))
+    .mutation(async ({ input }) => {
+      // 1. 加载全部数据
+      const script = await vsDb.getVideoScriptById(input.videoScriptId);
+      if (!script) throw new Error("视频脚本不存在");
+      const sections = await vsDb.getSections(input.videoScriptId);
+      const subtopics = await vsDb.getSubtopicsByVideoScript(input.videoScriptId);
+      const shots = await vsDb.getAllShotsByVideoScript(input.videoScriptId);
+      const editScripts = await vsDb.getEditScripts(input.videoScriptId);
+
+      // 2. 生成 Excel Buffer
+      const buffer = await generateVideoScriptExcel({
+        script, sections, subtopics, shots, editScripts,
+      });
+
+      // 3. 上传到 S3
+      const timestamp = Date.now();
+      const safeName = (script.scriptName || "视频脚本").replace(/[^\w\u4e00-\u9fff-]/g, "_");
+      const fileKey = `video-scripts/${script.id}/${safeName}_${timestamp}.xlsx`;
+      const { url } = await storagePut(fileKey, buffer, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
+      return { url, fileName: `${safeName}.xlsx` };
     }),
 });

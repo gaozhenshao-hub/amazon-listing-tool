@@ -475,11 +475,19 @@ function VideoScriptEditor({ scriptId }: { scriptId: number }) {
     },
     onError: (err) => toast.error(err.message),
   });
-  // Export functionality - TODO: implement exportToExcel backend endpoint
-  const exportMutation = {
-    mutate: (_args: { videoScriptId: number }) => toast.info("Excel导出功能即将上线"),
-    isPending: false,
-  };
+  // Excel导出
+  const exportMutation = trpc.videoScript.exportToExcel.useMutation({
+    onSuccess: (data) => {
+      toast.success("Excel导出成功，正在下载...");
+      const a = document.createElement("a");
+      a.href = data.url;
+      a.download = data.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    },
+    onError: (err) => toast.error(`导出失败: ${err.message}`),
+  });
 
   const currentStageIdx = useMemo(() => {
     if (!script.data) return 0;
@@ -1651,11 +1659,19 @@ function Stage4({ scriptId, onConfirm, isConfirmed }: {
   const updateMutation = trpc.videoScript.updateEditScript.useMutation({
     onSuccess: () => editScripts.refetch(),
   });
-  // Export functionality - TODO: implement exportToExcel backend endpoint
-  const exportMutation = {
-    mutate: (_args: { videoScriptId: number }) => toast.info("Excel导出功能即将上线"),
-    isPending: false,
-  };
+  // Excel导出
+  const exportMutation = trpc.videoScript.exportToExcel.useMutation({
+    onSuccess: (data) => {
+      toast.success("Excel导出成功，正在下载...");
+      const a = document.createElement("a");
+      a.href = data.url;
+      a.download = data.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    },
+    onError: (err) => toast.error(`导出失败: ${err.message}`),
+  });
 
   const editList = editScripts.data || [];
 
