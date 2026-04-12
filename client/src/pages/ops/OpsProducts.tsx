@@ -19,6 +19,7 @@ import {
   Store, User, Globe, Users, CheckSquare, UserPlus, UserCheck,
   BarChart3, ChevronDown, ChevronRight, ExternalLink,
   TrendingUp, TrendingDown, Minus, Trash2, RefreshCw,
+  ArrowUpDown, ArrowUp, ArrowDown, Calendar,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -152,39 +153,55 @@ type ProductOverview = {
   }>;
 };
 
+// ─── Sortable column keys (based on latest week data) ───
+type SortKey = "salesQty" | "orderQty" | "salesAmount" | "orderProfit" | "profitMargin" | "sessionTotal" | "totalCvr" | "adCvr" | "organicCvr" | "adOrders" | "organicOrders" | "adClicks" | "ctr" | "adImpressions" | "cpc" | "adSpend" | "acos" | "rating" | "reviewCount" | "returnRate" | null;
+type SortDir = "asc" | "desc";
+
 // ─── Column header definitions for the weekly data table ───
-const WEEKLY_COLS = [
-  { key: "date", label: "时间", w: "w-[70px]", align: "left" as const },
-  { key: "trend", label: "趋势", w: "w-[50px]", align: "center" as const },
-  { key: "salesQty", label: "销量", w: "w-[55px]", align: "right" as const },
-  { key: "orderQty", label: "订单", w: "w-[50px]", align: "right" as const },
-  { key: "salesAmount", label: "销售额", w: "w-[80px]", align: "right" as const },
-  { key: "orderProfit", label: "订单利润", w: "w-[80px]", align: "right" as const },
-  { key: "profitMargin", label: "利润率", w: "w-[55px]", align: "right" as const },
-  { key: "sessionTotal", label: "Session", w: "w-[65px]", align: "right" as const },
-  { key: "totalCvr", label: "总CVR", w: "w-[55px]", align: "right" as const },
-  { key: "adCvr", label: "广告CVR", w: "w-[60px]", align: "right" as const },
-  { key: "organicCvr", label: "自然CVR", w: "w-[60px]", align: "right" as const },
-  { key: "adOrders", label: "广告订单", w: "w-[60px]", align: "right" as const },
-  { key: "organicOrders", label: "自然订单", w: "w-[60px]", align: "right" as const },
-  { key: "adClicks", label: "广告点击", w: "w-[65px]", align: "right" as const },
-  { key: "ctr", label: "CTR", w: "w-[50px]", align: "right" as const },
-  { key: "adImpressions", label: "曝光", w: "w-[65px]", align: "right" as const },
-  { key: "cpc", label: "CPC", w: "w-[55px]", align: "right" as const },
-  { key: "adSpend", label: "广告花费", w: "w-[75px]", align: "right" as const },
-  { key: "acos", label: "ACOS", w: "w-[55px]", align: "right" as const },
-  { key: "rating", label: "评分", w: "w-[45px]", align: "right" as const },
-  { key: "reviewCount", label: "评论", w: "w-[50px]", align: "right" as const },
-  { key: "returnRate", label: "退货率", w: "w-[55px]", align: "right" as const },
+const WEEKLY_COLS: Array<{ key: string; label: string; w: string; align: "left" | "center" | "right"; sortable: boolean }> = [
+  { key: "date", label: "时间", w: "w-[70px]", align: "left", sortable: false },
+  { key: "trend", label: "趋势", w: "w-[50px]", align: "center", sortable: false },
+  { key: "salesQty", label: "销量", w: "w-[55px]", align: "right", sortable: true },
+  { key: "orderQty", label: "订单", w: "w-[50px]", align: "right", sortable: true },
+  { key: "salesAmount", label: "销售额", w: "w-[80px]", align: "right", sortable: true },
+  { key: "orderProfit", label: "订单利润", w: "w-[80px]", align: "right", sortable: true },
+  { key: "profitMargin", label: "利润率", w: "w-[55px]", align: "right", sortable: true },
+  { key: "sessionTotal", label: "Session", w: "w-[65px]", align: "right", sortable: true },
+  { key: "totalCvr", label: "总CVR", w: "w-[55px]", align: "right", sortable: true },
+  { key: "adCvr", label: "广告CVR", w: "w-[60px]", align: "right", sortable: true },
+  { key: "organicCvr", label: "自然CVR", w: "w-[60px]", align: "right", sortable: true },
+  { key: "adOrders", label: "广告订单", w: "w-[60px]", align: "right", sortable: true },
+  { key: "organicOrders", label: "自然订单", w: "w-[60px]", align: "right", sortable: true },
+  { key: "adClicks", label: "广告点击", w: "w-[65px]", align: "right", sortable: true },
+  { key: "ctr", label: "CTR", w: "w-[50px]", align: "right", sortable: true },
+  { key: "adImpressions", label: "曝光", w: "w-[65px]", align: "right", sortable: true },
+  { key: "cpc", label: "CPC", w: "w-[55px]", align: "right", sortable: true },
+  { key: "adSpend", label: "广告花费", w: "w-[75px]", align: "right", sortable: true },
+  { key: "acos", label: "ACOS", w: "w-[55px]", align: "right", sortable: true },
+  { key: "rating", label: "评分", w: "w-[45px]", align: "right", sortable: true },
+  { key: "reviewCount", label: "评论", w: "w-[50px]", align: "right", sortable: true },
+  { key: "returnRate", label: "退货率", w: "w-[55px]", align: "right", sortable: true },
 ];
 
+// Helper: get the latest week value for a product by sort key
+function getLatestWeekValue(product: ProductOverview, key: SortKey): number {
+  if (!key || product.weeks.length === 0) return 0;
+  // Sort weeks by date descending, take the latest
+  const sorted = [...product.weeks].sort((a, b) => b.weekStartDate.localeCompare(a.weekStartDate));
+  const latest = sorted[0];
+  return (latest as any)[key] ?? 0;
+}
+
 // ─── Product Row Component ───
-function ProductBlock({ product, onNavigate, onDelete, operatorList, onAssign }: {
+function ProductBlock({ product, onNavigate, onDelete, operatorList, onAssign, sortKey, sortDir, onSort }: {
   product: ProductOverview;
   onNavigate: (id: number) => void;
   onDelete: (id: number) => void;
   operatorList: string[];
   onAssign: (productId: number, operator: string) => void;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onSort: (key: SortKey) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -349,8 +366,21 @@ function ProductBlock({ product, onNavigate, onDelete, operatorList, onAssign }:
             <thead>
               <tr className="bg-muted/20 border-b">
                 {WEEKLY_COLS.map(col => (
-                  <th key={col.key} className={`px-1.5 py-1.5 ${col.w} text-${col.align} font-medium text-muted-foreground whitespace-nowrap`}>
-                    {col.label}
+                  <th key={col.key}
+                    className={`px-1.5 py-1.5 ${col.w} text-${col.align} font-medium text-muted-foreground whitespace-nowrap ${col.sortable ? "cursor-pointer hover:text-foreground hover:bg-muted/40 select-none transition-colors" : ""}`}
+                    onClick={col.sortable ? () => onSort(col.key as SortKey) : undefined}
+                  >
+                    <span className="inline-flex items-center gap-0.5">
+                      {col.label}
+                      {col.sortable && sortKey === col.key && (
+                        sortDir === "desc"
+                          ? <ArrowDown className="h-3 w-3 text-blue-600" />
+                          : <ArrowUp className="h-3 w-3 text-blue-600" />
+                      )}
+                      {col.sortable && sortKey !== col.key && (
+                        <ArrowUpDown className="h-2.5 w-2.5 text-muted-foreground/30" />
+                      )}
+                    </span>
                   </th>
                 ))}
               </tr>
@@ -566,6 +596,9 @@ export default function OpsProducts() {
   const [operatorFilter, setOperatorFilter] = useState("ALL");
   const [storeFilter, setStoreFilter] = useState("ALL");
   const [newOperatorName, setNewOperatorName] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [weekFilter, setWeekFilter] = useState(4); // 1-4 weeks
 
   // Main query - 4-week overview data
   const { data: products, isLoading } = trpc.productOps.getProductOverviewWithWeeks.useQuery({
@@ -583,7 +616,7 @@ export default function OpsProducts() {
     setForm({ parentAsin: "", title: "", brand: "", category: "", marketplace: "US", budgetRevenue: "", budgetProfit: "", budgetAcos: "", notes: "", operator: "", storeName: "" });
   }
 
-  // Filtering
+  // Filtering + sorting
   const filtered = useMemo(() => {
     let list = (products || []) as ProductOverview[];
     if (operatorFilter === "__UNASSIGNED__") {
@@ -604,8 +637,22 @@ export default function OpsProducts() {
         p.skus.some(s => s.toLowerCase().includes(q))
       );
     }
+    // Apply week filter: trim each product's weeks to the latest N
+    list = list.map(p => {
+      if (p.weeks.length <= weekFilter) return p;
+      const sorted = [...p.weeks].sort((a, b) => b.weekStartDate.localeCompare(a.weekStartDate));
+      return { ...p, weeks: sorted.slice(0, weekFilter).reverse() };
+    });
+    // Apply sorting by latest week value
+    if (sortKey) {
+      list = [...list].sort((a, b) => {
+        const va = getLatestWeekValue(a, sortKey);
+        const vb = getLatestWeekValue(b, sortKey);
+        return sortDir === "asc" ? va - vb : vb - va;
+      });
+    }
     return list;
-  }, [products, operatorFilter, storeFilter, searchTerm]);
+  }, [products, operatorFilter, storeFilter, searchTerm, weekFilter, sortKey, sortDir]);
 
   const availableOperators = useMemo(() => {
     const set = new Set((products || []).map(p => p.operator || "").filter(Boolean));
@@ -737,6 +784,32 @@ export default function OpsProducts() {
             </SelectContent>
           </Select>
         </div>
+        {/* Week Filter */}
+        <div className="flex items-center gap-1">
+          <Calendar className="h-4 w-4 text-muted-foreground" />
+          <Select value={String(weekFilter)} onValueChange={v => setWeekFilter(Number(v))}>
+            <SelectTrigger className="w-[120px]">
+              <SelectValue placeholder="显示周数" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1">最近1周</SelectItem>
+              <SelectItem value="2">最近2周</SelectItem>
+              <SelectItem value="3">最近3周</SelectItem>
+              <SelectItem value="4">最近4周</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {/* Sort Indicator */}
+        {sortKey && (
+          <div className="flex items-center gap-1 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1">
+            <ArrowUpDown className="h-3.5 w-3.5 text-blue-600" />
+            <span className="text-xs text-blue-700">
+              按{WEEKLY_COLS.find(c => c.key === sortKey)?.label || sortKey}
+              {sortDir === "desc" ? "↓" : "↑"}排序
+            </span>
+            <button className="text-blue-400 hover:text-blue-600 ml-1" onClick={() => setSortKey(null)}>×</button>
+          </div>
+        )}
       </div>
 
       {/* Batch Action Bar */}
@@ -796,6 +869,16 @@ export default function OpsProducts() {
               onDelete={(id) => deleteMut.mutate({ id })}
               operatorList={[...(operatorList || [])]}
               onAssign={(pid, op) => singleAssignMut.mutate({ productIds: [pid], operator: op })}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              onSort={(key) => {
+                if (sortKey === key) {
+                  setSortDir(d => d === "desc" ? "asc" : "desc");
+                } else {
+                  setSortKey(key);
+                  setSortDir("desc");
+                }
+              }}
             />
           ))}
         </div>

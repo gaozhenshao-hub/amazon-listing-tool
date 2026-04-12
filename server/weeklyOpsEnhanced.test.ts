@@ -26,6 +26,6 @@ describe("Product Weekly Ops Enhanced Features", () => {
   it("total productOps procedure count is 88", () => {
     const allKeys = Object.keys(appRouter._def.procedures as any);
     const productOpsKeys = allKeys.filter(k => k.startsWith("productOps."));
-    expect(productOpsKeys.length).toBe(88);
+    expect(productOpsKeys.length).toBe(91);
   });
 });

@@ -226,7 +226,7 @@ describe("ProductOps Router - New Procedures", () => {
   it("should have correct total procedure count (88)", async () => {
     const { productOpsRouter } = await import("./routers/productOps");
     const procedures = Object.keys((productOpsRouter as any)._def.procedures || {});
-    expect(procedures.length).toBe(88);
+    expect(procedures.length).toBe(91);
   });
 });
 

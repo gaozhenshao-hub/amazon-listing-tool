@@ -164,7 +164,7 @@ describe("productOps router module", () => {
   it("should have exactly 88 procedures", async () => {
     const mod = await import("./productOps");
     const procedures = Object.keys(mod.productOpsRouter._def.procedures);
-    expect(procedures.length).toBe(88);
+    expect(procedures.length).toBe(91);
   });
 
   it("all procedures should be defined", async () => {
