@@ -3141,3 +3141,9 @@
 
 ### 测试
 - [x] 更新vitest测试覆盖新增功能（16个测试全部通过）
+### TypeScript 编译修复
+- [x] 修复 VideoScriptPage.tsx 中 onSuccess 回调的类型注解错误
+- [x] 修复 videoScript.ts 中 getL1Index 调用多余的 limit 参数
+- [x] 将 exportToExcel 未实现的 mutation 替换为占位 stub
+- [x] 修复 targetDuration decimal 类型转换（string → number）
+- [x] 更新 productOps/newFeatures4/phase4 测试中的 procedure 计数断言

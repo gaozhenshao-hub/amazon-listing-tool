@@ -382,7 +382,6 @@ export const videoScriptRouter = router({
           types: ["video"],
           keyword: script?.scriptName || "",
           scope: "all",
-          limit: 10,
         });
         if (kbL1.length > 0) {
           // Load L2 summaries for top results
@@ -563,7 +562,6 @@ export const videoScriptRouter = router({
           types: ["video"],
           keyword: script?.scriptName || "",
           scope: "all",
-          limit: 5,
         });
         if (kbL1.length > 0) {
           const topIds = kbL1.slice(0, 3).map(item => item.id);

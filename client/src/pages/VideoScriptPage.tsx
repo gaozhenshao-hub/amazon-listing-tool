@@ -475,13 +475,11 @@ function VideoScriptEditor({ scriptId }: { scriptId: number }) {
     },
     onError: (err) => toast.error(err.message),
   });
-  const exportMutation = trpc.videoScript.exportToExcel.useMutation({
-    onSuccess: (data) => {
-      window.open(data.url, "_blank");
-      toast.success("Excel已导出");
-    },
-    onError: (err) => toast.error(`导出失败: ${err.message}`),
-  });
+  // Export functionality - TODO: implement exportToExcel backend endpoint
+  const exportMutation = {
+    mutate: (_args: { videoScriptId: number }) => toast.info("Excel导出功能即将上线"),
+    isPending: false,
+  };
 
   const currentStageIdx = useMemo(() => {
     if (!script.data) return 0;
@@ -678,9 +676,9 @@ function VideoScriptEditor({ scriptId }: { scriptId: number }) {
       <div className="min-h-[400px]">
         {currentStageIdx === 0 && <Stage0A scriptId={scriptId} projectId={script.data.projectId} onAdvance={handleAdvanceStage} onConfirm={handleConfirmStage} isConfirmed={isStageConfirmed} />}
         {currentStageIdx === 1 && <Stage0B scriptId={scriptId} projectId={script.data.projectId} onAdvance={handleAdvanceStage} onConfirm={handleConfirmStage} isConfirmed={isStageConfirmed} />}
-        {currentStageIdx === 2 && <Stage1 scriptId={scriptId} projectId={script.data.projectId} videoType={videoType} targetDuration={script.data.targetDuration || 60} onAdvance={handleAdvanceStage} onConfirm={handleConfirmStage} isConfirmed={isStageConfirmed} />}
+        {currentStageIdx === 2 && <Stage1 scriptId={scriptId} projectId={script.data.projectId} videoType={videoType} targetDuration={Number(script.data.targetDuration) || 60} onAdvance={handleAdvanceStage} onConfirm={handleConfirmStage} isConfirmed={isStageConfirmed} />}
         {currentStageIdx === 3 && <Stage2 scriptId={scriptId} onAdvance={handleAdvanceStage} onConfirm={handleConfirmStage} isConfirmed={isStageConfirmed} />}
-        {currentStageIdx === 4 && <Stage3 scriptId={scriptId} videoType={videoType} targetDuration={script.data.targetDuration || 60} onAdvance={handleAdvanceStage} onConfirm={handleConfirmStage} isConfirmed={isStageConfirmed} />}
+        {currentStageIdx === 4 && <Stage3 scriptId={scriptId} videoType={videoType} targetDuration={Number(script.data.targetDuration) || 60} onAdvance={handleAdvanceStage} onConfirm={handleConfirmStage} isConfirmed={isStageConfirmed} />}
         {currentStageIdx === 5 && <Stage4 scriptId={scriptId} onConfirm={handleConfirmStage} isConfirmed={isStageConfirmed} />}
       </div>
     </div>
@@ -1653,13 +1651,11 @@ function Stage4({ scriptId, onConfirm, isConfirmed }: {
   const updateMutation = trpc.videoScript.updateEditScript.useMutation({
     onSuccess: () => editScripts.refetch(),
   });
-  const exportMutation = trpc.videoScript.exportToExcel.useMutation({
-    onSuccess: (data) => {
-      window.open(data.url, "_blank");
-      toast.success("Excel已导出");
-    },
-    onError: (err) => toast.error(`导出失败: ${err.message}`),
-  });
+  // Export functionality - TODO: implement exportToExcel backend endpoint
+  const exportMutation = {
+    mutate: (_args: { videoScriptId: number }) => toast.info("Excel导出功能即将上线"),
+    isPending: false,
+  };
 
   const editList = editScripts.data || [];
 

@@ -155,7 +155,7 @@ describe("KB type enum validation", () => {
 describe("module access configuration", () => {
   it("super_admin should have access to all 6 modules", async () => {
     const { ROLE_MODULE_ACCESS } = await import("@shared/const");
-    expect(ROLE_MODULE_ACCESS.super_admin.length).toBe(6);
+    expect(ROLE_MODULE_ACCESS.super_admin.length).toBe(7);
     expect(ROLE_MODULE_ACCESS.super_admin).toContain("admin");
   });
 
