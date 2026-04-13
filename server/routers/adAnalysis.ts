@@ -2661,4 +2661,62 @@ ${JSON.stringify(anonymize(addCandidates.slice(0, 80)))}
 
       return { trendData, periodTotals, topTerms, isMock: adapter.isMockMode() };
     }),
+
+  // ─── ASIN映射自动预热（静默后台执行） ─────────────────────────
+  warmupAsinMapping: protectedProcedure
+    .input(z.object({ marketplace: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      const cacheKey = `asin_mapping_${input.marketplace || 'all'}`;
+      const cached = getCached(cacheKey);
+      if (cached) {
+        return { status: 'cached', asinCount: Object.keys(cached.mapping || {}).length };
+      }
+
+      // Trigger mapping build in background (same logic as syncSpProductAds)
+      try {
+        const adapter = getLingxingAdapter();
+        const { sellers } = await getAllSellerSids();
+        const sids = filterSidsByMarketplace(sellers, input.marketplace);
+        const sidsToQuery = sids.map(Number).slice(0, 5);
+
+        const allAds: any[] = [];
+        const adPaths = [
+          { path: "/pb/openapi/newad/spProductAds", type: "SP" },
+          { path: "/pb/openapi/newad/sdProductAds", type: "SD" },
+        ];
+        for (const sid of sidsToQuery) {
+          for (const { path: adPath, type: adType } of adPaths) {
+            try {
+              const res = await adapter.requestWithMockFallback({
+                path: adPath,
+                body: { sid, offset: 0, length: 100 },
+              });
+              const raw = res.data || [];
+              const records = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
+              records.forEach((r: any) => { r._adType = adType; r._sid = sid; });
+              allAds.push(...records);
+            } catch { /* skip */ }
+          }
+        }
+
+        // Build mapping
+        const mapping: Record<string, { campaignIds: string[]; adTypes: string[] }> = {};
+        for (const ad of allAds) {
+          const asin = String(ad.asin || ad.advertised_asin || '').trim();
+          const campaignId = String(ad.campaign_id || '');
+          const adType = ad._adType || 'SP';
+          if (!asin || !campaignId) continue;
+          if (!mapping[asin]) mapping[asin] = { campaignIds: [], adTypes: [] };
+          if (!mapping[asin].campaignIds.includes(campaignId)) mapping[asin].campaignIds.push(campaignId);
+          if (!mapping[asin].adTypes.includes(adType)) mapping[asin].adTypes.push(adType);
+        }
+
+        setCache(cacheKey, { mapping, totalAds: allAds.length, sidsQueried: sidsToQuery.length });
+
+        return { status: 'refreshed', asinCount: Object.keys(mapping).length, totalAds: allAds.length };
+      } catch (err: any) {
+        console.warn('[WarmupAsinMapping] Failed:', err.message);
+        return { status: 'error', asinCount: 0, error: err.message };
+      }
+    }),
 });

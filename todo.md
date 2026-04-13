@@ -3416,3 +3416,13 @@
 - [x] 修复后端getProductAdsSummary接口：复用adAnalysis的ASIN映射缓存，通过子ASIN精确查找关联campaign_id
 - [x] 修复前端OpsProductDetail广告展示：增加matchInfo调试信息栏（映射来源/匹配ASIN/关联活动数）
 - [x] 验证修复结果：全部3333个测试通过，含更新后的dataSource和productOps.mock测试
+
+## 广告活动详情跳转
+- [x] 产品详情页广告活动列表中的活动名称可点击（蓝色链接+↗图标）
+- [x] 点击后跳转到广告优化搜索词分析Tab，自动选中该活动（通过URL参数campaignId+campaignName）
+- [x] OpsAds支持URL参数深度链接：?tab=search-terms&campaignId=xxx&campaignName=xxx，应用后自动清除URL参数
+
+## ASIN映射自动预热
+- [x] 后端：warmupAsinMapping接口，检查缓存存在则直接返回，否则拉取SP+SD广告商品数据并建立映射缓存
+- [x] 前端：OpsAds组件挂载时自动调用warmupMutation，切换marketplace时重新预热
+- [x] 预热不阻塞页面加载，后台静默执行，仅console.log记录结果

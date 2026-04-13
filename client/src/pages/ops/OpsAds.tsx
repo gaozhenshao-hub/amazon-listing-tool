@@ -99,7 +99,12 @@ export default function OpsAds() {
     d.setDate(d.getDate() - 2);
     return d.toISOString().slice(0, 10);
   });
-  const [activeTab, setActiveTab] = useState("overview");
+  // Support URL params for deep-linking: ?tab=search-terms&campaignId=xxx&campaignName=xxx
+  const [activeTab, setActiveTab] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('tab') || "overview";
+  });
+  const [deepLinkApplied, setDeepLinkApplied] = useState(false);
   const [expandedPortfolios, setExpandedPortfolios] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -147,9 +152,21 @@ export default function OpsAds() {
     saveSelection(selectedCampaigns, primaryCampaignId);
   }, [selectedCampaigns, primaryCampaignId]);
 
+  // ASIN mapping warmup: silently trigger on mount to ensure product detail pages have mapping data
+  const warmupMutation = trpc.adAnalysis.warmupAsinMapping.useMutation();
+  useEffect(() => {
+    warmupMutation.mutate({ marketplace }, {
+      onSuccess: (res) => {
+        if (res.status === 'refreshed') {
+          console.log(`[AsinMapping] Warmup complete: ${res.asinCount} ASINs mapped`);
+        }
+      },
+    });
+  }, [marketplace]); // Re-warmup when marketplace changes
+
   // Auto-select a random campaign when data loads and no campaign is selected
   useEffect(() => {
-    if (campaigns.length > 0 && selectedCampaigns.size === 0) {
+    if (campaigns.length > 0 && selectedCampaigns.size === 0 && !deepLinkApplied) {
       const randomIndex = Math.floor(Math.random() * Math.min(campaigns.length, 10));
       const randomCampaign = campaigns[randomIndex] as any;
       if (randomCampaign) {
@@ -161,6 +178,29 @@ export default function OpsAds() {
       }
     }
   }, [campaigns]);
+
+  // Deep-link: apply URL params to select a specific campaign and tab
+  useEffect(() => {
+    if (deepLinkApplied || campaigns.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const urlCampaignId = params.get('campaignId');
+    const urlCampaignName = params.get('campaignName');
+    if (urlCampaignId) {
+      // Try to find the campaign in loaded data
+      const found = campaigns.find((c: any) => String(c.campaign_id) === urlCampaignId) as any;
+      const name = urlCampaignName || (found ? (found.name || found.campaign_name || `Campaign ${urlCampaignId}`) : `Campaign ${urlCampaignId}`);
+      const type = found ? mapCampaignTypeToAdType(found.campaign_type) : 'SP';
+      setSelectedCampaigns(new Map([[urlCampaignId, { id: urlCampaignId, name, type }]]));
+      setPrimaryCampaignId(urlCampaignId);
+      setDeepLinkApplied(true);
+      // Clean URL params after applying
+      const url = new URL(window.location.href);
+      url.searchParams.delete('campaignId');
+      url.searchParams.delete('campaignName');
+      url.searchParams.delete('tab');
+      window.history.replaceState({}, '', url.pathname);
+    }
+  }, [campaigns, deepLinkApplied]);
 
   // Build campaignNames map for multi-campaign search terms
   const selectedCampaignNames = useMemo(() => {

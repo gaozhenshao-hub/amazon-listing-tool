@@ -1016,7 +1016,7 @@ export const productOpsRouter = router({
       // ═══ Compute totals and build campaign list ═══
       let totalSpend = 0, totalSales = 0, totalClicks = 0, totalImpressions = 0, totalOrders = 0;
       const campaignList: Array<{
-        name: string; status: string; spend: number; sales: number;
+        campaignId: string; name: string; status: string; spend: number; sales: number;
         acos: number; roas: number; clicks: number; impressions: number;
       }> = [];
 
@@ -1053,6 +1053,7 @@ export const productOpsRouter = router({
         }
 
         campaignList.push({
+          campaignId: String(camp.campaign_id || ''),
           name: String(camp.campaign_name || camp.name || "Unknown"),
           status: String(camp.state || camp.status || "enabled"),
           spend: round2(spend),

@@ -545,7 +545,24 @@ export default function OpsProductDetail() {
                             const cRoas = c.spend > 0 ? (c.sales / c.spend).toFixed(2) : '0';
                             return (
                             <tr key={idx} className={`border-b last:border-0 ${isPaused ? 'opacity-50' : ''}`}>
-                              <td className="py-1.5 max-w-[200px] truncate text-xs">{c.name}</td>
+                              <td className="py-1.5 max-w-[200px] truncate text-xs">
+                                <button
+                                  className="text-left text-blue-600 hover:text-blue-800 hover:underline cursor-pointer font-medium truncate max-w-[200px] block"
+                                  title={`点击查看「${c.name}」的搜索词分析`}
+                                  onClick={() => {
+                                    const cId = (c as any).campaignId;
+                                    if (cId) {
+                                      navigate(`/ops/ads?tab=search-terms&campaignId=${encodeURIComponent(cId)}&campaignName=${encodeURIComponent(c.name)}`);
+                                    } else {
+                                      navigate('/ops/ads?tab=search-terms');
+                                      toast.info('已跳转到搜索词分析页面');
+                                    }
+                                  }}
+                                >
+                                  {c.name}
+                                  <span className="ml-1 text-[10px] text-blue-400">↗</span>
+                                </button>
+                              </td>
                               <td className="py-1.5 text-center">
                                 <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
                                   isPaused ? 'bg-gray-100 text-gray-500' : 'bg-emerald-50 text-emerald-700'
