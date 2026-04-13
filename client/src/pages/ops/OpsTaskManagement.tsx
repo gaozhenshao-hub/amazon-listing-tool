@@ -28,8 +28,15 @@ import {
   MoreHorizontal, Pencil, Trash2, CheckCircle, Clock,
   AlertTriangle, ArrowUpDown, Filter, Users, Tag,
   Sparkles, Upload, ChevronDown, ChevronRight, Calendar,
-  ListTodo, LayoutGrid, BarChart3,
+  ListTodo, LayoutGrid, BarChart3, Bell, AlarmClock, RefreshCw,
+  BellRing, Settings2,
 } from "lucide-react";
+import {
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Collapsible, CollapsibleContent, CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Checkbox } from "@/components/ui/checkbox";
 
 // ─── Types ───
@@ -81,6 +88,7 @@ export default function OpsTaskManagement() {
   const [showMeetingDialog, setShowMeetingDialog] = useState(false);
   const [showExtractPreview, setShowExtractPreview] = useState(false);
   const [editingTask, setEditingTask] = useState<any>(null);
+  const [showReminderPanel, setShowReminderPanel] = useState(true);
 
   // ─── Data Queries ───
   const tasksQuery = trpc.taskManagement.listAllTasks.useQuery({
@@ -96,6 +104,7 @@ export default function OpsTaskManagement() {
   const assigneesQuery = trpc.taskManagement.getAssignees.useQuery();
   const categoriesQuery = trpc.taskManagement.getCategories.useQuery();
   const productsQuery = trpc.taskManagement.getProductsForAssignment.useQuery();
+  const reminderSummary = trpc.taskManagement.getReminderSummary.useQuery();
 
   const utils = trpc.useUtils();
 
@@ -139,6 +148,14 @@ export default function OpsTaskManagement() {
     onError: (err) => toast.error(`批量创建失败: ${err.message}`),
   });
 
+  const triggerReminder = trpc.taskManagement.triggerReminderCheck.useMutation({
+    onSuccess: (data) => {
+      toast.success(`提醒检测完成：检查 ${data.checked} 个任务，发送 ${data.notified} 条通知`);
+      utils.taskManagement.getReminderSummary.invalidate();
+    },
+    onError: (err) => toast.error(`检测失败: ${err.message}`),
+  });
+
   // ─── Stats Cards ───
   const stats = statsQuery.data;
 
@@ -156,6 +173,31 @@ export default function OpsTaskManagement() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => triggerReminder.mutate()}
+                  disabled={triggerReminder.isPending}
+                  className="relative"
+                >
+                  {triggerReminder.isPending ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <BellRing className="h-4 w-4" />
+                  )}
+                  {reminderSummary.data && reminderSummary.data.counts.overdue > 0 && (
+                    <span className="absolute -top-1 -right-1 h-4 min-w-4 px-0.5 flex items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                      {reminderSummary.data.counts.overdue}
+                    </span>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>手动触发提醒检测</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <Button variant="outline" onClick={() => setShowMeetingDialog(true)}>
             <Sparkles className="h-4 w-4 mr-1" />
             AI会议提取
@@ -175,6 +217,18 @@ export default function OpsTaskManagement() {
         <StatsCard label="已完成" value={stats?.byStatus?.done ?? 0} icon={CheckCircle} color="text-green-600" />
         <StatsCard label="已逾期" value={stats?.overdue ?? 0} icon={AlertTriangle} color="text-red-600" />
       </div>
+
+      {/* Reminder Alert Panel */}
+      {reminderSummary.data && (reminderSummary.data.counts.overdue > 0 || reminderSummary.data.counts.dueSoon > 0) && (
+        <ReminderAlertPanel
+          data={reminderSummary.data}
+          isOpen={showReminderPanel}
+          onToggle={() => setShowReminderPanel(!showReminderPanel)}
+          onTriggerCheck={() => triggerReminder.mutate()}
+          isChecking={triggerReminder.isPending}
+          onEditTask={setEditingTask}
+        />
+      )}
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -314,11 +368,14 @@ export default function OpsTaskManagement() {
         onOpenChange={setShowExtractPreview}
         onConfirm={(tasks, meetingId) => {
           batchCreate.mutate({
-            tasks: tasks.filter(t => t.selected !== false).map(t => ({
-              ...t,
-              assigneeName: t.assigneeName || undefined,
-              dueDate: t.dueDate || undefined,
-              estimatedHours: t.estimatedHours || undefined,
+            tasks: tasks.filter((t: ExtractedTask) => t.selected !== false).map((t: ExtractedTask) => ({
+              title: t.title,
+              description: t.description,
+              priority: t.priority,
+              category: t.category,
+              assigneeName: t.assigneeName ?? undefined,
+              dueDate: t.dueDate ?? undefined,
+              estimatedHours: t.estimatedHours ?? undefined,
             })),
             meetingRecordId: meetingId,
           });
@@ -1083,6 +1140,166 @@ function MeetingExtractDialog({ open, onOpenChange, onExtracted }: {
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Reminder Alert Panel ───
+function ReminderAlertPanel({ data, isOpen, onToggle, onTriggerCheck, isChecking, onEditTask }: {
+  data: {
+    overdue: { id: number; title: string; assigneeName: string | null; dueDate: string | null; priority: string; status: string; category: string | null; daysOverdue: number }[];
+    dueSoon: { id: number; title: string; assigneeName: string | null; dueDate: string | null; priority: string; status: string; category: string | null; daysUntilDue: number }[];
+    dueThisWeek: { id: number; title: string; assigneeName: string | null; dueDate: string | null; priority: string; status: string; category: string | null; daysUntilDue: number }[];
+    counts: { overdue: number; dueSoon: number; dueThisWeek: number };
+  };
+  isOpen: boolean;
+  onToggle: () => void;
+  onTriggerCheck: () => void;
+  isChecking: boolean;
+  onEditTask: (task: any) => void;
+}) {
+  return (
+    <Collapsible open={isOpen} onOpenChange={onToggle}>
+      <Card className={data.counts.overdue > 0 ? "border-red-300 dark:border-red-800" : "border-orange-300 dark:border-orange-800"}>
+        <CollapsibleTrigger asChild>
+          <CardHeader className="cursor-pointer py-3 px-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`p-1.5 rounded-lg ${data.counts.overdue > 0 ? "bg-red-100 dark:bg-red-900" : "bg-orange-100 dark:bg-orange-900"}`}>
+                  <AlarmClock className={`h-4 w-4 ${data.counts.overdue > 0 ? "text-red-600" : "text-orange-600"}`} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-sm">任务提醒</span>
+                  {data.counts.overdue > 0 && (
+                    <Badge className="bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300 text-xs">
+                      {data.counts.overdue} 已逾期
+                    </Badge>
+                  )}
+                  {data.counts.dueSoon > 0 && (
+                    <Badge className="bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300 text-xs">
+                      {data.counts.dueSoon} 即将到期
+                    </Badge>
+                  )}
+                  {data.counts.dueThisWeek > 0 && (
+                    <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 text-xs">
+                      {data.counts.dueThisWeek} 本周到期
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={(e) => { e.stopPropagation(); onTriggerCheck(); }}
+                  disabled={isChecking}
+                >
+                  <RefreshCw className={`h-3 w-3 mr-1 ${isChecking ? "animate-spin" : ""}`} />
+                  检测并通知
+                </Button>
+                {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </div>
+            </div>
+          </CardHeader>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <CardContent className="pt-0 px-4 pb-4 space-y-3">
+            {/* Overdue Tasks */}
+            {data.overdue.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-red-600 dark:text-red-400 mb-1.5 flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" /> 已逾期任务
+                </p>
+                <div className="space-y-1">
+                  {data.overdue.map(task => (
+                    <div
+                      key={task.id}
+                      className="flex items-center justify-between px-3 py-2 rounded-md bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 cursor-pointer transition-colors"
+                      onClick={() => onEditTask(task)}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Badge className={PRIORITY_CONFIG[task.priority as TaskPriority]?.color || ""} >
+                          {PRIORITY_CONFIG[task.priority as TaskPriority]?.label || task.priority}
+                        </Badge>
+                        <span className="text-sm truncate">{task.title}</span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs text-muted-foreground">{task.assigneeName || "未分配"}</span>
+                        <Badge variant="destructive" className="text-[10px]">逾期 {task.daysOverdue} 天</Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Due Soon Tasks (within 3 days) */}
+            {data.dueSoon.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-orange-600 dark:text-orange-400 mb-1.5 flex items-center gap-1">
+                  <Clock className="h-3 w-3" /> 3天内到期
+                </p>
+                <div className="space-y-1">
+                  {data.dueSoon.map(task => (
+                    <div
+                      key={task.id}
+                      className="flex items-center justify-between px-3 py-2 rounded-md bg-orange-50 dark:bg-orange-950/30 hover:bg-orange-100 dark:hover:bg-orange-950/50 cursor-pointer transition-colors"
+                      onClick={() => onEditTask(task)}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Badge className={PRIORITY_CONFIG[task.priority as TaskPriority]?.color || ""} >
+                          {PRIORITY_CONFIG[task.priority as TaskPriority]?.label || task.priority}
+                        </Badge>
+                        <span className="text-sm truncate">{task.title}</span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs text-muted-foreground">{task.assigneeName || "未分配"}</span>
+                        <Badge className="bg-orange-100 text-orange-700 text-[10px]">
+                          {task.daysUntilDue === 0 ? "今天到期" : `${task.daysUntilDue} 天后到期`}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Due This Week Tasks (3-7 days) */}
+            {data.dueThisWeek.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1.5 flex items-center gap-1">
+                  <Calendar className="h-3 w-3" /> 本周内到期
+                </p>
+                <div className="space-y-1">
+                  {data.dueThisWeek.map(task => (
+                    <div
+                      key={task.id}
+                      className="flex items-center justify-between px-3 py-2 rounded-md bg-blue-50 dark:bg-blue-950/30 hover:bg-blue-100 dark:hover:bg-blue-950/50 cursor-pointer transition-colors"
+                      onClick={() => onEditTask(task)}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Badge className={PRIORITY_CONFIG[task.priority as TaskPriority]?.color || ""} >
+                          {PRIORITY_CONFIG[task.priority as TaskPriority]?.label || task.priority}
+                        </Badge>
+                        <span className="text-sm truncate">{task.title}</span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-xs text-muted-foreground">{task.assigneeName || "未分配"}</span>
+                        <Badge className="bg-blue-100 text-blue-700 text-[10px]">{task.daysUntilDue} 天后到期</Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <p className="text-[11px] text-muted-foreground pt-1">
+              系统每小时自动检测任务到期情况并发送通知给负责人。点击"检测并通知"可手动触发。
+            </p>
+          </CardContent>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
   );
 }
 

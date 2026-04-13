@@ -552,12 +552,11 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
       return { deleted: true };
     }),
 
-  /** Get products list for task assignment */
+    /** Get products list for task assignment */
   getProductsForAssignment: protectedProcedure
     .query(async () => {
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
-
       const products = await db.select({
         id: productProfiles.id,
         parentAsin: productProfiles.parentAsin,
@@ -566,7 +565,138 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
       }).from(productProfiles)
         .orderBy(desc(productProfiles.createdAt))
         .limit(200);
-
       return products;
+    }),
+
+  // ═══════════════════════════════════════════════════════
+  // ─── Task Reminder & Notification ───
+  // ═══════════════════════════════════════════════════════
+
+  /** Manually trigger reminder check for all tasks */
+  triggerReminderCheck: protectedProcedure
+    .mutation(async () => {
+      const { checkTodoReminders } = await import("../todoReminder");
+      return checkTodoReminders();
+    }),
+
+  /** Update reminder settings for a task */
+  updateReminderSettings: protectedProcedure
+    .input(z.object({
+      taskId: z.number(),
+      reminderEnabled: z.number().min(0).max(1),
+      reminderDays: z.array(z.number().min(0)).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      const updates: Record<string, unknown> = {
+        reminderEnabled: input.reminderEnabled,
+      };
+      if (input.reminderDays) {
+        updates.reminderDays = JSON.stringify(input.reminderDays);
+      }
+      await db.update(teamTasks).set(updates).where(eq(teamTasks.id, input.taskId));
+      return { updated: true };
+    }),
+
+  /** Get overdue and upcoming tasks summary for dashboard */
+  getReminderSummary: protectedProcedure
+    .query(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      const today = new Date().toISOString().slice(0, 10);
+      const threeDaysLater = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+      const sevenDaysLater = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+
+      // Overdue tasks (due date < today, not done)
+      const overdueTasks = await db.select().from(teamTasks)
+        .where(and(
+          sql`${teamTasks.status} != 'done'`,
+          sql`${teamTasks.dueDate} IS NOT NULL AND ${teamTasks.dueDate} != ''`,
+          sql`${teamTasks.dueDate} < ${today}`,
+        ))
+        .orderBy(asc(sql`${teamTasks.dueDate}`));
+
+      // Due within 3 days
+      const dueSoonTasks = await db.select().from(teamTasks)
+        .where(and(
+          sql`${teamTasks.status} != 'done'`,
+          sql`${teamTasks.dueDate} IS NOT NULL AND ${teamTasks.dueDate} != ''`,
+          sql`${teamTasks.dueDate} >= ${today}`,
+          sql`${teamTasks.dueDate} <= ${threeDaysLater}`,
+        ))
+        .orderBy(asc(sql`${teamTasks.dueDate}`));
+
+      // Due within 7 days (but after 3 days)
+      const dueThisWeekTasks = await db.select().from(teamTasks)
+        .where(and(
+          sql`${teamTasks.status} != 'done'`,
+          sql`${teamTasks.dueDate} IS NOT NULL AND ${teamTasks.dueDate} != ''`,
+          sql`${teamTasks.dueDate} > ${threeDaysLater}`,
+          sql`${teamTasks.dueDate} <= ${sevenDaysLater}`,
+        ))
+        .orderBy(asc(sql`${teamTasks.dueDate}`));
+
+      return {
+        overdue: overdueTasks.map(t => ({
+          id: t.id,
+          title: t.title,
+          assigneeName: t.assigneeName,
+          dueDate: t.dueDate,
+          priority: t.priority,
+          status: t.status,
+          category: t.category,
+          daysOverdue: Math.floor((Date.now() - new Date(t.dueDate + "T00:00:00Z").getTime()) / 86400000),
+        })),
+        dueSoon: dueSoonTasks.map(t => ({
+          id: t.id,
+          title: t.title,
+          assigneeName: t.assigneeName,
+          dueDate: t.dueDate,
+          priority: t.priority,
+          status: t.status,
+          category: t.category,
+          daysUntilDue: Math.max(0, Math.floor((new Date(t.dueDate + "T00:00:00Z").getTime() - Date.now()) / 86400000)),
+        })),
+        dueThisWeek: dueThisWeekTasks.map(t => ({
+          id: t.id,
+          title: t.title,
+          assigneeName: t.assigneeName,
+          dueDate: t.dueDate,
+          priority: t.priority,
+          status: t.status,
+          category: t.category,
+          daysUntilDue: Math.floor((new Date(t.dueDate + "T00:00:00Z").getTime() - Date.now()) / 86400000),
+        })),
+        counts: {
+          overdue: overdueTasks.length,
+          dueSoon: dueSoonTasks.length,
+          dueThisWeek: dueThisWeekTasks.length,
+        },
+      };
+    }),
+
+  /** Get notification history for tasks */
+  getTaskNotifications: protectedProcedure
+    .input(z.object({
+      taskId: z.number().optional(),
+      limit: z.number().min(1).max(100).default(20),
+    }).optional())
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      const { notifications } = await import("../../drizzle/schema");
+      const conditions = [
+        eq(notifications.userId, ctx.user.id),
+        sql`${notifications.relatedType} = 'team_task'`,
+      ];
+      if (input?.taskId) {
+        conditions.push(eq(notifications.relatedId, input.taskId));
+      }
+      const result = await db.select().from(notifications)
+        .where(and(...conditions))
+        .orderBy(desc(notifications.createdAt))
+        .limit(input?.limit || 20);
+      return result;
     }),
 });

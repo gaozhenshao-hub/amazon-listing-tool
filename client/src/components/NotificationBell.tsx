@@ -9,7 +9,8 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
   Bell, Check, CheckCheck, FileText, Package, Image, Video,
-  Wrench, AlertCircle, UserCheck, XCircle,
+  Wrench, AlertCircle, UserCheck, XCircle, Clock, AlarmClock,
+  ClipboardList,
 } from "lucide-react";
 
 const TYPE_CONFIG: Record<string, { icon: typeof Bell; color: string; bg: string }> = {
@@ -18,11 +19,14 @@ const TYPE_CONFIG: Record<string, { icon: typeof Bell; color: string; bg: string
   review_rejected: { icon: XCircle, color: "text-red-600", bg: "bg-red-100" },
   project_assigned: { icon: UserCheck, color: "text-purple-600", bg: "bg-purple-100" },
   system_alert: { icon: AlertCircle, color: "text-amber-600", bg: "bg-amber-100" },
+  todo_due_soon: { icon: Clock, color: "text-orange-600", bg: "bg-orange-100" },
+  todo_overdue: { icon: AlarmClock, color: "text-red-600", bg: "bg-red-100" },
 };
 
 const KB_TYPE_ICONS: Record<string, typeof Bell> = {
   kb_product: Package, kb_listing: FileText, kb_image: Image,
   kb_video: Video, kb_skill: Wrench,
+  team_task: ClipboardList, product_todo: ClipboardList,
 };
 
 export default function NotificationBell() {

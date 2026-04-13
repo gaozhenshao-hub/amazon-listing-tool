@@ -3320,3 +3320,12 @@
 - [x] 与产品详情页团队协作模块联动（全局任务跳转按钮）
 - [x] 任务状态管理（待规划/待办/进行中/待审核/已完成）
 - [x] Vitest单元测试（15个测试用例全部通过）
+
+## 任务到期自动提醒通知
+- [x] 分析现有通知系统（notification表/路由/前端组件）
+- [x] 后端：任务到期检测逻辑（即将到期+已逾期）— 已有todoReminder.ts实现
+- [x] 后端：自动发送通知给负责人 — 每小时自动检测
+- [x] 后端：定时检测任务（cronJob+手动触发）— 新增triggerReminderCheck/updateReminderSettings/getReminderSummary接口
+- [x] 前端：任务管理页面显示提醒状态（ReminderAlertPanel组件）
+- [x] 前端：通知列表中展示任务提醒（NotificationBell增加todo_due_soon/todo_overdue图标）
+- [x] Vitest单元测试（26个测试用例全部通过）
