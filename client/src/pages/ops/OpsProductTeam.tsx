@@ -17,7 +17,9 @@ import {
   Plus, Trash2, Loader2, Users, GripVertical, Calendar, User,
   CheckCircle2, Clock, AlertCircle, ArrowRight, BarChart3,
   ChevronDown, ChevronUp, Edit2, MessageSquare, Bell, BellOff,
+  ExternalLink, Sparkles,
 } from "lucide-react";
+import { useLocation } from "wouter";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, PieChart, Pie, Cell,
@@ -55,6 +57,7 @@ const TASK_TYPES: Record<string, { label: string; color: string }> = {
 const PIE_COLORS = ["#94a3b8", "#3b82f6", "#f59e0b", "#10b981"];
 
 export default function OpsProductTeam({ productId, parentAsin }: Props) {
+  const [, navigate] = useLocation();
   const { data: tasks, refetch, isLoading } = trpc.productOps.listTeamTasks.useQuery(
     { productProfileId: productId }
   );
@@ -190,6 +193,9 @@ export default function OpsProductTeam({ productId, parentAsin }: Props) {
           </Select>
           <Button size="sm" onClick={() => setShowCreate(true)}>
             <Plus className="h-3 w-3 mr-1" /> 新建任务
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => navigate("/ops/tasks")}>
+            <ExternalLink className="h-3 w-3 mr-1" /> 全局任务
           </Button>
         </div>
       </div>

@@ -75,6 +75,8 @@ import { offSocialRouter } from "./routers/offSocial";
 import { offAnalyticsRouter } from "./routers/offAnalytics";
 // Module 2 Extension: Video Script Generation
 import { videoScriptRouter } from "./routers/videoScript";
+// Task Management
+import { taskManagementRouter } from "./routers/taskManagement";
 
 export const appRouter = router({
   system: systemRouter,
@@ -162,6 +164,8 @@ export const appRouter = router({
   offAnalytics: offAnalyticsRouter,
   // Module 2 Extension: Video Script Generation
   videoScript: videoScriptRouter,
+  // Task Management
+  taskManagement: taskManagementRouter,
 });
 
 export type AppRouter = typeof appRouter;

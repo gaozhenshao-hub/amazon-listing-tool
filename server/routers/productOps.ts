@@ -3586,12 +3586,12 @@ export const productOpsRouter = router({
       }
 
       // ── Helper: get Monday of a date ──
-      function getWeekMonday(dateStr: string): string {
+      const getWeekMonday = (dateStr: string): string => {
         const d = new Date(dateStr);
         const day = d.getDay();
         const diff = d.getDate() - day + (day === 0 ? -6 : 1);
         return new Date(d.setDate(diff)).toISOString().split('T')[0];
-      }
+      };
 
       // ── Group profit items by week ──
       const weekMap = new Map<string, any[]>();
@@ -3625,7 +3625,7 @@ export const productOpsRouter = router({
 
       // ── Upsert weekly records ──
       let synced = 0;
-      const allWeeks = new Set([...weekMap.keys(), ...adWeekMap.keys(), ...sessionWeekMap.keys()]);
+      const allWeeks = new Set([...Array.from(weekMap.keys()), ...Array.from(adWeekMap.keys()), ...Array.from(sessionWeekMap.keys())]);
 
       for (const weekStart of Array.from(allWeeks).sort()) {
         const ws = new Date(weekStart);
@@ -3994,12 +3994,12 @@ export const productOpsRouter = router({
           const profitItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
 
           // Group by week and upsert
-          function getWeekMonday(dateStr: string): string {
+          const getWeekMonday = (dateStr: string): string => {
             const d = new Date(dateStr);
             const day = d.getDay();
             const diff = d.getDate() - day + (day === 0 ? -6 : 1);
             return new Date(d.setDate(diff)).toISOString().split('T')[0];
-          }
+          };
 
           const weekMap = new Map<string, any[]>();
           for (const item of profitItems) {

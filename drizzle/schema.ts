@@ -2089,6 +2089,7 @@ export const teamTasks = mysqlTable("team_tasks", {
   reminderDays: varchar("reminder_days", { length: 100 }), // JSON array e.g. [1,3,7]
   reminderEnabled: int("reminder_enabled").default(1),
   lastReminderSentAt: timestamp("last_reminder_sent_at"),
+  meetingRecordId: int("meeting_record_id"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -3291,3 +3292,21 @@ export const productBasicInfo = mysqlTable("product_basic_info", {
 });
 export type ProductBasicInfo = typeof productBasicInfo.$inferSelect;
 export type InsertProductBasicInfo = typeof productBasicInfo.$inferInsert;
+
+
+// ─── Meeting Records (会议录音记录) ───
+export const meetingRecords = mysqlTable("meeting_records", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  title: varchar("title", { length: 300 }),
+  audioUrl: text("audio_url"), // S3 URL of the uploaded audio
+  transcript: text("transcript"), // Full transcription text
+  extractedTasks: text("extracted_tasks"), // JSON array of extracted tasks
+  status: mysqlEnum("meeting_status", ["uploading", "transcribing", "extracting", "done", "error"]).default("uploading").notNull(),
+  errorMessage: text("error_message"),
+  duration: int("duration"), // audio duration in seconds
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type MeetingRecord = typeof meetingRecords.$inferSelect;
+export type InsertMeetingRecord = typeof meetingRecords.$inferInsert;
