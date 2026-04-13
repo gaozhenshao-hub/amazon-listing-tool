@@ -108,19 +108,28 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
   const searchTerms = data?.searchTerms || [];
   const categoryStats = data?.categoryStats || {};
   const categories = categoryDefs?.categories || [];
-  // Multi-mode: extract unique source campaigns for filter
-  const sourceCampaigns = useMemo(() => {
-    if (!isMultiMode) return [];
+  // Helper: extract campaign IDs from a search term (works for both single and multi mode)
+  const getTermCampaignIds = (t: any): string[] => {
+    // Multi-mode: sourceCampaigns is an array of objects with campaignId
+    if (t.sourceCampaigns && Array.isArray(t.sourceCampaigns)) {
+      return t.sourceCampaigns.map((s: any) => String(s.campaignId));
+    }
+    // Single-mode: campaign_id is a direct field
+    if (t.campaign_id) return [String(t.campaign_id)];
+    return [];
+  };
+
+  // Extract unique source campaigns for filter (works in both modes)
+  const sourceCampaignsList = useMemo(() => {
     const map = new Map<string, string>();
     searchTerms.forEach((t: any) => {
-      if (t.sourceCampaignIds) {
-        (t.sourceCampaignIds as string[]).forEach((cid: string) => {
-          if (!map.has(cid)) map.set(cid, campaignNames?.[cid] || `活动 ${cid}`);
-        });
-      }
+      const cids = getTermCampaignIds(t);
+      cids.forEach((cid: string) => {
+        if (!map.has(cid)) map.set(cid, campaignNames?.[cid] || `活动 ${cid}`);
+      });
     });
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-  }, [searchTerms, isMultiMode, campaignNames]);
+  }, [searchTerms, campaignNames]);
 
   // Filter and sort
   const filteredTerms = useMemo(() => {
@@ -132,11 +141,12 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
       const q = searchQuery.toLowerCase();
       result = result.filter((t: any) => (t.query || "").toLowerCase().includes(q));
     }
-    // Multi-mode: filter by source campaign
-    if (isMultiMode && sourceCampaignFilter) {
-      result = result.filter((t: any) => 
-        t.sourceCampaignIds && (t.sourceCampaignIds as string[]).includes(sourceCampaignFilter)
-      );
+    // Filter by source campaign (works in both single and multi mode)
+    if (sourceCampaignFilter) {
+      result = result.filter((t: any) => {
+        const cids = getTermCampaignIds(t);
+        return cids.includes(sourceCampaignFilter);
+      });
     }
     result.sort((a: any, b: any) => {
       const aVal = a[sortField] || 0;
@@ -144,7 +154,7 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
       return sortDir === "desc" ? bVal - aVal : aVal - bVal;
     });
     return result;
-  }, [searchTerms, categoryFilter, searchQuery, sortField, sortDir, isMultiMode, sourceCampaignFilter]);
+  }, [searchTerms, categoryFilter, searchQuery, sortField, sortDir, sourceCampaignFilter]);
 
   // Pie chart data
   const pieData = useMemo(() => {
@@ -209,8 +219,9 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
         CATEGORY_COLORS[t.categoryId]?.shortLabel || "",
       ];
       if (isMultiMode) {
-        const sources = (t.sourceCampaignIds || []).map((cid: string) => campaignNames?.[cid] || cid).join('; ');
-        base.push(`"${sources}"`, String((t.sourceCampaignIds || []).length));
+        const cids = getTermCampaignIds(t);
+        const sources = cids.map((cid: string) => campaignNames?.[cid] || cid).join('; ');
+        base.push(`"${sources}"`, String(cids.length));
       }
       base.push(
         String(t.impressions || 0), String(t.clicks || 0),
@@ -263,14 +274,14 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
                 </Badge>
               </div>
               <div className="flex items-center gap-2">
-                {sourceCampaigns.length > 0 && (
+                {sourceCampaignsList.length > 0 && (
                   <Select value={sourceCampaignFilter || 'all'} onValueChange={(v) => setSourceCampaignFilter(v === 'all' ? null : v)}>
                     <SelectTrigger className="h-7 text-xs w-[200px] bg-white">
                       <SelectValue placeholder="按来源活动筛选" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">全部活动</SelectItem>
-                      {sourceCampaigns.map(c => (
+                      {sourceCampaignsList.map(c => (
                         <SelectItem key={c.id} value={c.id}>
                           <span className="truncate max-w-[180px] block">{c.name}</span>
                         </SelectItem>
@@ -518,6 +529,21 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
+              {sourceCampaignsList.length > 0 && (
+                <Select value={sourceCampaignFilter || 'all'} onValueChange={(v) => setSourceCampaignFilter(v === 'all' ? null : v)}>
+                  <SelectTrigger className="h-8 text-xs w-[200px]">
+                    <SelectValue placeholder="按来源活动筛选" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部活动 ({sourceCampaignsList.length})</SelectItem>
+                    {sourceCampaignsList.map(c => (
+                      <SelectItem key={c.id} value={c.id}>
+                        <span className="truncate max-w-[180px] block">{c.name}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                 <Input
@@ -542,9 +568,7 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
                   <th className="text-left p-3 font-medium text-gray-600 w-10">#</th>
                   <th className="text-left p-3 font-medium text-gray-600">搜索词</th>
                   <th className="text-center p-3 font-medium text-gray-600 w-24">分类</th>
-                  {isMultiMode && (
-                    <th className="text-center p-3 font-medium text-gray-600 w-32">来源活动</th>
-                  )}
+                  <th className="text-center p-3 font-medium text-gray-600 w-32">来源活动</th>
                   {["impressions", "clicks", "cost", "sales", "orders", "acos", "ctr", "convRate"].map(field => (
                     <th
                       key={field}
@@ -567,7 +591,7 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
               </thead>
               <tbody>
                 {filteredTerms.length === 0 ? (
-                  <tr><td colSpan={isMultiMode ? 12 : 11} className="text-center py-12 text-gray-400">暂无搜索词数据</td></tr>
+                  <tr><td colSpan={12} className="text-center py-12 text-gray-400">暂无搜索词数据</td></tr>
                 ) : (
                   filteredTerms.slice(0, 200).map((t: any, i: number) => {
                     const config = CATEGORY_COLORS[t.categoryId] || CATEGORY_COLORS[12];
@@ -585,23 +609,28 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
                             {config.shortLabel}
                           </Badge>
                         </td>
-                        {isMultiMode && (
-                          <td className="p-3 text-center">
-                            <div className="flex flex-wrap gap-0.5 justify-center">
-                              {(t.sourceCampaignIds as string[] || []).length > 2 ? (
-                                <Badge variant="outline" className="text-[9px]">
-                                  {(t.sourceCampaignIds as string[]).length}个活动
-                                </Badge>
-                              ) : (
-                                (t.sourceCampaignIds as string[] || []).map((cid: string) => (
-                                  <Badge key={cid} variant="outline" className="text-[9px] max-w-[120px] truncate">
-                                    {campaignNames?.[cid]?.slice(0, 15) || cid}
+                        <td className="p-3 text-center">
+                          {(() => {
+                            const cids = getTermCampaignIds(t);
+                            return (
+                              <div className="flex flex-wrap gap-0.5 justify-center">
+                                {cids.length === 0 ? (
+                                  <span className="text-[10px] text-gray-400">-</span>
+                                ) : cids.length > 2 ? (
+                                  <Badge variant="outline" className="text-[9px]">
+                                    {cids.length}个活动
                                   </Badge>
-                                ))
-                              )}
-                            </div>
-                          </td>
-                        )}
+                                ) : (
+                                  cids.map((cid: string) => (
+                                    <Badge key={cid} variant="outline" className="text-[9px] max-w-[120px] truncate">
+                                      {campaignNames?.[cid]?.slice(0, 15) || cid}
+                                    </Badge>
+                                  ))
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </td>
                         <td className="p-3 text-right text-xs">{(t.impressions || 0).toLocaleString()}</td>
                         <td className="p-3 text-right text-xs">{(t.clicks || 0).toLocaleString()}</td>
                         <td className="p-3 text-right text-xs">${(t.cost || 0).toFixed(2)}</td>
