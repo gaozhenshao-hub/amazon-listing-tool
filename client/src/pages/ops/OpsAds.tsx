@@ -37,6 +37,7 @@ import CrossChannelAnalysis from "./ads/CrossChannelAnalysis";
 import AsinAdSummary from "./ads/AsinAdSummary";
 import BudgetAllocation from "./ads/BudgetAllocation";
 import SearchTermTrend from "./ads/SearchTermTrend";
+import BudgetTracker from "./ads/BudgetTracker";
 
 const PIE_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#9ca3af", "#8b5cf6", "#06b6d4", "#f97316"];
 
@@ -620,6 +621,7 @@ export default function OpsAds() {
           <TabsTrigger value="word-freq" className="text-xs gap-1"><Type className="w-3 h-3" />词频分析</TabsTrigger>
           <TabsTrigger value="effective-terms" className="text-xs gap-1"><Gem className="w-3 h-3" />有效词</TabsTrigger>
           <TabsTrigger value="budget" className="text-xs gap-1"><DollarSign className="w-3 h-3" />预算分配</TabsTrigger>
+          <TabsTrigger value="budget-tracker" className="text-xs gap-1"><Clock className="w-3 h-3" />效果追踪</TabsTrigger>
           <TabsTrigger value="trend" className="text-xs gap-1"><Activity className="w-3 h-3" />趋势对比</TabsTrigger>
           <TabsTrigger value="diagnostics" className="text-xs gap-1"><Activity className="w-3 h-3" />诊断</TabsTrigger>
           <TabsTrigger value="dsp" className="text-xs gap-1"><Layers className="w-3 h-3" />DSP</TabsTrigger>
@@ -1046,6 +1048,11 @@ export default function OpsAds() {
             startDate={dateMode === "range" ? startDate : undefined}
             endDate={dateMode === "range" ? endDate : undefined}
           />
+        </TabsContent>
+
+        {/* Tab: Budget Tracker */}
+        <TabsContent value="budget-tracker" className="mt-4">
+          <BudgetTracker marketplace={marketplace} />
         </TabsContent>
 
         {/* Tab: Search Term Trend */}

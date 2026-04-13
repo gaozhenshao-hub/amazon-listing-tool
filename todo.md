@@ -3426,3 +3426,13 @@
 - [x] 后端：warmupAsinMapping接口，检查缓存存在则直接返回，否则拉取SP+SD广告商品数据并建立映射缓存
 - [x] 前端：OpsAds组件挂载时自动调用warmupMutation，切换marketplace时重新预热
 - [x] 预热不阻塞页面加载，后台静默执行，仅console.log记录结果
+
+## 预算执行效果追踪
+- [x] 数据库：创建budget_tracking表（18个字段含基线/跟踪数据、用户决策、AI评分）
+- [x] 后端：saveBudgetDecision接口（保存用户决策+各活动明细JSON）
+- [x] 后端：getBudgetTrackingHistory接口（分页查询历史记录，数值字段自动转换）
+- [x] 后端：evaluateBudgetEffect接口（拉取执行后实际数据+AI评分+效果总结）
+- [x] 前端：BudgetTracker组件（KPI卡片+ACoS趋势图+历史记录卡片+展开明细）
+- [x] 前端：预算分配页增加"保存决策"面板（采纳/部分采纳/拒绝+备注）
+- [x] 前端：广告优化Tab栏新增"效果追踪"页签
+- [x] Vitest单元测试（3333个测试全部通过）

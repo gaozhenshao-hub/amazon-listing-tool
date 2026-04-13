@@ -3310,3 +3310,41 @@ export const meetingRecords = mysqlTable("meeting_records", {
 });
 export type MeetingRecord = typeof meetingRecords.$inferSelect;
 export type InsertMeetingRecord = typeof meetingRecords.$inferInsert;
+
+
+// ─── Budget Tracking (预算执行效果追踪) ───
+export const budgetTracking = mysqlTable("budget_tracking", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  marketplace: varchar("marketplace", { length: 20 }).default("US").notNull(),
+  // Snapshot of the AI suggestion batch
+  batchId: varchar("batch_id", { length: 64 }).notNull(), // unique ID per AI suggestion run
+  totalBudgetBefore: decimal("total_budget_before", { precision: 12, scale: 2 }),
+  totalBudgetAfter: decimal("total_budget_after", { precision: 12, scale: 2 }),
+  campaignCount: int("campaign_count").default(0),
+  // Metrics at the time of suggestion (baseline)
+  baselineSpend: decimal("baseline_spend", { precision: 12, scale: 2 }),
+  baselineSales: decimal("baseline_sales", { precision: 12, scale: 2 }),
+  baselineAcos: decimal("baseline_acos", { precision: 8, scale: 4 }),
+  baselineRoas: decimal("baseline_roas", { precision: 8, scale: 4 }),
+  baselineOrders: int("baseline_orders").default(0),
+  // User decision
+  userDecision: mysqlEnum("budget_user_decision", ["accepted", "modified", "rejected", "partial"]).default("accepted").notNull(),
+  userNotes: text("user_notes"),
+  // Detailed campaign-level decisions (JSON array)
+  campaignDecisions: text("campaign_decisions"), // JSON: [{ campaignId, campaignName, action, currentBudget, suggestedBudget, confirmedBudget, reason, priority }]
+  // Follow-up metrics (filled later when evaluating effect)
+  followupSpend: decimal("followup_spend", { precision: 12, scale: 2 }),
+  followupSales: decimal("followup_sales", { precision: 12, scale: 2 }),
+  followupAcos: decimal("followup_acos", { precision: 8, scale: 4 }),
+  followupRoas: decimal("followup_roas", { precision: 8, scale: 4 }),
+  followupOrders: int("followup_orders"),
+  followupEvaluatedAt: timestamp("followup_evaluated_at"),
+  // AI summary of the effect
+  effectSummary: text("effect_summary"), // AI-generated summary of the effect
+  effectScore: int("effect_score"), // 1-100 score of how well the suggestion performed
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type BudgetTracking = typeof budgetTracking.$inferSelect;
+export type InsertBudgetTracking = typeof budgetTracking.$inferInsert;

@@ -13,8 +13,9 @@ import {
 import {
   Sparkles, Loader2, DollarSign, TrendingUp, TrendingDown, Target,
   ArrowUpRight, ArrowDownRight, Minus, Download, Edit3, Check, X,
-  AlertTriangle, Lightbulb, Pause, Play,
+  AlertTriangle, Lightbulb, Pause, Play, Save, CheckCircle2,
 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 
 interface BudgetAllocationProps {
   marketplace?: string;
@@ -40,10 +41,20 @@ export default function BudgetAllocation({ marketplace, reportDate, startDate, e
   const [targetAcos, setTargetAcos] = useState(25);
   const [editingBudgets, setEditingBudgets] = useState<Record<string, number>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [userNotes, setUserNotes] = useState("");
+  const [saved, setSaved] = useState(false);
 
   const budgetMutation = trpc.adAnalysis.aiBudgetAllocation.useMutation({
-    onSuccess: () => toast.success("AI预算分析完成"),
+    onSuccess: () => { toast.success("AI预算分析完成"); setSaved(false); },
     onError: (err) => toast.error(`分析失败: ${err.message}`),
+  });
+
+  const saveMutation = trpc.adAnalysis.saveBudgetDecision.useMutation({
+    onSuccess: (res) => {
+      toast.success(`预算方案已保存 (${res.batchId})`);
+      setSaved(true);
+    },
+    onError: (err) => toast.error(`保存失败: ${err.message}`),
   });
 
   const data = budgetMutation.data;
@@ -55,6 +66,35 @@ export default function BudgetAllocation({ marketplace, reportDate, startDate, e
 
   const handleEditBudget = (campaignId: string, value: number) => {
     setEditingBudgets(prev => ({ ...prev, [campaignId]: value }));
+  };
+
+  const handleSaveDecision = (decision: 'accepted' | 'modified' | 'rejected' | 'partial') => {
+    if (!allocation?.campaigns || !data) return;
+    const hasEdits = Object.keys(editingBudgets).length > 0;
+    const actualDecision = hasEdits ? (decision === 'accepted' ? 'modified' : decision) : decision;
+    saveMutation.mutate({
+      marketplace,
+      totalBudgetBefore: data.totals.totalCurrentBudget,
+      totalBudgetAfter: allocation.total_suggested_budget || 0,
+      campaignCount: allocation.campaigns.length,
+      baselineSpend: data.totals.totalCost,
+      baselineSales: data.totals.totalSales,
+      baselineAcos: data.totals.overallAcos,
+      baselineRoas: data.totals.totalSales > 0 && data.totals.totalCost > 0 ? Math.round(data.totals.totalSales / data.totals.totalCost * 100) / 100 : 0,
+      baselineOrders: data.campaignData.reduce((s: number, c: any) => s + (c.orders || 0), 0),
+      userDecision: actualDecision,
+      userNotes: userNotes || undefined,
+      campaignDecisions: allocation.campaigns.map((c: any) => ({
+        campaignId: c.campaignId,
+        campaignName: c.name,
+        action: c.action,
+        currentBudget: c.currentBudget,
+        suggestedBudget: c.suggestedBudget,
+        confirmedBudget: editingBudgets[c.campaignId] ?? c.suggestedBudget,
+        reason: c.reason,
+        priority: c.priority,
+      })),
+    });
   };
 
   const handleExportCSV = () => {
@@ -350,6 +390,62 @@ export default function BudgetAllocation({ marketplace, reportDate, startDate, e
                     </tbody>
                   </table>
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Save Decision Panel */}
+          {allocation?.campaigns && !saved && (
+            <Card className="border-indigo-200 bg-indigo-50/30">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Save className="w-4 h-4 text-indigo-600" />
+                  <p className="text-sm font-medium text-indigo-800">保存预算决策并追踪效果</p>
+                </div>
+                <Textarea
+                  placeholder="添加备注（可选）..."
+                  value={userNotes}
+                  onChange={(e) => setUserNotes(e.target.value)}
+                  className="h-16 text-xs resize-none bg-white"
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    className="h-8 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                    disabled={saveMutation.isPending}
+                    onClick={() => handleSaveDecision('accepted')}
+                  >
+                    {saveMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                    采纳并保存
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs gap-1"
+                    disabled={saveMutation.isPending}
+                    onClick={() => handleSaveDecision('partial')}
+                  >
+                    部分采纳
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs gap-1 text-red-600 border-red-200 hover:bg-red-50"
+                    disabled={saveMutation.isPending}
+                    onClick={() => handleSaveDecision('rejected')}
+                  >
+                    拒绝
+                  </Button>
+                  <span className="text-[10px] text-muted-foreground ml-2">保存后可在"效果追踪"Tab中查看并评估执行效果</span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {saved && (
+            <Card className="border-emerald-200 bg-emerald-50/30">
+              <CardContent className="p-4 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <p className="text-sm text-emerald-700">预算方案已保存，您可以在"效果追踪"Tab中查看历史记录并评估执行效果。</p>
               </CardContent>
             </Card>
           )}

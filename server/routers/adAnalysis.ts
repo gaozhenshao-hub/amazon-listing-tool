@@ -3,7 +3,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { getLingxingAdapter } from "../lingxingAdapter";
 import { invokeLLM } from "../_core/llm";
-import { searchTermActions } from "../../drizzle/schema";
+import { searchTermActions, budgetTracking } from "../../drizzle/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 
 // ─── 12-Category Classification Thresholds ──────────────────────
@@ -2669,7 +2669,7 @@ ${JSON.stringify(anonymize(addCandidates.slice(0, 80)))}
       const cacheKey = `asin_mapping_${input.marketplace || 'all'}`;
       const cached = getCached(cacheKey);
       if (cached) {
-        return { status: 'cached', asinCount: Object.keys(cached.mapping || {}).length };
+        return { status: 'cached', asinCount: Object.keys((cached as any).mapping || {}).length };
       }
 
       // Trigger mapping build in background (same logic as syncSpProductAds)
@@ -2718,5 +2718,210 @@ ${JSON.stringify(anonymize(addCandidates.slice(0, 80)))}
         console.warn('[WarmupAsinMapping] Failed:', err.message);
         return { status: 'error', asinCount: 0, error: err.message };
       }
+    }),
+
+  // ─── 保存预算决策记录 ────────────────────────────────
+  saveBudgetDecision: protectedProcedure
+    .input(z.object({
+      marketplace: z.string().optional().default('US'),
+      totalBudgetBefore: z.number(),
+      totalBudgetAfter: z.number(),
+      campaignCount: z.number(),
+      baselineSpend: z.number(),
+      baselineSales: z.number(),
+      baselineAcos: z.number(),
+      baselineRoas: z.number(),
+      baselineOrders: z.number(),
+      userDecision: z.enum(['accepted', 'modified', 'rejected', 'partial']),
+      userNotes: z.string().optional(),
+      campaignDecisions: z.array(z.object({
+        campaignId: z.string(),
+        campaignName: z.string(),
+        action: z.string(),
+        currentBudget: z.number(),
+        suggestedBudget: z.number(),
+        confirmedBudget: z.number(),
+        reason: z.string(),
+        priority: z.string(),
+      })),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      const batchId = `BT_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      await db!.insert(budgetTracking).values({
+        userId: ctx.user.id,
+        marketplace: input.marketplace,
+        batchId,
+        totalBudgetBefore: String(input.totalBudgetBefore),
+        totalBudgetAfter: String(input.totalBudgetAfter),
+        campaignCount: input.campaignCount,
+        baselineSpend: String(input.baselineSpend),
+        baselineSales: String(input.baselineSales),
+        baselineAcos: String(input.baselineAcos),
+        baselineRoas: String(input.baselineRoas),
+        baselineOrders: input.baselineOrders,
+        userDecision: input.userDecision,
+        userNotes: input.userNotes || null,
+        campaignDecisions: JSON.stringify(input.campaignDecisions),
+      });
+      return { success: true, batchId };
+    }),
+
+  // ─── 查询预算追踪历史 ────────────────────────────────
+  getBudgetTrackingHistory: protectedProcedure
+    .input(z.object({
+      marketplace: z.string().optional(),
+      limit: z.number().optional().default(20),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      let query = db!.select().from(budgetTracking)
+        .where(eq(budgetTracking.userId, ctx.user.id))
+        .orderBy(desc(budgetTracking.createdAt))
+        .limit(input.limit);
+      const records = await query;
+      return {
+        records: records.map((r: any) => ({
+          ...r,
+          totalBudgetBefore: Number(r.totalBudgetBefore) || 0,
+          totalBudgetAfter: Number(r.totalBudgetAfter) || 0,
+          baselineSpend: Number(r.baselineSpend) || 0,
+          baselineSales: Number(r.baselineSales) || 0,
+          baselineAcos: Number(r.baselineAcos) || 0,
+          baselineRoas: Number(r.baselineRoas) || 0,
+          followupSpend: Number(r.followupSpend) || 0,
+          followupSales: Number(r.followupSales) || 0,
+          followupAcos: Number(r.followupAcos) || 0,
+          followupRoas: Number(r.followupRoas) || 0,
+          campaignDecisions: r.campaignDecisions ? JSON.parse(r.campaignDecisions as string) : [],
+        })),
+      };
+    }),
+
+  // ─── 评估预算执行效果 ────────────────────────────────
+  evaluateBudgetEffect: protectedProcedure
+    .input(z.object({
+      trackingId: z.number(),
+      marketplace: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      // Get the tracking record
+      const [record] = await db!.select().from(budgetTracking)
+        .where(and(eq(budgetTracking.id, input.trackingId), eq(budgetTracking.userId, ctx.user.id)))
+        .limit(1);
+      if (!record) throw new Error('记录不存在');
+
+      const decisions = record.campaignDecisions ? JSON.parse(record.campaignDecisions as string) : [];
+      const campaignIds = decisions.map((d: any) => d.campaignId).filter(Boolean);
+      if (campaignIds.length === 0) return { success: false, error: '无广告活动数据' };
+
+      // Fetch current performance data for these campaigns
+      const adapter = getLingxingAdapter();
+      let totalSpend = 0, totalSales = 0, totalOrders = 0;
+
+      // Get recent 7 days data
+      const dates = resolveDateRange({ days: 7 });
+      const BATCH = 10;
+      for (let i = 0; i < campaignIds.length; i += BATCH) {
+        const batch = campaignIds.slice(i, i + BATCH);
+        const results = await Promise.allSettled(
+          batch.flatMap((cid: string) =>
+            dates.slice(0, 3).map(reportDate =>
+              adapter.requestWithMockFallback({
+                path: '/pb/openapi/newad/spCampaignHourData',
+                body: { campaign_id: Number(cid), report_date: reportDate },
+              }).then(res => ({ cid, res })).catch(() => null)
+            )
+          )
+        );
+        for (const r of results) {
+          if (r.status !== 'fulfilled' || !r.value) continue;
+          const items = Array.isArray(r.value.res.data) ? r.value.res.data : (r.value.res.data as any)?.records || [];
+          for (const item of items) {
+            totalSpend += Number(item.cost) || 0;
+            totalSales += Number(item.sales) || 0;
+            totalOrders += Number(item.orders) || 0;
+          }
+        }
+      }
+
+      const followupAcos = totalSales > 0 ? Math.round(totalSpend / totalSales * 10000) / 100 : 0;
+      const followupRoas = totalSpend > 0 ? Math.round(totalSales / totalSpend * 100) / 100 : 0;
+
+      // AI evaluate the effect
+      const baseAcos = Number(record.baselineAcos) || 0;
+      const baseRoas = Number(record.baselineRoas) || 0;
+      const acosChange = baseAcos > 0 ? Math.round((followupAcos - baseAcos) / baseAcos * 100) : 0;
+      const roasChange = baseRoas > 0 ? Math.round((followupRoas - baseRoas) / baseRoas * 100) : 0;
+
+      let effectSummary = '';
+      let effectScore = 50;
+      try {
+        const llmRes = await invokeLLM({
+          messages: [
+            { role: 'system', content: '你是亚马逊广告效果评估专家。请严格按JSON格式输出。' },
+            { role: 'user', content: `请评估以下预算调整的执行效果：\n\n基线数据：花费$${Number(record.baselineSpend)||0} | 销售$${Number(record.baselineSales)||0} | ACoS:${baseAcos}% | ROAS:${baseRoas}x\n执行后：花费$${Math.round(totalSpend*100)/100} | 销售$${Math.round(totalSales*100)/100} | ACoS:${followupAcos}% | ROAS:${followupRoas}x\n变化：ACoS ${acosChange>0?'+':''}${acosChange}% | ROAS ${roasChange>0?'+':''}${roasChange}%\n活动数:${campaignIds.length} | 订单:${totalOrders}\n\n请给出简短评价(100字内)和评分(1-100)。` },
+          ],
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'budget_effect',
+              strict: true,
+              schema: {
+                type: 'object',
+                properties: {
+                  summary: { type: 'string' },
+                  score: { type: 'integer' },
+                  recommendation: { type: 'string' },
+                },
+                required: ['summary', 'score', 'recommendation'],
+                additionalProperties: false,
+              },
+            },
+          },
+        });
+        const parsed = JSON.parse(String(llmRes.choices[0].message.content) || '{}');
+        effectSummary = `${parsed.summary}\n\n建议：${parsed.recommendation}`;
+        effectScore = Math.max(1, Math.min(100, parsed.score || 50));
+      } catch {
+        effectSummary = `ACoS变化: ${acosChange>0?'+':''}${acosChange}%, ROAS变化: ${roasChange>0?'+':''}${roasChange}%`;
+        effectScore = acosChange < 0 ? 70 : (acosChange > 10 ? 30 : 50);
+      }
+
+      // Update the tracking record
+      await db!.update(budgetTracking)
+        .set({
+          followupSpend: String(Math.round(totalSpend * 100) / 100),
+          followupSales: String(Math.round(totalSales * 100) / 100),
+          followupAcos: String(followupAcos),
+          followupRoas: String(followupRoas),
+          followupOrders: totalOrders,
+          followupEvaluatedAt: new Date(),
+          effectSummary,
+          effectScore,
+        })
+        .where(eq(budgetTracking.id, input.trackingId));
+
+      return {
+        success: true,
+        followup: {
+          spend: Math.round(totalSpend * 100) / 100,
+          sales: Math.round(totalSales * 100) / 100,
+          acos: followupAcos,
+          roas: followupRoas,
+          orders: totalOrders,
+        },
+        baseline: {
+          spend: Number(record.baselineSpend) || 0,
+          sales: Number(record.baselineSales) || 0,
+          acos: baseAcos,
+          roas: baseRoas,
+          orders: record.baselineOrders || 0,
+        },
+        changes: { acosChange, roasChange },
+        effectSummary,
+        effectScore,
+      };
     }),
 });
