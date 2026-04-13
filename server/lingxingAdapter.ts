@@ -982,6 +982,8 @@ class LingxingAdapter {
       "/pb/openapi/newad/ad/queryWordReports": () => mockSearchTerms(body),
       // SP广告商品（ASIN映射）
       "/pb/openapi/newad/spProductAds": () => mockSpProductAds(body),
+      // SD广告商品（ASIN映射）
+      "/pb/openapi/newad/sdProductAds": () => mockSdProductAds(body),
       // ASIN 360小时数据
       "/basicOpen/salesAnalysis/productPerformance/performanceTrendByHour": () => mockAsin360PerformanceTrend(body),
       // 产品列表
@@ -2571,6 +2573,27 @@ function mockSpProductAds(body: Record<string, any>) {
     { campaign_id: 57765830151300, ad_group_id: 80000000000080825, profile_id: profileId, ad_id: 80000000000080826, state: "enabled", sku: "SKU-E001", asin: "B009000005", creation_date: 1640000000000, last_updated_date: 1670000000000, serving_status: "AD_STATUS_LIVE" },
   ];
   // 支持state筛选
+  const stateFilter = body.state;
+  const filtered = stateFilter ? mockAds.filter(a => a.state === stateFilter) : mockAds;
+  const offset = body.offset || 0;
+  const length = body.length || 15;
+  return filtered.slice(offset, offset + length);
+}
+
+/**
+ * Mock SD广告商品数据
+ * API: /pb/openapi/newad/sdProductAds
+ */
+function mockSdProductAds(body: Record<string, any>) {
+  const profileId = body.profile_id || 121923590660074;
+  const mockAds = [
+    { ad_id: 1640591210, ad_group_id: 1640591204, campaign_id: 1640591203, state: "enabled", sku: "SKU-SD-001", asin: "B009000010", profile_id: profileId, creation_date: 1640591614, last_updated_date: 1640591614, serving_status: "AD_STATUS_LIVE" },
+    { ad_id: 1640591211, ad_group_id: 1640591204, campaign_id: 1640591203, state: "enabled", sku: "SKU-SD-002", asin: "B009000011", profile_id: profileId, creation_date: 1640591614, last_updated_date: 1640591614, serving_status: "AD_STATUS_LIVE" },
+    { ad_id: 1640591212, ad_group_id: 1640591205, campaign_id: 1640591203, state: "paused", sku: "SKU-SD-003", asin: "B009000012", profile_id: profileId, creation_date: 1640591614, last_updated_date: 1655000000000, serving_status: "CAMPAIGN_PAUSED" },
+    { ad_id: 1640591213, ad_group_id: 1640591206, campaign_id: 1640591207, state: "enabled", sku: "SKU-SD-001", asin: "B009000010", profile_id: profileId, creation_date: 1645000000000, last_updated_date: 1660000000000, serving_status: "AD_STATUS_LIVE" },
+    { ad_id: 1640591214, ad_group_id: 1640591206, campaign_id: 1640591207, state: "enabled", sku: "SKU-SD-004", asin: "B009000013", profile_id: profileId, creation_date: 1645000000000, last_updated_date: 1660000000000, serving_status: "AD_STATUS_LIVE" },
+    { ad_id: 1640591215, ad_group_id: 1640591208, campaign_id: 1640591209, state: "enabled", sku: "SKU-A001", asin: "B009000000", profile_id: profileId, creation_date: 1650000000000, last_updated_date: 1670000000000, serving_status: "AD_STATUS_LIVE" },
+  ];
   const stateFilter = body.state;
   const filtered = stateFilter ? mockAds.filter(a => a.state === stateFilter) : mockAds;
   const offset = body.offset || 0;

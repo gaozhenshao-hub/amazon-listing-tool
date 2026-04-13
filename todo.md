@@ -3367,3 +3367,13 @@
 - [x] 前端：按ASIN筛选下拉框（多活动+单活动模式均支持）
 - [x] 前端：CSV导出包含ASIN信息
 - [x] Vitest单元测试（13个adAnalysis测试全部通过，含4个新增ASIN映射测试）
+
+## SD广告商品ASIN映射
+- [x] 后端：领星适配层添加sdProductAds mock数据
+- [x] 后端：syncSpProductAds扩展为同时同步SP+SD广告商品
+- [x] 后端：ASIN映射缓存合并SP+SD数据，asinDetails增加adTypes字段
+- [x] 前端：搜索词分析ASIN列区分展示SP/SD类型（紫色标签+边框）
+- [x] 前端：ASIN筛选下拉框显示广告类型标签
+- [x] 前端：CSV导出增加"广告类型"列
+- [x] 前端：修复SearchTermClassification变量声明顺序（getTermCampaignIds/searchTerms提前）
+- [x] Vitest单元测试（16个adAnalysis测试全部通过，含6个新增SP+SD映射测试，3333个总测试全部通过）

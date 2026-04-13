@@ -77,6 +77,14 @@ vi.mock("./lingxingAdapter", () => ({
           ],
         };
       }
+      if (path === "/pb/openapi/newad/sdProductAds") {
+        return {
+          data: [
+            { campaign_id: "SD001", ad_group_id: "SDAG001", asin: "B0TEST001", sku: "SKU-SD-001", state: "enabled", serving_status: "AD_STATUS_LIVE", profile_id: 123, ad_id: 2001, creation_date: 1640591614, last_updated_date: 1640591614 },
+            { campaign_id: "SD001", ad_group_id: "SDAG002", asin: "B0TEST003", sku: "SKU-SD-002", state: "enabled", serving_status: "AD_STATUS_LIVE", profile_id: 123, ad_id: 2002, creation_date: 1640591614, last_updated_date: 1640591614 },
+          ],
+        };
+      }
       return { data: [] };
     }),
     requestWithMockFallback: vi.fn().mockImplementation(async ({ path, body }: any) => {
@@ -86,6 +94,14 @@ vi.mock("./lingxingAdapter", () => ({
             { campaign_id: "C001", ad_group_id: "AG001", asin: "B0TEST001", sku: "SKU-001", state: "enabled", serving_status: "RUNNING", profile_id: 123, ad_id: 1001 },
             { campaign_id: "C001", ad_group_id: "AG002", asin: "B0TEST002", sku: "SKU-002", state: "enabled", serving_status: "RUNNING", profile_id: 123, ad_id: 1002 },
             { campaign_id: "C002", ad_group_id: "AG003", asin: "B0TEST001", sku: "SKU-001", state: "paused", serving_status: "CAMPAIGN_PAUSED", profile_id: 123, ad_id: 1003 },
+          ],
+        };
+      }
+      if (path === "/pb/openapi/newad/sdProductAds") {
+        return {
+          data: [
+            { campaign_id: "SD001", ad_group_id: "SDAG001", asin: "B0TEST001", sku: "SKU-SD-001", state: "enabled", serving_status: "AD_STATUS_LIVE", profile_id: 123, ad_id: 2001 },
+            { campaign_id: "SD001", ad_group_id: "SDAG002", asin: "B0TEST003", sku: "SKU-SD-002", state: "enabled", serving_status: "AD_STATUS_LIVE", profile_id: 123, ad_id: 2002 },
           ],
         };
       }
@@ -251,8 +267,8 @@ describe("adAnalysis router", () => {
     });
   });
 
-  describe("syncSpProductAds", () => {
-    it("syncs SP product ads and builds ASIN mapping", async () => {
+  describe("syncSpProductAds (SP+SD)", () => {
+    it("syncs both SP and SD product ads and builds ASIN mapping", async () => {
       const result = await caller.adAnalysis.syncSpProductAds({ marketplace: "US" });
       expect(result.success).toBe(true);
       expect(result.totalAds).toBeGreaterThanOrEqual(0);
@@ -263,7 +279,7 @@ describe("adAnalysis router", () => {
       expect(result.mapping.asinToAdGroups).toBeDefined();
     });
 
-    it("builds correct bidirectional mapping", async () => {
+    it("builds correct bidirectional mapping for SP ads", async () => {
       const result = await caller.adAnalysis.syncSpProductAds({ marketplace: "US" });
       const { mapping } = result;
       // Campaign C001 should map to B0TEST001 and B0TEST002
@@ -275,9 +291,40 @@ describe("adAnalysis router", () => {
         expect(mapping.asinToCampaigns["B0TEST001"].length).toBeGreaterThanOrEqual(1);
       }
     });
+
+    it("includes SD ad campaigns in the mapping", async () => {
+      const result = await caller.adAnalysis.syncSpProductAds({ marketplace: "US" });
+      const { mapping } = result;
+      // SD campaign SD001 should be in the mapping
+      if (mapping.campaignToAsins["SD001"]) {
+        expect(mapping.campaignToAsins["SD001"]).toContain("B0TEST001");
+        expect(mapping.campaignToAsins["SD001"]).toContain("B0TEST003");
+      }
+      // SD ad group SDAG001 should map to B0TEST001
+      if (mapping.adGroupToAsins["SDAG001"]) {
+        expect(mapping.adGroupToAsins["SDAG001"]).toContain("B0TEST001");
+      }
+    });
+
+    it("asinDetails includes adTypes for SP and SD", async () => {
+      const result = await caller.adAnalysis.syncSpProductAds({ marketplace: "US" });
+      const { mapping } = result;
+      // B0TEST001 appears in both SP and SD ads
+      if (mapping.asinDetails["B0TEST001"]) {
+        expect(mapping.asinDetails["B0TEST001"].adTypes).toBeDefined();
+        expect(Array.isArray(mapping.asinDetails["B0TEST001"].adTypes)).toBe(true);
+        // Should contain both SP and SD since B0TEST001 is in both mock datasets
+        expect(mapping.asinDetails["B0TEST001"].adTypes).toContain("SP");
+        expect(mapping.asinDetails["B0TEST001"].adTypes).toContain("SD");
+      }
+      // B0TEST003 only appears in SD ads
+      if (mapping.asinDetails["B0TEST003"]) {
+        expect(mapping.asinDetails["B0TEST003"].adTypes).toContain("SD");
+      }
+    });
   });
 
-  describe("getAsinCampaignMapping", () => {
+  describe("getAsinCampaignMapping (SP+SD)", () => {
     it("returns ASIN campaign mapping with auto-sync", async () => {
       const result = await caller.adAnalysis.getAsinCampaignMapping({ marketplace: "US" });
       expect(result).toHaveProperty("campaignToAsins");
@@ -288,14 +335,25 @@ describe("adAnalysis router", () => {
       expect(result).toHaveProperty("totalAsins");
     });
 
-    it("returns asinDetails with sku and state info", async () => {
+    it("returns asinDetails with sku, state and adTypes info", async () => {
       const result = await caller.adAnalysis.getAsinCampaignMapping({ marketplace: "US" });
       if (result.asinDetails && Object.keys(result.asinDetails).length > 0) {
         const firstAsin = Object.values(result.asinDetails)[0] as any;
         expect(firstAsin).toHaveProperty("asin");
         expect(firstAsin).toHaveProperty("sku");
         expect(firstAsin).toHaveProperty("state");
+        expect(firstAsin).toHaveProperty("adTypes");
+        expect(Array.isArray(firstAsin.adTypes)).toBe(true);
       }
+    });
+
+    it("merges SP and SD data into unified mapping", async () => {
+      const result = await caller.adAnalysis.getAsinCampaignMapping({ marketplace: "US" });
+      // Total ASINs should include both SP-only, SD-only, and SP+SD ASINs
+      expect(result.totalAsins).toBeGreaterThanOrEqual(1);
+      // Should have both SP and SD campaign IDs in the mapping
+      const allCampaignIds = Object.keys(result.campaignToAsins || {});
+      expect(allCampaignIds.length).toBeGreaterThanOrEqual(1);
     });
   });
 

@@ -1868,35 +1868,42 @@ ${JSON.stringify(input.terms.slice(0, 20))}
       const sids = filterSidsByMarketplace(sellers, input.marketplace);
       const sidsToQuery = sids.map(Number).slice(0, 5);
 
-      // Collect all SP product ads across stores
+      // Collect all SP + SD product ads across stores
       const allAds: any[] = [];
+      const adPaths = [
+        { path: "/pb/openapi/newad/spProductAds", type: "SP" },
+        { path: "/pb/openapi/newad/sdProductAds", type: "SD" },
+      ];
       for (const sid of sidsToQuery) {
-        try {
-          let offset = 0;
-          let hasMore = true;
-          while (hasMore && offset < 5000) {
-            const res = await adapter.requestWithMockFallback({
-              path: "/pb/openapi/newad/spProductAds",
-              body: {
-                sid,
-                ...(input.state ? { state: input.state } : {}),
-                offset,
-                length: 100,
-              },
-              headers: { "X-API-VERSION": "2" },
-            });
-            const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
-            for (const item of items) {
-              allAds.push({
-                ...item,
-                sid,
+        for (const { path: adPath, type: adType } of adPaths) {
+          try {
+            let offset = 0;
+            let hasMore = true;
+            while (hasMore && offset < 5000) {
+              const res = await adapter.requestWithMockFallback({
+                path: adPath,
+                body: {
+                  sid,
+                  ...(input.state ? { state: input.state } : {}),
+                  offset,
+                  length: 100,
+                },
+                headers: { "X-API-VERSION": "2" },
               });
+              const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
+              for (const item of items) {
+                allAds.push({
+                  ...item,
+                  sid,
+                  adType,
+                });
+              }
+              hasMore = items.length >= 100;
+              offset += 100;
             }
-            hasMore = items.length >= 100;
-            offset += 100;
+          } catch (err: any) {
+            console.warn(`[syncProductAds] ${adType} sid=${sid}: ${err.message}`);
           }
-        } catch (err: any) {
-          console.warn(`[syncSpProductAds] sid=${sid}: ${err.message}`);
         }
       }
 
@@ -1906,13 +1913,14 @@ ${JSON.stringify(input.terms.slice(0, 20))}
       const adGroupToAsins: Record<string, Set<string>> = {};
       const asinToCampaigns: Record<string, Set<string>> = {};
       const asinToAdGroups: Record<string, Set<string>> = {};
-      const asinDetails: Record<string, { asin: string; sku: string; state: string; servingStatus: string }> = {};
+      const asinDetails: Record<string, { asin: string; sku: string; state: string; servingStatus: string; adTypes: string[] }> = {};
 
       for (const ad of allAds) {
         const campaignId = String(ad.campaign_id || '');
         const adGroupId = String(ad.ad_group_id || '');
         const asin = String(ad.asin || '');
         const sku = String(ad.sku || '');
+        const adType = ad.adType || 'SP';
         if (!asin) continue;
 
         // Campaign -> ASINs
@@ -1931,9 +1939,11 @@ ${JSON.stringify(input.terms.slice(0, 20))}
         if (!asinToAdGroups[asin]) asinToAdGroups[asin] = new Set();
         asinToAdGroups[asin].add(adGroupId);
 
-        // ASIN details
+        // ASIN details (track which ad types this ASIN appears in)
         if (!asinDetails[asin]) {
-          asinDetails[asin] = { asin, sku, state: ad.state || '', servingStatus: ad.serving_status || '' };
+          asinDetails[asin] = { asin, sku, state: ad.state || '', servingStatus: ad.serving_status || '', adTypes: [adType] };
+        } else if (!asinDetails[asin].adTypes.includes(adType)) {
+          asinDetails[asin].adTypes.push(adType);
         }
       }
 
@@ -1988,30 +1998,36 @@ ${JSON.stringify(input.terms.slice(0, 20))}
         }
       }
 
-      // Auto-sync if no cache
+      // Auto-sync if no cache - fetch both SP and SD product ads
       const adapter = getLingxingAdapter();
       const { sellers } = await getAllSellerSids();
       const sids = filterSidsByMarketplace(sellers, input.marketplace);
       const sidsToQuery = sids.map(Number).slice(0, 5);
 
       const allAds: any[] = [];
+      const adPaths = [
+        { path: "/pb/openapi/newad/spProductAds", type: "SP" },
+        { path: "/pb/openapi/newad/sdProductAds", type: "SD" },
+      ];
       for (const sid of sidsToQuery) {
-        try {
-          let offset = 0;
-          let hasMore = true;
-          while (hasMore && offset < 5000) {
-            const res = await adapter.requestWithMockFallback({
-              path: "/pb/openapi/newad/spProductAds",
-              body: { sid, offset, length: 100 },
-              headers: { "X-API-VERSION": "2" },
-            });
-            const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
-            allAds.push(...items.map((item: any) => ({ ...item, sid })));
-            hasMore = items.length >= 100;
-            offset += 100;
+        for (const { path: adPath, type: adType } of adPaths) {
+          try {
+            let offset = 0;
+            let hasMore = true;
+            while (hasMore && offset < 5000) {
+              const res = await adapter.requestWithMockFallback({
+                path: adPath,
+                body: { sid, offset, length: 100 },
+                headers: { "X-API-VERSION": "2" },
+              });
+              const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
+              allAds.push(...items.map((item: any) => ({ ...item, sid, adType })));
+              hasMore = items.length >= 100;
+              offset += 100;
+            }
+          } catch (err: any) {
+            console.warn(`[getAsinCampaignMapping] ${adType} sid=${sid}: ${err.message}`);
           }
-        } catch (err: any) {
-          console.warn(`[getAsinCampaignMapping] sid=${sid}: ${err.message}`);
         }
       }
 
@@ -2019,12 +2035,13 @@ ${JSON.stringify(input.terms.slice(0, 20))}
       const adGroupToAsins: Record<string, Set<string>> = {};
       const asinToCampaigns: Record<string, Set<string>> = {};
       const asinToAdGroups: Record<string, Set<string>> = {};
-      const asinDetails: Record<string, { asin: string; sku: string; state: string; servingStatus: string }> = {};
+      const asinDetails: Record<string, { asin: string; sku: string; state: string; servingStatus: string; adTypes: string[] }> = {};
 
       for (const ad of allAds) {
         const campaignId = String(ad.campaign_id || '');
         const adGroupId = String(ad.ad_group_id || '');
         const asin = String(ad.asin || '');
+        const adType = ad.adType || 'SP';
         if (!asin) continue;
 
         if (!campaignToAsins[campaignId]) campaignToAsins[campaignId] = new Set();
@@ -2036,7 +2053,9 @@ ${JSON.stringify(input.terms.slice(0, 20))}
         if (!asinToAdGroups[asin]) asinToAdGroups[asin] = new Set();
         asinToAdGroups[asin].add(adGroupId);
         if (!asinDetails[asin]) {
-          asinDetails[asin] = { asin, sku: ad.sku || '', state: ad.state || '', servingStatus: ad.serving_status || '' };
+          asinDetails[asin] = { asin, sku: ad.sku || '', state: ad.state || '', servingStatus: ad.serving_status || '', adTypes: [adType] };
+        } else if (!asinDetails[asin].adTypes.includes(adType)) {
+          asinDetails[asin].adTypes.push(adType);
         }
       }
 

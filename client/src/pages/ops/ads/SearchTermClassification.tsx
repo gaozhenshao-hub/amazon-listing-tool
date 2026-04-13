@@ -107,6 +107,19 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
     { staleTime: 30 * 60 * 1000 }
   );
 
+  const searchTerms = data?.searchTerms || [];
+
+  // Helper: extract campaign IDs from a search term (works for both single and multi mode)
+  const getTermCampaignIds = (t: any): string[] => {
+    // Multi-mode: sourceCampaigns is an array of objects with campaignId
+    if (t.sourceCampaigns && Array.isArray(t.sourceCampaigns)) {
+      return t.sourceCampaigns.map((s: any) => String(s.campaignId));
+    }
+    // Single-mode: campaign_id is a direct field
+    if (t.campaign_id) return [String(t.campaign_id)];
+    return [];
+  };
+
   // Helper: get ASINs for a search term based on its campaign_id/ad_group_id
   const getTermAsins = (t: any): string[] => {
     if (!asinMapping) return [];
@@ -126,6 +139,16 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
     return Array.from(asins);
   };
 
+  // Helper: get ASIN details including ad types
+  const getTermAsinDetails = (t: any): Array<{ asin: string; adTypes: string[] }> => {
+    if (!asinMapping) return [];
+    const asins = getTermAsins(t);
+    return asins.map(asin => ({
+      asin,
+      adTypes: asinMapping.asinDetails?.[asin]?.adTypes || ['SP'],
+    }));
+  };
+
   // Extract unique ASINs for filter dropdown
   const asinsList = useMemo(() => {
     if (!asinMapping) return [];
@@ -143,20 +166,8 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
     onSuccess: () => toast.success("AI分析完成"),
     onError: (err) => toast.error("AI分析失败", { description: err.message }),
   });
-
-  const searchTerms = data?.searchTerms || [];
   const categoryStats = data?.categoryStats || {};
   const categories = categoryDefs?.categories || [];
-  // Helper: extract campaign IDs from a search term (works for both single and multi mode)
-  const getTermCampaignIds = (t: any): string[] => {
-    // Multi-mode: sourceCampaigns is an array of objects with campaignId
-    if (t.sourceCampaigns && Array.isArray(t.sourceCampaigns)) {
-      return t.sourceCampaigns.map((s: any) => String(s.campaignId));
-    }
-    // Single-mode: campaign_id is a direct field
-    if (t.campaign_id) return [String(t.campaign_id)];
-    return [];
-  };
 
   // Extract unique source campaigns for filter (works in both modes)
   const sourceCampaignsList = useMemo(() => {
@@ -257,15 +268,16 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
 
   const handleExportCSV = () => {
     const headers = isMultiMode
-      ? ["搜索词", "分类", "关联ASIN", "来源活动", "活动数", "曝光", "点击", "花费", "销售额", "订单", "ACoS", "CTR", "CVR"]
-      : ["搜索词", "分类", "关联ASIN", "曝光", "点击", "花费", "销售额", "订单", "ACoS", "CTR", "CVR"];
+      ? ["搜索词", "分类", "关联ASIN", "广告类型", "来源活动", "活动数", "曝光", "点击", "花费", "销售额", "订单", "ACoS", "CTR", "CVR"]
+      : ["搜索词", "分类", "关联ASIN", "广告类型", "曝光", "点击", "花费", "销售额", "订单", "ACoS", "CTR", "CVR"];
     const rows = filteredTerms.map((t: any) => {
       const base = [
         `"${(t.query || '').replace(/"/g, '""')}"`,
         CATEGORY_COLORS[t.categoryId]?.shortLabel || "",
       ];
-      const termAsins = getTermAsins(t);
-      base.push(`"${termAsins.join('; ')}"`);
+      const termAsinDetails = getTermAsinDetails(t);
+      base.push(`"${termAsinDetails.map(d => d.asin).join('; ')}"`);
+      base.push(`"${termAsinDetails.map(d => d.adTypes.join('+')).join('; ')}"`);
       if (isMultiMode) {
         const cids = getTermCampaignIds(t);
         const sources = cids.map((cid: string) => campaignNames?.[cid] || cid).join('; ');
@@ -339,17 +351,21 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
                 )}
                 {asinsList.length > 0 && (
                   <Select value={asinFilter || 'all'} onValueChange={(v) => setAsinFilter(v === 'all' ? null : v)}>
-                    <SelectTrigger className="h-7 text-xs w-[180px] bg-white">
+                    <SelectTrigger className="h-7 text-xs w-[200px] bg-white">
                       <SelectValue placeholder="按ASIN筛选" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">全部ASIN ({asinsList.length})</SelectItem>
-                      {asinsList.map(a => (
-                        <SelectItem key={a.asin} value={a.asin}>
-                          <span className="font-mono text-xs">{a.asin}</span>
-                          <span className="text-gray-400 ml-1">({a.count})</span>
-                        </SelectItem>
-                      ))}
+                      {asinsList.map(a => {
+                        const adTypes = asinMapping?.asinDetails?.[a.asin]?.adTypes || ['SP'];
+                        return (
+                          <SelectItem key={a.asin} value={a.asin}>
+                            <span className="font-mono text-xs">{a.asin}</span>
+                            <span className="text-[9px] text-purple-500 ml-1">{adTypes.join('+')}</span>
+                            <span className="text-gray-400 ml-1">({a.count})</span>
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                 )}
@@ -610,17 +626,21 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
               )}
               {asinsList.length > 0 && (
                 <Select value={asinFilter || 'all'} onValueChange={(v) => setAsinFilter(v === 'all' ? null : v)}>
-                  <SelectTrigger className="h-8 text-xs w-[180px]">
+                  <SelectTrigger className="h-8 text-xs w-[200px]">
                     <SelectValue placeholder="按ASIN筛选" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">全部ASIN ({asinsList.length})</SelectItem>
-                    {asinsList.map(a => (
-                      <SelectItem key={a.asin} value={a.asin}>
-                        <span className="font-mono text-xs">{a.asin}</span>
-                        <span className="text-gray-400 ml-1">({a.count})</span>
-                      </SelectItem>
-                    ))}
+                    {asinsList.map(a => {
+                      const adTypes = asinMapping?.asinDetails?.[a.asin]?.adTypes || ['SP'];
+                      return (
+                        <SelectItem key={a.asin} value={a.asin}>
+                          <span className="font-mono text-xs">{a.asin}</span>
+                          <span className="text-[9px] text-purple-500 ml-1">{adTypes.join('+')}</span>
+                          <span className="text-gray-400 ml-1">({a.count})</span>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               )}
@@ -692,19 +712,25 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
                         </td>
                         <td className="p-3 text-center">
                           {(() => {
-                            const asins = getTermAsins(t);
+                            const asinDetails = getTermAsinDetails(t);
                             return (
                               <div className="flex flex-wrap gap-0.5 justify-center">
-                                {asins.length === 0 ? (
+                                {asinDetails.length === 0 ? (
                                   <span className="text-[10px] text-gray-400">-</span>
-                                ) : asins.length > 2 ? (
+                                ) : asinDetails.length > 2 ? (
                                   <Badge variant="outline" className="text-[9px] font-mono">
-                                    {asins[0]}... +{asins.length - 1}
+                                    {asinDetails[0].asin}... +{asinDetails.length - 1}
                                   </Badge>
                                 ) : (
-                                  asins.map((asin: string) => (
-                                    <Badge key={asin} variant="outline" className="text-[9px] font-mono">
-                                      {asin}
+                                  asinDetails.map((detail) => (
+                                    <Badge key={detail.asin} variant="outline" className={`text-[9px] font-mono ${detail.adTypes.includes('SD') ? 'border-purple-300 bg-purple-50' : ''}`}>
+                                      {detail.asin}
+                                      {detail.adTypes.length > 1 && (
+                                        <span className="ml-0.5 text-[7px] text-purple-500">SP+SD</span>
+                                      )}
+                                      {detail.adTypes.length === 1 && detail.adTypes[0] === 'SD' && (
+                                        <span className="ml-0.5 text-[7px] text-purple-500">SD</span>
+                                      )}
                                     </Badge>
                                   ))
                                 )}
