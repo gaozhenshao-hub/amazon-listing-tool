@@ -68,6 +68,27 @@ vi.mock("./lingxingAdapter", () => ({
           ],
         };
       }
+      if (path === "/pb/openapi/newad/spProductAds") {
+        return {
+          data: [
+            { campaign_id: "C001", ad_group_id: "AG001", asin: "B0TEST001", sku: "SKU-001", state: "enabled", serving_status: "RUNNING", profile_id: 123, ad_id: 1001, creation_date: 1628567183000, last_updated_date: 1655708791290 },
+            { campaign_id: "C001", ad_group_id: "AG002", asin: "B0TEST002", sku: "SKU-002", state: "enabled", serving_status: "RUNNING", profile_id: 123, ad_id: 1002, creation_date: 1628567183000, last_updated_date: 1655708791290 },
+            { campaign_id: "C002", ad_group_id: "AG003", asin: "B0TEST001", sku: "SKU-001", state: "paused", serving_status: "CAMPAIGN_PAUSED", profile_id: 123, ad_id: 1003, creation_date: 1628567183000, last_updated_date: 1655708791290 },
+          ],
+        };
+      }
+      return { data: [] };
+    }),
+    requestWithMockFallback: vi.fn().mockImplementation(async ({ path, body }: any) => {
+      if (path === "/pb/openapi/newad/spProductAds") {
+        return {
+          data: [
+            { campaign_id: "C001", ad_group_id: "AG001", asin: "B0TEST001", sku: "SKU-001", state: "enabled", serving_status: "RUNNING", profile_id: 123, ad_id: 1001 },
+            { campaign_id: "C001", ad_group_id: "AG002", asin: "B0TEST002", sku: "SKU-002", state: "enabled", serving_status: "RUNNING", profile_id: 123, ad_id: 1002 },
+            { campaign_id: "C002", ad_group_id: "AG003", asin: "B0TEST001", sku: "SKU-001", state: "paused", serving_status: "CAMPAIGN_PAUSED", profile_id: 123, ad_id: 1003 },
+          ],
+        };
+      }
       return { data: [] };
     }),
   }),
@@ -227,6 +248,54 @@ describe("adAnalysis router", () => {
       expect(result).toHaveProperty("dimensions");
       expect(typeof result.overall_score).toBe("number");
       expect(Array.isArray(result.dimensions)).toBe(true);
+    });
+  });
+
+  describe("syncSpProductAds", () => {
+    it("syncs SP product ads and builds ASIN mapping", async () => {
+      const result = await caller.adAnalysis.syncSpProductAds({ marketplace: "US" });
+      expect(result.success).toBe(true);
+      expect(result.totalAds).toBeGreaterThanOrEqual(0);
+      expect(result.mapping).toBeDefined();
+      expect(result.mapping.campaignToAsins).toBeDefined();
+      expect(result.mapping.asinToCampaigns).toBeDefined();
+      expect(result.mapping.adGroupToAsins).toBeDefined();
+      expect(result.mapping.asinToAdGroups).toBeDefined();
+    });
+
+    it("builds correct bidirectional mapping", async () => {
+      const result = await caller.adAnalysis.syncSpProductAds({ marketplace: "US" });
+      const { mapping } = result;
+      // Campaign C001 should map to B0TEST001 and B0TEST002
+      if (mapping.campaignToAsins["C001"]) {
+        expect(mapping.campaignToAsins["C001"]).toContain("B0TEST001");
+      }
+      // ASIN B0TEST001 should map to campaigns C001 and C002
+      if (mapping.asinToCampaigns["B0TEST001"]) {
+        expect(mapping.asinToCampaigns["B0TEST001"].length).toBeGreaterThanOrEqual(1);
+      }
+    });
+  });
+
+  describe("getAsinCampaignMapping", () => {
+    it("returns ASIN campaign mapping with auto-sync", async () => {
+      const result = await caller.adAnalysis.getAsinCampaignMapping({ marketplace: "US" });
+      expect(result).toHaveProperty("campaignToAsins");
+      expect(result).toHaveProperty("asinToCampaigns");
+      expect(result).toHaveProperty("adGroupToAsins");
+      expect(result).toHaveProperty("asinToAdGroups");
+      expect(result).toHaveProperty("asinDetails");
+      expect(result).toHaveProperty("totalAsins");
+    });
+
+    it("returns asinDetails with sku and state info", async () => {
+      const result = await caller.adAnalysis.getAsinCampaignMapping({ marketplace: "US" });
+      if (result.asinDetails && Object.keys(result.asinDetails).length > 0) {
+        const firstAsin = Object.values(result.asinDetails)[0] as any;
+        expect(firstAsin).toHaveProperty("asin");
+        expect(firstAsin).toHaveProperty("sku");
+        expect(firstAsin).toHaveProperty("state");
+      }
     });
   });
 

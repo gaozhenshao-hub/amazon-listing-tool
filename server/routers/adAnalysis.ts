@@ -1855,4 +1855,214 @@ ${JSON.stringify(input.terms.slice(0, 20))}
       console.log(`[SearchTermsMulti] Completed in ${((Date.now() - startTime) / 1000).toFixed(1)}s, ${searchTerms.length} terms from ${input.campaignIds.length} campaigns`);
       return result;
     }),
+
+  // ─── SP广告商品同步（ASIN↔广告活动/广告组映射） ────────────────
+  syncSpProductAds: protectedProcedure
+    .input(z.object({
+      marketplace: z.string().optional(),
+      state: z.enum(["enabled", "paused", "archived"]).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const adapter = getLingxingAdapter();
+      const { sellers } = await getAllSellerSids();
+      const sids = filterSidsByMarketplace(sellers, input.marketplace);
+      const sidsToQuery = sids.map(Number).slice(0, 5);
+
+      // Collect all SP product ads across stores
+      const allAds: any[] = [];
+      for (const sid of sidsToQuery) {
+        try {
+          let offset = 0;
+          let hasMore = true;
+          while (hasMore && offset < 5000) {
+            const res = await adapter.requestWithMockFallback({
+              path: "/pb/openapi/newad/spProductAds",
+              body: {
+                sid,
+                ...(input.state ? { state: input.state } : {}),
+                offset,
+                length: 100,
+              },
+              headers: { "X-API-VERSION": "2" },
+            });
+            const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
+            for (const item of items) {
+              allAds.push({
+                ...item,
+                sid,
+              });
+            }
+            hasMore = items.length >= 100;
+            offset += 100;
+          }
+        } catch (err: any) {
+          console.warn(`[syncSpProductAds] sid=${sid}: ${err.message}`);
+        }
+      }
+
+      // Build mapping: campaign_id -> { asin[], ad_group_ids[] }
+      // and reverse: asin -> { campaign_ids[], ad_group_ids[] }
+      const campaignToAsins: Record<string, Set<string>> = {};
+      const adGroupToAsins: Record<string, Set<string>> = {};
+      const asinToCampaigns: Record<string, Set<string>> = {};
+      const asinToAdGroups: Record<string, Set<string>> = {};
+      const asinDetails: Record<string, { asin: string; sku: string; state: string; servingStatus: string }> = {};
+
+      for (const ad of allAds) {
+        const campaignId = String(ad.campaign_id || '');
+        const adGroupId = String(ad.ad_group_id || '');
+        const asin = String(ad.asin || '');
+        const sku = String(ad.sku || '');
+        if (!asin) continue;
+
+        // Campaign -> ASINs
+        if (!campaignToAsins[campaignId]) campaignToAsins[campaignId] = new Set();
+        campaignToAsins[campaignId].add(asin);
+
+        // AdGroup -> ASINs
+        if (!adGroupToAsins[adGroupId]) adGroupToAsins[adGroupId] = new Set();
+        adGroupToAsins[adGroupId].add(asin);
+
+        // ASIN -> Campaigns
+        if (!asinToCampaigns[asin]) asinToCampaigns[asin] = new Set();
+        asinToCampaigns[asin].add(campaignId);
+
+        // ASIN -> AdGroups
+        if (!asinToAdGroups[asin]) asinToAdGroups[asin] = new Set();
+        asinToAdGroups[asin].add(adGroupId);
+
+        // ASIN details
+        if (!asinDetails[asin]) {
+          asinDetails[asin] = { asin, sku, state: ad.state || '', servingStatus: ad.serving_status || '' };
+        }
+      }
+
+      // Store in cache for quick lookup
+      const mapping = {
+        campaignToAsins: Object.fromEntries(
+          Object.entries(campaignToAsins).map(([k, v]) => [k, Array.from(v)])
+        ),
+        adGroupToAsins: Object.fromEntries(
+          Object.entries(adGroupToAsins).map(([k, v]) => [k, Array.from(v)])
+        ),
+        asinToCampaigns: Object.fromEntries(
+          Object.entries(asinToCampaigns).map(([k, v]) => [k, Array.from(v)])
+        ),
+        asinToAdGroups: Object.fromEntries(
+          Object.entries(asinToAdGroups).map(([k, v]) => [k, Array.from(v)])
+        ),
+        asinDetails,
+        totalAds: allAds.length,
+        totalAsins: Object.keys(asinDetails).length,
+        totalCampaigns: Object.keys(campaignToAsins).length,
+        totalAdGroups: Object.keys(adGroupToAsins).length,
+        syncedAt: Date.now(),
+      };
+
+      // Cache for 30 minutes
+      setCache('spProductAds_mapping', mapping);
+
+      return {
+        success: true,
+        totalAds: allAds.length,
+        totalAsins: Object.keys(asinDetails).length,
+        totalCampaigns: Object.keys(campaignToAsins).length,
+        totalAdGroups: Object.keys(adGroupToAsins).length,
+        isMock: adapter.isMockMode(),
+        mapping,
+      };
+    }),
+
+  // ─── 获取ASIN↔广告活动映射关系 ────────────────────────────
+  getAsinCampaignMapping: protectedProcedure
+    .input(z.object({
+      marketplace: z.string().optional(),
+      forceRefresh: z.boolean().optional(),
+    }))
+    .query(async ({ input }) => {
+      // Try cache first
+      if (!input.forceRefresh) {
+        const cached = getCached<any>('spProductAds_mapping');
+        if (cached) {
+          return { ...cached, fromCache: true, isMock: false };
+        }
+      }
+
+      // Auto-sync if no cache
+      const adapter = getLingxingAdapter();
+      const { sellers } = await getAllSellerSids();
+      const sids = filterSidsByMarketplace(sellers, input.marketplace);
+      const sidsToQuery = sids.map(Number).slice(0, 5);
+
+      const allAds: any[] = [];
+      for (const sid of sidsToQuery) {
+        try {
+          let offset = 0;
+          let hasMore = true;
+          while (hasMore && offset < 5000) {
+            const res = await adapter.requestWithMockFallback({
+              path: "/pb/openapi/newad/spProductAds",
+              body: { sid, offset, length: 100 },
+              headers: { "X-API-VERSION": "2" },
+            });
+            const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
+            allAds.push(...items.map((item: any) => ({ ...item, sid })));
+            hasMore = items.length >= 100;
+            offset += 100;
+          }
+        } catch (err: any) {
+          console.warn(`[getAsinCampaignMapping] sid=${sid}: ${err.message}`);
+        }
+      }
+
+      const campaignToAsins: Record<string, Set<string>> = {};
+      const adGroupToAsins: Record<string, Set<string>> = {};
+      const asinToCampaigns: Record<string, Set<string>> = {};
+      const asinToAdGroups: Record<string, Set<string>> = {};
+      const asinDetails: Record<string, { asin: string; sku: string; state: string; servingStatus: string }> = {};
+
+      for (const ad of allAds) {
+        const campaignId = String(ad.campaign_id || '');
+        const adGroupId = String(ad.ad_group_id || '');
+        const asin = String(ad.asin || '');
+        if (!asin) continue;
+
+        if (!campaignToAsins[campaignId]) campaignToAsins[campaignId] = new Set();
+        campaignToAsins[campaignId].add(asin);
+        if (!adGroupToAsins[adGroupId]) adGroupToAsins[adGroupId] = new Set();
+        adGroupToAsins[adGroupId].add(asin);
+        if (!asinToCampaigns[asin]) asinToCampaigns[asin] = new Set();
+        asinToCampaigns[asin].add(campaignId);
+        if (!asinToAdGroups[asin]) asinToAdGroups[asin] = new Set();
+        asinToAdGroups[asin].add(adGroupId);
+        if (!asinDetails[asin]) {
+          asinDetails[asin] = { asin, sku: ad.sku || '', state: ad.state || '', servingStatus: ad.serving_status || '' };
+        }
+      }
+
+      const mapping = {
+        campaignToAsins: Object.fromEntries(
+          Object.entries(campaignToAsins).map(([k, v]) => [k, Array.from(v)])
+        ),
+        adGroupToAsins: Object.fromEntries(
+          Object.entries(adGroupToAsins).map(([k, v]) => [k, Array.from(v)])
+        ),
+        asinToCampaigns: Object.fromEntries(
+          Object.entries(asinToCampaigns).map(([k, v]) => [k, Array.from(v)])
+        ),
+        asinToAdGroups: Object.fromEntries(
+          Object.entries(asinToAdGroups).map(([k, v]) => [k, Array.from(v)])
+        ),
+        asinDetails,
+        totalAds: allAds.length,
+        totalAsins: Object.keys(asinDetails).length,
+        totalCampaigns: Object.keys(campaignToAsins).length,
+        totalAdGroups: Object.keys(adGroupToAsins).length,
+        syncedAt: Date.now(),
+      };
+
+      setCache('spProductAds_mapping', mapping);
+
+      return { ...mapping, fromCache: false, isMock: adapter.isMockMode() };
+    }),
 });

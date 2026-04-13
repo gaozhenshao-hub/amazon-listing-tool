@@ -67,6 +67,7 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
   const [userDecisions, setUserDecisions] = useState<Record<number, { decision: string; modifiedAction?: string; notes?: string }>>({}); 
   const [adType, setAdType] = useState<"SP" | "SB">(defaultAdType === "SB" ? "SB" : "SP");
   const [viewMode, setViewMode] = useState<"aggregate" | "compare">("aggregate");
+  const [asinFilter, setAsinFilter] = useState<string | null>(null);
 
   // Sync adType when parent campaign selection changes
   useEffect(() => {
@@ -99,6 +100,44 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
   const refetch = isMultiMode ? multiQuery.refetch : singleQuery.refetch;
 
   const { data: categoryDefs } = trpc.adAnalysis.getCategoryDefinitions.useQuery();
+
+  // ASIN mapping query
+  const { data: asinMapping } = trpc.adAnalysis.getAsinCampaignMapping.useQuery(
+    { marketplace },
+    { staleTime: 30 * 60 * 1000 }
+  );
+
+  // Helper: get ASINs for a search term based on its campaign_id/ad_group_id
+  const getTermAsins = (t: any): string[] => {
+    if (!asinMapping) return [];
+    const asins = new Set<string>();
+    const cids = getTermCampaignIds(t);
+    // Try ad_group_id first (more specific)
+    const adGroupId = t.ad_group_id ? String(t.ad_group_id) : null;
+    if (adGroupId && asinMapping.adGroupToAsins?.[adGroupId]) {
+      asinMapping.adGroupToAsins[adGroupId].forEach((a: string) => asins.add(a));
+    }
+    // Also check campaign_id
+    cids.forEach((cid: string) => {
+      if (asinMapping.campaignToAsins?.[cid]) {
+        asinMapping.campaignToAsins[cid].forEach((a: string) => asins.add(a));
+      }
+    });
+    return Array.from(asins);
+  };
+
+  // Extract unique ASINs for filter dropdown
+  const asinsList = useMemo(() => {
+    if (!asinMapping) return [];
+    const asinCountMap = new Map<string, number>();
+    searchTerms.forEach((t: any) => {
+      const asins = getTermAsins(t);
+      asins.forEach(a => asinCountMap.set(a, (asinCountMap.get(a) || 0) + 1));
+    });
+    return Array.from(asinCountMap.entries())
+      .map(([asin, count]) => ({ asin, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [searchTerms, asinMapping]);
 
   const aiAdvice = trpc.adAnalysis.aiSearchTermAdvice.useMutation({
     onSuccess: () => toast.success("AI分析完成"),
@@ -148,13 +187,20 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
         return cids.includes(sourceCampaignFilter);
       });
     }
+    // Filter by ASIN
+    if (asinFilter) {
+      result = result.filter((t: any) => {
+        const asins = getTermAsins(t);
+        return asins.includes(asinFilter);
+      });
+    }
     result.sort((a: any, b: any) => {
       const aVal = a[sortField] || 0;
       const bVal = b[sortField] || 0;
       return sortDir === "desc" ? bVal - aVal : aVal - bVal;
     });
     return result;
-  }, [searchTerms, categoryFilter, searchQuery, sortField, sortDir, sourceCampaignFilter]);
+  }, [searchTerms, categoryFilter, searchQuery, sortField, sortDir, sourceCampaignFilter, asinFilter, asinMapping]);
 
   // Pie chart data
   const pieData = useMemo(() => {
@@ -211,13 +257,15 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
 
   const handleExportCSV = () => {
     const headers = isMultiMode
-      ? ["搜索词", "分类", "来源活动", "活动数", "曝光", "点击", "花费", "销售额", "订单", "ACoS", "CTR", "CVR"]
-      : ["搜索词", "分类", "曝光", "点击", "花费", "销售额", "订单", "ACoS", "CTR", "CVR"];
+      ? ["搜索词", "分类", "关联ASIN", "来源活动", "活动数", "曝光", "点击", "花费", "销售额", "订单", "ACoS", "CTR", "CVR"]
+      : ["搜索词", "分类", "关联ASIN", "曝光", "点击", "花费", "销售额", "订单", "ACoS", "CTR", "CVR"];
     const rows = filteredTerms.map((t: any) => {
       const base = [
         `"${(t.query || '').replace(/"/g, '""')}"`,
         CATEGORY_COLORS[t.categoryId]?.shortLabel || "",
       ];
+      const termAsins = getTermAsins(t);
+      base.push(`"${termAsins.join('; ')}"`);
       if (isMultiMode) {
         const cids = getTermCampaignIds(t);
         const sources = cids.map((cid: string) => campaignNames?.[cid] || cid).join('; ');
@@ -284,6 +332,22 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
                       {sourceCampaignsList.map(c => (
                         <SelectItem key={c.id} value={c.id}>
                           <span className="truncate max-w-[180px] block">{c.name}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {asinsList.length > 0 && (
+                  <Select value={asinFilter || 'all'} onValueChange={(v) => setAsinFilter(v === 'all' ? null : v)}>
+                    <SelectTrigger className="h-7 text-xs w-[180px] bg-white">
+                      <SelectValue placeholder="按ASIN筛选" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">全部ASIN ({asinsList.length})</SelectItem>
+                      {asinsList.map(a => (
+                        <SelectItem key={a.asin} value={a.asin}>
+                          <span className="font-mono text-xs">{a.asin}</span>
+                          <span className="text-gray-400 ml-1">({a.count})</span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -544,6 +608,22 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
                   </SelectContent>
                 </Select>
               )}
+              {asinsList.length > 0 && (
+                <Select value={asinFilter || 'all'} onValueChange={(v) => setAsinFilter(v === 'all' ? null : v)}>
+                  <SelectTrigger className="h-8 text-xs w-[180px]">
+                    <SelectValue placeholder="按ASIN筛选" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部ASIN ({asinsList.length})</SelectItem>
+                    {asinsList.map(a => (
+                      <SelectItem key={a.asin} value={a.asin}>
+                        <span className="font-mono text-xs">{a.asin}</span>
+                        <span className="text-gray-400 ml-1">({a.count})</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                 <Input
@@ -568,6 +648,7 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
                   <th className="text-left p-3 font-medium text-gray-600 w-10">#</th>
                   <th className="text-left p-3 font-medium text-gray-600">搜索词</th>
                   <th className="text-center p-3 font-medium text-gray-600 w-24">分类</th>
+                  <th className="text-center p-3 font-medium text-gray-600 w-32">关联ASIN</th>
                   <th className="text-center p-3 font-medium text-gray-600 w-32">来源活动</th>
                   {["impressions", "clicks", "cost", "sales", "orders", "acos", "ctr", "convRate"].map(field => (
                     <th
@@ -608,6 +689,28 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
                           <Badge className={`text-[10px] ${config.bg} ${config.color} ${config.border} border`}>
                             {config.shortLabel}
                           </Badge>
+                        </td>
+                        <td className="p-3 text-center">
+                          {(() => {
+                            const asins = getTermAsins(t);
+                            return (
+                              <div className="flex flex-wrap gap-0.5 justify-center">
+                                {asins.length === 0 ? (
+                                  <span className="text-[10px] text-gray-400">-</span>
+                                ) : asins.length > 2 ? (
+                                  <Badge variant="outline" className="text-[9px] font-mono">
+                                    {asins[0]}... +{asins.length - 1}
+                                  </Badge>
+                                ) : (
+                                  asins.map((asin: string) => (
+                                    <Badge key={asin} variant="outline" className="text-[9px] font-mono">
+                                      {asin}
+                                    </Badge>
+                                  ))
+                                )}
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td className="p-3 text-center">
                           {(() => {

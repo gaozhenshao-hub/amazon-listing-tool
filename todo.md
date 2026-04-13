@@ -3356,3 +3356,14 @@
 - [x] 修复“来源活动”列为空的问题（字段名不匹配：sourceCampaigns vs sourceCampaignIds）
 - [x] 修复筛选广告活动后仍显示其他活动数据的问题（统一用getTermCampaignIds提取）
 - [x] 单活动模式也显示来源活动列和筛选下拉框
+
+## 广告活动与ASIN映射（SP广告商品）
+- [x] 分析现有广告模块和领星API对接层结构
+- [x] 后端：领星API /pb/openapi/newad/spProductAds 对接（含分页+mock数据）
+- [x] 后端：ASIN↔广告活动ID/广告组ID双向映射缓存
+- [x] 后端：syncSpProductAds同步接口 + getAsinCampaignMapping查询接口
+- [x] 后端：搜索词分析通过campaign_id/ad_group_id关联ASIN（getAsinCampaignMapping查询）
+- [x] 前端：搜索词分析表格增加“关联ASIN”列（Badge展示）
+- [x] 前端：按ASIN筛选下拉框（多活动+单活动模式均支持）
+- [x] 前端：CSV导出包含ASIN信息
+- [x] Vitest单元测试（13个adAnalysis测试全部通过，含4个新增ASIN映射测试）

@@ -60,6 +60,18 @@ vi.mock("./lingxingAdapter", () => ({
       }
       return { data: [] };
     }),
+    requestWithMockFallback: vi.fn().mockImplementation(async ({ path }: any) => {
+      if (path === "/erp/sc/data/fba/FbaShipmentList") {
+        return { data: [{ seller_sku: "SKU-001", asin: "B0TEST001", product_name: "Test Product 1", fulfillable_qty: 100, inbound_qty: 20, avg_daily_sales: 5, days_of_supply: 20, alertLevel: "normal" }] };
+      }
+      if (path === "/erp/sc/data/fba/awdShipmentList" || path.includes("awd")) {
+        return { data: [{ seller_sku: "SKU-001", asin: "B0TEST001", product_name: "Test Product 1", quantity: 200, status: "ACTIVE" }] };
+      }
+      if (path === "/erp/sc/data/inventory/list" || path.includes("inventory")) {
+        return { data: [{ seller_sku: "SKU-001", asin: "B0TEST001", product_name: "Test Product 1", quantity: 50, warehouse_name: "Local WH" }] };
+      }
+      return { data: [] };
+    }),
   }),
 }));
 
