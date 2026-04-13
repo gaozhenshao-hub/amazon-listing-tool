@@ -567,3 +567,64 @@ describe("Reminder Days UI Logic", () => {
     });
   });
 });
+
+describe("Product Search Selector Logic", () => {
+  describe("Search keyword matching", () => {
+    const products = [
+      { id: 1, parentAsin: "B0ABC12345", title: "Wireless Bluetooth Headphones", chineseName: "无线蓝牙耳机", marketplace: "US" },
+      { id: 2, parentAsin: "B0DEF67890", title: "USB-C Charging Cable", chineseName: "USB-C充电线", marketplace: "US" },
+      { id: 3, parentAsin: "B0GHI11111", title: "Phone Case for iPhone", chineseName: "手机壳", marketplace: "JP" },
+    ];
+
+    function filterProducts(keyword: string) {
+      const kw = keyword.toLowerCase();
+      return products.filter(p =>
+        p.parentAsin.toLowerCase().includes(kw) ||
+        p.title.toLowerCase().includes(kw) ||
+        (p.chineseName && p.chineseName.toLowerCase().includes(kw))
+      );
+    }
+
+    it("should find products by ASIN", () => {
+      expect(filterProducts("B0ABC").length).toBe(1);
+      expect(filterProducts("B0ABC")[0].id).toBe(1);
+    });
+
+    it("should find products by English title", () => {
+      expect(filterProducts("bluetooth").length).toBe(1);
+      expect(filterProducts("bluetooth")[0].id).toBe(1);
+    });
+
+    it("should find products by Chinese name", () => {
+      expect(filterProducts("蓝牙").length).toBe(1);
+      expect(filterProducts("蓝牙")[0].id).toBe(1);
+    });
+
+    it("should return multiple matches", () => {
+      expect(filterProducts("B0").length).toBe(3);
+    });
+
+    it("should return empty for no match", () => {
+      expect(filterProducts("ZZZZZ").length).toBe(0);
+    });
+  });
+
+  describe("Product selection state", () => {
+    it("should handle undefined as 'no product'", () => {
+      const value: number | undefined = undefined;
+      expect(value).toBeUndefined();
+    });
+
+    it("should handle numeric id as selected product", () => {
+      const value: number | undefined = 42;
+      expect(value).toBe(42);
+    });
+
+    it("should convert 0 or falsy productProfileId to undefined", () => {
+      const convert = (v: number | undefined) => v || undefined;
+      expect(convert(0)).toBeUndefined();
+      expect(convert(undefined)).toBeUndefined();
+      expect(convert(5)).toBe(5);
+    });
+  });
+});

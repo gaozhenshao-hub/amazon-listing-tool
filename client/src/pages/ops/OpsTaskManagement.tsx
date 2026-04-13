@@ -39,6 +39,11 @@ import {
 } from "@/components/ui/collapsible";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from "@/components/ui/command";
+import { ChevronsUpDown, Check, Package, X } from "lucide-react";
 
 // ─── Types ───
 type TaskStatus = "backlog" | "todo" | "in_progress" | "review" | "done";
@@ -94,6 +99,153 @@ function parseReminderDays(raw: string | null | undefined): number[] {
     if (Array.isArray(parsed) && parsed.every((n: unknown) => typeof n === "number")) return parsed;
   } catch {}
   return [1, 3];
+}
+
+// ─── Product Search Selector Component ───
+type ProductOption = {
+  id: number;
+  parentAsin: string;
+  title: string;
+  chineseName: string | null;
+  imageUrl?: string | null;
+  marketplace?: string | null;
+};
+
+function ProductSearchSelector({ value, onChange, products }: {
+  value: number | undefined;
+  onChange: (id: number | undefined) => void;
+  products: ProductOption[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [searchKeyword, setSearchKeyword] = useState("");
+
+  // Use server-side search when keyword is entered
+  const searchQuery = trpc.taskManagement.searchProducts.useQuery(
+    { keyword: searchKeyword, limit: 20 },
+    { enabled: searchKeyword.length >= 1 }
+  );
+
+  // Show search results when searching, otherwise show initial products list
+  const displayProducts = searchKeyword.length >= 1
+    ? (searchQuery.data ?? [])
+    : products;
+
+  const selectedProduct = products.find(p => p.id === value)
+    || (searchQuery.data ?? []).find(p => p.id === value);
+
+  return (
+    <div className="space-y-1">
+      <Label className="flex items-center gap-1.5">
+        <Package className="h-3.5 w-3.5 text-muted-foreground" />
+        关联产品
+      </Label>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            className="w-full justify-between font-normal h-9 text-sm"
+          >
+            {selectedProduct ? (
+              <span className="flex items-center gap-2 truncate">
+                {selectedProduct.imageUrl && (
+                  <img src={selectedProduct.imageUrl} alt="" className="h-5 w-5 rounded object-cover flex-shrink-0" />
+                )}
+                <span className="truncate">
+                  {selectedProduct.chineseName || selectedProduct.title}
+                </span>
+                <Badge variant="outline" className="text-[10px] px-1 py-0 flex-shrink-0">
+                  {selectedProduct.parentAsin}
+                </Badge>
+              </span>
+            ) : (
+              <span className="text-muted-foreground">搜索产品名称或ASIN...</span>
+            )}
+            <ChevronsUpDown className="ml-auto h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+          <Command shouldFilter={false}>
+            <CommandInput
+              placeholder="输入产品名称或父ASIN搜索..."
+              value={searchKeyword}
+              onValueChange={setSearchKeyword}
+            />
+            <CommandList>
+              <CommandEmpty>
+                {searchQuery.isLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>搜索中...</span>
+                  </div>
+                ) : (
+                  "未找到匹配的产品"
+                )}
+              </CommandEmpty>
+              <CommandGroup>
+                {/* "Not associated" option */}
+                <CommandItem
+                  value="__none__"
+                  onSelect={() => {
+                    onChange(undefined);
+                    setOpen(false);
+                    setSearchKeyword("");
+                  }}
+                >
+                  <Check className={`mr-2 h-4 w-4 ${!value ? "opacity-100" : "opacity-0"}`} />
+                  <span className="text-muted-foreground">不关联产品</span>
+                </CommandItem>
+                {displayProducts.map(p => (
+                  <CommandItem
+                    key={p.id}
+                    value={`${p.parentAsin}-${p.id}`}
+                    onSelect={() => {
+                      onChange(p.id);
+                      setOpen(false);
+                      setSearchKeyword("");
+                    }}
+                  >
+                    <Check className={`mr-2 h-4 w-4 ${value === p.id ? "opacity-100" : "opacity-0"}`} />
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      {p.imageUrl && (
+                        <img src={p.imageUrl} alt="" className="h-6 w-6 rounded object-cover flex-shrink-0" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm truncate">{p.chineseName || p.title}</div>
+                        <div className="text-[11px] text-muted-foreground flex items-center gap-1">
+                          <span className="font-mono">{p.parentAsin}</span>
+                          {p.marketplace && <span>· {p.marketplace}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      {selectedProduct && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1">
+          {selectedProduct.imageUrl && (
+            <img src={selectedProduct.imageUrl} alt="" className="h-8 w-8 rounded object-cover" />
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="truncate font-medium text-foreground">{selectedProduct.chineseName || selectedProduct.title}</div>
+            <div className="font-mono">{selectedProduct.parentAsin}{selectedProduct.marketplace ? ` · ${selectedProduct.marketplace}` : ""}</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onChange(undefined)}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Reminder Days Selector Component ───
@@ -869,26 +1021,15 @@ function CreateTaskDialog({ open, onOpenChange, onCreate, isLoading, products }:
               <Input type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label>预估工时（小时）</Label>
-              <Input type="number" value={form.estimatedHours} onChange={e => setForm(f => ({ ...f, estimatedHours: e.target.value }))} placeholder="如 2.5" />
-            </div>
-            <div>
-              <Label>关联产品</Label>
-              <Select value={form.productProfileId?.toString() || "none"} onValueChange={v => setForm(f => ({ ...f, productProfileId: v === "none" ? undefined : Number(v) }))}>
-                <SelectTrigger><SelectValue placeholder="选择产品" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">不关联</SelectItem>
-                  {products.map(p => (
-                    <SelectItem key={p.id} value={p.id.toString()}>
-                      {p.chineseName || p.title} ({p.parentAsin})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div>
+            <Label>预估工时（小时）</Label>
+            <Input type="number" value={form.estimatedHours} onChange={e => setForm(f => ({ ...f, estimatedHours: e.target.value }))} placeholder="如 2.5" />
           </div>
+          <ProductSearchSelector
+            value={form.productProfileId}
+            onChange={id => setForm(f => ({ ...f, productProfileId: id }))}
+            products={products}
+          />
           {/* Reminder Days Setting */}
           <ReminderDaysSelector
             selectedDays={form.reminderDays}
@@ -917,6 +1058,7 @@ function EditTaskDialog({ task, open, onOpenChange, onUpdate, isLoading }: {
   onUpdate: (data: any) => void;
   isLoading: boolean;
 }) {
+  const productsQuery = trpc.taskManagement.getProductsForAssignment.useQuery();
   const [form, setForm] = useState({
     title: task.title || "",
     description: task.description || "",
@@ -927,6 +1069,7 @@ function EditTaskDialog({ task, open, onOpenChange, onUpdate, isLoading }: {
     dueDate: task.dueDate || "",
     estimatedHours: task.estimatedHours || "",
     actualHours: task.actualHours || "",
+    productProfileId: task.productProfileId as number | undefined,
     reminderEnabled: task.reminderEnabled !== 0,
     reminderDays: parseReminderDays(task.reminderDays),
   });
@@ -1001,6 +1144,12 @@ function EditTaskDialog({ task, open, onOpenChange, onUpdate, isLoading }: {
               <Input type="number" value={form.actualHours} onChange={e => setForm(f => ({ ...f, actualHours: e.target.value }))} />
             </div>
           </div>
+          {/* Product Selector */}
+          <ProductSearchSelector
+            value={form.productProfileId}
+            onChange={id => setForm(f => ({ ...f, productProfileId: id }))}
+            products={productsQuery.data ?? []}
+          />
           {/* Reminder Days Setting */}
           <ReminderDaysSelector
             selectedDays={form.reminderDays}
@@ -1013,6 +1162,7 @@ function EditTaskDialog({ task, open, onOpenChange, onUpdate, isLoading }: {
           <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
           <Button onClick={() => onUpdate({
             ...form,
+            productProfileId: form.productProfileId || undefined,
             reminderEnabled: form.reminderEnabled ? 1 : 0,
             reminderDays: JSON.stringify(form.reminderDays),
           })} disabled={isLoading}>

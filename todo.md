@@ -3336,3 +3336,10 @@
 - [x] 前端：编辑弹窗增加提醒天数设置UI（ReminderDaysSelector组件）
 - [x] 前端：创建任务弹窗也增加提醒天数设置
 - [x] Vitest单元测试（38个测试用例全部通过）
+
+## 关联产品选择器优化（支持搜索）
+- [x] 分析现有关联产品选择器和产品数据结构
+- [x] 后端：searchProducts接口（按名称/ASIN/中文名模糊查询，父ASIN维度）
+- [x] 前端：ProductSearchSelector组件（Popover+Command搜索式选择器）
+- [x] 前端：创建任务和编辑任务弹窗均已集成新选择器
+- [x] Vitest单元测试（46个测试用例全部通过）

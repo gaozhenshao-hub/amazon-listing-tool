@@ -566,9 +566,41 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
         parentAsin: productProfiles.parentAsin,
         title: productProfiles.title,
         chineseName: productProfiles.chineseName,
+        imageUrl: productProfiles.imageUrl,
+        marketplace: productProfiles.marketplace,
       }).from(productProfiles)
         .orderBy(desc(productProfiles.createdAt))
         .limit(200);
+      return products;
+    }),
+
+  /** Search products by name or ASIN (parent ASIN dimension) */
+  searchProducts: protectedProcedure
+    .input(z.object({
+      keyword: z.string().min(1).max(100),
+      limit: z.number().min(1).max(50).optional().default(20),
+    }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      const kw = `%${input.keyword}%`;
+      const products = await db.select({
+        id: productProfiles.id,
+        parentAsin: productProfiles.parentAsin,
+        title: productProfiles.title,
+        chineseName: productProfiles.chineseName,
+        imageUrl: productProfiles.imageUrl,
+        marketplace: productProfiles.marketplace,
+      }).from(productProfiles)
+        .where(
+          or(
+            like(productProfiles.parentAsin, kw),
+            like(productProfiles.title, kw),
+            like(productProfiles.chineseName, kw),
+          )
+        )
+        .orderBy(desc(productProfiles.createdAt))
+        .limit(input.limit);
       return products;
     }),
 
