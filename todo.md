@@ -3377,3 +3377,22 @@
 - [x] 前端：CSV导出增加"广告类型"列
 - [x] 前端：修复SearchTermClassification变量声明顺序（getTermCampaignIds/searchTerms提前）
 - [x] Vitest单元测试（16个adAnalysis测试全部通过，含6个新增SP+SD映射测试，3333个总测试全部通过）
+
+## ASIN维度广告汇总看板
+- [x] 后端：getAsinAdSummary接口，按ASIN聚合SP+SD广告数据（花费/销售额/ACoS/订单/点击/曝光）
+- [x] 前端：广告优化Tab栏新增"ASIN汇总"页签，KPI卡片+TOP10柱状图+明细表格
+- [x] 前端：支持按ACoS/花费/销售额等多字段排序，支持搜索ASIN/SKU，支持CSV导出
+- [x] Vitest单元测试（3333个测试全部通过）
+
+## 搜索词AI操作建议
+- [x] 后端：aiGenerateNegativeAndAddKeywords接口，基于12分类结果自动识别否定词候选(4,8,10,12类)和加词候选(1,3,5,7,9类)
+- [x] 后端：AI生成否定词列表（含匹配类型/优先级/预估节省）和加词建议列表（含建议竞价/预估ACoS）
+- [x] 前端：搜索词分析工具栏新增"AI否定词/加词"按钮，展开AiKeywordActions面板
+- [x] 前端：支持全选/取消勾选，分别导出否定词 CSV 和加词建议 CSV
+- [x] Vitest单元测试（3333个测试全部通过）
+
+## 广告活动与产品总览联动
+- [x] 后端：复用已有getProductAdsSummary接口，按父ASIN查询关联广告活动汇总
+- [x] 前端：产品详情页广告概览增强：新增曝光/点击/CTR/CVR指标行，扩展活动表格增加ROAS列
+- [x] 前端：活动表格显示数从8扩展到12，超出部分提示前往广告优化模块查看
+- [x] Vitest单元测试（3333个测试全部通过）

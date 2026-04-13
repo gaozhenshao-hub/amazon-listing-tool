@@ -2084,4 +2084,305 @@ ${JSON.stringify(input.terms.slice(0, 20))}
 
       return { ...mapping, fromCache: false, isMock: adapter.isMockMode() };
     }),
+
+  // ─── ASIN维度广告汇总看板 ────────────────────────────────────
+  getAsinAdSummary: protectedProcedure
+    .input(z.object({
+      marketplace: z.string().optional(),
+      reportDate: z.string().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+    }))
+    .query(async ({ input }) => {
+      const adapter = getLingxingAdapter();
+      const { sellers } = await getAllSellerSids();
+      const sids = filterSidsByMarketplace(sellers, input.marketplace);
+      const sidsToQuery = sids.map(Number).slice(0, 5);
+
+      // 1. Get ASIN mapping (from cache or fresh)
+      let mapping = getCached<any>('spProductAds_mapping');
+      if (!mapping) {
+        // Auto-sync
+        const allAds: any[] = [];
+        const adPaths = [
+          { path: "/pb/openapi/newad/spProductAds", type: "SP" },
+          { path: "/pb/openapi/newad/sdProductAds", type: "SD" },
+        ];
+        for (const sid of sidsToQuery) {
+          for (const { path: adPath, type: adType } of adPaths) {
+            try {
+              const res = await adapter.requestWithMockFallback({
+                path: adPath,
+                body: { sid, offset: 0, length: 100 },
+                headers: { "X-API-VERSION": "2" },
+              });
+              const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
+              allAds.push(...items.map((item: any) => ({ ...item, sid, adType })));
+            } catch (err: any) {
+              console.warn(`[AsinAdSummary] ${adType} sid=${sid}: ${err.message}`);
+            }
+          }
+        }
+        // Build mapping
+        const asinToCampaigns: Record<string, Set<string>> = {};
+        const asinDetails: Record<string, { asin: string; sku: string; adTypes: string[] }> = {};
+        for (const ad of allAds) {
+          const campaignId = String(ad.campaign_id || '');
+          const asin = String(ad.asin || '');
+          const adType = ad.adType || 'SP';
+          if (!asin) continue;
+          if (!asinToCampaigns[asin]) asinToCampaigns[asin] = new Set();
+          asinToCampaigns[asin].add(campaignId);
+          if (!asinDetails[asin]) {
+            asinDetails[asin] = { asin, sku: ad.sku || '', adTypes: [adType] };
+          } else if (!asinDetails[asin].adTypes.includes(adType)) {
+            asinDetails[asin].adTypes.push(adType);
+          }
+        }
+        mapping = {
+          asinToCampaigns: Object.fromEntries(
+            Object.entries(asinToCampaigns).map(([k, v]) => [k, Array.from(v)])
+          ),
+          asinDetails,
+        };
+      }
+
+      // 2. Get campaign hour data for aggregation
+      const datesToQuery = resolveDateRange({
+        startDate: input.startDate,
+        endDate: input.endDate,
+        days: 3,
+      });
+
+      // Collect all unique campaign IDs from mapping
+      const allCampaignIds = new Set<string>();
+      for (const cids of Object.values(mapping.asinToCampaigns as Record<string, string[]>)) {
+        for (const cid of cids) allCampaignIds.add(cid);
+      }
+
+      // Fetch hour data for these campaigns
+      const campaignMetrics: Record<string, { impressions: number; clicks: number; cost: number; sales: number; orders: number }> = {};
+      const campaignIds = Array.from(allCampaignIds).slice(0, 200);
+
+      // Batch fetch
+      const BATCH = 30;
+      for (let i = 0; i < campaignIds.length; i += BATCH) {
+        const batch = campaignIds.slice(i, i + BATCH);
+        const results = await Promise.allSettled(
+          batch.flatMap(cid =>
+            datesToQuery.map(reportDate =>
+              adapter.requestWithMockFallback({
+                path: '/pb/openapi/newad/spCampaignHourData',
+                body: { campaign_id: Number(cid), report_date: reportDate },
+              }).then(res => ({ cid, res })).catch(() => null)
+            )
+          )
+        );
+        for (const r of results) {
+          if (r.status !== 'fulfilled' || !r.value) continue;
+          const { cid, res } = r.value;
+          const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
+          for (const item of items) {
+            if (!campaignMetrics[cid]) {
+              campaignMetrics[cid] = { impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0 };
+            }
+            campaignMetrics[cid].impressions += Number(item.impressions) || 0;
+            campaignMetrics[cid].clicks += Number(item.clicks) || 0;
+            campaignMetrics[cid].cost += Number(item.cost) || 0;
+            campaignMetrics[cid].sales += Number(item.sales) || 0;
+            campaignMetrics[cid].orders += Number(item.orders) || 0;
+          }
+        }
+      }
+
+      // 3. Aggregate by ASIN
+      const asinSummaries: Array<{
+        asin: string; sku: string; adTypes: string[];
+        impressions: number; clicks: number; cost: number; sales: number; orders: number;
+        acos: number; roas: number; ctr: number; cvr: number; cpc: number;
+        campaignCount: number;
+      }> = [];
+
+      for (const [asin, detail] of Object.entries(mapping.asinDetails as Record<string, { asin: string; sku: string; adTypes: string[] }>)) {
+        const campaignIdsForAsin = (mapping.asinToCampaigns as Record<string, string[]>)[asin] || [];
+        let impressions = 0, clicks = 0, cost = 0, sales = 0, orders = 0;
+        for (const cid of campaignIdsForAsin) {
+          const m = campaignMetrics[cid];
+          if (m) {
+            impressions += m.impressions;
+            clicks += m.clicks;
+            cost += m.cost;
+            sales += m.sales;
+            orders += m.orders;
+          }
+        }
+        const acos = sales > 0 ? Math.round(cost / sales * 10000) / 100 : 0;
+        const roas = cost > 0 ? Math.round(sales / cost * 100) / 100 : 0;
+        const ctr = impressions > 0 ? Math.round(clicks / impressions * 10000) / 100 : 0;
+        const cvr = clicks > 0 ? Math.round(orders / clicks * 10000) / 100 : 0;
+        const cpc = clicks > 0 ? Math.round(cost / clicks * 100) / 100 : 0;
+
+        asinSummaries.push({
+          asin: detail.asin,
+          sku: detail.sku,
+          adTypes: detail.adTypes,
+          impressions, clicks, cost, sales, orders,
+          acos, roas, ctr, cvr, cpc,
+          campaignCount: campaignIdsForAsin.length,
+        });
+      }
+
+      // Sort by cost descending
+      asinSummaries.sort((a, b) => b.cost - a.cost);
+
+      // Compute totals
+      const totals = asinSummaries.reduce((acc, s) => {
+        acc.impressions += s.impressions;
+        acc.clicks += s.clicks;
+        acc.cost += s.cost;
+        acc.sales += s.sales;
+        acc.orders += s.orders;
+        return acc;
+      }, { impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0 });
+
+      return {
+        asins: asinSummaries,
+        totals: {
+          ...totals,
+          acos: totals.sales > 0 ? Math.round(totals.cost / totals.sales * 10000) / 100 : 0,
+          roas: totals.cost > 0 ? Math.round(totals.sales / totals.cost * 100) / 100 : 0,
+        },
+        dateRange: { start: datesToQuery[0], end: datesToQuery[datesToQuery.length - 1], days: datesToQuery.length },
+        isMock: adapter.isMockMode(),
+      };
+    }),
+
+  // ─── AI生成否定词列表和加词建议 ──────────────────────────────
+  aiGenerateNegativeAndAddKeywords: protectedProcedure
+    .input(z.object({
+      searchTerms: z.array(z.record(z.string(), z.unknown())).max(200),
+      targetAcos: z.number().optional().default(25),
+      mode: z.enum(['negative', 'add', 'both']).optional().default('both'),
+    }))
+    .mutation(async ({ input }) => {
+      // Separate terms into negative candidates and add candidates based on category
+      const negCandidates: any[] = [];
+      const addCandidates: any[] = [];
+
+      for (const t of input.searchTerms) {
+        const catId = Number(t.categoryId || t.category_id || 0);
+        const cost = Number(t.cost || 0);
+        const orders = Number(t.orders || 0);
+        const impressions = Number(t.impressions || 0);
+        const clicks = Number(t.clicks || 0);
+        const acos = Number(t.sales) > 0 ? (cost / Number(t.sales)) * 100 : Infinity;
+
+        // Negative candidates: categories 4,8,10,12 (low efficiency) or high ACoS
+        if ([4, 8, 10, 12].includes(catId) || (acos > input.targetAcos * 2 && cost > 5)) {
+          negCandidates.push(t);
+        }
+        // Add candidates: categories 1,3,5,7,9 (high conversion) or good performance
+        if ([1, 3, 5, 7, 9].includes(catId) || (orders > 0 && acos < input.targetAcos)) {
+          addCandidates.push(t);
+        }
+      }
+
+      // Anonymize data
+      const anonymize = (terms: any[]) => terms.map((t, i) => {
+        const { asin, advertised_asin, sku, campaign_id, ad_group_id, ...rest } = t as any;
+        return { ...rest, idx: i };
+      });
+
+      const response = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `你是亚马逊PPC广告优化专家。请基于搜索词的12分类结果和数据表现，生成两份操作列表：
+1. 否定词列表：需要否定的低效/无效搜索词
+2. 加词建议列表：值得投放的高效/潜力搜索词
+
+目标ACoS: ${input.targetAcos}%
+
+对于否定词，请标注否定类型（精准否定 exact 或词组否定 phrase）和优先级。
+对于加词，请标注建议匹配类型（exact/phrase/broad）、建议竞价和优先级。
+
+输出严格JSON格式。`
+          },
+          {
+            role: "user",
+            content: `分析以下搜索词数据：
+
+否定词候选(${negCandidates.length}个):
+${JSON.stringify(anonymize(negCandidates.slice(0, 80)))}
+
+加词候选(${addCandidates.length}个):
+${JSON.stringify(anonymize(addCandidates.slice(0, 80)))}
+
+请生成：
+1. negative_keywords: 建议否定的搜索词列表
+2. add_keywords: 建议投放的搜索词列表
+3. summary: 整体操作建议摘要`
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "keyword_action_lists",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                negative_keywords: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      term: { type: "string", description: "搜索词" },
+                      match_type: { type: "string", description: "否定匹配类型: exact 或 phrase" },
+                      reason: { type: "string", description: "否定原因(30字以内)" },
+                      priority: { type: "string", description: "优先级: P0/P1/P2" },
+                      estimated_save: { type: "number", description: "预估月节省花费($)" },
+                    },
+                    required: ["term", "match_type", "reason", "priority", "estimated_save"],
+                    additionalProperties: false,
+                  },
+                },
+                add_keywords: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      term: { type: "string", description: "搜索词" },
+                      match_type: { type: "string", description: "建议匹配类型: exact/phrase/broad" },
+                      suggested_bid: { type: "number", description: "建议竞价($)" },
+                      reason: { type: "string", description: "加词原因(30字以内)" },
+                      priority: { type: "string", description: "优先级: P0/P1/P2" },
+                      expected_acos: { type: "number", description: "预估ACoS(%)" },
+                    },
+                    required: ["term", "match_type", "suggested_bid", "reason", "priority", "expected_acos"],
+                    additionalProperties: false,
+                  },
+                },
+                summary: { type: "string", description: "整体操作建议摘要" },
+              },
+              required: ["negative_keywords", "add_keywords", "summary"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const content = response.choices?.[0]?.message?.content as string;
+      const result = JSON.parse(content);
+      return {
+        ...result,
+        stats: {
+          totalTermsAnalyzed: input.searchTerms.length,
+          negCandidates: negCandidates.length,
+          addCandidates: addCandidates.length,
+          negGenerated: result.negative_keywords?.length || 0,
+          addGenerated: result.add_keywords?.length || 0,
+        },
+      };
+    }),
 });

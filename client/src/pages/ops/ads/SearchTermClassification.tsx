@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import SearchTermCompareMode from "./SearchTermCompareMode";
 import AdEmptyState from "./AdEmptyState";
+import AiKeywordActions from "./AiKeywordActions";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -68,6 +69,7 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
   const [adType, setAdType] = useState<"SP" | "SB">(defaultAdType === "SB" ? "SB" : "SP");
   const [viewMode, setViewMode] = useState<"aggregate" | "compare">("aggregate");
   const [asinFilter, setAsinFilter] = useState<string | null>(null);
+  const [showAiKeywordActions, setShowAiKeywordActions] = useState(false);
 
   // Sync adType when parent campaign selection changes
   useEffect(() => {
@@ -657,6 +659,14 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
                 <Download className="w-3.5 h-3.5 mr-1" />
                 导出CSV
               </Button>
+              <Button
+                size="sm"
+                className="h-8 gap-1 bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={() => setShowAiKeywordActions(!showAiKeywordActions)}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                {showAiKeywordActions ? '收起操作建议' : 'AI否定词/加词'}
+              </Button>
             </div>
           </div>
         </CardHeader>
@@ -891,6 +901,18 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
           ) : null}
         </DialogContent>
       </Dialog>
+
+      {/* AI Keyword Actions Panel */}
+      {showAiKeywordActions && (
+        <AiKeywordActions
+          searchTerms={searchTerms.map((t: any) => ({
+            ...t,
+            categoryId: t.categoryId || t.category_id,
+          }))}
+          targetAcos={25}
+          onClose={() => setShowAiKeywordActions(false)}
+        />
+      )}
     </div>
   );
 }

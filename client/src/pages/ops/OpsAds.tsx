@@ -34,6 +34,7 @@ import EffectiveSearchTerms from "./ads/EffectiveSearchTerms";
 import DspAnalysis from "./ads/DspAnalysis";
 import AdChatBot from "./ads/AdChatBot";
 import CrossChannelAnalysis from "./ads/CrossChannelAnalysis";
+import AsinAdSummary from "./ads/AsinAdSummary";
 
 const PIE_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#9ca3af", "#8b5cf6", "#06b6d4", "#f97316"];
 
@@ -568,6 +569,7 @@ export default function OpsAds() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="flex flex-wrap h-auto gap-1 bg-gray-100/50 p-1">
           <TabsTrigger value="overview" className="text-xs gap-1"><BarChart3 className="w-3 h-3" />总览</TabsTrigger>
+          <TabsTrigger value="asin-summary" className="text-xs gap-1"><Package className="w-3 h-3" />ASIN汇总</TabsTrigger>
           <TabsTrigger value="search-terms" className="text-xs gap-1"><Search className="w-3 h-3" />搜索词分析</TabsTrigger>
           <TabsTrigger value="targeting" className="text-xs gap-1"><Crosshair className="w-3 h-3" />投放对象</TabsTrigger>
           <TabsTrigger value="placement" className="text-xs gap-1"><Monitor className="w-3 h-3" />广告位</TabsTrigger>
@@ -979,6 +981,16 @@ export default function OpsAds() {
             reportDate={selectedDate}
             startDate={dateMode === "range" ? startDate : selectedDate}
             endDate={dateMode === "range" ? endDate : selectedDate}
+          />
+        </TabsContent>
+
+        {/* Tab: ASIN Ad Summary */}
+        <TabsContent value="asin-summary" className="mt-4">
+          <AsinAdSummary
+            marketplace={marketplace}
+            reportDate={selectedDate}
+            startDate={dateMode === "range" ? startDate : undefined}
+            endDate={dateMode === "range" ? endDate : undefined}
           />
         </TabsContent>
 

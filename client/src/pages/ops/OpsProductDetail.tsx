@@ -475,52 +475,86 @@ export default function OpsProductDetail() {
                   )}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
                     {[
-                      { label: "广告花费", value: `$${adsData.summary.totalSpend}` },
-                      { label: "广告销售额", value: `$${adsData.summary.totalSales}` },
-                      { label: "ACoS", value: `${adsData.summary.acos}%` },
-                      { label: "ROAS", value: (isNaN(adsData.summary.roas) || !isFinite(adsData.summary.roas)) ? "0.00" : adsData.summary.roas.toFixed(2) },
+                      { label: "广告花费", value: `$${adsData.summary.totalSpend}`, color: "text-red-600" },
+                      { label: "广告销售额", value: `$${adsData.summary.totalSales}`, color: "text-emerald-600" },
+                      { label: "ACoS", value: `${adsData.summary.acos}%`, color: adsData.summary.acos <= 25 ? "text-emerald-600" : adsData.summary.acos <= 40 ? "text-amber-600" : "text-red-600" },
+                      { label: "ROAS", value: (isNaN(adsData.summary.roas) || !isFinite(adsData.summary.roas)) ? "0.00" : adsData.summary.roas.toFixed(2), color: "text-blue-600" },
                     ].map((item, idx) => (
                       <div key={idx} className="text-center p-3 rounded-lg bg-muted/50">
                         <p className="text-xs text-muted-foreground">{item.label}</p>
-                        <p className="text-lg font-bold">{item.value}</p>
+                        <p className={`text-lg font-bold ${item.color}`}>{item.value}</p>
                       </div>
                     ))}
                   </div>
+                  {/* Additional metrics row */}
+                  <div className="grid grid-cols-4 gap-3 mb-4">
+                    <div className="text-center p-2 rounded bg-gray-50">
+                      <p className="text-[10px] text-muted-foreground">曝光</p>
+                      <p className="text-sm font-semibold">{(adsData.summary.totalImpressions || 0).toLocaleString()}</p>
+                    </div>
+                    <div className="text-center p-2 rounded bg-gray-50">
+                      <p className="text-[10px] text-muted-foreground">点击</p>
+                      <p className="text-sm font-semibold">{(adsData.summary.totalClicks || 0).toLocaleString()}</p>
+                    </div>
+                    <div className="text-center p-2 rounded bg-gray-50">
+                      <p className="text-[10px] text-muted-foreground">CTR</p>
+                      <p className="text-sm font-semibold">{adsData.summary.ctr || 0}%</p>
+                    </div>
+                    <div className="text-center p-2 rounded bg-gray-50">
+                      <p className="text-[10px] text-muted-foreground">CVR</p>
+                      <p className="text-sm font-semibold">{adsData.summary.cvr || 0}%</p>
+                    </div>
+                  </div>
                   {adsData.campaigns.length > 0 && (
                     <div className="overflow-x-auto">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-medium text-muted-foreground">关联广告活动 ({adsData.campaigns.length}个)</p>
+                      </div>
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b text-muted-foreground">
                             <th className="text-left py-2 font-medium">广告活动</th>
                             <th className="text-center py-2 font-medium">状态</th>
+                            <th className="text-right py-2 font-medium">曝光</th>
+                            <th className="text-right py-2 font-medium">点击</th>
                             <th className="text-right py-2 font-medium">花费</th>
                             <th className="text-right py-2 font-medium">销售额</th>
                             <th className="text-right py-2 font-medium">ACoS</th>
+                            <th className="text-right py-2 font-medium">ROAS</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {adsData.campaigns.slice(0, 8).map((c, idx) => {
+                          {adsData.campaigns.slice(0, 12).map((c, idx) => {
                             const isPaused = ['paused', 'archived', 'suspended'].includes((c.status || '').toLowerCase());
+                            const cRoas = c.spend > 0 ? (c.sales / c.spend).toFixed(2) : '0';
                             return (
                             <tr key={idx} className={`border-b last:border-0 ${isPaused ? 'opacity-50' : ''}`}>
-                              <td className="py-1.5 max-w-[200px] truncate">{c.name}</td>
+                              <td className="py-1.5 max-w-[200px] truncate text-xs">{c.name}</td>
                               <td className="py-1.5 text-center">
-                                <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${
+                                <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
                                   isPaused ? 'bg-gray-100 text-gray-500' : 'bg-emerald-50 text-emerald-700'
                                 }`}>
                                   {isPaused ? '已暂停' : '投放中'}
                                 </span>
                               </td>
-                              <td className="py-1.5 text-right font-mono">${c.spend}</td>
-                              <td className="py-1.5 text-right font-mono">${c.sales}</td>
-                              <td className="py-1.5 text-right">
-                                <span className={c.acos > 30 ? "text-red-600" : c.acos > 0 ? "text-emerald-600" : "text-muted-foreground"}>{c.acos}%</span>
+                              <td className="py-1.5 text-right text-xs">{(c.impressions || 0).toLocaleString()}</td>
+                              <td className="py-1.5 text-right text-xs">{(c.clicks || 0).toLocaleString()}</td>
+                              <td className="py-1.5 text-right text-xs font-mono text-red-600">${c.spend}</td>
+                              <td className="py-1.5 text-right text-xs font-mono text-emerald-600">${c.sales}</td>
+                              <td className="py-1.5 text-right text-xs">
+                                <span className={c.acos > 30 ? "text-red-600 font-medium" : c.acos > 0 ? "text-emerald-600 font-medium" : "text-muted-foreground"}>{c.acos}%</span>
                               </td>
+                              <td className="py-1.5 text-right text-xs font-medium text-blue-600">{cRoas}x</td>
                             </tr>
                             );
                           })}
                         </tbody>
                       </table>
+                      {adsData.campaigns.length > 12 && (
+                        <p className="text-xs text-center text-muted-foreground mt-2 py-1">
+                          还有 {adsData.campaigns.length - 12} 个广告活动未显示，请前往广告优化模块查看全部
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
