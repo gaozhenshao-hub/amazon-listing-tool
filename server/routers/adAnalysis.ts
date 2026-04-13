@@ -2385,4 +2385,277 @@ ${JSON.stringify(anonymize(addCandidates.slice(0, 80)))}
         },
       };
     }),
+
+  // ─── AI预算智能分配 ──────────────────────────────────────────
+  aiBudgetAllocation: protectedProcedure
+    .input(z.object({
+      marketplace: z.string().optional(),
+      reportDate: z.string().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      totalBudget: z.number().optional(),
+      targetAcos: z.number().optional().default(25),
+    }))
+    .mutation(async ({ input }) => {
+      const adapter = getLingxingAdapter();
+      const { sellers } = await getAllSellerSids();
+      const sids = filterSidsByMarketplace(sellers, input.marketplace);
+      const sidsToQuery = sids.map(Number).slice(0, 5);
+
+      const datesToQuery = resolveDateRange({
+        startDate: input.startDate,
+        endDate: input.endDate,
+        days: 7,
+      });
+
+      // Fetch SP campaigns
+      const campaigns: any[] = [];
+      for (const sid of sidsToQuery) {
+        try {
+          const res = await adapter.requestWithMockFallback({
+            path: '/pb/openapi/newad/spCampaigns',
+            body: { sid, offset: 0, length: 100 },
+            headers: { "X-API-VERSION": "2" },
+          });
+          const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
+          campaigns.push(...items.map((c: any) => ({ ...c, sid })));
+        } catch (err: any) {
+          console.warn(`[BudgetAlloc] SP campaigns sid=${sid}: ${err.message}`);
+        }
+      }
+
+      // Get ASIN mapping
+      const mapping = getCached<any>('spProductAds_mapping');
+      const asinToCampaigns: Record<string, string[]> = mapping?.asinToCampaigns || {};
+
+      // Build campaign perf map
+      const campaignPerf: Record<string, {
+        name: string; budget: number; status: string;
+        impressions: number; clicks: number; cost: number; sales: number; orders: number;
+        asin: string;
+      }> = {};
+
+      for (const c of campaigns) {
+        const cid = String(c.campaign_id || c.id || '');
+        const isPaused = ['paused', 'archived', 'suspended'].includes((c.status || c.state || '').toLowerCase());
+        campaignPerf[cid] = {
+          name: c.name || c.campaign_name || '',
+          budget: Number(c.daily_budget || c.budget || 0),
+          status: isPaused ? 'paused' : 'active',
+          impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0,
+          asin: '',
+        };
+      }
+
+      for (const [asin, cids] of Object.entries(asinToCampaigns)) {
+        for (const cid of cids) {
+          if (campaignPerf[cid]) campaignPerf[cid].asin = asin;
+        }
+      }
+
+      // Fetch hour data
+      const campaignIds = Object.keys(campaignPerf).slice(0, 100);
+      const BATCH = 20;
+      for (let i = 0; i < campaignIds.length; i += BATCH) {
+        const batch = campaignIds.slice(i, i + BATCH);
+        const results = await Promise.allSettled(
+          batch.flatMap(cid =>
+            datesToQuery.slice(0, 3).map(reportDate =>
+              adapter.requestWithMockFallback({
+                path: '/pb/openapi/newad/spCampaignHourData',
+                body: { campaign_id: Number(cid), report_date: reportDate },
+              }).then(res => ({ cid, res })).catch(() => null)
+            )
+          )
+        );
+        for (const r of results) {
+          if (r.status !== 'fulfilled' || !r.value) continue;
+          const { cid, res } = r.value;
+          const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
+          for (const item of items) {
+            if (!campaignPerf[cid]) continue;
+            campaignPerf[cid].impressions += Number(item.impressions) || 0;
+            campaignPerf[cid].clicks += Number(item.clicks) || 0;
+            campaignPerf[cid].cost += Number(item.cost) || 0;
+            campaignPerf[cid].sales += Number(item.sales) || 0;
+            campaignPerf[cid].orders += Number(item.orders) || 0;
+          }
+        }
+      }
+
+      // Build summaries for AI
+      const campaignSummaries = Object.entries(campaignPerf)
+        .filter(([_, c]) => c.status === 'active')
+        .map(([cid, c]) => {
+          const acos = c.sales > 0 ? Math.round(c.cost / c.sales * 10000) / 100 : (c.cost > 0 ? 999 : 0);
+          const roas = c.cost > 0 ? Math.round(c.sales / c.cost * 100) / 100 : 0;
+          return { campaignId: cid, name: c.name, asin: c.asin, currentBudget: c.budget, cost: Math.round(c.cost * 100) / 100, sales: Math.round(c.sales * 100) / 100, orders: c.orders, impressions: c.impressions, clicks: c.clicks, acos, roas };
+        })
+        .sort((a, b) => b.cost - a.cost)
+        .slice(0, 30);
+
+      const totalCurrentBudget = campaignSummaries.reduce((s, c) => s + c.currentBudget, 0);
+      const totalCost = campaignSummaries.reduce((s, c) => s + c.cost, 0);
+      const totalSales = campaignSummaries.reduce((s, c) => s + c.sales, 0);
+      const overallAcos = totalSales > 0 ? Math.round(totalCost / totalSales * 10000) / 100 : 0;
+
+      try {
+        const llmRes = await invokeLLM({
+          messages: [
+            { role: 'system', content: '你是亚马逊广告预算优化AI助手。请严格按JSON格式输出分析结果。' },
+            { role: 'user', content: `你是资深亚马逊广告优化专家。基于以下数据提供预算调整建议。\n\n总预算:$${totalCurrentBudget}/天 | 总花费:$${totalCost} | 总销售:$${totalSales} | ACoS:${overallAcos}% | 目标ACoS:${input.targetAcos}%\n\n各活动:\n${campaignSummaries.map((c, i) => `${i+1}. [${c.name}] ASIN:${c.asin||'未知'} | 预算:$${c.currentBudget}/天 | 花费:$${c.cost} | 销售:$${c.sales} | ACoS:${c.acos}% | ROAS:${c.roas}x | 订单:${c.orders}`).join('\n')}\n\n调整原则：1.ACoS低且出单好→加预算 2.ACoS远超目标→减预算或暂停 3.数据不足→维持观察 4.总预算变动控制在±20%` },
+          ],
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'budget_allocation',
+              strict: true,
+              schema: {
+                type: 'object',
+                properties: {
+                  overall_analysis: { type: 'string' },
+                  total_suggested_budget: { type: 'number' },
+                  campaigns: { type: 'array', items: { type: 'object', properties: { campaignId: { type: 'string' }, name: { type: 'string' }, action: { type: 'string' }, currentBudget: { type: 'number' }, suggestedBudget: { type: 'number' }, changePercent: { type: 'number' }, reason: { type: 'string' }, priority: { type: 'string' }, expectedAcos: { type: 'number' } }, required: ['campaignId', 'name', 'action', 'currentBudget', 'suggestedBudget', 'changePercent', 'reason', 'priority', 'expectedAcos'], additionalProperties: false } },
+                  key_insights: { type: 'array', items: { type: 'string' } },
+                },
+                required: ['overall_analysis', 'total_suggested_budget', 'campaigns', 'key_insights'],
+                additionalProperties: false,
+              },
+            },
+          },
+        });
+
+        const result = JSON.parse(String(llmRes.choices[0].message.content) || '{}');
+        return {
+          allocation: result,
+          campaignData: campaignSummaries,
+          totals: { totalCurrentBudget, totalCost, totalSales, overallAcos },
+          dateRange: { start: datesToQuery[0], end: datesToQuery[datesToQuery.length - 1], days: datesToQuery.length },
+          isMock: adapter.isMockMode(),
+        };
+      } catch (err: any) {
+        console.error('[BudgetAlloc] AI error:', err.message);
+        return {
+          allocation: null,
+          campaignData: campaignSummaries,
+          totals: { totalCurrentBudget, totalCost, totalSales, overallAcos },
+          dateRange: { start: datesToQuery[0], end: datesToQuery[datesToQuery.length - 1], days: datesToQuery.length },
+          isMock: adapter.isMockMode(),
+          error: 'AI分析暂时不可用，请稍后重试',
+        };
+      }
+    }),
+
+  // ─── 搜索词趋势对比 ──────────────────────────────────────────
+  getSearchTermTrend: protectedProcedure
+    .input(z.object({
+      campaignId: z.string().optional(),
+      campaignIds: z.array(z.string()).optional(),
+      marketplace: z.string().optional(),
+      periods: z.array(z.object({
+        label: z.string(),
+        startDate: z.string(),
+        endDate: z.string(),
+      })).min(2).max(4),
+      adType: z.enum(['SP', 'SB']).optional().default('SP'),
+      topN: z.number().optional().default(20),
+    }))
+    .query(async ({ input }) => {
+      const adapter = getLingxingAdapter();
+      const { sellers } = await getAllSellerSids();
+      const sids = filterSidsByMarketplace(sellers, input.marketplace);
+      const sidsToQuery = sids.map(Number).slice(0, 3);
+
+      const effectiveCampaignIds = (input.campaignIds && input.campaignIds.length > 0)
+        ? input.campaignIds
+        : (input.campaignId ? [input.campaignId] : []);
+      const campaignIdSet = new Set(effectiveCampaignIds);
+      const hasCampaignFilter = effectiveCampaignIds.length > 0;
+
+      const searchTermApiPath = input.adType === 'SB'
+        ? '/pb/openapi/newad/hsaQueryWordReports'
+        : '/pb/openapi/newad/queryWordReports';
+
+      const periodResults: Array<{
+        label: string; startDate: string; endDate: string;
+        terms: Record<string, { query: string; impressions: number; clicks: number; cost: number; sales: number; orders: number }>;
+      }> = [];
+
+      for (const period of input.periods) {
+        const dates = getDatesInRange(period.startDate, period.endDate);
+        const termMap: Record<string, { query: string; impressions: number; clicks: number; cost: number; sales: number; orders: number }> = {};
+
+        const tasks: (() => Promise<any[]>)[] = [];
+        for (const sid of sidsToQuery) {
+          for (const reportDate of dates.slice(0, 7)) {
+            tasks.push(async () => {
+              try {
+                const res = await adapter.requestWithMockFallback({
+                  path: searchTermApiPath,
+                  body: { sid, report_date: reportDate, show_detail: 1, target_type: 'keyword', offset: 0, length: 200, ...(hasCampaignFilter && effectiveCampaignIds.length === 1 ? { campaign_id: effectiveCampaignIds[0] } : {}) },
+                  headers: { 'X-API-VERSION': '2' },
+                });
+                return Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
+              } catch { return []; }
+            });
+          }
+        }
+
+        const allResults = await parallelBatch(tasks, 5);
+        for (const items of allResults) {
+          for (const item of items) {
+            if (hasCampaignFilter && item.campaign_id && !campaignIdSet.has(String(item.campaign_id))) continue;
+            const q = (item.query || '').toLowerCase().trim();
+            if (!q) continue;
+            if (termMap[q]) {
+              termMap[q].impressions += Number(item.impressions) || 0;
+              termMap[q].clicks += Number(item.clicks) || 0;
+              termMap[q].cost += Number(item.cost) || 0;
+              termMap[q].sales += Number(item.sales) || 0;
+              termMap[q].orders += Number(item.orders) || 0;
+            } else {
+              termMap[q] = { query: item.query || '', impressions: Number(item.impressions) || 0, clicks: Number(item.clicks) || 0, cost: Number(item.cost) || 0, sales: Number(item.sales) || 0, orders: Number(item.orders) || 0 };
+            }
+          }
+        }
+
+        periodResults.push({ label: period.label, startDate: period.startDate, endDate: period.endDate, terms: termMap });
+      }
+
+      // Find top N terms by total cost
+      const allTermCosts: Record<string, number> = {};
+      for (const pr of periodResults) {
+        for (const [q, t] of Object.entries(pr.terms)) {
+          allTermCosts[q] = (allTermCosts[q] || 0) + t.cost;
+        }
+      }
+      const topTerms = Object.entries(allTermCosts).sort((a, b) => b[1] - a[1]).slice(0, input.topN).map(([q]) => q);
+
+      // Build comparison
+      const trendData = topTerms.map(q => {
+        const periods = periodResults.map(pr => {
+          const t = pr.terms[q];
+          if (!t) return { label: pr.label, impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0, acos: 0, ctr: 0, cvr: 0 };
+          const acos = t.sales > 0 ? Math.round(t.cost / t.sales * 10000) / 100 : (t.cost > 0 ? 999 : 0);
+          const ctr = t.impressions > 0 ? Math.round(t.clicks / t.impressions * 10000) / 100 : 0;
+          const cvr = t.clicks > 0 ? Math.round(t.orders / t.clicks * 10000) / 100 : 0;
+          return { label: pr.label, impressions: t.impressions, clicks: t.clicks, cost: Math.round(t.cost * 100) / 100, sales: Math.round(t.sales * 100) / 100, orders: t.orders, acos, ctr, cvr };
+        });
+        const first = periods[0];
+        const last = periods[periods.length - 1];
+        const costChange = first.cost > 0 ? Math.round((last.cost - first.cost) / first.cost * 10000) / 100 : 0;
+        const salesChange = first.sales > 0 ? Math.round((last.sales - first.sales) / first.sales * 10000) / 100 : 0;
+        const impressionChange = first.impressions > 0 ? Math.round((last.impressions - first.impressions) / first.impressions * 10000) / 100 : 0;
+        return { query: q, periods, trends: { costChange, salesChange, impressionChange } };
+      });
+
+      const periodTotals = periodResults.map(pr => {
+        let impressions = 0, clicks = 0, cost = 0, sales = 0, orders = 0;
+        for (const t of Object.values(pr.terms)) { impressions += t.impressions; clicks += t.clicks; cost += t.cost; sales += t.sales; orders += t.orders; }
+        const acos = sales > 0 ? Math.round(cost / sales * 10000) / 100 : 0;
+        return { label: pr.label, startDate: pr.startDate, endDate: pr.endDate, impressions, clicks, cost: Math.round(cost * 100) / 100, sales: Math.round(sales * 100) / 100, orders, acos, termCount: Object.keys(pr.terms).length };
+      });
+
+      return { trendData, periodTotals, topTerms, isMock: adapter.isMockMode() };
+    }),
 });

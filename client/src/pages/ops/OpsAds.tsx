@@ -35,6 +35,8 @@ import DspAnalysis from "./ads/DspAnalysis";
 import AdChatBot from "./ads/AdChatBot";
 import CrossChannelAnalysis from "./ads/CrossChannelAnalysis";
 import AsinAdSummary from "./ads/AsinAdSummary";
+import BudgetAllocation from "./ads/BudgetAllocation";
+import SearchTermTrend from "./ads/SearchTermTrend";
 
 const PIE_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#9ca3af", "#8b5cf6", "#06b6d4", "#f97316"];
 
@@ -577,6 +579,8 @@ export default function OpsAds() {
           <TabsTrigger value="negative" className="text-xs gap-1"><XCircle className="w-3 h-3" />否定词</TabsTrigger>
           <TabsTrigger value="word-freq" className="text-xs gap-1"><Type className="w-3 h-3" />词频分析</TabsTrigger>
           <TabsTrigger value="effective-terms" className="text-xs gap-1"><Gem className="w-3 h-3" />有效词</TabsTrigger>
+          <TabsTrigger value="budget" className="text-xs gap-1"><DollarSign className="w-3 h-3" />预算分配</TabsTrigger>
+          <TabsTrigger value="trend" className="text-xs gap-1"><Activity className="w-3 h-3" />趋势对比</TabsTrigger>
           <TabsTrigger value="diagnostics" className="text-xs gap-1"><Activity className="w-3 h-3" />诊断</TabsTrigger>
           <TabsTrigger value="dsp" className="text-xs gap-1"><Layers className="w-3 h-3" />DSP</TabsTrigger>
           <TabsTrigger value="cross-channel" className="text-xs gap-1"><TrendingUp className="w-3 h-3" />跨渠道</TabsTrigger>
@@ -991,6 +995,25 @@ export default function OpsAds() {
             reportDate={selectedDate}
             startDate={dateMode === "range" ? startDate : undefined}
             endDate={dateMode === "range" ? endDate : undefined}
+          />
+        </TabsContent>
+
+        {/* Tab: Budget Allocation */}
+        <TabsContent value="budget" className="mt-4">
+          <BudgetAllocation
+            marketplace={marketplace}
+            reportDate={selectedDate}
+            startDate={dateMode === "range" ? startDate : undefined}
+            endDate={dateMode === "range" ? endDate : undefined}
+          />
+        </TabsContent>
+
+        {/* Tab: Search Term Trend */}
+        <TabsContent value="trend" className="mt-4">
+          <SearchTermTrend
+            marketplace={marketplace}
+            campaignId={selectedCampaignId || undefined}
+            campaignIds={selectedCampaignIds.length > 0 ? selectedCampaignIds : undefined}
           />
         </TabsContent>
 
