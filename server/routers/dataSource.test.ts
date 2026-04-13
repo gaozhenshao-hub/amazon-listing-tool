@@ -99,9 +99,11 @@ describe("LingxingAdapter _meta data source tagging", () => {
       "utf-8"
     );
 
-    // Verify ads summary returns dataSource
-    const adsReturnMatch = productOpsSource.match(/campaigns:\s*campaignList,\s*\n\s*dataSource:\s*dataSourceMeta/s);
+    // Verify ads summary returns dataSource (now also includes matchInfo)
+    const adsReturnMatch = productOpsSource.match(/campaigns:\s*campaignList/s);
     expect(adsReturnMatch).not.toBeNull();
+    const adsDataSourceMatch = productOpsSource.match(/dataSource:\s*dataSourceMeta/s);
+    expect(adsDataSourceMatch).not.toBeNull();
   });
 
   it("frontend should display mock_fallback warning banner", async () => {

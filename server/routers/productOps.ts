@@ -872,8 +872,6 @@ export const productOpsRouter = router({
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
 
       const adapter = getLingxingAdapter();
-
-      // Get seller list (with cache) to find matching sid
       const { matchedSid } = await findMatchedSid(adapter, product);
       console.log(`[AdsSummary] Product ${product.parentAsin}, matchedSid=${matchedSid}`);
 
@@ -882,69 +880,147 @@ export const productOpsRouter = router({
         .where(eq(productVariants.productId, input.productId));
       const childAsins = variants.map(v => v.childAsin).filter(Boolean);
       const allAsins = [product.parentAsin, ...childAsins];
+      console.log(`[AdsSummary] allAsins (parent+children): ${allAsins.join(', ')}`);
 
-      // Try product-level ad report first (spProductAdReports) for ASIN-specific data
-      let productAdData: any[] = [];
       let dataSourceMeta: { source: 'real' | 'mock_mode' | 'mock_fallback'; reason?: string } = { source: 'real' };
+
+      // ═══ Strategy 1: Use ASIN→Campaign mapping from adAnalysis cache ═══
+      // This is the most accurate method: spProductAds/sdProductAds tells us exactly
+      // which child ASINs are in which campaigns
+      let mappedCampaignIds = new Set<string>();
+      let mappingSource = 'none';
       try {
-        const productAdRes = await adapter.requestWithMockFallback({
-          path: "/pb/openapi/newad/spProductAdReports",
-          body: { sid: matchedSid, report_date: getDateNDaysAgo(1), show_detail: 0, offset: 0, length: 200, asin: product.parentAsin },
-          headers: { "X-API-VERSION": "2" },
-        });
-        if (productAdRes._meta && productAdRes._meta.source !== 'real') dataSourceMeta = productAdRes._meta;
-        const rawProductAd = productAdRes.data || [];
-        const allProductAds = Array.isArray(rawProductAd) ? rawProductAd : (rawProductAd as any).records || (rawProductAd as any).list || [];
-        // Filter by product ASINs
-        productAdData = allProductAds.filter((item: any) =>
-          allAsins.includes(item.asin) || allAsins.includes(item.advertised_asin)
-        );
-        console.log(`[AdsSummary] Product ad reports: ${allProductAds.length} total, ${productAdData.length} matched for ${product.parentAsin}`);
+        const { getAdAnalysisCache } = await import('./adAnalysis');
+        const mapping = getAdAnalysisCache<any>('spProductAds_mapping');
+        if (mapping?.asinToCampaigns) {
+          const asinToCampaigns = mapping.asinToCampaigns as Record<string, string[]>;
+          // Check BOTH parent ASIN and all child ASINs against the mapping
+          for (const asin of allAsins) {
+            const cids = asinToCampaigns[asin];
+            if (cids) {
+              for (const cid of cids) mappedCampaignIds.add(cid);
+            }
+          }
+          mappingSource = 'cache';
+          console.log(`[AdsSummary] ASIN mapping cache hit: found ${mappedCampaignIds.size} campaign IDs for ASINs ${allAsins.join(',')}`);
+        } else {
+          console.log(`[AdsSummary] ASIN mapping cache miss, will try fresh sync`);
+        }
       } catch (err: any) {
-        console.warn(`[AdsSummary] Product ad report fetch failed: ${err.message}`);
+        console.warn(`[AdsSummary] Failed to read adAnalysis cache: ${err.message}`);
       }
 
-      // Also fetch campaign-level data and filter by product name/ASIN in campaign name
+      // If cache miss, do a fresh spProductAds + sdProductAds fetch to build mapping
+      if (mappedCampaignIds.size === 0) {
+        try {
+          const adPaths = [
+            { path: "/pb/openapi/newad/spProductAds", type: "SP" },
+            { path: "/pb/openapi/newad/sdProductAds", type: "SD" },
+          ];
+          for (const { path: adPath, type: adType } of adPaths) {
+            try {
+              const res = await adapter.requestWithMockFallback({
+                path: adPath,
+                body: { sid: matchedSid, offset: 0, length: 200 },
+                headers: { "X-API-VERSION": "2" },
+              });
+              if (res._meta && res._meta.source !== 'real') dataSourceMeta = res._meta;
+              const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
+              // Filter items that match any of our ASINs (parent or child)
+              for (const item of items) {
+                const itemAsin = String(item.asin || item.advertised_asin || '');
+                if (allAsins.includes(itemAsin)) {
+                  const cid = String(item.campaign_id || '');
+                  if (cid) mappedCampaignIds.add(cid);
+                }
+              }
+              console.log(`[AdsSummary] Fresh ${adType} fetch: ${items.length} total ads, matched ${mappedCampaignIds.size} campaigns so far`);
+            } catch (err: any) {
+              console.warn(`[AdsSummary] ${adType} fetch failed: ${err.message}`);
+            }
+          }
+          mappingSource = 'fresh';
+        } catch (err: any) {
+          console.warn(`[AdsSummary] Fresh ad mapping failed: ${err.message}`);
+        }
+      }
+
+      // ═══ Strategy 2: Fetch all campaigns and match by campaign_id from mapping ═══
       const adRes = await adapter.requestWithMockFallback({
         path: "/pb/openapi/newad/spCampaigns",
-        body: { sid: matchedSid, start_date: getDateNDaysAgo(30), end_date: getToday(), asin: product.parentAsin },
+        body: { sid: matchedSid, start_date: getDateNDaysAgo(30), end_date: getToday() },
         headers: { "X-API-VERSION": "2" },
       });
       if (adRes._meta && adRes._meta.source !== 'real') dataSourceMeta = adRes._meta;
       const rawAd = adRes.data || [];
       const allCampaigns = Array.isArray(rawAd) ? rawAd : (rawAd as any).records || (rawAd as any).list || [];
 
-      // Filter campaigns: 1) match product ASIN/keywords 2) exclude paused/archived
-      const activeCampaignStates = ['enabled', 'active', 'running'];
-      const campaigns = allCampaigns.filter((c: any) => {
-        const name = String(c.campaign_name || c.name || '').toLowerCase();
-        const state = String(c.state || c.status || '').toLowerCase();
-        // First: only include active campaigns (exclude paused/archived)
-        const isActive = activeCampaignStates.includes(state) || state === '';
-        // Second: match by ASIN or product title keywords
-        const matchesProduct = allAsins.some(asin => name.includes(asin.toLowerCase())) ||
-               (product.title && product.title.split(' ').slice(0, 3).some((word: string) =>
-                 word.length > 3 && name.includes(word.toLowerCase())
-               ));
-        return isActive && matchesProduct;
-      });
-      // Also keep a separate list of all matching campaigns (including paused) for display
-      const allMatchingCampaigns = allCampaigns.filter((c: any) => {
-        const name = String(c.campaign_name || c.name || '').toLowerCase();
-        return allAsins.some(asin => name.includes(asin.toLowerCase())) ||
-               (product.title && product.title.split(' ').slice(0, 3).some((word: string) =>
-                 word.length > 3 && name.includes(word.toLowerCase())
-               ));
-      });
-      console.log(`[AdsSummary] Campaigns: ${allCampaigns.length} total, ${allMatchingCampaigns.length} matched, ${campaigns.length} active for ${product.parentAsin}`);
+      // Build a campaign lookup by ID
+      const campaignById: Record<string, any> = {};
+      for (const c of allCampaigns) {
+        const cid = String(c.campaign_id || '');
+        if (cid) campaignById[cid] = c;
+      }
 
+      // Match campaigns: primary = ASIN mapping, fallback = name matching
+      let matchedCampaigns: any[] = [];
+      if (mappedCampaignIds.size > 0) {
+        // Use precise ASIN→Campaign mapping
+        const mappedIds = Array.from(mappedCampaignIds);
+        for (const cid of mappedIds) {
+          if (campaignById[cid]) {
+            matchedCampaigns.push(campaignById[cid]);
+          }
+        }
+        console.log(`[AdsSummary] Matched ${matchedCampaigns.length} campaigns via ASIN mapping (${mappingSource})`);
+      }
+
+      // Fallback: also try name-based matching if ASIN mapping found nothing
+      if (matchedCampaigns.length === 0) {
+        matchedCampaigns = allCampaigns.filter((c: any) => {
+          const name = String(c.campaign_name || c.name || '').toLowerCase();
+          return allAsins.some(asin => name.includes(asin.toLowerCase())) ||
+                 (product.title && product.title.split(' ').slice(0, 3).some((word: string) =>
+                   word.length > 3 && name.includes(word.toLowerCase())
+                 ));
+        });
+        console.log(`[AdsSummary] Fallback name matching: ${matchedCampaigns.length} campaigns`);
+      }
+
+      console.log(`[AdsSummary] Final: ${allCampaigns.length} total campaigns, ${matchedCampaigns.length} matched for ${product.parentAsin}`);
+
+      // ═══ Strategy 3: Also fetch product-level ad reports for accurate totals ═══
+      let productAdData: any[] = [];
+      try {
+        // Fetch reports for each child ASIN (not just parent ASIN)
+        for (const asin of allAsins) {
+          const productAdRes = await adapter.requestWithMockFallback({
+            path: "/pb/openapi/newad/spProductAdReports",
+            body: { sid: matchedSid, report_date: getDateNDaysAgo(1), show_detail: 0, offset: 0, length: 200, asin },
+            headers: { "X-API-VERSION": "2" },
+          });
+          if (productAdRes._meta && productAdRes._meta.source !== 'real') dataSourceMeta = productAdRes._meta;
+          const rawProductAd = productAdRes.data || [];
+          const allProductAds = Array.isArray(rawProductAd) ? rawProductAd : (rawProductAd as any).records || (rawProductAd as any).list || [];
+          // Filter by this specific ASIN
+          const matched = allProductAds.filter((item: any) =>
+            String(item.asin || item.advertised_asin || '') === asin
+          );
+          productAdData.push(...matched);
+        }
+        console.log(`[AdsSummary] Product ad reports: ${productAdData.length} matched across ${allAsins.length} ASINs`);
+      } catch (err: any) {
+        console.warn(`[AdsSummary] Product ad report fetch failed: ${err.message}`);
+      }
+
+      // ═══ Compute totals and build campaign list ═══
       let totalSpend = 0, totalSales = 0, totalClicks = 0, totalImpressions = 0, totalOrders = 0;
       const campaignList: Array<{
         name: string; status: string; spend: number; sales: number;
         acos: number; roas: number; clicks: number; impressions: number;
       }> = [];
 
-      // If we have product-level ad data, use it for summary totals (more accurate)
+      // Use product-level ad data for totals if available (most accurate)
       if (productAdData.length > 0) {
         for (const item of productAdData) {
           totalSpend += Number(item.cost || item.spend || 0);
@@ -955,8 +1031,9 @@ export const productOpsRouter = router({
         }
       }
 
-      // Build campaign list from all matching campaigns (show paused ones too, but mark status)
-      for (const c of (allMatchingCampaigns.length > 0 ? allMatchingCampaigns : allCampaigns.slice(0, 5))) {
+      // Build campaign list from matched campaigns
+      const activeCampaignStates = ['enabled', 'active', 'running'];
+      for (const c of matchedCampaigns) {
         const camp = c as Record<string, unknown>;
         const spend = Number(camp.cost || camp.spend || 0);
         const sales = Number(camp.sales || camp.attributed_sales || 0);
@@ -964,7 +1041,7 @@ export const productOpsRouter = router({
         const impressions = Number(camp.impressions || 0);
         const orders = Number(camp.orders || camp.attributed_orders || 0);
 
-        // If no product-level data, accumulate from ACTIVE campaigns only
+        // If no product-level data, accumulate from ACTIVE campaigns
         const campState = String((camp as any).state || (camp as any).status || '').toLowerCase();
         const isCampActive = activeCampaignStates.includes(campState) || campState === '';
         if (productAdData.length === 0 && isCampActive) {
@@ -1000,6 +1077,14 @@ export const productOpsRouter = router({
           cvr: totalClicks > 0 ? round2(totalOrders / totalClicks * 100) : 0,
         },
         campaigns: campaignList,
+        matchInfo: {
+          mappingSource,
+          mappedCampaignCount: mappedCampaignIds.size,
+          totalCampaignCount: allCampaigns.length,
+          matchedCampaignCount: matchedCampaigns.length,
+          allAsins,
+          productAdReportCount: productAdData.length,
+        },
         dataSource: dataSourceMeta,
       };
     }),

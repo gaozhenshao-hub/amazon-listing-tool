@@ -473,6 +473,22 @@ export default function OpsProductDetail() {
                       </div>
                     </div>
                   )}
+                  {/* Match info debug */}
+                  {(adsData as any).matchInfo && (
+                    <div className="flex items-start gap-2 p-2 mb-3 rounded-md bg-blue-50 border border-blue-200">
+                      <Info className="h-3.5 w-3.5 text-blue-600 mt-0.5 shrink-0" />
+                      <div className="text-[11px] text-blue-700">
+                        <span>映射来源: {(adsData as any).matchInfo.mappingSource === 'cache' ? 'ASIN映射缓存' : (adsData as any).matchInfo.mappingSource === 'fresh' ? '实时ASIN查询' : '名称匹配'}</span>
+                        <span className="mx-1.5">|</span>
+                        <span>匹配ASIN: {(adsData as any).matchInfo.allAsins?.join(', ')}</span>
+                        <span className="mx-1.5">|</span>
+                        <span>关联活动: {(adsData as any).matchInfo.matchedCampaignCount}/{(adsData as any).matchInfo.totalCampaignCount}</span>
+                        {(adsData as any).matchInfo.matchedCampaignCount === 0 && (
+                          <span className="ml-2 text-amber-600 font-medium">提示: 请先在广告优化模块同步ASIN映射数据</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
                     {[
                       { label: "广告花费", value: `$${adsData.summary.totalSpend}`, color: "text-red-600" },

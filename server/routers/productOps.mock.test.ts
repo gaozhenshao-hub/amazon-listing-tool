@@ -224,19 +224,25 @@ describe("Lingxing Mock Data for Product Detail APIs", () => {
     expect(adapterSource).toContain("mockProductAdReports");
   });
 
-  it("ad API should pass ASIN in request body for mock matching", async () => {
+  it("ad API should use ASIN mapping for accurate campaign matching", async () => {
     const fs = await import("fs");
     const productOpsSource = fs.readFileSync(
       "/home/ubuntu/amazon-listing-tool/server/routers/productOps.ts",
       "utf-8"
     );
     
-    // Verify spProductAdReports request includes asin parameter
-    const adReportMatch = productOpsSource.match(/spProductAdReports.*?asin:\s*product\.parentAsin/s);
-    expect(adReportMatch).not.toBeNull();
+    // Verify spProductAds and sdProductAds are used for ASIN mapping
+    const spProductAdsMatch = productOpsSource.match(/spProductAds/s);
+    expect(spProductAdsMatch).not.toBeNull();
+    const sdProductAdsMatch = productOpsSource.match(/sdProductAds/s);
+    expect(sdProductAdsMatch).not.toBeNull();
     
-    // Verify spCampaigns request includes asin parameter
-    const campaignMatch = productOpsSource.match(/spCampaigns.*?asin:\s*product\.parentAsin/s);
-    expect(campaignMatch).not.toBeNull();
+    // Verify allAsins includes both parent and child ASINs
+    const allAsinsMatch = productOpsSource.match(/allAsins.*parentAsin.*childAsins/s);
+    expect(allAsinsMatch).not.toBeNull();
+    
+    // Verify spProductAdReports is still used for accurate totals
+    const adReportMatch = productOpsSource.match(/spProductAdReports/s);
+    expect(adReportMatch).not.toBeNull();
   });
 });

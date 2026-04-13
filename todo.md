@@ -3410,3 +3410,9 @@
 - [x] 前端：各时段总体对比柱状图 + 搜索词指标趋势柱状图（支持7种指标切换）
 - [x] 前端：明细表格展示各搜索词在不同时段的指标对比，绿色/红色箭头高亮显著变化，支持CSV导出
 - [x] Vitest单元测试（3333个测试全部通过）
+
+## 修复：产品详情页广告活动联动
+- [x] 排查产品详情页广告联动数据不正确的问题（根因：父ASIN与子ASIN映射缺失+名称模糊匹配不准确）
+- [x] 修复后端getProductAdsSummary接口：复用adAnalysis的ASIN映射缓存，通过子ASIN精确查找关联campaign_id
+- [x] 修复前端OpsProductDetail广告展示：增加matchInfo调试信息栏（映射来源/匹配ASIN/关联活动数）
+- [x] 验证修复结果：全部3333个测试通过，含更新后的dataSource和productOps.mock测试

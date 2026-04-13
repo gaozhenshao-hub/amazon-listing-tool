@@ -288,6 +288,9 @@ function filterSidsByMarketplace(sellers: any[], marketplaceCode?: string): stri
 }
 
 // ============== Ad Analysis Router ==============
+// Export cache helpers for cross-module ASIN mapping reuse
+export { getCached as getAdAnalysisCache, setCache as setAdAnalysisCache };
+
 export const adAnalysisRouter = router({
 
   // ─── Get ASIN List for Selection ──────────────────────────────
