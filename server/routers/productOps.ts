@@ -945,15 +945,33 @@ export const productOpsRouter = router({
         }
       }
 
-      // ═══ Strategy 2: Fetch all campaigns and match by campaign_id from mapping ═══
-      const adRes = await adapter.requestWithMockFallback({
-        path: "/pb/openapi/newad/spCampaigns",
-        body: { sid: matchedSid, start_date: getDateNDaysAgo(30), end_date: getToday() },
-        headers: { "X-API-VERSION": "2" },
-      });
-      if (adRes._meta && adRes._meta.source !== 'real') dataSourceMeta = adRes._meta;
-      const rawAd = adRes.data || [];
-      const allCampaigns = Array.isArray(rawAd) ? rawAd : (rawAd as any).records || (rawAd as any).list || [];
+      // ═══ Strategy 2: Fetch all campaigns (SP + SD) and match by campaign_id from mapping ═══
+      const campaignPaths = [
+        { path: "/pb/openapi/newad/spCampaigns", type: "SP" },
+        { path: "/pb/openapi/newad/sdCampaigns", type: "SD" },
+      ];
+      const allCampaigns: any[] = [];
+      for (const { path: campPath, type: campType } of campaignPaths) {
+        try {
+          const adRes = await adapter.requestWithMockFallback({
+            path: campPath,
+            body: { sid: matchedSid, start_date: getDateNDaysAgo(30), end_date: getToday() },
+            headers: { "X-API-VERSION": "2" },
+          });
+          if (adRes._meta && adRes._meta.source !== 'real') dataSourceMeta = adRes._meta;
+          const rawAd = adRes.data || [];
+          const campaigns = Array.isArray(rawAd) ? rawAd : (rawAd as any).records || (rawAd as any).list || [];
+          // Tag each campaign with its type for display
+          for (const c of campaigns) {
+            c._adType = campType;
+            c.campaign_name = c.campaign_name || c.name || 'Unknown';
+          }
+          allCampaigns.push(...campaigns);
+          console.log(`[AdsSummary] Fetched ${campaigns.length} ${campType} campaigns`);
+        } catch (err: any) {
+          console.warn(`[AdsSummary] ${campType} campaign fetch failed: ${err.message}`);
+        }
+      }
 
       // Build a campaign lookup by ID
       const campaignById: Record<string, any> = {};
@@ -1055,6 +1073,7 @@ export const productOpsRouter = router({
         campaignList.push({
           campaignId: String(camp.campaign_id || ''),
           name: String(camp.campaign_name || camp.name || "Unknown"),
+          adType: String(camp._adType || 'SP'),
           status: String(camp.state || camp.status || "enabled"),
           spend: round2(spend),
           sales: round2(sales),

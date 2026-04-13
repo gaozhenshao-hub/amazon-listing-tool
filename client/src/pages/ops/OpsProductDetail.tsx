@@ -483,8 +483,11 @@ export default function OpsProductDetail() {
                         <span>匹配ASIN: {(adsData as any).matchInfo.allAsins?.join(', ')}</span>
                         <span className="mx-1.5">|</span>
                         <span>关联活动: {(adsData as any).matchInfo.matchedCampaignCount}/{(adsData as any).matchInfo.totalCampaignCount}</span>
-                        {(adsData as any).matchInfo.matchedCampaignCount === 0 && (
-                          <span className="ml-2 text-amber-600 font-medium">提示: 请先在广告优化模块同步ASIN映射数据</span>
+                        {(adsData as any).matchInfo.matchedCampaignCount === 0 && (adsData as any).matchInfo.mappingSource === 'name_match' && (
+                          <span className="ml-2 text-amber-600 font-medium">提示: 未找到精确映射，已使用名称模糊匹配，请先进入广告优化模块触发一次ASIN映射同步</span>
+                        )}
+                        {(adsData as any).matchInfo.matchedCampaignCount === 0 && (adsData as any).matchInfo.mappingSource !== 'name_match' && (
+                          <span className="ml-2 text-amber-600 font-medium">提示: 该产品的ASIN未在广告活动中找到，可能尚未投放广告</span>
                         )}
                       </div>
                     </div>
@@ -530,6 +533,7 @@ export default function OpsProductDetail() {
                         <thead>
                           <tr className="border-b text-muted-foreground">
                             <th className="text-left py-2 font-medium">广告活动</th>
+                            <th className="text-center py-2 font-medium">类型</th>
                             <th className="text-center py-2 font-medium">状态</th>
                             <th className="text-right py-2 font-medium">曝光</th>
                             <th className="text-right py-2 font-medium">点击</th>
@@ -562,6 +566,15 @@ export default function OpsProductDetail() {
                                   {c.name}
                                   <span className="ml-1 text-[10px] text-blue-400">↗</span>
                                 </button>
+                              </td>
+                              <td className="py-1.5 text-center">
+                                <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                  (c as any).adType === 'SD' ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                  : (c as any).adType === 'SB' ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                  : 'bg-blue-50 text-blue-700 border border-blue-200'
+                                }`}>
+                                  {(c as any).adType || 'SP'}
+                                </span>
                               </td>
                               <td className="py-1.5 text-center">
                                 <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${

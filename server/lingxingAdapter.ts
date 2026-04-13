@@ -2562,15 +2562,23 @@ function mockSpProductAds(body: Record<string, any>) {
   const sid = body.sid || 7395;
   const profileId = body.profile_id || 121923590660074;
   // 模拟多个ASIN分布在不同的广告活动和广告组中
+  // campaign_id 与 mockSpCampaigns 保持一致（100001-100004）
+  // ASIN 同时包含真实产品表ASIN和原有mock ASIN，确保产品详情页能匹配
+  const realProductAsins = ['B0D3ZZD83K', 'B0D7HMP4ZH', 'B0D7HGCSN2', 'B0DCN8TMCY', 'B0DCNM8DYJ', 'B0DG8LL1HQ', 'B0DHG1DBWY', 'B0DHG6PKRK', 'B0DHGBMHG2', 'B0DMFFH29F'];
   const mockAds = [
-    { campaign_id: 57765830151100, ad_group_id: 80000000000080800, profile_id: profileId, ad_id: 80000000000080801, state: "enabled", sku: "SKU-A001", asin: "B009000000", creation_date: 1628567183000, last_updated_date: 1655708791290, serving_status: "CAMPAIGN_PAUSED" },
-    { campaign_id: 57765830151100, ad_group_id: 80000000000080800, profile_id: profileId, ad_id: 80000000000080802, state: "enabled", sku: "SKU-A002", asin: "B009000001", creation_date: 1628567183000, last_updated_date: 1655708791290, serving_status: "AD_STATUS_LIVE" },
-    { campaign_id: 57765830151100, ad_group_id: 80000000000080803, profile_id: profileId, ad_id: 80000000000080804, state: "enabled", sku: "SKU-B001", asin: "B009000002", creation_date: 1630000000000, last_updated_date: 1660000000000, serving_status: "AD_STATUS_LIVE" },
-    { campaign_id: 57765830151200, ad_group_id: 80000000000080810, profile_id: profileId, ad_id: 80000000000080811, state: "enabled", sku: "SKU-A001", asin: "B009000000", creation_date: 1630000000000, last_updated_date: 1660000000000, serving_status: "AD_STATUS_LIVE" },
-    { campaign_id: 57765830151200, ad_group_id: 80000000000080810, profile_id: profileId, ad_id: 80000000000080812, state: "paused", sku: "SKU-C001", asin: "B009000003", creation_date: 1635000000000, last_updated_date: 1665000000000, serving_status: "CAMPAIGN_PAUSED" },
-    { campaign_id: 57765830151300, ad_group_id: 80000000000080820, profile_id: profileId, ad_id: 80000000000080821, state: "enabled", sku: "SKU-A002", asin: "B009000001", creation_date: 1635000000000, last_updated_date: 1665000000000, serving_status: "AD_STATUS_LIVE" },
-    { campaign_id: 57765830151300, ad_group_id: 80000000000080820, profile_id: profileId, ad_id: 80000000000080822, state: "enabled", sku: "SKU-D001", asin: "B009000004", creation_date: 1640000000000, last_updated_date: 1670000000000, serving_status: "AD_STATUS_LIVE" },
-    { campaign_id: 57765830151300, ad_group_id: 80000000000080825, profile_id: profileId, ad_id: 80000000000080826, state: "enabled", sku: "SKU-E001", asin: "B009000005", creation_date: 1640000000000, last_updated_date: 1670000000000, serving_status: "AD_STATUS_LIVE" },
+    // 真实产品ASIN → 关联到SP广告活动
+    { campaign_id: 100001, ad_group_id: 80001, profile_id: profileId, ad_id: 90001, state: "enabled", sku: "MOCK-SKU-001", asin: realProductAsins[0], creation_date: 1628567183000, last_updated_date: 1655708791290, serving_status: "AD_STATUS_LIVE" },
+    { campaign_id: 100001, ad_group_id: 80001, profile_id: profileId, ad_id: 90002, state: "enabled", sku: "MOCK-SKU-002", asin: realProductAsins[1], creation_date: 1628567183000, last_updated_date: 1655708791290, serving_status: "AD_STATUS_LIVE" },
+    { campaign_id: 100002, ad_group_id: 80002, profile_id: profileId, ad_id: 90003, state: "enabled", sku: "MOCK-SKU-001", asin: realProductAsins[0], creation_date: 1630000000000, last_updated_date: 1660000000000, serving_status: "AD_STATUS_LIVE" },
+    { campaign_id: 100002, ad_group_id: 80002, profile_id: profileId, ad_id: 90004, state: "enabled", sku: "MOCK-SKU-003", asin: realProductAsins[2], creation_date: 1630000000000, last_updated_date: 1660000000000, serving_status: "AD_STATUS_LIVE" },
+    { campaign_id: 100003, ad_group_id: 80003, profile_id: profileId, ad_id: 90005, state: "enabled", sku: "MOCK-SKU-004", asin: realProductAsins[3], creation_date: 1635000000000, last_updated_date: 1665000000000, serving_status: "AD_STATUS_LIVE" },
+    { campaign_id: 100003, ad_group_id: 80003, profile_id: profileId, ad_id: 90006, state: "enabled", sku: "MOCK-SKU-005", asin: realProductAsins[4], creation_date: 1635000000000, last_updated_date: 1665000000000, serving_status: "AD_STATUS_LIVE" },
+    { campaign_id: 100004, ad_group_id: 80004, profile_id: profileId, ad_id: 90007, state: "paused", sku: "MOCK-SKU-006", asin: realProductAsins[5], creation_date: 1640000000000, last_updated_date: 1670000000000, serving_status: "CAMPAIGN_PAUSED" },
+    { campaign_id: 100004, ad_group_id: 80004, profile_id: profileId, ad_id: 90008, state: "enabled", sku: "MOCK-SKU-007", asin: realProductAsins[6], creation_date: 1640000000000, last_updated_date: 1670000000000, serving_status: "AD_STATUS_LIVE" },
+    // 保留原有mock ASIN以兼容搜索词分析等功能
+    { campaign_id: 100001, ad_group_id: 80001, profile_id: profileId, ad_id: 90011, state: "enabled", sku: "SKU-A001", asin: "B009000000", creation_date: 1628567183000, last_updated_date: 1655708791290, serving_status: "AD_STATUS_LIVE" },
+    { campaign_id: 100002, ad_group_id: 80002, profile_id: profileId, ad_id: 90012, state: "enabled", sku: "SKU-A002", asin: "B009000001", creation_date: 1630000000000, last_updated_date: 1660000000000, serving_status: "AD_STATUS_LIVE" },
+    { campaign_id: 100003, ad_group_id: 80003, profile_id: profileId, ad_id: 90013, state: "enabled", sku: "SKU-B001", asin: "B009000002", creation_date: 1635000000000, last_updated_date: 1665000000000, serving_status: "AD_STATUS_LIVE" },
   ];
   // 支持state筛选
   const stateFilter = body.state;
@@ -2586,13 +2594,18 @@ function mockSpProductAds(body: Record<string, any>) {
  */
 function mockSdProductAds(body: Record<string, any>) {
   const profileId = body.profile_id || 121923590660074;
+  // campaign_id 与 mockSdCampaigns 保持一致（300001-300002）
+  // ASIN 包含真实产品表ASIN，确保产品详情页能匹配
+  const realProductAsins = ['B0D3ZZD83K', 'B0D7HMP4ZH', 'B0D7HGCSN2', 'B0DCN8TMCY', 'B0DCNM8DYJ', 'B0DG8LL1HQ', 'B0DHG1DBWY', 'B0DHG6PKRK', 'B0DHGBMHG2', 'B0DMFFH29F'];
   const mockAds = [
-    { ad_id: 1640591210, ad_group_id: 1640591204, campaign_id: 1640591203, state: "enabled", sku: "SKU-SD-001", asin: "B009000010", profile_id: profileId, creation_date: 1640591614, last_updated_date: 1640591614, serving_status: "AD_STATUS_LIVE" },
-    { ad_id: 1640591211, ad_group_id: 1640591204, campaign_id: 1640591203, state: "enabled", sku: "SKU-SD-002", asin: "B009000011", profile_id: profileId, creation_date: 1640591614, last_updated_date: 1640591614, serving_status: "AD_STATUS_LIVE" },
-    { ad_id: 1640591212, ad_group_id: 1640591205, campaign_id: 1640591203, state: "paused", sku: "SKU-SD-003", asin: "B009000012", profile_id: profileId, creation_date: 1640591614, last_updated_date: 1655000000000, serving_status: "CAMPAIGN_PAUSED" },
-    { ad_id: 1640591213, ad_group_id: 1640591206, campaign_id: 1640591207, state: "enabled", sku: "SKU-SD-001", asin: "B009000010", profile_id: profileId, creation_date: 1645000000000, last_updated_date: 1660000000000, serving_status: "AD_STATUS_LIVE" },
-    { ad_id: 1640591214, ad_group_id: 1640591206, campaign_id: 1640591207, state: "enabled", sku: "SKU-SD-004", asin: "B009000013", profile_id: profileId, creation_date: 1645000000000, last_updated_date: 1660000000000, serving_status: "AD_STATUS_LIVE" },
-    { ad_id: 1640591215, ad_group_id: 1640591208, campaign_id: 1640591209, state: "enabled", sku: "SKU-A001", asin: "B009000000", profile_id: profileId, creation_date: 1650000000000, last_updated_date: 1670000000000, serving_status: "AD_STATUS_LIVE" },
+    // 真实产品ASIN → 关联到SD广告活动
+    { ad_id: 1640591210, ad_group_id: 1640591204, campaign_id: 300001, state: "enabled", sku: "MOCK-SKU-001", asin: realProductAsins[0], profile_id: profileId, creation_date: 1640591614, last_updated_date: 1640591614, serving_status: "AD_STATUS_LIVE" },
+    { ad_id: 1640591211, ad_group_id: 1640591204, campaign_id: 300001, state: "enabled", sku: "MOCK-SKU-003", asin: realProductAsins[2], profile_id: profileId, creation_date: 1640591614, last_updated_date: 1640591614, serving_status: "AD_STATUS_LIVE" },
+    { ad_id: 1640591212, ad_group_id: 1640591205, campaign_id: 300001, state: "paused", sku: "MOCK-SKU-005", asin: realProductAsins[4], profile_id: profileId, creation_date: 1640591614, last_updated_date: 1655000000000, serving_status: "CAMPAIGN_PAUSED" },
+    { ad_id: 1640591213, ad_group_id: 1640591206, campaign_id: 300002, state: "enabled", sku: "MOCK-SKU-004", asin: realProductAsins[3], profile_id: profileId, creation_date: 1645000000000, last_updated_date: 1660000000000, serving_status: "AD_STATUS_LIVE" },
+    { ad_id: 1640591214, ad_group_id: 1640591206, campaign_id: 300002, state: "enabled", sku: "MOCK-SKU-006", asin: realProductAsins[5], profile_id: profileId, creation_date: 1645000000000, last_updated_date: 1660000000000, serving_status: "AD_STATUS_LIVE" },
+    // 保留原有mock ASIN以兼容搜索词分析
+    { ad_id: 1640591215, ad_group_id: 1640591208, campaign_id: 300001, state: "enabled", sku: "SKU-A001", asin: "B009000000", profile_id: profileId, creation_date: 1650000000000, last_updated_date: 1670000000000, serving_status: "AD_STATUS_LIVE" },
   ];
   const stateFilter = body.state;
   const filtered = stateFilter ? mockAds.filter(a => a.state === stateFilter) : mockAds;
