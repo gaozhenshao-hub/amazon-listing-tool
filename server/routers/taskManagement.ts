@@ -155,6 +155,8 @@ export const taskManagementRouter = router({
       productProfileId: z.number().optional(),
       meetingRecordId: z.number().optional(),
       tags: z.string().optional(),
+      reminderDays: z.string().optional(),
+      reminderEnabled: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -178,6 +180,8 @@ export const taskManagementRouter = router({
         estimatedHours: input.estimatedHours,
         meetingRecordId: input.meetingRecordId,
         tags: input.tags,
+        reminderDays: input.reminderDays ?? "[1,3]",
+        reminderEnabled: input.reminderEnabled ?? 1,
       });
       return { id: result.insertId };
     }),

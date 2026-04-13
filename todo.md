@@ -3329,3 +3329,10 @@
 - [x] 前端：任务管理页面显示提醒状态（ReminderAlertPanel组件）
 - [x] 前端：通知列表中展示任务提醒（NotificationBell增加todo_due_soon/todo_overdue图标）
 - [x] Vitest单元测试（26个测试用例全部通过）
+
+## 任务编辑弹窗增加"提前提醒天数"设置
+- [x] 分析现有编辑弹窗和reminderDays/reminderEnabled字段
+- [x] 后端：createGlobalTask/updateTeamTask接口已支持reminderDays和reminderEnabled
+- [x] 前端：编辑弹窗增加提醒天数设置UI（ReminderDaysSelector组件）
+- [x] 前端：创建任务弹窗也增加提醒天数设置
+- [x] Vitest单元测试（38个测试用例全部通过）

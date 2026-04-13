@@ -38,6 +38,7 @@ import {
   Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 
 // ─── Types ───
 type TaskStatus = "backlog" | "todo" | "in_progress" | "review" | "done";
@@ -75,6 +76,82 @@ const CATEGORY_OPTIONS = [
   "竞品分析", "定价策略", "客服处理", "物流跟进",
   "数据分析", "其他",
 ];
+
+const REMINDER_DAY_OPTIONS = [
+  { value: 0, label: "当天" },
+  { value: 1, label: "1天前" },
+  { value: 2, label: "2天前" },
+  { value: 3, label: "3天前" },
+  { value: 5, label: "5天前" },
+  { value: 7, label: "7天前" },
+  { value: 14, label: "14天前" },
+];
+
+function parseReminderDays(raw: string | null | undefined): number[] {
+  if (!raw) return [1, 3];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every((n: unknown) => typeof n === "number")) return parsed;
+  } catch {}
+  return [1, 3];
+}
+
+// ─── Reminder Days Selector Component ───
+function ReminderDaysSelector({ selectedDays, onChange, enabled, onEnabledChange }: {
+  selectedDays: number[];
+  onChange: (days: number[]) => void;
+  enabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+}) {
+  const toggleDay = (day: number) => {
+    if (selectedDays.includes(day)) {
+      onChange(selectedDays.filter(d => d !== day));
+    } else {
+      onChange([...selectedDays, day].sort((a, b) => a - b));
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label className="flex items-center gap-1.5">
+          <BellRing className="h-3.5 w-3.5 text-muted-foreground" />
+          提前提醒
+        </Label>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">{enabled ? "已开启" : "已关闭"}</span>
+          <Switch checked={enabled} onCheckedChange={onEnabledChange} />
+        </div>
+      </div>
+      {enabled && (
+        <div className="flex flex-wrap gap-1.5">
+          {REMINDER_DAY_OPTIONS.map(opt => {
+            const isSelected = selectedDays.includes(opt.value);
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => toggleDay(opt.value)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                  isSelected
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-muted text-muted-foreground border-transparent hover:border-border hover:bg-accent"
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {enabled && selectedDays.length > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          将在截止日期前 {selectedDays.sort((a, b) => a - b).map(d => d === 0 ? "当天" : `${d}天`).join("、")} 发送提醒通知
+        </p>
+      )}
+    </div>
+  );
+}
 
 // ─── Main Component ───
 export default function OpsTaskManagement() {
@@ -723,6 +800,8 @@ function CreateTaskDialog({ open, onOpenChange, onCreate, isLoading, products }:
     priority: "medium" as TaskPriority, category: "",
     assigneeName: "", dueDate: "", estimatedHours: "",
     productProfileId: undefined as number | undefined,
+    reminderEnabled: true,
+    reminderDays: [1, 3] as number[],
   });
 
   const handleSubmit = () => {
@@ -731,11 +810,13 @@ function CreateTaskDialog({ open, onOpenChange, onCreate, isLoading, products }:
       ...form,
       estimatedHours: form.estimatedHours || undefined,
       productProfileId: form.productProfileId || undefined,
+      reminderEnabled: form.reminderEnabled ? 1 : 0,
+      reminderDays: JSON.stringify(form.reminderDays),
     });
     setForm({
       title: "", description: "", status: "todo", priority: "medium",
       category: "", assigneeName: "", dueDate: "", estimatedHours: "",
-      productProfileId: undefined,
+      productProfileId: undefined, reminderEnabled: true, reminderDays: [1, 3],
     });
   };
 
@@ -808,6 +889,13 @@ function CreateTaskDialog({ open, onOpenChange, onCreate, isLoading, products }:
               </Select>
             </div>
           </div>
+          {/* Reminder Days Setting */}
+          <ReminderDaysSelector
+            selectedDays={form.reminderDays}
+            onChange={days => setForm(f => ({ ...f, reminderDays: days }))}
+            enabled={form.reminderEnabled}
+            onEnabledChange={v => setForm(f => ({ ...f, reminderEnabled: v }))}
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
@@ -839,11 +927,13 @@ function EditTaskDialog({ task, open, onOpenChange, onUpdate, isLoading }: {
     dueDate: task.dueDate || "",
     estimatedHours: task.estimatedHours || "",
     actualHours: task.actualHours || "",
+    reminderEnabled: task.reminderEnabled !== 0,
+    reminderDays: parseReminderDays(task.reminderDays),
   });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>编辑任务</DialogTitle>
           <DialogDescription>修改任务信息</DialogDescription>
@@ -911,10 +1001,21 @@ function EditTaskDialog({ task, open, onOpenChange, onUpdate, isLoading }: {
               <Input type="number" value={form.actualHours} onChange={e => setForm(f => ({ ...f, actualHours: e.target.value }))} />
             </div>
           </div>
+          {/* Reminder Days Setting */}
+          <ReminderDaysSelector
+            selectedDays={form.reminderDays}
+            onChange={days => setForm(f => ({ ...f, reminderDays: days }))}
+            enabled={form.reminderEnabled}
+            onEnabledChange={v => setForm(f => ({ ...f, reminderEnabled: v }))}
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
-          <Button onClick={() => onUpdate(form)} disabled={isLoading}>
+          <Button onClick={() => onUpdate({
+            ...form,
+            reminderEnabled: form.reminderEnabled ? 1 : 0,
+            reminderDays: JSON.stringify(form.reminderDays),
+          })} disabled={isLoading}>
             {isLoading && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
             保存修改
           </Button>

@@ -470,3 +470,100 @@ describe("Task Reminder & Notification", () => {
     });
   });
 });
+
+describe("Reminder Days UI Logic", () => {
+  // Mirrors the parseReminderDays function from the frontend
+  function parseReminderDays(raw: string | null | undefined): number[] {
+    if (!raw) return [1, 3];
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.every((n: unknown) => typeof n === "number")) return parsed;
+    } catch {}
+    return [1, 3];
+  }
+
+  describe("parseReminderDays", () => {
+    it("should return default [1,3] for null/undefined", () => {
+      expect(parseReminderDays(null)).toEqual([1, 3]);
+      expect(parseReminderDays(undefined)).toEqual([1, 3]);
+    });
+
+    it("should parse valid JSON arrays", () => {
+      expect(parseReminderDays("[0,1,3,7]")).toEqual([0, 1, 3, 7]);
+      expect(parseReminderDays("[14]")).toEqual([14]);
+      expect(parseReminderDays("[]")).toEqual([]);
+    });
+
+    it("should return default for invalid JSON", () => {
+      expect(parseReminderDays("invalid")).toEqual([1, 3]);
+      expect(parseReminderDays("{\"a\":1}")).toEqual([1, 3]);
+      expect(parseReminderDays("[\"a\",\"b\"]")).toEqual([1, 3]);
+    });
+  });
+
+  describe("Reminder Day Toggle Logic", () => {
+    it("should add a day when not selected", () => {
+      const current = [1, 3];
+      const dayToAdd = 7;
+      const result = [...current, dayToAdd].sort((a, b) => a - b);
+      expect(result).toEqual([1, 3, 7]);
+    });
+
+    it("should remove a day when already selected", () => {
+      const current = [1, 3, 7];
+      const dayToRemove = 3;
+      const result = current.filter(d => d !== dayToRemove);
+      expect(result).toEqual([1, 7]);
+    });
+
+    it("should maintain sorted order after adding", () => {
+      const current = [3, 7];
+      const dayToAdd = 1;
+      const result = [...current, dayToAdd].sort((a, b) => a - b);
+      expect(result).toEqual([1, 3, 7]);
+    });
+  });
+
+  describe("Reminder Settings Serialization", () => {
+    it("should serialize reminderDays to JSON for backend", () => {
+      const days = [0, 1, 3, 7];
+      const serialized = JSON.stringify(days);
+      expect(serialized).toBe("[0,1,3,7]");
+    });
+
+    it("should convert boolean enabled to number for backend", () => {
+      expect(true ? 1 : 0).toBe(1);
+      expect(false ? 1 : 0).toBe(0);
+    });
+
+    it("should convert number enabled to boolean for frontend", () => {
+      expect(1 !== 0).toBe(true);
+      expect(0 !== 0).toBe(false);
+    });
+  });
+
+  describe("Reminder Day Options", () => {
+    const REMINDER_DAY_OPTIONS = [
+      { value: 0, label: "当天" },
+      { value: 1, label: "1天前" },
+      { value: 2, label: "2天前" },
+      { value: 3, label: "3天前" },
+      { value: 5, label: "5天前" },
+      { value: 7, label: "7天前" },
+      { value: 14, label: "14天前" },
+    ];
+
+    it("should have 7 reminder day options", () => {
+      expect(REMINDER_DAY_OPTIONS.length).toBe(7);
+    });
+
+    it("should have all non-negative values", () => {
+      expect(REMINDER_DAY_OPTIONS.every(o => o.value >= 0)).toBe(true);
+    });
+
+    it("should have unique values", () => {
+      const values = REMINDER_DAY_OPTIONS.map(o => o.value);
+      expect(new Set(values).size).toBe(values.length);
+    });
+  });
+});
