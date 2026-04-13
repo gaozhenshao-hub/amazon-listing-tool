@@ -53,7 +53,40 @@ export const taskManagementRouter = router({
 
       const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-      const tasks = await db.select().from(teamTasks)
+      const tasks = await db.select({
+        id: teamTasks.id,
+        productProfileId: teamTasks.productProfileId,
+        userId: teamTasks.userId,
+        title: teamTasks.title,
+        description: teamTasks.description,
+        status: teamTasks.status,
+        priority: teamTasks.priority,
+        category: teamTasks.category,
+        assigneeId: teamTasks.assigneeId,
+        assigneeName: teamTasks.assigneeName,
+        startDate: teamTasks.startDate,
+        dueDate: teamTasks.dueDate,
+        completedAt: teamTasks.completedAt,
+        estimatedHours: teamTasks.estimatedHours,
+        actualHours: teamTasks.actualHours,
+        linkedTodoId: teamTasks.linkedTodoId,
+        linkedPlanActionId: teamTasks.linkedPlanActionId,
+        tags: teamTasks.tags,
+        sortOrder: teamTasks.sortOrder,
+        reminderDays: teamTasks.reminderDays,
+        reminderEnabled: teamTasks.reminderEnabled,
+        lastReminderSentAt: teamTasks.lastReminderSentAt,
+        meetingRecordId: teamTasks.meetingRecordId,
+        createdAt: teamTasks.createdAt,
+        updatedAt: teamTasks.updatedAt,
+        // Joined product info
+        productParentAsin: productProfiles.parentAsin,
+        productTitle: productProfiles.title,
+        productChineseName: productProfiles.chineseName,
+        productImageUrl: productProfiles.imageUrl,
+        productMarketplace: productProfiles.marketplace,
+      }).from(teamTasks)
+        .leftJoin(productProfiles, eq(teamTasks.productProfileId, productProfiles.id))
         .where(where)
         .orderBy(desc(teamTasks.createdAt))
         .limit(input.limit)
@@ -601,6 +634,27 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
         )
         .orderBy(desc(productProfiles.createdAt))
         .limit(input.limit);
+      return products;
+    }),
+
+  /** Get products that have tasks associated (for filter dropdown) */
+  getProductsWithTasks: protectedProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
+      // Get distinct product IDs from tasks, then join with product info
+      const products = await db.selectDistinct({
+        id: productProfiles.id,
+        parentAsin: productProfiles.parentAsin,
+        title: productProfiles.title,
+        chineseName: productProfiles.chineseName,
+        imageUrl: productProfiles.imageUrl,
+        marketplace: productProfiles.marketplace,
+        taskCount: sql<number>`count(${teamTasks.id})`,
+      }).from(teamTasks)
+        .innerJoin(productProfiles, eq(teamTasks.productProfileId, productProfiles.id))
+        .groupBy(productProfiles.id, productProfiles.parentAsin, productProfiles.title, productProfiles.chineseName, productProfiles.imageUrl, productProfiles.marketplace)
+        .orderBy(sql`count(${teamTasks.id}) DESC`);
       return products;
     }),
 

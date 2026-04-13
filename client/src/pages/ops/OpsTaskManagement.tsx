@@ -313,6 +313,7 @@ export default function OpsTaskManagement() {
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterPriority, setFilterPriority] = useState<string>("all");
+  const [filterProduct, setFilterProduct] = useState<string>("all");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showMeetingDialog, setShowMeetingDialog] = useState(false);
   const [showExtractPreview, setShowExtractPreview] = useState(false);
@@ -325,6 +326,7 @@ export default function OpsTaskManagement() {
     category: filterCategory !== "all" ? filterCategory : undefined,
     status: filterStatus !== "all" ? filterStatus as TaskStatus : undefined,
     priority: filterPriority !== "all" ? filterPriority as TaskPriority : undefined,
+    productProfileId: filterProduct !== "all" ? Number(filterProduct) : undefined,
     search: searchQuery || undefined,
     limit: 200,
   });
@@ -333,6 +335,7 @@ export default function OpsTaskManagement() {
   const assigneesQuery = trpc.taskManagement.getAssignees.useQuery();
   const categoriesQuery = trpc.taskManagement.getCategories.useQuery();
   const productsQuery = trpc.taskManagement.getProductsForAssignment.useQuery();
+  const productsWithTasksQuery = trpc.taskManagement.getProductsWithTasks.useQuery();
   const reminderSummary = trpc.taskManagement.getReminderSummary.useQuery();
 
   const utils = trpc.useUtils();
@@ -531,6 +534,24 @@ export default function OpsTaskManagement() {
                 ))}
               </SelectContent>
             </Select>
+            <Select value={filterProduct} onValueChange={setFilterProduct}>
+              <SelectTrigger className="w-40">
+                <Package className="h-3.5 w-3.5 mr-1" />
+                <SelectValue placeholder="关联产品" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部产品</SelectItem>
+                {(productsWithTasksQuery.data || []).map((p: any) => (
+                  <SelectItem key={p.id} value={String(p.id)}>
+                    <span className="flex items-center gap-1.5">
+                      {p.parentAsin && <span className="text-xs font-mono text-muted-foreground">{p.parentAsin}</span>}
+                      <span className="truncate max-w-[120px]">{p.chineseName || p.title || '未命名'}</span>
+                      <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-1">{p.taskCount}</Badge>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -667,7 +688,8 @@ function TaskListView({ tasks, isLoading, onEdit, onDelete, onStatusChange }: {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-[300px]">任务</TableHead>
+            <TableHead className="w-[280px]">任务</TableHead>
+            <TableHead className="w-[160px]">关联产品</TableHead>
             <TableHead className="w-[100px]">状态</TableHead>
             <TableHead className="w-[80px]">优先级</TableHead>
             <TableHead className="w-[100px]">负责人</TableHead>
@@ -691,6 +713,32 @@ function TaskListView({ tasks, isLoading, onEdit, onDelete, onStatusChange }: {
                       <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{task.description}</p>
                     )}
                   </div>
+                </TableCell>
+                <TableCell>
+                  {task.productParentAsin ? (
+                    <div className="flex items-center gap-2">
+                      {task.productImageUrl ? (
+                        <img
+                          src={task.productImageUrl}
+                          alt=""
+                          className="h-8 w-8 rounded object-cover border flex-shrink-0"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      ) : (
+                        <div className="h-8 w-8 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                          <Package className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-xs font-mono text-primary">{task.productParentAsin}</p>
+                        <p className="text-[11px] text-muted-foreground truncate max-w-[100px]">
+                          {task.productChineseName || task.productTitle || ''}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">未关联</span>
+                  )}
                 </TableCell>
                 <TableCell>
                   <Select
@@ -801,6 +849,23 @@ function KanbanView({ tasks, isLoading, onEdit, onStatusChange }: {
                   >
                     <CardContent className="p-3 space-y-2">
                       <p className="text-sm font-medium line-clamp-2">{task.title}</p>
+                      {task.productParentAsin && (
+                        <div className="flex items-center gap-1.5">
+                          {task.productImageUrl ? (
+                            <img
+                              src={task.productImageUrl}
+                              alt=""
+                              className="h-6 w-6 rounded object-cover border flex-shrink-0"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                            />
+                          ) : (
+                            <div className="h-6 w-6 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                              <Package className="h-3 w-3 text-muted-foreground" />
+                            </div>
+                          )}
+                          <span className="text-[10px] font-mono text-primary">{task.productParentAsin}</span>
+                        </div>
+                      )}
                       <div className="flex items-center gap-1 flex-wrap">
                         <Badge className={`${priorityCfg.color} text-[10px] px-1.5 py-0`}>{priorityCfg.label}</Badge>
                         {task.category && (
