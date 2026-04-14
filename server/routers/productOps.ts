@@ -1034,7 +1034,7 @@ export const productOpsRouter = router({
       // ═══ Compute totals and build campaign list ═══
       let totalSpend = 0, totalSales = 0, totalClicks = 0, totalImpressions = 0, totalOrders = 0;
       const campaignList: Array<{
-        campaignId: string; name: string; status: string; spend: number; sales: number;
+        campaignId: string; name: string; adType: string; status: string; spend: number; sales: number;
         acos: number; roas: number; clicks: number; impressions: number;
       }> = [];
 

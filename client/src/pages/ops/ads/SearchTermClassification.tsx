@@ -608,6 +608,12 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
               <CardDescription className="text-xs">
                 共{filteredTerms.length}个搜索词
                 {categoryFilter !== null && ` · 筛选: ${CATEGORY_COLORS[categoryFilter]?.shortLabel}`}
+                {data && !isLoading && (
+                  <span className={`ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${(data as any)?.isMock ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${(data as any)?.isMock ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                    {(data as any)?.isMock ? '模拟数据' : '真实数据'}
+                  </span>
+                )}
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">

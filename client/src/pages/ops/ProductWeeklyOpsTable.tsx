@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import type { ReactElement } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -132,15 +133,15 @@ function getRowAlerts(w: any): { level: AlertLevel; alerts: string[] } {
 
   const acosVal = parseFloat(String(w.acos || 0));
   const acosLevel = getAlertLevel("acos", acosVal);
-  if (acosLevel !== "normal") { alerts.push(`ACOS ${acosVal.toFixed(1)}%`); maxLevel = acosLevel === "danger" ? "danger" : maxLevel === "danger" ? "danger" : "warn"; }
+  if (acosLevel !== "normal") { alerts.push(`ACOS ${acosVal.toFixed(1)}%`); maxLevel = acosLevel === "danger" ? "danger" : ["danger","warn"].includes(maxLevel) ? maxLevel : "warn"; }
 
   const profitVal = parseFloat(String(w.orderProfitMargin || 0));
   const profitLevel = getAlertLevel("profitMargin", profitVal);
-  if (profitLevel !== "normal") { alerts.push(`利润率 ${profitVal.toFixed(1)}%`); maxLevel = profitLevel === "danger" ? "danger" : maxLevel === "danger" ? "danger" : "warn"; }
+  if (profitLevel !== "normal") { alerts.push(`利润率 ${profitVal.toFixed(1)}%`); maxLevel = profitLevel === "danger" ? "danger" : ["danger","warn"].includes(maxLevel) ? maxLevel : "warn"; }
 
   const returnVal = parseFloat(String(w.returnRate || 0));
   const returnLevel = getAlertLevel("returnRate", returnVal);
-  if (returnLevel !== "normal") { alerts.push(`退货率 ${returnVal.toFixed(1)}%`); maxLevel = returnLevel === "danger" ? "danger" : maxLevel === "danger" ? "danger" : "warn"; }
+  if (returnLevel !== "normal") { alerts.push(`退货率 ${returnVal.toFixed(1)}%`); maxLevel = returnLevel === "danger" ? "danger" : ["danger","warn"].includes(maxLevel) ? maxLevel : "warn"; }
 
   return { level: maxLevel, alerts };
 }
@@ -241,10 +242,10 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
 
   // Alert summary for the entire product (based on latest week)
   const productAlertSummary = useMemo(() => {
-    if (!weeklyData || weeklyData.length === 0) return { level: "normal" as AlertLevel, alerts: [], badges: [] as JSX.Element[] };
+    if (!weeklyData || weeklyData.length === 0) return { level: "normal" as AlertLevel, alerts: [], badges: [] as ReactElement[] };
     const latest = [...weeklyData].sort((a, b) => b.weekStartDate.localeCompare(a.weekStartDate))[0];
     const { level, alerts } = getRowAlerts(latest);
-    const badges: JSX.Element[] = [];
+    const badges: ReactElement[] = [];
 
     const acosVal = parseFloat(String(latest.acos || 0));
     const acosLevel = getAlertLevel("acos", acosVal);

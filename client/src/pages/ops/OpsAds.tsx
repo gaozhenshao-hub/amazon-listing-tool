@@ -501,6 +501,24 @@ export default function OpsAds() {
             广告智能分析
           </h2>
           <p className="text-sm text-gray-500 mt-0.5">以广告组合(Portfolio)+广告活动(Campaign)为核心维度的全方位广告数据分析</p>
+          {campaignData && !campaignLoading && (
+            <div className="flex items-center gap-1.5 mt-1">
+              {(campaignData as any)?.isMock ? (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> 模拟数据
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> 领星API真实数据
+                </span>
+              )}
+              {cacheInfo && (
+                <span className="text-[10px] text-gray-400">
+                  {cacheInfo.campaignListCached ? '(缓存)' : '(实时)'}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">

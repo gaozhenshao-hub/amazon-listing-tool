@@ -111,11 +111,11 @@ function getProductAlerts(product: { weeks: Array<{ acos: number; profitMargin: 
   const labels: string[] = [];
   let maxLevel: AlertLevel = "normal";
   const acosL = getAlertLevel("acos", latest.acos);
-  if (acosL !== "normal") { labels.push(`ACOS ${latest.acos.toFixed(0)}%`); maxLevel = acosL === "danger" ? "danger" : maxLevel === "danger" ? "danger" : "warn"; }
+  if (acosL !== "normal") { labels.push(`ACOS ${latest.acos.toFixed(0)}%`); maxLevel = acosL === "danger" ? "danger" : ["danger","warn"].includes(maxLevel) ? maxLevel : "warn"; }
   const profitL = getAlertLevel("profitMargin", latest.profitMargin);
-  if (profitL !== "normal") { labels.push(`利润率 ${latest.profitMargin.toFixed(0)}%`); maxLevel = profitL === "danger" ? "danger" : maxLevel === "danger" ? "danger" : "warn"; }
+  if (profitL !== "normal") { labels.push(`利润率 ${latest.profitMargin.toFixed(0)}%`); maxLevel = profitL === "danger" ? "danger" : ["danger","warn"].includes(maxLevel) ? maxLevel : "warn"; }
   const returnL = getAlertLevel("returnRate", latest.returnRate);
-  if (returnL !== "normal") { labels.push(`退货率 ${latest.returnRate.toFixed(1)}%`); maxLevel = returnL === "danger" ? "danger" : maxLevel === "danger" ? "danger" : "warn"; }
+  if (returnL !== "normal") { labels.push(`退货率 ${latest.returnRate.toFixed(1)}%`); maxLevel = returnL === "danger" ? "danger" : ["danger","warn"].includes(maxLevel) ? maxLevel : "warn"; }
   return { level: maxLevel, count: labels.length, labels };
 }
 

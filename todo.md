@@ -3443,3 +3443,25 @@
 - [x] 前端：产品详情页广告表格新增"类型"列（SP蓝/SD紫/SB金）
 - [x] 前端：matchInfo提示文案优化（区分"未投放广告"和"需同步映射"两种情况）
 - [x] 测试验证（3333个测试全部通过）
+
+## 修复：搜索词按广告活动筛选失效
+- [ ] 排查搜索词分析页面选择单个活动后仍显示全部搜索词的问题
+- [ ] 修复前端筛选逻辑：选择活动后只显示该活动下的搜索词
+- [ ] 测试验证
+
+## 修复：领星API真实模式未启用
+- [ ] 排查lingxingAdapter的isMockMode判断逻辑
+- [ ] 确认API密钥环境变量是否正确注入
+- [ ] 修复模式切换逻辑，确保有API密钥时使用真实API
+- [ ] 同时修复搜索词按广告活动筛选失效的问题
+
+- [x] 诊断领星API数据来源 - 验证所有广告接口(SP/SD/SB/搜索词/商品广告/组合)均返回真实数据
+- [x] 修复 OpsProducts.tsx AlertLevel 类型比较 TS 错误
+- [x] 修复 ProductWeeklyOpsTable.tsx AlertLevel 类型比较 + JSX namespace 错误
+- [x] 修复 AdChatBot.tsx campaignIds 参数缺失 - 后端 adChatBot schema 增加 campaignIds
+- [x] 修复 cronJobs.ts cron 导入方式 + function-in-block 严格模式错误
+- [x] 修复 productOps.ts campaignList 类型定义缺少 adType 字段
+- [x] 广告智能分析页面增加数据来源标识（领星API真实数据/模拟数据）
+- [x] 搜索词明细增加数据来源标识（真实数据/模拟数据）
+- [x] TypeScript 编译 0 错误验证通过
+- [x] 全部 141 个测试文件、3333 个测试用例通过

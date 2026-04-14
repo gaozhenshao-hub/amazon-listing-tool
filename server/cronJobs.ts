@@ -2,13 +2,13 @@
  * Cron Jobs - Auto-sync weekly ops data from Lingxing API
  * Runs every Monday at 2:00 AM (server time) to pull last week's data
  */
-import cron from 'node-cron';
+import * as cron from 'node-cron';
 import { getDb } from './db';
 import { productProfiles, productVariants, productWeeklyOps, productMonthlySummary } from '../drizzle/schema';
 import { eq, and, desc } from 'drizzle-orm';
 import { getLingxingAdapter } from './lingxingAdapter';
 
-let cronTask: cron.ScheduledTask | null = null;
+let cronTask: ReturnType<typeof cron.schedule> | null = null;
 
 /**
  * Sync weekly ops for a single product (lightweight version for batch cron)
@@ -51,12 +51,12 @@ async function syncProductWeeklyOps(
     const profitItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
 
     // Group by week
-    function getWeekMonday(dateStr: string): string {
+    const getWeekMonday = (dateStr: string): string => {
       const d = new Date(dateStr);
       const day = d.getDay();
       const diff = d.getDate() - day + (day === 0 ? -6 : 1);
       return new Date(d.setDate(diff)).toISOString().split('T')[0];
-    }
+    };
 
     const weekMap = new Map<string, any[]>();
     for (const item of profitItems) {

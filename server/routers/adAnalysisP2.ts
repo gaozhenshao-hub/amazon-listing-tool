@@ -237,6 +237,7 @@ ${input.topOrders ? `TOP DSP订单:\n${input.topOrders.map(o => `- ${o.order_nam
     .input(z.object({
       question: z.string().min(1).max(2000),
       campaignId: z.string().optional(),
+      campaignIds: z.array(z.string()).optional(),
       marketplace: z.string().optional(),
       conversationHistory: z.array(z.object({
         role: z.enum(["user", "assistant"]),
