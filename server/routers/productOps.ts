@@ -3977,12 +3977,13 @@ export const productOpsRouter = router({
       const db = await getDb();
       const weeks = input?.weeks || 1;
 
-      // Get all active products for this user
+      // Get all active US products for this user (avoid syncing too much data)
       const products = await db!.select()
         .from(productProfiles)
         .where(and(
           eq(productProfiles.userId, ctx.user.id),
           eq(productProfiles.status, 'active'),
+          eq(productProfiles.marketplace, 'US'),
         ));
 
       if (products.length === 0) {

@@ -3478,3 +3478,4 @@
 - [x] 重构：使用父ASIN维度调用asinList接口（search_field=parent_asin）
 - [x] 新增：同步运营负责人（principal_names）到产品档案
 - [x] 产品总览列表每行增加“手动同步”按钮，点击后只更新当前产品数据
+- [x] 批量同步只同步美国站（US）产品数据，避免数据过多
