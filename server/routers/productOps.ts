@@ -3625,28 +3625,42 @@ export const productOpsRouter = router({
 
       for (const week of weekRanges) {
         try {
-          const res = await adapter.requestWithMockFallback({
-            path: "/bd/productPerformance/openApi/asinList",
-            body: {
-              offset: 0,
-              length: 20,
-              sort_field: "volume",
-              sort_type: "desc",
-              search_field: "parent_asin",
-              search_value: [parentAsin],
-              mid: matchedMid,
-              sid: sidArray,
-              start_date: week.start,
-              end_date: week.end,
-              summary_field: "asin",
-              currency_code: "USD",
-              is_recently_enum: true,
-              purchase_status: 0,
-            },
-          });
+          // Fetch all products for this store/week, then match by parent_asin in code
+          // (search_field/search_value doesn't work reliably for parent_asin searches)
+          let allItems: any[] = [];
+          let offset = 0;
+          const pageSize = 100;
+          while (true) {
+            const res = await adapter.requestWithMockFallback({
+              path: "/bd/productPerformance/openApi/asinList",
+              body: {
+                offset,
+                length: pageSize,
+                sort_field: "volume",
+                sort_type: "desc",
+                mid: matchedMid,
+                sid: sidArray,
+                start_date: week.start,
+                end_date: week.end,
+                summary_field: "parent_asin",
+                currency_code: "CNY",
+              },
+            });
+            const raw = res.data || [];
+            const pageItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
+            allItems.push(...pageItems);
+            const total = (raw as any).total || 0;
+            if (offset + pageSize >= total || pageItems.length === 0) break;
+            offset += pageSize;
+            // Rate limit delay between pages
+            await new Promise(r => setTimeout(r, 2000));
+          }
 
-          const raw = res.data || [];
-          const items = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
+          // Filter to match our target parent ASIN
+          const items = allItems.filter(item => {
+            const itemParentAsin = item.parent_asins?.[0]?.parent_asin || '';
+            return itemParentAsin.toUpperCase() === parentAsin.toUpperCase();
+          });
           if (items.length === 0) continue;
           totalItemCount += items.length;
 
@@ -3679,9 +3693,9 @@ export const productOpsRouter = router({
             if (item.principal_names && !operatorName) {
               operatorName = Array.isArray(item.principal_names) ? item.principal_names.join(', ') : String(item.principal_names);
             }
-            // Capture product name (品名)
-            if (item.product_name && !productNameFromApi) {
-              productNameFromApi = String(item.product_name);
+            // Capture product name (品名) - field is item_name in asinList API
+            if ((item.item_name || item.local_name) && !productNameFromApi) {
+              productNameFromApi = String(item.local_name || item.item_name);
             }
           }
 
@@ -3757,6 +3771,8 @@ export const productOpsRouter = router({
         } catch (err: any) {
           console.warn(`[syncWeeklyOps] Week ${week.start}~${week.end} error: ${err.message}`);
         }
+        // Rate limit: wait 1.5s between requests to avoid 103 error
+        await new Promise(resolve => setTimeout(resolve, 1500));
       }
 
       // ── Update operator (principal_names) and product name on product profile ──
@@ -4026,75 +4042,77 @@ export const productOpsRouter = router({
         cur = new Date(cur.getTime() + 7 * 86400000);
       }
 
+      // Build a map of parent ASIN -> product for quick lookup
+      const productByParentAsin = new Map<string, typeof products[0]>();
       for (const product of products) {
+        if (product.parentAsin) {
+          productByParentAsin.set(product.parentAsin.toUpperCase(), product);
+        }
+      }
+
+      // Get all US SIDs
+      const { sellers } = await findMatchedSid(adapter, products[0]);
+      const marketplaceMids = MARKETPLACE_MID_MAP['US'] || [1];
+      const allUsSids = sellers
+        .filter((s: any) => marketplaceMids.includes(s.mid))
+        .map((s: any) => s.sid);
+      const matchedMid = marketplaceMids[0];
+
+      // For each week, fetch ALL products from API in one batch, then match to DB products
+      for (const week of weekRanges) {
         try {
-          const { matchedSid, matchedMid, sellers } = await findMatchedSid(adapter, product);
-          const marketplaceMids = MARKETPLACE_MID_MAP[product.marketplace || 'US'] || [1];
-          const allSids = sellers
-            .filter((s: any) => marketplaceMids.includes(s.mid))
-            .map((s: any) => s.sid);
-          const sidArray = allSids.length > 0 ? allSids : [matchedSid];
+          // Paginate through all API products for this week
+          let allApiItems: any[] = [];
+          let offset = 0;
+          const pageSize = 100;
+          while (true) {
+            const res = await adapter.requestWithMockFallback({
+              path: "/bd/productPerformance/openApi/asinList",
+              body: {
+                offset,
+                length: pageSize,
+                sort_field: "volume",
+                sort_type: "desc",
+                mid: matchedMid,
+                sid: allUsSids,
+                start_date: week.start,
+                end_date: week.end,
+                summary_field: "parent_asin",
+                currency_code: "CNY",
+              },
+            });
+            const raw = res.data || [];
+            const pageItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
+            allApiItems.push(...pageItems);
+            const total = (raw as any).total || 0;
+            if (offset + pageSize >= total || pageItems.length === 0) break;
+            offset += pageSize;
+            // Rate limit delay between pages
+            await new Promise(r => setTimeout(r, 3000));
+          }
 
-          let productSynced = 0;
-          for (const week of weekRanges) {
+          console.log(`[batchSync] Week ${week.start}: fetched ${allApiItems.length} API items, matching against ${products.length} DB products`);
+
+          // Match API items to DB products and upsert
+          for (const apiItem of allApiItems) {
+            const itemParentAsin = (apiItem.parent_asins?.[0]?.parent_asin || '').toUpperCase();
+            const product = productByParentAsin.get(itemParentAsin);
+            if (!product) continue; // Not in our DB, skip
+
             try {
-              const res = await adapter.requestWithMockFallback({
-                path: "/bd/productPerformance/openApi/asinList",
-                body: {
-                  offset: 0,
-                  length: 20,
-                  sort_field: "volume",
-                  sort_type: "desc",
-                  search_field: "parent_asin",
-                  search_value: [product.parentAsin],
-                  mid: matchedMid,
-                  sid: sidArray,
-                  start_date: week.start,
-                  end_date: week.end,
-                  summary_field: "asin",
-                  currency_code: "USD",
-                  is_recently_enum: true,
-                  purchase_status: 0,
-                },
-              });
-
-              const raw = res.data || [];
-              const items = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
-              if (items.length === 0) continue;
-
-              // Aggregate all items for this week
-              let totalSales = 0, totalOrders = 0, totalRevenue = 0, totalProfit = 0;
-              let totalAdSpend = 0, totalAdSales = 0, totalAdOrders = 0;
-              let totalImpressions = 0, totalClicks = 0;
-              let totalSessions = 0, totalReturnRate = 0, returnCount = 0;
-              let latestRating = 0, latestReviewCount = 0;
-              let operatorName = '';
-              let productNameFromApi = '';
-
-              for (const item of items) {
-                totalSales += Number(item.volume || 0);
-                totalOrders += Number(item.order_items || 0);
-                totalRevenue += Number(item.amount || 0);
-                totalProfit += Number(item.gross_profit || 0);
-                totalAdSpend += Number(item.spend || 0);
-                totalAdSales += Number(item.ad_sales_amount || 0);
-                totalAdOrders += Number(item.ad_order_quantity || 0);
-                totalImpressions += Number(item.impressions || 0);
-                totalClicks += Number(item.clicks || 0);
-                totalSessions += Number(item.sessions_total || 0);
-                if (item.return_rate != null && Number(item.return_rate) > 0) {
-                  totalReturnRate += Number(item.return_rate);
-                  returnCount++;
-                }
-                if (Number(item.avg_star || 0) > 0) latestRating = Number(item.avg_star);
-                if (Number(item.reviews_count || 0) > 0) latestReviewCount = Number(item.reviews_count);
-                if (item.principal_names && !operatorName) {
-                  operatorName = Array.isArray(item.principal_names) ? item.principal_names.join(', ') : String(item.principal_names);
-                }
-                if (item.product_name && !productNameFromApi) {
-                  productNameFromApi = String(item.product_name);
-                }
-              }
+              const totalSales = Number(apiItem.volume || 0);
+              const totalOrders = Number(apiItem.order_items || 0);
+              const totalRevenue = Number(apiItem.amount || 0);
+              const totalProfit = Number(apiItem.gross_profit || 0);
+              const totalAdSpend = Number(apiItem.spend || 0);
+              const totalAdSales = Number(apiItem.ad_sales_amount || 0);
+              const totalAdOrders = Number(apiItem.ad_order_quantity || 0);
+              const totalImpressions = Number(apiItem.impressions || 0);
+              const totalClicks = Number(apiItem.clicks || 0);
+              const totalSessions = Number(apiItem.sessions_total || 0);
+              const latestRating = Number(apiItem.avg_star || 0);
+              const latestReviewCount = Number(apiItem.reviews_count || 0);
+              const avgReturnRate = Number(apiItem.return_rate || 0);
 
               const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
               const acos = totalAdSales > 0 ? (totalAdSpend / totalAdSales * 100) : 0;
@@ -4105,7 +4123,6 @@ export const productOpsRouter = router({
               const organicOrders = Math.max(0, totalOrders - totalAdOrders);
               const organicClicks = Math.max(0, totalSessions - totalClicks);
               const organicCvr = organicClicks > 0 ? (organicOrders / organicClicks * 100) : 0;
-              const avgReturnRate = returnCount > 0 ? (totalReturnRate / returnCount) : 0;
 
               // Trend
               const prevWeekStart = new Date(new Date(week.start).getTime() - 7 * 86400000).toISOString().split('T')[0];
@@ -4162,9 +4179,21 @@ export const productOpsRouter = router({
                   weekEndDate: week.end,
                 });
               }
-              productSynced++;
+
+              // Track results per product
+              const existingResult = results.find(r => r.productId === product.id);
+              if (existingResult) {
+                existingResult.syncedWeeks++;
+              } else {
+                results.push({ productId: product.id, parentAsin: product.parentAsin, syncedWeeks: 1 });
+              }
+              totalSynced++;
 
               // Update operator and product name if found
+              const operatorName = apiItem.principal_names
+                ? (Array.isArray(apiItem.principal_names) ? apiItem.principal_names.join(', ') : String(apiItem.principal_names))
+                : '';
+              const productNameFromApi = apiItem.local_name || apiItem.item_name || '';
               const batchProfileUpdates: Record<string, string> = {};
               if (operatorName && !product.operator) {
                 batchProfileUpdates.operator = operatorName;
@@ -4177,16 +4206,22 @@ export const productOpsRouter = router({
                   .set(batchProfileUpdates as any)
                   .where(eq(productProfiles.id, product.id));
               }
-            } catch (weekErr: any) {
-              console.warn(`[batchSync] Product ${product.parentAsin} week ${week.start} error: ${weekErr.message}`);
+            } catch (itemErr: any) {
+              console.warn(`[batchSync] Product ${itemParentAsin} week ${week.start} error: ${itemErr.message}`);
             }
           }
-
-          results.push({ productId: product.id, parentAsin: product.parentAsin, syncedWeeks: productSynced });
-          totalSynced += productSynced;
-        } catch (err: any) {
-          results.push({ productId: product.id, parentAsin: product.parentAsin, syncedWeeks: 0, error: err.message });
+        } catch (weekErr: any) {
+          console.warn(`[batchSync] Week ${week.start} fetch error: ${weekErr.message}`);
           totalErrors++;
+        }
+        // Rate limit: wait 3s between weeks
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+
+      // Add products that weren't found in API
+      for (const product of products) {
+        if (!results.find(r => r.productId === product.id)) {
+          results.push({ productId: product.id, parentAsin: product.parentAsin, syncedWeeks: 0 });
         }
       }
 

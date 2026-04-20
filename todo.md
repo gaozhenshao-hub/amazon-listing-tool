@@ -3481,3 +3481,9 @@
 - [x] 批量同步只同步美国站（US）产品数据，避免数据过多
 - [x] 同步时增加运营负责人(principal_names)和品名(product_name)写入
 - [x] 产品卡片右上角显示运营负责人和品名
+- [x] Bug: 产品同步返回0个数据 - 根因：asinList API的search_field/search_value对parent_asin不生效，改为拉取全部数据后在代码中按parent_asin匹配
+- [x] 重构：batchSyncWeeklyOps改为每周批量拉取所有产品数据（分页），然后按父ASIN匹配到DB产品（1次API调用/周 vs N次/产品/周）
+- [x] 重构：syncWeeklyOpsFromLingxing也改为拉取全部后过滤
+- [x] 修复：product_name字段名改为local_name/item_name
+- [x] 增加API请求间隔（页间3秒，周间3秒）防止触发频率限制
+- [x] 清理调试测试文件（test-asinlist*.mjs, ad-data-diagnosis.md）
