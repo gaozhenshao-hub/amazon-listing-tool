@@ -232,10 +232,12 @@ function getLatestWeekValue(product: ProductOverview, key: SortKey): number {
 }
 
 // ─── Product Row Component ───
-function ProductBlock({ product, onNavigate, onDelete, operatorList, onAssign, sortKey, sortDir, onSort }: {
+function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operatorList, onAssign, sortKey, sortDir, onSort }: {
   product: ProductOverview;
   onNavigate: (id: number) => void;
   onDelete: (id: number) => void;
+  onSync: (productId: number) => void;
+  isSyncing: boolean;
   operatorList: string[];
   onAssign: (productId: number, operator: string) => void;
   sortKey: SortKey;
@@ -386,6 +388,18 @@ function ProductBlock({ product, onNavigate, onDelete, operatorList, onAssign, s
 
           {/* Actions */}
           <div className="flex items-center gap-1">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" className={`h-7 w-7 p-0 ${isSyncing ? 'text-blue-500' : 'text-muted-foreground hover:text-blue-600'}`}
+                    onClick={(e) => { e.stopPropagation(); onSync(product.id); }}
+                    disabled={isSyncing}>
+                    {isSyncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{isSyncing ? '同步中...' : '同步本产品数据'}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -633,6 +647,18 @@ export default function OpsProducts() {
       toast.success(`已分配给 ${data.operator}`);
     },
     onError: (e: any) => toast.error(e.message),
+  });
+  const [syncingProductId, setSyncingProductId] = useState<number | null>(null);
+  const syncSingleProductMut = trpc.productOps.syncWeeklyOpsFromLingxing.useMutation({
+    onSuccess: (data) => {
+      utils.productOps.getProductOverviewWithWeeks.invalidate();
+      setSyncingProductId(null);
+      toast.success(`同步完成：${data.syncedWeeks}周数据已更新`);
+    },
+    onError: (e: any) => {
+      setSyncingProductId(null);
+      toast.error("同步失败", { description: e.message });
+    },
   });
   const { data: operatorList } = trpc.productOps.listOperators.useQuery();
 
@@ -916,6 +942,8 @@ export default function OpsProducts() {
               product={product}
               onNavigate={(id) => navigate(`/ops/products/${id}`)}
               onDelete={(id) => deleteMut.mutate({ id })}
+              onSync={(id) => { setSyncingProductId(id); syncSingleProductMut.mutate({ productId: id }); }}
+              isSyncing={syncingProductId === product.id && syncSingleProductMut.isPending}
               operatorList={[...(operatorList || [])]}
               onAssign={(pid, op) => singleAssignMut.mutate({ productIds: [pid], operator: op })}
               sortKey={sortKey}

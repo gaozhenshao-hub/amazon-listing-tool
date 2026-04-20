@@ -3477,3 +3477,4 @@
 - [ ] 验证：对比ASIN360原始数据与前端展示数据一致性
 - [x] 重构：使用父ASIN维度调用asinList接口（search_field=parent_asin）
 - [x] 新增：同步运营负责人（principal_names）到产品档案
+- [x] 产品总览列表每行增加“手动同步”按钮，点击后只更新当前产品数据
