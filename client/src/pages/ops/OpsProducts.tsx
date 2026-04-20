@@ -681,6 +681,8 @@ export default function OpsProducts() {
   const [sortKey, setSortKey] = useState<SortKey>(null);
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [weekFilter, setWeekFilter] = useState(4); // 1-4 weeks
+  const [syncWeeks, setSyncWeeks] = useState(1); // weeks to sync: 1-26
+  const [showSyncPopover, setShowSyncPopover] = useState(false);
 
   // Main query - 4-week overview data
   const { data: products, isLoading } = trpc.productOps.getProductOverviewWithWeeks.useQuery({
@@ -759,15 +761,59 @@ export default function OpsProducts() {
           <p className="text-muted-foreground mt-1 text-sm">按父ASIN维度管理，展示最近4周周度数据及同比变化</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => batchSyncWeeklyMut.mutate({ weeks: 1 })}
-            disabled={batchSyncWeeklyMut.isPending}
-            className="gap-2"
-          >
-            {batchSyncWeeklyMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            {batchSyncWeeklyMut.isPending ? "同步中..." : "批量同步周度数据"}
-          </Button>
+          <Popover open={showSyncPopover} onOpenChange={setShowSyncPopover}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={batchSyncWeeklyMut.isPending}
+                className="gap-2"
+              >
+                {batchSyncWeeklyMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {batchSyncWeeklyMut.isPending ? "同步中..." : "批量同步周度数据"}
+                <ChevronDown className="h-3 w-3 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-72 p-4" align="end">
+              <div className="space-y-3">
+                <div>
+                  <h4 className="font-medium text-sm">同步周数设置</h4>
+                  <p className="text-xs text-muted-foreground mt-1">选择需要同步的历史数据周数，周数越多耗时越长</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Select value={String(syncWeeks)} onValueChange={(v) => setSyncWeeks(Number(v))}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">最近 1 周</SelectItem>
+                      <SelectItem value="2">最近 2 周</SelectItem>
+                      <SelectItem value="4">最近 4 周（1个月）</SelectItem>
+                      <SelectItem value="8">最近 8 周（2个月）</SelectItem>
+                      <SelectItem value="13">最近 13 周（1季度）</SelectItem>
+                      <SelectItem value="26">最近 26 周（半年）</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {syncWeeks > 4 && (
+                  <div className="flex items-start gap-1.5 text-xs text-amber-600 bg-amber-50 rounded-md px-2.5 py-2">
+                    <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                    <span>同步 {syncWeeks} 周数据预计需要 {Math.ceil(syncWeeks * 0.5)} 分钟，请耐心等待</span>
+                  </div>
+                )}
+                <Button
+                  className="w-full gap-2"
+                  onClick={() => {
+                    setShowSyncPopover(false);
+                    batchSyncWeeklyMut.mutate({ weeks: syncWeeks });
+                  }}
+                  disabled={batchSyncWeeklyMut.isPending}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  开始同步 {syncWeeks} 周数据
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
           <Button
             variant="outline"
             onClick={() => syncMut.mutate()}

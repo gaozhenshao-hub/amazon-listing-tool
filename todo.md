@@ -3487,3 +3487,4 @@
 - [x] 修复：product_name字段名改为local_name/item_name
 - [x] 增加API请求间隔（页间3秒，周间3秒）防止触发频率限制
 - [x] 清理调试测试文件（test-asinlist*.mjs, ad-data-diagnosis.md）
+- [x] 批量同步UI增加"同步周数"参数选择（默认1周，支持1-26周），方便补历史数据
