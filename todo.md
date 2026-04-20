@@ -3465,3 +3465,15 @@
 - [x] 搜索词明细增加数据来源标识（真实数据/模拟数据）
 - [x] TypeScript 编译 0 错误验证通过
 - [x] 全部 141 个测试文件、3333 个测试用例通过
+- [x] Bug: 产品总览广告数据不准确 - 排查广告花费/ACOS/广告订单/点击等字段映射和计算逻辑
+- [x] 修复产品总览广告API调用参数（确保正确传入ASIN/SKU）
+- [x] 修复ACOS计算逻辑（应用广告花费/广告销售额，而非总销售额）
+- [x] 修复广告数据字段映射（对齐领星API真实返回字段）
+- [x] 重构：产品总览数据源全部切换为 /bd/productPerformance/openApi/asinList 接口
+- [x] 重构：重写syncWeeklyOpsFromLingxing，使用asinList接口替代MSKU利润报表+SP广告报表+ASIN360
+- [x] 重构：重写batchSyncWeeklyOps，统一使用asinList接口
+- [x] 重构：更新字段映射（volume/amount/spend/ad_sales_amount/sessions_total/cvr/acos等）
+- [ ] 重构：更新cronJobs.ts使用ASIN360数据源
+- [ ] 验证：对比ASIN360原始数据与前端展示数据一致性
+- [x] 重构：使用父ASIN维度调用asinList接口（search_field=parent_asin）
+- [x] 新增：同步运营负责人（principal_names）到产品档案

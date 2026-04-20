@@ -3481,6 +3481,7 @@ export const productOpsRouter = router({
       adImpressions: z.number().optional(),
       cpc: z.string().optional(),
       adSpend: z.string().optional(),
+      adSales: z.string().optional(),
       acos: z.string().optional(),
       rating: z.string().optional(),
       reviewCount: z.number().optional(),
@@ -3561,8 +3562,7 @@ export const productOpsRouter = router({
       }
     }),
 
-  // ─── Helper: split date range into <=31-day chunks (Lingxing API limit) ───
-  // Sync weekly ops from Lingxing API (profit + ads + session + review data)
+  // ─── Sync weekly ops from Lingxing asinList API (unified data source) ───
   syncWeeklyOpsFromLingxing: protectedProcedure
     .input(z.object({
       productId: z.number(),
@@ -3575,122 +3575,24 @@ export const productOpsRouter = router({
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
 
       const adapter = getLingxingAdapter();
-      const variants = await db!.select().from(productVariants)
-        .where(eq(productVariants.productId, input.productId));
-      const skus = variants.map(v => v.sku).filter(Boolean) as string[];
-      const childAsins = variants.map(v => v.childAsin).filter(Boolean);
       const parentAsin = product.parentAsin;
 
-      // Calculate date range
+      // Get matched SID and MID for this product
+      const { matchedSid, matchedMid, sellers } = await findMatchedSid(adapter, product);
+      // Collect all SIDs for the same marketplace
+      const marketplaceMids = MARKETPLACE_MID_MAP[product.marketplace || 'US'] || [1];
+      const allSids = sellers
+        .filter((s: any) => marketplaceMids.includes(s.mid))
+        .map((s: any) => s.sid);
+      const sidArray = allSids.length > 0 ? allSids : [matchedSid];
+
+      console.log(`[syncWeeklyOps] Product ${parentAsin}, mid=${matchedMid}, sids=${JSON.stringify(sidArray)}`);
+
+      // Calculate date range - split into weekly chunks for weekly granularity
       const now = new Date();
       const globalStart = new Date(now.getTime() - input.months * 30 * 86400000);
-      const globalEnd = now;
 
-      // Split into <=31-day chunks
-      function splitDateRange(start: Date, end: Date): Array<{ startDate: string; endDate: string }> {
-        const chunks: Array<{ startDate: string; endDate: string }> = [];
-        let cur = new Date(start);
-        while (cur < end) {
-          const chunkEnd = new Date(Math.min(cur.getTime() + 30 * 86400000, end.getTime()));
-          chunks.push({
-            startDate: cur.toISOString().split('T')[0],
-            endDate: chunkEnd.toISOString().split('T')[0],
-          });
-          cur = new Date(chunkEnd.getTime() + 86400000);
-        }
-        return chunks;
-      }
-      const dateChunks = splitDateRange(globalStart, globalEnd);
-
-      // ── 1. Fetch MSKU profit data (by SKU or ASIN) ──
-      let profitItems: any[] = [];
-      for (const chunk of dateChunks) {
-        try {
-          const searchField = skus.length > 0 ? 'seller_sku' : 'asin';
-          const searchValue = skus.length > 0 ? skus : (childAsins.length > 0 ? childAsins : [parentAsin]);
-          const res = await adapter.requestWithMockFallback({
-            path: "/bd/profit/report/open/report/msku/list",
-            body: {
-              offset: 0, length: 5000,
-              startDate: chunk.startDate,
-              endDate: chunk.endDate,
-              searchField,
-              searchValue,
-              monthlyQuery: false,
-              summaryEnabled: false,
-              orderStatus: "All",
-            },
-          });
-          const raw = res.data || [];
-          const items = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
-          profitItems.push(...items);
-        } catch (err: any) {
-          console.warn(`[syncWeeklyOps] Profit chunk ${chunk.startDate}~${chunk.endDate} error: ${err.message}`);
-        }
-      }
-
-      // ── 2. Fetch SP ad report data ──
-      let adItems: any[] = [];
-      for (const chunk of dateChunks) {
-        try {
-          const res = await adapter.requestWithMockFallback({
-            path: "/pb/openapi/newad/spProductAdReports",
-            body: {
-              start_date: chunk.startDate,
-              end_date: chunk.endDate,
-              asin: childAsins.length > 0 ? childAsins[0] : parentAsin,
-            },
-          });
-          const raw = res.data || res || [];
-          const items = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
-          adItems.push(...items);
-        } catch (err: any) {
-          console.warn(`[syncWeeklyOps] Ad data chunk error: ${err.message}`);
-        }
-      }
-
-      // ── 3. Fetch ASIN360 session/performance data ──
-      let sessionItems: any[] = [];
-      try {
-        const startStr = globalStart.toISOString().split('T')[0];
-        const endStr = globalEnd.toISOString().split('T')[0];
-        const res = await adapter.requestWithMockFallback({
-          path: "/basicOpen/salesAnalysis/productPerformance/performanceTrendByHour",
-          body: {
-            sids: 'all',
-            date_start: startStr,
-            date_end: endStr,
-            summary_field: 'asin',
-            summary_field_value: childAsins.length > 0 ? childAsins[0] : parentAsin,
-          },
-        });
-        const raw = res.data || res || {};
-        sessionItems = (raw as any).list || (Array.isArray(raw) ? raw : []);
-      } catch (err: any) {
-        console.warn(`[syncWeeklyOps] Session data error: ${err.message}`);
-      }
-
-      // ── 4. Fetch review stats ──
-      let reviewData: any = null;
-      try {
-        const startStr = globalStart.toISOString().split('T')[0];
-        const endStr = globalEnd.toISOString().split('T')[0];
-        const res = await adapter.requestWithMockFallback({
-          path: "/erp/sc/v2/ca/reviewReport/lists",
-          body: { start_date: startStr, end_date: endStr, offset: 0, length: 100 },
-          method: 'GET',
-        });
-        const raw = res.data || res || {};
-        // Find matching ASIN in review data
-        const reviewList = Array.isArray(raw) ? raw : (raw as any).list || (raw as any).data || [];
-        reviewData = reviewList.find((r: any) =>
-          r.asin === parentAsin || childAsins.includes(r.asin)
-        ) || (reviewList.length > 0 ? reviewList[0] : null);
-      } catch (err: any) {
-        console.warn(`[syncWeeklyOps] Review data error: ${err.message}`);
-      }
-
-      // ── Helper: get Monday of a date ──
+      // Helper: get Monday of a date
       const getWeekMonday = (dateStr: string): string => {
         const d = new Date(dateStr);
         const day = d.getDay();
@@ -3698,158 +3600,183 @@ export const productOpsRouter = router({
         return new Date(d.setDate(diff)).toISOString().split('T')[0];
       };
 
-      // ── Group profit items by week ──
-      const weekMap = new Map<string, any[]>();
-      for (const item of profitItems) {
-        const date = item.postedDateLocale || item.statDate || item.date || '';
-        if (!date) continue;
-        const weekKey = getWeekMonday(date);
-        if (!weekMap.has(weekKey)) weekMap.set(weekKey, []);
-        weekMap.get(weekKey)!.push(item);
+      // Generate weekly date ranges
+      const weekRanges: Array<{ start: string; end: string }> = [];
+      let cur = new Date(globalStart);
+      // Align to Monday
+      const curDay = cur.getDay();
+      const mondayDiff = curDay === 0 ? -6 : 1 - curDay;
+      cur.setDate(cur.getDate() + mondayDiff);
+
+      while (cur < now) {
+        const weekEnd = new Date(cur.getTime() + 6 * 86400000);
+        weekRanges.push({
+          start: cur.toISOString().split('T')[0],
+          end: weekEnd.toISOString().split('T')[0],
+        });
+        cur = new Date(cur.getTime() + 7 * 86400000);
       }
 
-      // ── Group ad items by week ──
-      const adWeekMap = new Map<string, any[]>();
-      for (const item of adItems) {
-        const date = item.report_date || item.date || '';
-        if (!date) continue;
-        const weekKey = getWeekMonday(date);
-        if (!adWeekMap.has(weekKey)) adWeekMap.set(weekKey, []);
-        adWeekMap.get(weekKey)!.push(item);
-      }
-
-      // ── Group session items by week ──
-      const sessionWeekMap = new Map<string, any[]>();
-      for (const item of sessionItems) {
-        const date = item.r_date || item.date || '';
-        if (!date) continue;
-        const weekKey = getWeekMonday(date);
-        if (!sessionWeekMap.has(weekKey)) sessionWeekMap.set(weekKey, []);
-        sessionWeekMap.get(weekKey)!.push(item);
-      }
-
-      // ── Upsert weekly records ──
+      // Fetch data from asinList API for each week
       let synced = 0;
-      const allWeeks = new Set([...Array.from(weekMap.keys()), ...Array.from(adWeekMap.keys()), ...Array.from(sessionWeekMap.keys())]);
+      let totalItemCount = 0;
+      let operatorName = '';
 
-      for (const weekStart of Array.from(allWeeks).sort()) {
-        const ws = new Date(weekStart);
-        const we = new Date(ws.getTime() + 6 * 86400000);
-        const weekEnd = we.toISOString().split('T')[0];
-
-        // Aggregate profit data
-        const items = weekMap.get(weekStart) || [];
-        let totalSales = 0, totalOrders = 0, totalRevenue = 0, totalProfit = 0;
-        let totalAdSpend = 0, totalRefundsRate = 0, refundsCount = 0;
-        for (const item of items) {
-          totalSales += Number(item.totalSalesQuantity || item.totalFbaAndFbmQuantity || 0);
-          totalOrders += Number(item.totalSalesQuantity || 0);
-          totalRevenue += Number(item.totalSalesAmount || item.totalFbaAndFbmAmount || 0);
-          totalProfit += Number(item.grossProfit || 0);
-          totalAdSpend += Math.abs(Number(item.totalAdsCost || 0));
-          if (item.refundsRate != null || item.fbaReturnsQuantityRate != null) {
-            totalRefundsRate += Number(item.refundsRate || item.fbaReturnsQuantityRate || 0);
-            refundsCount++;
-          }
-        }
-
-        // Aggregate ad data
-        const adDayItems = adWeekMap.get(weekStart) || [];
-        let weekAdImpressions = 0, weekAdClicks = 0, weekAdOrders = 0, weekAdSpendFromReport = 0;
-        for (const ad of adDayItems) {
-          weekAdImpressions += Number(ad.impressions || 0);
-          weekAdClicks += Number(ad.clicks || 0);
-          weekAdOrders += Number(ad.orders || ad.attributed_orders || 0);
-          weekAdSpendFromReport += Number(ad.cost || ad.spend || 0);
-        }
-        // Use ad report spend if profit API ad spend is 0
-        if (totalAdSpend === 0 && weekAdSpendFromReport > 0) {
-          totalAdSpend = weekAdSpendFromReport;
-        }
-
-        // Aggregate session data
-        const sessDayItems = sessionWeekMap.get(weekStart) || [];
-        let weekSessions = 0;
-        for (const sess of sessDayItems) {
-          weekSessions += Number(sess.sessions || sess.page_views || 0);
-        }
-
-        const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
-        const prevWeekStart = new Date(ws.getTime() - 7 * 86400000).toISOString().split('T')[0];
-        const prevItems = weekMap.get(prevWeekStart) || [];
-        const prevSales = prevItems.reduce((s: number, i: any) => s + Number(i.totalSalesQuantity || i.totalFbaAndFbmQuantity || 0), 0);
-        const trend = totalSales > prevSales ? 'up' : totalSales < prevSales ? 'down' : 'stable';
-
-        // Calculate CVR and CTR
-        const totalCvr = weekSessions > 0 ? (totalOrders / weekSessions * 100) : 0;
-        const adCvr = weekAdClicks > 0 ? (weekAdOrders / weekAdClicks * 100) : 0;
-        const organicOrders = Math.max(0, totalOrders - weekAdOrders);
-        const organicClicks = Math.max(0, weekSessions - weekAdClicks);
-        const organicCvr = organicClicks > 0 ? (organicOrders / organicClicks * 100) : 0;
-        const ctr = weekAdImpressions > 0 ? (weekAdClicks / weekAdImpressions) : 0;
-        const cpc = weekAdClicks > 0 ? (totalAdSpend / weekAdClicks) : 0;
-        const acos = totalRevenue > 0 ? (totalAdSpend / totalRevenue * 100) : 0;
-        const avgReturnRate = refundsCount > 0 ? (totalRefundsRate / refundsCount) : 0;
-
-        // Upsert
-        const [existing] = await db!.select().from(productWeeklyOps)
-          .where(and(
-            eq(productWeeklyOps.productId, input.productId),
-            eq(productWeeklyOps.userId, ctx.user.id),
-            eq(productWeeklyOps.weekStartDate, weekStart),
-          ));
-
-        const record = {
-          salesTrend: trend as any,
-          salesQty: totalSales,
-          orderQty: totalOrders,
-          salesAmount: totalRevenue.toFixed(2),
-          orderProfit: totalProfit.toFixed(2),
-          orderProfitMargin: profitMargin.toFixed(2),
-          sessionTotal: weekSessions,
-          totalCvr: totalCvr.toFixed(2),
-          adCvr: adCvr.toFixed(2),
-          organicCvr: organicCvr.toFixed(2),
-          adOrders: weekAdOrders,
-          organicOrders,
-          adClicks: weekAdClicks,
-          organicClicks,
-          ctr: ctr.toFixed(4),
-          adImpressions: weekAdImpressions,
-          cpc: cpc.toFixed(2),
-          adSpend: totalAdSpend.toFixed(2),
-          acos: acos.toFixed(2),
-          rating: reviewData?.score?.toString() || reviewData?.ratings?.toString() || '0',
-          reviewCount: reviewData?.review_num || reviewData?.total_reviews || 0,
-          returnRate: avgReturnRate.toFixed(2),
-        };
-
-        if (existing) {
-          await db!.update(productWeeklyOps).set(record as any).where(eq(productWeeklyOps.id, existing.id));
-        } else {
-          await db!.insert(productWeeklyOps).values({
-            ...record as any,
-            productId: input.productId,
-            userId: ctx.user.id,
-            weekStartDate: weekStart,
-            weekEndDate: weekEnd,
+      for (const week of weekRanges) {
+        try {
+          const res = await adapter.requestWithMockFallback({
+            path: "/bd/productPerformance/openApi/asinList",
+            body: {
+              offset: 0,
+              length: 20,
+              sort_field: "volume",
+              sort_type: "desc",
+              search_field: "parent_asin",
+              search_value: [parentAsin],
+              mid: matchedMid,
+              sid: sidArray,
+              start_date: week.start,
+              end_date: week.end,
+              summary_field: "asin",
+              currency_code: "USD",
+              is_recently_enum: true,
+              purchase_status: 0,
+            },
           });
+
+          const raw = res.data || [];
+          const items = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
+          if (items.length === 0) continue;
+          totalItemCount += items.length;
+
+          // Aggregate all items for this week (may have multiple child ASINs)
+          let totalSales = 0, totalOrders = 0, totalRevenue = 0, totalProfit = 0;
+          let totalAdSpend = 0, totalAdSales = 0, totalAdOrders = 0;
+          let totalImpressions = 0, totalClicks = 0;
+          let totalSessions = 0, totalReturnRate = 0, returnCount = 0;
+          let latestRating = 0, latestReviewCount = 0;
+
+          for (const item of items) {
+            totalSales += Number(item.volume || 0);
+            totalOrders += Number(item.order_items || 0);
+            totalRevenue += Number(item.amount || 0);
+            totalProfit += Number(item.gross_profit || 0);
+            totalAdSpend += Number(item.spend || 0);
+            totalAdSales += Number(item.ad_sales_amount || 0);
+            totalAdOrders += Number(item.ad_order_quantity || 0);
+            totalImpressions += Number(item.impressions || 0);
+            totalClicks += Number(item.clicks || 0);
+            totalSessions += Number(item.sessions_total || 0);
+            if (item.return_rate != null && Number(item.return_rate) > 0) {
+              totalReturnRate += Number(item.return_rate);
+              returnCount++;
+            }
+            // Take the latest rating/review
+            if (Number(item.avg_star || 0) > 0) latestRating = Number(item.avg_star);
+            if (Number(item.reviews_count || 0) > 0) latestReviewCount = Number(item.reviews_count);
+            // Capture operator name
+            if (item.principal_names && !operatorName) {
+              operatorName = Array.isArray(item.principal_names) ? item.principal_names.join(', ') : String(item.principal_names);
+            }
+          }
+
+          const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
+          // ACOS = ad spend / ad sales (NOT total sales)
+          const acos = totalAdSales > 0 ? (totalAdSpend / totalAdSales * 100) : 0;
+          const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) : 0;
+          const cpc = totalClicks > 0 ? (totalAdSpend / totalClicks) : 0;
+          const adCvr = totalClicks > 0 ? (totalAdOrders / totalClicks * 100) : 0;
+          const totalCvr = totalSessions > 0 ? (totalOrders / totalSessions * 100) : 0;
+          const organicOrders = Math.max(0, totalOrders - totalAdOrders);
+          const organicClicks = Math.max(0, totalSessions - totalClicks);
+          const organicCvr = organicClicks > 0 ? (organicOrders / organicClicks * 100) : 0;
+          const avgReturnRate = returnCount > 0 ? (totalReturnRate / returnCount) : 0;
+
+          // Determine trend by comparing with previous week
+          const prevWeekStart = new Date(new Date(week.start).getTime() - 7 * 86400000).toISOString().split('T')[0];
+          const [prevRecord] = await db!.select().from(productWeeklyOps)
+            .where(and(
+              eq(productWeeklyOps.productId, input.productId),
+              eq(productWeeklyOps.userId, ctx.user.id),
+              eq(productWeeklyOps.weekStartDate, prevWeekStart),
+            ));
+          const prevSales = prevRecord?.salesQty || 0;
+          const trend = totalSales > prevSales ? 'up' : totalSales < prevSales ? 'down' : 'stable';
+
+          // Upsert
+          const [existing] = await db!.select().from(productWeeklyOps)
+            .where(and(
+              eq(productWeeklyOps.productId, input.productId),
+              eq(productWeeklyOps.userId, ctx.user.id),
+              eq(productWeeklyOps.weekStartDate, week.start),
+            ));
+
+          const record = {
+            salesTrend: trend as any,
+            salesQty: totalSales,
+            orderQty: totalOrders,
+            salesAmount: totalRevenue.toFixed(2),
+            orderProfit: totalProfit.toFixed(2),
+            orderProfitMargin: profitMargin.toFixed(2),
+            sessionTotal: totalSessions,
+            totalCvr: totalCvr.toFixed(2),
+            adCvr: adCvr.toFixed(2),
+            organicCvr: organicCvr.toFixed(2),
+            adOrders: totalAdOrders,
+            organicOrders,
+            adClicks: totalClicks,
+            organicClicks,
+            ctr: ctr.toFixed(4),
+            adImpressions: totalImpressions,
+            cpc: cpc.toFixed(2),
+            adSpend: totalAdSpend.toFixed(2),
+            adSales: totalAdSales.toFixed(2),
+            acos: acos.toFixed(2),
+            rating: latestRating.toFixed(1),
+            reviewCount: latestReviewCount,
+            returnRate: avgReturnRate.toFixed(2),
+          };
+
+          if (existing) {
+            await db!.update(productWeeklyOps).set(record as any).where(eq(productWeeklyOps.id, existing.id));
+          } else {
+            await db!.insert(productWeeklyOps).values({
+              ...record as any,
+              productId: input.productId,
+              userId: ctx.user.id,
+              weekStartDate: week.start,
+              weekEndDate: week.end,
+            });
+          }
+          synced++;
+        } catch (err: any) {
+          console.warn(`[syncWeeklyOps] Week ${week.start}~${week.end} error: ${err.message}`);
         }
-        synced++;
       }
 
-      // ── Auto-generate monthly summaries ──
-      const monthMap = new Map<string, { profit: number; orders: number; revenue: number; adSpend: number }>();
-      for (const item of profitItems) {
-        const date = item.postedDateLocale || item.statDate || item.date || '';
-        if (!date) continue;
-        const ym = date.substring(0, 7);
-        if (!monthMap.has(ym)) monthMap.set(ym, { profit: 0, orders: 0, revenue: 0, adSpend: 0 });
+      // ── Update operator (principal_names) on product profile ──
+      if (operatorName && !product.operator) {
+        await db!.update(productProfiles)
+          .set({ operator: operatorName } as any)
+          .where(eq(productProfiles.id, input.productId));
+      }
+
+      // ── Auto-generate monthly summaries from weekly data ──
+      const monthMap = new Map<string, { profit: number; orders: number; revenue: number; adSpend: number; adSales: number }>();
+      const allWeeklyData = await db!.select().from(productWeeklyOps)
+        .where(and(
+          eq(productWeeklyOps.productId, input.productId),
+          eq(productWeeklyOps.userId, ctx.user.id),
+        ));
+      for (const w of allWeeklyData) {
+        const ym = w.weekStartDate.substring(0, 7);
+        if (!monthMap.has(ym)) monthMap.set(ym, { profit: 0, orders: 0, revenue: 0, adSpend: 0, adSales: 0 });
         const m = monthMap.get(ym)!;
-        m.orders += Number(item.totalSalesQuantity || 0);
-        m.revenue += Number(item.totalSalesAmount || item.totalFbaAndFbmAmount || 0);
-        m.profit += Number(item.grossProfit || 0);
-        m.adSpend += Math.abs(Number(item.totalAdsCost || 0));
+        m.orders += w.salesQty || 0;
+        m.revenue += Number(w.salesAmount || 0);
+        m.profit += Number(w.orderProfit || 0);
+        m.adSpend += Number(w.adSpend || 0);
+        m.adSales += Number(w.adSales || 0);
       }
 
       for (const [ym, data] of Array.from(monthMap.entries())) {
@@ -3866,8 +3793,8 @@ export const productOpsRouter = router({
           totalOrderQty: data.orders,
           totalSalesAmount: data.revenue.toFixed(2),
           totalAdSpend: data.adSpend.toFixed(2),
-          avgAcos: data.revenue > 0 ? (data.adSpend / data.revenue * 100).toFixed(2) : '0',
-          avgRating: reviewData?.score?.toString() || reviewData?.ratings?.toString() || '0',
+          avgAcos: data.adSales > 0 ? (data.adSpend / data.adSales * 100).toFixed(2) : '0',
+          avgRating: '0',
         };
         if (existing) {
           await db!.update(productMonthlySummary).set(record as any).where(eq(productMonthlySummary.id, existing.id));
@@ -3881,7 +3808,7 @@ export const productOpsRouter = router({
         }
       }
 
-      return { syncedWeeks: synced, syncedMonths: monthMap.size, profitItemCount: profitItems.length, adItemCount: adItems.length, sessionItemCount: sessionItems.length };
+      return { syncedWeeks: synced, syncedMonths: monthMap.size, totalItemCount, dataSource: 'asinList' };
     }),
 
   // Auto-fill product basic info from Lingxing profit API
@@ -4041,18 +3968,17 @@ export const productOpsRouter = router({
       return results;
     }),
 
-  // ─── Batch sync weekly ops for all active products ───
+  // ─── Batch sync weekly ops for all active products (using asinList API) ───
   batchSyncWeeklyOps: protectedProcedure
     .input(z.object({
-      weeks: z.number().default(1), // how many weeks back to sync (default: last 1 week)
+      weeks: z.number().default(1),
     }).optional())
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       const weeks = input?.weeks || 1;
-      const months = Math.max(1, Math.ceil(weeks * 7 / 30));
 
       // Get all active products for this user
-      const products = await db!.select({ id: productProfiles.id, parentAsin: productProfiles.parentAsin })
+      const products = await db!.select()
         .from(productProfiles)
         .where(and(
           eq(productProfiles.userId, ctx.user.id),
@@ -4068,102 +3994,168 @@ export const productOpsRouter = router({
       let totalSynced = 0;
       let totalErrors = 0;
 
+      // Generate weekly date ranges
+      const now = new Date();
+      const getWeekMonday = (d: Date): Date => {
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        return new Date(new Date(d).setDate(diff));
+      };
+
+      const weekRanges: Array<{ start: string; end: string }> = [];
+      let cur = getWeekMonday(new Date(now.getTime() - (weeks - 1) * 7 * 86400000));
+      while (cur <= now) {
+        const weekEnd = new Date(cur.getTime() + 6 * 86400000);
+        weekRanges.push({
+          start: cur.toISOString().split('T')[0],
+          end: weekEnd.toISOString().split('T')[0],
+        });
+        cur = new Date(cur.getTime() + 7 * 86400000);
+      }
+
       for (const product of products) {
         try {
-          // Reuse the same logic as syncWeeklyOpsFromLingxing but inline
-          const variants = await db!.select().from(productVariants)
-            .where(eq(productVariants.productId, product.id));
-          const skus = variants.map(v => v.sku).filter(Boolean) as string[];
-          const childAsins = variants.map(v => v.childAsin).filter(Boolean);
-
-          const now = new Date();
-          const globalStart = new Date(now.getTime() - months * 30 * 86400000);
-          const startDate = globalStart.toISOString().split('T')[0];
-          const endDate = now.toISOString().split('T')[0];
-
-          // Fetch MSKU profit data
-          const searchField = skus.length > 0 ? 'seller_sku' : 'asin';
-          const searchValue = skus.length > 0 ? skus : (childAsins.length > 0 ? childAsins : [product.parentAsin]);
-          const res = await adapter.requestWithMockFallback({
-            path: "/bd/profit/report/open/report/msku/list",
-            body: {
-              offset: 0, length: 5000,
-              startDate, endDate,
-              searchField, searchValue,
-              monthlyQuery: false,
-              summaryEnabled: false,
-              orderStatus: "All",
-            },
-          });
-          const raw = res.data || [];
-          const profitItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
-
-          // Group by week and upsert
-          const getWeekMonday = (dateStr: string): string => {
-            const d = new Date(dateStr);
-            const day = d.getDay();
-            const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-            return new Date(d.setDate(diff)).toISOString().split('T')[0];
-          };
-
-          const weekMap = new Map<string, any[]>();
-          for (const item of profitItems) {
-            const date = item.postedDateLocale || item.statDate || item.date || '';
-            if (!date) continue;
-            const weekKey = getWeekMonday(date);
-            if (!weekMap.has(weekKey)) weekMap.set(weekKey, []);
-            weekMap.get(weekKey)!.push(item);
-          }
+          const { matchedSid, matchedMid, sellers } = await findMatchedSid(adapter, product);
+          const marketplaceMids = MARKETPLACE_MID_MAP[product.marketplace || 'US'] || [1];
+          const allSids = sellers
+            .filter((s: any) => marketplaceMids.includes(s.mid))
+            .map((s: any) => s.sid);
+          const sidArray = allSids.length > 0 ? allSids : [matchedSid];
 
           let productSynced = 0;
-          for (const [weekStart, items] of Array.from(weekMap.entries())) {
-            const ws = new Date(weekStart);
-            const weekEnd = new Date(ws.getTime() + 6 * 86400000).toISOString().split('T')[0];
-
-            let totalSales = 0, totalRevenue = 0, totalProfit = 0, totalAdSpend = 0;
-            for (const item of items) {
-              totalSales += Number(item.totalSalesQuantity || item.totalFbaAndFbmQuantity || 0);
-              totalRevenue += Number(item.totalSalesAmount || item.totalFbaAndFbmAmount || 0);
-              totalProfit += Number(item.grossProfit || 0);
-              totalAdSpend += Math.abs(Number(item.totalAdsCost || 0));
-            }
-
-            const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
-            const prevWeekStart = new Date(ws.getTime() - 7 * 86400000).toISOString().split('T')[0];
-            const prevItems = weekMap.get(prevWeekStart) || [];
-            const prevSales = prevItems.reduce((s: number, i: any) => s + Number(i.totalSalesQuantity || i.totalFbaAndFbmQuantity || 0), 0);
-            const trend = totalSales > prevSales ? 'up' : totalSales < prevSales ? 'down' : 'stable';
-
-            const [existing] = await db!.select().from(productWeeklyOps)
-              .where(and(
-                eq(productWeeklyOps.productId, product.id),
-                eq(productWeeklyOps.userId, ctx.user.id),
-                eq(productWeeklyOps.weekStartDate, weekStart),
-              ));
-
-            const record = {
-              salesTrend: trend as any,
-              salesQty: totalSales,
-              orderQty: totalSales,
-              salesAmount: totalRevenue.toFixed(2),
-              orderProfit: totalProfit.toFixed(2),
-              orderProfitMargin: profitMargin.toFixed(2),
-              adSpend: totalAdSpend.toFixed(2),
-              acos: totalRevenue > 0 ? (totalAdSpend / totalRevenue * 100).toFixed(2) : '0',
-            };
-
-            if (existing) {
-              await db!.update(productWeeklyOps).set(record as any).where(eq(productWeeklyOps.id, existing.id));
-            } else {
-              await db!.insert(productWeeklyOps).values({
-                ...record as any,
-                productId: product.id,
-                userId: ctx.user.id,
-                weekStartDate: weekStart,
-                weekEndDate: weekEnd,
+          for (const week of weekRanges) {
+            try {
+              const res = await adapter.requestWithMockFallback({
+                path: "/bd/productPerformance/openApi/asinList",
+                body: {
+                  offset: 0,
+                  length: 20,
+                  sort_field: "volume",
+                  sort_type: "desc",
+                  search_field: "parent_asin",
+                  search_value: [product.parentAsin],
+                  mid: matchedMid,
+                  sid: sidArray,
+                  start_date: week.start,
+                  end_date: week.end,
+                  summary_field: "asin",
+                  currency_code: "USD",
+                  is_recently_enum: true,
+                  purchase_status: 0,
+                },
               });
+
+              const raw = res.data || [];
+              const items = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
+              if (items.length === 0) continue;
+
+              // Aggregate all items for this week
+              let totalSales = 0, totalOrders = 0, totalRevenue = 0, totalProfit = 0;
+              let totalAdSpend = 0, totalAdSales = 0, totalAdOrders = 0;
+              let totalImpressions = 0, totalClicks = 0;
+              let totalSessions = 0, totalReturnRate = 0, returnCount = 0;
+              let latestRating = 0, latestReviewCount = 0;
+              let operatorName = '';
+
+              for (const item of items) {
+                totalSales += Number(item.volume || 0);
+                totalOrders += Number(item.order_items || 0);
+                totalRevenue += Number(item.amount || 0);
+                totalProfit += Number(item.gross_profit || 0);
+                totalAdSpend += Number(item.spend || 0);
+                totalAdSales += Number(item.ad_sales_amount || 0);
+                totalAdOrders += Number(item.ad_order_quantity || 0);
+                totalImpressions += Number(item.impressions || 0);
+                totalClicks += Number(item.clicks || 0);
+                totalSessions += Number(item.sessions_total || 0);
+                if (item.return_rate != null && Number(item.return_rate) > 0) {
+                  totalReturnRate += Number(item.return_rate);
+                  returnCount++;
+                }
+                if (Number(item.avg_star || 0) > 0) latestRating = Number(item.avg_star);
+                if (Number(item.reviews_count || 0) > 0) latestReviewCount = Number(item.reviews_count);
+                if (item.principal_names && !operatorName) {
+                  operatorName = Array.isArray(item.principal_names) ? item.principal_names.join(', ') : String(item.principal_names);
+                }
+              }
+
+              const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
+              const acos = totalAdSales > 0 ? (totalAdSpend / totalAdSales * 100) : 0;
+              const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) : 0;
+              const cpc = totalClicks > 0 ? (totalAdSpend / totalClicks) : 0;
+              const adCvr = totalClicks > 0 ? (totalAdOrders / totalClicks * 100) : 0;
+              const totalCvr = totalSessions > 0 ? (totalOrders / totalSessions * 100) : 0;
+              const organicOrders = Math.max(0, totalOrders - totalAdOrders);
+              const organicClicks = Math.max(0, totalSessions - totalClicks);
+              const organicCvr = organicClicks > 0 ? (organicOrders / organicClicks * 100) : 0;
+              const avgReturnRate = returnCount > 0 ? (totalReturnRate / returnCount) : 0;
+
+              // Trend
+              const prevWeekStart = new Date(new Date(week.start).getTime() - 7 * 86400000).toISOString().split('T')[0];
+              const [prevRecord] = await db!.select().from(productWeeklyOps)
+                .where(and(
+                  eq(productWeeklyOps.productId, product.id),
+                  eq(productWeeklyOps.userId, ctx.user.id),
+                  eq(productWeeklyOps.weekStartDate, prevWeekStart),
+                ));
+              const prevSales = prevRecord?.salesQty || 0;
+              const trend = totalSales > prevSales ? 'up' : totalSales < prevSales ? 'down' : 'stable';
+
+              const [existing] = await db!.select().from(productWeeklyOps)
+                .where(and(
+                  eq(productWeeklyOps.productId, product.id),
+                  eq(productWeeklyOps.userId, ctx.user.id),
+                  eq(productWeeklyOps.weekStartDate, week.start),
+                ));
+
+              const record = {
+                salesTrend: trend as any,
+                salesQty: totalSales,
+                orderQty: totalOrders,
+                salesAmount: totalRevenue.toFixed(2),
+                orderProfit: totalProfit.toFixed(2),
+                orderProfitMargin: profitMargin.toFixed(2),
+                sessionTotal: totalSessions,
+                totalCvr: totalCvr.toFixed(2),
+                adCvr: adCvr.toFixed(2),
+                organicCvr: organicCvr.toFixed(2),
+                adOrders: totalAdOrders,
+                organicOrders,
+                adClicks: totalClicks,
+                organicClicks,
+                ctr: ctr.toFixed(4),
+                adImpressions: totalImpressions,
+                cpc: cpc.toFixed(2),
+                adSpend: totalAdSpend.toFixed(2),
+                adSales: totalAdSales.toFixed(2),
+                acos: acos.toFixed(2),
+                rating: latestRating.toFixed(1),
+                reviewCount: latestReviewCount,
+                returnRate: avgReturnRate.toFixed(2),
+              };
+
+              if (existing) {
+                await db!.update(productWeeklyOps).set(record as any).where(eq(productWeeklyOps.id, existing.id));
+              } else {
+                await db!.insert(productWeeklyOps).values({
+                  ...record as any,
+                  productId: product.id,
+                  userId: ctx.user.id,
+                  weekStartDate: week.start,
+                  weekEndDate: week.end,
+                });
+              }
+              productSynced++;
+
+              // Update operator if found
+              if (operatorName && !product.operator) {
+                await db!.update(productProfiles)
+                  .set({ operator: operatorName } as any)
+                  .where(eq(productProfiles.id, product.id));
+              }
+            } catch (weekErr: any) {
+              console.warn(`[batchSync] Product ${product.parentAsin} week ${week.start} error: ${weekErr.message}`);
             }
-            productSynced++;
           }
 
           results.push({ productId: product.id, parentAsin: product.parentAsin, syncedWeeks: productSynced });
@@ -4269,6 +4261,7 @@ export const productOpsRouter = router({
           const adImpressions = week.adImpressions || 0;
           const cpc = parseFloat(String(week.cpc || "0"));
           const adSpend = parseFloat(String(week.adSpend || "0"));
+          const adSales = parseFloat(String((week as any).adSales || "0"));
           const acos = parseFloat(String(week.acos || "0"));
           const rating = parseFloat(String(week.rating || "0"));
           const reviewCount = week.reviewCount || 0;
@@ -4299,6 +4292,7 @@ export const productOpsRouter = router({
             adImpressions,
             cpc,
             adSpend,
+            adSales,
             acos,
             // Quality
             rating,
@@ -4393,15 +4387,21 @@ const MARKETPLACE_MID_MAP: Record<string, number[]> = {
   'US': [1], 'UK': [4], 'DE': [5], 'FR': [6], 'IT': [7], 'ES': [8], 'JP': [9], 'AU': [10], 'CA': [2], 'MX': [3],
 };
 
-async function findMatchedSid(adapter: any, product: { storeName: string | null; marketplace: string | null }): Promise<{ matchedSid: number | string; sellers: any[] }> {
+async function findMatchedSid(adapter: any, product: { storeName: string | null; marketplace: string | null }): Promise<{ matchedSid: number | string; matchedMid: number; sellers: any[] }> {
   const sellers = await getCachedSellers(adapter);
   let matchedSid: number | string = 1;
+  let matchedMid: number = 1; // default US
   const matched = sellers.find((s: any) =>
     (product.storeName && (s.name === product.storeName || s.wname === product.storeName || s.account_name === product.storeName)) ||
     (product.marketplace && (s.marketplace === product.marketplace || (MARKETPLACE_MID_MAP[product.marketplace] || []).includes(s.mid)))
   );
-  if (matched) matchedSid = matched.sid;
-  return { matchedSid, sellers };
+  if (matched) {
+    matchedSid = matched.sid;
+    matchedMid = matched.mid || (product.marketplace ? (MARKETPLACE_MID_MAP[product.marketplace]?.[0] || 1) : 1);
+  } else if (product.marketplace) {
+    matchedMid = MARKETPLACE_MID_MAP[product.marketplace]?.[0] || 1;
+  }
+  return { matchedSid, matchedMid, sellers };
 }
 
 function getToday(): string {

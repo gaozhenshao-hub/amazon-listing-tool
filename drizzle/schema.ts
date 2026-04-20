@@ -3231,6 +3231,7 @@ export const productWeeklyOps = mysqlTable("product_weekly_ops", {
   adImpressions: int("ad_impressions").default(0),
   cpc: decimal("cpc", { precision: 8, scale: 2 }).default("0"),
   adSpend: decimal("ad_spend", { precision: 12, scale: 2 }).default("0"),
+  adSales: decimal("ad_sales", { precision: 12, scale: 2 }).default("0"),
   acos: decimal("acos", { precision: 6, scale: 2 }).default("0"),
   rating: decimal("rating", { precision: 3, scale: 1 }).default("0"),
   reviewCount: int("review_count").default(0),

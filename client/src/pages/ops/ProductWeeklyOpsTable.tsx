@@ -278,6 +278,7 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
         orderProfit: parseFloat(String(w.orderProfit || "0")),
         profitMargin: parseFloat(String(w.orderProfitMargin || "0")),
         adSpend: parseFloat(String(w.adSpend || "0")),
+        adSales: parseFloat(String((w as any).adSales || "0")),
         acos: parseFloat(String(w.acos || "0")),
         cpc: parseFloat(String(w.cpc || "0")),
         sessionTotal: w.sessionTotal || 0,
@@ -318,6 +319,7 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
       adImpressions: String(row.adImpressions || 0),
       cpc: String(row.cpc || "0"),
       adSpend: String(row.adSpend || "0"),
+      adSales: String((row as any).adSales || "0"),
       acos: String(row.acos || "0"),
       rating: String(row.rating || "0"),
       reviewCount: String(row.reviewCount || 0),
@@ -348,6 +350,7 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
       adImpressions: parseInt(editData.adImpressions) || 0,
       cpc: editData.cpc,
       adSpend: editData.adSpend,
+      adSales: editData.adSales,
       acos: editData.acos,
       rating: editData.rating,
       reviewCount: parseInt(editData.reviewCount) || 0,
@@ -361,7 +364,7 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
     salesQty: "0", orderQty: "0", salesAmount: "0", orderProfit: "0", orderProfitMargin: "0",
     sessionTotal: "0", totalCvr: "0", adCvr: "0", organicCvr: "0",
     adOrders: "0", organicOrders: "0", adClicks: "0", organicClicks: "0",
-    ctr: "0", adImpressions: "0", cpc: "0", adSpend: "0", acos: "0",
+    ctr: "0", adImpressions: "0", cpc: "0", adSpend: "0", adSales: "0", acos: "0",
     rating: "0", reviewCount: "0", returnRate: "0",
   });
 
@@ -435,6 +438,7 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
     { key: "adImpressions", label: "曝光", width: "w-16" },
     { key: "cpc", label: "CPC", width: "w-14" },
     { key: "adSpend", label: "广告费", width: "w-18" },
+    { key: "adSales", label: "广告销售额", width: "w-20" },
     { key: "acos", label: "ACOS", width: "w-14" },
     { key: "rating", label: "评分", width: "w-12" },
     { key: "reviewCount", label: "评论", width: "w-12" },
@@ -516,7 +520,8 @@ export default function ProductWeeklyOpsTable({ productId, parentAsin }: Props) 
               <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} />
               <Tooltip contentStyle={tooltipStyle} />
               <Legend wrapperStyle={legendStyle} />
-              <Bar yAxisId="left" dataKey="adSpend" name="广告费" fill="#ef4444" opacity={0.6} radius={[2, 2, 0, 0]} />
+              <Bar yAxisId="left" dataKey="adSpend" name="广告花费" fill="#ef4444" opacity={0.6} radius={[2, 2, 0, 0]} />
+              <Bar yAxisId="left" dataKey="adSales" name="广告销售额" fill="#22c55e" opacity={0.6} radius={[2, 2, 0, 0]} />
               <Line yAxisId="right" type="monotone" dataKey="cpc" name="CPC $" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
               <Line yAxisId="right" type="monotone" dataKey="ctr" name="CTR%" stroke="#06b6d4" strokeWidth={1.5} dot={{ r: 2 }} />
             </ComposedChart>
