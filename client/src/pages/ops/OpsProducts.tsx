@@ -344,7 +344,14 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
             </>
           )}
 
-          {/* Operator */}
+          {/* Product Name (品名) */}
+          {product.chineseName && (
+            <div className="text-xs px-2 py-1 rounded bg-violet-50 border border-violet-200 text-violet-700 max-w-[160px] truncate" title={product.chineseName}>
+              <span className="text-[10px] text-violet-400 mr-1">品名</span>{product.chineseName}
+            </div>
+          )}
+
+          {/* Operator (运营负责人) */}
           <Popover open={assignOpen} onOpenChange={setAssignOpen}>
             <PopoverTrigger asChild>
               <button className={`text-xs rounded px-2 py-1 transition-colors border ${

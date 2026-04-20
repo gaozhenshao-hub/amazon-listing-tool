@@ -3621,6 +3621,7 @@ export const productOpsRouter = router({
       let synced = 0;
       let totalItemCount = 0;
       let operatorName = '';
+      let productNameFromApi = '';
 
       for (const week of weekRanges) {
         try {
@@ -3677,6 +3678,10 @@ export const productOpsRouter = router({
             // Capture operator name
             if (item.principal_names && !operatorName) {
               operatorName = Array.isArray(item.principal_names) ? item.principal_names.join(', ') : String(item.principal_names);
+            }
+            // Capture product name (品名)
+            if (item.product_name && !productNameFromApi) {
+              productNameFromApi = String(item.product_name);
             }
           }
 
@@ -3754,10 +3759,17 @@ export const productOpsRouter = router({
         }
       }
 
-      // ── Update operator (principal_names) on product profile ──
+      // ── Update operator (principal_names) and product name on product profile ──
+      const profileUpdates: Record<string, string> = {};
       if (operatorName && !product.operator) {
+        profileUpdates.operator = operatorName;
+      }
+      if (productNameFromApi && !product.chineseName) {
+        profileUpdates.chineseName = productNameFromApi;
+      }
+      if (Object.keys(profileUpdates).length > 0) {
         await db!.update(productProfiles)
-          .set({ operator: operatorName } as any)
+          .set(profileUpdates as any)
           .where(eq(productProfiles.id, input.productId));
       }
 
@@ -4057,6 +4069,7 @@ export const productOpsRouter = router({
               let totalSessions = 0, totalReturnRate = 0, returnCount = 0;
               let latestRating = 0, latestReviewCount = 0;
               let operatorName = '';
+              let productNameFromApi = '';
 
               for (const item of items) {
                 totalSales += Number(item.volume || 0);
@@ -4077,6 +4090,9 @@ export const productOpsRouter = router({
                 if (Number(item.reviews_count || 0) > 0) latestReviewCount = Number(item.reviews_count);
                 if (item.principal_names && !operatorName) {
                   operatorName = Array.isArray(item.principal_names) ? item.principal_names.join(', ') : String(item.principal_names);
+                }
+                if (item.product_name && !productNameFromApi) {
+                  productNameFromApi = String(item.product_name);
                 }
               }
 
@@ -4148,10 +4164,17 @@ export const productOpsRouter = router({
               }
               productSynced++;
 
-              // Update operator if found
+              // Update operator and product name if found
+              const batchProfileUpdates: Record<string, string> = {};
               if (operatorName && !product.operator) {
+                batchProfileUpdates.operator = operatorName;
+              }
+              if (productNameFromApi && !product.chineseName) {
+                batchProfileUpdates.chineseName = productNameFromApi;
+              }
+              if (Object.keys(batchProfileUpdates).length > 0) {
                 await db!.update(productProfiles)
-                  .set({ operator: operatorName } as any)
+                  .set(batchProfileUpdates as any)
                   .where(eq(productProfiles.id, product.id));
               }
             } catch (weekErr: any) {
