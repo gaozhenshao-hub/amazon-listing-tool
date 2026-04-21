@@ -20,7 +20,7 @@ import {
   BarChart3, ChevronDown, ChevronRight, ExternalLink,
   TrendingUp, TrendingDown, Minus, Trash2, RefreshCw,
   ArrowUpDown, ArrowUp, ArrowDown, Calendar,
-  AlertTriangle, AlertCircle,
+  AlertTriangle, AlertCircle, Database, Upload, FileSpreadsheet,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -232,7 +232,7 @@ function getLatestWeekValue(product: ProductOverview, key: SortKey): number {
 }
 
 // ─── Product Row Component ───
-function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operatorList, onAssign, sortKey, sortDir, onSort }: {
+function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operatorList, onAssign, sortKey, sortDir, onSort, isImportMode }: {
   product: ProductOverview;
   onNavigate: (id: number) => void;
   onDelete: (id: number) => void;
@@ -243,6 +243,7 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
   sortKey: SortKey;
   sortDir: SortDir;
   onSort: (key: SortKey) => void;
+  isImportMode?: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -395,6 +396,7 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
 
           {/* Actions */}
           <div className="flex items-center gap-1">
+            {!isImportMode && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -407,6 +409,8 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
                 <TooltipContent>{isSyncing ? '同步中...' : '同步本产品数据'}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
+            )}
+            {!isImportMode && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -418,6 +422,8 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
                 <TooltipContent>查看详情</TooltipContent>
               </Tooltip>
             </TooltipProvider>
+            )}
+            {!isImportMode && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -429,6 +435,7 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
                 <TooltipContent>删除产品</TooltipContent>
               </Tooltip>
             </TooltipProvider>
+            )}
           </div>
         </div>
       </div>
@@ -608,11 +615,14 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
   );
 }
 
+type DataSource = "system" | "lingxing" | "saihu";
+
 // ─── Main Component ───
 export default function OpsProducts() {
   const [, navigate] = useLocation();
   const [marketplaceFilter, setMarketplaceFilter] = useState("US");
   const [statusFilter, setStatusFilter] = useState("active");
+  const [dataSource, setDataSource] = useState<DataSource>("lingxing");
 
   // Mutations
   const utils = trpc.useUtils();
@@ -684,12 +694,26 @@ export default function OpsProducts() {
   const [syncWeeks, setSyncWeeks] = useState(1); // weeks to sync: 1-26
   const [showSyncPopover, setShowSyncPopover] = useState(false);
 
-  // Main query - 4-week overview data
-  const { data: products, isLoading } = trpc.productOps.getProductOverviewWithWeeks.useQuery({
+  // Main query - system data (original)
+  const { data: systemProducts, isLoading: systemLoading } = trpc.productOps.getProductOverviewWithWeeks.useQuery({
     marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "all",
     statusFilter: statusFilter !== "ALL" ? statusFilter as any : "all",
     weeks: 4,
-  });
+  }, { enabled: dataSource === "system" });
+
+  // Import data query (lingxing or saihu)
+  const { data: importProducts, isLoading: importLoading } = trpc.dataImport.getProductOverviewFromImport.useQuery({
+    sourceType: dataSource === "saihu" ? "saihu" : "lingxing",
+    weeks: 4,
+    marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "ALL",
+  }, { enabled: dataSource !== "system" });
+
+  // Import stats for showing data availability
+  const { data: importStats } = trpc.dataImport.getImportStats.useQuery();
+
+  // Unified products & loading state
+  const products = dataSource === "system" ? systemProducts : importProducts;
+  const isLoading = dataSource === "system" ? systemLoading : importLoading;
 
   const [form, setForm] = useState({
     parentAsin: "", title: "", brand: "", category: "", marketplace: "US",
@@ -754,14 +778,82 @@ export default function OpsProducts() {
 
   return (
     <div className="space-y-4">
+      {/* Data Source Tabs */}
+      <div className="flex items-center gap-1 p-1 bg-muted/50 rounded-lg w-fit">
+        <button
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            dataSource === "system" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+          }`}
+          onClick={() => setDataSource("system")}
+        >
+          <Database className="h-3.5 w-3.5" />
+          系统数据
+        </button>
+        <button
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            dataSource === "lingxing" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+          }`}
+          onClick={() => setDataSource("lingxing")}
+        >
+          <FileSpreadsheet className="h-3.5 w-3.5" />
+          领星数据
+          {importStats?.lingxing && importStats.lingxing.weekCount > 0 && (
+            <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-0.5">
+              {importStats.lingxing.weekCount}周 / {importStats.lingxing.productCount}品
+            </Badge>
+          )}
+        </button>
+        <button
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            dataSource === "saihu" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+          }`}
+          onClick={() => setDataSource("saihu")}
+        >
+          <FileSpreadsheet className="h-3.5 w-3.5" />
+          赛狐数据
+          {importStats?.saihu && importStats.saihu.weekCount > 0 && (
+            <Badge variant="secondary" className="text-[10px] px-1 py-0 ml-0.5">
+              {importStats.saihu.weekCount}周 / {importStats.saihu.productCount}品
+            </Badge>
+          )}
+        </button>
+      </div>
+
+      {/* No Import Data Hint */}
+      {dataSource !== "system" && !isLoading && (!products || (products as any[]).length === 0) && (
+        <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+          <Upload className="h-5 w-5 text-amber-600 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-amber-800">
+              {dataSource === "lingxing" ? "暂无领星导入数据" : "暂无赛狐导入数据"}
+            </p>
+            <p className="text-xs text-amber-600 mt-0.5">
+              请先在"数据导入中心"上传{dataSource === "lingxing" ? "领星产品表现" : "赛狐产品分析"}的Excel文件
+            </p>
+          </div>
+          <Button variant="outline" size="sm" className="shrink-0 gap-1" onClick={() => navigate("/ops/data-import")}>
+            <Upload className="h-3.5 w-3.5" /> 去导入
+          </Button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">产品运营总览</h1>
-          <p className="text-muted-foreground mt-1 text-sm">按父ASIN维度管理，展示最近4周周度数据及同比变化</p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {dataSource === "system" ? "按父ASIN维度管理，展示最近4周周度数据及同比变化" :
+             dataSource === "lingxing" ? "基于领星导入数据，按父ASIN维度展示最近4周周度数据" :
+             "基于赛狐导入数据，按父ASIN聚合展示最近4周周度数据"}
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <Popover open={showSyncPopover} onOpenChange={setShowSyncPopover}>
+          {dataSource !== "system" && (
+            <Button variant="outline" size="sm" className="gap-1" onClick={() => navigate("/ops/data-import")}>
+              <Upload className="h-3.5 w-3.5" /> 导入数据
+            </Button>
+          )}
+          {dataSource === "system" && (<Popover open={showSyncPopover} onOpenChange={setShowSyncPopover}>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
@@ -813,19 +905,23 @@ export default function OpsProducts() {
                 </Button>
               </div>
             </PopoverContent>
-          </Popover>
-          <Button
-            variant="outline"
-            onClick={() => syncMut.mutate()}
-            disabled={syncMut.isPending}
-            className="gap-2"
-          >
-            {syncMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            {syncMut.isPending ? "同步中..." : "从领星同步"}
-          </Button>
-          <Button onClick={() => setShowCreate(true)} className="gap-2">
-            <Plus className="h-4 w-4" /> 添加产品
-          </Button>
+          </Popover>)}
+          {dataSource === "system" && (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => syncMut.mutate()}
+                disabled={syncMut.isPending}
+                className="gap-2"
+              >
+                {syncMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                {syncMut.isPending ? "同步中..." : "从领星同步"}
+              </Button>
+              <Button onClick={() => setShowCreate(true)} className="gap-2">
+                <Plus className="h-4 w-4" /> 添加产品
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -983,7 +1079,8 @@ export default function OpsProducts() {
             <p className="text-muted-foreground">
               {searchTerm || marketplaceFilter !== "ALL" || statusFilter !== "ALL"
                 ? "没有找到匹配的产品"
-                : "还没有添加产品，点击\"从领星同步\"或\"添加产品\"开始"}
+                : dataSource === "system" ? "还没有添加产品，点击\"从领星同步\"或\"添加产品\"开始"
+                : `暂无${dataSource === "lingxing" ? "领星" : "赛狐"}导入数据，请先在数据导入中心上传Excel文件`}
             </p>
           </CardContent>
         </Card>
@@ -1009,6 +1106,7 @@ export default function OpsProducts() {
                   setSortDir("desc");
                 }
               }}
+              isImportMode={dataSource !== "system"}
             />
           ))}
         </div>

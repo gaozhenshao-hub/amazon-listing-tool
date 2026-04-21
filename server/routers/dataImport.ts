@@ -316,4 +316,372 @@ export const dataImportRouter = router({
         lastImportAt: latestImport?.createdAt || null,
       };
     }),
+
+  // ─── Product Overview from Imported Data ───
+  // Returns data in the same shape as productOps.getProductOverviewWithWeeks
+  // so the frontend can switch data sources seamlessly
+  getProductOverviewFromImport: protectedProcedure
+    .input(z.object({
+      sourceType: z.enum(["lingxing", "saihu"]),
+      weeks: z.number().default(4),
+      marketplace: z.string().default("US"),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      const weeksToShow = input.weeks;
+
+      if (input.sourceType === "lingxing") {
+        return buildOverviewFromLingxing(db!, ctx.user.id, weeksToShow, input.marketplace);
+      } else {
+        return buildOverviewFromSaihu(db!, ctx.user.id, weeksToShow, input.marketplace);
+      }
+    }),
 });
+
+// ═══════════════════════════════════════════════════════
+// Helper: Build product overview from Lingxing imported data
+// Lingxing data is already at parent ASIN level, no aggregation needed
+// ═══════════════════════════════════════════════════════
+async function buildOverviewFromLingxing(db: any, userId: number, weeksToShow: number, marketplace: string) {
+  // Get distinct week ranges
+  const weekRanges = await db.selectDistinct({
+    weekStartDate: lingxingProductWeekly.weekStartDate,
+    weekEndDate: lingxingProductWeekly.weekEndDate,
+  })
+    .from(lingxingProductWeekly)
+    .where(eq(lingxingProductWeekly.userId, userId))
+    .orderBy(desc(lingxingProductWeekly.weekStartDate))
+    .limit(weeksToShow + 1); // +1 for WoW comparison
+
+  if (weekRanges.length === 0) return [];
+
+  // Get all data for these weeks
+  const allData = await db.select().from(lingxingProductWeekly)
+    .where(and(
+      eq(lingxingProductWeekly.userId, userId),
+      sql`${lingxingProductWeekly.weekStartDate} IN (${sql.join(weekRanges.map((w: any) => sql`${w.weekStartDate}`), sql`,`)})`
+    ))
+    .orderBy(desc(lingxingProductWeekly.weekStartDate));
+
+  // Filter by marketplace (country field)
+  const marketplaceMap: Record<string, string> = { US: "US", CA: "CA", MX: "MX", UK: "UK", DE: "DE", FR: "FR", IT: "IT", ES: "ES", JP: "JP", AU: "AU" };
+  const filteredData = marketplace === "ALL" ? allData : allData.filter((r: any) => {
+    const c = (r.country || "").toUpperCase();
+    return c === marketplace || c.includes(marketplace);
+  });
+
+  // Group by parentAsin
+  const parentAsinMap = new Map<string, any[]>();
+  for (const row of filteredData) {
+    const key = row.parentAsin || row.asin || "unknown";
+    if (!parentAsinMap.has(key)) parentAsinMap.set(key, []);
+    parentAsinMap.get(key)!.push(row);
+  }
+
+  // Build result for each parent ASIN
+  const result: any[] = [];
+  for (const [parentAsin, rows] of Array.from(parentAsinMap.entries())) {
+    // Get the latest row for product info
+    const latestRow = rows.sort((a: any, b: any) => (b.weekStartDate || "").localeCompare(a.weekStartDate || ""))[0];
+
+    // Group rows by week
+    const weekMap = new Map<string, any>();
+    for (const row of rows) {
+      const weekKey = row.weekStartDate;
+      if (!weekMap.has(weekKey)) weekMap.set(weekKey, row);
+    }
+
+    // Build weekly data with WoW comparison
+    const sortedWeekKeys = Array.from(weekMap.keys()).sort((a, b) => b.localeCompare(a));
+    const weeksWithComparison = sortedWeekKeys.slice(0, weeksToShow).map((weekKey, idx) => {
+      const week = weekMap.get(weekKey)!;
+      const prevWeekKey = sortedWeekKeys[idx + 1];
+      const prevWeek = prevWeekKey ? weekMap.get(prevWeekKey) : null;
+
+      const salesQty = week.salesQty || 0;
+      const orderQty = week.orderQty || 0;
+      const salesAmount = pf(week.salesAmount);
+      const orderProfit = pf(week.orderProfit);
+      const profitMargin = parsePercentStr(week.orderProfitMargin);
+      const sessionTotal = week.sessionsTotal || 0;
+      const totalCvr = parsePercentStr(week.cvr);
+      const adCvr = parsePercentStr(week.adCvr);
+      const organicCvr = parsePercentStr(week.organicCvr);
+      const adOrders = week.adOrders || 0;
+      const organicOrders = week.organicOrders || 0;
+      const adClicks = week.adClicks || 0;
+      const ctr = parsePercentStr(week.ctr);
+      const adImpressions = week.adImpressions || 0;
+      const cpc = pf(week.cpc);
+      const adSpend = pf(week.adSpend);
+      const adSales = pf(week.adSales);
+      const acos = parsePercentStr(week.acos);
+      const rating = pf(week.rating);
+      const reviewCount = week.reviewCount || 0;
+      const returnRate = parsePercentStr(week.returnRate);
+
+      return {
+        id: week.id,
+        weekStartDate: week.weekStartDate,
+        weekEndDate: week.weekEndDate,
+        salesTrend: null as string | null,
+        salesQty, orderQty, salesAmount, orderProfit, profitMargin,
+        sessionTotal, totalCvr, adCvr, organicCvr,
+        adOrders, organicOrders,
+        adClicks, ctr, adImpressions, cpc, adSpend, adSales, acos,
+        rating, reviewCount, returnRate,
+        wow: prevWeek ? {
+          salesQty: calcChange(salesQty, prevWeek.salesQty || 0),
+          salesAmount: calcChange(salesAmount, pf(prevWeek.salesAmount)),
+          orderProfit: calcChange(orderProfit, pf(prevWeek.orderProfit)),
+          sessionTotal: calcChange(sessionTotal, prevWeek.sessionsTotal || 0),
+          adSpend: calcChange(adSpend, pf(prevWeek.adSpend)),
+          acos: calcChange(acos, parsePercentStr(prevWeek.acos)),
+        } : null,
+      };
+    });
+
+    // Compute salesTrend for the latest week
+    if (weeksWithComparison.length > 0 && weeksWithComparison[0].wow) {
+      const pct = weeksWithComparison[0].wow.salesQty.pct;
+      weeksWithComparison[0].salesTrend = pct !== null ? (pct > 5 ? "up" : pct < -5 ? "down" : "flat") : null;
+    }
+
+    result.push({
+      id: 0, // no productProfiles id
+      parentAsin,
+      title: latestRow.title || "",
+      chineseName: latestRow.productName || null,
+      brand: latestRow.brand || null,
+      category: latestRow.category1 || null,
+      marketplace: latestRow.country || marketplace,
+      imageUrl: null as string | null,
+      status: "active",
+      operator: latestRow.operator || null,
+      storeName: latestRow.storeName || null,
+      variantCount: 0,
+      skus: latestRow.sku ? [latestRow.sku] : [],
+      basicInfo: null,
+      weeks: weeksWithComparison,
+      monthlySummaries: [],
+    });
+  }
+
+  // Sort by latest week salesAmount desc
+  result.sort((a, b) => {
+    const aVal = a.weeks[0]?.salesAmount || 0;
+    const bVal = b.weeks[0]?.salesAmount || 0;
+    return bVal - aVal;
+  });
+
+  return result;
+}
+
+// ═══════════════════════════════════════════════════════
+// Helper: Build product overview from Saihu imported data
+// Saihu data is at ASIN level, needs aggregation by parent ASIN
+// ═══════════════════════════════════════════════════════
+async function buildOverviewFromSaihu(db: any, userId: number, weeksToShow: number, marketplace: string) {
+  // Get distinct week ranges
+  const weekRanges = await db.selectDistinct({
+    weekStartDate: saihuProductWeekly.weekStartDate,
+    weekEndDate: saihuProductWeekly.weekEndDate,
+  })
+    .from(saihuProductWeekly)
+    .where(eq(saihuProductWeekly.userId, userId))
+    .orderBy(desc(saihuProductWeekly.weekStartDate))
+    .limit(weeksToShow + 1);
+
+  if (weekRanges.length === 0) return [];
+
+  // Get all data for these weeks
+  const allData = await db.select().from(saihuProductWeekly)
+    .where(and(
+      eq(saihuProductWeekly.userId, userId),
+      sql`${saihuProductWeekly.weekStartDate} IN (${sql.join(weekRanges.map((w: any) => sql`${w.weekStartDate}`), sql`,`)})`
+    ))
+    .orderBy(desc(saihuProductWeekly.weekStartDate));
+
+  // Filter by marketplace (site field)
+  const filteredData = marketplace === "ALL" ? allData : allData.filter((r: any) => {
+    const s = (r.site || "").toUpperCase();
+    return s === marketplace || s.includes(marketplace);
+  });
+
+  // Group by parentAsin → weekStartDate → aggregate child ASINs
+  const parentAsinMap = new Map<string, Map<string, any[]>>();
+  for (const row of filteredData) {
+    const pAsin = row.parentAsin || row.asin || "unknown";
+    if (!parentAsinMap.has(pAsin)) parentAsinMap.set(pAsin, new Map());
+    const weekMap = parentAsinMap.get(pAsin)!;
+    if (!weekMap.has(row.weekStartDate)) weekMap.set(row.weekStartDate, []);
+    weekMap.get(row.weekStartDate)!.push(row);
+  }
+
+  const result: any[] = [];
+  for (const [parentAsin, weekMap] of Array.from(parentAsinMap.entries())) {
+    // Get latest week's first row for product info
+    const sortedWeekKeys = Array.from(weekMap.keys()).sort((a, b) => b.localeCompare(a));
+    const latestRows = weekMap.get(sortedWeekKeys[0])!;
+    const infoRow = latestRows[0];
+
+    // Aggregate each week's child ASINs
+    const aggregatedWeekMap = new Map<string, any>();
+    for (const [weekKey, childRows] of Array.from(weekMap.entries())) {
+      aggregatedWeekMap.set(weekKey, aggregateSaihuRows(childRows, weekKey));
+    }
+
+    // Build weekly data with WoW comparison
+    const weeksWithComparison = sortedWeekKeys.slice(0, weeksToShow).map((weekKey, idx) => {
+      const agg = aggregatedWeekMap.get(weekKey)!;
+      const prevWeekKey = sortedWeekKeys[idx + 1];
+      const prevAgg = prevWeekKey ? aggregatedWeekMap.get(prevWeekKey) : null;
+
+      return {
+        id: 0,
+        weekStartDate: weekKey,
+        weekEndDate: agg.weekEndDate,
+        salesTrend: null as string | null,
+        salesQty: agg.salesQty,
+        orderQty: agg.orderQty,
+        salesAmount: agg.salesAmount,
+        orderProfit: agg.grossProfit,
+        profitMargin: agg.grossMargin,
+        sessionTotal: agg.sessionsTotal,
+        totalCvr: agg.cvr,
+        adCvr: agg.adCvr,
+        organicCvr: agg.organicCvr,
+        adOrders: agg.adOrders,
+        organicOrders: agg.organicOrders,
+        adClicks: agg.adClicks,
+        ctr: agg.adClickRate,
+        adImpressions: agg.adImpressions,
+        cpc: agg.cpc,
+        adSpend: agg.adSpend,
+        adSales: agg.adSalesAmount,
+        acos: agg.acos,
+        rating: agg.rating,
+        reviewCount: agg.ratingCount,
+        returnRate: agg.returnRate,
+        wow: prevAgg ? {
+          salesQty: calcChange(agg.salesQty, prevAgg.salesQty),
+          salesAmount: calcChange(agg.salesAmount, prevAgg.salesAmount),
+          orderProfit: calcChange(agg.grossProfit, prevAgg.grossProfit),
+          sessionTotal: calcChange(agg.sessionsTotal, prevAgg.sessionsTotal),
+          adSpend: calcChange(agg.adSpend, prevAgg.adSpend),
+          acos: calcChange(agg.acos, prevAgg.acos),
+        } : null,
+      };
+    });
+
+    // Compute salesTrend
+    if (weeksWithComparison.length > 0 && weeksWithComparison[0].wow) {
+      const pct = weeksWithComparison[0].wow.salesQty.pct;
+      weeksWithComparison[0].salesTrend = pct !== null ? (pct > 5 ? "up" : pct < -5 ? "down" : "flat") : null;
+    }
+
+    result.push({
+      id: 0,
+      parentAsin,
+      title: infoRow.title || "",
+      chineseName: infoRow.productName || null,
+      brand: infoRow.brand || null,
+      category: infoRow.category || null,
+      marketplace: infoRow.site || marketplace,
+      imageUrl: infoRow.imageUrl || null,
+      status: "active",
+      operator: infoRow.operator || null,
+      storeName: infoRow.storeName || null,
+      variantCount: latestRows.length,
+      skus: latestRows.map((r: any) => r.sku).filter(Boolean),
+      basicInfo: null,
+      weeks: weeksWithComparison,
+      monthlySummaries: [],
+    });
+  }
+
+  result.sort((a, b) => {
+    const aVal = a.weeks[0]?.salesAmount || 0;
+    const bVal = b.weeks[0]?.salesAmount || 0;
+    return bVal - aVal;
+  });
+
+  return result;
+}
+
+// ─── Aggregate Saihu child ASIN rows into parent ASIN level ───
+function aggregateSaihuRows(rows: any[], weekKey: string) {
+  // Sum integer/currency fields, weighted-average rate fields
+  let salesQty = 0, orderQty = 0, salesAmount = 0, grossProfit = 0;
+  let sessionsTotal = 0, adOrders = 0, organicOrders = 0;
+  let adClicks = 0, adImpressions = 0, adSpend = 0, adSalesAmount = 0;
+  let ratingCount = 0, refundQty = 0, returnQty = 0;
+  let organicClicks = 0;
+  let ratingSum = 0, ratingWeightSum = 0;
+  let weekEndDate = "";
+
+  for (const r of rows) {
+    salesQty += r.salesQty || 0;
+    orderQty += r.orderQty || 0;
+    salesAmount += pf(r.salesAmount);
+    grossProfit += pf(r.grossProfit);
+    sessionsTotal += r.sessionsTotal || 0;
+    adOrders += r.adOrders || 0;
+    organicOrders += r.organicOrders || 0;
+    adClicks += r.adClicks || 0;
+    adImpressions += r.adImpressions || 0;
+    adSpend += pf(r.adSpend);
+    adSalesAmount += pf(r.adSalesAmount);
+    ratingCount += r.ratingCount || 0;
+    refundQty += r.refundQty || 0;
+    returnQty += r.returnQty || 0;
+    organicClicks += r.organicClicks || 0;
+    // Weighted rating by ratingCount
+    const rc = r.ratingCount || 0;
+    const rt = pf(r.rating);
+    if (rc > 0 && rt > 0) { ratingSum += rt * rc; ratingWeightSum += rc; }
+    if (r.weekEndDate) weekEndDate = r.weekEndDate;
+  }
+
+  // Derived rates
+  const grossMargin = salesAmount > 0 ? (grossProfit / salesAmount) * 100 : 0;
+  const cvr = sessionsTotal > 0 ? (orderQty / sessionsTotal) * 100 : 0;
+  const adCvr = adClicks > 0 ? (adOrders / adClicks) * 100 : 0;
+  const organicCvr = organicClicks > 0 ? (organicOrders / organicClicks) * 100 : 0;
+  const adClickRate = adImpressions > 0 ? (adClicks / adImpressions) * 100 : 0;
+  const cpc = adClicks > 0 ? adSpend / adClicks : 0;
+  const acos = adSalesAmount > 0 ? (adSpend / adSalesAmount) * 100 : 0;
+  const rating = ratingWeightSum > 0 ? ratingSum / ratingWeightSum : 0;
+  const returnRate = salesQty > 0 ? (returnQty / salesQty) * 100 : 0;
+
+  return {
+    weekEndDate,
+    salesQty, orderQty, salesAmount, grossProfit, grossMargin,
+    sessionsTotal, cvr, adCvr, organicCvr,
+    adOrders, organicOrders,
+    adClicks, adClickRate, adImpressions, cpc, adSpend, adSalesAmount, acos,
+    rating: Math.round(rating * 10) / 10,
+    ratingCount, returnRate,
+  };
+}
+
+// ─── Shared utility functions ───
+function pf(val: any): number {
+  if (val == null || val === "") return 0;
+  const n = parseFloat(String(val));
+  return isNaN(n) ? 0 : n;
+}
+
+/** Parse percent string like "25.5" or "25.5%" → 25.5 */
+function parsePercentStr(val: any): number {
+  if (val == null || val === "") return 0;
+  const s = String(val).replace(/%/g, "").trim();
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
+function calcChange(current: number, previous: number): { value: number; pct: number | null } {
+  if (previous === 0) return { value: current, pct: null };
+  const pct = ((current - previous) / Math.abs(previous)) * 100;
+  return { value: current, pct: Math.round(pct * 100) / 100 };
+}

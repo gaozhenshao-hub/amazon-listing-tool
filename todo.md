@@ -3499,4 +3499,8 @@
 - [x] 数据导入中心：后端tRPC路由（uploadAndParse、confirmImport、getHistory、deleteImport、getWeeklySummary、getImportStats）
 - [x] 数据导入中心：前端UI页面（拖拽上传 + 数据预览Dialog + 导入历史表格 + 统计卡片）
 - [x] 数据导入中心：侧边栏新增"数据导入中心"入口（/ops/data-import）
-- [ ] 改造产品总览：从导入数据读取，支持领星/赛狐切换，支持最近四周对比（待后续迭代）
+- [x] 改造产品总览：从导入数据读取，支持领星/赛狐切换，支持最近四周对比
+- [x] 改造产品总览：后端新增从导入数据读取的tRPC接口（getProductOverviewFromImport）
+- [x] 改造产品总览：支持领星/赛狐数据源切换（系统数据/领星数据/赛狐数据 Tab切换）
+- [x] 改造产品总览：支持最近四周对比视图（复用现有周度表格+WoW同比）
+- [x] 改造产品总览：前端UI改造（数据源Tab + 导入统计徽章 + 无数据引导 + 导入模式隐藏系统操作按钮）
