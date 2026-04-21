@@ -66,6 +66,7 @@ import {
   Send,
   CheckCircle,
   ClipboardList,
+  Upload,
   type LucideIcon,
 } from "lucide-react";
 import { ROLE_LABELS, ROLE_MODULE_ACCESS, ADMIN_ROLES } from "@shared/const";
@@ -159,6 +160,7 @@ const modules: ModuleDef[] = [
       { icon: Layers, label: "自定义看板", path: "/ops/custom-dashboard" },
       { icon: Bot, label: "爬虫引擎", path: "/ops/crawler" },
       { icon: Clock, label: "物流时效分析", path: "/ops/logistics" },
+      { icon: Upload, label: "数据导入中心", path: "/ops/data-import" },
       { icon: ClipboardList, label: "任务管理", path: "/ops/tasks" },
     ],
   },

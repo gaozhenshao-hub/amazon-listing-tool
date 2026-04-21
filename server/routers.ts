@@ -77,6 +77,8 @@ import { offAnalyticsRouter } from "./routers/offAnalytics";
 import { videoScriptRouter } from "./routers/videoScript";
 // Task Management
 import { taskManagementRouter } from "./routers/taskManagement";
+// Data Import Center
+import { dataImportRouter } from "./routers/dataImport";
 
 export const appRouter = router({
   system: systemRouter,
@@ -164,6 +166,8 @@ export const appRouter = router({
   offAnalytics: offAnalyticsRouter,
   // Module 2 Extension: Video Script Generation
   videoScript: videoScriptRouter,
+  // Data Import Center
+  dataImport: dataImportRouter,
   // Task Management
   taskManagement: taskManagementRouter,
 });

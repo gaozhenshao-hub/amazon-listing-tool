@@ -3488,3 +3488,15 @@
 - [x] 增加API请求间隔（页间3秒，周间3秒）防止触发频率限制
 - [x] 清理调试测试文件（test-asinlist*.mjs, ad-data-diagnosis.md）
 - [x] 批量同步UI增加"同步周数"参数选择（默认1周，支持1-26周），方便补历史数据
+- [x] 架构重构：将领星API实时调用全部替换为"用户上传领星导出Excel表格"方案（第一阶段：数据导入中心已完成）
+- [x] 排查所有领星API调用点，梳理数据依赖关系（47个API端点，13个后端文件）
+- [x] 设计数据导入中心：表格模板定义、解析逻辑、字段映射
+- [x] 实现后端表格上传解析和数据入库
+- [x] 实现前端数据导入中心UI
+- [ ] 改造现有模块移除API依赖，改用上传数据源（待后续迭代）
+- [x] 数据导入中心：数据库设计（data_imports表 + lingxing_product_weekly表 + saihu_product_weekly表）
+- [x] 数据导入中心：后端Excel解析器（领星146列映射 + 赛狐170列映射 + 文件名日期解析）
+- [x] 数据导入中心：后端tRPC路由（uploadAndParse、confirmImport、getHistory、deleteImport、getWeeklySummary、getImportStats）
+- [x] 数据导入中心：前端UI页面（拖拽上传 + 数据预览Dialog + 导入历史表格 + 统计卡片）
+- [x] 数据导入中心：侧边栏新增"数据导入中心"入口（/ops/data-import）
+- [ ] 改造产品总览：从导入数据读取，支持领星/赛狐切换，支持最近四周对比（待后续迭代）
