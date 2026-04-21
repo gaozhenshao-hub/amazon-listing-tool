@@ -238,9 +238,10 @@ function getLatestWeekValue(product: ProductOverview, key: SortKey): number {
 }
 
 // ─── Product Row Component ───
-function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operatorList, onAssign, sortKey, sortDir, onSort, isImportMode }: {
+function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync, isSyncing, operatorList, onAssign, sortKey, sortDir, onSort, isImportMode }: {
   product: ProductOverview;
   onNavigate: (id: number) => void;
+  onNavigateImport?: (parentAsin: string) => void;
   onDelete: (id: number) => void;
   onSync: (productId: number) => void;
   isSyncing: boolean;
@@ -426,6 +427,19 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>查看详情</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            )}
+            {isImportMode && onNavigateImport && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-blue-500 hover:text-blue-700"
+                    onClick={(e) => { e.stopPropagation(); onNavigateImport(product.parentAsin); }}>
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>查看详情（导入数据）</TooltipContent>
               </Tooltip>
             </TooltipProvider>
             )}
@@ -1097,6 +1111,7 @@ export default function OpsProducts() {
               key={product.id}
               product={product}
               onNavigate={(id) => navigate(`/ops/products/${id}`)}
+              onNavigateImport={(parentAsin) => navigate(`/ops/products/import/${dataSource}/${encodeURIComponent(parentAsin)}`)}
               onDelete={(id) => deleteMut.mutate({ id })}
               onSync={(id) => { setSyncingProductId(id); syncSingleProductMut.mutate({ productId: id }); }}
               isSyncing={syncingProductId === product.id && syncSingleProductMut.isPending}

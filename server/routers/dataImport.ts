@@ -336,6 +336,24 @@ export const dataImportRouter = router({
         return buildOverviewFromSaihu(db!, ctx.user.id, weeksToShow, input.marketplace);
       }
     }),
+
+  // ─── Product Detail from Imported Data ───
+  // Returns product info + ALL weekly data for a single parentAsin
+  // Used by the product detail page in import mode
+  getProductDetailFromImport: protectedProcedure
+    .input(z.object({
+      parentAsin: z.string(),
+      sourceType: z.enum(["lingxing", "saihu"]),
+      marketplace: z.string().default("ALL"),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (input.sourceType === "lingxing") {
+        return buildProductDetailFromLingxing(db!, ctx.user.id, input.parentAsin, input.marketplace);
+      } else {
+        return buildProductDetailFromSaihu(db!, ctx.user.id, input.parentAsin, input.marketplace);
+      }
+    }),
 });
 
 // ═══════════════════════════════════════════════════════
@@ -684,4 +702,264 @@ function calcChange(current: number, previous: number): { value: number; pct: nu
   if (previous === 0) return { value: current, pct: null };
   const pct = ((current - previous) / Math.abs(previous)) * 100;
   return { value: current, pct: Math.round(pct * 100) / 100 };
+}
+
+// ═══════════════════════════════════════════════════════
+// Helper: Build product detail from Lingxing imported data
+// Returns product header info + ALL weekly data for a single parentAsin
+// ═══════════════════════════════════════════════════════
+async function buildProductDetailFromLingxing(db: any, userId: number, parentAsin: string, marketplace: string) {
+  // Get all data for this parentAsin
+  const allData = await db.select().from(lingxingProductWeekly)
+    .where(and(
+      eq(lingxingProductWeekly.userId, userId),
+      eq(lingxingProductWeekly.parentAsin, parentAsin),
+    ))
+    .orderBy(desc(lingxingProductWeekly.weekStartDate));
+
+  // Filter by marketplace if specified
+  const filteredData = marketplace === "ALL" ? allData : allData.filter((r: any) => {
+    const c = (r.country || "").toUpperCase();
+    return c === marketplace || c.includes(marketplace);
+  });
+
+  if (filteredData.length === 0) return null;
+
+  // Get the latest row for product info
+  const latestRow = filteredData[0];
+
+  // Group rows by week
+  const weekMap = new Map<string, any>();
+  for (const row of filteredData) {
+    const weekKey = row.weekStartDate;
+    if (!weekMap.has(weekKey)) weekMap.set(weekKey, row);
+  }
+
+  // Build weekly data with WoW comparison (ALL weeks, not limited)
+  const sortedWeekKeys = Array.from(weekMap.keys()).sort((a, b) => b.localeCompare(a));
+  const weeks = sortedWeekKeys.map((weekKey, idx) => {
+    const week = weekMap.get(weekKey)!;
+    const prevWeekKey = sortedWeekKeys[idx + 1];
+    const prevWeek = prevWeekKey ? weekMap.get(prevWeekKey) : null;
+
+    const salesQty = week.salesQty || 0;
+    const orderQty = week.orderQty || 0;
+    const salesAmount = pf(week.salesAmount);
+    const orderProfit = pf(week.orderProfit);
+    const profitMargin = parsePercentStr(week.orderProfitMargin);
+    const sessionTotal = week.sessionsTotal || 0;
+    const totalCvr = parsePercentStr(week.cvr);
+    const adCvr = parsePercentStr(week.adCvr);
+    const organicCvr = parsePercentStr(week.organicCvr);
+    const adOrders = week.adOrders || 0;
+    const organicOrders = week.organicOrders || 0;
+    const adClicks = week.adClicks || 0;
+    const ctr = parsePercentStr(week.ctr);
+    const adImpressions = week.adImpressions || 0;
+    const cpc = pf(week.cpc);
+    const adSpend = pf(week.adSpend);
+    const adSales = pf(week.adSales);
+    const acos = parsePercentStr(week.acos);
+    const rating = pf(week.rating);
+    const reviewCount = week.reviewCount || 0;
+    const returnRate = parsePercentStr(week.returnRate);
+
+    return {
+      id: week.id,
+      weekStartDate: week.weekStartDate,
+      weekEndDate: week.weekEndDate,
+      salesTrend: null as string | null,
+      salesQty, orderQty, salesAmount, orderProfit, profitMargin,
+      sessionTotal, totalCvr, adCvr, organicCvr,
+      adOrders, organicOrders,
+      adClicks, ctr, adImpressions, cpc, adSpend, adSales, acos,
+      rating, reviewCount, returnRate,
+      wow: prevWeek ? {
+        salesQty: calcChange(salesQty, prevWeek.salesQty || 0),
+        salesAmount: calcChange(salesAmount, pf(prevWeek.salesAmount)),
+        orderProfit: calcChange(orderProfit, pf(prevWeek.orderProfit)),
+        sessionTotal: calcChange(sessionTotal, prevWeek.sessionsTotal || 0),
+        adSpend: calcChange(adSpend, pf(prevWeek.adSpend)),
+        acos: calcChange(acos, parsePercentStr(prevWeek.acos)),
+      } : null,
+    };
+  });
+
+  // Compute salesTrend for the latest week
+  if (weeks.length > 0 && weeks[0].wow) {
+    const pct = weeks[0].wow.salesQty.pct;
+    weeks[0].salesTrend = pct !== null ? (pct > 5 ? "up" : pct < -5 ? "down" : "flat") : null;
+  }
+
+  // Extract child ASINs from the asin field (Lingxing may have comma-separated child ASINs)
+  const childAsins = (latestRow.asin || "").split(",").map((a: string) => a.trim()).filter(Boolean);
+  const variants = childAsins.map((asin: string) => ({
+    id: 0,
+    childAsin: asin,
+    sku: latestRow.sku || null,
+    title: null,
+    price: latestRow.price || null,
+    status: "active",
+  }));
+
+  return {
+    product: {
+      id: 0,
+      parentAsin,
+      title: latestRow.title || "",
+      chineseName: latestRow.productName || null,
+      brand: latestRow.brand || null,
+      category: latestRow.category1 || null,
+      marketplace: latestRow.country || marketplace,
+      imageUrl: null as string | null,
+      status: "active",
+      operator: latestRow.operator || null,
+      storeName: latestRow.storeName || null,
+      variants,
+    },
+    weeks,
+    // Extra detail fields from Lingxing
+    extraInfo: {
+      sku: latestRow.sku || null,
+      msku: latestRow.msku || null,
+      bsrMain: latestRow.bsrMain || null,
+      bsrSub: latestRow.bsrSub || null,
+      fbaAvailable: latestRow.fbaAvailable || 0,
+      fbaTotal: latestRow.fbaTotal || 0,
+      fbaInTransit: latestRow.fbaInTransit || 0,
+      fbaDaysOfSupply: latestRow.fbaDaysOfSupply || 0,
+      availableStock: latestRow.availableStock || 0,
+      category2: latestRow.category2 || null,
+      category3: latestRow.category3 || null,
+    },
+  };
+}
+
+// ═══════════════════════════════════════════════════════
+// Helper: Build product detail from Saihu imported data
+// Saihu data is at ASIN level, needs aggregation by parent ASIN
+// ═══════════════════════════════════════════════════════
+async function buildProductDetailFromSaihu(db: any, userId: number, parentAsin: string, marketplace: string) {
+  // Get all data for this parentAsin
+  const allData = await db.select().from(saihuProductWeekly)
+    .where(and(
+      eq(saihuProductWeekly.userId, userId),
+      eq(saihuProductWeekly.parentAsin, parentAsin),
+    ))
+    .orderBy(desc(saihuProductWeekly.weekStartDate));
+
+  // Filter by marketplace
+  const filteredData = marketplace === "ALL" ? allData : allData.filter((r: any) => {
+    const s = (r.site || "").toUpperCase();
+    return s === marketplace || s.includes(marketplace);
+  });
+
+  if (filteredData.length === 0) return null;
+
+  // Group by weekStartDate → aggregate child ASINs
+  const weekMap = new Map<string, any[]>();
+  for (const row of filteredData) {
+    if (!weekMap.has(row.weekStartDate)) weekMap.set(row.weekStartDate, []);
+    weekMap.get(row.weekStartDate)!.push(row);
+  }
+
+  // Get latest week's first row for product info
+  const sortedWeekKeys = Array.from(weekMap.keys()).sort((a, b) => b.localeCompare(a));
+  const latestRows = weekMap.get(sortedWeekKeys[0])!;
+  const infoRow = latestRows[0];
+
+  // Aggregate each week's child ASINs
+  const aggregatedWeekMap = new Map<string, any>();
+  for (const [weekKey, childRows] of Array.from(weekMap.entries())) {
+    aggregatedWeekMap.set(weekKey, aggregateSaihuRows(childRows, weekKey));
+  }
+
+  // Build weekly data with WoW comparison (ALL weeks)
+  const weeks = sortedWeekKeys.map((weekKey, idx) => {
+    const agg = aggregatedWeekMap.get(weekKey)!;
+    const prevWeekKey = sortedWeekKeys[idx + 1];
+    const prevAgg = prevWeekKey ? aggregatedWeekMap.get(prevWeekKey) : null;
+
+    return {
+      id: 0,
+      weekStartDate: weekKey,
+      weekEndDate: agg.weekEndDate,
+      salesTrend: null as string | null,
+      salesQty: agg.salesQty,
+      orderQty: agg.orderQty,
+      salesAmount: agg.salesAmount,
+      orderProfit: agg.grossProfit,
+      profitMargin: agg.grossMargin,
+      sessionTotal: agg.sessionsTotal,
+      totalCvr: agg.cvr,
+      adCvr: agg.adCvr,
+      organicCvr: agg.organicCvr,
+      adOrders: agg.adOrders,
+      organicOrders: agg.organicOrders,
+      adClicks: agg.adClicks,
+      ctr: agg.adClickRate,
+      adImpressions: agg.adImpressions,
+      cpc: agg.cpc,
+      adSpend: agg.adSpend,
+      adSales: agg.adSalesAmount,
+      acos: agg.acos,
+      rating: agg.rating,
+      reviewCount: agg.ratingCount,
+      returnRate: agg.returnRate,
+      wow: prevAgg ? {
+        salesQty: calcChange(agg.salesQty, prevAgg.salesQty),
+        salesAmount: calcChange(agg.salesAmount, prevAgg.salesAmount),
+        orderProfit: calcChange(agg.grossProfit, prevAgg.grossProfit),
+        sessionTotal: calcChange(agg.sessionsTotal, prevAgg.sessionsTotal),
+        adSpend: calcChange(agg.adSpend, prevAgg.adSpend),
+        acos: calcChange(agg.acos, prevAgg.acos),
+      } : null,
+    };
+  });
+
+  // Compute salesTrend
+  if (weeks.length > 0 && weeks[0].wow) {
+    const pct = weeks[0].wow.salesQty.pct;
+    weeks[0].salesTrend = pct !== null ? (pct > 5 ? "up" : pct < -5 ? "down" : "flat") : null;
+  }
+
+  // Build variants from latest week's child ASINs
+  const variants = latestRows.map((r: any) => ({
+    id: 0,
+    childAsin: r.asin || "",
+    sku: r.sku || null,
+    title: r.title || null,
+    price: r.avgPrice ? String(r.avgPrice) : null,
+    status: "active",
+  }));
+
+  return {
+    product: {
+      id: 0,
+      parentAsin,
+      title: infoRow.title || "",
+      chineseName: infoRow.productName || null,
+      brand: infoRow.brand || null,
+      category: infoRow.category || null,
+      marketplace: infoRow.site || marketplace,
+      imageUrl: infoRow.imageUrl || null,
+      status: "active",
+      operator: infoRow.operator || null,
+      storeName: infoRow.storeName || null,
+      variants,
+    },
+    weeks,
+    // Extra detail fields from Saihu
+    extraInfo: {
+      sku: infoRow.sku || null,
+      msku: infoRow.msku || null,
+      bsrMain: infoRow.bsrMain || null,
+      bsrSub: infoRow.bsrSub || null,
+      fbaAvailable: infoRow.fbaAvailable || 0,
+      fbaInTransit: infoRow.fbaInTransit || 0,
+      fbaDaysOfSupply: pf(infoRow.fbaDaysOfSupply),
+      listingDate: infoRow.listingDate || null,
+      developer: infoRow.developer || null,
+    },
+  };
 }

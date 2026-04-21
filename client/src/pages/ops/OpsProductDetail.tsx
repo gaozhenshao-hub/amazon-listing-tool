@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -26,43 +26,85 @@ import {
   TrendingUp, TrendingDown, Package, DollarSign, Target, Eye,
   Search, BarChart3, Edit2, MessageSquare, Flag, Milestone,
   AlertCircle, FileText, Loader2, Bell, BellOff, RefreshCw, Info, WifiOff,
+  Database,
 } from "lucide-react";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer, Legend,
+  BarChart, Bar, ComposedChart, Area,
 } from "recharts";
 
-export default function OpsProductDetail() {
-  const [, params] = useRoute("/ops/products/:id");
-  const [, navigate] = useLocation();
-  const productId = Number(params?.id);
+// ─── Helper: format number ───
+function fmtNum(v: number | null | undefined, decimals = 0): string {
+  if (v == null || isNaN(v)) return "-";
+  return v.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+function fmtPct(v: number | null | undefined): string {
+  if (v == null || isNaN(v)) return "-";
+  return `${v.toFixed(1)}%`;
+}
+function fmtWeekRange(start: string, end: string): string {
+  const s = start.replace(/^\d{4}-/, "").replace(/-/g, "/");
+  const e = end.replace(/^\d{4}-/, "").replace(/-/g, "/");
+  return `${s}-${e}`;
+}
 
-  // ─── Data Queries ───
+// ─── WoW change badge ───
+function WowBadge({ wow }: { wow: { value: number; pct: number | null } | null | undefined }) {
+  if (!wow || wow.pct == null) return null;
+  const isUp = wow.pct > 0;
+  const color = isUp ? "text-emerald-600" : wow.pct < 0 ? "text-red-600" : "text-gray-500";
+  return (
+    <span className={`text-[10px] ${color} flex items-center gap-0.5`}>
+      {isUp ? <TrendingUp className="h-3 w-3" /> : wow.pct < 0 ? <TrendingDown className="h-3 w-3" /> : null}
+      {wow.pct > 0 ? "+" : ""}{wow.pct.toFixed(1)}%
+    </span>
+  );
+}
+
+export default function OpsProductDetail() {
+  // ─── Route Matching: detect import mode vs system mode ───
+  const [isImportRoute, importParams] = useRoute("/ops/products/import/:source/:parentAsin");
+  const [isSystemRoute, systemParams] = useRoute("/ops/products/:id");
+  const [, navigate] = useLocation();
+
+  const isImportMode = !!isImportRoute;
+  const sourceType = importParams?.source as "lingxing" | "saihu" | undefined;
+  const importParentAsin = importParams?.parentAsin ? decodeURIComponent(importParams.parentAsin) : undefined;
+  const productId = isSystemRoute ? Number(systemParams?.id) : 0;
+
+  // ─── Import Mode Data Query ───
+  const { data: importDetail, isLoading: loadingImport } = trpc.dataImport.getProductDetailFromImport.useQuery(
+    { parentAsin: importParentAsin || "", sourceType: sourceType || "lingxing", marketplace: "ALL" },
+    { enabled: isImportMode && !!importParentAsin && !!sourceType }
+  );
+
+  // ─── System Mode Data Queries ───
   const { data: product, isLoading: loadingProduct, refetch: refetchProduct } = trpc.productOps.getProduct.useQuery(
-    { id: productId }, { enabled: !!productId }
+    { id: productId }, { enabled: !isImportMode && !!productId }
   );
   const { data: profitData, isLoading: loadingProfit, error: profitError, refetch: refetchProfit, isFetching: fetchingProfit } = trpc.productOps.getProductProfitSummary.useQuery(
-    { productId }, { enabled: !!productId, retry: 1 }
+    { productId }, { enabled: !isImportMode && !!productId, retry: 1 }
   );
   const { data: inventoryData, isLoading: loadingInventory, error: inventoryError, refetch: refetchInventory, isFetching: fetchingInventory } = trpc.productOps.getProductInventorySummary.useQuery(
-    { productId }, { enabled: !!productId, retry: 1 }
+    { productId }, { enabled: !isImportMode && !!productId, retry: 1 }
   );
   const { data: adsData, isLoading: loadingAds, error: adsError, refetch: refetchAds, isFetching: fetchingAds } = trpc.productOps.getProductAdsSummary.useQuery(
-    { productId }, { enabled: !!productId, retry: 1 }
+    { productId }, { enabled: !isImportMode && !!productId, retry: 1 }
   );
   const { data: todos, refetch: refetchTodos } = trpc.productOps.getTodos.useQuery(
-    { productId }, { enabled: !!productId }
+    { productId }, { enabled: !isImportMode && !!productId }
   );
   const { data: logs, refetch: refetchLogs } = trpc.productOps.getLogs.useQuery(
-    { productId }, { enabled: !!productId }
+    { productId }, { enabled: !isImportMode && !!productId }
   );
   const { data: competitors } = trpc.productOps.getProductCompetitors.useQuery(
-    { productId }, { enabled: !!productId }
+    { productId }, { enabled: !isImportMode && !!productId }
   );
   const { data: keywordMonitorsData, refetch: refetchKeywords } = trpc.productOps.getKeywordMonitors.useQuery(
-    { productId }, { enabled: !!productId }
+    { productId }, { enabled: !isImportMode && !!productId }
   );
 
-  // ─── Mutations ───
+  // ─── Mutations (system mode only) ───
   const createTodo = trpc.productOps.createTodo.useMutation({
     onSuccess: () => { refetchTodos(); setShowAddTodo(false); setTodoForm({ title: "", priority: "medium", dueDate: "", assignee: "", reminderDays: [1], reminderEnabled: true }); },
   });
@@ -92,9 +134,216 @@ export default function OpsProductDetail() {
 
   // Stable date for memoization
   const [stableDate] = useState(() => new Date());
-  const _stableDate = stableDate; // suppress unused warning
+  const _stableDate = stableDate;
   void _stableDate;
 
+  // ─── Chart data for import mode ───
+  const importChartData = useMemo(() => {
+    if (!importDetail?.weeks) return [];
+    return [...importDetail.weeks].reverse().map(w => ({
+      week: fmtWeekRange(w.weekStartDate, w.weekEndDate),
+      salesQty: w.salesQty,
+      salesAmount: w.salesAmount,
+      orderProfit: w.orderProfit,
+      sessionTotal: w.sessionTotal,
+      adSpend: w.adSpend,
+      acos: w.acos,
+      totalCvr: w.totalCvr,
+      rating: w.rating,
+    }));
+  }, [importDetail?.weeks]);
+
+  // ═══════════════════════════════════════════════════
+  // IMPORT MODE RENDER
+  // ═══════════════════════════════════════════════════
+  if (isImportMode) {
+    if (loadingImport) {
+      return (
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      );
+    }
+    if (!importDetail) {
+      return (
+        <div className="text-center py-12">
+          <p className="text-muted-foreground">未找到该产品的导入数据</p>
+          <Button variant="link" onClick={() => navigate("/ops/products")}>返回产品列表</Button>
+        </div>
+      );
+    }
+
+    const p = importDetail.product;
+    const weeks = importDetail.weeks;
+    const extra = importDetail.extraInfo;
+    const latest = weeks[0];
+
+    return (
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => navigate("/ops/products")}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold truncate">{p.title || p.parentAsin}</h1>
+              <Badge variant="outline" className={`text-xs ${sourceType === "lingxing" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-purple-50 text-purple-700 border-purple-200"}`}>
+                <Database className="h-3 w-3 mr-1" />
+                {sourceType === "lingxing" ? "领星数据" : "赛狐数据"}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+              <span className="font-mono">{p.parentAsin}</span>
+              {p.brand && <span>· {p.brand}</span>}
+              {p.marketplace && <span>· {p.marketplace}</span>}
+              {p.category && <span>· {p.category}</span>}
+              {p.operator && <span>· 运营: {p.operator}</span>}
+              {p.storeName && <span>· 店铺: {p.storeName}</span>}
+            </div>
+            {p.chineseName && (
+              <p className="text-xs text-muted-foreground mt-0.5">品名: {p.chineseName}</p>
+            )}
+          </div>
+        </div>
+
+        {/* Extra Info Cards */}
+        {extra && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+            {extra.bsrMain && (
+              <div className="text-center p-3 rounded-lg bg-muted/50 border">
+                <p className="text-xs text-muted-foreground">BSR大类</p>
+                <p className="text-sm font-semibold">{extra.bsrMain}</p>
+              </div>
+            )}
+            {extra.bsrSub && (
+              <div className="text-center p-3 rounded-lg bg-muted/50 border">
+                <p className="text-xs text-muted-foreground">BSR小类</p>
+                <p className="text-sm font-semibold">{extra.bsrSub}</p>
+              </div>
+            )}
+            {extra.fbaAvailable != null && (
+              <div className="text-center p-3 rounded-lg bg-muted/50 border">
+                <p className="text-xs text-muted-foreground">FBA可售</p>
+                <p className="text-sm font-semibold text-emerald-600">{extra.fbaAvailable}</p>
+              </div>
+            )}
+            {extra.fbaDaysOfSupply != null && (
+              <div className="text-center p-3 rounded-lg bg-muted/50 border">
+                <p className="text-xs text-muted-foreground">可售天数</p>
+                <p className={`text-sm font-semibold ${Number(extra.fbaDaysOfSupply) < 14 ? "text-red-600" : "text-emerald-600"}`}>{extra.fbaDaysOfSupply}</p>
+              </div>
+            )}
+            {extra.sku && (
+              <div className="text-center p-3 rounded-lg bg-muted/50 border">
+                <p className="text-xs text-muted-foreground">SKU</p>
+                <p className="text-sm font-semibold truncate" title={extra.sku}>{extra.sku}</p>
+              </div>
+            )}
+            {extra.msku && (
+              <div className="text-center p-3 rounded-lg bg-muted/50 border">
+                <p className="text-xs text-muted-foreground">MSKU</p>
+                <p className="text-sm font-semibold truncate" title={extra.msku}>{extra.msku}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* KPI Summary Cards (latest week) */}
+        {latest && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+            <Card className="p-3">
+              <p className="text-xs text-muted-foreground">周销量</p>
+              <p className="text-lg font-bold">{fmtNum(latest.salesQty)}</p>
+              <WowBadge wow={latest.wow?.salesQty} />
+            </Card>
+            <Card className="p-3">
+              <p className="text-xs text-muted-foreground">周销售额</p>
+              <p className="text-lg font-bold">${fmtNum(latest.salesAmount, 1)}</p>
+              <WowBadge wow={latest.wow?.salesAmount} />
+            </Card>
+            <Card className="p-3">
+              <p className="text-xs text-muted-foreground">周利润</p>
+              <p className={`text-lg font-bold ${latest.orderProfit >= 0 ? "text-emerald-600" : "text-red-600"}`}>${fmtNum(latest.orderProfit, 1)}</p>
+              <WowBadge wow={latest.wow?.orderProfit} />
+            </Card>
+            <Card className="p-3">
+              <p className="text-xs text-muted-foreground">Sessions</p>
+              <p className="text-lg font-bold">{fmtNum(latest.sessionTotal)}</p>
+              <WowBadge wow={latest.wow?.sessionTotal} />
+            </Card>
+            <Card className="p-3">
+              <p className="text-xs text-muted-foreground">广告花费</p>
+              <p className="text-lg font-bold text-red-600">${fmtNum(latest.adSpend, 1)}</p>
+              <WowBadge wow={latest.wow?.adSpend} />
+            </Card>
+            <Card className="p-3">
+              <p className="text-xs text-muted-foreground">ACoS</p>
+              <p className={`text-lg font-bold ${latest.acos <= 25 ? "text-emerald-600" : latest.acos <= 40 ? "text-amber-600" : "text-red-600"}`}>{fmtPct(latest.acos)}</p>
+              <WowBadge wow={latest.wow?.acos} />
+            </Card>
+          </div>
+        )}
+
+        {/* Tabs: Weekly Data + Charts */}
+        <Tabs defaultValue="weekly" className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="weekly">周度数据表</TabsTrigger>
+            <TabsTrigger value="charts">趋势图表</TabsTrigger>
+            <TabsTrigger value="variants">子ASIN变体</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="weekly" className="mt-4">
+            <ImportWeeklyTable weeks={weeks} sourceType={sourceType || "lingxing"} />
+          </TabsContent>
+
+          <TabsContent value="charts" className="mt-4">
+            <ImportCharts data={importChartData} />
+          </TabsContent>
+
+          <TabsContent value="variants" className="mt-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">子ASIN变体 ({p.variants.length})</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {p.variants.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">暂无变体数据</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b text-muted-foreground">
+                          <th className="text-left py-2 font-medium">子ASIN</th>
+                          <th className="text-left py-2 font-medium">SKU</th>
+                          <th className="text-left py-2 font-medium">标题</th>
+                          <th className="text-right py-2 font-medium">价格</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {p.variants.map((v: any, idx: number) => (
+                          <tr key={idx} className="border-b last:border-0">
+                            <td className="py-2 font-mono text-xs">{v.childAsin}</td>
+                            <td className="py-2 text-xs">{v.sku || "-"}</td>
+                            <td className="py-2 max-w-[300px] truncate text-xs">{v.title || "-"}</td>
+                            <td className="py-2 text-right text-xs">{v.price ? `$${v.price}` : "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════
+  // SYSTEM MODE RENDER (original logic)
+  // ═══════════════════════════════════════════════════
   if (loadingProduct) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -322,14 +571,14 @@ export default function OpsProductDetail() {
                   {/* ASIN 360 小时数据图表 */}
                   {profitData.hourlyTrend && profitData.hourlyTrend.length > 0 && (
                     <div className="mt-4 border-t pt-3">
-                      <p className="text-sm font-medium text-muted-foreground mb-2">📈 ASIN 360 昨日小时数据</p>
+                      <p className="text-sm font-medium text-muted-foreground mb-2">ASIN 360 昨日小时数据</p>
                       <ResponsiveContainer width="100%" height={200}>
                         <LineChart data={profitData.hourlyTrend} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
                           <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                           <XAxis dataKey="hour" tick={{ fontSize: 11 }} />
                           <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
                           <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
-                          <Tooltip contentStyle={{ fontSize: 12 }} />
+                          <RTooltip contentStyle={{ fontSize: 12 }} />
                           <Legend wrapperStyle={{ fontSize: 11 }} />
                           <Line yAxisId="left" type="monotone" dataKey="volume" name="销量" stroke="#3b82f6" strokeWidth={2} dot={false} />
                           <Line yAxisId="left" type="monotone" dataKey="orderItems" name="订单" stroke="#10b981" strokeWidth={2} dot={false} />
@@ -545,8 +794,9 @@ export default function OpsProductDetail() {
                         </thead>
                         <tbody>
                           {adsData.campaigns.slice(0, 12).map((c, idx) => {
-                            const isPaused = ['paused', 'archived', 'suspended'].includes((c.status || '').toLowerCase());
-                            const cRoas = c.spend > 0 ? (c.sales / c.spend).toFixed(2) : '0';
+                            const isPaused = ['paused', 'archived', 'suspended']
+                              .includes((c.status || '').toLowerCase());
+                            const cRoas = c.spend > 0 ? (c.sales / c.spend).toFixed(2) : "0.00";
                             return (
                             <tr key={idx} className={`border-b last:border-0 ${isPaused ? 'opacity-50' : ''}`}>
                               <td className="py-1.5 max-w-[200px] truncate text-xs">
@@ -1103,6 +1353,189 @@ export default function OpsProductDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════
+// Import Mode Sub-Components
+// ═══════════════════════════════════════════════════
+
+// ─── Weekly Data Table for Import Mode ───
+function ImportWeeklyTable({ weeks, sourceType }: { weeks: any[]; sourceType: string }) {
+  const [showAll, setShowAll] = useState(false);
+  const displayWeeks = showAll ? weeks : weeks.slice(0, 12);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-blue-600" />
+            周度运营数据 ({weeks.length}周)
+          </CardTitle>
+          {weeks.length > 12 && (
+            <Button variant="outline" size="sm" onClick={() => setShowAll(!showAll)}>
+              {showAll ? "收起" : `显示全部 ${weeks.length} 周`}
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b bg-muted/50">
+                <th className="text-left py-2 px-2 font-medium sticky left-0 bg-muted/50 z-10">周期</th>
+                <th className="text-right py-2 px-2 font-medium">销量</th>
+                <th className="text-right py-2 px-2 font-medium">订单</th>
+                <th className="text-right py-2 px-2 font-medium">销售额</th>
+                <th className="text-right py-2 px-2 font-medium">利润</th>
+                <th className="text-right py-2 px-2 font-medium">利润率</th>
+                <th className="text-right py-2 px-2 font-medium">Sessions</th>
+                <th className="text-right py-2 px-2 font-medium">CVR</th>
+                <th className="text-right py-2 px-2 font-medium">广告花费</th>
+                <th className="text-right py-2 px-2 font-medium">广告销售</th>
+                <th className="text-right py-2 px-2 font-medium">ACoS</th>
+                <th className="text-right py-2 px-2 font-medium">CPC</th>
+                <th className="text-right py-2 px-2 font-medium">曝光</th>
+                <th className="text-right py-2 px-2 font-medium">点击</th>
+                <th className="text-right py-2 px-2 font-medium">CTR</th>
+                <th className="text-right py-2 px-2 font-medium">评分</th>
+                <th className="text-right py-2 px-2 font-medium">评论数</th>
+                <th className="text-right py-2 px-2 font-medium">退货率</th>
+              </tr>
+            </thead>
+            <tbody>
+              {displayWeeks.map((w, idx) => (
+                <tr key={idx} className={`border-b last:border-0 hover:bg-muted/30 ${idx === 0 ? "bg-blue-50/30" : ""}`}>
+                  <td className="py-1.5 px-2 font-medium sticky left-0 bg-inherit z-10 whitespace-nowrap">
+                    {fmtWeekRange(w.weekStartDate, w.weekEndDate)}
+                    {idx === 0 && <Badge variant="secondary" className="ml-1 text-[9px] px-1 py-0">最新</Badge>}
+                  </td>
+                  <td className="py-1.5 px-2 text-right font-mono">
+                    {fmtNum(w.salesQty)}
+                    {w.wow?.salesQty && <WowBadge wow={w.wow.salesQty} />}
+                  </td>
+                  <td className="py-1.5 px-2 text-right font-mono">{fmtNum(w.orderQty)}</td>
+                  <td className="py-1.5 px-2 text-right font-mono">${fmtNum(w.salesAmount, 1)}</td>
+                  <td className={`py-1.5 px-2 text-right font-mono ${w.orderProfit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                    ${fmtNum(w.orderProfit, 1)}
+                  </td>
+                  <td className="py-1.5 px-2 text-right">{fmtPct(w.profitMargin)}</td>
+                  <td className="py-1.5 px-2 text-right font-mono">{fmtNum(w.sessionTotal)}</td>
+                  <td className="py-1.5 px-2 text-right">{fmtPct(w.totalCvr)}</td>
+                  <td className="py-1.5 px-2 text-right font-mono text-red-600">${fmtNum(w.adSpend, 1)}</td>
+                  <td className="py-1.5 px-2 text-right font-mono text-emerald-600">${fmtNum(w.adSales, 1)}</td>
+                  <td className={`py-1.5 px-2 text-right ${w.acos <= 25 ? "text-emerald-600" : w.acos <= 40 ? "text-amber-600" : "text-red-600"}`}>
+                    {fmtPct(w.acos)}
+                  </td>
+                  <td className="py-1.5 px-2 text-right font-mono">${fmtNum(w.cpc, 2)}</td>
+                  <td className="py-1.5 px-2 text-right font-mono">{fmtNum(w.adImpressions)}</td>
+                  <td className="py-1.5 px-2 text-right font-mono">{fmtNum(w.adClicks)}</td>
+                  <td className="py-1.5 px-2 text-right">{fmtPct(w.ctr)}</td>
+                  <td className="py-1.5 px-2 text-right">{w.rating > 0 ? w.rating.toFixed(1) : "-"}</td>
+                  <td className="py-1.5 px-2 text-right font-mono">{fmtNum(w.reviewCount)}</td>
+                  <td className="py-1.5 px-2 text-right">{fmtPct(w.returnRate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Trend Charts for Import Mode ───
+function ImportCharts({ data }: { data: any[] }) {
+  if (data.length === 0) {
+    return <p className="text-sm text-muted-foreground text-center py-8">暂无趋势数据</p>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Sales & Revenue Chart */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">销量 & 销售额趋势</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={280}>
+            <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+              <XAxis dataKey="week" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={50} />
+              <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
+              <RTooltip contentStyle={{ fontSize: 12 }} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar yAxisId="left" dataKey="salesQty" name="销量" fill="#3b82f6" opacity={0.7} />
+              <Line yAxisId="right" type="monotone" dataKey="salesAmount" name="销售额($)" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      {/* Profit & Margin Chart */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">利润趋势</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={250}>
+            <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+              <XAxis dataKey="week" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={50} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <RTooltip contentStyle={{ fontSize: 12 }} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Area type="monotone" dataKey="orderProfit" name="利润($)" fill="#10b981" fillOpacity={0.2} stroke="#10b981" strokeWidth={2} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      {/* Traffic & CVR Chart */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">流量 & 转化率趋势</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={250}>
+            <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+              <XAxis dataKey="week" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={50} />
+              <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} domain={[0, 'auto']} />
+              <RTooltip contentStyle={{ fontSize: 12 }} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar yAxisId="left" dataKey="sessionTotal" name="Sessions" fill="#8b5cf6" opacity={0.6} />
+              <Line yAxisId="right" type="monotone" dataKey="totalCvr" name="CVR(%)" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      {/* Ads Performance Chart */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">广告表现趋势</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={250}>
+            <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+              <XAxis dataKey="week" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={50} />
+              <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} domain={[0, 'auto']} />
+              <RTooltip contentStyle={{ fontSize: 12 }} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar yAxisId="left" dataKey="adSpend" name="广告花费($)" fill="#ef4444" opacity={0.6} />
+              <Line yAxisId="right" type="monotone" dataKey="acos" name="ACoS(%)" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
     </div>
   );
 }
