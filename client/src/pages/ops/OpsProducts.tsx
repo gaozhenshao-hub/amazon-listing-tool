@@ -57,10 +57,16 @@ function fmtNum(val: number) {
 function fmtPct(val: number, digits = 2) {
   return `${val.toFixed(digits)}%`;
 }
-function fmtWeekDate(dateStr: string) {
-  // "2026-04-07" -> "4月7日"
-  const d = new Date(dateStr + "T00:00:00");
-  return `${d.getMonth() + 1}月${d.getDate()}日`;
+function fmtWeekDate(startDate: string, endDate?: string) {
+  // "2026-04-07", "2026-04-13" -> "4/07-4/13"
+  const s = new Date(startDate + "T00:00:00");
+  const sm = String(s.getMonth() + 1);
+  const sd = String(s.getDate()).padStart(2, "0");
+  if (!endDate) return `${sm}/${sd}起`;
+  const e = new Date(endDate + "T00:00:00");
+  const em = String(e.getMonth() + 1);
+  const ed = String(e.getDate()).padStart(2, "0");
+  return `${sm}/${sd}-${em}/${ed}`;
 }
 
 function TrendBadge({ trend }: { trend: string | null }) {
@@ -511,7 +517,7 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
                   monthWeeks.sort((a, b) => a.weekStartDate.localeCompare(b.weekStartDate)).forEach(w => {
                     rows.push(
                       <tr key={`week-${w.id}`} className="border-b hover:bg-muted/20 transition-colors">
-                        <td className="px-1.5 py-1 text-left whitespace-nowrap">{fmtWeekDate(w.weekStartDate)}</td>
+                        <td className="px-1.5 py-1 text-left whitespace-nowrap">{fmtWeekDate(w.weekStartDate, w.weekEndDate)}</td>
                         <td className="px-1.5 py-1 text-center"><TrendBadge trend={w.salesTrend} /></td>
                         <td className="px-1.5 py-1 text-right tabular-nums">
                           {w.salesQty}
@@ -559,7 +565,7 @@ function ProductBlock({ product, onNavigate, onDelete, onSync, isSyncing, operat
               {/* If no monthly grouping, just show weeks directly */}
               {product.monthlySummaries.length === 0 && product.weeks.map(w => (
                 <tr key={`week-${w.id}`} className="border-b hover:bg-muted/20 transition-colors">
-                  <td className="px-1.5 py-1 text-left whitespace-nowrap">{fmtWeekDate(w.weekStartDate)}</td>
+                  <td className="px-1.5 py-1 text-left whitespace-nowrap">{fmtWeekDate(w.weekStartDate, w.weekEndDate)}</td>
                   <td className="px-1.5 py-1 text-center"><TrendBadge trend={w.salesTrend} /></td>
                   <td className="px-1.5 py-1 text-right tabular-nums">
                     {w.salesQty}
