@@ -153,198 +153,44 @@ export default function OpsProductDetail() {
     }));
   }, [importDetail?.weeks]);
 
-  // ═══════════════════════════════════════════════════
-  // IMPORT MODE RENDER
-  // ═══════════════════════════════════════════════════
-  if (isImportMode) {
-    if (loadingImport) {
-      return (
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      );
+  // ─── Derive unified product info for both modes ───
+  const derivedProduct = useMemo(() => {
+    if (isImportMode && importDetail) {
+      const p = importDetail.product;
+      return {
+        title: p.title || p.parentAsin,
+        parentAsin: p.parentAsin,
+        brand: p.brand,
+        marketplace: p.marketplace,
+        category: p.category,
+        status: "active" as const,
+        operator: p.operator,
+        storeName: p.storeName,
+        chineseName: p.chineseName,
+        variants: p.variants || [],
+      };
     }
-    if (!importDetail) {
-      return (
-        <div className="text-center py-12">
-          <p className="text-muted-foreground">未找到该产品的导入数据</p>
-          <Button variant="link" onClick={() => navigate("/ops/products")}>返回产品列表</Button>
-        </div>
-      );
+    if (!isImportMode && product) {
+      return {
+        title: product.title,
+        parentAsin: product.parentAsin,
+        brand: product.brand,
+        marketplace: product.marketplace,
+        category: product.category,
+        status: product.status,
+        operator: null as string | null,
+        storeName: null as string | null,
+        chineseName: null as string | null,
+        variants: product.variants,
+      };
     }
+    return null;
+  }, [isImportMode, importDetail, product]);
 
-    const p = importDetail.product;
-    const weeks = importDetail.weeks;
-    const extra = importDetail.extraInfo;
-    const latest = weeks[0];
+  // ─── Loading states ───
+  const isLoading = isImportMode ? loadingImport : loadingProduct;
 
-    return (
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/ops/products")}>
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold truncate">{p.title || p.parentAsin}</h1>
-              <Badge variant="outline" className={`text-xs ${sourceType === "lingxing" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-purple-50 text-purple-700 border-purple-200"}`}>
-                <Database className="h-3 w-3 mr-1" />
-                {sourceType === "lingxing" ? "领星数据" : "赛狐数据"}
-              </Badge>
-            </div>
-            <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-              <span className="font-mono">{p.parentAsin}</span>
-              {p.brand && <span>· {p.brand}</span>}
-              {p.marketplace && <span>· {p.marketplace}</span>}
-              {p.category && <span>· {p.category}</span>}
-              {p.operator && <span>· 运营: {p.operator}</span>}
-              {p.storeName && <span>· 店铺: {p.storeName}</span>}
-            </div>
-            {p.chineseName && (
-              <p className="text-xs text-muted-foreground mt-0.5">品名: {p.chineseName}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Extra Info Cards */}
-        {extra && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-            {extra.bsrMain && (
-              <div className="text-center p-3 rounded-lg bg-muted/50 border">
-                <p className="text-xs text-muted-foreground">BSR大类</p>
-                <p className="text-sm font-semibold">{extra.bsrMain}</p>
-              </div>
-            )}
-            {extra.bsrSub && (
-              <div className="text-center p-3 rounded-lg bg-muted/50 border">
-                <p className="text-xs text-muted-foreground">BSR小类</p>
-                <p className="text-sm font-semibold">{extra.bsrSub}</p>
-              </div>
-            )}
-            {extra.fbaAvailable != null && (
-              <div className="text-center p-3 rounded-lg bg-muted/50 border">
-                <p className="text-xs text-muted-foreground">FBA可售</p>
-                <p className="text-sm font-semibold text-emerald-600">{extra.fbaAvailable}</p>
-              </div>
-            )}
-            {extra.fbaDaysOfSupply != null && (
-              <div className="text-center p-3 rounded-lg bg-muted/50 border">
-                <p className="text-xs text-muted-foreground">可售天数</p>
-                <p className={`text-sm font-semibold ${Number(extra.fbaDaysOfSupply) < 14 ? "text-red-600" : "text-emerald-600"}`}>{extra.fbaDaysOfSupply}</p>
-              </div>
-            )}
-            {extra.sku && (
-              <div className="text-center p-3 rounded-lg bg-muted/50 border">
-                <p className="text-xs text-muted-foreground">SKU</p>
-                <p className="text-sm font-semibold truncate" title={extra.sku}>{extra.sku}</p>
-              </div>
-            )}
-            {extra.msku && (
-              <div className="text-center p-3 rounded-lg bg-muted/50 border">
-                <p className="text-xs text-muted-foreground">MSKU</p>
-                <p className="text-sm font-semibold truncate" title={extra.msku}>{extra.msku}</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* KPI Summary Cards (latest week) */}
-        {latest && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-            <Card className="p-3">
-              <p className="text-xs text-muted-foreground">周销量</p>
-              <p className="text-lg font-bold">{fmtNum(latest.salesQty)}</p>
-              <WowBadge wow={latest.wow?.salesQty} />
-            </Card>
-            <Card className="p-3">
-              <p className="text-xs text-muted-foreground">周销售额</p>
-              <p className="text-lg font-bold">${fmtNum(latest.salesAmount, 1)}</p>
-              <WowBadge wow={latest.wow?.salesAmount} />
-            </Card>
-            <Card className="p-3">
-              <p className="text-xs text-muted-foreground">周利润</p>
-              <p className={`text-lg font-bold ${latest.orderProfit >= 0 ? "text-emerald-600" : "text-red-600"}`}>${fmtNum(latest.orderProfit, 1)}</p>
-              <WowBadge wow={latest.wow?.orderProfit} />
-            </Card>
-            <Card className="p-3">
-              <p className="text-xs text-muted-foreground">Sessions</p>
-              <p className="text-lg font-bold">{fmtNum(latest.sessionTotal)}</p>
-              <WowBadge wow={latest.wow?.sessionTotal} />
-            </Card>
-            <Card className="p-3">
-              <p className="text-xs text-muted-foreground">广告花费</p>
-              <p className="text-lg font-bold text-red-600">${fmtNum(latest.adSpend, 1)}</p>
-              <WowBadge wow={latest.wow?.adSpend} />
-            </Card>
-            <Card className="p-3">
-              <p className="text-xs text-muted-foreground">ACoS</p>
-              <p className={`text-lg font-bold ${latest.acos <= 25 ? "text-emerald-600" : latest.acos <= 40 ? "text-amber-600" : "text-red-600"}`}>{fmtPct(latest.acos)}</p>
-              <WowBadge wow={latest.wow?.acos} />
-            </Card>
-          </div>
-        )}
-
-        {/* Tabs: Weekly Data + Charts */}
-        <Tabs defaultValue="weekly" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="weekly">周度数据表</TabsTrigger>
-            <TabsTrigger value="charts">趋势图表</TabsTrigger>
-            <TabsTrigger value="variants">子ASIN变体</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="weekly" className="mt-4">
-            <ImportWeeklyTable weeks={weeks} sourceType={sourceType || "lingxing"} />
-          </TabsContent>
-
-          <TabsContent value="charts" className="mt-4">
-            <ImportCharts data={importChartData} />
-          </TabsContent>
-
-          <TabsContent value="variants" className="mt-4">
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">子ASIN变体 ({p.variants.length})</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {p.variants.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">暂无变体数据</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b text-muted-foreground">
-                          <th className="text-left py-2 font-medium">子ASIN</th>
-                          <th className="text-left py-2 font-medium">SKU</th>
-                          <th className="text-left py-2 font-medium">标题</th>
-                          <th className="text-right py-2 font-medium">价格</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {p.variants.map((v: any, idx: number) => (
-                          <tr key={idx} className="border-b last:border-0">
-                            <td className="py-2 font-mono text-xs">{v.childAsin}</td>
-                            <td className="py-2 text-xs">{v.sku || "-"}</td>
-                            <td className="py-2 max-w-[300px] truncate text-xs">{v.title || "-"}</td>
-                            <td className="py-2 text-right text-xs">{v.price ? `$${v.price}` : "-"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-      </div>
-    );
-  }
-
-  // ═══════════════════════════════════════════════════
-  // SYSTEM MODE RENDER (original logic)
-  // ═══════════════════════════════════════════════════
-  if (loadingProduct) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -352,10 +198,10 @@ export default function OpsProductDetail() {
     );
   }
 
-  if (!product) {
+  if (!derivedProduct) {
     return (
       <div className="text-center py-12">
-        <p className="text-muted-foreground">产品不存在</p>
+        <p className="text-muted-foreground">{isImportMode ? "未找到该产品的导入数据" : "产品不存在"}</p>
         <Button variant="link" onClick={() => navigate("/ops/products")}>返回产品列表</Button>
       </div>
     );
@@ -377,31 +223,129 @@ export default function OpsProductDetail() {
     milestone: "bg-green-100 text-green-700",
   };
 
+  // Import mode extra info
+  const extra = isImportMode ? importDetail?.extraInfo : null;
+  const importWeeks = isImportMode ? (importDetail?.weeks || []) : [];
+  const latestImportWeek = importWeeks[0];
+
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* ═══ Header ═══ */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" onClick={() => navigate("/ops/products")}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-bold truncate">{product.title}</h1>
-          <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-            <span className="font-mono">{product.parentAsin}</span>
-            {product.brand && <span>· {product.brand}</span>}
-            <span>· {product.marketplace}</span>
-            {product.category && <span>· {product.category}</span>}
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold truncate">{derivedProduct.title}</h1>
+            {isImportMode && (
+              <Badge variant="outline" className={`text-xs ${sourceType === "lingxing" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-purple-50 text-purple-700 border-purple-200"}`}>
+                <Database className="h-3 w-3 mr-1" />
+                {sourceType === "lingxing" ? "领星数据" : "赛狐数据"}
+              </Badge>
+            )}
           </div>
+          <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+            <span className="font-mono">{derivedProduct.parentAsin}</span>
+            {derivedProduct.brand && <span>· {derivedProduct.brand}</span>}
+            {derivedProduct.marketplace && <span>· {derivedProduct.marketplace}</span>}
+            {derivedProduct.category && <span>· {derivedProduct.category}</span>}
+            {derivedProduct.operator && <span>· 运营: {derivedProduct.operator}</span>}
+            {derivedProduct.storeName && <span>· 店铺: {derivedProduct.storeName}</span>}
+          </div>
+          {derivedProduct.chineseName && (
+            <p className="text-xs text-muted-foreground mt-0.5">品名: {derivedProduct.chineseName}</p>
+          )}
         </div>
-        <Badge variant="secondary" className={
-          product.status === "active" ? "bg-emerald-100 text-emerald-700" :
-          product.status === "inactive" ? "bg-gray-100 text-gray-600" : "bg-red-100 text-red-700"
-        }>
-          {product.status === "active" ? "在售" : product.status === "inactive" ? "暂停" : "停售"}
-        </Badge>
+        {!isImportMode && (
+          <Badge variant="secondary" className={
+            derivedProduct.status === "active" ? "bg-emerald-100 text-emerald-700" :
+            derivedProduct.status === "inactive" ? "bg-gray-100 text-gray-600" : "bg-red-100 text-red-700"
+          }>
+            {derivedProduct.status === "active" ? "在售" : derivedProduct.status === "inactive" ? "暂停" : "停售"}
+          </Badge>
+        )}
       </div>
 
-      {/* Tab Navigation */}
+      {/* ═══ Import Mode: Extra Info Row (BSR/FBA/SKU/MSKU) ═══ */}
+      {isImportMode && extra && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+          {extra.bsrMain && (
+            <div className="text-center p-3 rounded-lg bg-muted/50 border">
+              <p className="text-xs text-muted-foreground">BSR大类</p>
+              <p className="text-sm font-semibold">{extra.bsrMain}</p>
+            </div>
+          )}
+          {extra.bsrSub && (
+            <div className="text-center p-3 rounded-lg bg-muted/50 border">
+              <p className="text-xs text-muted-foreground">BSR小类</p>
+              <p className="text-sm font-semibold">{extra.bsrSub}</p>
+            </div>
+          )}
+          {extra.fbaAvailable != null && (
+            <div className="text-center p-3 rounded-lg bg-muted/50 border">
+              <p className="text-xs text-muted-foreground">FBA可售</p>
+              <p className="text-sm font-semibold text-emerald-600">{extra.fbaAvailable}</p>
+            </div>
+          )}
+          {extra.fbaDaysOfSupply != null && (
+            <div className="text-center p-3 rounded-lg bg-muted/50 border">
+              <p className="text-xs text-muted-foreground">可售天数</p>
+              <p className={`text-sm font-semibold ${Number(extra.fbaDaysOfSupply) < 14 ? "text-red-600" : "text-emerald-600"}`}>{extra.fbaDaysOfSupply}</p>
+            </div>
+          )}
+          {extra.sku && (
+            <div className="text-center p-3 rounded-lg bg-muted/50 border">
+              <p className="text-xs text-muted-foreground">SKU</p>
+              <p className="text-sm font-semibold truncate" title={extra.sku}>{extra.sku}</p>
+            </div>
+          )}
+          {extra.msku && (
+            <div className="text-center p-3 rounded-lg bg-muted/50 border">
+              <p className="text-xs text-muted-foreground">MSKU</p>
+              <p className="text-sm font-semibold truncate" title={extra.msku}>{extra.msku}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ Import Mode: KPI Summary Cards (latest week) ═══ */}
+      {isImportMode && latestImportWeek && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+          <Card className="p-3">
+            <p className="text-xs text-muted-foreground">周销量</p>
+            <p className="text-lg font-bold">{fmtNum(latestImportWeek.salesQty)}</p>
+            <WowBadge wow={latestImportWeek.wow?.salesQty} />
+          </Card>
+          <Card className="p-3">
+            <p className="text-xs text-muted-foreground">周销售额</p>
+            <p className="text-lg font-bold">${fmtNum(latestImportWeek.salesAmount, 1)}</p>
+            <WowBadge wow={latestImportWeek.wow?.salesAmount} />
+          </Card>
+          <Card className="p-3">
+            <p className="text-xs text-muted-foreground">周利润</p>
+            <p className={`text-lg font-bold ${latestImportWeek.orderProfit >= 0 ? "text-emerald-600" : "text-red-600"}`}>${fmtNum(latestImportWeek.orderProfit, 1)}</p>
+            <WowBadge wow={latestImportWeek.wow?.orderProfit} />
+          </Card>
+          <Card className="p-3">
+            <p className="text-xs text-muted-foreground">Sessions</p>
+            <p className="text-lg font-bold">{fmtNum(latestImportWeek.sessionTotal)}</p>
+            <WowBadge wow={latestImportWeek.wow?.sessionTotal} />
+          </Card>
+          <Card className="p-3">
+            <p className="text-xs text-muted-foreground">广告花费</p>
+            <p className="text-lg font-bold text-red-600">${fmtNum(latestImportWeek.adSpend, 1)}</p>
+            <WowBadge wow={latestImportWeek.wow?.adSpend} />
+          </Card>
+          <Card className="p-3">
+            <p className="text-xs text-muted-foreground">ACoS</p>
+            <p className={`text-lg font-bold ${latestImportWeek.acos <= 25 ? "text-emerald-600" : latestImportWeek.acos <= 40 ? "text-amber-600" : "text-red-600"}`}>{fmtPct(latestImportWeek.acos)}</p>
+            <WowBadge wow={latestImportWeek.wow?.acos} />
+          </Card>
+        </div>
+      )}
+
+      {/* ═══ Tab Navigation — SAME for both modes ═══ */}
       <Tabs defaultValue="dashboard" className="w-full">
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="dashboard">数据看板</TabsTrigger>
@@ -411,9 +355,58 @@ export default function OpsProductDetail() {
           <TabsTrigger value="team">团队协作</TabsTrigger>
         </TabsList>
 
+        {/* ═══ Tab: 数据看板 ═══ */}
         <TabsContent value="dashboard" className="mt-4">
+
+      {/* ─── Import Mode Dashboard ─── */}
+      {isImportMode ? (
+        <div className="space-y-6">
+          {/* Import Weekly Data Table */}
+          <ImportWeeklyTable weeks={importWeeks} sourceType={sourceType || "lingxing"} />
+
+          {/* Import Trend Charts */}
+          <ImportCharts data={importChartData} />
+
+          {/* Import Variants */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">子ASIN变体 ({derivedProduct.variants.length})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {derivedProduct.variants.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">暂无变体数据</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-muted-foreground">
+                        <th className="text-left py-2 font-medium">子ASIN</th>
+                        <th className="text-left py-2 font-medium">SKU</th>
+                        <th className="text-left py-2 font-medium">标题</th>
+                        <th className="text-right py-2 font-medium">价格</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {derivedProduct.variants.map((v: any, idx: number) => (
+                        <tr key={idx} className="border-b last:border-0">
+                          <td className="py-2 font-mono text-xs">{v.childAsin}</td>
+                          <td className="py-2 text-xs">{v.sku || "-"}</td>
+                          <td className="py-2 max-w-[300px] truncate text-xs">{v.title || "-"}</td>
+                          <td className="py-2 text-right text-xs">{v.price ? `$${v.price}` : "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        /* ─── System Mode Dashboard (original) ─── */
+        <>
       {/* Weekly Ops Table (Excel-style) - Full Width */}
-      <ProductWeeklyOpsTable productId={productId} parentAsin={product.parentAsin} />
+      <ProductWeeklyOpsTable productId={productId} parentAsin={derivedProduct.parentAsin} />
 
       {/* Main Layout: Left (data) + Right (todos & logs) */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mt-6">
@@ -431,7 +424,7 @@ export default function OpsProductDetail() {
               </div>
             </CardHeader>
             <CardContent>
-              {product.variants.length === 0 ? (
+              {derivedProduct.variants.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">暂无变体，点击上方按钮添加</p>
               ) : (
                 <div className="overflow-x-auto">
@@ -446,8 +439,8 @@ export default function OpsProductDetail() {
                       </tr>
                     </thead>
                     <tbody>
-                      {product.variants.map((v: { id: number; childAsin: string; sku: string | null; title: string | null; price: string | null; status: string }) => (
-                        <tr key={v.id} className="border-b last:border-0">
+                      {derivedProduct.variants.map((v: any) => (
+                        <tr key={v.id || v.childAsin} className="border-b last:border-0">
                           <td className="py-2 font-mono text-xs">{v.childAsin}</td>
                           <td className="py-2">{v.sku || "-"}</td>
                           <td className="py-2 max-w-[200px] truncate">{v.title || "-"}</td>
@@ -610,9 +603,6 @@ export default function OpsProductDetail() {
                   {inventoryData?.dataSource?.source === 'mock_fallback' && (
                     <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">模拟数据</Badge>
                   )}
-                  {inventoryData?.dataSource?.source === 'mock_mode' && (
-                    <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">演示模式</Badge>
-                  )}
                 </div>
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => refetchInventory()} disabled={fetchingInventory}>
                   <RefreshCw className={`h-4 w-4 ${fetchingInventory ? 'animate-spin' : ''}`} />
@@ -639,33 +629,35 @@ export default function OpsProductDetail() {
                       <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
                       <div className="text-xs">
                         <p className="font-medium text-amber-800">领星API连接失败，当前显示为模拟数据</p>
-                        {inventoryData.dataSource.reason && <p className="text-amber-600 mt-0.5">{inventoryData.dataSource.reason}</p>}
                       </div>
                     </div>
                   )}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
                     {[
-                      { label: "FBA可售", value: inventoryData.total.fulfillableQty, color: "text-emerald-600" },
-                      { label: "在途", value: inventoryData.total.inboundQty, color: "text-blue-600" },
-                      { label: "日均销量", value: inventoryData.total.avgDailySales, color: "text-orange-600" },
-                      { label: "可售天数", value: inventoryData.total.daysOfSupply, color: inventoryData.total.daysOfSupply < 14 ? "text-red-600" : "text-emerald-600" },
+                      { label: "FBA可售", value: inventoryData.fba.available, color: "text-emerald-600" },
+                      { label: "FBA在途", value: inventoryData.fba.inbound, color: "text-blue-600" },
+                      { label: "FBA预留", value: inventoryData.fba.reserved, color: "text-amber-600" },
+                      { label: "可售天数", value: `${inventoryData.fba.daysOfSupply}天`, color: inventoryData.fba.daysOfSupply < 14 ? "text-red-600" : "text-emerald-600" },
                     ].map((item, idx) => (
                       <div key={idx} className="text-center p-3 rounded-lg bg-muted/50">
                         <p className="text-xs text-muted-foreground">{item.label}</p>
-                        <p className={`text-xl font-bold ${item.color}`}>{item.value}</p>
+                        <p className={`text-lg font-bold ${item.color}`}>{item.value}</p>
                       </div>
                     ))}
                   </div>
-                  <Badge variant="secondary" className={
-                    inventoryData.total.replenishStatus === "urgent" ? "bg-red-100 text-red-700" :
-                    inventoryData.total.replenishStatus === "warning" ? "bg-yellow-100 text-yellow-700" :
-                    inventoryData.total.replenishStatus === "overstock" ? "bg-purple-100 text-purple-700" :
-                    "bg-emerald-100 text-emerald-700"
-                  }>
-                    {inventoryData.total.replenishStatus === "urgent" ? "紧急补货" :
-                     inventoryData.total.replenishStatus === "warning" ? "即将断货" :
-                     inventoryData.total.replenishStatus === "overstock" ? "库存过剩" : "库存正常"}
-                  </Badge>
+                  {inventoryData.alert && (
+                    <div className={`flex items-center gap-2 p-2 rounded-md ${
+                      inventoryData.alert.level === "danger" ? "bg-red-50 border border-red-200" :
+                      inventoryData.alert.level === "warning" ? "bg-amber-50 border border-amber-200" :
+                      "bg-blue-50 border border-blue-200"
+                    }`}>
+                      <AlertTriangle className={`h-4 w-4 ${
+                        inventoryData.alert.level === "danger" ? "text-red-600" :
+                        inventoryData.alert.level === "warning" ? "text-amber-600" : "text-blue-600"
+                      }`} />
+                      <p className="text-xs font-medium">{inventoryData.alert.message}</p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-3 py-6">
@@ -685,12 +677,9 @@ export default function OpsProductDetail() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Target className="h-5 w-5 text-orange-600" />
-                  <CardTitle className="text-base">广告概览</CardTitle>
+                  <CardTitle className="text-base">广告概览（近30天）</CardTitle>
                   {adsData?.dataSource?.source === 'mock_fallback' && (
                     <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">模拟数据</Badge>
-                  )}
-                  {adsData?.dataSource?.source === 'mock_mode' && (
-                    <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">演示模式</Badge>
                   )}
                 </div>
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => refetchAds()} disabled={fetchingAds}>
@@ -722,7 +711,6 @@ export default function OpsProductDetail() {
                       </div>
                     </div>
                   )}
-                  {/* Match info debug */}
                   {(adsData as any).matchInfo && (
                     <div className="flex items-start gap-2 p-2 mb-3 rounded-md bg-blue-50 border border-blue-200">
                       <Info className="h-3.5 w-3.5 text-blue-600 mt-0.5 shrink-0" />
@@ -733,10 +721,10 @@ export default function OpsProductDetail() {
                         <span className="mx-1.5">|</span>
                         <span>关联活动: {(adsData as any).matchInfo.matchedCampaignCount}/{(adsData as any).matchInfo.totalCampaignCount}</span>
                         {(adsData as any).matchInfo.matchedCampaignCount === 0 && (adsData as any).matchInfo.mappingSource === 'name_match' && (
-                          <span className="ml-2 text-amber-600 font-medium">提示: 未找到精确映射，已使用名称模糊匹配，请先进入广告优化模块触发一次ASIN映射同步</span>
+                          <span className="ml-2 text-amber-600 font-medium">提示: 未找到精确映射，已使用名称模糊匹配</span>
                         )}
                         {(adsData as any).matchInfo.matchedCampaignCount === 0 && (adsData as any).matchInfo.mappingSource !== 'name_match' && (
-                          <span className="ml-2 text-amber-600 font-medium">提示: 该产品的ASIN未在广告活动中找到，可能尚未投放广告</span>
+                          <span className="ml-2 text-amber-600 font-medium">提示: 该产品的ASIN未在广告活动中找到</span>
                         )}
                       </div>
                     </div>
@@ -754,7 +742,6 @@ export default function OpsProductDetail() {
                       </div>
                     ))}
                   </div>
-                  {/* Additional metrics row */}
                   <div className="grid grid-cols-4 gap-3 mb-4">
                     <div className="text-center p-2 rounded bg-gray-50">
                       <p className="text-[10px] text-muted-foreground">曝光</p>
@@ -1122,28 +1109,35 @@ export default function OpsProductDetail() {
           </Card>
         </div>
       </div>
+        </>
+      )}
 
       </TabsContent>
 
+        {/* ═══ Tab: 运营计划 ═══ */}
         <TabsContent value="plan" className="mt-4">
-          <OpsProductPlan productId={productId} parentAsin={product.parentAsin} productTitle={product.title} />
+          <OpsProductPlan productId={productId} parentAsin={derivedProduct.parentAsin} productTitle={derivedProduct.title} />
         </TabsContent>
 
+        {/* ═══ Tab: 转化率对比 ═══ */}
         <TabsContent value="conversion" className="mt-4">
-          <OpsProductConversion productId={productId} parentAsin={product.parentAsin} />
+          <OpsProductConversion productId={productId} parentAsin={derivedProduct.parentAsin} />
         </TabsContent>
 
+        {/* ═══ Tab: 执行复盘 ═══ */}
         <TabsContent value="review" className="mt-4">
-          <OpsProductReview productId={productId} parentAsin={product.parentAsin} />
+          <OpsProductReview productId={productId} parentAsin={derivedProduct.parentAsin} />
         </TabsContent>
 
+        {/* ═══ Tab: 团队协作 ═══ */}
         <TabsContent value="team" className="mt-4">
-          <OpsProductTeam productId={productId} parentAsin={product.parentAsin} />
+          <OpsProductTeam productId={productId} parentAsin={derivedProduct.parentAsin} />
         </TabsContent>
       </Tabs>
 
-      {/* ─── Dialogs ─── */}
-
+      {/* ─── Dialogs (system mode only) ─── */}
+      {!isImportMode && (
+        <>
       {/* Add Todo Dialog */}
       <Dialog open={showAddTodo} onOpenChange={setShowAddTodo}>
         <DialogContent className="max-w-md">
@@ -1353,6 +1347,8 @@ export default function OpsProductDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+        </>
+      )}
     </div>
   );
 }
