@@ -15,6 +15,7 @@ import {
   Trash2, AlertTriangle, Database, BarChart3, ArrowUpFromLine,
 } from "lucide-react";
 import { toast } from "sonner";
+import OperatorMappingDialog from "@/components/OperatorMappingDialog";
 
 // ─── Helper: format date ───
 function formatDate(d: Date | string | null) {
@@ -57,6 +58,9 @@ export default function OpsDataImport() {
   const [confirmingImport, setConfirmingImport] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [mappingDialogOpen, setMappingDialogOpen] = useState(false);
+  const [mappingOperatorNames, setMappingOperatorNames] = useState<string[]>([]);
+  const [mappingSourceType, setMappingSourceType] = useState<"lingxing" | "saihu">("lingxing");
 
   // ─── Queries ───
   const historyQuery = trpc.dataImport.getHistory.useQuery({ page: 1, pageSize: 50, sourceType: "all" });
@@ -80,6 +84,20 @@ export default function OpsDataImport() {
       toast.success("数据导入成功", {
         description: `成功导入 ${data.importedRows} 行数据${data.skippedRows > 0 ? `，跳过 ${data.skippedRows} 行` : ""}`,
       });
+      // Extract unique operator names from preview data for mapping
+      if (previewData?.previewRows?.length > 0) {
+        const operatorField = previewData.sourceType === "lingxing" ? "operator" : "operator";
+        const names = [...new Set(
+          previewData.previewRows
+            .map((r: any) => r[operatorField] || r.负责人 || r.业务员)
+            .filter(Boolean)
+        )] as string[];
+        if (names.length > 0) {
+          setMappingOperatorNames(names);
+          setMappingSourceType(previewData.sourceType as "lingxing" | "saihu");
+          setMappingDialogOpen(true);
+        }
+      }
       setPreviewOpen(false);
       setPreviewData(null);
       setConfirmingImport(false);
@@ -493,6 +511,16 @@ export default function OpsDataImport() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Operator Name Mapping Dialog */}
+      <OperatorMappingDialog
+        open={mappingDialogOpen}
+        onOpenChange={setMappingDialogOpen}
+        operatorNames={mappingOperatorNames}
+        sourceType={mappingSourceType}
+        onComplete={() => {
+          setMappingOperatorNames([]);
+        }}
+      />
     </div>
   );
 }

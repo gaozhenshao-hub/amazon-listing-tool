@@ -24,6 +24,9 @@ import {
   Activity,
   Wifi,
   WifiOff,
+  Users,
+  Trash2,
+  ArrowRight,
 } from "lucide-react";
 import {
   Select,
@@ -195,7 +198,7 @@ export default function SystemSettings() {
       </div>
 
       <Tabs defaultValue="lingxing" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="lingxing" className="flex items-center gap-2">
             <Globe className="h-4 w-4" />
             领星API
@@ -215,6 +218,10 @@ export default function SystemSettings() {
           <TabsTrigger value="test" className="flex items-center gap-2">
             <TestTube2 className="h-4 w-4" />
             连接测试
+          </TabsTrigger>
+          <TabsTrigger value="mapping" className="flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            人员映射
           </TabsTrigger>
         </TabsList>
 
@@ -551,6 +558,11 @@ export default function SystemSettings() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Operator Name Mapping Tab */}
+        <TabsContent value="mapping" className="space-y-6">
+          <OperatorMappingSettings />
         </TabsContent>
       </Tabs>
     </div>
@@ -1364,6 +1376,157 @@ function NextSlsSettings() {
               <li>配置保存后立即生效，无需重启服务</li>
             </ul>
           </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// Operator Name Mapping Settings Component
+// ═══════════════════════════════════════════════════════════════════════
+
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+function OperatorMappingSettings() {
+  const { data: mappings, isLoading, refetch } = trpc.operatorMapping.listMappings.useQuery();
+  const deleteMut = trpc.operatorMapping.deleteMapping.useMutation({
+    onSuccess: () => {
+      toast.success("映射已删除");
+      refetch();
+    },
+    onError: (err) => toast.error("删除失败", { description: err.message }),
+  });
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            运营人员名称映射管理
+          </CardTitle>
+          <CardDescription>
+            管理领星/赛狐导出数据中的运营人员名称与系统用户之间的映射关系。
+            导入数据时系统会自动匹配，未匹配的名称会弹出确认弹窗。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : !mappings?.length ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <Users className="h-12 w-12 mx-auto mb-3 opacity-30" />
+              <p>暂无映射记录</p>
+              <p className="text-sm mt-1">导入数据时会自动创建映射关系</p>
+            </div>
+          ) : (
+            <div className="border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>导出名称（外部）</TableHead>
+                    <TableHead className="w-[40px]"></TableHead>
+                    <TableHead>系统用户名</TableHead>
+                    <TableHead>数据来源</TableHead>
+                    <TableHead>状态</TableHead>
+                    <TableHead>创建时间</TableHead>
+                    <TableHead className="text-right">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {mappings.map((m) => (
+                    <TableRow key={m.id}>
+                      <TableCell className="font-medium">{m.externalName}</TableCell>
+                      <TableCell>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      </TableCell>
+                      <TableCell>
+                        {m.systemUserName ? (
+                          <span className="text-green-700 dark:text-green-300 font-medium">
+                            {m.systemUserName}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">未映射</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={
+                          m.sourceType === "lingxing"
+                            ? "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800"
+                            : m.sourceType === "saihu"
+                            ? "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800"
+                            : ""
+                        }>
+                          {m.sourceType === "lingxing" ? "领星" : m.sourceType === "saihu" ? "赛狐" : "通用"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {m.isConfirmed ? (
+                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800">
+                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                            已确认
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800">
+                            待确认
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {m.createdAt ? new Date(m.createdAt).toLocaleDateString("zh-CN") : "-"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={() => {
+                            if (confirm("确定删除此映射关系？删除后下次导入需要重新确认。")) {
+                              deleteMut.mutate({ id: m.id });
+                            }
+                          }}
+                          disabled={deleteMut.isPending}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Tips */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">使用说明</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground space-y-2">
+          <p>
+            <strong>自动匹配：</strong>每次导入Excel数据时，系统会自动从导出的运营人员名称中提取核心名称，
+            与系统用户进行模糊匹配。匹配度高于80%的会自动建议，低于80%的需要手动确认。
+          </p>
+          <p>
+            <strong>映射记忆：</strong>确认过的映射关系会被记住，下次导入相同名称时自动使用已确认的映射，无需重复确认。
+          </p>
+          <p>
+            <strong>名称提取规则：</strong>系统会自动去除领星导出名称中的前缀（如"运营"）和后缀标签（如"_XM-1"），
+            提取核心中文名或英文名进行匹配。
+          </p>
         </CardContent>
       </Card>
     </div>

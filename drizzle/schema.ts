@@ -3705,3 +3705,21 @@ export const saihuProductWeekly = mysqlTable("saihu_product_weekly", {
 
 export type SaihuProductWeekly = typeof saihuProductWeekly.$inferSelect;
 export type InsertSaihuProductWeekly = typeof saihuProductWeekly.$inferInsert;
+
+
+// ==================== 运营人员名称映射表 ====================
+// Maps external operator names (from Lingxing/Saihu exports) to system user IDs
+export const operatorNameMappings = mysqlTable("operator_name_mappings", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(), // The user who created this mapping
+  externalName: varchar("external_name", { length: 200 }).notNull(), // Name from Lingxing/Saihu export (e.g. "运营 超级管理员_XM-1")
+  sourceType: mysqlEnum("source_type", ["lingxing", "saihu", "all"]).default("all").notNull(), // Which data source this mapping applies to
+  systemUserName: varchar("system_user_name", { length: 200 }), // Mapped system user name (from users.name)
+  systemUserId: int("system_user_id"), // Mapped system user ID (from users.id)
+  isConfirmed: int("is_confirmed").default(1).notNull(), // Whether this mapping has been confirmed by user
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OperatorNameMapping = typeof operatorNameMappings.$inferSelect;
+export type InsertOperatorNameMapping = typeof operatorNameMappings.$inferInsert;

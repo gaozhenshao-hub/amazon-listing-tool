@@ -79,6 +79,7 @@ import { videoScriptRouter } from "./routers/videoScript";
 import { taskManagementRouter } from "./routers/taskManagement";
 // Data Import Center
 import { dataImportRouter } from "./routers/dataImport";
+import { operatorMappingRouter } from "./routers/operatorMapping";
 
 export const appRouter = router({
   system: systemRouter,
@@ -168,6 +169,7 @@ export const appRouter = router({
   videoScript: videoScriptRouter,
   // Data Import Center
   dataImport: dataImportRouter,
+  operatorMapping: operatorMappingRouter,
   // Task Management
   taskManagement: taskManagementRouter,
 });
