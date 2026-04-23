@@ -1848,31 +1848,35 @@ export const opsPlans = mysqlTable("ops_plans", {
   projectManager: varchar("project_manager", { length: 100 }),
   projectMembers: text("project_members"), // JSON array of member names
   gamePlanner: varchar("game_planner", { length: 100 }), // 游戏策划师 (formerly 项目教练)
-  // 基期现状数据
-  baselineDailySales: decimal("baseline_daily_sales", { precision: 12, scale: 2 }),
-  baselineDailyOrders: decimal("baseline_daily_orders", { precision: 10, scale: 2 }),
-  baselineAdConvRate: decimal("baseline_ad_conv_rate", { precision: 6, scale: 2 }),
-  baselineIndustrySearchConvRate: decimal("baseline_industry_search_conv_rate", { precision: 6, scale: 2 }),
-  baselineSearchConvRate: decimal("baseline_search_conv_rate", { precision: 6, scale: 2 }),
-  baselineCategorySearchConvRate: decimal("baseline_category_search_conv_rate", { precision: 6, scale: 2 }),
-  baselineAvgPrice: decimal("baseline_avg_price", { precision: 10, scale: 2 }),
-  baselineRatingCount: int("baseline_rating_count"),
-  baselineRatingScore: decimal("baseline_rating_score", { precision: 3, scale: 1 }),
-  // 当期现状数据
-  currentDailySales: decimal("current_daily_sales", { precision: 12, scale: 2 }),
-  currentDailyOrders: decimal("current_daily_orders", { precision: 10, scale: 2 }),
-  currentAdConvRate: decimal("current_ad_conv_rate", { precision: 6, scale: 2 }),
-  currentIndustrySearchConvRate: decimal("current_industry_search_conv_rate", { precision: 6, scale: 2 }),
-  currentSearchConvRate: decimal("current_search_conv_rate", { precision: 6, scale: 2 }),
-  currentCategorySearchConvRate: decimal("current_category_search_conv_rate", { precision: 6, scale: 2 }),
-  currentAvgPrice: decimal("current_avg_price", { precision: 10, scale: 2 }),
-  currentRatingCount: int("current_rating_count"),
-  currentRatingScore: decimal("current_rating_score", { precision: 3, scale: 1 }),
-  // 季度目标
-  targetSearchConvRate: decimal("target_search_conv_rate", { precision: 6, scale: 2 }),
-  targetOrderConvRate: decimal("target_order_conv_rate", { precision: 6, scale: 2 }),
-  targetAdConvRate: decimal("target_ad_conv_rate", { precision: 6, scale: 2 }),
-  targetKeywordAdvantage: decimal("target_keyword_advantage", { precision: 6, scale: 2 }),
+  // 基期现状数据 (周维度)
+  baselineWeekLabel: varchar("baseline_week_label", { length: 50 }), // e.g. "04/06-04/12"
+  baselineSales: decimal("baseline_sales", { precision: 12, scale: 2 }), // 销售额
+  baselineSubcategoryRank: int("baseline_subcategory_rank"), // 小类排名
+  baselineProfitRate: decimal("baseline_profit_rate", { precision: 6, scale: 2 }), // 利润率%
+  baselineConvRate: decimal("baseline_conv_rate", { precision: 6, scale: 2 }), // 转化率%
+  baselineOrganicOrders: int("baseline_organic_orders"), // 自然单
+  baselineAdOrders: int("baseline_ad_orders"), // 广告单
+  baselineRatingScore: decimal("baseline_rating_score", { precision: 3, scale: 1 }), // 评分
+  baselineRatingCount: int("baseline_rating_count"), // Rating数量
+  // 当期现状数据 (周维度)
+  currentWeekLabel: varchar("current_week_label", { length: 50 }), // e.g. "04/13-04/19"
+  currentSales: decimal("current_sales", { precision: 12, scale: 2 }), // 销售额
+  currentSubcategoryRank: int("current_subcategory_rank"), // 小类排名
+  currentProfitRate: decimal("current_profit_rate", { precision: 6, scale: 2 }), // 利润率%
+  currentConvRate: decimal("current_conv_rate", { precision: 6, scale: 2 }), // 转化率%
+  currentOrganicOrders: int("current_organic_orders"), // 自然单
+  currentAdOrders: int("current_ad_orders"), // 广告单
+  currentRatingScore: decimal("current_rating_score", { precision: 3, scale: 1 }), // 评分
+  currentRatingCount: int("current_rating_count"), // Rating数量
+  // 目标数据
+  targetSales: decimal("target_sales", { precision: 12, scale: 2 }),
+  targetSubcategoryRank: int("target_subcategory_rank"),
+  targetProfitRate: decimal("target_profit_rate", { precision: 6, scale: 2 }),
+  targetConvRate: decimal("target_conv_rate", { precision: 6, scale: 2 }),
+  targetOrganicOrders: int("target_organic_orders"),
+  targetAdOrders: int("target_ad_orders"),
+  targetRatingScore: decimal("target_rating_score", { precision: 3, scale: 1 }),
+  targetRatingCount: int("target_rating_count"),
   // 状态
   status: mysqlEnum("plan_status", ["draft", "active", "completed", "archived"]).default("draft").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

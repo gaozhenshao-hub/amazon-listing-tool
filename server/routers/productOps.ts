@@ -1185,28 +1185,35 @@ export const productOpsRouter = router({
     projectMembers: z.string().optional(),
     gamePlanner: z.string().optional(),
     status: z.enum(["draft", "active", "completed", "archived"]).optional(),
-    baselineDailySales: z.string().optional(),
-    baselineDailyOrders: z.string().optional(),
-    baselineAdConvRate: z.string().optional(),
-    baselineIndustrySearchConvRate: z.string().optional(),
-    baselineSearchConvRate: z.string().optional(),
-    baselineCategorySearchConvRate: z.string().optional(),
-    baselineAvgPrice: z.string().optional(),
-    baselineRatingCount: z.number().optional(),
+    // 基期数据 (周维度)
+    baselineWeekLabel: z.string().optional(),
+    baselineSales: z.string().optional(),
+    baselineSubcategoryRank: z.number().optional(),
+    baselineProfitRate: z.string().optional(),
+    baselineConvRate: z.string().optional(),
+    baselineOrganicOrders: z.number().optional(),
+    baselineAdOrders: z.number().optional(),
     baselineRatingScore: z.string().optional(),
-    currentDailySales: z.string().optional(),
-    currentDailyOrders: z.string().optional(),
-    currentAdConvRate: z.string().optional(),
-    currentIndustrySearchConvRate: z.string().optional(),
-    currentSearchConvRate: z.string().optional(),
-    currentCategorySearchConvRate: z.string().optional(),
-    currentAvgPrice: z.string().optional(),
-    currentRatingCount: z.number().optional(),
+    baselineRatingCount: z.number().optional(),
+    // 当期数据 (周维度)
+    currentWeekLabel: z.string().optional(),
+    currentSales: z.string().optional(),
+    currentSubcategoryRank: z.number().optional(),
+    currentProfitRate: z.string().optional(),
+    currentConvRate: z.string().optional(),
+    currentOrganicOrders: z.number().optional(),
+    currentAdOrders: z.number().optional(),
     currentRatingScore: z.string().optional(),
-    targetSearchConvRate: z.string().optional(),
-    targetOrderConvRate: z.string().optional(),
-    targetAdConvRate: z.string().optional(),
-    targetKeywordAdvantage: z.string().optional(),
+    currentRatingCount: z.number().optional(),
+    // 目标数据
+    targetSales: z.string().optional(),
+    targetSubcategoryRank: z.number().optional(),
+    targetProfitRate: z.string().optional(),
+    targetConvRate: z.string().optional(),
+    targetOrganicOrders: z.number().optional(),
+    targetAdOrders: z.number().optional(),
+    targetRatingScore: z.string().optional(),
+    targetRatingCount: z.number().optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     const { planId, ...updates } = input;
@@ -2785,7 +2792,6 @@ export const productOpsRouter = router({
     .input(z.object({
       planId: z.number(),
       productId: z.number(),
-      period: z.enum(["week", "biweek", "month"]).default("month"),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -2798,16 +2804,24 @@ export const productOpsRouter = router({
       const [plan] = await db!.select().from(opsPlans).where(eq(opsPlans.id, input.planId));
       if (!plan) throw new TRPCError({ code: 'NOT_FOUND', message: '计划不存在' });
 
-      const periodDays = input.period === 'week' ? 7 : input.period === 'biweek' ? 14 : 30;
+      // 周维度：获取最近一周的数据
       const now = new Date();
-      const start = new Date(now.getTime() - periodDays * 86400000).toISOString().split('T')[0];
-      const end = now.toISOString().split('T')[0];
+      const dayOfWeek = now.getDay(); // 0=Sun
+      // 计算上周日-上周六
+      const lastSunday = new Date(now);
+      lastSunday.setDate(now.getDate() - dayOfWeek - 7);
+      const lastSaturday = new Date(lastSunday);
+      lastSaturday.setDate(lastSunday.getDate() + 6);
+      const start = lastSunday.toISOString().split('T')[0];
+      const end = lastSaturday.toISOString().split('T')[0];
+      const weekLabel = `${(lastSunday.getMonth()+1).toString().padStart(2,'0')}/${lastSunday.getDate().toString().padStart(2,'0')}-${(lastSaturday.getMonth()+1).toString().padStart(2,'0')}/${lastSaturday.getDate().toString().padStart(2,'0')}`;
 
-      let currentData = {
-        currentDailySales: '0', currentDailyOrders: '0', currentAdConvRate: '0',
-        currentIndustrySearchConvRate: '0', currentSearchConvRate: '0',
-        currentCategorySearchConvRate: '0', currentAvgPrice: '0',
-        currentRatingCount: 0, currentRatingScore: '0',
+      let currentData: Record<string, any> = {
+        currentWeekLabel: weekLabel,
+        currentSales: '0', currentSubcategoryRank: null,
+        currentProfitRate: '0', currentConvRate: '0',
+        currentOrganicOrders: 0, currentAdOrders: 0,
+        currentRatingScore: '0', currentRatingCount: 0,
       };
 
       // Get product variants for filtering
@@ -2891,21 +2905,27 @@ export const productOpsRouter = router({
           ratingCount = Number(i.reviewCount || i.rating_count || ratingCount || 0);
           ratingScore = Number(i.averageRating || i.rating_score || ratingScore || 0);
         }
-        console.log(`[SyncPlanCurrentData] Aggregated: revenue=${totalRevenue}, orders=${totalOrders}, adSpend=${totalAdSpend}, adSales=${totalAdSales}, avgPrice=${avgPrice}`);
-        const days = Math.max(1, periodDays);
-        const adConvRate = totalAdSales > 0 && totalAdSpend > 0 ? round2(totalAdSales / totalAdSpend * 100) : 0;
-        const searchConvRate = totalOrders > 0 ? round2(Math.random() * 5 + 8) : 0; // Placeholder - real data from business reports
+        console.log(`[SyncPlanCurrentData] Aggregated: revenue=${totalRevenue}, orders=${totalOrders}, adSpend=${totalAdSpend}, adSales=${totalAdSales}`);
+        // 计算利润率 = (销售额 - 广告费 - 估算成本) / 销售额 * 100
+        const estimatedCost = totalRevenue * 0.35; // 估算成本约35%
+        const profitRate = totalRevenue > 0 ? round2((totalRevenue - totalAdSpend - estimatedCost) / totalRevenue * 100) : 0;
+        // 转化率 = 订单数 / sessions * 100 (使用领星数据中的sessions字段)
+        const sessions = list.reduce((sum: number, item: any) => sum + Number((item as any).sessions || (item as any).totalSessions || 0), 0);
+        const convRate = sessions > 0 ? round2(totalOrders / sessions * 100) : 0;
+        // 广告单 = 广告订单数
+        const adOrders = list.reduce((sum: number, item: any) => sum + Number((item as any).totalAdsOrders || (item as any).adOrders || 0), 0);
+        const organicOrders = Math.max(0, totalOrders - adOrders);
 
         currentData = {
-          currentDailySales: String(round2(totalRevenue / days)),
-          currentDailyOrders: String(round2(totalOrders / days)),
-          currentAdConvRate: String(adConvRate),
-          currentIndustrySearchConvRate: String(round2(searchConvRate * 0.8)),
-          currentSearchConvRate: String(round2(searchConvRate)),
-          currentCategorySearchConvRate: String(round2(searchConvRate * 1.1)),
-          currentAvgPrice: String(round2(avgPrice || (totalRevenue > 0 && totalOrders > 0 ? totalRevenue / totalOrders : 0))),
-          currentRatingCount: ratingCount,
+          currentWeekLabel: weekLabel,
+          currentSales: String(round2(totalRevenue)),
+          currentSubcategoryRank: null, // BSR需要从其他接口获取
+          currentProfitRate: String(profitRate),
+          currentConvRate: String(convRate),
+          currentOrganicOrders: organicOrders,
+          currentAdOrders: adOrders,
           currentRatingScore: String(round2(ratingScore)),
+          currentRatingCount: ratingCount,
         };
       } catch (err: any) {
         console.warn(`[SyncPlanCurrentData] Error: ${err.message}`);
@@ -2913,19 +2933,19 @@ export const productOpsRouter = router({
 
       // Update the plan with current data
       await db!.update(opsPlans).set({
-        currentDailySales: currentData.currentDailySales,
-        currentDailyOrders: currentData.currentDailyOrders,
-        currentAdConvRate: currentData.currentAdConvRate,
-        currentIndustrySearchConvRate: currentData.currentIndustrySearchConvRate,
-        currentSearchConvRate: currentData.currentSearchConvRate,
-        currentCategorySearchConvRate: currentData.currentCategorySearchConvRate,
-        currentAvgPrice: currentData.currentAvgPrice,
-        currentRatingCount: currentData.currentRatingCount,
+        currentWeekLabel: currentData.currentWeekLabel,
+        currentSales: currentData.currentSales,
+        currentSubcategoryRank: currentData.currentSubcategoryRank,
+        currentProfitRate: currentData.currentProfitRate,
+        currentConvRate: currentData.currentConvRate,
+        currentOrganicOrders: currentData.currentOrganicOrders,
+        currentAdOrders: currentData.currentAdOrders,
         currentRatingScore: currentData.currentRatingScore,
+        currentRatingCount: currentData.currentRatingCount,
         updatedAt: new Date(),
       }).where(eq(opsPlans.id, input.planId));
 
-      return { synced: true, data: currentData, period: input.period, dateRange: { start, end } };
+      return { synced: true, data: currentData, weekLabel, dateRange: { start, end } };
     }),
 
   // ─── 复盘数据自动从领星同步 ───
