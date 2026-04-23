@@ -699,6 +699,11 @@ export default function OpsProducts() {
   });
   const { data: operatorList } = trpc.productOps.listOperators.useQuery();
 
+  // Operator name mappings - used to show mapping status in filter dropdown
+  const { data: mappingsList } = trpc.operatorMapping.listMappings.useQuery(undefined, {
+    enabled: dataSource !== "system",
+  });
+
   // State
   const [showCreate, setShowCreate] = useState(false);
   const [showBatchAssign, setShowBatchAssign] = useState(false);
@@ -786,6 +791,17 @@ export default function OpsProducts() {
     const set = new Set((products || []).map(p => p.operator || "").filter(Boolean));
     return Array.from(set).sort();
   }, [products]);
+
+  // Build a set of mapped system user names for the current data source
+  const mappedSystemNames = useMemo(() => {
+    if (!mappingsList || dataSource === "system") return new Set<string>();
+    return new Set(
+      mappingsList
+        .filter(m => m.sourceType === (dataSource === "saihu" ? "saihu" : "lingxing") || m.sourceType === "all")
+        .map(m => m.systemUserName)
+        .filter(Boolean)
+    );
+  }, [mappingsList, dataSource]);
 
   const availableStores = useMemo(() => {
     const set = new Set((products || []).map(p => p.storeName || "").filter(Boolean));
@@ -1022,7 +1038,14 @@ export default function OpsProducts() {
                 availableOperators.forEach(o => allOps.add(o));
                 (operatorList || []).forEach((o: string) => allOps.add(o));
                 return Array.from(allOps).sort().map(o => (
-                  <SelectItem key={o} value={o}>{o}</SelectItem>
+                  <SelectItem key={o} value={o}>
+                    <span className="flex items-center gap-1">
+                      {o}
+                      {dataSource !== "system" && mappedSystemNames.has(o) && (
+                        <span className="text-[10px] text-green-600 bg-green-50 px-1 rounded">已映射</span>
+                      )}
+                    </span>
+                  </SelectItem>
                 ));
               })()}
             </SelectContent>
