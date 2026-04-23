@@ -6,10 +6,51 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { dataImports, lingxingProductWeekly, saihuProductWeekly } from "../../drizzle/schema";
+import { dataImports, lingxingProductWeekly, saihuProductWeekly, operatorNameMappings } from "../../drizzle/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { parseExcelBuffer, parseDateRangeFromFilename, detectSourceType, type SourceType, type DateRange } from "../excelParser";
 import { storagePut } from "../storage";
+
+/**
+ * Helper: Apply operator name mappings to replace external names with system user names
+ * Queries the operator_name_mappings table and replaces operator fields in-place
+ */
+async function applyOperatorMappings(
+  db: any,
+  userId: number,
+  items: { operator: string | null }[],
+  sourceType: "lingxing" | "saihu"
+): Promise<void> {
+  // Collect all unique operator names
+  const uniqueNames = [...new Set(items.map(i => i.operator).filter(Boolean))] as string[];
+  if (uniqueNames.length === 0) return;
+
+  // Load all confirmed mappings for this user
+  const allMappings = await db.select().from(operatorNameMappings)
+    .where(and(
+      eq(operatorNameMappings.userId, userId),
+      eq(operatorNameMappings.isConfirmed, 1),
+    ));
+
+  // Build a lookup map: externalName -> systemUserName
+  const mappingLookup = new Map<string, string>();
+  for (const name of uniqueNames) {
+    const mapping = allMappings.find((m: any) =>
+      m.externalName === name &&
+      (m.sourceType === sourceType || m.sourceType === "all")
+    );
+    if (mapping && mapping.systemUserName) {
+      mappingLookup.set(name, mapping.systemUserName);
+    }
+  }
+
+  // Replace operator names in-place
+  for (const item of items) {
+    if (item.operator && mappingLookup.has(item.operator)) {
+      item.operator = mappingLookup.get(item.operator)!;
+    }
+  }
+}
 
 export const dataImportRouter = router({
   // ─── Upload & Parse Excel (returns preview) ───
@@ -492,6 +533,9 @@ async function buildOverviewFromLingxing(db: any, userId: number, weeksToShow: n
     return bVal - aVal;
   });
 
+  // Apply operator name mappings (replace external names with system user names)
+  await applyOperatorMappings(db, userId, result, "lingxing");
+
   return result;
 }
 
@@ -623,6 +667,9 @@ async function buildOverviewFromSaihu(db: any, userId: number, weeksToShow: numb
     const bVal = b.weeks[0]?.salesAmount || 0;
     return bVal - aVal;
   });
+
+  // Apply operator name mappings (replace external names with system user names)
+  await applyOperatorMappings(db, userId, result, "saihu");
 
   return result;
 }
@@ -802,21 +849,25 @@ async function buildProductDetailFromLingxing(db: any, userId: number, parentAsi
     status: "active",
   }));
 
+  // Apply operator name mapping to product
+  const productObj = {
+    id: 0,
+    parentAsin,
+    title: latestRow.title || "",
+    chineseName: latestRow.productName || null,
+    brand: latestRow.brand || null,
+    category: latestRow.category1 || null,
+    marketplace: latestRow.country || marketplace,
+    imageUrl: null as string | null,
+    status: "active",
+    operator: latestRow.operator || null,
+    storeName: latestRow.storeName || null,
+    variants,
+  };
+  await applyOperatorMappings(db, userId, [productObj], "lingxing");
+
   return {
-    product: {
-      id: 0,
-      parentAsin,
-      title: latestRow.title || "",
-      chineseName: latestRow.productName || null,
-      brand: latestRow.brand || null,
-      category: latestRow.category1 || null,
-      marketplace: latestRow.country || marketplace,
-      imageUrl: null as string | null,
-      status: "active",
-      operator: latestRow.operator || null,
-      storeName: latestRow.storeName || null,
-      variants,
-    },
+    product: productObj,
     weeks,
     // Extra detail fields from Lingxing
     extraInfo: {
@@ -933,21 +984,25 @@ async function buildProductDetailFromSaihu(db: any, userId: number, parentAsin: 
     status: "active",
   }));
 
+  // Apply operator name mapping to product
+  const productObj = {
+    id: 0,
+    parentAsin,
+    title: infoRow.title || "",
+    chineseName: infoRow.productName || null,
+    brand: infoRow.brand || null,
+    category: infoRow.category || null,
+    marketplace: infoRow.site || marketplace,
+    imageUrl: infoRow.imageUrl || null,
+    status: "active",
+    operator: infoRow.operator || null,
+    storeName: infoRow.storeName || null,
+    variants,
+  };
+  await applyOperatorMappings(db, userId, [productObj], "saihu");
+
   return {
-    product: {
-      id: 0,
-      parentAsin,
-      title: infoRow.title || "",
-      chineseName: infoRow.productName || null,
-      brand: infoRow.brand || null,
-      category: infoRow.category || null,
-      marketplace: infoRow.site || marketplace,
-      imageUrl: infoRow.imageUrl || null,
-      status: "active",
-      operator: infoRow.operator || null,
-      storeName: infoRow.storeName || null,
-      variants,
-    },
+    product: productObj,
     weeks,
     // Extra detail fields from Saihu
     extraInfo: {
