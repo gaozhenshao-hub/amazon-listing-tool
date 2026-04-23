@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import OperatorMappingDialog from "@/components/OperatorMappingDialog";
+import AdReportImportTab from "./AdReportImportTab";
 
 // ─── Helper: format date ───
 function formatDate(d: Date | string | null) {
@@ -249,6 +250,7 @@ export default function OpsDataImport() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="upload">上传数据</TabsTrigger>
+          <TabsTrigger value="ad-report">广告报表</TabsTrigger>
           <TabsTrigger value="history">导入历史</TabsTrigger>
         </TabsList>
 
@@ -334,6 +336,11 @@ export default function OpsDataImport() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Ad Report Tab */}
+        <TabsContent value="ad-report" className="space-y-4">
+          <AdReportImportTab />
         </TabsContent>
 
         {/* History Tab */}

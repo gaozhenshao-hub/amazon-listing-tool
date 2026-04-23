@@ -3723,3 +3723,139 @@ export const operatorNameMappings = mysqlTable("operator_name_mappings", {
 
 export type OperatorNameMapping = typeof operatorNameMappings.$inferSelect;
 export type InsertOperatorNameMapping = typeof operatorNameMappings.$inferInsert;
+
+// ═══════════════════════════════════════════════════════════════
+// Ad Keyword Tracking Module
+// ═══════════════════════════════════════════════════════════════
+
+// ASIN ↔ Ad Portfolio mapping (manual mapping by user)
+export const adPortfolioMappings = mysqlTable("ad_portfolio_mappings", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  productId: int("product_id").notNull(), // FK → product_profiles.id
+  parentAsin: varchar("parent_asin", { length: 20 }).notNull(),
+  portfolioName: varchar("portfolio_name", { length: 300 }).notNull(), // e.g. "48黄色"
+  storeName: varchar("store_name", { length: 255 }), // e.g. "1店-US"
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AdPortfolioMapping = typeof adPortfolioMappings.$inferSelect;
+export type InsertAdPortfolioMapping = typeof adPortfolioMappings.$inferInsert;
+
+// Ad report imports (tracks each uploaded ad report file)
+export const adReportImports = mysqlTable("ad_report_imports", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  fileName: varchar("file_name", { length: 500 }).notNull(),
+  fileUrl: text("file_url"),
+  weekStartDate: varchar("week_start_date", { length: 10 }).notNull(), // YYYY-MM-DD
+  weekEndDate: varchar("week_end_date", { length: 10 }).notNull(),
+  totalRows: int("total_rows").default(0),
+  keywordRows: int("keyword_rows").default(0),
+  productTargetRows: int("product_target_rows").default(0),
+  mappedRows: int("mapped_rows").default(0), // rows matched to a product via portfolio mapping
+  unmappedPortfolios: text("unmapped_portfolios"), // JSON array of portfolio names without mapping
+  status: mysqlEnum("import_status", ["pending", "parsing", "previewing", "importing", "completed", "failed"]).default("pending").notNull(),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AdReportImport = typeof adReportImports.$inferSelect;
+export type InsertAdReportImport = typeof adReportImports.$inferInsert;
+
+// Ad keyword weekly data (one row per keyword per match type per ad type per week)
+export const adKeywordWeekly = mysqlTable("ad_keyword_weekly", {
+  id: int("id").autoincrement().primaryKey(),
+  importId: int("import_id").notNull(), // FK → ad_report_imports.id
+  userId: int("user_id").notNull(),
+  productId: int("product_id"), // FK → product_profiles.id (resolved via portfolio mapping)
+  parentAsin: varchar("parent_asin", { length: 20 }),
+  weekStartDate: varchar("week_start_date", { length: 10 }).notNull(),
+  weekEndDate: varchar("week_end_date", { length: 10 }).notNull(),
+  // Ad structure info
+  storeName: varchar("store_name", { length: 200 }),
+  country: varchar("country", { length: 50 }),
+  adType: varchar("ad_type", { length: 10 }).notNull(), // SP, SB, SD
+  portfolioName: varchar("portfolio_name", { length: 300 }),
+  campaignName: varchar("campaign_name", { length: 500 }),
+  adGroupName: varchar("ad_group_name", { length: 500 }),
+  // Keyword info
+  keyword: varchar("keyword", { length: 500 }).notNull(),
+  matchType: varchar("match_type", { length: 20 }).notNull(), // 精准, 广泛, 词组
+  targetingType: varchar("targeting_type", { length: 20 }).default("keyword").notNull(), // keyword or product
+  status: varchar("ad_status", { length: 50 }), // enabled, paused, etc.
+  // Bid info
+  bid: decimal("bid", { precision: 10, scale: 2 }),
+  defaultBid: decimal("default_bid", { precision: 10, scale: 2 }),
+  // Performance metrics
+  impressions: int("impressions").default(0),
+  impressionShare: varchar("impression_share", { length: 20 }), // IS%
+  clicks: int("clicks").default(0),
+  ctr: decimal("ctr", { precision: 6, scale: 2 }), // stored as percentage, e.g. 2.69
+  cpc: decimal("cpc", { precision: 10, scale: 2 }),
+  spend: decimal("spend", { precision: 12, scale: 2 }),
+  sales: decimal("sales", { precision: 12, scale: 2 }),
+  directSales: decimal("direct_sales", { precision: 12, scale: 2 }),
+  indirectSales: decimal("indirect_sales", { precision: 12, scale: 2 }),
+  acos: decimal("acos", { precision: 6, scale: 2 }), // stored as percentage
+  roas: decimal("roas", { precision: 8, scale: 2 }),
+  orders: int("orders").default(0),
+  directOrders: int("direct_orders").default(0),
+  indirectOrders: int("indirect_orders").default(0),
+  cvr: decimal("cvr", { precision: 6, scale: 2 }),
+  adSalesQty: int("ad_sales_qty").default(0),
+  directSalesQty: int("direct_sales_qty").default(0),
+  indirectSalesQty: int("indirect_sales_qty").default(0),
+  // Brand metrics (SB/SD)
+  brandNewOrders: int("brand_new_orders").default(0),
+  brandNewSales: decimal("brand_new_sales", { precision: 12, scale: 2 }),
+  brandSearchCount: int("brand_search_count").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AdKeywordWeekly = typeof adKeywordWeekly.$inferSelect;
+export type InsertAdKeywordWeekly = typeof adKeywordWeekly.$inferInsert;
+
+// Ad keyword metadata (manually editable fields like monthly search volume)
+export const adKeywordMeta = mysqlTable("ad_keyword_meta", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  productId: int("product_id"), // FK → product_profiles.id
+  parentAsin: varchar("parent_asin", { length: 20 }),
+  keyword: varchar("keyword", { length: 500 }).notNull(),
+  matchType: varchar("match_type", { length: 20 }), // optional: can be global for keyword
+  monthlySearchVolume: int("monthly_search_volume"), // manually entered
+  searchVolumeUpdatedAt: timestamp("search_volume_updated_at"),
+  notes: text("notes"),
+  isTracked: int("is_tracked").default(1).notNull(), // whether to show in tracking UI
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AdKeywordMeta = typeof adKeywordMeta.$inferSelect;
+export type InsertAdKeywordMeta = typeof adKeywordMeta.$inferInsert;
+
+// Competitor rank data (per keyword, per week) - reserved for future
+export const adCompetitorRanks = mysqlTable("ad_competitor_ranks", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  productId: int("product_id"),
+  parentAsin: varchar("parent_asin", { length: 20 }),
+  keyword: varchar("keyword", { length: 500 }).notNull(),
+  weekStartDate: varchar("week_start_date", { length: 10 }).notNull(),
+  weekEndDate: varchar("week_end_date", { length: 10 }).notNull(),
+  // Competitor info
+  competitorBrand: varchar("competitor_brand", { length: 200 }).notNull(),
+  competitorAsin: varchar("competitor_asin", { length: 20 }),
+  organicRank: int("organic_rank"), // natural position
+  adRank: int("ad_rank"), // ad position
+  abaClickShare: decimal("aba_click_share", { precision: 6, scale: 2 }), // ABA click share %
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AdCompetitorRank = typeof adCompetitorRanks.$inferSelect;
+export type InsertAdCompetitorRank = typeof adCompetitorRanks.$inferInsert;

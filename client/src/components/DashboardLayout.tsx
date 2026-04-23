@@ -161,6 +161,7 @@ const modules: ModuleDef[] = [
       { icon: Bot, label: "爬虫引擎", path: "/ops/crawler" },
       { icon: Clock, label: "物流时效分析", path: "/ops/logistics" },
       { icon: Upload, label: "数据导入中心", path: "/ops/data-import" },
+      { icon: Link2, label: "广告组合映射", path: "/ops/ad-mapping" },
       { icon: ClipboardList, label: "任务管理", path: "/ops/tasks" },
     ],
   },

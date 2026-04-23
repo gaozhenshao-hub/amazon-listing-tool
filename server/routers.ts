@@ -80,6 +80,8 @@ import { taskManagementRouter } from "./routers/taskManagement";
 // Data Import Center
 import { dataImportRouter } from "./routers/dataImport";
 import { operatorMappingRouter } from "./routers/operatorMapping";
+// Ad Keyword Tracking
+import { adTrackingRouter } from "./routers/adTracking";
 
 export const appRouter = router({
   system: systemRouter,
@@ -170,6 +172,8 @@ export const appRouter = router({
   // Data Import Center
   dataImport: dataImportRouter,
   operatorMapping: operatorMappingRouter,
+  // Ad Keyword Tracking
+  adTracking: adTrackingRouter,
   // Task Management
   taskManagement: taskManagementRouter,
 });

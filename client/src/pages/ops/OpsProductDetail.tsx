@@ -7,6 +7,7 @@ import OpsProductConversion from "./OpsProductConversion";
 import OpsProductReview from "./OpsProductReview";
 import OpsProductTeam from "./OpsProductTeam";
 import ProductWeeklyOpsTable from "./ProductWeeklyOpsTable";
+import AdKeywordTracking from "./AdKeywordTracking";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -363,6 +364,12 @@ export default function OpsProductDetail() {
         <div className="space-y-6">
           {/* Import Weekly Data Table */}
           <ImportWeeklyTable weeks={importWeeks} sourceType={sourceType || "lingxing"} />
+
+          {/* Ad Keyword Tracking */}
+          <AdKeywordTracking
+            productId={0}
+            parentAsin={derivedProduct.parentAsin}
+          />
 
           {/* Import Trend Charts */}
           <ImportCharts data={importChartData} />
