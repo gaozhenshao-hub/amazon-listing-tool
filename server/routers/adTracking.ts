@@ -20,6 +20,7 @@ import {
 import { eq, desc, and, inArray, sql, like } from "drizzle-orm";
 import { parseAdReportBuffer } from "../adReportParser";
 import { storagePut } from "../storage";
+import XLSX from "xlsx";
 
 export const adTrackingRouter = router({
   // ═══════════════════════════════════════════
@@ -579,5 +580,272 @@ export const adTrackingRouter = router({
       }
 
       return { success: true, updated: input.updates.length };
+    }),
+
+  // ═══════════════════════════════════════════
+  // Template Download & Batch Upload
+  // ═══════════════════════════════════════════
+
+  /** Get all unique portfolio names from imported ad data + existing mappings */
+  getAllPortfolios: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return { portfolios: [], existingMappings: [] };
+
+    // Get unique portfolios from ad_keyword_weekly
+    const weeklyPortfolios = await db.selectDistinct({ portfolioName: adKeywordWeekly.portfolioName })
+      .from(adKeywordWeekly)
+      .where(eq(adKeywordWeekly.userId, ctx.user.id));
+
+    // Also get from unmappedPortfolios in ad_report_imports
+    const imports = await db.select({ unmappedPortfolios: adReportImports.unmappedPortfolios })
+      .from(adReportImports)
+      .where(eq(adReportImports.userId, ctx.user.id));
+
+    const allPortfolios = new Set<string>();
+    for (const row of weeklyPortfolios) {
+      if (row.portfolioName) allPortfolios.add(row.portfolioName);
+    }
+    for (const imp of imports) {
+      try {
+        const unmapped = JSON.parse(imp.unmappedPortfolios || "[]");
+        for (const p of unmapped) if (p) allPortfolios.add(p);
+      } catch {}
+    }
+
+    // Get existing mappings
+    const existingMappings = await db.select({
+      portfolioName: adPortfolioMappings.portfolioName,
+      parentAsin: adPortfolioMappings.parentAsin,
+      storeName: adPortfolioMappings.storeName,
+    }).from(adPortfolioMappings)
+      .where(eq(adPortfolioMappings.userId, ctx.user.id));
+
+    return {
+      portfolios: [...allPortfolios].sort(),
+      existingMappings,
+    };
+  }),
+
+  /** Generate mapping template Excel (base64) */
+  generateMappingTemplate: protectedProcedure.mutation(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+    // Get all unique portfolios from ad data
+    const weeklyPortfolios = await db.selectDistinct({
+      portfolioName: adKeywordWeekly.portfolioName,
+      storeName: adKeywordWeekly.storeName,
+      adType: adKeywordWeekly.adType,
+    }).from(adKeywordWeekly)
+      .where(eq(adKeywordWeekly.userId, ctx.user.id));
+
+    // Also get from unmapped portfolios in imports
+    const imports = await db.select({ unmappedPortfolios: adReportImports.unmappedPortfolios })
+      .from(adReportImports)
+      .where(eq(adReportImports.userId, ctx.user.id));
+
+    // Build portfolio info map
+    const portfolioInfo = new Map<string, { stores: Set<string>; adTypes: Set<string> }>();
+    for (const row of weeklyPortfolios) {
+      if (!row.portfolioName) continue;
+      if (!portfolioInfo.has(row.portfolioName)) {
+        portfolioInfo.set(row.portfolioName, { stores: new Set(), adTypes: new Set() });
+      }
+      const info = portfolioInfo.get(row.portfolioName)!;
+      if (row.storeName) info.stores.add(row.storeName);
+      if (row.adType) info.adTypes.add(row.adType);
+    }
+    for (const imp of imports) {
+      try {
+        const unmapped = JSON.parse(imp.unmappedPortfolios || "[]");
+        for (const p of unmapped) {
+          if (p && !portfolioInfo.has(p)) {
+            portfolioInfo.set(p, { stores: new Set(), adTypes: new Set() });
+          }
+        }
+      } catch {}
+    }
+
+    // Get existing mappings
+    const existingMappings = await db.select().from(adPortfolioMappings)
+      .where(eq(adPortfolioMappings.userId, ctx.user.id));
+    const mappingMap = new Map<string, { parentAsin: string; storeName: string | null }>();
+    for (const m of existingMappings) {
+      mappingMap.set(m.portfolioName, { parentAsin: m.parentAsin, storeName: m.storeName });
+    }
+
+    // Build Excel rows
+    const rows: any[] = [];
+    const sortedPortfolios = [...portfolioInfo.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    for (const [name, info] of sortedPortfolios) {
+      const existing = mappingMap.get(name);
+      rows.push({
+        "广告组合名称": name,
+        "父ASIN（必填）": existing?.parentAsin || "",
+        "店铺名称": existing?.storeName || [...info.stores].join(", ") || "",
+        "广告类型": [...info.adTypes].join(", ") || "",
+        "映射状态": existing ? "已映射" : "未映射",
+      });
+    }
+
+    if (rows.length === 0) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "暂无广告组合数据，请先导入广告报表" });
+    }
+
+    // Generate Excel
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+
+    // Set column widths
+    ws["!cols"] = [
+      { wch: 35 }, // 广告组合名称
+      { wch: 18 }, // 父ASIN
+      { wch: 18 }, // 店铺名称
+      { wch: 15 }, // 广告类型
+      { wch: 10 }, // 映射状态
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, "广告组合映射");
+    const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    const base64 = Buffer.from(buffer).toString("base64");
+
+    return {
+      base64,
+      fileName: `广告组合映射模板_${new Date().toISOString().slice(0, 10)}.xlsx`,
+      totalPortfolios: rows.length,
+      mappedCount: rows.filter(r => r["映射状态"] === "已映射").length,
+      unmappedCount: rows.filter(r => r["映射状态"] === "未映射").length,
+    };
+  }),
+
+  /** Batch import mappings from uploaded Excel */
+  batchImportMappings: protectedProcedure
+    .input(z.object({
+      fileData: z.string(), // base64
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+
+      const buffer = Buffer.from(input.fileData, "base64");
+      const wb = XLSX.read(buffer, { type: "buffer" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      if (!ws) throw new TRPCError({ code: "BAD_REQUEST", message: "Excel文件中没有工作表" });
+
+      const rawData: any[] = XLSX.utils.sheet_to_json(ws);
+      if (rawData.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "Excel中没有数据" });
+
+      // Get existing products for matching
+      const products = await db.select({
+        id: productProfiles.id,
+        parentAsin: productProfiles.parentAsin,
+        storeName: productProfiles.storeName,
+      }).from(productProfiles)
+        .where(eq(productProfiles.userId, ctx.user.id));
+      const asinToProduct = new Map<string, { id: number; storeName: string | null }>();
+      for (const p of products) {
+        if (p.parentAsin) asinToProduct.set(p.parentAsin, { id: p.id, storeName: p.storeName });
+      }
+
+      // Get existing mappings to avoid duplicates
+      const existingMappings = await db.select().from(adPortfolioMappings)
+        .where(eq(adPortfolioMappings.userId, ctx.user.id));
+      const existingSet = new Set(existingMappings.map(m => `${m.portfolioName}||${m.parentAsin}`));
+
+      // Parse rows
+      const toCreate: {
+        portfolioName: string;
+        parentAsin: string;
+        productId: number;
+        storeName: string | null;
+      }[] = [];
+      const toUpdate: {
+        id: number;
+        parentAsin: string;
+        productId: number;
+        storeName: string | null;
+      }[] = [];
+      const errors: string[] = [];
+      let skipped = 0;
+
+      for (let i = 0; i < rawData.length; i++) {
+        const row = rawData[i];
+        const portfolioName = String(row["广告组合名称"] || "").trim();
+        const parentAsin = String(row["父ASIN（必填）"] || "").trim();
+        const storeName = String(row["店铺名称"] || "").trim() || null;
+
+        if (!portfolioName) {
+          continue; // skip empty rows
+        }
+        if (!parentAsin) {
+          skipped++;
+          continue; // skip rows without ASIN (user didn't fill in)
+        }
+
+        // Find matching product
+        const product = asinToProduct.get(parentAsin);
+        const productId = product?.id || 0;
+
+        // Check if this mapping already exists
+        const existingMapping = existingMappings.find(m => m.portfolioName === portfolioName);
+        if (existingMapping) {
+          // Update if ASIN changed
+          if (existingMapping.parentAsin !== parentAsin) {
+            toUpdate.push({
+              id: existingMapping.id,
+              parentAsin,
+              productId,
+              storeName: storeName || product?.storeName || null,
+            });
+          }
+        } else {
+          toCreate.push({
+            portfolioName,
+            parentAsin,
+            productId,
+            storeName: storeName || product?.storeName || null,
+          });
+        }
+      }
+
+      // Execute creates in batches
+      const BATCH_SIZE = 50;
+      let created = 0;
+      for (let i = 0; i < toCreate.length; i += BATCH_SIZE) {
+        const batch = toCreate.slice(i, i + BATCH_SIZE);
+        await db.insert(adPortfolioMappings).values(
+          batch.map(item => ({
+            userId: ctx.user.id,
+            productId: item.productId,
+            parentAsin: item.parentAsin,
+            portfolioName: item.portfolioName,
+            storeName: item.storeName,
+            notes: null,
+          }))
+        );
+        created += batch.length;
+      }
+
+      // Execute updates
+      let updated = 0;
+      for (const item of toUpdate) {
+        await db.update(adPortfolioMappings)
+          .set({
+            parentAsin: item.parentAsin,
+            productId: item.productId,
+            storeName: item.storeName,
+          })
+          .where(and(eq(adPortfolioMappings.id, item.id), eq(adPortfolioMappings.userId, ctx.user.id)));
+        updated++;
+      }
+
+      return {
+        success: true,
+        created,
+        updated,
+        skipped,
+        errors,
+        total: rawData.length,
+      };
     }),
 });
