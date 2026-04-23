@@ -640,7 +640,7 @@ type DataSource = "system" | "lingxing" | "saihu";
 // ─── Main Component ───
 export default function OpsProducts() {
   const [, navigate] = useLocation();
-  const [marketplaceFilter, setMarketplaceFilter] = useState("US");
+  const [marketplaceFilter, setMarketplaceFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("active");
   const [dataSource, setDataSource] = useState<DataSource>("lingxing");
 
@@ -805,6 +805,12 @@ export default function OpsProducts() {
 
   const availableStores = useMemo(() => {
     const set = new Set((products || []).map(p => p.storeName || "").filter(Boolean));
+    return Array.from(set).sort();
+  }, [products]);
+
+  // Dynamic marketplace list from actual product data
+  const availableMarketplaces = useMemo(() => {
+    const set = new Set((products || []).map(p => p.marketplace || "").filter(Boolean));
     return Array.from(set).sort();
   }, [products]);
 
@@ -991,8 +997,9 @@ export default function OpsProducts() {
               <SelectValue placeholder="站点" />
             </SelectTrigger>
             <SelectContent>
-              {MARKETPLACE_OPTIONS.map(o => (
-                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              <SelectItem value="ALL">全部站点</SelectItem>
+              {availableMarketplaces.map(m => (
+                <SelectItem key={m} value={m}>{m}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -1034,19 +1041,26 @@ export default function OpsProducts() {
               <SelectItem value="ALL">全部运营</SelectItem>
               <SelectItem value="__UNASSIGNED__">未分配</SelectItem>
               {(() => {
-                const allOps = new Set<string>();
-                availableOperators.forEach(o => allOps.add(o));
-                (operatorList || []).forEach((o: string) => allOps.add(o));
-                return Array.from(allOps).sort().map(o => (
-                  <SelectItem key={o} value={o}>
-                    <span className="flex items-center gap-1">
-                      {o}
-                      {dataSource !== "system" && mappedSystemNames.has(o) && (
-                        <span className="text-[10px] text-green-600 bg-green-50 px-1 rounded">已映射</span>
-                      )}
-                    </span>
-                  </SelectItem>
-                ));
+                if (dataSource === "system") {
+                  // System mode: show operators from data + system user list
+                  const allOps = new Set<string>();
+                  availableOperators.forEach(o => allOps.add(o));
+                  (operatorList || []).forEach((o: string) => allOps.add(o));
+                  return Array.from(allOps).sort().map(o => (
+                    <SelectItem key={o} value={o}>{o}</SelectItem>
+                  ));
+                } else {
+                  // Import mode: only show system users (mapped names), not raw imported names
+                  const systemUsers = new Set<string>();
+                  (operatorList || []).forEach((o: string) => systemUsers.add(o));
+                  // Also add mapped names that appear in the data
+                  availableOperators.forEach(o => {
+                    if (mappedSystemNames.has(o)) systemUsers.add(o);
+                  });
+                  return Array.from(systemUsers).sort().map(o => (
+                    <SelectItem key={o} value={o}>{o}</SelectItem>
+                  ));
+                }
               })()}
             </SelectContent>
           </Select>
