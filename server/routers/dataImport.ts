@@ -45,9 +45,13 @@ async function applyOperatorMappings(
   }
 
   // Replace operator names in-place
+  let replaced = 0, notFound = 0;
   for (const item of items) {
     if (item.operator && mappingLookup.has(item.operator)) {
       item.operator = mappingLookup.get(item.operator)!;
+      replaced++;
+    } else if (item.operator) {
+      notFound++;
     }
   }
 }

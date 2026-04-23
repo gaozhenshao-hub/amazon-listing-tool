@@ -699,6 +699,13 @@ export default function OpsProducts() {
   });
   const { data: operatorList } = trpc.productOps.listOperators.useQuery();
 
+  // Get team member names (pure system users, no productProfiles contamination)
+  const { data: teamMembersList } = trpc.productOps.listTeamMembers.useQuery();
+  const systemUserNames = useMemo(() => {
+    if (!teamMembersList) return new Set<string>();
+    return new Set(teamMembersList.map(m => m.name).filter(Boolean) as string[]);
+  }, [teamMembersList]);
+
   // Operator name mappings - used to show mapping status in filter dropdown
   const { data: mappingsList } = trpc.operatorMapping.listMappings.useQuery(undefined, {
     enabled: dataSource !== "system",
@@ -1050,14 +1057,10 @@ export default function OpsProducts() {
                     <SelectItem key={o} value={o}>{o}</SelectItem>
                   ));
                 } else {
-                  // Import mode: only show system users (mapped names), not raw imported names
-                  const systemUsers = new Set<string>();
-                  (operatorList || []).forEach((o: string) => systemUsers.add(o));
-                  // Also add mapped names that appear in the data
-                  availableOperators.forEach(o => {
-                    if (mappedSystemNames.has(o)) systemUsers.add(o);
-                  });
-                  return Array.from(systemUsers).sort().map(o => (
+                  // Import mode: only show system user names that appear in the data
+                  // Filter out raw unmapped names (XM-1, 娄迪 etc.) that aren't system users
+                  const filteredOps = availableOperators.filter(o => systemUserNames.has(o));
+                  return filteredOps.sort().map(o => (
                     <SelectItem key={o} value={o}>{o}</SelectItem>
                   ));
                 }
