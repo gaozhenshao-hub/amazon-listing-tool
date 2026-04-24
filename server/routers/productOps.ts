@@ -3194,7 +3194,7 @@ export const productOpsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      const { invokeLLM } = await import('./_core/llm');
+      // invokeLLM already imported at top of file
 
       const [review] = await db!.select().from(executionReviews).where(eq(executionReviews.id, input.reviewId));
       if (!review) throw new TRPCError({ code: 'NOT_FOUND', message: '复盘记录不存在' });

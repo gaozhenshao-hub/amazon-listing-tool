@@ -3606,3 +3606,5 @@
 - [x] 后端：syncReviewFromImportedData从导入Excel数据加载实际数据
 - [x] 后端：generateReviewAiAnalysis生成结构化JSON分析报告
 - [x] 修复：雷达图隐藏径向轴刻度标签，优化浅色主题配色
+### 部署修复
+- [x] 修复esbuild构建错误：productOps.ts第3197行动态import('./_core/llm')路径解析失败
