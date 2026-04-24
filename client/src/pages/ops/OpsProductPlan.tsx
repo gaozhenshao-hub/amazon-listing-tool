@@ -86,8 +86,8 @@ export default function OpsProductPlan({ productId, parentAsin, productTitle }: 
   const [showEditBaseline, setShowEditBaseline] = useState(false);
   const [showEditTargets, setShowEditTargets] = useState(false);
 
-  // Week period selector for current data (from imported data)
-  const [selectedWeekIndex, setSelectedWeekIndex] = useState(0);
+  // Week count selector for current data (from imported data)
+  const [selectedWeekCount, setSelectedWeekCount] = useState(1);
   const { data: availableWeeks } = trpc.productOps.getAvailableWeeks.useQuery(
     { parentAsin }, { enabled: !!parentAsin }
   );
@@ -100,13 +100,13 @@ export default function OpsProductPlan({ productId, parentAsin, productTitle }: 
       toast.error(`加载失败: ${err.message}`);
     },
   });
-  // Auto-load current data when week selection changes
+  // Auto-load current data when week count changes
   useEffect(() => {
-    if (activePlanId && productId && availableWeeks && availableWeeks.length > 0) {
-      syncCurrentData.mutate({ planId: activePlanId, productId, weekIndex: selectedWeekIndex });
+    if (activePlanId && parentAsin && availableWeeks && availableWeeks.length > 0) {
+      syncCurrentData.mutate({ planId: activePlanId, parentAsin, weekCount: selectedWeekCount });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedWeekIndex, activePlanId]);
+  }, [selectedWeekCount, activePlanId]);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     baseline: true, current: true, targets: true, actions: true, summaries: false,
   });
@@ -309,19 +309,18 @@ export default function OpsProductPlan({ productId, parentAsin, productTitle }: 
                   <div className="flex items-center gap-2">
                     {availableWeeks && availableWeeks.length > 0 ? (
                       <Select
-                        value={String(selectedWeekIndex)}
-                        onValueChange={(v) => { setSelectedWeekIndex(Number(v)); }}
+                        value={String(selectedWeekCount)}
+                        onValueChange={(v) => { setSelectedWeekCount(Number(v)); }}
                       >
-                        <SelectTrigger className="h-7 w-[160px] text-xs" onClick={(e) => e.stopPropagation()}>
+                        <SelectTrigger className="h-7 w-[140px] text-xs" onClick={(e) => e.stopPropagation()}>
                           {syncCurrentData.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
                           <SelectValue placeholder="选择周期" />
                         </SelectTrigger>
                         <SelectContent>
-                          {availableWeeks.map((w) => (
-                            <SelectItem key={w.index} value={String(w.index)}>
-                              {w.label}
-                            </SelectItem>
-                          ))}
+                          <SelectItem value="1">最近 1 周</SelectItem>
+                          {availableWeeks.length >= 2 && <SelectItem value="2">最近 2 周</SelectItem>}
+                          {availableWeeks.length >= 3 && <SelectItem value="3">最近 3 周</SelectItem>}
+                          {availableWeeks.length >= 4 && <SelectItem value="4">最近 4 周</SelectItem>}
                         </SelectContent>
                       </Select>
                     ) : (

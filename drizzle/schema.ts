@@ -2024,43 +2024,49 @@ export const executionReviews = mysqlTable("execution_reviews", {
   id: int("id").autoincrement().primaryKey(),
   productProfileId: int("product_profile_id").notNull(),
   userId: int("user_id").notNull(),
-  planId: int("plan_id"), // linked ops_plan
-  period: varchar("period", { length: 50 }).notNull(), // e.g. "2026-Q1-W4"
+  planId: int("plan_id"),
+  parentAsin: varchar("parent_asin", { length: 20 }),
+  period: varchar("period", { length: 50 }).notNull(),
   periodType: mysqlEnum("period_type", ["weekly", "monthly", "quarterly"]).default("monthly").notNull(),
-  // Baseline metrics
+  // Baseline metrics (基线数据 - 从运营计划基期带入)
   baselineSales: decimal("baseline_sales", { precision: 12, scale: 2 }),
-  baselineProfit: decimal("baseline_profit", { precision: 12, scale: 2 }),
   baselineProfitRate: decimal("baseline_profit_rate", { precision: 5, scale: 2 }),
-  baselineOrderConvRate: decimal("baseline_order_conv_rate", { precision: 5, scale: 2 }),
-  baselineSearchConvRate: decimal("baseline_search_conv_rate", { precision: 5, scale: 2 }),
-  baselineAdConvRate: decimal("baseline_ad_conv_rate", { precision: 5, scale: 2 }),
-  baselineRanking: int("baseline_ranking"),
-  baselineRating: decimal("baseline_rating", { precision: 3, scale: 2 }),
-  // Actual metrics
+  baselineSubcategoryRank: int("baseline_subcategory_rank"),
+  baselineConvRate: decimal("baseline_conv_rate", { precision: 5, scale: 2 }),
+  baselineOrganicOrders: int("baseline_organic_orders"),
+  baselineAdOrders: int("baseline_ad_orders"),
+  baselineRatingScore: decimal("baseline_rating_score", { precision: 3, scale: 2 }),
+  baselineRatingCount: int("baseline_rating_count"),
+  baselineWeekLabel: varchar("baseline_week_label", { length: 50 }),
+  // Actual metrics (实际数据 - 从导入的周度数据中查询)
   actualSales: decimal("actual_sales", { precision: 12, scale: 2 }),
-  actualProfit: decimal("actual_profit", { precision: 12, scale: 2 }),
   actualProfitRate: decimal("actual_profit_rate", { precision: 5, scale: 2 }),
-  actualOrderConvRate: decimal("actual_order_conv_rate", { precision: 5, scale: 2 }),
-  actualSearchConvRate: decimal("actual_search_conv_rate", { precision: 5, scale: 2 }),
-  actualAdConvRate: decimal("actual_ad_conv_rate", { precision: 5, scale: 2 }),
-  actualRanking: int("actual_ranking"),
-  actualRating: decimal("actual_rating", { precision: 3, scale: 2 }),
-  // Target metrics
+  actualSubcategoryRank: int("actual_subcategory_rank"),
+  actualConvRate: decimal("actual_conv_rate", { precision: 5, scale: 2 }),
+  actualOrganicOrders: int("actual_organic_orders"),
+  actualAdOrders: int("actual_ad_orders"),
+  actualRatingScore: decimal("actual_rating_score", { precision: 3, scale: 2 }),
+  actualRatingCount: int("actual_rating_count"),
+  actualWeekLabel: varchar("actual_week_label", { length: 100 }),
+  actualWeekCount: int("actual_week_count").default(1),
+  // Target metrics (目标数据 - 从运营计划目标带入)
   targetSales: decimal("target_sales", { precision: 12, scale: 2 }),
-  targetProfit: decimal("target_profit", { precision: 12, scale: 2 }),
-  targetOrderConvRate: decimal("target_order_conv_rate", { precision: 5, scale: 2 }),
-  targetSearchConvRate: decimal("target_search_conv_rate", { precision: 5, scale: 2 }),
-  targetAdConvRate: decimal("target_ad_conv_rate", { precision: 5, scale: 2 }),
+  targetSubcategoryRank: int("target_subcategory_rank"),
+  targetConvRate: decimal("target_conv_rate", { precision: 5, scale: 2 }),
+  targetOrganicOrders: int("target_organic_orders"),
+  targetAdOrders: int("target_ad_orders"),
+  targetRatingScore: decimal("target_rating_score", { precision: 3, scale: 2 }),
+  targetRatingCount: int("target_rating_count"),
   // Review content
-  achievementSummary: text("achievement_summary"), // 达成情况总结
-  keyActions: text("key_actions"), // 关键执行动作
-  lessonsLearned: text("lessons_learned"), // 经验教训
-  nextPeriodPlan: text("next_period_plan"), // 下期计划
-  // Game strategist feedback (游戏策划师)
-  strategistFeedback: text("strategist_feedback"), // 游戏策划师反馈
+  achievementSummary: text("achievement_summary"),
+  keyActions: text("key_actions"),
+  lessonsLearned: text("lessons_learned"),
+  nextPeriodPlan: text("next_period_plan"),
+  // Game strategist feedback
+  strategistFeedback: text("strategist_feedback"),
   strategistRating: mysqlEnum("strategist_rating", ["S", "A", "B", "C", "D"]),
   // AI analysis
-  aiAnalysis: text("ai_analysis"), // AI复盘分析
+  aiAnalysis: text("ai_analysis"),
   aiAnalysisLocked: int("ai_analysis_locked").default(0),
   status: mysqlEnum("review_status", ["draft", "submitted", "reviewed"]).default("draft").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

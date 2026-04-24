@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -19,153 +19,364 @@ import {
 import {
   Plus, Trash2, Loader2, Brain, TrendingUp, TrendingDown, Minus,
   Target, BarChart3, FileText, Calendar, Award, ChevronDown, ChevronUp,
-  Edit2, Save, X,
+  Edit2, Save, X, Download, AlertTriangle, CheckCircle2, Lightbulb, Focus,
+  ArrowRight,
 } from "lucide-react";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis,
-  PolarRadiusAxis, LineChart, Line,
+  PolarRadiusAxis, Tooltip, Legend,
 } from "recharts";
 
+// ─── Types ───
 interface Props {
   productId: number;
   parentAsin: string;
 }
 
+interface AiAnalysis {
+  achievementSummary: string;
+  keyFindings: { metric: string; status: string; detail: string; changeRate?: string }[];
+  problems: { issue: string; possibleCause: string; severity: string }[];
+  recommendations: { action: string; priority: string; expectedImpact: string }[];
+  nextPeriodFocus: string[];
+}
+
+// ─── 8 metrics definition ───
+const METRICS = [
+  { key: "Sales", label: "销售额", prefix: "$", suffix: "", type: "money" },
+  { key: "SubcategoryRank", label: "小类排名", prefix: "#", suffix: "", type: "rank" },
+  { key: "ProfitRate", label: "利润率", prefix: "", suffix: "%", type: "percent" },
+  { key: "ConvRate", label: "转化率", prefix: "", suffix: "%", type: "percent" },
+  { key: "OrganicOrders", label: "自然单", prefix: "", suffix: "", type: "number" },
+  { key: "AdOrders", label: "广告单", prefix: "", suffix: "", type: "number" },
+  { key: "RatingScore", label: "评分", prefix: "", suffix: "", type: "decimal" },
+  { key: "RatingCount", label: "Rating数量", prefix: "", suffix: "", type: "number" },
+] as const;
+
+// ─── Helpers ───
+function fmtVal(val: any, type: string, prefix: string, suffix: string): string {
+  if (val == null || val === "" || val === undefined) return "-";
+  const n = Number(val);
+  if (isNaN(n)) return "-";
+  if (type === "money") return `${prefix}${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (type === "rank") return n > 0 ? `${prefix}${n.toLocaleString()}` : "-";
+  if (type === "percent") return `${n.toFixed(2)}${suffix}`;
+  if (type === "decimal") return `${n.toFixed(1)}${suffix}`;
+  return `${prefix}${n.toLocaleString()}${suffix}`;
+}
+
+function calcAchievementRate(baseline: any, actual: any, target: any, type: string): number | null {
+  const b = Number(baseline || 0);
+  const a = Number(actual || 0);
+  const t = Number(target || 0);
+  if (t === 0 && b === 0) return null;
+  // For rank, lower is better
+  if (type === "rank") {
+    if (t === 0) return null;
+    // achievement = target / actual * 100 (lower actual = better)
+    return a > 0 ? (t / a) * 100 : 0;
+  }
+  if (t === 0) return null;
+  return (a / t) * 100;
+}
+
+function calcChange(baseline: any, actual: any, type: string): { value: number; direction: "up" | "down" | "flat" } {
+  const b = Number(baseline || 0);
+  const a = Number(actual || 0);
+  const diff = a - b;
+  if (Math.abs(diff) < 0.001) return { value: 0, direction: "flat" };
+  // For rank, decrease is good
+  if (type === "rank") {
+    return { value: diff, direction: diff < 0 ? "up" : "down" };
+  }
+  return { value: diff, direction: diff > 0 ? "up" : "down" };
+}
+
 export default function OpsProductReview({ productId, parentAsin }: Props) {
+  // ─── Queries ───
   const { data: reviews, refetch, isLoading } = trpc.productOps.listExecutionReviews.useQuery(
-    { productProfileId: productId }
+    { productProfileId: productId, parentAsin },
+    { enabled: !!parentAsin }
+  );
+  const { data: plans } = trpc.productOps.listPlans.useQuery(
+    { productProfileId: productId },
+    { enabled: !!productId }
+  );
+  const { data: availableWeeks } = trpc.productOps.getAvailableWeeks.useQuery(
+    { parentAsin },
+    { enabled: !!parentAsin }
   );
 
+  // ─── Mutations ───
   const createReview = trpc.productOps.createExecutionReview.useMutation({
     onSuccess: () => { refetch(); setShowCreate(false); toast.success("复盘记录已创建"); },
+    onError: (err) => toast.error(`创建失败: ${err.message}`),
   });
   const updateReview = trpc.productOps.updateExecutionReview.useMutation({
     onSuccess: () => { refetch(); toast.success("复盘已更新"); },
+    onError: (err) => toast.error(`更新失败: ${err.message}`),
   });
   const deleteReview = trpc.productOps.deleteExecutionReview.useMutation({
     onSuccess: () => { refetch(); setSelectedReviewId(null); toast.success("复盘已删除"); },
+    onError: (err) => toast.error(`删除失败: ${err.message}`),
   });
-  const aiAnalysis = trpc.productOps.aiReviewAnalysis.useMutation({
+  const syncReviewData = trpc.productOps.syncReviewFromImportedData.useMutation({
+    onSuccess: () => { refetch(); toast.success("实际数据已从导入数据加载"); },
+    onError: (err) => toast.error(`加载失败: ${err.message}`),
+  });
+  const aiAnalysisMut = trpc.productOps.generateReviewAiAnalysis.useMutation({
     onSuccess: () => { refetch(); toast.success("AI复盘分析完成"); },
-  });
-  const syncReview = trpc.productOps.syncReviewFromLingxing.useMutation({
-    onSuccess: (data) => {
-      refetch();
-      toast.success(`复盘数据已从领星同步 (基线: ${data.dateRanges.baseline.start}~${data.dateRanges.baseline.end}, 实际: ${data.dateRanges.actual.start}~${data.dateRanges.actual.end})`);
-    },
-    onError: (err) => { toast.error(`同步失败: ${err.message}`); },
+    onError: (err) => toast.error(`AI分析失败: ${err.message}`),
   });
 
+  // ─── State ───
   const [showCreate, setShowCreate] = useState(false);
   const [selectedReviewId, setSelectedReviewId] = useState<number | null>(null);
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
-  const [showCompare, setShowCompare] = useState(false);
+  const [weekCount, setWeekCount] = useState(1);
+  const [showAiPanel, setShowAiPanel] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    comparison: true, textFields: true, aiAnalysis: true,
+  });
+  const [selectedPlanId, setSelectedPlanId] = useState<string>("none");
 
   const selectedReview = reviews?.find((r: any) => r.id === selectedReviewId) || reviews?.[0];
 
+  // ─── Create form ───
   const [createForm, setCreateForm] = useState({
-    period: "", periodType: "monthly" as string,
-    baselineSales: 0, baselineProfit: 0, baselineOrderConvRate: 0,
-    baselineSearchConvRate: 0, baselineAdConvRate: 0,
-    targetSales: 0, targetProfit: 0,
-    actualSales: 0, actualProfit: 0, actualOrderConvRate: 0,
-    actualSearchConvRate: 0, actualAdConvRate: 0,
+    period: "",
+    periodType: "weekly" as string,
+    baselineSales: "", baselineSubcategoryRank: "", baselineProfitRate: "",
+    baselineConvRate: "", baselineOrganicOrders: "", baselineAdOrders: "",
+    baselineRatingScore: "", baselineRatingCount: "",
+    targetSales: "", targetSubcategoryRank: "", targetConvRate: "",
+    targetOrganicOrders: "", targetAdOrders: "", targetRatingScore: "", targetRatingCount: "",
   });
 
-  // ─── Computed ───
-  const achievementRates = useMemo(() => {
-    if (!selectedReview) return null;
-    const salesRate = selectedReview.targetSales ? (Number(selectedReview.actualSales || 0) / Number(selectedReview.targetSales) * 100) : 0;
-    const profitRate = selectedReview.targetProfit ? (Number(selectedReview.actualProfit || 0) / Number(selectedReview.targetProfit) * 100) : 0;
-    const orderConvDelta = Number(selectedReview.actualOrderConvRate || 0) - Number(selectedReview.baselineOrderConvRate || 0);
-    const searchConvDelta = Number(selectedReview.actualSearchConvRate || 0) - Number(selectedReview.baselineSearchConvRate || 0);
-    const adConvDelta = Number(selectedReview.actualAdConvRate || 0) - Number(selectedReview.baselineAdConvRate || 0);
-    return { salesRate, profitRate, orderConvDelta, searchConvDelta, adConvDelta };
+  // ─── Auto-select first review ───
+  useEffect(() => {
+    if (reviews && reviews.length > 0 && !selectedReviewId) {
+      setSelectedReviewId(reviews[0].id);
+    }
+  }, [reviews, selectedReviewId]);
+
+  // ─── Load from plan ───
+  const handleLoadFromPlan = useCallback((planId: string) => {
+    setSelectedPlanId(planId);
+    if (planId === "none" || !plans) return;
+    const plan = plans.find((p: any) => p.id === Number(planId));
+    if (!plan) return;
+    setCreateForm(prev => ({
+      ...prev,
+      baselineSales: plan.baselineSales || "",
+      baselineSubcategoryRank: plan.baselineSubcategoryRank?.toString() || "",
+      baselineProfitRate: plan.baselineProfitRate || "",
+      baselineConvRate: plan.baselineConvRate || "",
+      baselineOrganicOrders: plan.baselineOrganicOrders?.toString() || "",
+      baselineAdOrders: plan.baselineAdOrders?.toString() || "",
+      baselineRatingScore: plan.baselineRatingScore || "",
+      baselineRatingCount: plan.baselineRatingCount?.toString() || "",
+      targetSales: plan.targetSales || "",
+      targetSubcategoryRank: plan.targetSubcategoryRank?.toString() || "",
+      targetConvRate: plan.targetConvRate || "",
+      targetOrganicOrders: plan.targetOrganicOrders?.toString() || "",
+      targetAdOrders: plan.targetAdOrders?.toString() || "",
+      targetRatingScore: plan.targetRatingScore || "",
+      targetRatingCount: plan.targetRatingCount?.toString() || "",
+    }));
+    toast.success("已从运营计划加载基线和目标数据");
+  }, [plans]);
+
+  // ─── Computed: achievement rates ───
+  const comparisonData = useMemo(() => {
+    if (!selectedReview) return [];
+    return METRICS.map(m => {
+      const baseline = (selectedReview as any)[`baseline${m.key}`];
+      const actual = (selectedReview as any)[`actual${m.key}`];
+      const target = (selectedReview as any)[`target${m.key}`];
+      const achievement = calcAchievementRate(baseline, actual, target, m.type);
+      const change = calcChange(baseline, actual, m.type);
+      return { ...m, baseline, actual, target, achievement, change };
+    });
   }, [selectedReview]);
 
+  // ─── Radar chart data ───
   const radarData = useMemo(() => {
     if (!selectedReview) return [];
-    return [
-      { metric: "销售额达成", baseline: 100, actual: achievementRates?.salesRate || 0 },
-      { metric: "利润达成", baseline: 100, actual: achievementRates?.profitRate || 0 },
-      { metric: "订单转化率", baseline: (selectedReview.baselineOrderConvRate || 0), actual: (selectedReview.actualOrderConvRate || 0) },
-      { metric: "搜索转化率", baseline: (selectedReview.baselineSearchConvRate || 0), actual: (selectedReview.actualSearchConvRate || 0) },
-      { metric: "广告转化率", baseline: (selectedReview.baselineAdConvRate || 0), actual: (selectedReview.actualAdConvRate || 0) },
-    ];
-  }, [selectedReview, achievementRates]);
+    // Normalize metrics to 0-100 scale for radar
+    return METRICS.filter(m => m.key !== "RatingCount").map(m => {
+      const baseline = Number((selectedReview as any)[`baseline${m.key}`] || 0);
+      const actual = Number((selectedReview as any)[`actual${m.key}`] || 0);
+      const target = Number((selectedReview as any)[`target${m.key}`] || 0);
+      // For rank, invert (lower is better)
+      if (m.type === "rank") {
+        const maxRank = Math.max(baseline, actual, target, 1);
+        return {
+          metric: m.label,
+          基线: maxRank > 0 ? ((maxRank - baseline + 1) / maxRank) * 100 : 0,
+          实际: maxRank > 0 ? ((maxRank - actual + 1) / maxRank) * 100 : 0,
+          目标: maxRank > 0 ? ((maxRank - target + 1) / maxRank) * 100 : 0,
+        };
+      }
+      const maxVal = Math.max(baseline, actual, target, 1);
+      return {
+        metric: m.label,
+        基线: (baseline / maxVal) * 100,
+        实际: (actual / maxVal) * 100,
+        目标: (target / maxVal) * 100,
+      };
+    });
+  }, [selectedReview]);
 
-  const multiPeriodData = useMemo(() => {
-    if (!reviews || reviews.length < 2) return [];
-    return reviews.slice().reverse().map((r: any) => ({
-      period: r.period,
-      sales: r.actualSales || 0,
-      profit: r.actualProfit || 0,
-      orderConv: r.actualOrderConvRate || 0,
-      searchConv: r.actualSearchConvRate || 0,
-      adConv: r.actualAdConvRate || 0,
-    }));
-  }, [reviews]);
+  // ─── Parse AI analysis ───
+  const parsedAiAnalysis: AiAnalysis | null = useMemo(() => {
+    if (!selectedReview?.aiAnalysis) return null;
+    try {
+      const parsed = typeof selectedReview.aiAnalysis === "string"
+        ? JSON.parse(selectedReview.aiAnalysis)
+        : selectedReview.aiAnalysis;
+      return parsed;
+    } catch {
+      return null;
+    }
+  }, [selectedReview]);
 
-  const safeFixed = (val: number | undefined, digits: number = 1) => {
-    const n = val ?? 0;
-    return isNaN(n) || !isFinite(n) ? "0" + (digits > 0 ? "." + "0".repeat(digits) : "") : n.toFixed(digits);
-  };
-
-  const getAchievementBadge = (rate: number) => {
-    const safe = isNaN(rate) || !isFinite(rate) ? 0 : rate;
-    if (safe >= 100) return <Badge className="bg-emerald-100 text-emerald-700">达标 {safeFixed(safe)}%</Badge>;
-    if (safe >= 80) return <Badge className="bg-amber-100 text-amber-700">接近 {safeFixed(safe)}%</Badge>;
-    return <Badge className="bg-red-100 text-red-700">未达标 {safeFixed(safe)}%</Badge>;
-  };
-
-  const getDeltaIcon = (delta: number) => {
-    if (delta > 0) return <TrendingUp className="h-4 w-4 text-emerald-600" />;
-    if (delta < 0) return <TrendingDown className="h-4 w-4 text-red-600" />;
-    return <Minus className="h-4 w-4 text-gray-400" />;
-  };
-
+  // ─── Inline edit ───
   const startEdit = (field: string, value: string) => {
     setEditingField(field);
-    setEditValue(value);
+    setEditValue(value || "");
   };
-
   const saveEdit = () => {
     if (!selectedReview || !editingField) return;
-    updateReview.mutate({
-      reviewId: selectedReview.id,
-      [editingField]: editValue,
-    });
+    updateReview.mutate({ reviewId: selectedReview.id, [editingField]: editValue });
     setEditingField(null);
   };
+  const cancelEdit = () => { setEditingField(null); setEditValue(""); };
 
+  // ─── Handlers ───
+  const handleCreate = () => {
+    createReview.mutate({
+      productProfileId: productId,
+      parentAsin,
+      period: createForm.period,
+      periodType: createForm.periodType as any,
+      baselineSales: createForm.baselineSales || undefined,
+      baselineSubcategoryRank: createForm.baselineSubcategoryRank ? Number(createForm.baselineSubcategoryRank) : undefined,
+      baselineProfitRate: createForm.baselineProfitRate || undefined,
+      baselineConvRate: createForm.baselineConvRate || undefined,
+      baselineOrganicOrders: createForm.baselineOrganicOrders ? Number(createForm.baselineOrganicOrders) : undefined,
+      baselineAdOrders: createForm.baselineAdOrders ? Number(createForm.baselineAdOrders) : undefined,
+      baselineRatingScore: createForm.baselineRatingScore || undefined,
+      baselineRatingCount: createForm.baselineRatingCount ? Number(createForm.baselineRatingCount) : undefined,
+      baselineWeekLabel: createForm.period,
+      targetSales: createForm.targetSales || undefined,
+      targetSubcategoryRank: createForm.targetSubcategoryRank ? Number(createForm.targetSubcategoryRank) : undefined,
+      targetConvRate: createForm.targetConvRate || undefined,
+      targetOrganicOrders: createForm.targetOrganicOrders ? Number(createForm.targetOrganicOrders) : undefined,
+      targetAdOrders: createForm.targetAdOrders ? Number(createForm.targetAdOrders) : undefined,
+      targetRatingScore: createForm.targetRatingScore || undefined,
+      targetRatingCount: createForm.targetRatingCount ? Number(createForm.targetRatingCount) : undefined,
+    });
+  };
+
+  const handleSyncActual = () => {
+    if (!selectedReview) return;
+    syncReviewData.mutate({
+      reviewId: selectedReview.id,
+      parentAsin,
+      weekCount,
+      syncTarget: "actual",
+    });
+  };
+
+  const handleSyncFromPlan = () => {
+    if (!selectedReview || !selectedPlanId || selectedPlanId === "none") {
+      toast.error("请先选择一个运营计划");
+      return;
+    }
+    syncReviewData.mutate({
+      reviewId: selectedReview.id,
+      parentAsin,
+      weekCount: 1,
+      syncTarget: "both",
+      planId: Number(selectedPlanId),
+    });
+  };
+
+  const handleAiAnalysis = () => {
+    if (!selectedReview) return;
+    aiAnalysisMut.mutate({ reviewId: selectedReview.id });
+  };
+
+  const toggleSection = (key: string) => {
+    setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const getAchievementBadge = (rate: number | null) => {
+    if (rate === null) return <Badge variant="outline" className="text-muted-foreground">-</Badge>;
+    if (rate >= 100) return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">{rate.toFixed(1)}% 达标</Badge>;
+    if (rate >= 80) return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">{rate.toFixed(1)}% 接近</Badge>;
+    return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">{rate.toFixed(1)}% 未达标</Badge>;
+  };
+
+  const getSeverityBadge = (severity: string) => {
+    switch (severity) {
+      case "high": return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">高</Badge>;
+      case "medium": return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">中</Badge>;
+      case "low": return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">低</Badge>;
+      default: return <Badge variant="outline">{severity}</Badge>;
+    }
+  };
+
+  const getPriorityBadge = (priority: string) => {
+    switch (priority) {
+      case "high": return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">高优</Badge>;
+      case "medium": return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">中优</Badge>;
+      case "low": return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">低优</Badge>;
+      default: return <Badge variant="outline">{priority}</Badge>;
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "达标": case "超额": return <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">{status}</Badge>;
+      case "未达标": return <Badge className="bg-red-500/20 text-red-400 border-red-500/30">{status}</Badge>;
+      case "接近": return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">{status}</Badge>;
+      default: return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  // ─── Render ───
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <span className="ml-2 text-muted-foreground">加载复盘数据...</span>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* ═══ Header: Review selector + actions ═══ */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Target className="h-5 w-5 text-orange-600" />
-            执行复盘
+          <h3 className="text-base font-semibold flex items-center gap-2">
+            <FileText className="h-4 w-4 text-primary" /> 执行复盘
           </h3>
-          {reviews && reviews.length > 1 && (
-            <Select value={String(selectedReview?.id || "")} onValueChange={v => setSelectedReviewId(Number(v))}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="选择复盘期" />
+          {reviews && reviews.length > 0 && (
+            <Select
+              value={selectedReviewId?.toString() || ""}
+              onValueChange={(v) => setSelectedReviewId(Number(v))}
+            >
+              <SelectTrigger className="w-[200px] h-8 text-xs">
+                <SelectValue placeholder="选择复盘记录" />
               </SelectTrigger>
               <SelectContent>
                 {reviews.map((r: any) => (
-                  <SelectItem key={r.id} value={String(r.id)}>
-                    {r.period} ({r.periodType === "monthly" ? "月度" : r.periodType === "quarterly" ? "季度" : "年度"})
+                  <SelectItem key={r.id} value={r.id.toString()}>
+                    {r.period} ({r.status === "draft" ? "草稿" : r.status === "submitted" ? "已提交" : "已审核"})
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -173,449 +384,563 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {selectedReview && (
-            <Button size="sm" variant="outline" className="gap-1"
-              disabled={syncReview.isPending}
-              onClick={() => syncReview.mutate({
-                reviewId: selectedReview.id,
-                productId,
-                periodType: (selectedReview.periodType || 'monthly') as any,
-                syncTarget: 'both',
-              })}>
-              {syncReview.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <TrendingUp className="h-3 w-3" />}
-              同步领星数据
-            </Button>
-          )}
-          {reviews && reviews.length >= 2 && (
-            <Button size="sm" variant="outline" onClick={() => setShowCompare(!showCompare)}>
-              <BarChart3 className="h-3 w-3 mr-1" />
-              {showCompare ? "隐藏多期对比" : "多期对比"}
-            </Button>
-          )}
-          <Button size="sm" onClick={() => setShowCreate(true)}>
-            <Plus className="h-3 w-3 mr-1" /> 新建复盘
+          <Button size="sm" variant="outline" onClick={() => setShowCreate(true)}>
+            <Plus className="h-3.5 w-3.5 mr-1" /> 新建复盘
           </Button>
+          {selectedReview && (
+            <Button
+              size="sm" variant="outline"
+              className="text-red-400 hover:text-red-300"
+              onClick={() => {
+                if (confirm("确定删除此复盘记录？")) deleteReview.mutate({ reviewId: selectedReview.id });
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Multi-period comparison */}
-      {showCompare && multiPeriodData.length >= 2 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">多期数据对比</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm font-medium mb-2">销售额 & 利润趋势</p>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={multiPeriodData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="period" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="sales" name="销售额" fill="#3b82f6" />
-                    <Bar dataKey="profit" name="利润" fill="#10b981" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div>
-                <p className="text-sm font-medium mb-2">转化率趋势</p>
-                <ResponsiveContainer width="100%" height={200}>
-                  <LineChart data={multiPeriodData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="period" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="orderConv" name="订单转化率" stroke="#8b5cf6" strokeWidth={2} />
-                    <Line type="monotone" dataKey="searchConv" name="搜索转化率" stroke="#f59e0b" strokeWidth={2} />
-                    <Line type="monotone" dataKey="adConv" name="广告转化率" stroke="#ef4444" strokeWidth={2} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
+      {/* ═══ No reviews ═══ */}
+      {(!reviews || reviews.length === 0) && (
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <FileText className="h-10 w-10 text-muted-foreground mb-3" />
+            <p className="text-muted-foreground mb-2">暂无复盘记录</p>
+            <p className="text-xs text-muted-foreground mb-4">创建复盘记录后，可从导入数据自动加载实际数据，并使用AI进行分析</p>
+            <Button size="sm" onClick={() => setShowCreate(true)}>
+              <Plus className="h-3.5 w-3.5 mr-1" /> 创建第一条复盘
+            </Button>
           </CardContent>
         </Card>
       )}
 
-      {!selectedReview ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Target className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <p className="text-muted-foreground mb-4">创建复盘记录，对比基线与实际数据，AI自动分析达成情况</p>
-            <Button onClick={() => setShowCreate(true)}>
-              <Plus className="h-4 w-4 mr-2" /> 创建首次复盘
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <>
-          {/* Achievement Overview */}
-          <div className="grid grid-cols-5 gap-3">
-            <Card>
-              <CardContent className="pt-4 pb-3 text-center">
-                <p className="text-xs text-muted-foreground mb-1">销售额达成</p>
-                <div className="text-2xl font-bold text-blue-600">{isNaN(achievementRates?.salesRate ?? 0) ? "0.0" : (achievementRates?.salesRate ?? 0).toFixed(1)}%</div>
-                <div className="mt-1">{getAchievementBadge(achievementRates?.salesRate || 0)}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4 pb-3 text-center">
-                <p className="text-xs text-muted-foreground mb-1">利润达成</p>
-                <div className="text-2xl font-bold text-emerald-600">{isNaN(achievementRates?.profitRate ?? 0) ? "0.0" : (achievementRates?.profitRate ?? 0).toFixed(1)}%</div>
-                <div className="mt-1">{getAchievementBadge(achievementRates?.profitRate || 0)}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4 pb-3 text-center">
-                <p className="text-xs text-muted-foreground mb-1">订单转化率变化</p>
-                <div className="flex items-center justify-center gap-1">
-                  {getDeltaIcon(achievementRates?.orderConvDelta || 0)}
-                  <span className="text-lg font-bold">{(achievementRates?.orderConvDelta || 0) > 0 ? "+" : ""}{isNaN(achievementRates?.orderConvDelta ?? 0) ? "0.00" : (achievementRates?.orderConvDelta ?? 0).toFixed(2)}%</span>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4 pb-3 text-center">
-                <p className="text-xs text-muted-foreground mb-1">搜索转化率变化</p>
-                <div className="flex items-center justify-center gap-1">
-                  {getDeltaIcon(achievementRates?.searchConvDelta || 0)}
-                  <span className="text-lg font-bold">{(achievementRates?.searchConvDelta || 0) > 0 ? "+" : ""}{isNaN(achievementRates?.searchConvDelta ?? 0) ? "0.00" : (achievementRates?.searchConvDelta ?? 0).toFixed(2)}%</span>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4 pb-3 text-center">
-                <p className="text-xs text-muted-foreground mb-1">广告转化率变化</p>
-                <div className="flex items-center justify-center gap-1">
-                  {getDeltaIcon(achievementRates?.adConvDelta || 0)}
-                  <span className="text-lg font-bold">{(achievementRates?.adConvDelta || 0) > 0 ? "+" : ""}{isNaN(achievementRates?.adConvDelta ?? 0) ? "0.00" : (achievementRates?.adConvDelta ?? 0).toFixed(2)}%</span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Data Comparison Table + Radar */}
-          <div className="grid grid-cols-3 gap-4">
-            <Card className="col-span-2">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">基线 vs 实际 数据对比</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>指标</TableHead>
-                      <TableHead className="text-right">基线(基期)</TableHead>
-                      <TableHead className="text-right">目标</TableHead>
-                      <TableHead className="text-right">实际</TableHead>
-                      <TableHead className="text-right">达成率</TableHead>
-                      <TableHead className="text-right">变化</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    <TableRow>
-                      <TableCell className="font-medium">销售额</TableCell>
-                      <TableCell className="text-right">${(selectedReview.baselineSales || 0).toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-blue-600">${(selectedReview.targetSales || 0).toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-medium">${(selectedReview.actualSales || 0).toLocaleString()}</TableCell>
-                      <TableCell className="text-right">{getAchievementBadge(achievementRates?.salesRate || 0)}</TableCell>
-                      <TableCell className="text-right">{getDeltaIcon(Number(selectedReview.actualSales || 0) - Number(selectedReview.baselineSales || 0))}</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="font-medium">利润</TableCell>
-                      <TableCell className="text-right">${(selectedReview.baselineProfit || 0).toLocaleString()}</TableCell>
-                      <TableCell className="text-right text-blue-600">${(selectedReview.targetProfit || 0).toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-medium">${(selectedReview.actualProfit || 0).toLocaleString()}</TableCell>
-                      <TableCell className="text-right">{getAchievementBadge(achievementRates?.profitRate || 0)}</TableCell>
-                      <TableCell className="text-right">{getDeltaIcon(Number(selectedReview.actualProfit || 0) - Number(selectedReview.baselineProfit || 0))}</TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="font-medium">订单转化率</TableCell>
-                      <TableCell className="text-right">{selectedReview.baselineOrderConvRate || 0}%</TableCell>
-                      <TableCell className="text-right text-muted-foreground">—</TableCell>
-                      <TableCell className="text-right font-medium">{selectedReview.actualOrderConvRate || 0}%</TableCell>
-                      <TableCell className="text-right">—</TableCell>
-                      <TableCell className="text-right">
-                        <span className={`${(achievementRates?.orderConvDelta || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                          {(achievementRates?.orderConvDelta || 0) > 0 ? "+" : ""}{safeFixed(achievementRates?.orderConvDelta, 2)}%
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="font-medium">搜索转化率</TableCell>
-                      <TableCell className="text-right">{selectedReview.baselineSearchConvRate || 0}%</TableCell>
-                      <TableCell className="text-right text-muted-foreground">—</TableCell>
-                      <TableCell className="text-right font-medium">{selectedReview.actualSearchConvRate || 0}%</TableCell>
-                      <TableCell className="text-right">—</TableCell>
-                      <TableCell className="text-right">
-                        <span className={`${(achievementRates?.searchConvDelta || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                          {(achievementRates?.searchConvDelta || 0) > 0 ? "+" : ""}{safeFixed(achievementRates?.searchConvDelta, 2)}%
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="font-medium">广告转化率</TableCell>
-                      <TableCell className="text-right">{selectedReview.baselineAdConvRate || 0}%</TableCell>
-                      <TableCell className="text-right text-muted-foreground">—</TableCell>
-                      <TableCell className="text-right font-medium">{selectedReview.actualAdConvRate || 0}%</TableCell>
-                      <TableCell className="text-right">—</TableCell>
-                      <TableCell className="text-right">
-                        <span className={`${(achievementRates?.adConvDelta || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                          {(achievementRates?.adConvDelta || 0) > 0 ? "+" : ""}{safeFixed(achievementRates?.adConvDelta, 2)}%
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">达成雷达图</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={250}>
-                  <RadarChart data={radarData}>
-                    <PolarGrid />
-                    <PolarAngleAxis dataKey="metric" tick={{ fontSize: 11 }} />
-                    <PolarRadiusAxis tick={{ fontSize: 10 }} />
-                    <Radar name="基线" dataKey="baseline" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.2} />
-                    <Radar name="实际" dataKey="actual" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.3} />
-                    <Legend />
-                    <Tooltip />
-                  </RadarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Summary & Key Actions */}
-          <div className="grid grid-cols-2 gap-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Award className="h-4 w-4 text-amber-600" />
-                    成就总结
-                  </CardTitle>
-                  {editingField !== "achievementSummary" && (
-                    <Button size="sm" variant="ghost" onClick={() => startEdit("achievementSummary", selectedReview.achievementSummary || "")}>
-                      <Edit2 className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {editingField === "achievementSummary" ? (
-                  <div className="space-y-2">
-                    <Textarea value={editValue} onChange={e => setEditValue(e.target.value)} rows={4} />
-                    <div className="flex gap-2">
-                      <Button size="sm" onClick={saveEdit}><Save className="h-3 w-3 mr-1" /> 保存</Button>
-                      <Button size="sm" variant="outline" onClick={() => setEditingField(null)}><X className="h-3 w-3" /></Button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                    {selectedReview.achievementSummary || "点击编辑按钮添加成就总结..."}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <FileText className="h-4 w-4 text-blue-600" />
-                    关键动作
-                  </CardTitle>
-                  {editingField !== "keyActions" && (
-                    <Button size="sm" variant="ghost" onClick={() => startEdit("keyActions", selectedReview.keyActions || "")}>
-                      <Edit2 className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {editingField === "keyActions" ? (
-                  <div className="space-y-2">
-                    <Textarea value={editValue} onChange={e => setEditValue(e.target.value)} rows={4} />
-                    <div className="flex gap-2">
-                      <Button size="sm" onClick={saveEdit}><Save className="h-3 w-3 mr-1" /> 保存</Button>
-                      <Button size="sm" variant="outline" onClick={() => setEditingField(null)}><X className="h-3 w-3" /></Button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                    {selectedReview.keyActions || "点击编辑按钮添加关键动作..."}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* AI Analysis */}
+      {/* ═══ Selected review detail ═══ */}
+      {selectedReview && (
+        <div className="space-y-4">
+          {/* ─── Action bar: sync actual data ─── */}
           <Card>
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Brain className="h-4 w-4 text-purple-600" />
-                  游戏策划师 AI复盘分析
-                </CardTitle>
-                <Button size="sm" variant="outline" onClick={() => aiAnalysis.mutate({ reviewId: selectedReview.id })} disabled={aiAnalysis.isPending}>
-                  {aiAnalysis.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Brain className="h-3 w-3 mr-1" />}
-                  {selectedReview.aiAnalysis ? "重新分析" : "AI分析"}
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {selectedReview.aiAnalysis ? (
-                <div className="prose prose-sm max-w-none">
-                  <div className="bg-purple-50/50 border border-purple-100 rounded-lg p-4 text-sm whitespace-pre-wrap">
-                    {selectedReview.aiAnalysis}
-                  </div>
+            <CardContent className="py-3 px-4">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground">加载实际数据:</span>
+                  <Select value={weekCount.toString()} onValueChange={(v) => setWeekCount(Number(v))}>
+                    <SelectTrigger className="w-[120px] h-7 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">最近 1 周</SelectItem>
+                      {(availableWeeks?.length || 0) >= 2 && <SelectItem value="2">最近 2 周</SelectItem>}
+                      {(availableWeeks?.length || 0) >= 4 && <SelectItem value="4">最近 4 周</SelectItem>}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    size="sm" variant="outline" className="h-7 text-xs"
+                    onClick={handleSyncActual}
+                    disabled={syncReviewData.isPending}
+                  >
+                    {syncReviewData.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Download className="h-3 w-3 mr-1" />}
+                    从导入数据加载
+                  </Button>
                 </div>
-              ) : (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  点击"AI分析"按钮，游戏策划师将基于复盘数据生成深度分析报告
-                </p>
+                <div className="flex items-center gap-3">
+                  {plans && plans.length > 0 && (
+                    <>
+                      <Select value={selectedPlanId} onValueChange={setSelectedPlanId}>
+                        <SelectTrigger className="w-[160px] h-7 text-xs">
+                          <SelectValue placeholder="选择运营计划" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">不关联计划</SelectItem>
+                          {plans.map((p: any) => (
+                            <SelectItem key={p.id} value={p.id.toString()}>
+                              {p.planName || p.planPeriod || `计划#${p.id}`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm" variant="outline" className="h-7 text-xs"
+                        onClick={handleSyncFromPlan}
+                        disabled={syncReviewData.isPending || selectedPlanId === "none"}
+                      >
+                        从计划同步基线/目标
+                      </Button>
+                    </>
+                  )}
+                  <Button
+                    size="sm" className="h-7 text-xs"
+                    onClick={handleAiAnalysis}
+                    disabled={aiAnalysisMut.isPending}
+                  >
+                    {aiAnalysisMut.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Brain className="h-3 w-3 mr-1" />}
+                    AI智能分析
+                  </Button>
+                </div>
+              </div>
+              {selectedReview.actualWeekLabel && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  实际数据周期: <span className="text-foreground font-medium">{selectedReview.actualWeekLabel}</span>
+                  {selectedReview.baselineWeekLabel && (
+                    <span className="ml-3">基线周期: <span className="text-foreground font-medium">{selectedReview.baselineWeekLabel}</span></span>
+                  )}
+                </div>
               )}
             </CardContent>
           </Card>
 
-          {/* Delete */}
-          <div className="flex justify-end">
-            <Button size="sm" variant="destructive" onClick={() => {
-              if (confirm("确定删除此复盘记录？")) deleteReview.mutate({ reviewId: selectedReview.id });
-            }}>
-              <Trash2 className="h-3 w-3 mr-1" /> 删除此复盘
-            </Button>
-          </div>
-        </>
+          {/* ─── Data comparison table ─── */}
+          <Card>
+            <CardHeader className="py-3 px-4 cursor-pointer" onClick={() => toggleSection("comparison")}>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-blue-400" /> 数据对比 (基线 / 目标 / 实际)
+                </CardTitle>
+                {expandedSections.comparison ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </div>
+            </CardHeader>
+            {expandedSections.comparison && (
+              <CardContent className="px-4 pb-4 pt-0">
+                <div className="rounded-lg border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/30">
+                        <TableHead className="text-xs w-[100px]">指标</TableHead>
+                        <TableHead className="text-xs text-center">基线</TableHead>
+                        <TableHead className="text-xs text-center">目标</TableHead>
+                        <TableHead className="text-xs text-center">实际</TableHead>
+                        <TableHead className="text-xs text-center">变化</TableHead>
+                        <TableHead className="text-xs text-center">达成率</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {comparisonData.map((row) => (
+                        <TableRow key={row.key} className="hover:bg-muted/20">
+                          <TableCell className="text-xs font-medium">{row.label}</TableCell>
+                          <TableCell className="text-xs text-center text-muted-foreground">
+                            {fmtVal(row.baseline, row.type, row.prefix, row.suffix)}
+                          </TableCell>
+                          <TableCell className="text-xs text-center text-blue-400">
+                            {fmtVal(row.target, row.type, row.prefix, row.suffix)}
+                          </TableCell>
+                          <TableCell className="text-xs text-center font-medium">
+                            {fmtVal(row.actual, row.type, row.prefix, row.suffix)}
+                          </TableCell>
+                          <TableCell className="text-xs text-center">
+                            <span className={`inline-flex items-center gap-1 ${
+                              row.change.direction === "up" ? "text-emerald-400" :
+                              row.change.direction === "down" ? "text-red-400" : "text-muted-foreground"
+                            }`}>
+                              {row.change.direction === "up" && <TrendingUp className="h-3 w-3" />}
+                              {row.change.direction === "down" && <TrendingDown className="h-3 w-3" />}
+                              {row.change.direction === "flat" && <Minus className="h-3 w-3" />}
+                              {row.type === "rank" ? (
+                                row.change.value !== 0 ? Math.abs(row.change.value) : "-"
+                              ) : row.type === "percent" || row.type === "decimal" ? (
+                                row.change.value !== 0 ? `${row.change.value > 0 ? "+" : ""}${row.change.value.toFixed(2)}` : "-"
+                              ) : (
+                                row.change.value !== 0 ? `${row.change.value > 0 ? "+" : ""}${row.change.value.toLocaleString()}` : "-"
+                              )}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs text-center">
+                            {getAchievementBadge(row.achievement)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            )}
+          </Card>
+
+          {/* ─── Radar chart ─── */}
+          {radarData.length > 0 && (
+            <Card>
+              <CardHeader className="py-3 px-4">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Target className="h-4 w-4 text-purple-400" /> 指标雷达图
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-4 pb-4 pt-0">
+                <ResponsiveContainer width="100%" height={300}>
+                  <RadarChart data={radarData}>
+                    <PolarGrid stroke="rgba(0,0,0,0.08)" />
+                    <PolarAngleAxis dataKey="metric" tick={{ fill: "#64748b", fontSize: 11 }} />
+                    <PolarRadiusAxis tick={false} axisLine={false} domain={[0, 100]} />
+                    <Radar name="基线" dataKey="基线" stroke="#64748b" fill="#64748b" fillOpacity={0.1} />
+                    <Radar name="目标" dataKey="目标" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.1} strokeDasharray="5 5" />
+                    <Radar name="实际" dataKey="实际" stroke="#10b981" fill="#10b981" fillOpacity={0.2} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Tooltip contentStyle={{ backgroundColor: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 11, color: "#334155" }} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ─── Text fields: 运营总结/关键动作/经验教训/下期计划 ─── */}
+          <Card>
+            <CardHeader className="py-3 px-4 cursor-pointer" onClick={() => toggleSection("textFields")}>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Edit2 className="h-4 w-4 text-amber-400" /> 运营复盘记录
+                </CardTitle>
+                {expandedSections.textFields ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </div>
+            </CardHeader>
+            {expandedSections.textFields && (
+              <CardContent className="px-4 pb-4 pt-0 space-y-3">
+                {[
+                  { field: "achievementSummary", label: "成果总结", icon: <Award className="h-3.5 w-3.5 text-amber-400" /> },
+                  { field: "keyActions", label: "关键动作", icon: <Target className="h-3.5 w-3.5 text-blue-400" /> },
+                  { field: "lessonsLearned", label: "经验教训", icon: <Lightbulb className="h-3.5 w-3.5 text-yellow-400" /> },
+                  { field: "nextPeriodPlan", label: "下期计划", icon: <ArrowRight className="h-3.5 w-3.5 text-green-400" /> },
+                ].map(({ field, label, icon }) => (
+                  <div key={field} className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs flex items-center gap-1.5">{icon} {label}</Label>
+                      {editingField === field ? (
+                        <div className="flex gap-1">
+                          <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveEdit}>
+                            <Save className="h-3 w-3 text-emerald-400" />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={cancelEdit}>
+                            <X className="h-3 w-3 text-red-400" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          size="sm" variant="ghost" className="h-6 w-6 p-0"
+                          onClick={() => startEdit(field, (selectedReview as any)[field] || "")}
+                        >
+                          <Edit2 className="h-3 w-3 text-muted-foreground" />
+                        </Button>
+                      )}
+                    </div>
+                    {editingField === field ? (
+                      <Textarea
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        className="text-xs min-h-[60px]"
+                        placeholder={`输入${label}...`}
+                      />
+                    ) : (
+                      <div className="text-xs text-muted-foreground bg-muted/20 rounded-md p-2 min-h-[40px] whitespace-pre-wrap">
+                        {(selectedReview as any)[field] || <span className="italic">未填写</span>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            )}
+          </Card>
+
+          {/* ─── AI Analysis Panel ─── */}
+          <Card>
+            <CardHeader className="py-3 px-4 cursor-pointer" onClick={() => toggleSection("aiAnalysis")}>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Brain className="h-4 w-4 text-violet-400" /> AI智能分析
+                  {parsedAiAnalysis && <Badge variant="outline" className="text-[10px] ml-1">已生成</Badge>}
+                </CardTitle>
+                {expandedSections.aiAnalysis ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </div>
+            </CardHeader>
+            {expandedSections.aiAnalysis && (
+              <CardContent className="px-4 pb-4 pt-0">
+                {!parsedAiAnalysis ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <Brain className="h-8 w-8 text-muted-foreground mb-2" />
+                    <p className="text-xs text-muted-foreground mb-3">点击"AI智能分析"按钮，基于数据对比生成结构化分析报告</p>
+                    <Button size="sm" onClick={handleAiAnalysis} disabled={aiAnalysisMut.isPending}>
+                      {aiAnalysisMut.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Brain className="h-3 w-3 mr-1" />}
+                      生成AI分析
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Achievement Summary */}
+                    <div className="bg-gradient-to-r from-violet-500/10 to-blue-500/10 rounded-lg p-3 border border-violet-500/20">
+                      <p className="text-xs font-medium text-violet-300 mb-1">整体达成评估</p>
+                      <p className="text-sm">{parsedAiAnalysis.achievementSummary}</p>
+                    </div>
+
+                    {/* Key Findings */}
+                    {parsedAiAnalysis.keyFindings && parsedAiAnalysis.keyFindings.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-blue-400 mb-2 flex items-center gap-1.5">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> 关键发现
+                        </p>
+                        <div className="grid gap-2">
+                          {parsedAiAnalysis.keyFindings.map((f, i) => (
+                            <div key={i} className="flex items-start gap-2 bg-muted/20 rounded-md p-2">
+                              <div className="flex-shrink-0 mt-0.5">
+                                {getStatusBadge(f.status)}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-medium">{f.metric}</span>
+                                  {f.changeRate && <span className="text-[10px] text-muted-foreground">({f.changeRate})</span>}
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-0.5">{f.detail}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Problems */}
+                    {parsedAiAnalysis.problems && parsedAiAnalysis.problems.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-red-400 mb-2 flex items-center gap-1.5">
+                          <AlertTriangle className="h-3.5 w-3.5" /> 问题诊断
+                        </p>
+                        <div className="grid gap-2">
+                          {parsedAiAnalysis.problems.map((p, i) => (
+                            <div key={i} className="bg-red-500/5 border border-red-500/10 rounded-md p-2">
+                              <div className="flex items-center gap-2 mb-1">
+                                {getSeverityBadge(p.severity)}
+                                <span className="text-xs font-medium">{p.issue}</span>
+                              </div>
+                              <p className="text-xs text-muted-foreground">可能原因: {p.possibleCause}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Recommendations */}
+                    {parsedAiAnalysis.recommendations && parsedAiAnalysis.recommendations.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-emerald-400 mb-2 flex items-center gap-1.5">
+                          <Lightbulb className="h-3.5 w-3.5" /> 优化建议
+                        </p>
+                        <div className="grid gap-2">
+                          {parsedAiAnalysis.recommendations.map((r, i) => (
+                            <div key={i} className="bg-emerald-500/5 border border-emerald-500/10 rounded-md p-2">
+                              <div className="flex items-center gap-2 mb-1">
+                                {getPriorityBadge(r.priority)}
+                                <span className="text-xs font-medium">{r.action}</span>
+                              </div>
+                              <p className="text-xs text-muted-foreground">预期效果: {r.expectedImpact}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Next Period Focus */}
+                    {parsedAiAnalysis.nextPeriodFocus && parsedAiAnalysis.nextPeriodFocus.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-amber-400 mb-2 flex items-center gap-1.5">
+                          <Focus className="h-3.5 w-3.5" /> 下期重点
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {parsedAiAnalysis.nextPeriodFocus.map((f, i) => (
+                            <Badge key={i} variant="outline" className="text-xs bg-amber-500/10 border-amber-500/20 text-amber-300">
+                              {f}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Regenerate button */}
+                    <div className="flex justify-end pt-2">
+                      <Button size="sm" variant="outline" className="text-xs" onClick={handleAiAnalysis} disabled={aiAnalysisMut.isPending}>
+                        {aiAnalysisMut.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Brain className="h-3 w-3 mr-1" />}
+                        重新生成分析
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            )}
+          </Card>
+
+          {/* ─── Strategist feedback ─── */}
+          <Card>
+            <CardHeader className="py-3 px-4">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Award className="h-4 w-4 text-yellow-400" /> 策划师评价
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 pt-0">
+              <div className="flex items-center gap-3 mb-2">
+                <Label className="text-xs">评级:</Label>
+                <div className="flex gap-1">
+                  {["S", "A", "B", "C", "D"].map((grade) => (
+                    <Button
+                      key={grade}
+                      size="sm"
+                      variant={selectedReview.strategistRating === grade ? "default" : "outline"}
+                      className={`h-7 w-7 p-0 text-xs ${
+                        selectedReview.strategistRating === grade
+                          ? grade === "S" ? "bg-yellow-500 text-black" :
+                            grade === "A" ? "bg-emerald-500" :
+                            grade === "B" ? "bg-blue-500" :
+                            grade === "C" ? "bg-amber-500" : "bg-red-500"
+                          : ""
+                      }`}
+                      onClick={() => updateReview.mutate({ reviewId: selectedReview.id, strategistRating: grade as any })}
+                    >
+                      {grade}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">评语</Label>
+                  {editingField === "strategistFeedback" ? (
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveEdit}>
+                        <Save className="h-3 w-3 text-emerald-400" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={cancelEdit}>
+                        <X className="h-3 w-3 text-red-400" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm" variant="ghost" className="h-6 w-6 p-0"
+                      onClick={() => startEdit("strategistFeedback", selectedReview.strategistFeedback || "")}
+                    >
+                      <Edit2 className="h-3 w-3 text-muted-foreground" />
+                    </Button>
+                  )}
+                </div>
+                {editingField === "strategistFeedback" ? (
+                  <Textarea
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    className="text-xs min-h-[60px]"
+                    placeholder="输入策划师评语..."
+                  />
+                ) : (
+                  <div className="text-xs text-muted-foreground bg-muted/20 rounded-md p-2 min-h-[40px] whitespace-pre-wrap">
+                    {selectedReview.strategistFeedback || <span className="italic">未填写</span>}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
-      {/* Create Dialog */}
+      {/* ═══ Create Review Dialog ═══ */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>新建执行复盘</DialogTitle></DialogHeader>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base">新建执行复盘</DialogTitle>
+          </DialogHeader>
           <div className="space-y-4">
+            {/* Period */}
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>复盘期间 *</Label>
-                <Input value={createForm.period} onChange={e => setCreateForm(f => ({ ...f, period: e.target.value }))} placeholder="如：2026年Q1" />
+              <div className="space-y-1">
+                <Label className="text-xs">复盘周期 *</Label>
+                <Input
+                  value={createForm.period}
+                  onChange={(e) => setCreateForm(prev => ({ ...prev, period: e.target.value }))}
+                  placeholder="例: 2026-W16 或 04/14-04/20"
+                  className="text-xs h-8"
+                />
               </div>
-              <div>
-                <Label>周期类型</Label>
-                <Select value={createForm.periodType} onValueChange={v => setCreateForm(f => ({ ...f, periodType: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+              <div className="space-y-1">
+                <Label className="text-xs">周期类型</Label>
+                <Select value={createForm.periodType} onValueChange={(v) => setCreateForm(prev => ({ ...prev, periodType: v }))}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="weekly">周度</SelectItem>
                     <SelectItem value="monthly">月度</SelectItem>
                     <SelectItem value="quarterly">季度</SelectItem>
-                    <SelectItem value="yearly">年度</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            <div className="border rounded-lg p-3">
-              <p className="text-sm font-medium mb-2">基线数据（基期）</p>
-              <div className="grid grid-cols-5 gap-2">
-                <div>
-                  <Label className="text-xs">销售额($)</Label>
-                  <Input type="number" value={createForm.baselineSales} onChange={e => setCreateForm(f => ({ ...f, baselineSales: Number(e.target.value) }))} />
-                </div>
-                <div>
-                  <Label className="text-xs">利润($)</Label>
-                  <Input type="number" value={createForm.baselineProfit} onChange={e => setCreateForm(f => ({ ...f, baselineProfit: Number(e.target.value) }))} />
-                </div>
-                <div>
-                  <Label className="text-xs">订单转化率(%)</Label>
-                  <Input type="number" step="0.01" value={createForm.baselineOrderConvRate} onChange={e => setCreateForm(f => ({ ...f, baselineOrderConvRate: Number(e.target.value) }))} />
-                </div>
-                <div>
-                  <Label className="text-xs">搜索转化率(%)</Label>
-                  <Input type="number" step="0.01" value={createForm.baselineSearchConvRate} onChange={e => setCreateForm(f => ({ ...f, baselineSearchConvRate: Number(e.target.value) }))} />
-                </div>
-                <div>
-                  <Label className="text-xs">广告转化率(%)</Label>
-                  <Input type="number" step="0.01" value={createForm.baselineAdConvRate} onChange={e => setCreateForm(f => ({ ...f, baselineAdConvRate: Number(e.target.value) }))} />
-                </div>
+            {/* Load from plan */}
+            {plans && plans.length > 0 && (
+              <div className="space-y-1">
+                <Label className="text-xs">从运营计划加载基线/目标</Label>
+                <Select value={selectedPlanId} onValueChange={handleLoadFromPlan}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择运营计划..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">手动填写</SelectItem>
+                    {plans.map((p: any) => (
+                      <SelectItem key={p.id} value={p.id.toString()}>
+                        {p.planName || p.planPeriod || `计划#${p.id}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Baseline data */}
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">基线数据</p>
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { key: "baselineSales", label: "销售额($)" },
+                  { key: "baselineSubcategoryRank", label: "小类排名" },
+                  { key: "baselineProfitRate", label: "利润率(%)" },
+                  { key: "baselineConvRate", label: "转化率(%)" },
+                  { key: "baselineOrganicOrders", label: "自然单" },
+                  { key: "baselineAdOrders", label: "广告单" },
+                  { key: "baselineRatingScore", label: "评分" },
+                  { key: "baselineRatingCount", label: "Rating数量" },
+                ].map(({ key, label }) => (
+                  <div key={key} className="space-y-0.5">
+                    <Label className="text-[10px] text-muted-foreground">{label}</Label>
+                    <Input
+                      value={(createForm as any)[key]}
+                      onChange={(e) => setCreateForm(prev => ({ ...prev, [key]: e.target.value }))}
+                      className="text-xs h-7"
+                      type="text"
+                    />
+                  </div>
+                ))}
               </div>
             </div>
 
-            <div className="border rounded-lg p-3">
-              <p className="text-sm font-medium mb-2">目标数据</p>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-xs">目标销售额($)</Label>
-                  <Input type="number" value={createForm.targetSales} onChange={e => setCreateForm(f => ({ ...f, targetSales: Number(e.target.value) }))} />
-                </div>
-                <div>
-                  <Label className="text-xs">目标利润($)</Label>
-                  <Input type="number" value={createForm.targetProfit} onChange={e => setCreateForm(f => ({ ...f, targetProfit: Number(e.target.value) }))} />
-                </div>
-              </div>
-            </div>
-
-            <div className="border rounded-lg p-3">
-              <p className="text-sm font-medium mb-2">实际数据（当期）</p>
-              <div className="grid grid-cols-5 gap-2">
-                <div>
-                  <Label className="text-xs">实际销售额($)</Label>
-                  <Input type="number" value={createForm.actualSales} onChange={e => setCreateForm(f => ({ ...f, actualSales: Number(e.target.value) }))} />
-                </div>
-                <div>
-                  <Label className="text-xs">实际利润($)</Label>
-                  <Input type="number" value={createForm.actualProfit} onChange={e => setCreateForm(f => ({ ...f, actualProfit: Number(e.target.value) }))} />
-                </div>
-                <div>
-                  <Label className="text-xs">订单转化率(%)</Label>
-                  <Input type="number" step="0.01" value={createForm.actualOrderConvRate} onChange={e => setCreateForm(f => ({ ...f, actualOrderConvRate: Number(e.target.value) }))} />
-                </div>
-                <div>
-                  <Label className="text-xs">搜索转化率(%)</Label>
-                  <Input type="number" step="0.01" value={createForm.actualSearchConvRate} onChange={e => setCreateForm(f => ({ ...f, actualSearchConvRate: Number(e.target.value) }))} />
-                </div>
-                <div>
-                  <Label className="text-xs">广告转化率(%)</Label>
-                  <Input type="number" step="0.01" value={createForm.actualAdConvRate} onChange={e => setCreateForm(f => ({ ...f, actualAdConvRate: Number(e.target.value) }))} />
-                </div>
+            {/* Target data */}
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">目标数据</p>
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { key: "targetSales", label: "销售额($)" },
+                  { key: "targetSubcategoryRank", label: "小类排名" },
+                  { key: "targetConvRate", label: "转化率(%)" },
+                  { key: "targetOrganicOrders", label: "自然单" },
+                  { key: "targetAdOrders", label: "广告单" },
+                  { key: "targetRatingScore", label: "评分" },
+                  { key: "targetRatingCount", label: "Rating数量" },
+                ].map(({ key, label }) => (
+                  <div key={key} className="space-y-0.5">
+                    <Label className="text-[10px] text-muted-foreground">{label}</Label>
+                    <Input
+                      value={(createForm as any)[key]}
+                      onChange={(e) => setCreateForm(prev => ({ ...prev, [key]: e.target.value }))}
+                      className="text-xs h-7"
+                      type="text"
+                    />
+                  </div>
+                ))}
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowCreate(false)}>取消</Button>
-            <Button disabled={!createForm.period || createReview.isPending} onClick={() => {
-              createReview.mutate({
-                productProfileId: productId,
-                period: createForm.period,
-                periodType: createForm.periodType as "monthly" | "quarterly" | "weekly",
-                baselineSales: String(createForm.baselineSales),
-                baselineProfit: String(createForm.baselineProfit),
-                baselineOrderConvRate: String(createForm.baselineOrderConvRate),
-                baselineSearchConvRate: String(createForm.baselineSearchConvRate),
-                baselineAdConvRate: String(createForm.baselineAdConvRate),
-                targetSales: String(createForm.targetSales),
-                targetProfit: String(createForm.targetProfit),
-              }, {
-                onSuccess: (data) => {
-                  // After create, update with actual data
-                  updateReview.mutate({
-                    reviewId: data.id,
-                    actualSales: String(createForm.actualSales),
-                    actualProfit: String(createForm.actualProfit),
-                    actualOrderConvRate: String(createForm.actualOrderConvRate),
-                    actualSearchConvRate: String(createForm.actualSearchConvRate),
-                    actualAdConvRate: String(createForm.actualAdConvRate),
-                  });
-                },
-              });
-            }}>
-              {createReview.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+            <Button variant="outline" size="sm" onClick={() => setShowCreate(false)}>取消</Button>
+            <Button
+              size="sm"
+              onClick={handleCreate}
+              disabled={!createForm.period || createReview.isPending}
+            >
+              {createReview.isPending && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
               创建复盘
             </Button>
           </DialogFooter>

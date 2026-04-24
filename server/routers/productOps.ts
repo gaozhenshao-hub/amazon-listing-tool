@@ -2036,27 +2036,45 @@ export const productOpsRouter = router({
   // ═══════════════════════════════════════════════════════
 
   listExecutionReviews: protectedProcedure
-    .input(z.object({ productProfileId: z.number() }))
-    .query(async ({ input }) => {
+    .input(z.object({ productProfileId: z.number(), parentAsin: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
       const db = await getDb();
+      const conditions = [eq(executionReviews.userId, ctx.user.id)];
+      if (input.parentAsin) {
+        conditions.push(eq(executionReviews.parentAsin, input.parentAsin));
+      } else {
+        conditions.push(eq(executionReviews.productProfileId, input.productProfileId));
+      }
       return db!.select().from(executionReviews)
-        .where(eq(executionReviews.productProfileId, input.productProfileId))
+        .where(and(...conditions))
         .orderBy(desc(executionReviews.createdAt));
     }),
 
   createExecutionReview: protectedProcedure
     .input(z.object({
       productProfileId: z.number(),
+      parentAsin: z.string().optional(),
       planId: z.number().optional(),
       period: z.string().min(1),
-      periodType: z.enum(["weekly", "monthly", "quarterly"]).optional().default("monthly"),
-      baselineSales: z.string().optional(), baselineProfit: z.string().optional(),
-      baselineProfitRate: z.string().optional(), baselineOrderConvRate: z.string().optional(),
-      baselineSearchConvRate: z.string().optional(), baselineAdConvRate: z.string().optional(),
-      baselineRanking: z.number().optional(), baselineRating: z.string().optional(),
-      targetSales: z.string().optional(), targetProfit: z.string().optional(),
-      targetOrderConvRate: z.string().optional(), targetSearchConvRate: z.string().optional(),
-      targetAdConvRate: z.string().optional(),
+      periodType: z.enum(["weekly", "monthly", "quarterly"]).optional().default("weekly"),
+      // 基线数据
+      baselineSales: z.string().optional(),
+      baselineSubcategoryRank: z.number().optional(),
+      baselineProfitRate: z.string().optional(),
+      baselineConvRate: z.string().optional(),
+      baselineOrganicOrders: z.number().optional(),
+      baselineAdOrders: z.number().optional(),
+      baselineRatingScore: z.string().optional(),
+      baselineRatingCount: z.number().optional(),
+      baselineWeekLabel: z.string().optional(),
+      // 目标数据
+      targetSales: z.string().optional(),
+      targetSubcategoryRank: z.number().optional(),
+      targetConvRate: z.string().optional(),
+      targetOrganicOrders: z.number().optional(),
+      targetAdOrders: z.number().optional(),
+      targetRatingScore: z.string().optional(),
+      targetRatingCount: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
@@ -2069,10 +2087,18 @@ export const productOpsRouter = router({
   updateExecutionReview: protectedProcedure
     .input(z.object({
       reviewId: z.number(),
-      actualSales: z.string().optional(), actualProfit: z.string().optional(),
-      actualProfitRate: z.string().optional(), actualOrderConvRate: z.string().optional(),
-      actualSearchConvRate: z.string().optional(), actualAdConvRate: z.string().optional(),
-      actualRanking: z.number().optional(), actualRating: z.string().optional(),
+      // 实际数据
+      actualSales: z.string().optional(),
+      actualSubcategoryRank: z.number().optional(),
+      actualProfitRate: z.string().optional(),
+      actualConvRate: z.string().optional(),
+      actualOrganicOrders: z.number().optional(),
+      actualAdOrders: z.number().optional(),
+      actualRatingScore: z.string().optional(),
+      actualRatingCount: z.number().optional(),
+      actualWeekLabel: z.string().optional(),
+      actualWeekCount: z.number().optional(),
+      // 文本字段
       achievementSummary: z.string().optional(), keyActions: z.string().optional(),
       lessonsLearned: z.string().optional(), nextPeriodPlan: z.string().optional(),
       strategistFeedback: z.string().optional(),
@@ -2106,10 +2132,108 @@ export const productOpsRouter = router({
       if (!review) throw new TRPCError({ code: "NOT_FOUND" });
       if (review.aiAnalysisLocked) return { analysis: review.aiAnalysis };
 
-      const prompt = `你是一位资深亚马逊运营游戏策划师，请基于以下复盘数据进行分析：\n\n期间：${review.period}\n基线数据：销售额${review.baselineSales}，利润${review.baselineProfit}，订单转化率${review.baselineOrderConvRate}%，搜索转化率${review.baselineSearchConvRate}%，广告转化率${review.baselineAdConvRate}%\n实际数据：销售额${review.actualSales}，利润${review.actualProfit}，订单转化率${review.actualOrderConvRate}%，搜索转化率${review.actualSearchConvRate}%，广告转化率${review.actualAdConvRate}%\n目标数据：销售额${review.targetSales}，利润${review.targetProfit}\n运营总结：${review.achievementSummary || '无'}\n关键动作：${review.keyActions || '无'}\n\n请从以下维度进行分析：\n1. 目标达成率评估（各指标达成百分比）\n2. 关键成功因素和不足之处\n3. 数据异常点分析\n4. 下一阶段优化建议（具体可执行的3-5条）\n5. 游戏策划师评语（激励性+指导性）`;
+      const prompt = `你是一位资深亚马逊运营分析师。请基于以下数据进行运营复盘分析：
 
-      const resp = await invokeLLM({ messages: [{ role: "user", content: prompt }] });
-      const analysis = (resp.choices?.[0]?.message?.content as string) || "AI分析暂不可用";
+【复盘周期】${review.period}
+
+【基线数据（计划起始）】
+销售额: $${review.baselineSales || 0} | 小类排名: #${review.baselineSubcategoryRank || '-'} | 利润率: ${review.baselineProfitRate || 0}%
+转化率: ${review.baselineConvRate || 0}% | 自然单: ${review.baselineOrganicOrders || 0} | 广告单: ${review.baselineAdOrders || 0}
+评分: ${review.baselineRatingScore || '-'} | Rating数量: ${review.baselineRatingCount || 0}
+
+【目标数据】
+销售额: $${review.targetSales || 0} | 小类排名: #${review.targetSubcategoryRank || '-'}
+转化率: ${review.targetConvRate || 0}% | 自然单: ${review.targetOrganicOrders || 0} | 广告单: ${review.targetAdOrders || 0}
+评分: ${review.targetRatingScore || '-'} | Rating数量: ${review.targetRatingCount || 0}
+
+【实际数据（当前）】
+销售额: $${review.actualSales || 0} | 小类排名: #${review.actualSubcategoryRank || '-'} | 利润率: ${review.actualProfitRate || 0}%
+转化率: ${review.actualConvRate || 0}% | 自然单: ${review.actualOrganicOrders || 0} | 广告单: ${review.actualAdOrders || 0}
+评分: ${review.actualRatingScore || '-'} | Rating数量: ${review.actualRatingCount || 0}
+
+【运营总结】${review.achievementSummary || '无'}
+【关键动作】${review.keyActions || '无'}
+
+请输出JSON格式的分析结果：
+{
+  "achievementSummary": "整体达成情况概述（2-3句话）",
+  "keyFindings": [
+    { "metric": "指标名", "status": "达标/未达标/超额", "detail": "具体分析" }
+  ],
+  "problems": [
+    { "issue": "问题描述", "possibleCause": "可能原因", "severity": "high/medium/low" }
+  ],
+  "recommendations": [
+    { "action": "具体建议", "priority": "high/medium/low", "expectedImpact": "预期效果" }
+  ],
+  "nextPeriodFocus": ["下期重点1", "下期重点2"]
+}`;
+
+      const resp = await invokeLLM({
+        messages: [
+          { role: "system", content: "你是一位资深亚马逊运营分析师，擅长数据分析和运营策略。请始终输出有效的JSON格式。" },
+          { role: "user", content: prompt }
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "review_analysis",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                achievementSummary: { type: "string", description: "整体达成情况概述" },
+                keyFindings: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      metric: { type: "string" },
+                      status: { type: "string" },
+                      detail: { type: "string" }
+                    },
+                    required: ["metric", "status", "detail"],
+                    additionalProperties: false
+                  }
+                },
+                problems: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      issue: { type: "string" },
+                      possibleCause: { type: "string" },
+                      severity: { type: "string" }
+                    },
+                    required: ["issue", "possibleCause", "severity"],
+                    additionalProperties: false
+                  }
+                },
+                recommendations: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      action: { type: "string" },
+                      priority: { type: "string" },
+                      expectedImpact: { type: "string" }
+                    },
+                    required: ["action", "priority", "expectedImpact"],
+                    additionalProperties: false
+                  }
+                },
+                nextPeriodFocus: {
+                  type: "array",
+                  items: { type: "string" }
+                }
+              },
+              required: ["achievementSummary", "keyFindings", "problems", "recommendations", "nextPeriodFocus"],
+              additionalProperties: false
+            }
+          }
+        }
+      });
+      const analysis = (resp.choices?.[0]?.message?.content as string) || '{"achievementSummary":"AI分析暂不可用","keyFindings":[],"problems":[],"recommendations":[],"nextPeriodFocus":[]}';
       await db!.update(executionReviews).set({ aiAnalysis: analysis }).where(eq(executionReviews.id, input.reviewId));
       return { analysis };
     }),
@@ -2788,19 +2912,15 @@ export const productOpsRouter = router({
       };
     }),
 
-  // ─── 获取当期数据（从已导入的周度数据中查询） ───
+  // ─── 获取当期数据（从已导入的周度数据中查询，支持多周聚合） ───
   syncPlanCurrentData: protectedProcedure
     .input(z.object({
       planId: z.number(),
-      productId: z.number(),
-      weekIndex: z.number().default(0), // 0=最近一周, 1=前一周, 2=前两周...
+      parentAsin: z.string(),
+      weekCount: z.number().default(1), // 1=最近1周, 2=最近2周, 4=最近4周(约1个月)
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-
-      const [product] = await db!.select().from(productProfiles)
-        .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
-      if (!product) throw new TRPCError({ code: 'NOT_FOUND', message: '产品不存在' });
 
       const [plan] = await db!.select().from(opsPlans).where(eq(opsPlans.id, input.planId));
       if (!plan) throw new TRPCError({ code: 'NOT_FOUND', message: '计划不存在' });
@@ -2809,7 +2929,7 @@ export const productOpsRouter = router({
       const weeklyRows = await db!.select().from(lingxingProductWeekly)
         .where(and(
           eq(lingxingProductWeekly.userId, ctx.user.id),
-          eq(lingxingProductWeekly.parentAsin, product.parentAsin),
+          eq(lingxingProductWeekly.parentAsin, input.parentAsin),
         ))
         .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
@@ -2826,52 +2946,59 @@ export const productOpsRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: '暂无已导入的周度数据，请先在数据导入中心导入数据' });
       }
 
-      const weekIdx = Math.min(input.weekIndex, sortedWeeks.length - 1);
-      const [weekKey, rows] = sortedWeeks[weekIdx];
-      const [weekStart, weekEnd] = weekKey.split('_');
+      // 取最近N周的数据进行聚合
+      const weeksToAggregate = Math.min(input.weekCount, sortedWeeks.length);
+      const selectedWeeks = sortedWeeks.slice(0, weeksToAggregate);
 
       // 格式化周标签
-      const s = new Date(weekStart + 'T00:00:00');
-      const e = new Date(weekEnd + 'T00:00:00');
-      const weekLabel = `${(s.getMonth()+1).toString().padStart(2,'0')}/${s.getDate().toString().padStart(2,'0')}-${(e.getMonth()+1).toString().padStart(2,'0')}/${e.getDate().toString().padStart(2,'0')}`;
+      const lastWeek = selectedWeeks[selectedWeeks.length - 1];
+      const firstWeek = selectedWeeks[0];
+      const [, lastEnd] = firstWeek[0].split('_');
+      const [lastStart] = lastWeek[0].split('_');
+      const s = new Date(lastStart + 'T00:00:00');
+      const e = new Date(lastEnd + 'T00:00:00');
+      const weekLabel = weeksToAggregate === 1
+        ? `${(s.getMonth()+1).toString().padStart(2,'0')}/${s.getDate().toString().padStart(2,'0')}-${(e.getMonth()+1).toString().padStart(2,'0')}/${e.getDate().toString().padStart(2,'0')}`
+        : `${(s.getMonth()+1).toString().padStart(2,'0')}/${s.getDate().toString().padStart(2,'0')}-${(e.getMonth()+1).toString().padStart(2,'0')}/${e.getDate().toString().padStart(2,'0')} (${weeksToAggregate}周)`;
 
-      // 聚合数据（多行可能是同一父ASIN不同子ASIN的数据）
+      // 聚合多周数据
       let totalSales = 0, organicOrders = 0, adOrders = 0;
       let ratingScore = '0', ratingCount = 0;
       let subcategoryRank: string | null = null;
-      let profitMargin = '0', convRate = '0';
+      let profitMarginSum = 0, convRateSum = 0;
+      let profitMarginCount = 0, convRateCount = 0;
 
-      for (const row of rows) {
-        totalSales += Number(row.salesAmount || 0);
-        organicOrders += Number(row.organicOrders || 0);
-        adOrders += Number(row.adOrders || 0);
-        // 使用最后一条有效数据的排名/评分
-        if (row.bsrSub) subcategoryRank = row.bsrSub;
-        if (row.rating) ratingScore = row.rating;
-        if (row.reviewCount) ratingCount = Number(row.reviewCount);
-        if (row.orderProfitMargin) profitMargin = row.orderProfitMargin;
-        if (row.cvr) convRate = row.cvr;
+      for (const [, rows] of selectedWeeks) {
+        for (const row of rows) {
+          totalSales += Number(row.salesAmount || 0);
+          organicOrders += Number(row.organicOrders || 0);
+          adOrders += Number(row.adOrders || 0);
+          // 使用最新一周的排名/评分
+          if (!subcategoryRank && row.bsrSub) subcategoryRank = row.bsrSub;
+          if (ratingScore === '0' && row.rating) ratingScore = row.rating;
+          if (ratingCount === 0 && row.reviewCount) ratingCount = Number(row.reviewCount);
+          if (row.orderProfitMargin) { profitMarginSum += Number(row.orderProfitMargin); profitMarginCount++; }
+          if (row.cvr) { convRateSum += Number(row.cvr); convRateCount++; }
+        }
       }
 
-      // 解析小类排名（可能是 "Commercial Dish Racks：1" 格式）
+      // 利润率和转化率取平均值
+      const avgProfitMargin = profitMarginCount > 0 ? profitMarginSum / profitMarginCount : 0;
+      const avgConvRate = convRateCount > 0 ? convRateSum / convRateCount : 0;
+
+      // 解析小类排名
       let rankNum: number | null = null;
       if (subcategoryRank) {
         const match = subcategoryRank.match(/(\d+)/);
         if (match) rankNum = parseInt(match[1]);
       }
 
-      // 解析利润率和转化率（去掉%号）
-      const parsePct = (v: string) => {
-        const n = parseFloat(v.replace('%', ''));
-        return isNaN(n) ? '0' : String(round2(n));
-      };
-
       const currentData = {
         currentWeekLabel: weekLabel,
         currentSales: String(round2(totalSales)),
         currentSubcategoryRank: rankNum,
-        currentProfitRate: parsePct(profitMargin),
-        currentConvRate: parsePct(convRate),
+        currentProfitRate: String(round2(avgProfitMargin)),
+        currentConvRate: String(round2(avgConvRate)),
         currentOrganicOrders: organicOrders,
         currentAdOrders: adOrders,
         currentRatingScore: ratingScore,
@@ -2905,7 +3032,7 @@ export const productOpsRouter = router({
         };
       });
 
-      return { synced: true, data: currentData, weekLabel, availableWeeks };
+      return { synced: true, data: currentData, weekLabel, availableWeeks, totalWeeks: sortedWeeks.length };
     }),
 
   // ─── 获取可用周列表（不更新数据，仅查询） ───
@@ -2938,155 +3065,256 @@ export const productOpsRouter = router({
       });
     }),
 
-  // ─── 复盘数据自动从领星同步 ───
-  syncReviewFromLingxing: protectedProcedure
+  // ─── 复盘数据从导入数据查询 ───
+  syncReviewFromImportedData: protectedProcedure
     .input(z.object({
       reviewId: z.number(),
-      productId: z.number(),
-      periodType: z.enum(["weekly", "monthly", "quarterly"]).default("monthly"),
-      syncTarget: z.enum(["baseline", "actual", "both"]).default("both"),
+      parentAsin: z.string(),
+      weekCount: z.number().default(1),
+      syncTarget: z.enum(["baseline", "actual", "both"]).default("actual"),
+      planId: z.number().optional(), // 可选：从运营计划自动带入基线和目标
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      const adapter = getLingxingAdapter();
-
-      const [product] = await db!.select().from(productProfiles)
-        .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
-      if (!product) throw new TRPCError({ code: 'NOT_FOUND', message: '产品不存在' });
 
       const [review] = await db!.select().from(executionReviews).where(eq(executionReviews.id, input.reviewId));
       if (!review) throw new TRPCError({ code: 'NOT_FOUND', message: '复盘记录不存在' });
 
-      const now = new Date();
-      const periodDays = input.periodType === 'weekly' ? 7 : input.periodType === 'monthly' ? 30 : 90;
+      const updates: Record<string, any> = { parentAsin: input.parentAsin };
 
-      // Current period = recent N days
-      const currentEnd = now.toISOString().split('T')[0];
-      const currentStart = new Date(now.getTime() - periodDays * 86400000).toISOString().split('T')[0];
-      // Baseline period = the N days before that
-      const baselineEnd = currentStart;
-      const baselineStart = new Date(now.getTime() - 2 * periodDays * 86400000).toISOString().split('T')[0];
+      // 从导入的周度数据中查询实际数据
+      if (input.syncTarget === 'actual' || input.syncTarget === 'both') {
+        const weeklyRows = await db!.select().from(lingxingProductWeekly)
+          .where(and(
+            eq(lingxingProductWeekly.userId, ctx.user.id),
+            eq(lingxingProductWeekly.parentAsin, input.parentAsin),
+          ))
+          .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
-      // Get product variants for filtering (same as syncPlanCurrentData)
-      const variants = await db!.select().from(productVariants)
-        .where(eq(productVariants.productId, input.productId));
-      const childAsins = variants.map(v => v.childAsin).filter(Boolean);
-      const skus = variants.map(v => v.sku).filter(Boolean) as string[];
+        const weekMap = new Map<string, typeof weeklyRows>();
+        for (const row of weeklyRows) {
+          const key = `${row.weekStartDate}_${row.weekEndDate}`;
+          if (!weekMap.has(key)) weekMap.set(key, []);
+          weekMap.get(key)!.push(row);
+        }
+        const sortedWeeks = Array.from(weekMap.entries()).sort((a, b) => b[0].localeCompare(a[0]));
 
-      const fetchPeriodMetrics = async (start: string, end: string) => {
-        let sales = 0, profit = 0, orders = 0, units = 0, adSpend = 0, adSales = 0, sessions = 0;
-        try {
-          // Try ASIN-specific profit API first (use searchField/searchValue per API docs)
-          const res = await adapter.requestWithMockFallback({
-            path: "/bd/profit/report/open/report/asin/list",
-            body: {
-              offset: 0,
-              length: 1000,
-              startDate: start,
-              endDate: end,
-              searchField: "asin",
-              searchValue: childAsins.length > 0 ? childAsins : [product.parentAsin],
-              monthlyQuery: false,
-              orderStatus: "All",
-            },
-          });
-          const rawData = res.data || [];
-          let list = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
-          console.log(`[SyncReview] ASIN API returned ${list.length} items for ${product.parentAsin} (${start} to ${end})`);
+        if (sortedWeeks.length > 0) {
+          const weeksToAggregate = Math.min(input.weekCount, sortedWeeks.length);
+          const selectedWeeks = sortedWeeks.slice(0, weeksToAggregate);
 
-          // Try parent ASIN API if no data
-          if (list.length === 0 && product.parentAsin) {
-            try {
-              const parentRes = await adapter.requestWithMockFallback({
-                path: "/bd/profit/report/open/report/parent/asin/list",
-                body: {
-                  offset: 0,
-                  length: 1000,
-                  startDate: start,
-                  endDate: end,
-                  searchField: "parent_asin",
-                  searchValue: [product.parentAsin],
-                  monthlyQuery: false,
-                  orderStatus: "All",
-                },
-              });
-              const rawParent = parentRes.data || [];
-              list = Array.isArray(rawParent) ? rawParent : (rawParent as any).records || (rawParent as any).list || [];
-              console.log(`[SyncReview] Parent ASIN API returned ${list.length} items`);
-            } catch (e: any) {
-              console.warn(`[SyncReview] Parent ASIN API failed: ${e.message}`);
+          let totalSales = 0, organicOrders = 0, adOrders = 0;
+          let ratingScore = '0', ratingCount = 0;
+          let subcategoryRank: string | null = null;
+          let profitMarginSum = 0, convRateSum = 0;
+          let profitMarginCount = 0, convRateCount = 0;
+
+          for (const [, rows] of selectedWeeks) {
+            for (const row of rows) {
+              totalSales += Number(row.salesAmount || 0);
+              organicOrders += Number(row.organicOrders || 0);
+              adOrders += Number(row.adOrders || 0);
+              if (!subcategoryRank && row.bsrSub) subcategoryRank = row.bsrSub;
+              if (ratingScore === '0' && row.rating) ratingScore = row.rating;
+              if (ratingCount === 0 && row.reviewCount) ratingCount = Number(row.reviewCount);
+              if (row.orderProfitMargin) { profitMarginSum += Number(row.orderProfitMargin); profitMarginCount++; }
+              if (row.cvr) { convRateSum += Number(row.cvr); convRateCount++; }
             }
           }
 
-          // Fallback to MSKU list if still no data
-          if (list.length === 0) {
-            const mskuRes = await adapter.requestWithMockFallback({
-              path: "/bd/profit/report/open/report/msku/list",
-              body: { startDate: start, endDate: end, length: 500, summaryEnabled: true },
-            });
-            const rawMsku = mskuRes.data || [];
-            const allItems = Array.isArray(rawMsku) ? rawMsku : (rawMsku as any).records || (rawMsku as any).list || [];
-            list = allItems.filter((item: any) => {
-              const itemAsin = item.asin || item.parentAsin || '';
-              const itemSku = item.localSku || item.msku || item.seller_sku || '';
-              return childAsins.includes(itemAsin) || itemAsin === product.parentAsin || skus.includes(itemSku);
-            });
-            console.log(`[SyncReview] MSKU fallback: ${allItems.length} total, ${list.length} matched`);
+          const avgProfitMargin = profitMarginCount > 0 ? profitMarginSum / profitMarginCount : 0;
+          const avgConvRate = convRateCount > 0 ? convRateSum / convRateCount : 0;
+
+          let rankNum: number | null = null;
+          if (subcategoryRank) {
+            const match = subcategoryRank.match(/(\d+)/);
+            if (match) rankNum = parseInt(match[1]);
           }
 
-          for (const item of list) {
-            const i = item as Record<string, any>;
-            // Field mapping per Lingxing API docs
-            sales += Number(i.totalSalesAmount || i.totalFbaAndFbmAmount || i.platformIncome || 0);
-            profit += Number(i.grossProfit || 0);
-            orders += Number(i.totalSalesQuantity || 0);
-            units += Number(i.totalFbaAndFbmQuantity || i.totalSalesQuantity || 0);
-            adSpend += Math.abs(Number(i.totalAdsCost || 0));
-            adSales += Number(i.totalAdsSales || i.adSales || 0);
-            sessions += Number(i.sessions || 0);
-          }
-          console.log(`[SyncReview] Aggregated (${start}-${end}): sales=${sales}, profit=${profit}, orders=${orders}, units=${units}`);
-        } catch (err: any) {
-          console.warn(`[SyncReview] Error fetching ${start}-${end}: ${err.message}`);
+          // 生成周标签
+          const lastWeek = selectedWeeks[selectedWeeks.length - 1];
+          const firstWeek = selectedWeeks[0];
+          const [, lastEnd] = firstWeek[0].split('_');
+          const [lastStart] = lastWeek[0].split('_');
+          const s = new Date(lastStart + 'T00:00:00');
+          const e = new Date(lastEnd + 'T00:00:00');
+          const weekLabel = weeksToAggregate === 1
+            ? `${(s.getMonth()+1).toString().padStart(2,'0')}/${s.getDate().toString().padStart(2,'0')}-${(e.getMonth()+1).toString().padStart(2,'0')}/${e.getDate().toString().padStart(2,'0')}`
+            : `${(s.getMonth()+1).toString().padStart(2,'0')}/${s.getDate().toString().padStart(2,'0')}-${(e.getMonth()+1).toString().padStart(2,'0')}/${e.getDate().toString().padStart(2,'0')} (${weeksToAggregate}周)`;
+
+          updates.actualSales = String(round2(totalSales));
+          updates.actualProfitRate = String(round2(avgProfitMargin));
+          updates.actualSubcategoryRank = rankNum;
+          updates.actualConvRate = String(round2(avgConvRate));
+          updates.actualOrganicOrders = organicOrders;
+          updates.actualAdOrders = adOrders;
+          updates.actualRatingScore = ratingScore;
+          updates.actualRatingCount = ratingCount;
+          updates.actualWeekLabel = weekLabel;
+          updates.actualWeekCount = weeksToAggregate;
         }
-        const orderConvRate = sessions > 0 ? round2(orders / sessions * 100) : (orders > 0 ? round2(8 + Math.random() * 4) : 0);
-        const searchConvRate = sessions > 0 ? round2(units / sessions * 100) : (units > 0 ? round2(10 + Math.random() * 5) : 0);
-        const adConvRate = adSpend > 0 ? round2(adSales / adSpend * 100) : 0;
-        return { sales: round2(sales), profit: round2(profit), orderConvRate, searchConvRate, adConvRate };
-      };
-
-      const updates: Record<string, any> = {};
-
-      if (input.syncTarget === 'baseline' || input.syncTarget === 'both') {
-        const baseline = await fetchPeriodMetrics(baselineStart, baselineEnd);
-        updates.baselineSales = String(baseline.sales);
-        updates.baselineProfit = String(baseline.profit);
-        updates.baselineOrderConvRate = String(baseline.orderConvRate);
-        updates.baselineSearchConvRate = String(baseline.searchConvRate);
-        updates.baselineAdConvRate = String(baseline.adConvRate);
       }
 
-      if (input.syncTarget === 'actual' || input.syncTarget === 'both') {
-        const actual = await fetchPeriodMetrics(currentStart, currentEnd);
-        updates.actualSales = String(actual.sales);
-        updates.actualProfit = String(actual.profit);
-        updates.actualOrderConvRate = String(actual.orderConvRate);
-        updates.actualSearchConvRate = String(actual.searchConvRate);
-        updates.actualAdConvRate = String(actual.adConvRate);
+      // 从运营计划自动带入基线和目标数据
+      if (input.planId && (input.syncTarget === 'baseline' || input.syncTarget === 'both')) {
+        const [plan] = await db!.select().from(opsPlans).where(eq(opsPlans.id, input.planId));
+        if (plan) {
+          updates.baselineSales = plan.baselineSales;
+          updates.baselineProfitRate = plan.baselineProfitRate;
+          updates.baselineSubcategoryRank = plan.baselineSubcategoryRank;
+          updates.baselineConvRate = plan.baselineConvRate;
+          updates.baselineOrganicOrders = plan.baselineOrganicOrders;
+          updates.baselineAdOrders = plan.baselineAdOrders;
+          updates.baselineRatingScore = plan.baselineRatingScore;
+          updates.baselineRatingCount = plan.baselineRatingCount;
+          updates.baselineWeekLabel = plan.baselineWeekLabel;
+          // 目标数据
+          updates.targetSales = plan.targetSales;
+          updates.targetSubcategoryRank = plan.targetSubcategoryRank;
+          updates.targetConvRate = plan.targetConvRate;
+          updates.targetOrganicOrders = plan.targetOrganicOrders;
+          updates.targetAdOrders = plan.targetAdOrders;
+          updates.targetRatingScore = plan.targetRatingScore;
+          updates.targetRatingCount = plan.targetRatingCount;
+        }
       }
 
       if (Object.keys(updates).length > 0) {
         await db!.update(executionReviews).set(updates).where(eq(executionReviews.id, input.reviewId));
       }
 
-      return {
-        synced: true,
-        updates,
-        dateRanges: {
-          baseline: { start: baselineStart, end: baselineEnd },
-          actual: { start: currentStart, end: currentEnd },
-        },
-      };
+      return { synced: true, updates };
+    }),
+
+  // ─── AI复盘分析 ───
+  generateReviewAiAnalysis: protectedProcedure
+    .input(z.object({
+      reviewId: z.number(),
+      productTitle: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const { invokeLLM } = await import('./_core/llm');
+
+      const [review] = await db!.select().from(executionReviews).where(eq(executionReviews.id, input.reviewId));
+      if (!review) throw new TRPCError({ code: 'NOT_FOUND', message: '复盘记录不存在' });
+
+      const prompt = `你是一位资深亚马逊运营分析师。请基于以下数据进行运营复盘分析：
+
+【产品信息】${input.productTitle || review.parentAsin || '未知产品'}
+【复盘周期】${review.actualWeekLabel || review.period}
+
+【基线数据（计划起始）】
+销售额: $${review.baselineSales || '--'} | 小类排名: #${review.baselineSubcategoryRank || '--'} | 利润率: ${review.baselineProfitRate || '--'}%
+转化率: ${review.baselineConvRate || '--'}% | 自然单: ${review.baselineOrganicOrders ?? '--'} | 广告单: ${review.baselineAdOrders ?? '--'}
+评分: ${review.baselineRatingScore || '--'} | Rating数量: ${review.baselineRatingCount ?? '--'}
+
+【实际数据（当前）】
+销售额: $${review.actualSales || '--'} | 小类排名: #${review.actualSubcategoryRank || '--'} | 利润率: ${review.actualProfitRate || '--'}%
+转化率: ${review.actualConvRate || '--'}% | 自然单: ${review.actualOrganicOrders ?? '--'} | 广告单: ${review.actualAdOrders ?? '--'}
+评分: ${review.actualRatingScore || '--'} | Rating数量: ${review.actualRatingCount ?? '--'}
+
+【目标数据】
+销售额: $${review.targetSales || '--'} | 小类排名: #${review.targetSubcategoryRank || '--'}
+转化率: ${review.targetConvRate || '--'}% | 自然单: ${review.targetOrganicOrders ?? '--'} | 广告单: ${review.targetAdOrders ?? '--'}
+评分: ${review.targetRatingScore || '--'} | Rating数量: ${review.targetRatingCount ?? '--'}
+
+请输出JSON格式的分析结果：
+{
+  "achievementSummary": "整体达成情况概述（2-3句话）",
+  "keyFindings": [
+    { "metric": "指标名", "status": "达标/未达标/超额", "detail": "具体分析", "changeRate": "变化率%" }
+  ],
+  "problems": [
+    { "issue": "问题描述", "possibleCause": "可能原因", "severity": "high/medium/low" }
+  ],
+  "recommendations": [
+    { "action": "具体建议", "priority": "high/medium/low", "expectedImpact": "预期效果" }
+  ],
+  "nextPeriodFocus": ["下期重点1", "下期重点2"]
+}`;
+
+      try {
+        const response = await invokeLLM({
+          messages: [
+            { role: 'system', content: '你是一位资深亚马逊运营分析师，擅长数据分析和运营策略。请始终输出有效的JSON格式。' },
+            { role: 'user', content: prompt },
+          ],
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'review_analysis',
+              strict: true,
+              schema: {
+                type: 'object',
+                properties: {
+                  achievementSummary: { type: 'string', description: '整体达成情况概述' },
+                  keyFindings: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        metric: { type: 'string' },
+                        status: { type: 'string' },
+                        detail: { type: 'string' },
+                        changeRate: { type: 'string' },
+                      },
+                      required: ['metric', 'status', 'detail', 'changeRate'],
+                      additionalProperties: false,
+                    },
+                  },
+                  problems: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        issue: { type: 'string' },
+                        possibleCause: { type: 'string' },
+                        severity: { type: 'string' },
+                      },
+                      required: ['issue', 'possibleCause', 'severity'],
+                      additionalProperties: false,
+                    },
+                  },
+                  recommendations: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        action: { type: 'string' },
+                        priority: { type: 'string' },
+                        expectedImpact: { type: 'string' },
+                      },
+                      required: ['action', 'priority', 'expectedImpact'],
+                      additionalProperties: false,
+                    },
+                  },
+                  nextPeriodFocus: {
+                    type: 'array',
+                    items: { type: 'string' },
+                  },
+                },
+                required: ['achievementSummary', 'keyFindings', 'problems', 'recommendations', 'nextPeriodFocus'],
+                additionalProperties: false,
+              },
+            },
+          },
+        });
+
+        const aiResult = JSON.parse(response.choices[0].message.content || '{}');
+
+        // 保存AI分析结果
+        await db!.update(executionReviews).set({
+          aiAnalysis: JSON.stringify(aiResult),
+          achievementSummary: aiResult.achievementSummary,
+          updatedAt: new Date(),
+        }).where(eq(executionReviews.id, input.reviewId));
+
+        return { success: true, analysis: aiResult };
+      } catch (err: any) {
+        console.error('[AI Review] Error:', err.message);
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'AI分析失败: ' + err.message });
+      }
     }),
 
   // ============== SellerSprite Import ==============
