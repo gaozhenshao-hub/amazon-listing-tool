@@ -15,6 +15,7 @@ import {
   conversionComparisons, conversionCheckItems, conversionScores, conversionSuggestions, checkItemOverrides,
   executionReviews, teamTasks, users,
   productWeeklyOps, productMonthlySummary, productBasicInfo,
+  lingxingProductWeekly,
 } from "../../drizzle/schema";
 import { eq, desc, and, sql, asc, isNull, inArray } from "drizzle-orm";
 
@@ -2787,15 +2788,15 @@ export const productOpsRouter = router({
       };
     }),
 
-  // ─── 同步当期数据到运营计划 ───
+  // ─── 获取当期数据（从已导入的周度数据中查询） ───
   syncPlanCurrentData: protectedProcedure
     .input(z.object({
       planId: z.number(),
       productId: z.number(),
+      weekIndex: z.number().default(0), // 0=最近一周, 1=前一周, 2=前两周...
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      const adapter = getLingxingAdapter();
 
       const [product] = await db!.select().from(productProfiles)
         .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
@@ -2804,132 +2805,78 @@ export const productOpsRouter = router({
       const [plan] = await db!.select().from(opsPlans).where(eq(opsPlans.id, input.planId));
       if (!plan) throw new TRPCError({ code: 'NOT_FOUND', message: '计划不存在' });
 
-      // 周维度：获取最近一周的数据
-      const now = new Date();
-      const dayOfWeek = now.getDay(); // 0=Sun
-      // 计算上周日-上周六
-      const lastSunday = new Date(now);
-      lastSunday.setDate(now.getDate() - dayOfWeek - 7);
-      const lastSaturday = new Date(lastSunday);
-      lastSaturday.setDate(lastSunday.getDate() + 6);
-      const start = lastSunday.toISOString().split('T')[0];
-      const end = lastSaturday.toISOString().split('T')[0];
-      const weekLabel = `${(lastSunday.getMonth()+1).toString().padStart(2,'0')}/${lastSunday.getDate().toString().padStart(2,'0')}-${(lastSaturday.getMonth()+1).toString().padStart(2,'0')}/${lastSaturday.getDate().toString().padStart(2,'0')}`;
+      // 从已导入的lingxing_product_weekly表中查询该产品的周度数据
+      const weeklyRows = await db!.select().from(lingxingProductWeekly)
+        .where(and(
+          eq(lingxingProductWeekly.userId, ctx.user.id),
+          eq(lingxingProductWeekly.parentAsin, product.parentAsin),
+        ))
+        .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
-      let currentData: Record<string, any> = {
-        currentWeekLabel: weekLabel,
-        currentSales: '0', currentSubcategoryRank: null,
-        currentProfitRate: '0', currentConvRate: '0',
-        currentOrganicOrders: 0, currentAdOrders: 0,
-        currentRatingScore: '0', currentRatingCount: 0,
+      // 按周分组（去重）
+      const weekMap = new Map<string, typeof weeklyRows>();
+      for (const row of weeklyRows) {
+        const key = `${row.weekStartDate}_${row.weekEndDate}`;
+        if (!weekMap.has(key)) weekMap.set(key, []);
+        weekMap.get(key)!.push(row);
+      }
+      const sortedWeeks = Array.from(weekMap.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+
+      if (sortedWeeks.length === 0) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: '暂无已导入的周度数据，请先在数据导入中心导入数据' });
+      }
+
+      const weekIdx = Math.min(input.weekIndex, sortedWeeks.length - 1);
+      const [weekKey, rows] = sortedWeeks[weekIdx];
+      const [weekStart, weekEnd] = weekKey.split('_');
+
+      // 格式化周标签
+      const s = new Date(weekStart + 'T00:00:00');
+      const e = new Date(weekEnd + 'T00:00:00');
+      const weekLabel = `${(s.getMonth()+1).toString().padStart(2,'0')}/${s.getDate().toString().padStart(2,'0')}-${(e.getMonth()+1).toString().padStart(2,'0')}/${e.getDate().toString().padStart(2,'0')}`;
+
+      // 聚合数据（多行可能是同一父ASIN不同子ASIN的数据）
+      let totalSales = 0, organicOrders = 0, adOrders = 0;
+      let ratingScore = '0', ratingCount = 0;
+      let subcategoryRank: string | null = null;
+      let profitMargin = '0', convRate = '0';
+
+      for (const row of rows) {
+        totalSales += Number(row.salesAmount || 0);
+        organicOrders += Number(row.organicOrders || 0);
+        adOrders += Number(row.adOrders || 0);
+        // 使用最后一条有效数据的排名/评分
+        if (row.bsrSub) subcategoryRank = row.bsrSub;
+        if (row.rating) ratingScore = row.rating;
+        if (row.reviewCount) ratingCount = Number(row.reviewCount);
+        if (row.orderProfitMargin) profitMargin = row.orderProfitMargin;
+        if (row.cvr) convRate = row.cvr;
+      }
+
+      // 解析小类排名（可能是 "Commercial Dish Racks：1" 格式）
+      let rankNum: number | null = null;
+      if (subcategoryRank) {
+        const match = subcategoryRank.match(/(\d+)/);
+        if (match) rankNum = parseInt(match[1]);
+      }
+
+      // 解析利润率和转化率（去掉%号）
+      const parsePct = (v: string) => {
+        const n = parseFloat(v.replace('%', ''));
+        return isNaN(n) ? '0' : String(round2(n));
       };
 
-      // Get product variants for filtering
-      const variants = await db!.select().from(productVariants)
-        .where(eq(productVariants.productId, input.productId));
-      const childAsins = variants.map(v => v.childAsin).filter(Boolean);
-      const skus = variants.map(v => v.sku).filter(Boolean) as string[];
-
-      try {
-        // Try ASIN-specific profit API first (use searchField/searchValue per API docs)
-        const res = await adapter.requestWithMockFallback({
-          path: "/bd/profit/report/open/report/asin/list",
-          body: {
-            offset: 0,
-            length: 1000,
-            startDate: start,
-            endDate: end,
-            searchField: "asin",
-            searchValue: childAsins.length > 0 ? childAsins : [product.parentAsin],
-            monthlyQuery: false,
-            orderStatus: "All",
-          },
-        });
-        const rawData = res.data || [];
-        let list = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
-        console.log(`[SyncPlanCurrentData] ASIN API returned ${list.length} items for ${product.parentAsin}`);
-
-        // Try parent ASIN API if no data
-        if (list.length === 0 && product.parentAsin) {
-          try {
-            const parentRes = await adapter.requestWithMockFallback({
-              path: "/bd/profit/report/open/report/parent/asin/list",
-              body: {
-                offset: 0,
-                length: 1000,
-                startDate: start,
-                endDate: end,
-                searchField: "parent_asin",
-                searchValue: [product.parentAsin],
-                monthlyQuery: false,
-                orderStatus: "All",
-              },
-            });
-            const rawParent = parentRes.data || [];
-            list = Array.isArray(rawParent) ? rawParent : (rawParent as any).records || (rawParent as any).list || [];
-            console.log(`[SyncPlanCurrentData] Parent ASIN API returned ${list.length} items`);
-          } catch (e: any) {
-            console.warn(`[SyncPlanCurrentData] Parent ASIN API failed: ${e.message}`);
-          }
-        }
-
-        // Fallback to MSKU list with product filtering
-        if (list.length === 0) {
-          const mskuRes = await adapter.requestWithMockFallback({
-            path: "/bd/profit/report/open/report/msku/list",
-            body: { startDate: start, endDate: end, length: 500, summaryEnabled: true },
-          });
-          const rawMsku = mskuRes.data || [];
-          const allItems = Array.isArray(rawMsku) ? rawMsku : (rawMsku as any).records || (rawMsku as any).list || [];
-          list = allItems.filter((item: any) => {
-            const itemAsin = item.asin || item.parentAsin || '';
-            const itemSku = item.localSku || item.msku || item.seller_sku || '';
-            return childAsins.includes(itemAsin) || itemAsin === product.parentAsin || skus.includes(itemSku);
-          });
-          console.log(`[SyncPlanCurrentData] MSKU fallback: ${allItems.length} total, ${list.length} matched`);
-        }
-        let totalRevenue = 0, totalOrders = 0, totalAdSpend = 0, totalAdSales = 0;
-        let avgPrice = 0, ratingCount = 0, ratingScore = 0;
-        for (const item of list) {
-          const i = item as Record<string, any>;
-          // Revenue: totalSalesAmount = 销售额 (primary per Lingxing API docs)
-          totalRevenue += Number(i.totalSalesAmount || i.totalFbaAndFbmAmount || i.platformIncome || 0);
-          // Orders: totalSalesQuantity = 销量
-          totalOrders += Number(i.totalSalesQuantity || 0);
-          // Ad spend: totalAdsCost = 广告费, Ad sales: totalAdsSales = 广告销售额
-          totalAdSpend += Math.abs(Number(i.totalAdsCost || 0));
-          totalAdSales += Number(i.totalAdsSales || i.adSales || 0);
-          // Average price
-          avgPrice = Number(i.averageSellingPrice || i.avg_price || avgPrice || 0);
-          // Rating data
-          ratingCount = Number(i.reviewCount || i.rating_count || ratingCount || 0);
-          ratingScore = Number(i.averageRating || i.rating_score || ratingScore || 0);
-        }
-        console.log(`[SyncPlanCurrentData] Aggregated: revenue=${totalRevenue}, orders=${totalOrders}, adSpend=${totalAdSpend}, adSales=${totalAdSales}`);
-        // 计算利润率 = (销售额 - 广告费 - 估算成本) / 销售额 * 100
-        const estimatedCost = totalRevenue * 0.35; // 估算成本约35%
-        const profitRate = totalRevenue > 0 ? round2((totalRevenue - totalAdSpend - estimatedCost) / totalRevenue * 100) : 0;
-        // 转化率 = 订单数 / sessions * 100 (使用领星数据中的sessions字段)
-        const sessions = list.reduce((sum: number, item: any) => sum + Number((item as any).sessions || (item as any).totalSessions || 0), 0);
-        const convRate = sessions > 0 ? round2(totalOrders / sessions * 100) : 0;
-        // 广告单 = 广告订单数
-        const adOrders = list.reduce((sum: number, item: any) => sum + Number((item as any).totalAdsOrders || (item as any).adOrders || 0), 0);
-        const organicOrders = Math.max(0, totalOrders - adOrders);
-
-        currentData = {
-          currentWeekLabel: weekLabel,
-          currentSales: String(round2(totalRevenue)),
-          currentSubcategoryRank: null, // BSR需要从其他接口获取
-          currentProfitRate: String(profitRate),
-          currentConvRate: String(convRate),
-          currentOrganicOrders: organicOrders,
-          currentAdOrders: adOrders,
-          currentRatingScore: String(round2(ratingScore)),
-          currentRatingCount: ratingCount,
-        };
-      } catch (err: any) {
-        console.warn(`[SyncPlanCurrentData] Error: ${err.message}`);
-      }
+      const currentData = {
+        currentWeekLabel: weekLabel,
+        currentSales: String(round2(totalSales)),
+        currentSubcategoryRank: rankNum,
+        currentProfitRate: parsePct(profitMargin),
+        currentConvRate: parsePct(convRate),
+        currentOrganicOrders: organicOrders,
+        currentAdOrders: adOrders,
+        currentRatingScore: ratingScore,
+        currentRatingCount: ratingCount,
+      };
 
       // Update the plan with current data
       await db!.update(opsPlans).set({
@@ -2945,7 +2892,50 @@ export const productOpsRouter = router({
         updatedAt: new Date(),
       }).where(eq(opsPlans.id, input.planId));
 
-      return { synced: true, data: currentData, weekLabel, dateRange: { start, end } };
+      // 返回可用周列表供前端下拉选择
+      const availableWeeks = sortedWeeks.map(([key], idx) => {
+        const [ws, we] = key.split('_');
+        const sd = new Date(ws + 'T00:00:00');
+        const ed = new Date(we + 'T00:00:00');
+        return {
+          index: idx,
+          label: `${(sd.getMonth()+1).toString().padStart(2,'0')}/${sd.getDate().toString().padStart(2,'0')}-${(ed.getMonth()+1).toString().padStart(2,'0')}/${ed.getDate().toString().padStart(2,'0')}`,
+          weekStart: ws,
+          weekEnd: we,
+        };
+      });
+
+      return { synced: true, data: currentData, weekLabel, availableWeeks };
+    }),
+
+  // ─── 获取可用周列表（不更新数据，仅查询） ───
+  getAvailableWeeks: protectedProcedure
+    .input(z.object({
+      parentAsin: z.string(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      const weeklyRows = await db!.selectDistinct({
+        weekStartDate: lingxingProductWeekly.weekStartDate,
+        weekEndDate: lingxingProductWeekly.weekEndDate,
+      })
+        .from(lingxingProductWeekly)
+        .where(and(
+          eq(lingxingProductWeekly.userId, ctx.user.id),
+          eq(lingxingProductWeekly.parentAsin, input.parentAsin),
+        ))
+        .orderBy(desc(lingxingProductWeekly.weekStartDate));
+
+      return weeklyRows.map((w, idx) => {
+        const sd = new Date(w.weekStartDate + 'T00:00:00');
+        const ed = new Date(w.weekEndDate + 'T00:00:00');
+        return {
+          index: idx,
+          label: `${(sd.getMonth()+1).toString().padStart(2,'0')}/${sd.getDate().toString().padStart(2,'0')}-${(ed.getMonth()+1).toString().padStart(2,'0')}/${ed.getDate().toString().padStart(2,'0')}`,
+          weekStart: w.weekStartDate,
+          weekEnd: w.weekEndDate,
+        };
+      });
     }),
 
   // ─── 复盘数据自动从领星同步 ───

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -86,16 +86,27 @@ export default function OpsProductPlan({ productId, parentAsin, productTitle }: 
   const [showEditBaseline, setShowEditBaseline] = useState(false);
   const [showEditTargets, setShowEditTargets] = useState(false);
 
-  // Sync current data from Lingxing (now weekly)
+  // Week period selector for current data (from imported data)
+  const [selectedWeekIndex, setSelectedWeekIndex] = useState(0);
+  const { data: availableWeeks } = trpc.productOps.getAvailableWeeks.useQuery(
+    { parentAsin }, { enabled: !!parentAsin }
+  );
   const syncCurrentData = trpc.productOps.syncPlanCurrentData.useMutation({
     onSuccess: (data) => {
       refetchPlans();
-      toast.success(`当期数据已同步 (${data.weekLabel})`);
+      toast.success(`当期数据已加载 (${data.weekLabel})`);
     },
     onError: (err) => {
-      toast.error(`同步失败: ${err.message}`);
+      toast.error(`加载失败: ${err.message}`);
     },
   });
+  // Auto-load current data when week selection changes
+  useEffect(() => {
+    if (activePlanId && productId && availableWeeks && availableWeeks.length > 0) {
+      syncCurrentData.mutate({ planId: activePlanId, productId, weekIndex: selectedWeekIndex });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWeekIndex, activePlanId]);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     baseline: true, current: true, targets: true, actions: true, summaries: false,
   });
@@ -296,17 +307,26 @@ export default function OpsProductPlan({ productId, parentAsin, productTitle }: 
                     )}
                   </CardTitle>
                   <div className="flex items-center gap-2">
-                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
-                      disabled={syncCurrentData.isPending}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (activePlanId) {
-                          syncCurrentData.mutate({ planId: activePlanId, productId });
-                        }
-                      }}>
-                      {syncCurrentData.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <TrendingUp className="h-3 w-3" />}
-                      同步领星数据
-                    </Button>
+                    {availableWeeks && availableWeeks.length > 0 ? (
+                      <Select
+                        value={String(selectedWeekIndex)}
+                        onValueChange={(v) => { setSelectedWeekIndex(Number(v)); }}
+                      >
+                        <SelectTrigger className="h-7 w-[160px] text-xs" onClick={(e) => e.stopPropagation()}>
+                          {syncCurrentData.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                          <SelectValue placeholder="选择周期" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableWeeks.map((w) => (
+                            <SelectItem key={w.index} value={String(w.index)}>
+                              {w.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Badge variant="outline" className="text-xs text-muted-foreground">暂无导入数据</Badge>
+                    )}
                     <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); setShowEditBaseline(true); loadBaselineForm(); }}>
                       <Edit2 className="h-3 w-3" />
                     </Button>
