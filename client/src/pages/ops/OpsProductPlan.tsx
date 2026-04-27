@@ -600,6 +600,10 @@ export default function OpsProductPlan({ productId, parentAsin, productTitle }: 
           <DialogHeader><DialogTitle>新建运营计划</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div>
+              <Label>父ASIN *</Label>
+              <Input value={parentAsin} disabled className="bg-muted font-mono" />
+            </div>
+            <div>
               <Label>计划名称 *</Label>
               <Input value={planForm.planName} onChange={e => setPlanForm(f => ({ ...f, planName: e.target.value }))} placeholder="如：Q1运营提升计划" />
             </div>

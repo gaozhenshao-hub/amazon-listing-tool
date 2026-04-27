@@ -13,6 +13,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -147,15 +148,10 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
   const [createForm, setCreateForm] = useState({
     period: "",
     periodType: "weekly" as string,
-    baselineWeekStart: "",
-    baselineWeekEnd: "",
-    targetWeekStart: "",
-    targetWeekEnd: "",
   });
-  const [targetPreview, setTargetPreview] = useState<Record<string, any> | null>(null);
-  const [loadingTarget, setLoadingTarget] = useState(false);
-  const [baselinePreview, setBaselinePreview] = useState<Record<string, any> | null>(null);
-  const [loadingBaseline, setLoadingBaseline] = useState(false);
+  // Multi-select weeks for baseline and target
+  const [selectedBaselineWeeks, setSelectedBaselineWeeks] = useState<{ weekStart: string; weekEnd: string; label: string }[]>([]);
+  const [selectedTargetWeeks, setSelectedTargetWeeks] = useState<{ weekStart: string; weekEnd: string; label: string }[]>([]);
 
   // ─── Auto-select first review ───
   useEffect(() => {
@@ -164,43 +160,23 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
     }
   }, [reviews, selectedReviewId]);
 
-  // ─── Handle target week selection ───
-  const handleTargetWeekSelect = useCallback(async (weekValue: string) => {
-    if (!weekValue || weekValue === "none") {
-      setCreateForm(prev => ({ ...prev, targetWeekStart: "", targetWeekEnd: "" }));
-      setTargetPreview(null);
-      return;
-    }
-    const [weekStart, weekEnd] = weekValue.split("_");
-    setCreateForm(prev => ({ ...prev, targetWeekStart: weekStart, targetWeekEnd: weekEnd }));
-    setLoadingTarget(true);
-    const week = availableWeeks?.find((w: any) => w.weekStart === weekStart && w.weekEnd === weekEnd);
-    if (week) {
-      setTargetPreview({ weekLabel: week.label, weekStart, weekEnd, status: "selected" });
-    }
-    setLoadingTarget(false);
-  }, [availableWeeks]);
+  // ─── Handle multi-select week toggle for baseline ───
+  const toggleBaselineWeek = useCallback((weekStart: string, weekEnd: string, label: string) => {
+    setSelectedBaselineWeeks(prev => {
+      const exists = prev.find(w => w.weekStart === weekStart && w.weekEnd === weekEnd);
+      if (exists) return prev.filter(w => !(w.weekStart === weekStart && w.weekEnd === weekEnd));
+      return [...prev, { weekStart, weekEnd, label }];
+    });
+  }, []);
 
-  // ─── Handle baseline week selection ───
-  const handleBaselineWeekSelect = useCallback(async (weekValue: string) => {
-    if (!weekValue || weekValue === "none") {
-      setCreateForm(prev => ({ ...prev, baselineWeekStart: "", baselineWeekEnd: "" }));
-      setBaselinePreview(null);
-      return;
-    }
-    const [weekStart, weekEnd] = weekValue.split("_");
-    setCreateForm(prev => ({ ...prev, baselineWeekStart: weekStart, baselineWeekEnd: weekEnd }));
-    setLoadingBaseline(true);
-
-    // Find the matching weekly data from availableWeeks to show preview
-    // We'll use syncReviewFromImportedData logic but just for preview
-    // For now, show the selected week label as preview
-    const week = availableWeeks?.find((w: any) => w.weekStart === weekStart && w.weekEnd === weekEnd);
-    if (week) {
-      setBaselinePreview({ weekLabel: week.label, weekStart, weekEnd, status: "selected" });
-    }
-    setLoadingBaseline(false);
-  }, [availableWeeks]);
+  // ─── Handle multi-select week toggle for target ───
+  const toggleTargetWeek = useCallback((weekStart: string, weekEnd: string, label: string) => {
+    setSelectedTargetWeeks(prev => {
+      const exists = prev.find(w => w.weekStart === weekStart && w.weekEnd === weekEnd);
+      if (exists) return prev.filter(w => !(w.weekStart === weekStart && w.weekEnd === weekEnd));
+      return [...prev, { weekStart, weekEnd, label }];
+    });
+  }, []);
 
   // ─── Computed: achievement rates ───
   const comparisonData = useMemo(() => {
@@ -275,12 +251,10 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
       parentAsin,
       period: createForm.period,
       periodType: createForm.periodType as any,
-      // 基线数据：通过选择周度自动拓取
-      baselineWeekStart: createForm.baselineWeekStart || undefined,
-      baselineWeekEnd: createForm.baselineWeekEnd || undefined,
-      // 目标数据：通过选择周度自动拓取
-      targetWeekStart: createForm.targetWeekStart || undefined,
-      targetWeekEnd: createForm.targetWeekEnd || undefined,
+      // 基线数据：多选周度自动拓取
+      baselineWeeks: selectedBaselineWeeks.length > 0 ? selectedBaselineWeeks.map(w => ({ weekStart: w.weekStart, weekEnd: w.weekEnd })) : undefined,
+      // 目标数据：多选周度自动拓取
+      targetWeeks: selectedTargetWeeks.length > 0 ? selectedTargetWeeks.map(w => ({ weekStart: w.weekStart, weekEnd: w.weekEnd })) : undefined,
     });
   };
 
@@ -842,6 +816,12 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
             <DialogTitle className="text-base">新建执行复盘</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Parent ASIN */}
+            <div className="space-y-1">
+              <Label className="text-xs">父ASIN *</Label>
+              <Input value={parentAsin} disabled className="bg-muted font-mono text-xs h-8" />
+            </div>
+
             {/* Period */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -866,77 +846,69 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
               </div>
             </div>
 
-
-
-            {/* Baseline data: auto-fetch by selecting week */}
+            {/* Baseline data: multi-select weeks */}
             <div>
-              <p className="text-xs font-medium text-muted-foreground mb-2">基线数据（选择周度自动拓取）</p>
-              <Select
-                value={createForm.baselineWeekStart ? `${createForm.baselineWeekStart}_${createForm.baselineWeekEnd}` : "none"}
-                onValueChange={handleBaselineWeekSelect}
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="选择基线周度..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">不设置基线</SelectItem>
-                  {availableWeeks?.map((w: any, idx: number) => (
-                    <SelectItem key={idx} value={`${w.weekStart}_${w.weekEnd}`}>
-                      {w.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {loadingBaseline && (
-                <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" /> 加载基线数据中...
-                </div>
-              )}
-              {baselinePreview && (
+              <p className="text-xs font-medium text-muted-foreground mb-2">基线数据（可多选周度，自动聚合拓取）</p>
+              <div className="border rounded-md p-2 max-h-40 overflow-y-auto space-y-1">
+                {(!availableWeeks || availableWeeks.length === 0) ? (
+                  <p className="text-xs text-muted-foreground py-2 text-center">暂无可用周度数据，请先导入周度数据</p>
+                ) : (
+                  availableWeeks.map((w: any, idx: number) => {
+                    const isSelected = selectedBaselineWeeks.some(s => s.weekStart === w.weekStart && s.weekEnd === w.weekEnd);
+                    return (
+                      <label key={`bl-${idx}`} className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-accent/50 transition-colors ${isSelected ? 'bg-blue-50 dark:bg-blue-950/30' : ''}`}>
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleBaselineWeek(w.weekStart, w.weekEnd, w.label)}
+                        />
+                        <span className="text-xs">{w.label}</span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+              {selectedBaselineWeeks.length > 0 && (
                 <div className="mt-2 p-2 rounded-lg bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-800/50">
                   <p className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1">
                     <CheckCircle2 className="h-3 w-3" />
-                    已选择基线周度：{baselinePreview.weekLabel}
+                    已选择 {selectedBaselineWeeks.length} 个基线周度：{selectedBaselineWeeks.map(w => w.label).join(', ')}
                   </p>
                   <p className="text-[10px] text-muted-foreground mt-0.5">
-                    创建复盘时将自动从导入的周度数据中拓取销售额、排名、利润率、转化率等基线指标
+                    创建复盘时将自动从导入的周度数据中聚合拓取销售额、排名、利润率、转化率等基线指标
                   </p>
                 </div>
               )}
             </div>
 
-            {/* Target data: auto-fetch by selecting week */}
+            {/* Target data: multi-select weeks */}
             <div>
-              <p className="text-xs font-medium text-muted-foreground mb-2">目标数据（选择周度自动拓取）</p>
-              <Select
-                value={createForm.targetWeekStart ? `${createForm.targetWeekStart}_${createForm.targetWeekEnd}` : "none"}
-                onValueChange={handleTargetWeekSelect}
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="选择目标周度..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">不设置目标</SelectItem>
-                  {availableWeeks?.map((w: any, idx: number) => (
-                    <SelectItem key={`t-${idx}`} value={`${w.weekStart}_${w.weekEnd}`}>
-                      {w.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {loadingTarget && (
-                <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" /> 加载目标数据中...
-                </div>
-              )}
-              {targetPreview && (
+              <p className="text-xs font-medium text-muted-foreground mb-2">目标数据（可多选周度，自动聚合拓取）</p>
+              <div className="border rounded-md p-2 max-h-40 overflow-y-auto space-y-1">
+                {(!availableWeeks || availableWeeks.length === 0) ? (
+                  <p className="text-xs text-muted-foreground py-2 text-center">暂无可用周度数据，请先导入周度数据</p>
+                ) : (
+                  availableWeeks.map((w: any, idx: number) => {
+                    const isSelected = selectedTargetWeeks.some(s => s.weekStart === w.weekStart && s.weekEnd === w.weekEnd);
+                    return (
+                      <label key={`tg-${idx}`} className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-accent/50 transition-colors ${isSelected ? 'bg-green-50 dark:bg-green-950/30' : ''}`}>
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleTargetWeek(w.weekStart, w.weekEnd, w.label)}
+                        />
+                        <span className="text-xs">{w.label}</span>
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+              {selectedTargetWeeks.length > 0 && (
                 <div className="mt-2 p-2 rounded-lg bg-green-50/50 dark:bg-green-950/20 border border-green-200/50 dark:border-green-800/50">
                   <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
                     <CheckCircle2 className="h-3 w-3" />
-                    已选择目标周度：{targetPreview.weekLabel}
+                    已选择 {selectedTargetWeeks.length} 个目标周度：{selectedTargetWeeks.map(w => w.label).join(', ')}
                   </p>
                   <p className="text-[10px] text-muted-foreground mt-0.5">
-                    创建复盘时将自动从导入的周度数据中拓取销售额、排名、利润率、转化率等目标指标
+                    创建复盘时将自动从导入的周度数据中聚合拓取销售额、排名、利润率、转化率等目标指标
                   </p>
                 </div>
               )}

@@ -3707,3 +3707,14 @@
 - [x] 前端：删除确认对话框+删除操作+数据刷新
 - [x] 单元测试验证导入历史和级联删除逻辑（8个测试全部通过）
 - [x] 构建验证并保存checkpoint（pnpm build成功）
+### Bug修复：密码保存失败（密码已符合要求但仍提示修改）
+- [x] 排查密码验证逻辑
+- [x] 直接通过数据库重置超管密码并设置mustChangePassword=0
+### 新建计划/复盘增加父ASIN字段 + 复盘基线数据多选周度
+- [x] 后端：createPlan增加parentAsin必填字段
+- [x] 后端：createReview增加parentAsin必填字段
+- [x] 后端：复盘基线数据和目标数据支持多选周度（baselineWeeks/targetWeeks数组）
+- [x] 前端：新建计划表单增加父ASIN显示字段（自动填充当前产品父ASIN，置灰不可编辑）
+- [x] 前端：新建复盘表单增加父ASIN显示字段（自动填充当前产品父ASIN，置灰不可编辑）
+- [x] 前端：复盘基线数据和目标数据从单选Select改为Checkbox多选列表
+- [x] 构建验证通过（pnpm build成功）

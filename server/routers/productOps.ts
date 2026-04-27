@@ -1182,7 +1182,7 @@ export const productOpsRouter = router({
 
   createPlan: protectedProcedure.input(z.object({
     productProfileId: z.number(),
-    parentAsin: z.string().optional(),
+    parentAsin: z.string().min(1, "父ASIN不能为空"),
     planName: z.string().min(1),
     planPeriod: z.string().optional(),
     projectManager: z.string().optional(),
@@ -2091,41 +2091,59 @@ export const productOpsRouter = router({
   createExecutionReview: protectedProcedure
     .input(z.object({
       productProfileId: z.number(),
-      parentAsin: z.string().optional(),
+      parentAsin: z.string().min(1, "父ASIN不能为空"),
       planId: z.number().optional(),
       period: z.string().min(1),
       periodType: z.enum(["weekly", "monthly", "quarterly"]).optional().default("weekly"),
-      // 基线数据：通过选择周度自动拓取
+      // 基线数据：支持多选周度自动拓取
+      baselineWeeks: z.array(z.object({
+        weekStart: z.string(),
+        weekEnd: z.string(),
+      })).optional(),
+      // 目标数据：支持多选周度自动拓取
+      targetWeeks: z.array(z.object({
+        weekStart: z.string(),
+        weekEnd: z.string(),
+      })).optional(),
+      // 向后兼容旧字段
       baselineWeekStart: z.string().optional(),
       baselineWeekEnd: z.string().optional(),
-      // 目标数据：通过选择周度自动拓取
       targetWeekStart: z.string().optional(),
       targetWeekEnd: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      const { baselineWeekStart, baselineWeekEnd, targetWeekStart, targetWeekEnd, ...rest } = input;
+      const { baselineWeeks, targetWeeks, baselineWeekStart, baselineWeekEnd, targetWeekStart, targetWeekEnd, ...rest } = input;
 
-      // Auto-fetch baseline data from imported weekly data
+      // Resolve baseline weeks: prefer new multi-select array, fallback to old single pair
+      const effectiveBaselineWeeks = (baselineWeeks && baselineWeeks.length > 0)
+        ? baselineWeeks
+        : (baselineWeekStart && baselineWeekEnd ? [{ weekStart: baselineWeekStart, weekEnd: baselineWeekEnd }] : []);
+
+      // Auto-fetch baseline data from imported weekly data (multi-week aggregation)
       let baselineData: Record<string, any> = {};
-      if (baselineWeekStart && baselineWeekEnd && input.parentAsin) {
+      if (effectiveBaselineWeeks.length > 0 && input.parentAsin) {
         const effectiveUserId = await resolveDataUserId(db!, ctx.user);
-        const weeklyRows = await db!.select().from(lingxingProductWeekly)
-          .where(and(
-            eq(lingxingProductWeekly.userId, effectiveUserId),
-            eq(lingxingProductWeekly.parentAsin, input.parentAsin),
-            eq(lingxingProductWeekly.weekStartDate, baselineWeekStart),
-            eq(lingxingProductWeekly.weekEndDate, baselineWeekEnd),
-          ));
+        let allRows: any[] = [];
+        for (const wk of effectiveBaselineWeeks) {
+          const weeklyRows = await db!.select().from(lingxingProductWeekly)
+            .where(and(
+              eq(lingxingProductWeekly.userId, effectiveUserId),
+              eq(lingxingProductWeekly.parentAsin, input.parentAsin),
+              eq(lingxingProductWeekly.weekStartDate, wk.weekStart),
+              eq(lingxingProductWeekly.weekEndDate, wk.weekEnd),
+            ));
+          allRows.push(...weeklyRows);
+        }
 
-        if (weeklyRows.length > 0) {
+        if (allRows.length > 0) {
           let totalSales = 0, organicOrders = 0, adOrders = 0;
           let ratingScore = '0', ratingCount = 0;
           let subcategoryRank: number | null = null;
           let profitMarginSum = 0, convRateSum = 0;
           let profitMarginCount = 0, convRateCount = 0;
 
-          for (const row of weeklyRows) {
+          for (const row of allRows) {
             totalSales += Number(row.salesAmount || 0);
             organicOrders += Number(row.organicOrders || 0);
             adOrders += Number(row.adOrders || 0);
@@ -2139,9 +2157,13 @@ export const productOpsRouter = router({
             if (row.cvr) { convRateSum += Number(row.cvr); convRateCount++; }
           }
 
-          const s = new Date(baselineWeekStart + 'T00:00:00');
-          const e = new Date(baselineWeekEnd + 'T00:00:00');
-          const weekLabel = `${(s.getMonth()+1).toString().padStart(2,'0')}/${s.getDate().toString().padStart(2,'0')}-${(e.getMonth()+1).toString().padStart(2,'0')}/${e.getDate().toString().padStart(2,'0')}`;
+          // Build week label from all selected weeks
+          const weekLabels = effectiveBaselineWeeks.map(wk => {
+            const s = new Date(wk.weekStart + 'T00:00:00');
+            const e = new Date(wk.weekEnd + 'T00:00:00');
+            return `${(s.getMonth()+1).toString().padStart(2,'0')}/${s.getDate().toString().padStart(2,'0')}-${(e.getMonth()+1).toString().padStart(2,'0')}/${e.getDate().toString().padStart(2,'0')}`;
+          });
+          const weekLabel = weekLabels.join(', ');
 
           baselineData = {
             baselineSales: String(round2(totalSales)),
@@ -2157,25 +2179,34 @@ export const productOpsRouter = router({
         }
       }
 
-      // Auto-fetch target data from imported weekly data
-      let targetData: Record<string, any> = {};
-      if (targetWeekStart && targetWeekEnd && input.parentAsin) {
-        const effectiveUserId2 = await resolveDataUserId(db!, ctx.user);
-        const targetRows = await db!.select().from(lingxingProductWeekly)
-          .where(and(
-            eq(lingxingProductWeekly.userId, effectiveUserId2),
-            eq(lingxingProductWeekly.parentAsin, input.parentAsin),
-            eq(lingxingProductWeekly.weekStartDate, targetWeekStart),
-            eq(lingxingProductWeekly.weekEndDate, targetWeekEnd),
-          ));
+      // Resolve target weeks: prefer new multi-select array, fallback to old single pair
+      const effectiveTargetWeeks = (targetWeeks && targetWeeks.length > 0)
+        ? targetWeeks
+        : (targetWeekStart && targetWeekEnd ? [{ weekStart: targetWeekStart, weekEnd: targetWeekEnd }] : []);
 
-        if (targetRows.length > 0) {
+      // Auto-fetch target data from imported weekly data (multi-week aggregation)
+      let targetData: Record<string, any> = {};
+      if (effectiveTargetWeeks.length > 0 && input.parentAsin) {
+        const effectiveUserId2 = await resolveDataUserId(db!, ctx.user);
+        let allTargetRows: any[] = [];
+        for (const wk of effectiveTargetWeeks) {
+          const targetRows = await db!.select().from(lingxingProductWeekly)
+            .where(and(
+              eq(lingxingProductWeekly.userId, effectiveUserId2),
+              eq(lingxingProductWeekly.parentAsin, input.parentAsin),
+              eq(lingxingProductWeekly.weekStartDate, wk.weekStart),
+              eq(lingxingProductWeekly.weekEndDate, wk.weekEnd),
+            ));
+          allTargetRows.push(...targetRows);
+        }
+
+        if (allTargetRows.length > 0) {
           let tSales = 0, tOrgOrders = 0, tAdOrders = 0;
           let tRatingScore = '0', tRatingCount = 0;
           let tSubcategoryRank: number | null = null;
           let tConvRateSum = 0, tConvRateCount = 0;
 
-          for (const row of targetRows) {
+          for (const row of allTargetRows) {
             tSales += Number(row.salesAmount || 0);
             tOrgOrders += Number(row.organicOrders || 0);
             tAdOrders += Number(row.adOrders || 0);
@@ -2188,9 +2219,12 @@ export const productOpsRouter = router({
             if (row.cvr) { tConvRateSum += Number(row.cvr); tConvRateCount++; }
           }
 
-          const ts = new Date(targetWeekStart + 'T00:00:00');
-          const te = new Date(targetWeekEnd + 'T00:00:00');
-          const targetWeekLabel = `${(ts.getMonth()+1).toString().padStart(2,'0')}/${ts.getDate().toString().padStart(2,'0')}-${(te.getMonth()+1).toString().padStart(2,'0')}/${te.getDate().toString().padStart(2,'0')}`;
+          const targetWeekLabels = effectiveTargetWeeks.map(wk => {
+            const ts = new Date(wk.weekStart + 'T00:00:00');
+            const te = new Date(wk.weekEnd + 'T00:00:00');
+            return `${(ts.getMonth()+1).toString().padStart(2,'0')}/${ts.getDate().toString().padStart(2,'0')}-${(te.getMonth()+1).toString().padStart(2,'0')}/${te.getDate().toString().padStart(2,'0')}`;
+          });
+          const targetWeekLabel = targetWeekLabels.join(', ');
 
           targetData = {
             targetSales: String(round2(tSales)),
