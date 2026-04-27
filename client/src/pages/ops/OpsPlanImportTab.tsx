@@ -137,9 +137,8 @@ export default function OpsPlanImportTab() {
   };
 
   // ─── Preview columns ───
-  const previewColumns = ["父ASIN", "产品标题", "运营", "计划名称", "计划周期",
-    "基线-销售额", "基线-小类排名", "基线-利润率%", "基线-转化率%",
-    "目标-销售额", "目标-小类排名", "目标-利润率%", "目标-转化率%"];
+  const previewColumns = ["父ASIN", "产品标题", "店铺", "运营", "计划名称", "计划周期",
+    "项目经理", "游戏策划师"];
 
   return (
     <div className="space-y-4">
@@ -161,7 +160,7 @@ export default function OpsPlanImportTab() {
             <div className="flex-1">
               <h4 className="font-medium text-blue-700 dark:text-blue-300 mb-1">下载运营计划模板</h4>
               <p className="text-sm text-blue-600/80 dark:text-blue-400/80 mb-3">
-                模板已自动填充您负责的产品父ASIN和产品标题，您只需填写计划名称和基线/目标数据
+                模板已自动填充您负责的产品父ASIN和产品标题，您只需填写计划名称和计划周期（基线/目标数据在系统中自动加载）
               </p>
               <Button onClick={handleDownloadTemplate} disabled={downloading} variant="outline" className="gap-2">
                 {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
@@ -180,8 +179,7 @@ export default function OpsPlanImportTab() {
                 <ul className="list-disc list-inside ml-2 space-y-0.5">
                   <li><strong>计划名称</strong>（必填）：如"B0DJSQ6WC6 Q2运营计划"</li>
                   <li><strong>计划周期</strong>：如"2026Q2"或"2026W16-W20"</li>
-                  <li><strong>基线数据</strong>：当前产品的各项指标基准值</li>
-                  <li><strong>目标数据</strong>：期望达到的各项指标目标值</li>
+                  <li><strong>基线/目标数据</strong>：在系统中创建计划时选择对应周度自动加载，无需在模板中填写</li>
                 </ul>
               </div>
             </div>

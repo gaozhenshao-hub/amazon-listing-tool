@@ -2062,18 +2062,13 @@ export const productOpsRouter = router({
       // 基线数据：通过选择周度自动拓取
       baselineWeekStart: z.string().optional(),
       baselineWeekEnd: z.string().optional(),
-      // 目标数据
-      targetSales: z.string().optional(),
-      targetSubcategoryRank: z.number().optional(),
-      targetConvRate: z.string().optional(),
-      targetOrganicOrders: z.number().optional(),
-      targetAdOrders: z.number().optional(),
-      targetRatingScore: z.string().optional(),
-      targetRatingCount: z.number().optional(),
+      // 目标数据：通过选择周度自动拓取
+      targetWeekStart: z.string().optional(),
+      targetWeekEnd: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      const { baselineWeekStart, baselineWeekEnd, ...rest } = input;
+      const { baselineWeekStart, baselineWeekEnd, targetWeekStart, targetWeekEnd, ...rest } = input;
 
       // Auto-fetch baseline data from imported weekly data
       let baselineData: Record<string, any> = {};
@@ -2126,10 +2121,58 @@ export const productOpsRouter = router({
         }
       }
 
+      // Auto-fetch target data from imported weekly data
+      let targetData: Record<string, any> = {};
+      if (targetWeekStart && targetWeekEnd && input.parentAsin) {
+        const effectiveUserId2 = await resolveDataUserId(db!, ctx.user);
+        const targetRows = await db!.select().from(lingxingProductWeekly)
+          .where(and(
+            eq(lingxingProductWeekly.userId, effectiveUserId2),
+            eq(lingxingProductWeekly.parentAsin, input.parentAsin),
+            eq(lingxingProductWeekly.weekStartDate, targetWeekStart),
+            eq(lingxingProductWeekly.weekEndDate, targetWeekEnd),
+          ));
+
+        if (targetRows.length > 0) {
+          let tSales = 0, tOrgOrders = 0, tAdOrders = 0;
+          let tRatingScore = '0', tRatingCount = 0;
+          let tSubcategoryRank: number | null = null;
+          let tConvRateSum = 0, tConvRateCount = 0;
+
+          for (const row of targetRows) {
+            tSales += Number(row.salesAmount || 0);
+            tOrgOrders += Number(row.organicOrders || 0);
+            tAdOrders += Number(row.adOrders || 0);
+            if (!tSubcategoryRank && row.bsrSub) {
+              const match = row.bsrSub.match(/(\d+)/);
+              if (match) tSubcategoryRank = parseInt(match[1]);
+            }
+            if (tRatingScore === '0' && row.rating) tRatingScore = row.rating;
+            if (tRatingCount === 0 && row.reviewCount) tRatingCount = Number(row.reviewCount);
+            if (row.cvr) { tConvRateSum += Number(row.cvr); tConvRateCount++; }
+          }
+
+          const ts = new Date(targetWeekStart + 'T00:00:00');
+          const te = new Date(targetWeekEnd + 'T00:00:00');
+          const targetWeekLabel = `${(ts.getMonth()+1).toString().padStart(2,'0')}/${ts.getDate().toString().padStart(2,'0')}-${(te.getMonth()+1).toString().padStart(2,'0')}/${te.getDate().toString().padStart(2,'0')}`;
+
+          targetData = {
+            targetSales: String(round2(tSales)),
+            targetSubcategoryRank: tSubcategoryRank,
+            targetConvRate: tConvRateCount > 0 ? String(round2(tConvRateSum / tConvRateCount)) : undefined,
+            targetOrganicOrders: tOrgOrders,
+            targetAdOrders: tAdOrders,
+            targetRatingScore: tRatingScore !== '0' ? tRatingScore : undefined,
+            targetRatingCount: tRatingCount > 0 ? tRatingCount : undefined,
+            targetWeekLabel: targetWeekLabel,
+          };
+        }
+      }
+
       const [result] = await db!.insert(executionReviews).values({
-        ...rest, ...baselineData, userId: ctx.user.id,
+        ...rest, ...baselineData, ...targetData, userId: ctx.user.id,
       });
-      return { id: result.insertId, baselineData };
+      return { id: result.insertId, baselineData, targetData };
     }),
 
   updateExecutionReview: protectedProcedure
@@ -4779,22 +4822,6 @@ export const productOpsRouter = router({
         "计划周期": "",
         "项目经理": "",
         "游戏策划师": "",
-        "基线-销售额": "",
-        "基线-小类排名": "",
-        "基线-利润率%": "",
-        "基线-转化率%": "",
-        "基线-自然单": "",
-        "基线-广告单": "",
-        "基线-评分": "",
-        "基线-Rating数": "",
-        "目标-销售额": "",
-        "目标-小类排名": "",
-        "目标-利润率%": "",
-        "目标-转化率%": "",
-        "目标-自然单": "",
-        "目标-广告单": "",
-        "目标-评分": "",
-        "目标-Rating数": "",
       }));
 
       // Generate Excel using xlsx
@@ -4811,8 +4838,6 @@ export const productOpsRouter = router({
         { wch: 12 }, // 计划周期
         { wch: 10 }, // 项目经理
         { wch: 12 }, // 游戏策划师
-        { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, // 基线
-        { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, // 目标
       ];
 
       const wb = XLSX.utils.book_new();
@@ -4823,20 +4848,9 @@ export const productOpsRouter = router({
         { "说明": "使用说明" },
         { "说明": "1. 父ASIN列已自动填充您负责的产品，请勿修改" },
         { "说明": "2. 填写\"计划名称\"（必填）和其他计划信息" },
-        { "说明": "3. 基线数据：填写当前产品的基准数据（可选）" },
-        { "说明": "4. 目标数据：填写期望达到的目标数据（可选）" },
-        { "说明": "5. 填写完成后在\"数据导入中心\"上传此文件" },
-        { "说明": "6. 如果该ASIN已有运营计划，导入时将更新现有计划" },
-        { "说明": "" },
-        { "说明": "字段说明：" },
-        { "说明": "销售额：周度销售额（美元）" },
-        { "说明": "小类排名：亚马逊小类排名数字" },
-        { "说明": "利润率%：利润率百分比（如 15.5 表示 15.5%）" },
-        { "说明": "转化率%：转化率百分比（如 8.2 表示 8.2%）" },
-        { "说明": "自然单：自然订单数" },
-        { "说明": "广告单：广告订单数" },
-        { "说明": "评分：产品评分（如 4.5）" },
-        { "说明": "Rating数：评价数量" },
+        { "说明": "3. 基线/目标数据：在系统中创建计划时选择对应周度自动加载，无需在模板中填写" },
+        { "说明": "4. 填写完成后在\"数据导入中心\"上传此文件" },
+        { "说明": "5. 如果该ASIN已有运营计划，导入时将更新现有计划" },
       ];
       const instrWs = XLSX.utils.json_to_sheet(instrRows);
       instrWs["!cols"] = [{ wch: 60 }];
@@ -4915,24 +4929,7 @@ export const productOpsRouter = router({
           planPeriod: parseStr(row["计划周期"]),
           projectManager: parseStr(row["项目经理"]),
           gamePlanner: parseStr(row["游戏策划师"]),
-          // Baseline
-          baselineSales: parseStr(row["基线-销售额"]),
-          baselineSubcategoryRank: parseNum(row["基线-小类排名"]),
-          baselineProfitRate: parseStr(row["基线-利润率%"]),
-          baselineConvRate: parseStr(row["基线-转化率%"]),
-          baselineOrganicOrders: parseNum(row["基线-自然单"]),
-          baselineAdOrders: parseNum(row["基线-广告单"]),
-          baselineRatingScore: parseStr(row["基线-评分"]),
-          baselineRatingCount: parseNum(row["基线-Rating数"]),
-          // Target
-          targetSales: parseStr(row["目标-销售额"]),
-          targetSubcategoryRank: parseNum(row["目标-小类排名"]),
-          targetProfitRate: parseStr(row["目标-利润率%"]),
-          targetConvRate: parseStr(row["目标-转化率%"]),
-          targetOrganicOrders: parseNum(row["目标-自然单"]),
-          targetAdOrders: parseNum(row["目标-广告单"]),
-          targetRatingScore: parseStr(row["目标-评分"]),
-          targetRatingCount: parseNum(row["目标-Rating数"]),
+          // 基线/目标数据在系统中选择周度自动加载，不再从模板解析
         };
 
         // Clean null values
@@ -5043,25 +5040,7 @@ export const productOpsRouter = router({
         "运营": p.operator || "",
         "复盘周期": "",
         "周期类型": "weekly",
-        // Target
-        "目标-销售额": "",
-        "目标-小类排名": "",
-        "目标-转化率%": "",
-        "目标-自然单": "",
-        "目标-广告单": "",
-        "目标-评分": "",
-        "目标-Rating数": "",
-        // Actual
-        "实际-销售额": "",
-        "实际-小类排名": "",
-        "实际-利润率%": "",
-        "实际-转化率%": "",
-        "实际-自然单": "",
-        "实际-广告单": "",
-        "实际-评分": "",
-        "实际-Rating数": "",
-        "实际周标签": "",
-        // Review content
+        // Review content only - baseline/target/actual data loaded from system
         "成果摘要": "",
         "关键动作": "",
         "经验教训": "",
@@ -5079,9 +5058,7 @@ export const productOpsRouter = router({
         { wch: 10 }, // 运营
         { wch: 16 }, // 复盘周期
         { wch: 10 }, // 周期类型
-        { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, // 目标
-        { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 14 }, // 实际
-        { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, // 复盘内容
+        { wch: 35 }, { wch: 35 }, { wch: 35 }, { wch: 35 }, // 复盘内容
       ];
 
       const wb = XLSX.utils.book_new();
@@ -5093,22 +5070,15 @@ export const productOpsRouter = router({
         { "说明": "1. 父ASIN列已自动填充您负责的产品，请勿修改" },
         { "说明": "2. 填写\"复盘周期\"(必填)：如\"2026W16\"或\"2026年4月\"" },
         { "说明": "3. 周期类型：weekly(周)、monthly(月)、quarterly(季)，默认weekly" },
-        { "说明": "4. 基线数据：创建复盘时选择周度自动从导入数据拓取，无需手动填写" },
-        { "说明": "5. 目标数据：期望达到的各项指标目标值" },
-        { "说明": "6. 实际数据：实际达成的各项指标值（可选，也可导入后从周度数据自动加载）" },
-        { "说明": "7. 复盘内容：成果摘要、关键动作、经验教训、下期计划" },
-        { "说明": "8. 如果该ASIN+周期已有复盘记录，导入时将更新现有记录" },
+        { "说明": "4. 基线/目标/实际数据：在系统中创建复盘时选择对应周度自动加载，无需在模板中填写" },
+        { "说明": "5. 复盘内容：成果摘要、关键动作、经验教训、下期计划" },
+        { "说明": "6. 如果该ASIN+周期已有复盘记录，导入时将更新现有记录" },
         { "说明": "" },
         { "说明": "字段说明：" },
-        { "说明": "销售额：周度销售额（美元）" },
-        { "说明": "小类排名：亚马逊小类排名数字" },
-        { "说明": "利润率%：利润率百分比（如 15.5 表示 15.5%）" },
-        { "说明": "转化率%：转化率百分比（如 8.2 表示 8.2%）" },
-        { "说明": "自然单：自然订单数" },
-        { "说明": "广告单：广告订单数" },
-        { "说明": "评分：产品评分（如 4.5）" },
-        { "说明": "Rating数：评价数量" },
-        { "说明": "周标签：如\"2026-04-14~2026-04-20\"" },
+        { "说明": "成果摘要：本周期的主要成果和达成情况" },
+        { "说明": "关键动作：本周期执行的关键运营动作" },
+        { "说明": "经验教训：本周期总结的经验和教训" },
+        { "说明": "下期计划：下一周期的运营计划和目标" },
       ];
       const instrWs = XLSX.utils.json_to_sheet(instrRows);
       instrWs["!cols"] = [{ wch: 60 }];
@@ -5190,26 +5160,8 @@ export const productOpsRouter = router({
           period,
           periodType,
           parentAsin,
-          // Baseline: auto-fetched from imported weekly data, not from Excel
-          // Target
-          targetSales: parseStr(row["目标-销售额"]),
-          targetSubcategoryRank: parseNum(row["目标-小类排名"]),
-          targetConvRate: parseStr(row["目标-转化率%"]),
-          targetOrganicOrders: parseNum(row["目标-自然单"]),
-          targetAdOrders: parseNum(row["目标-广告单"]),
-          targetRatingScore: parseStr(row["目标-评分"]),
-          targetRatingCount: parseNum(row["目标-Rating数"]),
-          // Actual
-          actualSales: parseStr(row["实际-销售额"]),
-          actualSubcategoryRank: parseNum(row["实际-小类排名"]),
-          actualProfitRate: parseStr(row["实际-利润率%"]),
-          actualConvRate: parseStr(row["实际-转化率%"]),
-          actualOrganicOrders: parseNum(row["实际-自然单"]),
-          actualAdOrders: parseNum(row["实际-广告单"]),
-          actualRatingScore: parseStr(row["实际-评分"]),
-          actualRatingCount: parseNum(row["实际-Rating数"]),
-          actualWeekLabel: parseStr(row["实际周标签"]),
-          // Review content
+          // Baseline/Target/Actual data: loaded from system when creating review, not from Excel
+          // Review content only
           achievementSummary: parseStr(row["成果摘要"]),
           keyActions: parseStr(row["关键动作"]),
           lessonsLearned: parseStr(row["经验教训"]),

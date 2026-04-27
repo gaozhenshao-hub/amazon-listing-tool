@@ -136,9 +136,7 @@ export default function OpsReviewImportTab() {
 
   // ─── Preview columns ───
   const previewColumns = ["父ASIN", "产品标题", "运营", "复盘周期", "周期类型",
-    "目标-销售额", "目标-小类排名", "目标-转化率%",
-    "实际-销售额", "实际-小类排名", "实际-利润率%",
-    "成果摘要"];
+    "成果摘要", "关键动作", "经验教训", "下期计划"];
 
   return (
     <div className="space-y-4">
@@ -159,8 +157,8 @@ export default function OpsReviewImportTab() {
             <div className="h-8 w-8 rounded-full bg-purple-600 text-white flex items-center justify-center text-sm font-bold shrink-0">1</div>
             <div className="flex-1">
               <h4 className="font-medium text-purple-700 dark:text-purple-300 mb-1">下载执行复盘模板</h4>
-              <p className="text-sm text-purple-600/80 dark:text-purple-400/80 mb-3">
-                模板已自动填充您负责的产品父ASIN和产品标题，您只需填写复盘周期和基线/目标/实际数据
+                <p className="text-sm text-purple-600/80 dark:text-purple-400/80 mb-3">
+                模板已自动填充您负责的产品父ASIN和产品标题，您只需填写复盘周期和复盘内容（基线/目标/实际数据在系统中自动加载）
               </p>
               <Button onClick={handleDownloadTemplate} disabled={downloading} variant="outline" className="gap-2">
                 {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
@@ -179,9 +177,7 @@ export default function OpsReviewImportTab() {
                 <ul className="list-disc list-inside ml-2 space-y-0.5">
                   <li><strong>复盘周期</strong>（必填）：如"2026W16"或"2026年4月"</li>
                   <li><strong>周期类型</strong>：weekly(周)、monthly(月)、quarterly(季)，默认weekly</li>
-                  <li><strong>基线数据</strong>：创建复盘时选择周度自动拓取，无需在模板中填写</li>
-                  <li><strong>目标数据</strong>：期望达到的各项指标目标值</li>
-                  <li><strong>实际数据</strong>：实际达成的各项指标值（可选，也可导入后从周度数据自动加载）</li>
+                  <li><strong>基线/目标/实际数据</strong>：在系统中创建复盘时选择对应周度自动加载，无需在模板中填写</li>
                   <li><strong>复盘内容</strong>：成果摘要、关键动作、经验教训、下期计划</li>
                 </ul>
               </div>

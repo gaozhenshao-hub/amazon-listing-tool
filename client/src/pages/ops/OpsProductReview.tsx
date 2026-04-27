@@ -149,9 +149,11 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
     periodType: "weekly" as string,
     baselineWeekStart: "",
     baselineWeekEnd: "",
-    targetSales: "", targetSubcategoryRank: "", targetConvRate: "",
-    targetOrganicOrders: "", targetAdOrders: "", targetRatingScore: "", targetRatingCount: "",
+    targetWeekStart: "",
+    targetWeekEnd: "",
   });
+  const [targetPreview, setTargetPreview] = useState<Record<string, any> | null>(null);
+  const [loadingTarget, setLoadingTarget] = useState(false);
   const [baselinePreview, setBaselinePreview] = useState<Record<string, any> | null>(null);
   const [loadingBaseline, setLoadingBaseline] = useState(false);
 
@@ -162,24 +164,22 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
     }
   }, [reviews, selectedReviewId]);
 
-  // ─── Load from plan (target data only) ───
-  const handleLoadFromPlan = useCallback((planId: string) => {
-    setSelectedPlanId(planId);
-    if (planId === "none" || !plans) return;
-    const plan = plans.find((p: any) => p.id === Number(planId));
-    if (!plan) return;
-    setCreateForm(prev => ({
-      ...prev,
-      targetSales: plan.targetSales || "",
-      targetSubcategoryRank: plan.targetSubcategoryRank?.toString() || "",
-      targetConvRate: plan.targetConvRate || "",
-      targetOrganicOrders: plan.targetOrganicOrders?.toString() || "",
-      targetAdOrders: plan.targetAdOrders?.toString() || "",
-      targetRatingScore: plan.targetRatingScore || "",
-      targetRatingCount: plan.targetRatingCount?.toString() || "",
-    }));
-    toast.success("已从运营计划加载目标数据");
-  }, [plans]);
+  // ─── Handle target week selection ───
+  const handleTargetWeekSelect = useCallback(async (weekValue: string) => {
+    if (!weekValue || weekValue === "none") {
+      setCreateForm(prev => ({ ...prev, targetWeekStart: "", targetWeekEnd: "" }));
+      setTargetPreview(null);
+      return;
+    }
+    const [weekStart, weekEnd] = weekValue.split("_");
+    setCreateForm(prev => ({ ...prev, targetWeekStart: weekStart, targetWeekEnd: weekEnd }));
+    setLoadingTarget(true);
+    const week = availableWeeks?.find((w: any) => w.weekStart === weekStart && w.weekEnd === weekEnd);
+    if (week) {
+      setTargetPreview({ weekLabel: week.label, weekStart, weekEnd, status: "selected" });
+    }
+    setLoadingTarget(false);
+  }, [availableWeeks]);
 
   // ─── Handle baseline week selection ───
   const handleBaselineWeekSelect = useCallback(async (weekValue: string) => {
@@ -278,14 +278,9 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
       // 基线数据：通过选择周度自动拓取
       baselineWeekStart: createForm.baselineWeekStart || undefined,
       baselineWeekEnd: createForm.baselineWeekEnd || undefined,
-      // 目标数据
-      targetSales: createForm.targetSales || undefined,
-      targetSubcategoryRank: createForm.targetSubcategoryRank ? Number(createForm.targetSubcategoryRank) : undefined,
-      targetConvRate: createForm.targetConvRate || undefined,
-      targetOrganicOrders: createForm.targetOrganicOrders ? Number(createForm.targetOrganicOrders) : undefined,
-      targetAdOrders: createForm.targetAdOrders ? Number(createForm.targetAdOrders) : undefined,
-      targetRatingScore: createForm.targetRatingScore || undefined,
-      targetRatingCount: createForm.targetRatingCount ? Number(createForm.targetRatingCount) : undefined,
+      // 目标数据：通过选择周度自动拓取
+      targetWeekStart: createForm.targetWeekStart || undefined,
+      targetWeekEnd: createForm.targetWeekEnd || undefined,
     });
   };
 
@@ -871,23 +866,7 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
               </div>
             </div>
 
-            {/* Load from plan (target only) */}
-            {plans && plans.length > 0 && (
-              <div className="space-y-1">
-                <Label className="text-xs">从运营计划加载目标数据</Label>
-                <Select value={selectedPlanId} onValueChange={handleLoadFromPlan}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择运营计划..." /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">手动填写</SelectItem>
-                    {plans.map((p: any) => (
-                      <SelectItem key={p.id} value={p.id.toString()}>
-                        {p.planName || p.planPeriod || `计划#${p.id}`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+
 
             {/* Baseline data: auto-fetch by selecting week */}
             <div>
@@ -926,30 +905,41 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
               )}
             </div>
 
-            {/* Target data */}
+            {/* Target data: auto-fetch by selecting week */}
             <div>
-              <p className="text-xs font-medium text-muted-foreground mb-2">目标数据</p>
-              <div className="grid grid-cols-4 gap-2">
-                {[
-                  { key: "targetSales", label: "销售额($)" },
-                  { key: "targetSubcategoryRank", label: "小类排名" },
-                  { key: "targetConvRate", label: "转化率(%)" },
-                  { key: "targetOrganicOrders", label: "自然单" },
-                  { key: "targetAdOrders", label: "广告单" },
-                  { key: "targetRatingScore", label: "评分" },
-                  { key: "targetRatingCount", label: "Rating数量" },
-                ].map(({ key, label }) => (
-                  <div key={key} className="space-y-0.5">
-                    <Label className="text-[10px] text-muted-foreground">{label}</Label>
-                    <Input
-                      value={(createForm as any)[key]}
-                      onChange={(e) => setCreateForm(prev => ({ ...prev, [key]: e.target.value }))}
-                      className="text-xs h-7"
-                      type="text"
-                    />
-                  </div>
-                ))}
-              </div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">目标数据（选择周度自动拓取）</p>
+              <Select
+                value={createForm.targetWeekStart ? `${createForm.targetWeekStart}_${createForm.targetWeekEnd}` : "none"}
+                onValueChange={handleTargetWeekSelect}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="选择目标周度..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">不设置目标</SelectItem>
+                  {availableWeeks?.map((w: any, idx: number) => (
+                    <SelectItem key={`t-${idx}`} value={`${w.weekStart}_${w.weekEnd}`}>
+                      {w.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {loadingTarget && (
+                <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" /> 加载目标数据中...
+                </div>
+              )}
+              {targetPreview && (
+                <div className="mt-2 p-2 rounded-lg bg-green-50/50 dark:bg-green-950/20 border border-green-200/50 dark:border-green-800/50">
+                  <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3" />
+                    已选择目标周度：{targetPreview.weekLabel}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    创建复盘时将自动从导入的周度数据中拓取销售额、排名、利润率、转化率等目标指标
+                  </p>
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>

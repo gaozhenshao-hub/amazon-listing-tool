@@ -3655,3 +3655,15 @@
 - [x] 前端：创建复盘表单中基线区域改为选择可用周度下拉，选择后自动加载数据
 - [x] 前端：删除基线手动输入表单字段
 - [x] 测试验证并保存checkpoint
+### 进一步简化执行复盘模板（删除目标/实际数据列，仅保留复盘文本）
+- [x] 后端：downloadReviewTemplate删除目标和实际数据列，仅保留父ASIN/标题/运营/复盘周期/周期类型+复盘文本
+- [x] 后端：importReviewsFromExcel删除目标和实际字段解析
+- [x] 后端：createExecutionReview增加目标周度选择，自动从数据中加载
+- [x] 前端：创建表单中目标数据改为选择周度下拉自动加载
+- [x] 前端：导入模板预览表格删除目标和实际数据列
+- [x] 测试验证并保存checkpoint
+### 运营计划模板也删除基期数据列
+- [x] 后端：修改downloadPlanTemplate删除基期和目标数据列
+- [x] 后端：修改importPlansFromExcel删除基期/目标字段解析
+- [x] 前端：更新OpsPlanImportTab预览列和说明文案
+- [x] 构建验证并保存checkpoint

@@ -2057,6 +2057,7 @@ export const executionReviews = mysqlTable("execution_reviews", {
   targetAdOrders: int("target_ad_orders"),
   targetRatingScore: decimal("target_rating_score", { precision: 3, scale: 2 }),
   targetRatingCount: int("target_rating_count"),
+  targetWeekLabel: varchar("target_week_label", { length: 50 }),
   // Review content
   achievementSummary: text("achievement_summary"),
   keyActions: text("key_actions"),
