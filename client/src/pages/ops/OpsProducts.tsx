@@ -1,6 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { MANAGER_ROLES } from "@shared/const";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -640,6 +642,8 @@ type DataSource = "system" | "lingxing" | "saihu";
 // ─── Main Component ───
 export default function OpsProducts() {
   const [, navigate] = useLocation();
+  const { user } = useAuth();
+  const isManagerOrAbove = user?.role && (MANAGER_ROLES as readonly string[]).includes(user.role);
   const [marketplaceFilter, setMarketplaceFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("active");
   const [dataSource, setDataSource] = useState<DataSource>("lingxing");
@@ -718,6 +722,12 @@ export default function OpsProducts() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [searchTerm, setSearchTerm] = useState("");
   const [operatorFilter, setOperatorFilter] = useState("ALL");
+  // Auto-lock operator filter for non-admin users to their own name
+  useEffect(() => {
+    if (user && !isManagerOrAbove && user.name) {
+      setOperatorFilter(user.name);
+    }
+  }, [user, isManagerOrAbove]);
   const [storeFilter, setStoreFilter] = useState("ALL");
   const [newOperatorName, setNewOperatorName] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>(null);
@@ -1040,13 +1050,13 @@ export default function OpsProducts() {
         )}
         <div className="flex items-center gap-1">
           <User className="h-4 w-4 text-muted-foreground" />
-          <Select value={operatorFilter} onValueChange={setOperatorFilter}>
+          <Select value={operatorFilter} onValueChange={setOperatorFilter} disabled={!isManagerOrAbove}>
             <SelectTrigger className="w-[140px]">
               <SelectValue placeholder="运营" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">全部运营</SelectItem>
-              <SelectItem value="__UNASSIGNED__">未分配</SelectItem>
+              {isManagerOrAbove && <SelectItem value="ALL">全部运营</SelectItem>}
+              {isManagerOrAbove && <SelectItem value="__UNASSIGNED__">未分配</SelectItem>}
               {(() => {
                 if (dataSource === "system") {
                   // System mode: show operators from data + system user list
@@ -1101,10 +1111,10 @@ export default function OpsProducts() {
         <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
           <CheckSquare className="h-4 w-4 text-blue-600" />
           <span className="text-sm text-blue-700 font-medium">已选择 {selectedIds.size} 个产品</span>
-          <Button variant="outline" size="sm" onClick={() => setShowBatchAssign(true)} className="gap-1">
+          {isManagerOrAbove && <Button variant="outline" size="sm" onClick={() => setShowBatchAssign(true)} className="gap-1">
             <Users className="h-3 w-3" />
             批量分配运营
-          </Button>
+          </Button>}
           <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
             取消选择
           </Button>

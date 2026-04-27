@@ -6,10 +6,73 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { dataImports, lingxingProductWeekly, saihuProductWeekly, operatorNameMappings } from "../../drizzle/schema";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { dataImports, lingxingProductWeekly, saihuProductWeekly, operatorNameMappings, users } from "../../drizzle/schema";
+import { MANAGER_ROLES } from "../../shared/const";
+import { eq, desc, and, sql, or } from "drizzle-orm";
 import { parseExcelBuffer, parseDateRangeFromFilename, detectSourceType, type SourceType, type DateRange } from "../excelParser";
 import { storagePut } from "../storage";
+
+/**
+ * Helper: Resolve the effective userId for data queries.
+ * Non-admin/manager users need to query data imported by admins, not their own userId.
+ * Returns the userId that should be used for querying imported data tables.
+ */
+async function resolveDataUserId(db: any, currentUser: { id: number; role: string; name: string | null }): Promise<number> {
+  const isManagerOrAbove = (MANAGER_ROLES as readonly string[]).includes(currentUser.role);
+  if (isManagerOrAbove) {
+    return currentUser.id;
+  }
+  // For non-admin users, find the admin/super_admin who has imported data
+  // First check if the current user has their own imported data
+  const [ownData] = await db.select({ count: sql<number>`count(*)` })
+    .from(dataImports)
+    .where(eq(dataImports.userId, currentUser.id));
+  if (ownData?.count > 0) {
+    return currentUser.id;
+  }
+  // Otherwise, find the admin who has imported data
+  const adminUsers = await db.select({ id: users.id, role: users.role })
+    .from(users)
+    .where(and(
+      or(
+        eq(users.role, "super_admin"),
+        eq(users.role, "admin"),
+        eq(users.role, "ops_manager")
+      ),
+      eq(users.status, "active")
+    ));
+  // Find the admin with the most recent import
+  for (const admin of adminUsers) {
+    const [adminData] = await db.select({ count: sql<number>`count(*)` })
+      .from(dataImports)
+      .where(eq(dataImports.userId, admin.id));
+    if (adminData?.count > 0) {
+      return admin.id;
+    }
+  }
+  // Fallback: return current user's id (will show empty data)
+  return currentUser.id;
+}
+
+/**
+ * Helper: Filter products by operator permission for non-admin users.
+ * After operator name mapping is applied, filter to only show products
+ * where the operator matches the current user's name.
+ */
+function filterByOperatorPermission(
+  items: { operator: string | null }[],
+  currentUser: { role: string; name: string | null }
+): typeof items {
+  const isManagerOrAbove = (MANAGER_ROLES as readonly string[]).includes(currentUser.role);
+  if (isManagerOrAbove || !currentUser.name) {
+    return items;
+  }
+  // Non-admin users only see products assigned to them
+  return items.filter(item => {
+    if (!item.operator) return false;
+    return item.operator === currentUser.name;
+  });
+}
 
 /**
  * Helper: Apply operator name mappings to replace external names with system user names
@@ -260,6 +323,8 @@ export const dataImportRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
+      // Resolve effective userId for non-admin users
+      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
       if (input.sourceType === "lingxing") {
         // Get distinct week ranges, ordered by date desc
         const weekRanges = await db!.selectDistinct({
@@ -267,7 +332,7 @@ export const dataImportRouter = router({
           weekEndDate: lingxingProductWeekly.weekEndDate,
         })
           .from(lingxingProductWeekly)
-          .where(eq(lingxingProductWeekly.userId, ctx.user.id))
+          .where(eq(lingxingProductWeekly.userId, effectiveUserId))
           .orderBy(desc(lingxingProductWeekly.weekStartDate))
           .limit(input.weeks);
 
@@ -276,7 +341,7 @@ export const dataImportRouter = router({
         // Get all data for these weeks
         const data = await db!.select().from(lingxingProductWeekly)
           .where(and(
-            eq(lingxingProductWeekly.userId, ctx.user.id),
+            eq(lingxingProductWeekly.userId, effectiveUserId),
             sql`${lingxingProductWeekly.weekStartDate} IN (${sql.join(weekRanges.map((w: { weekStartDate: string }) => sql`${w.weekStartDate}`), sql`,`)})`
           ))
           .orderBy(desc(lingxingProductWeekly.weekStartDate));
@@ -288,7 +353,7 @@ export const dataImportRouter = router({
           weekEndDate: saihuProductWeekly.weekEndDate,
         })
           .from(saihuProductWeekly)
-          .where(eq(saihuProductWeekly.userId, ctx.user.id))
+          .where(eq(saihuProductWeekly.userId, effectiveUserId))
           .orderBy(desc(saihuProductWeekly.weekStartDate))
           .limit(input.weeks);
 
@@ -296,7 +361,7 @@ export const dataImportRouter = router({
 
         const data = await db!.select().from(saihuProductWeekly)
           .where(and(
-            eq(saihuProductWeekly.userId, ctx.user.id),
+            eq(saihuProductWeekly.userId, effectiveUserId),
             sql`${saihuProductWeekly.weekStartDate} IN (${sql.join(weekRanges.map((w: { weekStartDate: string }) => sql`${w.weekStartDate}`), sql`,`)})`
           ))
           .orderBy(desc(saihuProductWeekly.weekStartDate));
@@ -312,13 +377,15 @@ export const dataImportRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
+      // Resolve effective userId for non-admin users
+      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
       const table = input.sourceType === "lingxing" ? lingxingProductWeekly : saihuProductWeekly;
       const ranges = await db!.selectDistinct({
         weekStartDate: table.weekStartDate,
         weekEndDate: table.weekEndDate,
       })
         .from(table)
-        .where(eq(table.userId, ctx.user.id))
+        .where(eq(table.userId, effectiveUserId))
         .orderBy(desc(table.weekStartDate));
 
       return ranges;
@@ -328,24 +395,26 @@ export const dataImportRouter = router({
   getImportStats: protectedProcedure
     .query(async ({ ctx }) => {
       const db = await getDb();
+      // Resolve effective userId for non-admin users
+      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
       const [lingxingCount] = await db!.select({ count: sql<number>`count(DISTINCT week_start_date)` })
         .from(lingxingProductWeekly)
-        .where(eq(lingxingProductWeekly.userId, ctx.user.id));
+        .where(eq(lingxingProductWeekly.userId, effectiveUserId));
 
       const [saihuCount] = await db!.select({ count: sql<number>`count(DISTINCT week_start_date)` })
         .from(saihuProductWeekly)
-        .where(eq(saihuProductWeekly.userId, ctx.user.id));
+        .where(eq(saihuProductWeekly.userId, effectiveUserId));
 
       const [lingxingProducts] = await db!.select({ count: sql<number>`count(DISTINCT parent_asin)` })
         .from(lingxingProductWeekly)
-        .where(eq(lingxingProductWeekly.userId, ctx.user.id));
+        .where(eq(lingxingProductWeekly.userId, effectiveUserId));
 
       const [saihuProducts] = await db!.select({ count: sql<number>`count(DISTINCT parent_asin)` })
         .from(saihuProductWeekly)
-        .where(eq(saihuProductWeekly.userId, ctx.user.id));
+        .where(eq(saihuProductWeekly.userId, effectiveUserId));
 
       const [latestImport] = await db!.select().from(dataImports)
-        .where(and(eq(dataImports.userId, ctx.user.id), eq(dataImports.status, "completed")))
+        .where(and(eq(dataImports.userId, effectiveUserId), eq(dataImports.status, "completed")))
         .orderBy(desc(dataImports.createdAt))
         .limit(1);
 
@@ -374,12 +443,17 @@ export const dataImportRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       const weeksToShow = input.weeks;
+      // Resolve effective userId (non-admin users use admin's data)
+      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
 
+      let result;
       if (input.sourceType === "lingxing") {
-        return buildOverviewFromLingxing(db!, ctx.user.id, weeksToShow, input.marketplace);
+        result = await buildOverviewFromLingxing(db!, effectiveUserId, weeksToShow, input.marketplace);
       } else {
-        return buildOverviewFromSaihu(db!, ctx.user.id, weeksToShow, input.marketplace);
+        result = await buildOverviewFromSaihu(db!, effectiveUserId, weeksToShow, input.marketplace);
       }
+      // Apply operator-based permission filtering for non-admin users
+      return filterByOperatorPermission(result, ctx.user) as typeof result;
     }),
 
   // ─── Product Detail from Imported Data ───
@@ -393,10 +467,12 @@ export const dataImportRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
+      // Resolve effective userId (non-admin users use admin's data)
+      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
       if (input.sourceType === "lingxing") {
-        return buildProductDetailFromLingxing(db!, ctx.user.id, input.parentAsin, input.marketplace);
+        return buildProductDetailFromLingxing(db!, effectiveUserId, input.parentAsin, input.marketplace);
       } else {
-        return buildProductDetailFromSaihu(db!, ctx.user.id, input.parentAsin, input.marketplace);
+        return buildProductDetailFromSaihu(db!, effectiveUserId, input.parentAsin, input.marketplace);
       }
     }),
 });
