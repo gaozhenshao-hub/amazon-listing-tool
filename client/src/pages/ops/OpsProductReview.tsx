@@ -137,6 +137,8 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
   const [editValue, setEditValue] = useState("");
   const [weekCount, setWeekCount] = useState(1);
   const [showAiPanel, setShowAiPanel] = useState(false);
+  const [aiEditMode, setAiEditMode] = useState(false);
+  const [aiEditData, setAiEditData] = useState<AiAnalysis | null>(null);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     comparison: true, textFields: true, aiAnalysis: true,
   });
@@ -256,6 +258,34 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
       // 目标数据：多选周度自动拓取
       targetWeeks: selectedTargetWeeks.length > 0 ? selectedTargetWeeks.map(w => ({ weekStart: w.weekStart, weekEnd: w.weekEnd })) : undefined,
     });
+  };
+
+  // ─── AI Analysis Edit Handlers ───
+  const handleStartAiEdit = () => {
+    if (parsedAiAnalysis) {
+      setAiEditData(JSON.parse(JSON.stringify(parsedAiAnalysis)));
+      setAiEditMode(true);
+    }
+  };
+  const handleCancelAiEdit = () => {
+    setAiEditMode(false);
+    setAiEditData(null);
+  };
+  const handleSaveAiAnalysis = () => {
+    if (!selectedReview || !aiEditData) return;
+    updateReview.mutate(
+      { reviewId: selectedReview.id, aiAnalysis: JSON.stringify(aiEditData) },
+      {
+        onSuccess: () => {
+          setAiEditMode(false);
+          setAiEditData(null);
+          toast.success("AI分析已保存");
+        },
+      }
+    );
+  };
+  const updateAiField = (field: keyof AiAnalysis, value: any) => {
+    setAiEditData(prev => prev ? { ...prev, [field]: value } : prev);
   };
 
   const handleSyncActual = () => {
@@ -622,13 +652,14 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Brain className="h-4 w-4 text-violet-400" /> AI智能分析
                   {parsedAiAnalysis && <Badge variant="outline" className="text-[10px] ml-1">已生成</Badge>}
+                  {aiEditMode && <Badge className="text-[10px] ml-1 bg-amber-500/20 text-amber-400 border-amber-500/30">编辑中</Badge>}
                 </CardTitle>
                 {expandedSections.aiAnalysis ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </div>
             </CardHeader>
             {expandedSections.aiAnalysis && (
               <CardContent className="px-4 pb-4 pt-0">
-                {!parsedAiAnalysis ? (
+                {!parsedAiAnalysis && !aiEditMode ? (
                   <div className="flex flex-col items-center justify-center py-8 text-center">
                     <Brain className="h-8 w-8 text-muted-foreground mb-2" />
                     <p className="text-xs text-muted-foreground mb-3">点击"AI智能分析"按钮，基于数据对比生成结构化分析报告</p>
@@ -637,7 +668,185 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
                       生成AI分析
                     </Button>
                   </div>
-                ) : (
+                ) : aiEditMode && aiEditData ? (
+                  /* ========== EDIT MODE ========== */
+                  <div className="space-y-4">
+                    {/* Achievement Summary - Edit */}
+                    <div className="bg-gradient-to-r from-violet-500/10 to-blue-500/10 rounded-lg p-3 border border-violet-500/20">
+                      <p className="text-xs font-medium text-violet-300 mb-1">整体达成评估</p>
+                      <Textarea
+                        value={aiEditData.achievementSummary}
+                        onChange={(e) => updateAiField('achievementSummary', e.target.value)}
+                        className="text-sm min-h-[60px] bg-background/50"
+                        placeholder="输入整体达成评估..."
+                      />
+                    </div>
+
+                    {/* Key Findings - Edit */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-medium text-blue-400 flex items-center gap-1.5">
+                          <CheckCircle2 className="h-3.5 w-3.5" /> 关键发现
+                        </p>
+                        <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={() => {
+                          updateAiField('keyFindings', [...(aiEditData.keyFindings || []), { metric: '', status: '达标', detail: '', changeRate: '' }]);
+                        }}>
+                          <Plus className="h-3 w-3 mr-0.5" /> 添加
+                        </Button>
+                      </div>
+                      <div className="grid gap-2">
+                        {(aiEditData.keyFindings || []).map((f, i) => (
+                          <div key={i} className="bg-muted/20 rounded-md p-2 space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              <Input value={f.metric} onChange={(e) => {
+                                const arr = [...aiEditData.keyFindings]; arr[i] = { ...arr[i], metric: e.target.value }; updateAiField('keyFindings', arr);
+                              }} placeholder="指标名" className="h-7 text-xs flex-1" />
+                              <Select value={f.status} onValueChange={(v) => {
+                                const arr = [...aiEditData.keyFindings]; arr[i] = { ...arr[i], status: v }; updateAiField('keyFindings', arr);
+                              }}>
+                                <SelectTrigger className="h-7 text-xs w-24"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="达标">达标</SelectItem>
+                                  <SelectItem value="未达标">未达标</SelectItem>
+                                  <SelectItem value="超额">超额</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Input value={f.changeRate || ''} onChange={(e) => {
+                                const arr = [...aiEditData.keyFindings]; arr[i] = { ...arr[i], changeRate: e.target.value }; updateAiField('keyFindings', arr);
+                              }} placeholder="变化率" className="h-7 text-xs w-20" />
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-400 hover:text-red-300" onClick={() => {
+                                updateAiField('keyFindings', aiEditData.keyFindings.filter((_, idx) => idx !== i));
+                              }}><Trash2 className="h-3 w-3" /></Button>
+                            </div>
+                            <Input value={f.detail} onChange={(e) => {
+                              const arr = [...aiEditData.keyFindings]; arr[i] = { ...arr[i], detail: e.target.value }; updateAiField('keyFindings', arr);
+                            }} placeholder="具体分析详情..." className="h-7 text-xs" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Problems - Edit */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-medium text-red-400 flex items-center gap-1.5">
+                          <AlertTriangle className="h-3.5 w-3.5" /> 问题诊断
+                        </p>
+                        <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={() => {
+                          updateAiField('problems', [...(aiEditData.problems || []), { issue: '', possibleCause: '', severity: '中' }]);
+                        }}>
+                          <Plus className="h-3 w-3 mr-0.5" /> 添加
+                        </Button>
+                      </div>
+                      <div className="grid gap-2">
+                        {(aiEditData.problems || []).map((p, i) => (
+                          <div key={i} className="bg-red-500/5 border border-red-500/10 rounded-md p-2 space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              <Select value={p.severity} onValueChange={(v) => {
+                                const arr = [...aiEditData.problems]; arr[i] = { ...arr[i], severity: v }; updateAiField('problems', arr);
+                              }}>
+                                <SelectTrigger className="h-7 text-xs w-16"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="高">高</SelectItem>
+                                  <SelectItem value="中">中</SelectItem>
+                                  <SelectItem value="低">低</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Input value={p.issue} onChange={(e) => {
+                                const arr = [...aiEditData.problems]; arr[i] = { ...arr[i], issue: e.target.value }; updateAiField('problems', arr);
+                              }} placeholder="问题描述" className="h-7 text-xs flex-1" />
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-400 hover:text-red-300" onClick={() => {
+                                updateAiField('problems', aiEditData.problems.filter((_, idx) => idx !== i));
+                              }}><Trash2 className="h-3 w-3" /></Button>
+                            </div>
+                            <Input value={p.possibleCause} onChange={(e) => {
+                              const arr = [...aiEditData.problems]; arr[i] = { ...arr[i], possibleCause: e.target.value }; updateAiField('problems', arr);
+                            }} placeholder="可能原因..." className="h-7 text-xs" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Recommendations - Edit */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-medium text-emerald-400 flex items-center gap-1.5">
+                          <Lightbulb className="h-3.5 w-3.5" /> 优化建议
+                        </p>
+                        <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={() => {
+                          updateAiField('recommendations', [...(aiEditData.recommendations || []), { action: '', priority: '中', expectedImpact: '' }]);
+                        }}>
+                          <Plus className="h-3 w-3 mr-0.5" /> 添加
+                        </Button>
+                      </div>
+                      <div className="grid gap-2">
+                        {(aiEditData.recommendations || []).map((r, i) => (
+                          <div key={i} className="bg-emerald-500/5 border border-emerald-500/10 rounded-md p-2 space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              <Select value={r.priority} onValueChange={(v) => {
+                                const arr = [...aiEditData.recommendations]; arr[i] = { ...arr[i], priority: v }; updateAiField('recommendations', arr);
+                              }}>
+                                <SelectTrigger className="h-7 text-xs w-16"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="高">高</SelectItem>
+                                  <SelectItem value="中">中</SelectItem>
+                                  <SelectItem value="低">低</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <Input value={r.action} onChange={(e) => {
+                                const arr = [...aiEditData.recommendations]; arr[i] = { ...arr[i], action: e.target.value }; updateAiField('recommendations', arr);
+                              }} placeholder="建议操作" className="h-7 text-xs flex-1" />
+                              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-400 hover:text-red-300" onClick={() => {
+                                updateAiField('recommendations', aiEditData.recommendations.filter((_, idx) => idx !== i));
+                              }}><Trash2 className="h-3 w-3" /></Button>
+                            </div>
+                            <Input value={r.expectedImpact} onChange={(e) => {
+                              const arr = [...aiEditData.recommendations]; arr[i] = { ...arr[i], expectedImpact: e.target.value }; updateAiField('recommendations', arr);
+                            }} placeholder="预期效果..." className="h-7 text-xs" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Next Period Focus - Edit */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-medium text-amber-400 flex items-center gap-1.5">
+                          <Focus className="h-3.5 w-3.5" /> 下期重点
+                        </p>
+                        <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2" onClick={() => {
+                          updateAiField('nextPeriodFocus', [...(aiEditData.nextPeriodFocus || []), '']);
+                        }}>
+                          <Plus className="h-3 w-3 mr-0.5" /> 添加
+                        </Button>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {(aiEditData.nextPeriodFocus || []).map((f, i) => (
+                          <div key={i} className="flex items-center gap-1">
+                            <Input value={f} onChange={(e) => {
+                              const arr = [...aiEditData.nextPeriodFocus]; arr[i] = e.target.value; updateAiField('nextPeriodFocus', arr);
+                            }} className="h-7 text-xs w-40" placeholder="重点事项..." />
+                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-400 hover:text-red-300" onClick={() => {
+                              updateAiField('nextPeriodFocus', aiEditData.nextPeriodFocus.filter((_, idx) => idx !== i));
+                            }}><Trash2 className="h-3 w-3" /></Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Save / Cancel buttons */}
+                    <div className="flex justify-end gap-2 pt-2 border-t">
+                      <Button size="sm" variant="outline" className="text-xs" onClick={handleCancelAiEdit}>
+                        <X className="h-3 w-3 mr-1" /> 取消
+                      </Button>
+                      <Button size="sm" className="text-xs" onClick={handleSaveAiAnalysis} disabled={updateReview.isPending}>
+                        {updateReview.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Save className="h-3 w-3 mr-1" />}
+                        保存分析
+                      </Button>
+                    </div>
+                  </div>
+                ) : parsedAiAnalysis ? (
+                  /* ========== VIEW MODE ========== */
                   <div className="space-y-4">
                     {/* Achievement Summary */}
                     <div className="bg-gradient-to-r from-violet-500/10 to-blue-500/10 rounded-lg p-3 border border-violet-500/20">
@@ -726,15 +935,18 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
                       </div>
                     )}
 
-                    {/* Regenerate button */}
-                    <div className="flex justify-end pt-2">
+                    {/* Edit / Regenerate buttons */}
+                    <div className="flex justify-end gap-2 pt-2">
+                      <Button size="sm" variant="outline" className="text-xs" onClick={handleStartAiEdit}>
+                        <Edit2 className="h-3 w-3 mr-1" /> 编辑分析
+                      </Button>
                       <Button size="sm" variant="outline" className="text-xs" onClick={handleAiAnalysis} disabled={aiAnalysisMut.isPending}>
                         {aiAnalysisMut.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Brain className="h-3 w-3 mr-1" />}
                         重新生成分析
                       </Button>
                     </div>
                   </div>
-                )}
+                ) : null}
               </CardContent>
             )}
           </Card>
