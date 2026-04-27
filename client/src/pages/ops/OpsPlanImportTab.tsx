@@ -138,7 +138,9 @@ export default function OpsPlanImportTab() {
 
   // ─── Preview columns ───
   const previewColumns = ["父ASIN", "产品标题", "店铺", "运营", "计划名称", "计划周期",
-    "项目经理", "游戏策划师"];
+    "项目经理", "游戏策划师",
+    "目标-销售额", "目标-小类排名", "目标-利润率(%)", "目标-转化率(%)",
+    "目标-自然订单", "目标-广告订单", "目标-评分", "目标-评论数", "提升目标/动作"];
 
   return (
     <div className="space-y-4">
@@ -179,7 +181,8 @@ export default function OpsPlanImportTab() {
                 <ul className="list-disc list-inside ml-2 space-y-0.5">
                   <li><strong>计划名称</strong>（必填）：如“B0DJSQ6WC6 Q2运营计划”，不超过100字符</li>
                   <li><strong>计划周期</strong>：建议格式“2026Q2”、“2026年4月-6月”、“2026W16-W20”</li>
-                  <li><strong>基线/目标数据</strong>：无需填写，在产品详情页选择周度自动加载</li>
+                  <li><strong>基线数据</strong>：无需填写，在产品详情页选择周度自动加载</li>
+                  <li><strong>目标数据</strong>：可直接在模板中填写（销售额、排名、利润率、自然/广告订单等）</li>
                 </ul>
                 <div className="mt-2 p-2 rounded bg-amber-100/60 dark:bg-amber-900/30 text-xs">
                   <AlertTriangle className="h-3 w-3 inline mr-1" />

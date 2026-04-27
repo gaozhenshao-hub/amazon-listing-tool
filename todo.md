@@ -3675,3 +3675,8 @@
 - [x] 后端：导入模板增加数据校验提示（计划周期格式等）
 - [x] 前端：导入时增加校验错误提示UI
 - [x] 测试验证并保存checkpoint
+### Bug修复：运营计划模板目标数据列误删恢复
+- [x] 后端：downloadPlanTemplate恢复目标数据列（销售额、自然订单、广告订单等）
+- [x] 后端：importPlansFromExcel恢复目标数据字段解析
+- [x] 前端：OpsPlanImportTab恢复目标数据预览列
+- [x] 验证修复并保存checkpoint

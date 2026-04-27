@@ -4854,6 +4854,15 @@ export const productOpsRouter = router({
         "计划周期": "",
         "项目经理": "",
         "游戏策划师": "",
+        "目标-销售额": "",
+        "目标-小类排名": "",
+        "目标-利润率(%)": "",
+        "目标-转化率(%)": "",
+        "目标-自然订单": "",
+        "目标-广告订单": "",
+        "目标-评分": "",
+        "目标-评论数": "",
+        "提升目标/动作": "",
       }));
 
       // Generate Excel using xlsx
@@ -4870,6 +4879,15 @@ export const productOpsRouter = router({
         { wch: 12 }, // 计划周期
         { wch: 10 }, // 项目经理
         { wch: 12 }, // 游戏策划师
+        { wch: 14 }, // 目标-销售额
+        { wch: 14 }, // 目标-小类排名
+        { wch: 14 }, // 目标-利润率
+        { wch: 14 }, // 目标-转化率
+        { wch: 14 }, // 目标-自然订单
+        { wch: 14 }, // 目标-广告订单
+        { wch: 10 }, // 目标-评分
+        { wch: 12 }, // 目标-评论数
+        { wch: 20 }, // 提升目标/动作
       ];
 
       const wb = XLSX.utils.book_new();
@@ -4895,9 +4913,17 @@ export const productOpsRouter = router({
         { "说明": "4. 如果该ASIN已有运营计划，导入时将自动更新现有计划" },
         { "说明": "" },
         { "说明": "【基线/目标数据说明】" },
-        { "说明": "基线和目标数据无需在模板中填写，在系统中创建计划后：" },
-        { "说明": "• 进入产品详情页 → 运营计划Tab → 选择基线周度自动加载历史数据" },
-        { "说明": "• 目标数据在计划详情中手动设定或从历史数据推算" },
+        { "说明": "基线数据无需在模板中填写，在系统中创建计划后选择基线周度自动加载" },
+        { "说明": "目标数据可在模板中直接填写，包括：" },
+        { "说明": "• 目标-销售额：填写数字，如 5000" },
+        { "说明": "• 目标-小类排名：填写整数，如 50" },
+        { "说明": "• 目标-利润率(%)：填写百分比数字，如 15.5" },
+        { "说明": "• 目标-转化率(%)：填写百分比数字，如 12.3" },
+        { "说明": "• 目标-自然订单：填写整数，如 100" },
+        { "说明": "• 目标-广告订单：填写整数，如 50" },
+        { "说明": "• 目标-评分：填写小数，如 4.5" },
+        { "说明": "• 目标-评论数：填写整数，如 200" },
+        { "说明": "• 提升目标/动作：填写文本描述" },
       ];
       const instrWs = XLSX.utils.json_to_sheet(instrRows);
       instrWs["!cols"] = [{ wch: 70 }];
@@ -4980,7 +5006,17 @@ export const productOpsRouter = router({
           planPeriod: parseStr(row["计划周期"]),
           projectManager: parseStr(row["项目经理"]),
           gamePlanner: parseStr(row["游戏策划师"]),
-          // 基线/目标数据在系统中选择周度自动加载，不再从模板解析
+          // 基线数据在系统中选择周度自动加载，不从模板解析
+          // 目标数据从模板解析
+          targetSales: parseNum(row["目标-销售额"]),
+          targetSubcategoryRank: parseNum(row["目标-小类排名"]),
+          targetProfitRate: parseNum(row["目标-利润率(%)"]),
+          targetConvRate: parseNum(row["目标-转化率(%)"]),
+          targetOrganicOrders: parseNum(row["目标-自然订单"]),
+          targetAdOrders: parseNum(row["目标-广告订单"]),
+          targetRatingScore: parseNum(row["目标-评分"]),
+          targetRatingCount: parseNum(row["目标-评论数"]),
+          targetAction: parseStr(row["提升目标/动作"]),
         };
 
         // Clean null values
