@@ -3647,3 +3647,11 @@
 - [x] 前端：支持模板下载、文件上传、预览确认、导入结果反馈
 - [x] 编写单元测试验证导入逻辑
 - [x] 验证构建通过并保存checkpoint
+### 执行复盘基线数据自动抓取（选择日期自动加载，删除手动录入）
+- [x] 后端：createExecutionReview内置基线自动拓取，按ASIN+周度从lingxing_product_weekly自动查询基线数据
+- [x] 后端：downloadReviewTemplate删除基线数据列
+- [x] 后端：importReviewsFromExcel删除基线字段解析
+- [x] 后端：createExecutionReview删除基线手动输入字段，改为接收baselineWeekStart/End自动查询填充
+- [x] 前端：创建复盘表单中基线区域改为选择可用周度下拉，选择后自动加载数据
+- [x] 前端：删除基线手动输入表单字段
+- [x] 测试验证并保存checkpoint

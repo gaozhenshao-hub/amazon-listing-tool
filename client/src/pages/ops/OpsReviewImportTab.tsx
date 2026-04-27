@@ -136,8 +136,7 @@ export default function OpsReviewImportTab() {
 
   // ─── Preview columns ───
   const previewColumns = ["父ASIN", "产品标题", "运营", "复盘周期", "周期类型",
-    "基线-销售额", "基线-小类排名", "基线-利润率%", "基线-转化率%",
-    "目标-销售额", "目标-小类排名",
+    "目标-销售额", "目标-小类排名", "目标-转化率%",
     "实际-销售额", "实际-小类排名", "实际-利润率%",
     "成果摘要"];
 
@@ -180,7 +179,7 @@ export default function OpsReviewImportTab() {
                 <ul className="list-disc list-inside ml-2 space-y-0.5">
                   <li><strong>复盘周期</strong>（必填）：如"2026W16"或"2026年4月"</li>
                   <li><strong>周期类型</strong>：weekly(周)、monthly(月)、quarterly(季)，默认weekly</li>
-                  <li><strong>基线数据</strong>：复盘基期的各项指标基准值</li>
+                  <li><strong>基线数据</strong>：创建复盘时选择周度自动拓取，无需在模板中填写</li>
                   <li><strong>目标数据</strong>：期望达到的各项指标目标值</li>
                   <li><strong>实际数据</strong>：实际达成的各项指标值（可选，也可导入后从周度数据自动加载）</li>
                   <li><strong>复盘内容</strong>：成果摘要、关键动作、经验教训、下期计划</li>

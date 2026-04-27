@@ -147,12 +147,13 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
   const [createForm, setCreateForm] = useState({
     period: "",
     periodType: "weekly" as string,
-    baselineSales: "", baselineSubcategoryRank: "", baselineProfitRate: "",
-    baselineConvRate: "", baselineOrganicOrders: "", baselineAdOrders: "",
-    baselineRatingScore: "", baselineRatingCount: "",
+    baselineWeekStart: "",
+    baselineWeekEnd: "",
     targetSales: "", targetSubcategoryRank: "", targetConvRate: "",
     targetOrganicOrders: "", targetAdOrders: "", targetRatingScore: "", targetRatingCount: "",
   });
+  const [baselinePreview, setBaselinePreview] = useState<Record<string, any> | null>(null);
+  const [loadingBaseline, setLoadingBaseline] = useState(false);
 
   // ─── Auto-select first review ───
   useEffect(() => {
@@ -161,7 +162,7 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
     }
   }, [reviews, selectedReviewId]);
 
-  // ─── Load from plan ───
+  // ─── Load from plan (target data only) ───
   const handleLoadFromPlan = useCallback((planId: string) => {
     setSelectedPlanId(planId);
     if (planId === "none" || !plans) return;
@@ -169,14 +170,6 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
     if (!plan) return;
     setCreateForm(prev => ({
       ...prev,
-      baselineSales: plan.baselineSales || "",
-      baselineSubcategoryRank: plan.baselineSubcategoryRank?.toString() || "",
-      baselineProfitRate: plan.baselineProfitRate || "",
-      baselineConvRate: plan.baselineConvRate || "",
-      baselineOrganicOrders: plan.baselineOrganicOrders?.toString() || "",
-      baselineAdOrders: plan.baselineAdOrders?.toString() || "",
-      baselineRatingScore: plan.baselineRatingScore || "",
-      baselineRatingCount: plan.baselineRatingCount?.toString() || "",
       targetSales: plan.targetSales || "",
       targetSubcategoryRank: plan.targetSubcategoryRank?.toString() || "",
       targetConvRate: plan.targetConvRate || "",
@@ -185,8 +178,29 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
       targetRatingScore: plan.targetRatingScore || "",
       targetRatingCount: plan.targetRatingCount?.toString() || "",
     }));
-    toast.success("已从运营计划加载基线和目标数据");
+    toast.success("已从运营计划加载目标数据");
   }, [plans]);
+
+  // ─── Handle baseline week selection ───
+  const handleBaselineWeekSelect = useCallback(async (weekValue: string) => {
+    if (!weekValue || weekValue === "none") {
+      setCreateForm(prev => ({ ...prev, baselineWeekStart: "", baselineWeekEnd: "" }));
+      setBaselinePreview(null);
+      return;
+    }
+    const [weekStart, weekEnd] = weekValue.split("_");
+    setCreateForm(prev => ({ ...prev, baselineWeekStart: weekStart, baselineWeekEnd: weekEnd }));
+    setLoadingBaseline(true);
+
+    // Find the matching weekly data from availableWeeks to show preview
+    // We'll use syncReviewFromImportedData logic but just for preview
+    // For now, show the selected week label as preview
+    const week = availableWeeks?.find((w: any) => w.weekStart === weekStart && w.weekEnd === weekEnd);
+    if (week) {
+      setBaselinePreview({ weekLabel: week.label, weekStart, weekEnd, status: "selected" });
+    }
+    setLoadingBaseline(false);
+  }, [availableWeeks]);
 
   // ─── Computed: achievement rates ───
   const comparisonData = useMemo(() => {
@@ -261,15 +275,10 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
       parentAsin,
       period: createForm.period,
       periodType: createForm.periodType as any,
-      baselineSales: createForm.baselineSales || undefined,
-      baselineSubcategoryRank: createForm.baselineSubcategoryRank ? Number(createForm.baselineSubcategoryRank) : undefined,
-      baselineProfitRate: createForm.baselineProfitRate || undefined,
-      baselineConvRate: createForm.baselineConvRate || undefined,
-      baselineOrganicOrders: createForm.baselineOrganicOrders ? Number(createForm.baselineOrganicOrders) : undefined,
-      baselineAdOrders: createForm.baselineAdOrders ? Number(createForm.baselineAdOrders) : undefined,
-      baselineRatingScore: createForm.baselineRatingScore || undefined,
-      baselineRatingCount: createForm.baselineRatingCount ? Number(createForm.baselineRatingCount) : undefined,
-      baselineWeekLabel: createForm.period,
+      // 基线数据：通过选择周度自动拓取
+      baselineWeekStart: createForm.baselineWeekStart || undefined,
+      baselineWeekEnd: createForm.baselineWeekEnd || undefined,
+      // 目标数据
       targetSales: createForm.targetSales || undefined,
       targetSubcategoryRank: createForm.targetSubcategoryRank ? Number(createForm.targetSubcategoryRank) : undefined,
       targetConvRate: createForm.targetConvRate || undefined,
@@ -862,10 +871,10 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
               </div>
             </div>
 
-            {/* Load from plan */}
+            {/* Load from plan (target only) */}
             {plans && plans.length > 0 && (
               <div className="space-y-1">
-                <Label className="text-xs">从运营计划加载基线/目标</Label>
+                <Label className="text-xs">从运营计划加载目标数据</Label>
                 <Select value={selectedPlanId} onValueChange={handleLoadFromPlan}>
                   <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择运营计划..." /></SelectTrigger>
                   <SelectContent>
@@ -880,31 +889,41 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
               </div>
             )}
 
-            {/* Baseline data */}
+            {/* Baseline data: auto-fetch by selecting week */}
             <div>
-              <p className="text-xs font-medium text-muted-foreground mb-2">基线数据</p>
-              <div className="grid grid-cols-4 gap-2">
-                {[
-                  { key: "baselineSales", label: "销售额($)" },
-                  { key: "baselineSubcategoryRank", label: "小类排名" },
-                  { key: "baselineProfitRate", label: "利润率(%)" },
-                  { key: "baselineConvRate", label: "转化率(%)" },
-                  { key: "baselineOrganicOrders", label: "自然单" },
-                  { key: "baselineAdOrders", label: "广告单" },
-                  { key: "baselineRatingScore", label: "评分" },
-                  { key: "baselineRatingCount", label: "Rating数量" },
-                ].map(({ key, label }) => (
-                  <div key={key} className="space-y-0.5">
-                    <Label className="text-[10px] text-muted-foreground">{label}</Label>
-                    <Input
-                      value={(createForm as any)[key]}
-                      onChange={(e) => setCreateForm(prev => ({ ...prev, [key]: e.target.value }))}
-                      className="text-xs h-7"
-                      type="text"
-                    />
-                  </div>
-                ))}
-              </div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">基线数据（选择周度自动拓取）</p>
+              <Select
+                value={createForm.baselineWeekStart ? `${createForm.baselineWeekStart}_${createForm.baselineWeekEnd}` : "none"}
+                onValueChange={handleBaselineWeekSelect}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="选择基线周度..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">不设置基线</SelectItem>
+                  {availableWeeks?.map((w: any, idx: number) => (
+                    <SelectItem key={idx} value={`${w.weekStart}_${w.weekEnd}`}>
+                      {w.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {loadingBaseline && (
+                <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" /> 加载基线数据中...
+                </div>
+              )}
+              {baselinePreview && (
+                <div className="mt-2 p-2 rounded-lg bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/50 dark:border-blue-800/50">
+                  <p className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3" />
+                    已选择基线周度：{baselinePreview.weekLabel}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    创建复盘时将自动从导入的周度数据中拓取销售额、排名、利润率、转化率等基线指标
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Target data */}

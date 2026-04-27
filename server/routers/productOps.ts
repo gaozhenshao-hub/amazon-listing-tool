@@ -2059,16 +2059,9 @@ export const productOpsRouter = router({
       planId: z.number().optional(),
       period: z.string().min(1),
       periodType: z.enum(["weekly", "monthly", "quarterly"]).optional().default("weekly"),
-      // 基线数据
-      baselineSales: z.string().optional(),
-      baselineSubcategoryRank: z.number().optional(),
-      baselineProfitRate: z.string().optional(),
-      baselineConvRate: z.string().optional(),
-      baselineOrganicOrders: z.number().optional(),
-      baselineAdOrders: z.number().optional(),
-      baselineRatingScore: z.string().optional(),
-      baselineRatingCount: z.number().optional(),
-      baselineWeekLabel: z.string().optional(),
+      // 基线数据：通过选择周度自动拓取
+      baselineWeekStart: z.string().optional(),
+      baselineWeekEnd: z.string().optional(),
       // 目标数据
       targetSales: z.string().optional(),
       targetSubcategoryRank: z.number().optional(),
@@ -2080,10 +2073,63 @@ export const productOpsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
+      const { baselineWeekStart, baselineWeekEnd, ...rest } = input;
+
+      // Auto-fetch baseline data from imported weekly data
+      let baselineData: Record<string, any> = {};
+      if (baselineWeekStart && baselineWeekEnd && input.parentAsin) {
+        const effectiveUserId = await resolveDataUserId(db!, ctx.user);
+        const weeklyRows = await db!.select().from(lingxingProductWeekly)
+          .where(and(
+            eq(lingxingProductWeekly.userId, effectiveUserId),
+            eq(lingxingProductWeekly.parentAsin, input.parentAsin),
+            eq(lingxingProductWeekly.weekStartDate, baselineWeekStart),
+            eq(lingxingProductWeekly.weekEndDate, baselineWeekEnd),
+          ));
+
+        if (weeklyRows.length > 0) {
+          let totalSales = 0, organicOrders = 0, adOrders = 0;
+          let ratingScore = '0', ratingCount = 0;
+          let subcategoryRank: number | null = null;
+          let profitMarginSum = 0, convRateSum = 0;
+          let profitMarginCount = 0, convRateCount = 0;
+
+          for (const row of weeklyRows) {
+            totalSales += Number(row.salesAmount || 0);
+            organicOrders += Number(row.organicOrders || 0);
+            adOrders += Number(row.adOrders || 0);
+            if (!subcategoryRank && row.bsrSub) {
+              const match = row.bsrSub.match(/(\d+)/);
+              if (match) subcategoryRank = parseInt(match[1]);
+            }
+            if (ratingScore === '0' && row.rating) ratingScore = row.rating;
+            if (ratingCount === 0 && row.reviewCount) ratingCount = Number(row.reviewCount);
+            if (row.orderProfitMargin) { profitMarginSum += Number(row.orderProfitMargin); profitMarginCount++; }
+            if (row.cvr) { convRateSum += Number(row.cvr); convRateCount++; }
+          }
+
+          const s = new Date(baselineWeekStart + 'T00:00:00');
+          const e = new Date(baselineWeekEnd + 'T00:00:00');
+          const weekLabel = `${(s.getMonth()+1).toString().padStart(2,'0')}/${s.getDate().toString().padStart(2,'0')}-${(e.getMonth()+1).toString().padStart(2,'0')}/${e.getDate().toString().padStart(2,'0')}`;
+
+          baselineData = {
+            baselineSales: String(round2(totalSales)),
+            baselineProfitRate: profitMarginCount > 0 ? String(round2(profitMarginSum / profitMarginCount)) : undefined,
+            baselineSubcategoryRank: subcategoryRank,
+            baselineConvRate: convRateCount > 0 ? String(round2(convRateSum / convRateCount)) : undefined,
+            baselineOrganicOrders: organicOrders,
+            baselineAdOrders: adOrders,
+            baselineRatingScore: ratingScore !== '0' ? ratingScore : undefined,
+            baselineRatingCount: ratingCount > 0 ? ratingCount : undefined,
+            baselineWeekLabel: weekLabel,
+          };
+        }
+      }
+
       const [result] = await db!.insert(executionReviews).values({
-        ...input, userId: ctx.user.id,
+        ...rest, ...baselineData, userId: ctx.user.id,
       });
-      return { id: result.insertId };
+      return { id: result.insertId, baselineData };
     }),
 
   updateExecutionReview: protectedProcedure
@@ -4997,16 +5043,6 @@ export const productOpsRouter = router({
         "运营": p.operator || "",
         "复盘周期": "",
         "周期类型": "weekly",
-        // Baseline
-        "基线-销售额": "",
-        "基线-小类排名": "",
-        "基线-利润率%": "",
-        "基线-转化率%": "",
-        "基线-自然单": "",
-        "基线-广告单": "",
-        "基线-评分": "",
-        "基线-Rating数": "",
-        "基线周标签": "",
         // Target
         "目标-销售额": "",
         "目标-小类排名": "",
@@ -5043,7 +5079,6 @@ export const productOpsRouter = router({
         { wch: 10 }, // 运营
         { wch: 16 }, // 复盘周期
         { wch: 10 }, // 周期类型
-        { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 14 }, // 基线
         { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, // 目标
         { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 14 }, // 实际
         { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, // 复盘内容
@@ -5058,7 +5093,7 @@ export const productOpsRouter = router({
         { "说明": "1. 父ASIN列已自动填充您负责的产品，请勿修改" },
         { "说明": "2. 填写\"复盘周期\"(必填)：如\"2026W16\"或\"2026年4月\"" },
         { "说明": "3. 周期类型：weekly(周)、monthly(月)、quarterly(季)，默认weekly" },
-        { "说明": "4. 基线数据：复盘基期的各项指标基准值" },
+        { "说明": "4. 基线数据：创建复盘时选择周度自动从导入数据拓取，无需手动填写" },
         { "说明": "5. 目标数据：期望达到的各项指标目标值" },
         { "说明": "6. 实际数据：实际达成的各项指标值（可选，也可导入后从周度数据自动加载）" },
         { "说明": "7. 复盘内容：成果摘要、关键动作、经验教训、下期计划" },
@@ -5155,16 +5190,7 @@ export const productOpsRouter = router({
           period,
           periodType,
           parentAsin,
-          // Baseline
-          baselineSales: parseStr(row["基线-销售额"]),
-          baselineSubcategoryRank: parseNum(row["基线-小类排名"]),
-          baselineProfitRate: parseStr(row["基线-利润率%"]),
-          baselineConvRate: parseStr(row["基线-转化率%"]),
-          baselineOrganicOrders: parseNum(row["基线-自然单"]),
-          baselineAdOrders: parseNum(row["基线-广告单"]),
-          baselineRatingScore: parseStr(row["基线-评分"]),
-          baselineRatingCount: parseNum(row["基线-Rating数"]),
-          baselineWeekLabel: parseStr(row["基线周标签"]),
+          // Baseline: auto-fetched from imported weekly data, not from Excel
           // Target
           targetSales: parseStr(row["目标-销售额"]),
           targetSubcategoryRank: parseNum(row["目标-小类排名"]),
