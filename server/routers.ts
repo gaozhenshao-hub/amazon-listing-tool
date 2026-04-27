@@ -59,12 +59,10 @@ import { shippingBatchRouter } from "./routers/shippingBatch";
 import { logisticsRouter } from "./routers/logistics";
 import { adAnalysisRouter } from "./routers/adAnalysis";
 import { adAnalysisP2Router } from "./routers/adAnalysisP2";
-import { profitDeepRouter } from "./routers/profitDeep";
 import { opsProductPlanRouter } from "./routers/opsProductPlan";
 import { afterSalesRouter } from "./routers/afterSales";
 import { dashboardUpgradeRouter } from "./routers/dashboardUpgrade";
 import { customDashboardRouter } from "./routers/customDashboard";
-import { competitorMonitorRouter } from "./routers/competitorMonitor";
 import { customerProfileRouter } from "./routers/customerProfile";
 // Module 6: Off-site Marketing
 import { offInfluencerRouter } from "./routers/offInfluencer";
@@ -151,14 +149,12 @@ export const appRouter = router({
   logistics: logisticsRouter,
   adAnalysis: adAnalysisRouter,
   adAnalysisP2: adAnalysisP2Router,
-  profitDeep: profitDeepRouter,
   opsProductPlan: opsProductPlanRouter,
   // Module 4: After-Sales Management
   afterSales: afterSalesRouter,
   // Phase 4: Dashboard Upgrade
   dashboardUpgrade: dashboardUpgradeRouter,
   customDashboard: customDashboardRouter,
-  competitorMonitor: competitorMonitorRouter,
   customerProfile: customerProfileRouter,
   // Module 6: Off-site Marketing
   offInfluencer: offInfluencerRouter,

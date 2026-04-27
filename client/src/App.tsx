@@ -47,18 +47,14 @@ import KBIntel from "./pages/knowledge/KBIntel";
 // ─── Module 3: Operations AI Tools ─────────────────────────────
 import OpsDashboard from "./pages/ops/OpsDashboard";
 import OpsInventory from "./pages/ops/OpsInventory";
-import OpsProfit from "./pages/ops/OpsProfit";
 import OpsAds from "./pages/ops/OpsAds";
-import OpsCompetitor from "./pages/ops/OpsCompetitor";
 import OpsProducts from "./pages/ops/OpsProducts";
 import OpsProductDetail from "./pages/ops/OpsProductDetail";
 import OpsCrawlerManager from "./pages/ops/OpsCrawlerManager";
 import OpsShippingBatchDetail from "./pages/ops/OpsShippingBatchDetail";
 import OpsLogistics from "./pages/ops/OpsLogistics";
-import OpsProfitDeep from "./pages/ops/OpsProfitDeep";
 import OpsDashboardUpgrade from "./pages/ops/OpsDashboardUpgrade";
 import OpsCustomDashboard from "./pages/ops/OpsCustomDashboard";
-import OpsCompetitorMonitor from "./pages/ops/OpsCompetitorMonitor";
 import OpsTaskManagement from "./pages/ops/OpsTaskManagement";
 import OpsDataImport from "./pages/ops/OpsDataImport";
 import OpsAdMapping from "./pages/ops/OpsAdMapping";
@@ -163,17 +159,13 @@ function Router() {
         <Route path="/ops/products">{() => <PermissionGuard><OpsProducts /></PermissionGuard>}</Route>
         <Route path="/ops/products/import/:source/:parentAsin">{() => <PermissionGuard><OpsProductDetail /></PermissionGuard>}</Route>
         <Route path="/ops/products/:id">{() => <PermissionGuard><OpsProductDetail /></PermissionGuard>}</Route>
-        <Route path="/ops/profit">{() => <PermissionGuard><OpsProfit /></PermissionGuard>}</Route>
         <Route path="/ops/inventory">{() => <PermissionGuard><OpsInventory /></PermissionGuard>}</Route>
         <Route path="/ops/ads">{() => <PermissionGuard><OpsAds /></PermissionGuard>}</Route>
-        <Route path="/ops/competitor">{() => <PermissionGuard><OpsCompetitor /></PermissionGuard>}</Route>
         <Route path="/ops/crawler">{() => <PermissionGuard><OpsCrawlerManager /></PermissionGuard>}</Route>
         <Route path="/ops/shipping/:id">{() => <PermissionGuard><OpsShippingBatchDetail /></PermissionGuard>}</Route>
         <Route path="/ops/logistics">{() => <PermissionGuard><OpsLogistics /></PermissionGuard>}</Route>
-        <Route path="/ops/profit-deep">{() => <PermissionGuard><OpsProfitDeep /></PermissionGuard>}</Route>
         <Route path="/ops/dashboard-upgrade">{() => <PermissionGuard><OpsDashboardUpgrade /></PermissionGuard>}</Route>
         <Route path="/ops/custom-dashboard">{() => <PermissionGuard><OpsCustomDashboard /></PermissionGuard>}</Route>
-        <Route path="/ops/competitor-monitor">{() => <PermissionGuard><OpsCompetitorMonitor /></PermissionGuard>}</Route>
         <Route path="/ops/data-import">{() => <PermissionGuard><OpsDataImport /></PermissionGuard>}</Route>
         <Route path="/ops/ad-mapping">{() => <PermissionGuard><OpsAdMapping /></PermissionGuard>}</Route>
         <Route path="/ops/tasks">{() => <PermissionGuard><OpsTaskManagement /></PermissionGuard>}</Route>

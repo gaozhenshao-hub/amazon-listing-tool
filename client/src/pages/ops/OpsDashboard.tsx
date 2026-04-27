@@ -16,7 +16,7 @@ import {
   DollarSign, TrendingUp, TrendingDown, Package, Target, AlertTriangle, ShoppingCart,
   Percent, Store, RefreshCw, Wifi, WifiOff, ArrowUpRight, ArrowDownRight,
   Calendar, ShieldCheck, Sparkles, Zap, Tag, Clock, ChevronLeft, ChevronRight,
-  Loader2, CheckCircle, XCircle, Info,
+  Loader2, CheckCircle, XCircle, Info, ShoppingBag, Upload,
 } from "lucide-react";
 
 // ─── Promotion Calendar Component ─────────────────────────────
@@ -652,10 +652,10 @@ export default function OpsDashboard() {
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <QuickActionCard
-          title="利润分析"
-          description="查看SKU级别的利润分解和成本优化建议"
-          icon={DollarSign}
-          href="/ops/profit"
+          title="产品总览"
+          description="查看所有产品运营数据和周度趋势"
+          icon={ShoppingBag}
+          href="/ops/products"
           color="emerald"
         />
         <QuickActionCard
@@ -673,10 +673,10 @@ export default function OpsDashboard() {
           color="blue"
         />
         <QuickActionCard
-          title="竞品监控"
-          description="竞品价格、排名、评论变化追踪"
-          icon={TrendingUp}
-          href="/ops/competitor"
+          title="数据导入"
+          description="导入领星产品数据和运营计划"
+          icon={Upload}
+          href="/ops/data-import"
           color="purple"
         />
       </div>

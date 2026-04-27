@@ -82,11 +82,11 @@ const moduleCards: ModuleCard[] = [
     iconBg: "bg-orange-500",
     title: "运营AI提效工具",
     description:
-      "基于领星ERP数据的运营智能分析，覆盖广告优化、利润分析、竞品监控和库存预警",
+      "基于领星ERP数据的运营智能分析，覆盖广告优化、库存预警、运营计划和执行复盘",
     path: "/ops",
     status: "developing",
     cardBg: "bg-gradient-to-br from-rose-50 to-pink-50/50 border-rose-200/60",
-    features: ["广告优化", "利润分析", "竞品监控", "库存预警", "搜索词分析"],
+    features: ["广告优化", "库存预警", "运营计划", "执行复盘", "搜索词分析"],
     actionLabel: "查看进度",
   },
   {
