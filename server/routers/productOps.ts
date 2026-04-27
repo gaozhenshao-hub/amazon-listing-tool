@@ -4937,6 +4937,300 @@ export const productOpsRouter = router({
       };
     }),
 
+  // ─── Execution Review Excel Import ───────────────────────────
+
+  /** Download execution review template Excel */
+  downloadReviewTemplate: protectedProcedure
+    .input(z.object({
+      marketplace: z.string().default("ALL"),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
+
+      // Get distinct parent ASINs with latest product info
+      const allRows = await db!.select({
+        parentAsin: lingxingProductWeekly.parentAsin,
+        title: lingxingProductWeekly.title,
+        productName: lingxingProductWeekly.productName,
+        storeName: lingxingProductWeekly.storeName,
+        operator: lingxingProductWeekly.operator,
+        country: lingxingProductWeekly.country,
+        weekStartDate: lingxingProductWeekly.weekStartDate,
+      })
+        .from(lingxingProductWeekly)
+        .where(eq(lingxingProductWeekly.userId, effectiveUserId))
+        .orderBy(desc(lingxingProductWeekly.weekStartDate));
+
+      // Filter by marketplace
+      const filtered = input.marketplace === "ALL" ? allRows : allRows.filter((r: any) => {
+        const c = (r.country || "").toUpperCase();
+        return c === input.marketplace || c.includes(input.marketplace);
+      });
+
+      // Deduplicate by parentAsin, keep latest row
+      const asinMap = new Map<string, any>();
+      for (const row of filtered) {
+        const key = row.parentAsin;
+        if (!asinMap.has(key)) asinMap.set(key, row);
+      }
+
+      // Apply operator permission filter for non-admin users
+      const { MANAGER_ROLES } = await import("../../shared/const");
+      const isManagerOrAbove = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
+      let products = Array.from(asinMap.values());
+      if (!isManagerOrAbove && ctx.user.name) {
+        const mappings = await db!.select().from(operatorNameMappings)
+          .where(eq(operatorNameMappings.userId, effectiveUserId));
+        const nameMap = new Map(mappings.map((m: any) => [m.externalName, m.systemUserName]));
+        products = products.filter((p: any) => {
+          const mappedName = nameMap.get(p.operator) || p.operator;
+          return mappedName === ctx.user.name;
+        });
+      }
+
+      // Build template rows
+      const templateRows = products.map((p: any) => ({
+        "父ASIN": p.parentAsin,
+        "产品标题": p.title || p.productName || "",
+        "店铺": p.storeName || "",
+        "运营": p.operator || "",
+        "复盘周期": "",
+        "周期类型": "weekly",
+        // Baseline
+        "基线-销售额": "",
+        "基线-小类排名": "",
+        "基线-利润率%": "",
+        "基线-转化率%": "",
+        "基线-自然单": "",
+        "基线-广告单": "",
+        "基线-评分": "",
+        "基线-Rating数": "",
+        "基线周标签": "",
+        // Target
+        "目标-销售额": "",
+        "目标-小类排名": "",
+        "目标-转化率%": "",
+        "目标-自然单": "",
+        "目标-广告单": "",
+        "目标-评分": "",
+        "目标-Rating数": "",
+        // Actual
+        "实际-销售额": "",
+        "实际-小类排名": "",
+        "实际-利润率%": "",
+        "实际-转化率%": "",
+        "实际-自然单": "",
+        "实际-广告单": "",
+        "实际-评分": "",
+        "实际-Rating数": "",
+        "实际周标签": "",
+        // Review content
+        "成果摘要": "",
+        "关键动作": "",
+        "经验教训": "",
+        "下期计划": "",
+      }));
+
+      const XLSX = await import("xlsx");
+      const ws = XLSX.utils.json_to_sheet(templateRows);
+
+      // Set column widths
+      ws["!cols"] = [
+        { wch: 14 }, // 父ASIN
+        { wch: 40 }, // 产品标题
+        { wch: 12 }, // 店铺
+        { wch: 10 }, // 运营
+        { wch: 16 }, // 复盘周期
+        { wch: 10 }, // 周期类型
+        { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 14 }, // 基线
+        { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, // 目标
+        { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 14 }, // 实际
+        { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, // 复盘内容
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "执行复盘");
+
+      // Add instructions sheet
+      const instrRows = [
+        { "说明": "使用说明" },
+        { "说明": "1. 父ASIN列已自动填充您负责的产品，请勿修改" },
+        { "说明": "2. 填写\"复盘周期\"(必填)：如\"2026W16\"或\"2026年4月\"" },
+        { "说明": "3. 周期类型：weekly(周)、monthly(月)、quarterly(季)，默认weekly" },
+        { "说明": "4. 基线数据：复盘基期的各项指标基准值" },
+        { "说明": "5. 目标数据：期望达到的各项指标目标值" },
+        { "说明": "6. 实际数据：实际达成的各项指标值（可选，也可导入后从周度数据自动加载）" },
+        { "说明": "7. 复盘内容：成果摘要、关键动作、经验教训、下期计划" },
+        { "说明": "8. 如果该ASIN+周期已有复盘记录，导入时将更新现有记录" },
+        { "说明": "" },
+        { "说明": "字段说明：" },
+        { "说明": "销售额：周度销售额（美元）" },
+        { "说明": "小类排名：亚马逊小类排名数字" },
+        { "说明": "利润率%：利润率百分比（如 15.5 表示 15.5%）" },
+        { "说明": "转化率%：转化率百分比（如 8.2 表示 8.2%）" },
+        { "说明": "自然单：自然订单数" },
+        { "说明": "广告单：广告订单数" },
+        { "说明": "评分：产品评分（如 4.5）" },
+        { "说明": "Rating数：评价数量" },
+        { "说明": "周标签：如\"2026-04-14~2026-04-20\"" },
+      ];
+      const instrWs = XLSX.utils.json_to_sheet(instrRows);
+      instrWs["!cols"] = [{ wch: 60 }];
+      XLSX.utils.book_append_sheet(wb, instrWs, "使用说明");
+
+      const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+      const base64 = Buffer.from(buf).toString("base64");
+
+      return {
+        fileName: `执行复盘模板_${products.length}个产品_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        base64Data: base64,
+        productCount: products.length,
+      };
+    }),
+
+  /** Parse and import execution reviews from uploaded Excel */
+  importReviewsFromExcel: protectedProcedure
+    .input(z.object({
+      fileName: z.string(),
+      fileData: z.string(), // base64
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const XLSX = await import("xlsx");
+
+      // Parse Excel
+      const buf = Buffer.from(input.fileData, "base64");
+      const wb = XLSX.read(buf, { type: "buffer" });
+      const ws = wb.Sheets["执行复盘"] || wb.Sheets[wb.SheetNames[0]];
+      if (!ws) throw new TRPCError({ code: "BAD_REQUEST", message: '未找到"执行复盘"工作表' });
+
+      const rows: any[] = XLSX.utils.sheet_to_json(ws);
+      if (rows.length === 0) throw new TRPCError({ code: "BAD_REQUEST", message: "表格中没有数据行" });
+
+      const results: { parentAsin: string; period: string; status: "created" | "updated" | "skipped"; reason?: string }[] = [];
+
+      // Get existing reviews for this user
+      const existingReviews = await db!.select().from(executionReviews)
+        .where(eq(executionReviews.userId, ctx.user.id));
+
+      // Get productProfiles for this user to find productProfileId by parentAsin
+      const profiles = await db!.select().from(productProfiles)
+        .where(eq(productProfiles.userId, ctx.user.id));
+      const profileByAsin = new Map(profiles.map((p: any) => [p.parentAsin, p]));
+
+      for (const row of rows) {
+        const parentAsin = String(row["父ASIN"] || "").trim();
+        const period = String(row["复盘周期"] || "").trim();
+
+        if (!parentAsin) {
+          results.push({ parentAsin: "(空)", period, status: "skipped", reason: "缺少父ASIN" });
+          continue;
+        }
+        if (!period) {
+          results.push({ parentAsin, period: "(空)", status: "skipped", reason: "缺少复盘周期" });
+          continue;
+        }
+
+        const parseNum = (v: any) => {
+          if (v === undefined || v === null || v === "") return undefined;
+          const n = Number(v);
+          return isNaN(n) ? undefined : n;
+        };
+        const parseStr = (v: any) => {
+          if (v === undefined || v === null || v === "") return undefined;
+          return String(v);
+        };
+
+        const periodType = (parseStr(row["周期类型"]) || "weekly") as "weekly" | "monthly" | "quarterly";
+        if (!["weekly", "monthly", "quarterly"].includes(periodType)) {
+          results.push({ parentAsin, period, status: "skipped", reason: `无效周期类型: ${periodType}` });
+          continue;
+        }
+
+        const profile = profileByAsin.get(parentAsin);
+        const productProfileId = profile ? profile.id : 0;
+
+        const reviewData: Record<string, any> = {
+          period,
+          periodType,
+          parentAsin,
+          // Baseline
+          baselineSales: parseStr(row["基线-销售额"]),
+          baselineSubcategoryRank: parseNum(row["基线-小类排名"]),
+          baselineProfitRate: parseStr(row["基线-利润率%"]),
+          baselineConvRate: parseStr(row["基线-转化率%"]),
+          baselineOrganicOrders: parseNum(row["基线-自然单"]),
+          baselineAdOrders: parseNum(row["基线-广告单"]),
+          baselineRatingScore: parseStr(row["基线-评分"]),
+          baselineRatingCount: parseNum(row["基线-Rating数"]),
+          baselineWeekLabel: parseStr(row["基线周标签"]),
+          // Target
+          targetSales: parseStr(row["目标-销售额"]),
+          targetSubcategoryRank: parseNum(row["目标-小类排名"]),
+          targetConvRate: parseStr(row["目标-转化率%"]),
+          targetOrganicOrders: parseNum(row["目标-自然单"]),
+          targetAdOrders: parseNum(row["目标-广告单"]),
+          targetRatingScore: parseStr(row["目标-评分"]),
+          targetRatingCount: parseNum(row["目标-Rating数"]),
+          // Actual
+          actualSales: parseStr(row["实际-销售额"]),
+          actualSubcategoryRank: parseNum(row["实际-小类排名"]),
+          actualProfitRate: parseStr(row["实际-利润率%"]),
+          actualConvRate: parseStr(row["实际-转化率%"]),
+          actualOrganicOrders: parseNum(row["实际-自然单"]),
+          actualAdOrders: parseNum(row["实际-广告单"]),
+          actualRatingScore: parseStr(row["实际-评分"]),
+          actualRatingCount: parseNum(row["实际-Rating数"]),
+          actualWeekLabel: parseStr(row["实际周标签"]),
+          // Review content
+          achievementSummary: parseStr(row["成果摘要"]),
+          keyActions: parseStr(row["关键动作"]),
+          lessonsLearned: parseStr(row["经验教训"]),
+          nextPeriodPlan: parseStr(row["下期计划"]),
+        };
+
+        // Clean undefined values
+        const cleanData: Record<string, any> = {};
+        for (const [k, v] of Object.entries(reviewData)) {
+          if (v !== undefined) cleanData[k] = v;
+        }
+
+        // Check if review already exists for this ASIN + period
+        const existingReview = existingReviews.find((r: any) =>
+          r.parentAsin === parentAsin && r.period === period
+        );
+
+        try {
+          if (existingReview) {
+            // Update existing review
+            await db!.update(executionReviews).set(cleanData)
+              .where(and(eq(executionReviews.id, existingReview.id), eq(executionReviews.userId, ctx.user.id)));
+            results.push({ parentAsin, period, status: "updated" });
+          } else {
+            // Create new review
+            await db!.insert(executionReviews).values({
+              userId: ctx.user.id,
+              productProfileId,
+              ...cleanData,
+              status: "draft",
+            });
+            results.push({ parentAsin, period, status: "created" });
+          }
+        } catch (err: any) {
+          results.push({ parentAsin, period, status: "skipped", reason: err.message?.slice(0, 100) });
+        }
+      }
+
+      return {
+        total: rows.length,
+        created: results.filter(r => r.status === "created").length,
+        updated: results.filter(r => r.status === "updated").length,
+        skipped: results.filter(r => r.status === "skipped").length,
+        details: results,
+      };
+    }),
+
 });
 
 // ═══════════════════════════════════════════════════════
