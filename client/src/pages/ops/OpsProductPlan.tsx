@@ -86,6 +86,20 @@ export default function OpsProductPlan({ productId, parentAsin, productTitle }: 
   const [showEditBaseline, setShowEditBaseline] = useState(false);
   const [showEditTargets, setShowEditTargets] = useState(false);
 
+  // Baseline: multi-select week indices
+  const [selectedBaselineWeeks, setSelectedBaselineWeeks] = useState<number[]>([]);
+  const [showBaselineWeekPicker, setShowBaselineWeekPicker] = useState(false);
+  const syncBaselineData = trpc.productOps.syncPlanBaselineData.useMutation({
+    onSuccess: (data) => {
+      refetchPlans();
+      toast.success(`基期数据已加载 (${data.weekLabel})`);
+      setShowBaselineWeekPicker(false);
+    },
+    onError: (err) => {
+      toast.error(`加载失败: ${err.message}`);
+    },
+  });
+
   // Week count selector for current data (from imported data)
   const [selectedWeekCount, setSelectedWeekCount] = useState(1);
   const { data: availableWeeks } = trpc.productOps.getAvailableWeeks.useQuery(
@@ -272,6 +286,48 @@ export default function OpsProductPlan({ productId, parentAsin, productTitle }: 
                     )}
                   </CardTitle>
                   <div className="flex items-center gap-2">
+                    {availableWeeks && availableWeeks.length > 0 ? (
+                      <div className="relative" onClick={(e) => e.stopPropagation()}>
+                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setShowBaselineWeekPicker(!showBaselineWeekPicker)}>
+                          {syncBaselineData.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Calendar className="h-3 w-3" />}
+                          {selectedBaselineWeeks.length > 0 ? `已选${selectedBaselineWeeks.length}周` : '选择周度'}
+                        </Button>
+                        {showBaselineWeekPicker && (
+                          <div className="absolute right-0 top-8 z-50 bg-popover border rounded-lg shadow-lg p-3 min-w-[220px]">
+                            <div className="text-xs font-medium mb-2 text-muted-foreground">选择基期周度（可多选）</div>
+                            <div className="max-h-[200px] overflow-y-auto space-y-1">
+                              {availableWeeks.map((w: any) => (
+                                <label key={w.index} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-accent cursor-pointer text-xs">
+                                  <Checkbox
+                                    checked={selectedBaselineWeeks.includes(w.index)}
+                                    onCheckedChange={(checked) => {
+                                      setSelectedBaselineWeeks(prev =>
+                                        checked ? [...prev, w.index] : prev.filter(i => i !== w.index)
+                                      );
+                                    }}
+                                  />
+                                  {w.label}
+                                </label>
+                              ))}
+                            </div>
+                            <div className="flex gap-2 mt-2 pt-2 border-t">
+                              <Button size="sm" variant="outline" className="h-6 text-xs flex-1" onClick={() => { setSelectedBaselineWeeks([]); }}>清空</Button>
+                              <Button size="sm" className="h-6 text-xs flex-1" disabled={selectedBaselineWeeks.length === 0 || syncBaselineData.isPending}
+                                onClick={() => {
+                                  if (activePlanId) {
+                                    syncBaselineData.mutate({ planId: activePlanId, parentAsin, weekIndices: selectedBaselineWeeks });
+                                  }
+                                }}>
+                                {syncBaselineData.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                                加载数据
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <Badge variant="outline" className="text-xs text-muted-foreground">暂无导入数据</Badge>
+                    )}
                     <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); setShowEditBaseline(true); loadBaselineForm(); }}>
                       <Edit2 className="h-3 w-3" />
                     </Button>

@@ -3158,6 +3158,111 @@ export const productOpsRouter = router({
       return { synced: true, data: currentData, weekLabel, availableWeeks, totalWeeks: sortedWeeks.length };
     }),
 
+  // ─── 基期数据：按多选周度自动聚合加载 ───
+  syncPlanBaselineData: protectedProcedure
+    .input(z.object({
+      planId: z.number(),
+      parentAsin: z.string(),
+      weekIndices: z.array(z.number()).min(1), // 选中的周度索引（0=最近一周，1=上上周...）
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const [plan] = await db!.select().from(opsPlans).where(eq(opsPlans.id, input.planId));
+      if (!plan) throw new TRPCError({ code: 'NOT_FOUND', message: '计划不存在' });
+      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
+      // 查询该产品所有周度数据
+      const weeklyRows = await db!.select().from(lingxingProductWeekly)
+        .where(and(
+          eq(lingxingProductWeekly.userId, effectiveUserId),
+          eq(lingxingProductWeekly.parentAsin, input.parentAsin),
+        ))
+        .orderBy(desc(lingxingProductWeekly.weekStartDate));
+
+      // 按周分组
+      const weekMap = new Map<string, typeof weeklyRows>();
+      for (const row of weeklyRows) {
+        const key = `${row.weekStartDate}_${row.weekEndDate}`;
+        if (!weekMap.has(key)) weekMap.set(key, []);
+        weekMap.get(key)!.push(row);
+      }
+      const sortedWeeks = Array.from(weekMap.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+
+      if (sortedWeeks.length === 0) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: '暂无已导入的周度数据，请先在数据导入中心导入数据' });
+      }
+
+      // 根据选中的索引获取对应周度
+      const selectedWeeks = input.weekIndices
+        .filter(i => i >= 0 && i < sortedWeeks.length)
+        .sort((a, b) => a - b)
+        .map(i => sortedWeeks[i]);
+
+      if (selectedWeeks.length === 0) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: '所选周度不存在' });
+      }
+
+      // 生成周标签（多选时显示范围）
+      const lastWeek = selectedWeeks[selectedWeeks.length - 1];
+      const firstWeek = selectedWeeks[0];
+      const fmtDate = (d: string) => {
+        const dt = new Date(d + 'T00:00:00');
+        return `${(dt.getMonth()+1).toString().padStart(2,'0')}/${dt.getDate().toString().padStart(2,'0')}`;
+      };
+      const labels = selectedWeeks.map(([key]) => {
+        const [ws, we] = key.split('_');
+        return `${fmtDate(ws)}-${fmtDate(we)}`;
+      });
+      const weekLabel = labels.length <= 2 ? labels.join(', ') : `${labels[labels.length - 1]}~${labels[0]} (${labels.length}周)`;
+
+      // 聚合多周数据
+      let totalSales = 0, organicOrders = 0, adOrders = 0;
+      let ratingScore = '0', ratingCount = 0;
+      let subcategoryRank: string | null = null;
+      let profitMarginSum = 0, convRateSum = 0;
+      let profitMarginCount = 0, convRateCount = 0;
+
+      for (const [, rows] of selectedWeeks) {
+        for (const row of rows) {
+          totalSales += Number(row.salesAmount || 0);
+          organicOrders += Number(row.organicOrders || 0);
+          adOrders += Number(row.adOrders || 0);
+          if (!subcategoryRank && row.bsrSub) subcategoryRank = row.bsrSub;
+          if (ratingScore === '0' && row.rating) ratingScore = row.rating;
+          if (ratingCount === 0 && row.reviewCount) ratingCount = Number(row.reviewCount);
+          if (row.orderProfitMargin) { profitMarginSum += Number(row.orderProfitMargin); profitMarginCount++; }
+          if (row.cvr) { convRateSum += Number(row.cvr); convRateCount++; }
+        }
+      }
+
+      const avgProfitMargin = profitMarginCount > 0 ? profitMarginSum / profitMarginCount : 0;
+      const avgConvRate = convRateCount > 0 ? convRateSum / convRateCount : 0;
+
+      let rankNum: number | null = null;
+      if (subcategoryRank) {
+        const match = subcategoryRank.match(/(\d+)/);
+        if (match) rankNum = parseInt(match[1]);
+      }
+
+      const baselineData = {
+        baselineWeekLabel: weekLabel,
+        baselineSales: String(round2(totalSales)),
+        baselineSubcategoryRank: rankNum,
+        baselineProfitRate: String(round2(avgProfitMargin)),
+        baselineConvRate: String(round2(avgConvRate)),
+        baselineOrganicOrders: organicOrders,
+        baselineAdOrders: adOrders,
+        baselineRatingScore: ratingScore,
+        baselineRatingCount: ratingCount,
+      };
+
+      await db!.update(opsPlans).set({
+        ...baselineData,
+        updatedAt: new Date(),
+      }).where(eq(opsPlans.id, input.planId));
+
+      return { synced: true, data: baselineData, weekLabel };
+    }),
+
   // ─── 获取可用周列表（不更新数据，仅查询） ───
   getAvailableWeeks: protectedProcedure
     .input(z.object({

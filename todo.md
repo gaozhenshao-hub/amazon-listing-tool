@@ -3680,3 +3680,9 @@
 - [x] 后端：importPlansFromExcel恢复目标数据字段解析
 - [x] 前端：OpsPlanImportTab恢复目标数据预览列
 - [x] 验证修复并保存checkpoint
+### 运营计划基期数据支持多选周度
+- [x] 后端：新增syncPlanBaselineData过程支持多周度聚合
+- [x] 后端：多周度聚合计算（销售额/订单合计，利润率/转化率平均）
+- [x] 前端：基期数据选择器改为多选下拉（checkbox式）
+- [x] 前端：多选后自动加载聚合结果并写入数据库
+- [x] 构建验证并保存checkpoint
