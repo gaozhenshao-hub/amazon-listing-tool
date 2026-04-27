@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import OperatorMappingDialog from "@/components/OperatorMappingDialog";
 import AdReportImportTab from "./AdReportImportTab";
+import OpsPlanImportTab from "./OpsPlanImportTab";
 
 // ─── Helper: format date ───
 function formatDate(d: Date | string | null) {
@@ -251,6 +252,7 @@ export default function OpsDataImport() {
         <TabsList>
           <TabsTrigger value="upload">上传数据</TabsTrigger>
           <TabsTrigger value="ad-report">广告报表</TabsTrigger>
+          <TabsTrigger value="ops-plan">运营计划</TabsTrigger>
           <TabsTrigger value="history">导入历史</TabsTrigger>
         </TabsList>
 
@@ -341,6 +343,11 @@ export default function OpsDataImport() {
         {/* Ad Report Tab */}
         <TabsContent value="ad-report" className="space-y-4">
           <AdReportImportTab />
+        </TabsContent>
+
+        {/* Ops Plan Import Tab */}
+        <TabsContent value="ops-plan" className="space-y-4">
+          <OpsPlanImportTab />
         </TabsContent>
 
         {/* History Tab */}

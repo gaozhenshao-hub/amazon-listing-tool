@@ -3615,3 +3615,9 @@
 ### Bug修复：执行复盘多周数据不变
 - [x] 修复syncReviewFromImportedData多周聚合逻辑：选择2周/4周时实际数据应聚合多周而非只取最近1周
 - [x] 修复 syncPlanCurrentData / getAvailableWeeks / syncReviewFromImportedData 中 userId 权限问题，统一使用 resolveDataUserId
+### 运营计划表格批量导入功能
+- [x] 后端：运营计划模板下载API（包含用户产品父ASIN、计划名称、基线/目标字段）
+- [x] 后端：运营计划Excel批量导入解析API（解析上传文件，批量创建/更新运营计划）
+- [x] 前端：数据导入中心增加"运营计划"导入卡片
+- [x] 前端：模板下载按钮（自动填充用户产品的父ASIN列表）
+- [x] 前端：上传Excel后预览和确认导入
