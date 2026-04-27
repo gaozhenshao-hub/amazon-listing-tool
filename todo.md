@@ -3635,3 +3635,7 @@
 - [x] 清理后端路由引用（删除competitorMonitor.ts和profitDeep.ts）
 - [x] 更新仪表盘和平台首页的引用文字
 - [x] 验证构建通过
+### 运营仪表盘全部数据源改造（领星API→Excel导入数据）
+- [x] 后端：重写getDashboardOverview，销售/利润/订单/库存/广告全部从lingxing_product_weekly聚合
+- [x] 前端：OpsDashboard.tsx适配新数据结构，趋势图改为周度维度，更新描述文案
+- [x] 验证构建通过并保存checkpoint

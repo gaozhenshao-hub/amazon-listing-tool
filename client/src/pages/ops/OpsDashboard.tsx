@@ -14,7 +14,7 @@ import {
 } from "recharts";
 import {
   DollarSign, TrendingUp, TrendingDown, Package, Target, AlertTriangle, ShoppingCart,
-  Percent, Store, RefreshCw, Wifi, WifiOff, ArrowUpRight, ArrowDownRight,
+  Percent, Store, RefreshCw, ArrowUpRight, ArrowDownRight,
   Calendar, ShieldCheck, Sparkles, Zap, Tag, Clock, ChevronLeft, ChevronRight,
   Loader2, CheckCircle, XCircle, Info, ShoppingBag, Upload,
 } from "lucide-react";
@@ -217,18 +217,18 @@ export default function OpsDashboard() {
   const summary = data?.summary;
   const profitTrend = data?.profitTrend || [];
   const topAlerts = data?.topAlerts || [];
-  const isMock = data?.isMock;
+  const dataSource = (data as any)?.dataSource;
 
   const kpiCards = [
     {
-      title: "30天销售额",
+      title: "近4周销售额",
       value: `$${(summary?.revenue30d || 0).toLocaleString()}`,
       icon: DollarSign,
       color: "text-emerald-600",
       bgColor: "bg-emerald-50",
     },
     {
-      title: "30天净利润",
+      title: "近4周净利润",
       value: `$${(summary?.profit30d || 0).toLocaleString()}`,
       icon: TrendingUp,
       color: "text-blue-600",
@@ -236,7 +236,7 @@ export default function OpsDashboard() {
       sub: `利润率 ${summary?.avgMargin || 0}%`,
     },
     {
-      title: "30天订单量",
+      title: "近4周订单量",
       value: (summary?.orders30d || 0).toLocaleString(),
       icon: ShoppingCart,
       color: "text-purple-600",
@@ -266,19 +266,18 @@ export default function OpsDashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">运营仪表盘</h1>
-          <p className="text-sm text-gray-500 mt-1">基于领星ERP数据的运营概览 · 促销日历 · 店铺健康 · 智能预警</p>
+          <p className="text-sm text-gray-500 mt-1">基于导入Excel数据的运营概览 · 促销日历 · 店铺健康 · 智能预警</p>
         </div>
         <div className="flex items-center gap-3">
-          {isMock && (
-            <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50">
-              <WifiOff className="w-3 h-3 mr-1" />
-              Mock数据模式
+          {dataSource === 'excel' ? (
+            <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50">
+              <Upload className="w-3 h-3 mr-1" />
+              Excel导入数据
             </Badge>
-          )}
-          {!isMock && (
-            <Badge variant="outline" className="border-green-300 text-green-700 bg-green-50">
-              <Wifi className="w-3 h-3 mr-1" />
-              实时数据
+          ) : (
+            <Badge variant="outline" className="border-gray-300 text-gray-600 bg-gray-50">
+              <Info className="w-3 h-3 mr-1" />
+              暂无数据
             </Badge>
           )}
           <Button variant="outline" size="sm" onClick={handleGenerateBriefing} disabled={briefingMutation.isPending}>
@@ -381,7 +380,7 @@ export default function OpsDashboard() {
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2">
             <CardTitle className="text-base">收入与利润趋势</CardTitle>
-            <CardDescription>近30天每日收入和利润走势</CardDescription>
+            <CardDescription>按周汇总的收入和利润走势（来自导入数据）</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-72">
@@ -398,15 +397,16 @@ export default function OpsDashboard() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={(v) => v?.slice(5)} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `$${v}`} />
                   <Tooltip
-                    formatter={(value: number, name: string) => [`$${value.toLocaleString()}`, name === "revenue" ? "收入" : "利润"]}
-                    labelFormatter={(label) => `日期: ${label}`}
+                    formatter={(value: number, name: string) => [`$${value.toLocaleString()}`, name === "revenue" ? "收入" : name === "adSpend" ? "广告花费" : "利润"]}
+                    labelFormatter={(label) => `周期: ${label}`}
                   />
-                  <Legend formatter={(value) => value === "revenue" ? "收入" : "利润"} />
+                  <Legend formatter={(value) => value === "revenue" ? "收入" : value === "adSpend" ? "广告花费" : "利润"} />
                   <Area type="monotone" dataKey="revenue" stroke="#3b82f6" fill="url(#colorRevenue)" strokeWidth={2} />
                   <Area type="monotone" dataKey="profit" stroke="#10b981" fill="url(#colorProfit)" strokeWidth={2} />
+                  <Line type="monotone" dataKey="adSpend" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>

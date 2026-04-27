@@ -9,9 +9,12 @@ import {
   adAnalysisTasks, adAutomationRules, searchTermActions,
   competitorMonitors, competitorSnapshots, competitorReports,
   lingxingApiLogs, userSettings, asinStatusCache, asinPermissions,
-  asinTagDefinitions, asinTagAssignments, productProfiles, productVariants
+  asinTagDefinitions, asinTagAssignments, productProfiles, productVariants,
+  lingxingProductWeekly, operatorNameMappings
 } from "../../drizzle/schema";
-import { eq, desc, and, sql, gte, lte } from "drizzle-orm";
+import { eq, desc, and, sql, gte, lte, or } from "drizzle-orm";
+import { MANAGER_ROLES } from "../../shared/const";
+import { resolveDataUserId } from "./dataImport";
 
 // ─── Ad Data Memory Cache ─────────────────────────────────────────────
 interface CacheEntry<T> {
@@ -137,142 +140,159 @@ export const operationsRouter = router({
   getDashboardOverview: protectedProcedure
     .input(z.object({ marketplace: z.string().optional() }).optional())
     .query(async ({ ctx, input }) => {
-    const adapter = getLingxingAdapter();
-    const isMock = adapter.isMockMode();
+    const db = await getDb();
+    const mp = input?.marketplace || 'ALL';
 
-    // First get all seller SIDs, then filter by marketplace
-    const { sids: allSids, sellers } = await getAllSellerSids();
-    const mp = input?.marketplace || 'US';
-    const sids = filterSidsByMarketplace(sellers, mp);
-    const allSidsStr = sids.join(',');
-    const firstSid = sids.length > 0 ? Number(sids[0]) : 1;
-    
-    // Fetch key data from Lingxing using real SIDs
-    // Two profit requests: summary for cards, daily for trend chart
-    const [profitSummaryRes, profitDailyRes, inventoryRes, adReportRes] = await Promise.all([
-      adapter.requestWithMockFallback({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 1000, startDate: getDateNDaysAgo(30), endDate: getYesterday(), monthlyQuery: false, orderStatus: "All", summaryEnabled: true } }),
-      adapter.requestWithMockFallback({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 1000, startDate: getDateNDaysAgo(30), endDate: getYesterday(), monthlyQuery: false, orderStatus: "All" } }),
-      adapter.requestWithMockFallback({ path: "/erp/sc/data/fba/FbaStockLists", body: { offset: 0, length: 500 } }),
-      adapter.requestWithMockFallback({ path: "/pb/openapi/newad/spAdvertiseHourData", body: { report_date: getYesterday(), offset: 0, length: 1000 } }).catch(() => ({ data: [] })),
-    ]);
-    const sellerRes = { data: sellers };
+    // ── Profit & Sales data: from imported Excel (lingxing_product_weekly) ──
+    const effectiveUserId = await resolveDataUserId(db!, ctx.user);
 
-    // Calculate summary metrics
-    // Normalize data: profit API returns {records:[...]}, FBA returns {total, list:[]}
-    // Summary data (aggregated by MSKU) for cards
-    const rawProfitSummary = profitSummaryRes.data || [];
-    const profitSummaryData = Array.isArray(rawProfitSummary) ? rawProfitSummary : (rawProfitSummary as any).records || (rawProfitSummary as any).list || [];
-    // Daily data (per day per MSKU) for trend chart
-    const rawProfitDaily = profitDailyRes.data || [];
-    const profitDailyData = Array.isArray(rawProfitDaily) ? rawProfitDaily : (rawProfitDaily as any).records || (rawProfitDaily as any).list || [];
-    // Use summary data for card calculations
-    const profitData = profitSummaryData;
-    const rawInventory = inventoryRes.data || [];
-    const inventoryData = Array.isArray(rawInventory) ? rawInventory : (rawInventory as any).records || (rawInventory as any).list || [];
-    const rawAd = adReportRes.data || [];
-    const adData = Array.isArray(rawAd) ? rawAd : (rawAd as any).records || (rawAd as any).list || [];
-    console.log(`[Dashboard] Profit records: ${profitData.length}, Inventory records: ${inventoryData.length}, Ad report records: ${adData.length}`);
+    // Get all available weeks, take the most recent 12 weeks for trend
+    const weekRanges = await db!.selectDistinct({
+      weekStartDate: lingxingProductWeekly.weekStartDate,
+      weekEndDate: lingxingProductWeekly.weekEndDate,
+    })
+      .from(lingxingProductWeekly)
+      .where(eq(lingxingProductWeekly.userId, effectiveUserId))
+      .orderBy(desc(lingxingProductWeekly.weekStartDate))
+      .limit(12);
 
-    // Real Lingxing profit fields:
-    // revenue: totalFbaAndFbmAmount, profit: grossProfit, margin: grossRate
-    // orders: totalSalesQuantity, adSpend: totalAdsCost
-    // fees: platformFee(-), totalFbaDeliveryFee(-), totalStorageFee(-)
-    // cost: cgPriceAbsTotal, cgTransportCostsTotal
-    // Field mapping per Lingxing API docs: totalSalesAmount=销售额, grossProfit=毛利润, totalSalesQuantity=销量
-    const totalRevenue = profitData.reduce((s: number, d: any) => s + Number(d.totalSalesAmount || d.totalFbaAndFbmAmount || 0), 0);
-    const totalProfit = profitData.reduce((s: number, d: any) => s + Number(d.grossProfit || 0), 0);
-    const totalOrders = profitData.reduce((s: number, d: any) => s + Number(d.totalSalesQuantity || 0), 0);
+    let totalRevenue = 0;
+    let totalProfit = 0;
+    let totalOrders = 0;
+    let totalAdSpendFromExcel = 0;
+    let totalAdSalesFromExcel = 0;
+    let profitTrend: { date: string; revenue: number; profit: number; margin: number; orders: number; adSpend: number }[] = [];
+    let permittedData: any[] = [];
+
+    if (weekRanges.length > 0) {
+      // Get all data for these weeks
+      const allWeeklyData = await db!.select().from(lingxingProductWeekly)
+        .where(and(
+          eq(lingxingProductWeekly.userId, effectiveUserId),
+          sql`${lingxingProductWeekly.weekStartDate} IN (${sql.join(weekRanges.map((w: any) => sql`${w.weekStartDate}`), sql`,`)})`
+        ));
+
+      // Filter by marketplace if needed
+      const filteredData = mp === 'ALL' ? allWeeklyData : allWeeklyData.filter((r: any) => {
+        const c = (r.country || '').toUpperCase();
+        return c === mp || c.includes(mp);
+      });
+
+      // Apply operator-based permission filtering for non-admin users
+      const isManagerOrAbove = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
+      permittedData = filteredData;
+      if (!isManagerOrAbove && ctx.user.name) {
+        // Need to apply operator name mappings first
+        const allMappings = await db!.select().from(operatorNameMappings)
+          .where(and(
+            eq(operatorNameMappings.userId, effectiveUserId),
+            eq(operatorNameMappings.isConfirmed, 1),
+          ));
+        const mappingLookup = new Map<string, string>();
+        for (const m of allMappings) {
+          if (m.externalName && m.systemUserName) {
+            mappingLookup.set(m.externalName.toLowerCase(), m.systemUserName);
+          }
+        }
+        permittedData = filteredData.filter((r: any) => {
+          if (!r.operator) return false;
+          const mapped = mappingLookup.get(r.operator.toLowerCase()) || r.operator;
+          return mapped === ctx.user.name;
+        });
+      }
+
+      // Aggregate by week for trend chart
+      const weekMap: Record<string, { revenue: number; profit: number; orders: number; adSpend: number; adSales: number }> = {};
+      for (const row of permittedData) {
+        const weekKey = row.weekStartDate;
+        if (!weekMap[weekKey]) weekMap[weekKey] = { revenue: 0, profit: 0, orders: 0, adSpend: 0, adSales: 0 };
+        weekMap[weekKey].revenue += parseFloat(String(row.salesAmount || 0));
+        weekMap[weekKey].profit += parseFloat(String(row.orderProfit || row.settlementProfit || 0));
+        weekMap[weekKey].orders += (row.salesQty || 0);
+        weekMap[weekKey].adSpend += parseFloat(String(row.adSpend || 0));
+        weekMap[weekKey].adSales += parseFloat(String(row.adSales || 0));
+      }
+
+      // Build sorted trend array
+      profitTrend = Object.entries(weekMap)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([weekStart, v]) => {
+          const weekEnd = weekRanges.find((w: any) => w.weekStartDate === weekStart)?.weekEndDate || weekStart;
+          return {
+            date: `${weekStart.slice(5)}~${weekEnd.slice(5)}`,
+            revenue: Math.round(v.revenue * 100) / 100,
+            profit: Math.round(v.profit * 100) / 100,
+            margin: v.revenue > 0 ? Math.round(v.profit / v.revenue * 10000) / 100 : 0,
+            orders: v.orders,
+            adSpend: Math.round(v.adSpend * 100) / 100,
+          };
+        });
+
+      // Calculate summary from the most recent 4 weeks (approximately 30 days)
+      const recentWeekKeys = Object.keys(weekMap).sort((a, b) => b.localeCompare(a)).slice(0, 4);
+      for (const wk of recentWeekKeys) {
+        const v = weekMap[wk];
+        totalRevenue += v.revenue;
+        totalProfit += v.profit;
+        totalOrders += v.orders;
+        totalAdSpendFromExcel += v.adSpend;
+        totalAdSalesFromExcel += v.adSales;
+      }
+    }
+
     const avgMargin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
+    const avgAcos = totalAdSalesFromExcel > 0 ? (totalAdSpendFromExcel / totalAdSalesFromExcel * 100) : 0;
 
-    // FBA inventory fields: sellable_days (可售天数), fulfillable_quantity (可售库存), msku, product_name
-    const lowStockCount = inventoryData.filter((i: any) => {
-      const days = Number(i.sellable_days) || Number(i.days_of_supply) || 0;
-      return days < 14;
-    }).length;
-    const overstockCount = inventoryData.filter((i: any) => {
-      const days = Number(i.sellable_days) || Number(i.days_of_supply) || 0;
-      return days > 90;
-    }).length;
+    // ── Inventory & SKU data: also from imported Excel (latest week) ──
+    let skuCount = 0;
+    let lowStockCount = 0;
+    let overstockCount = 0;
+    const inventoryAlerts: { type: string; message: string; severity: string }[] = [];
 
-    // Ad data from campaign reports API (cost, sales fields)
-    const totalAdSpend = adData.reduce((s: number, d: any) => s + (Number(d.cost) || 0), 0);
-    const totalAdSales = adData.reduce((s: number, d: any) => s + (Number(d.sales) || 0), 0);
-    // Fallback: extract ad cost from profit data if ad report is empty
-    const profitAdSpend = profitData.reduce((s: number, d: any) => s + Math.abs(Number(d.totalAdsCost || 0)), 0);
-    const finalAdSpend = totalAdSpend > 0 ? totalAdSpend : profitAdSpend;
-    const avgAcos = totalAdSales > 0 ? (finalAdSpend / totalAdSales * 100) : 0;
-    console.log(`[Dashboard] Ad spend: $${finalAdSpend.toFixed(2)}, Ad sales: $${totalAdSales.toFixed(2)}, ACoS: ${avgAcos.toFixed(1)}%`);
+    if (weekRanges.length > 0) {
+      // Use the most recent week's data for inventory snapshot
+      const latestWeekStart = weekRanges[0].weekStartDate;
+      const latestWeekData = (permittedData || []).filter((r: any) => r.weekStartDate === latestWeekStart);
+
+      // Count unique parent ASINs as SKU count
+      const uniqueAsins = new Set(latestWeekData.map((r: any) => r.parentAsin || r.asin).filter(Boolean));
+      skuCount = uniqueAsins.size;
+
+      // Inventory alerts based on fbaDaysOfSupply
+      for (const row of latestWeekData) {
+        const days = row.fbaDaysOfSupply || 0;
+        if (days > 0 && days < 14) lowStockCount++;
+        if (days > 90) overstockCount++;
+        if (days > 0 && days < 7) {
+          const asin = row.parentAsin || row.asin || 'Unknown';
+          inventoryAlerts.push({
+            type: "inventory_critical",
+            message: `${asin}: 仅剩${days}天库存，需紧急补货`,
+            severity: "critical",
+          });
+        }
+      }
+    }
+
+    console.log(`[Dashboard] Excel data: ${profitTrend.length} weeks trend, Revenue: $${totalRevenue.toFixed(2)}, Profit: $${totalProfit.toFixed(2)}, SKUs: ${skuCount}, LowStock: ${lowStockCount}`);
 
     return {
-      isMock,
+      isMock: false, // No longer using mock/real Lingxing API distinction
+      dataSource: 'excel' as const, // Indicate data is from imported Excel
       summary: {
         revenue30d: Math.round(totalRevenue * 100) / 100,
         profit30d: Math.round(totalProfit * 100) / 100,
         orders30d: totalOrders,
         avgMargin: Math.round(avgMargin * 10) / 10,
-        skuCount: inventoryData.length,
+        skuCount,
         lowStockCount,
         overstockCount,
-        adSpend30d: Math.round(finalAdSpend * 100) / 100,
+        adSpend30d: Math.round(totalAdSpendFromExcel * 100) / 100,
         avgAcos: Math.round(avgAcos * 10) / 10,
-        sellerCount: (sellerRes.data || []).length,
+        sellerCount: 0, // Not applicable for Excel data
       },
-      // Build trend from daily data: group by date and sum
-      profitTrend: (() => {
-        const dateMap: Record<string, { revenue: number; profit: number; orders: number }> = {};
-        for (const d of profitDailyData) {
-          const date = d.postedDateLocale || d.reportDateMonth || d.date || d.statDate || '';
-          if (!date) continue;
-          if (!dateMap[date]) dateMap[date] = { revenue: 0, profit: 0, orders: 0 };
-          dateMap[date].revenue += Number(d.totalSalesAmount || d.totalFbaAndFbmAmount || 0);
-          dateMap[date].profit += Number(d.grossProfit || 0);
-          dateMap[date].orders += Number(d.totalSalesQuantity || 0);
-        }
-        return Object.entries(dateMap)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .slice(-30)
-          .map(([date, v]) => ({
-            date,
-            revenue: Math.round(v.revenue * 100) / 100,
-            profit: Math.round(v.profit * 100) / 100,
-            margin: v.revenue > 0 ? Math.round(v.profit / v.revenue * 10000) / 100 : 0,
-            orders: v.orders,
-          }));
-      })(),
-      topAlerts: [
-        ...inventoryData
-          .filter((i: any) => {
-            const days = Number(i.sellable_days) || Number(i.days_of_supply) || 0;
-            return days < 7;
-          })
-          .slice(0, 3)
-          .map((i: any) => {
-            const sku = i.msku || i.seller_sku || i.local_sku || 'Unknown';
-            const days = Number(i.sellable_days) || Number(i.days_of_supply) || 0;
-            return {
-              type: "inventory_critical" as const,
-              message: `${sku}: 仅剩${days}天库存，需紧急补货`,
-              severity: "critical" as const,
-            };
-          }),
-        ...adData
-          .filter((a: any) => {
-            const cost = Number(a.cost) || 0;
-            const sales = Number(a.sales) || 0;
-            return sales > 0 && cost > 0 && (cost / sales) > 0.5;
-          })
-          .slice(0, 2)
-          .map((a: any) => {
-            const cost = Number(a.cost) || 0;
-            const sales = Number(a.sales) || 0;
-            const acos = (cost / sales * 100).toFixed(1);
-            return {
-              type: "ad_acos_high" as const,
-              message: `广告活动 Campaign ${a.campaign_id}: ACoS ${acos}%，超出阈值`,
-              severity: "warning" as const,
-            };
-          }),
-      ],
+      profitTrend,
+      topAlerts: inventoryAlerts.slice(0, 5),
     };
   }),
 
