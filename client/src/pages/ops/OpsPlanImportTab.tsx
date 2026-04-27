@@ -177,10 +177,14 @@ export default function OpsPlanImportTab() {
               <div className="text-sm text-amber-600/80 dark:text-amber-400/80 space-y-1">
                 <p>在模板中填写以下信息：</p>
                 <ul className="list-disc list-inside ml-2 space-y-0.5">
-                  <li><strong>计划名称</strong>（必填）：如"B0DJSQ6WC6 Q2运营计划"</li>
-                  <li><strong>计划周期</strong>：如"2026Q2"或"2026W16-W20"</li>
-                  <li><strong>基线/目标数据</strong>：在系统中创建计划时选择对应周度自动加载，无需在模板中填写</li>
+                  <li><strong>计划名称</strong>（必填）：如“B0DJSQ6WC6 Q2运营计划”，不超过100字符</li>
+                  <li><strong>计划周期</strong>：建议格式“2026Q2”、“2026年4月-6月”、“2026W16-W20”</li>
+                  <li><strong>基线/目标数据</strong>：无需填写，在产品详情页选择周度自动加载</li>
                 </ul>
+                <div className="mt-2 p-2 rounded bg-amber-100/60 dark:bg-amber-900/30 text-xs">
+                  <AlertTriangle className="h-3 w-3 inline mr-1" />
+                  校验提示：父ASIN请勿修改；计划名称为空的行将被跳过；已有计划的ASIN将自动更新
+                </div>
               </div>
             </div>
           </div>

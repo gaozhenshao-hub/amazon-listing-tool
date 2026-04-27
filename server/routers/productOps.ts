@@ -19,7 +19,7 @@ import {
   lingxingProductWeekly,
   operatorNameMappings,
 } from "../../drizzle/schema";
-import { eq, desc, and, sql, asc, isNull, inArray } from "drizzle-orm";
+import { eq, desc, and, or, sql, asc, isNull, inArray } from "drizzle-orm";
 
 // ============== Scoring Progress Tracking ==============
 type ScoringProgress = {
@@ -1146,15 +1146,26 @@ export const productOpsRouter = router({
 
   listPlans: protectedProcedure.input(z.object({ productProfileId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
+    const { MANAGER_ROLES } = await import("../../shared/const");
+    const isManager = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
+    const conditions = [eq(opsPlans.productProfileId, input.productProfileId)];
+    if (!isManager) {
+      conditions.push(eq(opsPlans.userId, ctx.user.id));
+    }
     return db!.select().from(opsPlans)
-      .where(and(eq(opsPlans.userId, ctx.user.id), eq(opsPlans.productProfileId, input.productProfileId)))
+      .where(and(...conditions))
       .orderBy(desc(opsPlans.updatedAt));
   }),
 
   getPlan: protectedProcedure.input(z.object({ planId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
-    const [plan] = await db!.select().from(opsPlans)
-      .where(and(eq(opsPlans.id, input.planId), eq(opsPlans.userId, ctx.user.id)));
+    const { MANAGER_ROLES } = await import("../../shared/const");
+    const isManager = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
+    const conditions = [eq(opsPlans.id, input.planId)];
+    if (!isManager) {
+      conditions.push(eq(opsPlans.userId, ctx.user.id));
+    }
+    const [plan] = await db!.select().from(opsPlans).where(and(...conditions));
     if (!plan) throw new TRPCError({ code: "NOT_FOUND", message: "Plan not found" });
     return plan;
   }),
@@ -1224,15 +1235,23 @@ export const productOpsRouter = router({
     for (const [k, v] of Object.entries(updates)) {
       if (v !== undefined) cleanUpdates[k] = v;
     }
-    await db!.update(opsPlans).set(cleanUpdates).where(and(eq(opsPlans.id, planId), eq(opsPlans.userId, ctx.user.id)));
+    const { MANAGER_ROLES } = await import("../../shared/const");
+    const isManager = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
+    const updateConditions = [eq(opsPlans.id, planId)];
+    if (!isManager) updateConditions.push(eq(opsPlans.userId, ctx.user.id));
+    await db!.update(opsPlans).set(cleanUpdates).where(and(...updateConditions));
     return { success: true };
   }),
 
   deletePlan: protectedProcedure.input(z.object({ planId: z.number() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
+    const { MANAGER_ROLES } = await import("../../shared/const");
+    const isManager = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
     await db!.delete(opsPlanActions).where(eq(opsPlanActions.planId, input.planId));
     await db!.delete(opsPlanSummaries).where(eq(opsPlanSummaries.planId, input.planId));
-    await db!.delete(opsPlans).where(and(eq(opsPlans.id, input.planId), eq(opsPlans.userId, ctx.user.id)));
+    const delConditions = [eq(opsPlans.id, input.planId)];
+    if (!isManager) delConditions.push(eq(opsPlans.userId, ctx.user.id));
+    await db!.delete(opsPlans).where(and(...delConditions));
     return { success: true };
   }),
 
@@ -2041,7 +2060,12 @@ export const productOpsRouter = router({
     .input(z.object({ productProfileId: z.number(), parentAsin: z.string().optional() }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
-      const conditions = [eq(executionReviews.userId, ctx.user.id)];
+      const { MANAGER_ROLES } = await import("../../shared/const");
+      const isManager = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
+      const conditions: any[] = [];
+      if (!isManager) {
+        conditions.push(eq(executionReviews.userId, ctx.user.id));
+      }
       if (input.parentAsin) {
         conditions.push(eq(executionReviews.parentAsin, input.parentAsin));
       } else {
@@ -2197,21 +2221,29 @@ export const productOpsRouter = router({
       status: z.enum(["draft", "submitted", "reviewed"]).optional(),
       aiAnalysis: z.string().optional(), aiAnalysisLocked: z.number().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
+      const { MANAGER_ROLES } = await import("../../shared/const");
+      const isManager = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
       const { reviewId, ...updates } = input;
       const clean = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
       if (Object.keys(clean).length > 0) {
-        await db!.update(executionReviews).set(clean).where(eq(executionReviews.id, reviewId));
+        const conds = [eq(executionReviews.id, reviewId)];
+        if (!isManager) conds.push(eq(executionReviews.userId, ctx.user.id));
+        await db!.update(executionReviews).set(clean).where(and(...conds));
       }
       return { updated: true };
     }),
 
   deleteExecutionReview: protectedProcedure
     .input(z.object({ reviewId: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      await db!.delete(executionReviews).where(eq(executionReviews.id, input.reviewId));
+      const { MANAGER_ROLES } = await import("../../shared/const");
+      const isManager = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
+      const conds = [eq(executionReviews.id, input.reviewId)];
+      if (!isManager) conds.push(eq(executionReviews.userId, ctx.user.id));
+      await db!.delete(executionReviews).where(and(...conds));
       return { deleted: true };
     }),
 
@@ -4843,17 +4875,32 @@ export const productOpsRouter = router({
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "运营计划");
 
-      // Add instructions sheet
+      // Add instructions sheet with validation rules
       const instrRows = [
-        { "说明": "使用说明" },
-        { "说明": "1. 父ASIN列已自动填充您负责的产品，请勿修改" },
-        { "说明": "2. 填写\"计划名称\"（必填）和其他计划信息" },
-        { "说明": "3. 基线/目标数据：在系统中创建计划时选择对应周度自动加载，无需在模板中填写" },
-        { "说明": "4. 填写完成后在\"数据导入中心\"上传此文件" },
-        { "说明": "5. 如果该ASIN已有运营计划，导入时将更新现有计划" },
+        { "说明": "═══ 使用说明 ═══" },
+        { "说明": "" },
+        { "说明": "【必填字段】" },
+        { "说明": "• 父ASIN：已自动填充，请勿修改（格式：B0开头的10位字母数字）" },
+        { "说明": "• 计划名称：必填，建议格式如\"B0XXXXXX 2026Q2运营计划\"" },
+        { "说明": "" },
+        { "说明": "【选填字段】" },
+        { "说明": "• 计划周期：建议格式 \"2026Q2\"、\"2026年4月-6月\"、\"2026W16-W20\"" },
+        { "说明": "• 项目经理：填写负责人姓名" },
+        { "说明": "• 游戏策划师：填写策划师姓名" },
+        { "说明": "" },
+        { "说明": "【数据校验规则】" },
+        { "说明": "1. 父ASIN不能为空，且必须与系统中已导入的产品匹配" },
+        { "说明": "2. 计划名称不能为空，长度不超过100个字符" },
+        { "说明": "3. 计划周期建议使用统一格式，便于后续筛选和排序" },
+        { "说明": "4. 如果该ASIN已有运营计划，导入时将自动更新现有计划" },
+        { "说明": "" },
+        { "说明": "【基线/目标数据说明】" },
+        { "说明": "基线和目标数据无需在模板中填写，在系统中创建计划后：" },
+        { "说明": "• 进入产品详情页 → 运营计划Tab → 选择基线周度自动加载历史数据" },
+        { "说明": "• 目标数据在计划详情中手动设定或从历史数据推算" },
       ];
       const instrWs = XLSX.utils.json_to_sheet(instrRows);
-      instrWs["!cols"] = [{ wch: 60 }];
+      instrWs["!cols"] = [{ wch: 70 }];
       XLSX.utils.book_append_sheet(wb, instrWs, "使用说明");
 
       const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
@@ -4909,7 +4956,11 @@ export const productOpsRouter = router({
           continue;
         }
         if (!planName) {
-          results.push({ parentAsin, planName: "(空)", status: "skipped", reason: "缺少计划名称" });
+          results.push({ parentAsin, planName: "(空)", status: "skipped", reason: "缺少计划名称（必填）" });
+          continue;
+        }
+        if (planName.length > 100) {
+          results.push({ parentAsin, planName: planName.slice(0, 20) + "...", status: "skipped", reason: "计划名称超过100字符限制" });
           continue;
         }
 
@@ -5064,24 +5115,34 @@ export const productOpsRouter = router({
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "执行复盘");
 
-      // Add instructions sheet
+      // Add instructions sheet with validation rules
       const instrRows = [
-        { "说明": "使用说明" },
-        { "说明": "1. 父ASIN列已自动填充您负责的产品，请勿修改" },
-        { "说明": "2. 填写\"复盘周期\"(必填)：如\"2026W16\"或\"2026年4月\"" },
-        { "说明": "3. 周期类型：weekly(周)、monthly(月)、quarterly(季)，默认weekly" },
-        { "说明": "4. 基线/目标/实际数据：在系统中创建复盘时选择对应周度自动加载，无需在模板中填写" },
-        { "说明": "5. 复盘内容：成果摘要、关键动作、经验教训、下期计划" },
-        { "说明": "6. 如果该ASIN+周期已有复盘记录，导入时将更新现有记录" },
+        { "说明": "═══ 使用说明 ═══" },
         { "说明": "" },
-        { "说明": "字段说明：" },
-        { "说明": "成果摘要：本周期的主要成果和达成情况" },
-        { "说明": "关键动作：本周期执行的关键运营动作" },
-        { "说明": "经验教训：本周期总结的经验和教训" },
-        { "说明": "下期计划：下一周期的运营计划和目标" },
+        { "说明": "【必填字段】" },
+        { "说明": "• 父ASIN：已自动填充，请勿修改（格式：B0开头的10位字母数字）" },
+        { "说明": "• 复盘周期：必填，建议格式：\"2026W16\"、\"2026年4月\"、\"2026Q2\"" },
+        { "说明": "" },
+        { "说明": "【选填字段】" },
+        { "说明": "• 周期类型：weekly(周)、monthly(月)、quarterly(季)，默认weekly" },
+        { "说明": "• 成果摘要：本周期的主要成果和达成情况" },
+        { "说明": "• 关键动作：本周期执行的关键运营动作" },
+        { "说明": "• 经验教训：本周期总结的经验和教训" },
+        { "说明": "• 下期计划：下一周期的运营计划和目标" },
+        { "说明": "" },
+        { "说明": "【数据校验规则】" },
+        { "说明": "1. 父ASIN不能为空，且必须与系统中已导入的产品匹配" },
+        { "说明": "2. 复盘周期不能为空，建议使用统一格式（如 2026W16）" },
+        { "说明": "3. 周期类型只能填 weekly/monthly/quarterly，其他值将被跳过" },
+        { "说明": "4. 同一ASIN+同一复盘周期的记录将自动更新（而非重复创建）" },
+        { "说明": "" },
+        { "说明": "【基线/目标/实际数据说明】" },
+        { "说明": "这些数据无需在模板中填写，在系统中创建复盘后：" },
+        { "说明": "• 进入产品详情页 → 执行复盘Tab → 选择基线/目标周度自动加载历史数据" },
+        { "说明": "• 实际数据在复盘详情中选择实际周度自动加载" },
       ];
       const instrWs = XLSX.utils.json_to_sheet(instrRows);
-      instrWs["!cols"] = [{ wch: 60 }];
+      instrWs["!cols"] = [{ wch: 70 }];
       XLSX.utils.book_append_sheet(wb, instrWs, "使用说明");
 
       const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
@@ -5133,7 +5194,11 @@ export const productOpsRouter = router({
           continue;
         }
         if (!period) {
-          results.push({ parentAsin, period: "(空)", status: "skipped", reason: "缺少复盘周期" });
+          results.push({ parentAsin, period: "(空)", status: "skipped", reason: "缺少复盘周期（必填，建议格式：2026W16）" });
+          continue;
+        }
+        if (period.length > 50) {
+          results.push({ parentAsin, period: period.slice(0, 20) + "...", status: "skipped", reason: "复盘周期超过50字符限制" });
           continue;
         }
 

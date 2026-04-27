@@ -175,11 +175,15 @@ export default function OpsReviewImportTab() {
               <div className="text-sm text-amber-600/80 dark:text-amber-400/80 space-y-1">
                 <p>在模板中填写以下信息：</p>
                 <ul className="list-disc list-inside ml-2 space-y-0.5">
-                  <li><strong>复盘周期</strong>（必填）：如"2026W16"或"2026年4月"</li>
+                  <li><strong>复盘周期</strong>（必填）：建议格式“2026W16”、“2026年4月”、“2026Q2”</li>
                   <li><strong>周期类型</strong>：weekly(周)、monthly(月)、quarterly(季)，默认weekly</li>
-                  <li><strong>基线/目标/实际数据</strong>：在系统中创建复盘时选择对应周度自动加载，无需在模板中填写</li>
+                  <li><strong>基线/目标/实际数据</strong>：无需填写，在产品详情页选择周度自动加载</li>
                   <li><strong>复盘内容</strong>：成果摘要、关键动作、经验教训、下期计划</li>
                 </ul>
+                <div className="mt-2 p-2 rounded bg-amber-100/60 dark:bg-amber-900/30 text-xs">
+                  <AlertTriangle className="h-3 w-3 inline mr-1" />
+                  校验提示：父ASIN请勿修改；复盘周期为空的行将被跳过；周期类型只能填weekly/monthly/quarterly；同ASIN+同周期将自动更新
+                </div>
               </div>
             </div>
           </div>
