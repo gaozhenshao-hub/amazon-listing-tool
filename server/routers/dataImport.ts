@@ -17,7 +17,7 @@ import { storagePut } from "../storage";
  * Non-admin/manager users need to query data imported by admins, not their own userId.
  * Returns the userId that should be used for querying imported data tables.
  */
-async function resolveDataUserId(db: any, currentUser: { id: number; role: string; name: string | null }): Promise<number> {
+export async function resolveDataUserId(db: any, currentUser: { id: number; role: string; name: string | null }): Promise<number> {
   const isManagerOrAbove = (MANAGER_ROLES as readonly string[]).includes(currentUser.role);
   if (isManagerOrAbove) {
     return currentUser.id;

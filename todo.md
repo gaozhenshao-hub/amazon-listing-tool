@@ -3612,3 +3612,6 @@
 - [x] 后端：运营角色用户查询产品时自动过滤只显示自己用户名对应的数据
 - [x] 后端：admin角色保持可查看所有数据
 - [x] 前端：运营筛选器对非admin用户自动锁定为当前用户
+### Bug修复：执行复盘多周数据不变
+- [x] 修复syncReviewFromImportedData多周聚合逻辑：选择2周/4周时实际数据应聚合多周而非只取最近1周
+- [x] 修复 syncPlanCurrentData / getAvailableWeeks / syncReviewFromImportedData 中 userId 权限问题，统一使用 resolveDataUserId

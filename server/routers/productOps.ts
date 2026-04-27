@@ -7,6 +7,7 @@ import { invokeLLM } from "../_core/llm";
 import { collectConversionData, collectMultipleAsins, type ConversionCrawlData } from "./conversionDataCollector";
 import { scoreAllCheckItems, type CheckItemScore } from "./conversionAiScorer";
 import { parseSellerSpriteData, parseSellerSpriteXlsx, mergeSellerSpriteWithCrawlData, buildCrawlDataFromSellerSprite, type SellerSpriteProductData, type ImportResult } from "./sellerSpriteImporter";
+import { resolveDataUserId } from "./dataImport";
 import {
   productProfiles, productVariants, productTodos, productLogs,
   keywordMonitors, keywordSnapshots,
@@ -2919,16 +2920,16 @@ export const productOpsRouter = router({
       parentAsin: z.string(),
       weekCount: z.number().default(1), // 1=最近1周, 2=最近2周, 4=最近4周(约1个月)
     }))
-    .mutation(async ({ ctx, input }) => {
+      .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-
       const [plan] = await db!.select().from(opsPlans).where(eq(opsPlans.id, input.planId));
       if (!plan) throw new TRPCError({ code: 'NOT_FOUND', message: '计划不存在' });
-
+      // Use resolveDataUserId to handle non-admin users querying admin-imported data
+      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
       // 从已导入的lingxing_product_weekly表中查询该产品的周度数据
       const weeklyRows = await db!.select().from(lingxingProductWeekly)
         .where(and(
-          eq(lingxingProductWeekly.userId, ctx.user.id),
+          eq(lingxingProductWeekly.userId, effectiveUserId),
           eq(lingxingProductWeekly.parentAsin, input.parentAsin),
         ))
         .orderBy(desc(lingxingProductWeekly.weekStartDate));
@@ -3042,13 +3043,15 @@ export const productOpsRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
+      // Use resolveDataUserId to handle non-admin users querying admin-imported data
+      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
       const weeklyRows = await db!.selectDistinct({
         weekStartDate: lingxingProductWeekly.weekStartDate,
         weekEndDate: lingxingProductWeekly.weekEndDate,
       })
         .from(lingxingProductWeekly)
         .where(and(
-          eq(lingxingProductWeekly.userId, ctx.user.id),
+          eq(lingxingProductWeekly.userId, effectiveUserId),
           eq(lingxingProductWeekly.parentAsin, input.parentAsin),
         ))
         .orderBy(desc(lingxingProductWeekly.weekStartDate));
@@ -3084,9 +3087,11 @@ export const productOpsRouter = router({
 
       // 从导入的周度数据中查询实际数据
       if (input.syncTarget === 'actual' || input.syncTarget === 'both') {
+        // Use resolveDataUserId to handle non-admin users querying admin-imported data
+        const effectiveUserId = await resolveDataUserId(db!, ctx.user);
         const weeklyRows = await db!.select().from(lingxingProductWeekly)
           .where(and(
-            eq(lingxingProductWeekly.userId, ctx.user.id),
+            eq(lingxingProductWeekly.userId, effectiveUserId),
             eq(lingxingProductWeekly.parentAsin, input.parentAsin),
           ))
           .orderBy(desc(lingxingProductWeekly.weekStartDate));
