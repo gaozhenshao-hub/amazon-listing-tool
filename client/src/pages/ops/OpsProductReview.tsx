@@ -99,8 +99,8 @@ export default function OpsProductReview({ productId, parentAsin }: Props) {
     { enabled: !!parentAsin }
   );
   const { data: plans } = trpc.productOps.listPlans.useQuery(
-    { productProfileId: productId },
-    { enabled: !!productId }
+    { productProfileId: productId, parentAsin },
+    { enabled: !!parentAsin }
   );
   const { data: availableWeeks } = trpc.productOps.getAvailableWeeks.useQuery(
     { parentAsin },

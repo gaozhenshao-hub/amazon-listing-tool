@@ -3686,3 +3686,14 @@
 - [x] 前端：基期数据选择器改为多选下拉（checkbox式）
 - [x] 前端：多选后自动加载聚合结果并写入数据库
 - [x] 构建验证并保存checkpoint
+### Bug修复：运营计划和复盘下拉列表显示其他产品数据
+- [x] 数据库：ops_plans表新增parent_asin字段和索引
+- [x] 后端：listPlans增加parentAsin参数，优先按parentAsin过滤（productProfileId=0且无parentAsin时返回空数组防止数据泄露）
+- [x] 后端：createPlan增加parentAsin参数，创建时存储parentAsin
+- [x] 后端：importPlansFromExcel创建/更新时写入parentAsin
+- [x] 前端：OpsProductPlan.tsx的listPlans和createPlan调用传递parentAsin
+- [x] 前端：OpsProductReview.tsx的listPlans调用传递parentAsin
+- [x] 历史数据修复：91/99条计划已通过plan_name中的ASIN关联设置parent_asin
+- [x] 单元测试：7个测试用例验证parentAsin过滤逻辑
+- [x] 构建验证通过（pnpm build成功）
+- [x] 保存checkpoint

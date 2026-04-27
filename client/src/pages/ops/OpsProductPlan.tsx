@@ -34,7 +34,7 @@ interface Props {
 export default function OpsProductPlan({ productId, parentAsin, productTitle }: Props) {
   // ─── Queries ───
   const { data: plans, refetch: refetchPlans, isLoading } = trpc.productOps.listPlans.useQuery(
-    { productProfileId: productId }
+    { productProfileId: productId, parentAsin }
   );
 
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
@@ -627,7 +627,7 @@ export default function OpsProductPlan({ productId, parentAsin, productTitle }: 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreatePlan(false)}>取消</Button>
             <Button disabled={!planForm.planName || createPlan.isPending} onClick={() => createPlan.mutate({
-              productProfileId: productId, ...planForm,
+              productProfileId: productId, parentAsin, ...planForm,
             })}>
               {createPlan.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
               创建

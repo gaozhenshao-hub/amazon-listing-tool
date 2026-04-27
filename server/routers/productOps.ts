@@ -1144,13 +1144,22 @@ export const productOpsRouter = router({
   // ─── Operations Plan CRUD ───
   // ═══════════════════════════════════════════════════════
 
-  listPlans: protectedProcedure.input(z.object({ productProfileId: z.number() })).query(async ({ ctx, input }) => {
+  listPlans: protectedProcedure.input(z.object({ productProfileId: z.number(), parentAsin: z.string().optional() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     const { MANAGER_ROLES } = await import("../../shared/const");
     const isManager = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
-    const conditions = [eq(opsPlans.productProfileId, input.productProfileId)];
+    const conditions: any[] = [];
     if (!isManager) {
       conditions.push(eq(opsPlans.userId, ctx.user.id));
+    }
+    // Prefer parentAsin filter (works for both import and system mode)
+    if (input.parentAsin) {
+      conditions.push(eq(opsPlans.parentAsin, input.parentAsin));
+    } else if (input.productProfileId > 0) {
+      conditions.push(eq(opsPlans.productProfileId, input.productProfileId));
+    } else {
+      // productProfileId=0 and no parentAsin: return empty to prevent cross-product data leak
+      return [];
     }
     return db!.select().from(opsPlans)
       .where(and(...conditions))
@@ -1172,6 +1181,7 @@ export const productOpsRouter = router({
 
   createPlan: protectedProcedure.input(z.object({
     productProfileId: z.number(),
+    parentAsin: z.string().optional(),
     planName: z.string().min(1),
     planPeriod: z.string().optional(),
     projectManager: z.string().optional(),
@@ -1182,6 +1192,7 @@ export const productOpsRouter = router({
     const [result] = await db!.insert(opsPlans).values({
       userId: ctx.user.id,
       productProfileId: input.productProfileId,
+      parentAsin: input.parentAsin || null,
       planName: input.planName,
       planPeriod: input.planPeriod || null,
       projectManager: input.projectManager || null,
@@ -5136,6 +5147,8 @@ export const productOpsRouter = router({
 
         // Check if plan already exists for this ASIN
         const existingPlan = existingPlans.find((p: any) => {
+          // Match by parentAsin first (most reliable)
+          if (p.parentAsin === parentAsin) return true;
           if (profile && p.productProfileId === profile.id) return true;
           // For import mode: match by planName containing parentAsin
           if (p.productProfileId === 0 && p.planName.includes(parentAsin)) return true;
@@ -5144,18 +5157,19 @@ export const productOpsRouter = router({
 
         try {
           if (existingPlan) {
-            // Update existing plan
-            await db!.update(opsPlans).set(cleanData)
+            // Update existing plan - also set parentAsin for data isolation
+            await db!.update(opsPlans).set({ ...cleanData, parentAsin })
               .where(and(eq(opsPlans.id, existingPlan.id), eq(opsPlans.userId, ctx.user.id)));
             results.push({ parentAsin, planName, status: "updated" });
           } else {
-            // Create new plan
+            // Create new plan with parentAsin for data isolation
             await db!.insert(opsPlans).values({
               userId: ctx.user.id,
               productProfileId,
+              parentAsin,
+              planName,
               ...cleanData,
-              status: "draft",
-            });
+            } as any);
             results.push({ parentAsin, planName, status: "created" });
           }
         } catch (err: any) {
@@ -5397,8 +5411,7 @@ export const productOpsRouter = router({
               userId: ctx.user.id,
               productProfileId,
               ...cleanData,
-              status: "draft",
-            });
+            } as any);
             results.push({ parentAsin, period, status: "created" });
           }
         } catch (err: any) {

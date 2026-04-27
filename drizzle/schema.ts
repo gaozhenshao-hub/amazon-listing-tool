@@ -1843,6 +1843,7 @@ export const opsPlans = mysqlTable("ops_plans", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("user_id").notNull(),
   productProfileId: int("product_profile_id").notNull(),
+  parentAsin: varchar("parent_asin", { length: 20 }), // 父ASIN，用于import模式下的数据隔离
   planName: varchar("plan_name", { length: 200 }).notNull(),
   planPeriod: varchar("plan_period", { length: 50 }), // e.g. "2026Q1"
   projectManager: varchar("project_manager", { length: 100 }),
