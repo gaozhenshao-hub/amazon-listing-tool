@@ -2077,6 +2077,23 @@ export const executionReviews = mysqlTable("execution_reviews", {
 export type ExecutionReview = typeof executionReviews.$inferSelect;
 export type InsertExecutionReview = typeof executionReviews.$inferInsert;
 
+// ─── Ops Import History (运营数据导入历史) ───
+export const opsImportHistory = mysqlTable("ops_import_history", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  importType: mysqlEnum("import_type", ["plan", "review"]).notNull(), // 导入类型：计划/复盘
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  totalCount: int("total_count").default(0).notNull(), // 总行数
+  createdCount: int("created_count").default(0).notNull(), // 新建数
+  updatedCount: int("updated_count").default(0).notNull(), // 更新数
+  skippedCount: int("skipped_count").default(0).notNull(), // 跳过数
+  recordIds: text("record_ids"), // JSON array of created/updated record IDs
+  parentAsins: text("parent_asins"), // JSON array of affected parent ASINs
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type OpsImportHistory = typeof opsImportHistory.$inferSelect;
+export type InsertOpsImportHistory = typeof opsImportHistory.$inferInsert;
+
 // ─── Team Tasks (团队协作看板) ───
 export const teamTasks = mysqlTable("team_tasks", {
   id: int("id").autoincrement().primaryKey(),

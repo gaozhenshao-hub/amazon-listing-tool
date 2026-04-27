@@ -3697,3 +3697,13 @@
 - [x] 单元测试：7个测试用例验证parentAsin过滤逻辑
 - [x] 构建验证通过（pnpm build成功）
 - [x] 保存checkpoint
+### 运营计划和执行复盘导入历史功能
+- [x] 数据库：新增ops_import_history表（记录导入时间、文件名、类型、数量、关联ID列表）
+- [x] 后端：importPlansFromExcel/importReviewsFromExcel写入导入历史记录
+- [x] 后端：listImportHistory API（按类型查询导入历史）
+- [x] 后端：deleteImportHistory API（删除导入历史+级联删除关联的计划/复盘数据）
+- [x] 前端：OpsProductPlan导入Tab下方增加导入历史列表
+- [x] 前端：OpsProductReview导入Tab下方增加导入历史列表
+- [x] 前端：删除确认对话框+删除操作+数据刷新
+- [x] 单元测试验证导入历史和级联删除逻辑（8个测试全部通过）
+- [x] 构建验证并保存checkpoint（pnpm build成功）

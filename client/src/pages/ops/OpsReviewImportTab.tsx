@@ -11,8 +11,12 @@ import {
 } from "@/components/ui/dialog";
 import {
   Download, Upload, FileSpreadsheet, CheckCircle2, XCircle, Loader2,
-  AlertTriangle, FileText, SkipForward,
+  AlertTriangle, FileText, SkipForward, Trash2, History, Clock,
 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 
 export default function OpsReviewImportTab() {
@@ -26,6 +30,11 @@ export default function OpsReviewImportTab() {
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deletingHistoryId, setDeletingHistoryId] = useState<number | null>(null);
+
+  // ─── Queries ───
+  const importHistory = trpc.productOps.listImportHistory.useQuery({ importType: "review" });
 
   // ─── Mutations ───
   const downloadTemplate = trpc.productOps.downloadReviewTemplate.useMutation({
@@ -61,6 +70,7 @@ export default function OpsReviewImportTab() {
       setPreviewOpen(false);
       setPendingFileData(null);
       setImporting(false);
+      importHistory.refetch();
       toast.success("执行复盘导入完成", {
         description: `创建 ${data.created} 个，更新 ${data.updated} 个，跳过 ${data.skipped} 个`,
       });
@@ -68,6 +78,20 @@ export default function OpsReviewImportTab() {
     onError: (err) => {
       toast.error("导入失败", { description: err.message });
       setImporting(false);
+    },
+  });
+
+  const deleteImportHistoryMut = trpc.productOps.deleteImportHistory.useMutation({
+    onSuccess: (data) => {
+      importHistory.refetch();
+      setDeleteConfirmOpen(false);
+      setDeletingHistoryId(null);
+      toast.success("导入记录已删除", {
+        description: `已级联删除 ${data.deletedRecords} 条执行复盘数据`,
+      });
+    },
+    onError: (err) => {
+      toast.error("删除失败", { description: err.message });
     },
   });
 
@@ -405,6 +429,113 @@ export default function OpsReviewImportTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Import History */}
+      {(importHistory.data && importHistory.data.length > 0) && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <History className="h-4 w-4" />
+              导入历史
+              <Badge variant="secondary" className="ml-1">{importHistory.data.length}</Badge>
+            </CardTitle>
+            <CardDescription>删除导入记录将同步清除该次导入创建的所有执行复盘数据</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>导入时间</TableHead>
+                    <TableHead>文件名</TableHead>
+                    <TableHead className="text-center">总计</TableHead>
+                    <TableHead className="text-center">新建</TableHead>
+                    <TableHead className="text-center">更新</TableHead>
+                    <TableHead className="text-center">跳过</TableHead>
+                    <TableHead>涉及ASIN</TableHead>
+                    <TableHead className="text-right">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {importHistory.data.map((h: any) => (
+                    <TableRow key={h.id}>
+                      <TableCell className="text-sm whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                          {new Date(h.createdAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm max-w-[200px] truncate" title={h.fileName}>
+                        <div className="flex items-center gap-1.5">
+                          <FileSpreadsheet className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                          {h.fileName}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center font-medium">{h.totalCount}</TableCell>
+                      <TableCell className="text-center text-green-600 font-medium">{h.createdCount}</TableCell>
+                      <TableCell className="text-center text-blue-600 font-medium">{h.updatedCount}</TableCell>
+                      <TableCell className="text-center text-amber-600 font-medium">{h.skippedCount}</TableCell>
+                      <TableCell className="text-xs">
+                        <div className="flex flex-wrap gap-1 max-w-[200px]">
+                          {(h.parentAsins || []).slice(0, 3).map((asin: string) => (
+                            <Badge key={asin} variant="outline" className="text-[10px] font-mono">{asin}</Badge>
+                          ))}
+                          {(h.parentAsins || []).length > 3 && (
+                            <Badge variant="outline" className="text-[10px]">+{h.parentAsins.length - 3}</Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => {
+                            setDeletingHistoryId(h.id);
+                            setDeleteConfirmOpen(true);
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-1" />
+                          删除
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除导入记录</AlertDialogTitle>
+            <AlertDialogDescription>
+              此操作将永久删除该次导入创建的所有执行复盘数据，且不可恢复。确定要继续吗？
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteImportHistoryMut.isPending}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteImportHistoryMut.isPending}
+              onClick={() => {
+                if (deletingHistoryId) {
+                  deleteImportHistoryMut.mutate({ historyId: deletingHistoryId });
+                }
+              }}
+            >
+              {deleteImportHistoryMut.isPending ? (
+                <><Loader2 className="h-4 w-4 animate-spin mr-2" /> 删除中...</>
+              ) : (
+                <><Trash2 className="h-4 w-4 mr-2" /> 确认删除</>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -18,6 +18,7 @@ import {
   productWeeklyOps, productMonthlySummary, productBasicInfo,
   lingxingProductWeekly,
   operatorNameMappings,
+  opsImportHistory,
 } from "../../drizzle/schema";
 import { eq, desc, and, or, sql, asc, isNull, inArray } from "drizzle-orm";
 
@@ -5160,27 +5161,46 @@ export const productOpsRouter = router({
             // Update existing plan - also set parentAsin for data isolation
             await db!.update(opsPlans).set({ ...cleanData, parentAsin })
               .where(and(eq(opsPlans.id, existingPlan.id), eq(opsPlans.userId, ctx.user.id)));
-            results.push({ parentAsin, planName, status: "updated" });
+            results.push({ parentAsin, planName, status: "updated", recordId: existingPlan.id });
           } else {
             // Create new plan with parentAsin for data isolation
-            await db!.insert(opsPlans).values({
+            const [insertResult] = await db!.insert(opsPlans).values({
               userId: ctx.user.id,
               productProfileId,
               parentAsin,
               planName,
               ...cleanData,
             } as any);
-            results.push({ parentAsin, planName, status: "created" });
+            results.push({ parentAsin, planName, status: "created", recordId: (insertResult as any).insertId });
           }
         } catch (err: any) {
           results.push({ parentAsin, planName, status: "skipped", reason: err.message?.slice(0, 100) });
         }
       }
 
+      // Record import history
+      const createdCount = results.filter(r => r.status === "created").length;
+      const updatedCount = results.filter(r => r.status === "updated").length;
+      const recordIds = results.filter(r => r.recordId).map(r => r.recordId);
+      const parentAsinSet = [...new Set(results.filter(r => r.status !== "skipped").map(r => r.parentAsin))];
+      try {
+        await db!.insert(opsImportHistory).values({
+          userId: ctx.user.id,
+          importType: "plan",
+          fileName: input.fileName,
+          totalCount: rows.length,
+          createdCount,
+          updatedCount,
+          skippedCount: results.filter(r => r.status === "skipped").length,
+          recordIds: JSON.stringify(recordIds),
+          parentAsins: JSON.stringify(parentAsinSet),
+        });
+      } catch (e) { /* ignore history recording errors */ }
+
       return {
         total: rows.length,
-        created: results.filter(r => r.status === "created").length,
-        updated: results.filter(r => r.status === "updated").length,
+        created: createdCount,
+        updated: updatedCount,
         skipped: results.filter(r => r.status === "skipped").length,
         details: results,
       };
@@ -5404,27 +5424,129 @@ export const productOpsRouter = router({
             // Update existing review
             await db!.update(executionReviews).set(cleanData)
               .where(and(eq(executionReviews.id, existingReview.id), eq(executionReviews.userId, ctx.user.id)));
-            results.push({ parentAsin, period, status: "updated" });
+            results.push({ parentAsin, period, status: "updated", recordId: existingReview.id });
           } else {
             // Create new review
-            await db!.insert(executionReviews).values({
+            const [insertResult] = await db!.insert(executionReviews).values({
               userId: ctx.user.id,
               productProfileId,
               ...cleanData,
             } as any);
-            results.push({ parentAsin, period, status: "created" });
+            results.push({ parentAsin, period, status: "created", recordId: (insertResult as any).insertId });
           }
         } catch (err: any) {
           results.push({ parentAsin, period, status: "skipped", reason: err.message?.slice(0, 100) });
         }
       }
 
+      // Record import history
+      const createdCount = results.filter(r => r.status === "created").length;
+      const updatedCount = results.filter(r => r.status === "updated").length;
+      const recordIds = results.filter(r => r.recordId).map(r => r.recordId);
+      const parentAsinSet = [...new Set(results.filter(r => r.status !== "skipped").map(r => r.parentAsin))];
+      try {
+        await db!.insert(opsImportHistory).values({
+          userId: ctx.user.id,
+          importType: "review",
+          fileName: input.fileName,
+          totalCount: rows.length,
+          createdCount,
+          updatedCount,
+          skippedCount: results.filter(r => r.status === "skipped").length,
+          recordIds: JSON.stringify(recordIds),
+          parentAsins: JSON.stringify(parentAsinSet),
+        });
+      } catch (e) { /* ignore history recording errors */ }
+
       return {
         total: rows.length,
-        created: results.filter(r => r.status === "created").length,
-        updated: results.filter(r => r.status === "updated").length,
+        created: createdCount,
+        updated: updatedCount,
         skipped: results.filter(r => r.status === "skipped").length,
         details: results,
+      };
+    }),
+
+  // ─── Import History Management ───────────────────────────────
+
+  /** List import history for plans or reviews */
+  listImportHistory: protectedProcedure
+    .input(z.object({
+      importType: z.enum(["plan", "review"]),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
+
+      const history = await db!.select().from(opsImportHistory)
+        .where(and(
+          eq(opsImportHistory.userId, effectiveUserId),
+          eq(opsImportHistory.importType, input.importType),
+        ))
+        .orderBy(desc(opsImportHistory.createdAt));
+
+      return history.map((h: any) => ({
+        ...h,
+        recordIds: h.recordIds ? JSON.parse(h.recordIds) : [],
+        parentAsins: h.parentAsins ? JSON.parse(h.parentAsins) : [],
+      }));
+    }),
+
+  /** Delete import history and cascade delete associated records */
+  deleteImportHistory: protectedProcedure
+    .input(z.object({
+      historyId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
+
+      // Get the history record
+      const [history] = await db!.select().from(opsImportHistory)
+        .where(and(
+          eq(opsImportHistory.id, input.historyId),
+          eq(opsImportHistory.userId, effectiveUserId),
+        ));
+
+      if (!history) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "导入记录不存在" });
+      }
+
+      const recordIds: number[] = history.recordIds ? JSON.parse(history.recordIds) : [];
+
+      // Cascade delete associated records
+      if (recordIds.length > 0) {
+        if (history.importType === "plan") {
+          // Delete plan actions first (foreign key)
+          await db!.delete(opsPlanActions)
+            .where(inArray(opsPlanActions.planId, recordIds));
+          // Delete plan summaries
+          await db!.delete(opsPlanSummaries)
+            .where(inArray(opsPlanSummaries.planId, recordIds));
+          // Delete plans
+          await db!.delete(opsPlans)
+            .where(and(
+              inArray(opsPlans.id, recordIds),
+              eq(opsPlans.userId, effectiveUserId),
+            ));
+        } else if (history.importType === "review") {
+          // Delete reviews
+          await db!.delete(executionReviews)
+            .where(and(
+              inArray(executionReviews.id, recordIds),
+              eq(executionReviews.userId, effectiveUserId),
+            ));
+        }
+      }
+
+      // Delete the history record itself
+      await db!.delete(opsImportHistory)
+        .where(eq(opsImportHistory.id, input.historyId));
+
+      return {
+        success: true,
+        deletedRecords: recordIds.length,
+        importType: history.importType,
       };
     }),
 
