@@ -306,7 +306,7 @@ describe("adLocalAnalysis router", () => {
   });
 
   // Test 18: getDspReportLocal returns empty data with message
-  it("getDspReportLocal returns empty data with message", async () => {
+  it("getDspReportLocal returns empty data with hasData=false and message", async () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.adLocalAnalysis.getDspReportLocal({});
@@ -314,22 +314,49 @@ describe("adLocalAnalysis router", () => {
     expect(result).toHaveProperty("kpi");
     expect(result).toHaveProperty("orders");
     expect(result).toHaveProperty("message");
+    expect(result).toHaveProperty("hasData", false);
+    expect(result).toHaveProperty("_meta");
+    expect(result._meta).toHaveProperty("isLocalData", true);
     expect(result.message).toContain("DSP");
     expect(Array.isArray(result.orders)).toBe(true);
     expect(result.orders.length).toBe(0);
+    // Verify KPI fields are all zero
+    expect(result.kpi.totalBudget).toBe(0);
+    expect(result.kpi.totalSpends).toBe(0);
+    expect(result.kpi.totalSales).toBe(0);
+    expect(result.kpi.roas).toBe(0);
+    expect(result.kpi.acos).toBe(0);
   });
 
-  // Test 19: aiDspStrategyLocal returns error message
+  // Test 19: getDspReportLocal with date filters returns correct structure
+  it("getDspReportLocal with date filters returns correct structure", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.adLocalAnalysis.getDspReportLocal({
+      weekStartDate: "2025-01-01",
+      weekEndDate: "2025-01-31",
+    });
+
+    // Even with date filters, should return correct structure (likely empty for test user)
+    expect(result).toHaveProperty("kpi");
+    expect(result).toHaveProperty("orders");
+    expect(result).toHaveProperty("hasData");
+    expect(result).toHaveProperty("_meta");
+    expect(Array.isArray(result.orders)).toBe(true);
+  });
+
+  // Test 20: aiDspStrategyLocal returns error message when no data
   it("aiDspStrategyLocal returns error about no DSP data", async () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.adLocalAnalysis.aiDspStrategyLocal({});
 
     expect(result).toHaveProperty("error");
+    expect(result).toHaveProperty("strategy", null);
     expect(result.error).toContain("DSP");
   });
 
-  // Test 20: adChatBotLocal returns answer structure
+  // Test 21: adChatBotLocal returns answer structure
   it("adChatBotLocal returns answer with structured response", async () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
@@ -342,7 +369,7 @@ describe("adLocalAnalysis router", () => {
     expect(result.answer.length).toBeGreaterThan(0);
   }, 30000);
 
-  // Test 21: aiChannelStrategyLocal returns strategy (LLM-dependent)
+  // Test 22: aiChannelStrategyLocal returns strategy (LLM-dependent)
   it("aiChannelStrategyLocal returns a result", async () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
@@ -352,4 +379,92 @@ describe("adLocalAnalysis router", () => {
     expect(result).toBeDefined();
     expect(result).toBeTruthy();
   }, 30000);
+
+  // Test 23: parseDspReport parses CSV correctly
+  it("parseDspReport parses CSV text into structured rows", async () => {
+    const { parseDspReport } = await import("./routers/adReportParsers");
+    const csv = `订单名称,预算,状态,花费,销售额,订单,曝光,可见曝光,点击,DPV,加购,ROAS,ACoS,CTR,广告项类型,创意类型,店铺名称
+DSP Campaign A,5000,Active,1200,3600,45,50000,40000,800,300,120,3.0,33.3%,1.6%,Display,Static,MyStore
+DSP Campaign B,3000,Paused,800,1600,20,30000,25000,500,150,60,2.0,50%,1.67%,Video,Dynamic,MyStore`;
+    const rows = await parseDspReport(csv);
+
+    expect(rows.length).toBe(2);
+    expect(rows[0].orderName).toBe("DSP Campaign A");
+    expect(rows[0].orderBudget).toBe(5000);
+    expect(rows[0].orderStatus).toBe("Active");
+    expect(rows[0].spends).toBe(1200);
+    expect(rows[0].sales).toBe(3600);
+    expect(rows[0].orders).toBe(45);
+    expect(rows[0].impressions).toBe(50000);
+    expect(rows[0].viewableImpressions).toBe(40000);
+    expect(rows[0].clicks).toBe(800);
+    expect(rows[0].dpv).toBe(300);
+    expect(rows[0].totalAddToCart).toBe(120);
+    expect(rows[0].lineItemType).toBe("Display");
+    expect(rows[0].creativeType).toBe("Static");
+    expect(rows[0].storeName).toBe("MyStore");
+    // Derived metrics: roas = 3600/1200 = 3.0
+    expect(rows[0].roas).toBe(3);
+    // acos = 1200/3600 = 0.333...
+    expect(rows[0].acos).toBeCloseTo(0.333, 2);
+
+    expect(rows[1].orderName).toBe("DSP Campaign B");
+    expect(rows[1].orderStatus).toBe("Paused");
+  });
+
+  // Test 24: parseDspReport handles empty CSV
+  it("parseDspReport returns empty array for empty CSV", async () => {
+    const { parseDspReport } = await import("./routers/adReportParsers");
+    const csv = `订单名称,预算,状态,花费`;
+    const rows = await parseDspReport(csv);
+    expect(rows.length).toBe(0);
+  });
+
+  // Test 25: parseDspReport handles English column headers
+  it("parseDspReport handles English column headers", async () => {
+    const { parseDspReport } = await import("./routers/adReportParsers");
+    const csv = `Order Name,Budget,Status,Spends,Sales,Orders,Impressions,Viewable Impressions,Clicks,DPV,Add to Cart,ROAS,ACoS,CTR,Line Item Type,Creative Type,Store Name
+Test Order,10000,Active,2500,7500,100,100000,80000,2000,500,200,3.0,33.3%,2.0%,Display,Video,TestStore`;
+    const rows = await parseDspReport(csv);
+
+    expect(rows.length).toBe(1);
+    expect(rows[0].orderName).toBe("Test Order");
+    expect(rows[0].orderBudget).toBe(10000);
+    expect(rows[0].spends).toBe(2500);
+    expect(rows[0].sales).toBe(7500);
+    expect(rows[0].storeName).toBe("TestStore");
+  });
+
+  // Test 26: uploadDspReport validates empty file
+  it("uploadDspReport throws on empty file", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const emptyBase64 = Buffer.from("订单名称,预算,状态,花费\n").toString("base64");
+    await expect(
+      caller.adReportUpload.uploadDspReport({
+        fileBase64: emptyBase64,
+        fileName: "empty.csv",
+      })
+    ).rejects.toThrow("没有有效DSP数据行");
+  });
+
+  // Test 27: uploadDspReport succeeds with valid CSV data
+  it("uploadDspReport processes valid CSV and returns uploadId", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const csvContent = `订单名称,预算,状态,花费,销售额,订单,曝光,可见曝光,点击,DPV,加购,ROAS,ACoS,CTR,广告项类型,创意类型,店铺名称
+Test DSP Order,5000,Active,1000,3000,30,50000,40000,800,200,100,3.0,33.3%,1.6%,Display,Static,TestStore`;
+    const base64 = Buffer.from(csvContent).toString("base64");
+    const result = await caller.adReportUpload.uploadDspReport({
+      fileBase64: base64,
+      fileName: "test_dsp.csv",
+      weekStartDate: "2025-03-01",
+      weekEndDate: "2025-03-07",
+    });
+
+    expect(result).toHaveProperty("uploadId");
+    expect(result).toHaveProperty("totalRows", 1);
+    expect(result).toHaveProperty("importedRows", 1);
+    expect(typeof result.uploadId).toBe("number");
+  });
 });

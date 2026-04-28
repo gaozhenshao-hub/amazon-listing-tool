@@ -14,6 +14,7 @@ import {
   adHourlyReports,
   adOrderHourly,
   budgetTracking,
+  adDspReports,
 } from "../../drizzle/schema";
 import { eq, and, inArray, gte, lte, desc, sql } from "drizzle-orm";
 import { invokeLLM } from "../_core/llm";
@@ -1261,23 +1262,119 @@ export const adLocalAnalysisRouter = router({
       return JSON.parse(response.choices?.[0]?.message?.content as string);
     }),
 
-  // ─── 18. getDspReportLocal (returns empty with notice) ─────────
+   // ─── 18. getDspReportLocal ──────────────────────────────────────
   getDspReportLocal: protectedProcedure
     .input(z.object({ weekStartDate: z.string().optional(), weekEndDate: z.string().optional() }))
-    .query(async () => {
+    .query(async ({ ctx, input }) => {
+      const db = await getDbInstance();
+      const conditions: any[] = [eq(adDspReports.userId, ctx.user.id)];
+      if (input.weekStartDate) conditions.push(gte(adDspReports.weekStartDate, input.weekStartDate));
+      if (input.weekEndDate) conditions.push(lte(adDspReports.weekEndDate, input.weekEndDate));
+      const rows = await db.select().from(adDspReports).where(and(...conditions));
+
+      if (rows.length === 0) {
+        return {
+          orders: [],
+          kpi: { totalBudget:0, totalSpends:0, totalSales:0, totalOrders:0, totalImpressions:0, totalViewable:0, totalClicks:0, totalDpv:0, totalAddToCart:0, roas:0, acos:0, ctr:0, viewabilityRate:0 },
+          message: '暂无DSP报告数据。请前往「数据导入中心」上传DSP广告报告。',
+          hasData: false,
+          _meta: { isLocalData: true, notice: '暂无DSP报告数据' },
+        };
+      }
+
+      const orders = rows.map(r => ({
+        orderName: r.orderName || '',
+        orderBudget: n(r.orderBudget),
+        orderStatus: r.orderStatus || '',
+        spends: n(r.spends),
+        sales: n(r.sales),
+        orders: r.orders || 0,
+        impressions: r.impressions || 0,
+        viewableImpressions: r.viewableImpressions || 0,
+        clicks: r.clicks || 0,
+        dpv: r.dpv || 0,
+        totalAddToCart: r.totalAddToCart || 0,
+        roas: n(r.roas),
+        acos: n(r.acos),
+        ctr: n(r.ctr),
+        lineItemType: r.lineItemType || '',
+        creativeType: r.creativeType || '',
+      }));
+
+      const totalBudget = orders.reduce((s, o) => s + o.orderBudget, 0);
+      const totalSpends = orders.reduce((s, o) => s + o.spends, 0);
+      const totalSales = orders.reduce((s, o) => s + o.sales, 0);
+      const totalOrders = orders.reduce((s, o) => s + o.orders, 0);
+      const totalImpressions = orders.reduce((s, o) => s + o.impressions, 0);
+      const totalViewable = orders.reduce((s, o) => s + o.viewableImpressions, 0);
+      const totalClicks = orders.reduce((s, o) => s + o.clicks, 0);
+      const totalDpv = orders.reduce((s, o) => s + o.dpv, 0);
+      const totalAddToCart = orders.reduce((s, o) => s + o.totalAddToCart, 0);
+
       return {
-        orders: [],
-        kpi: { totalBudget:0, totalSpends:0, totalSales:0, totalOrders:0, totalImpressions:0, totalViewable:0, totalClicks:0, totalDpv:0, totalAddToCart:0, roas:0, acos:0, ctr:0, viewabilityRate:0 },
-        message: '本地数据不包含DSP报告，请通过领星ERP获取DSP数据',
-        _meta: { isLocalData: true, notice: '本地数据不包含DSP报告，请通过领星ERP获取DSP数据' },
+        orders,
+        kpi: {
+          totalBudget, totalSpends, totalSales, totalOrders,
+          totalImpressions, totalViewable, totalClicks, totalDpv, totalAddToCart,
+          roas: totalSpends > 0 ? totalSales / totalSpends : 0,
+          acos: totalSales > 0 ? totalSpends / totalSales : 0,
+          ctr: totalImpressions > 0 ? totalClicks / totalImpressions : 0,
+          viewabilityRate: totalImpressions > 0 ? totalViewable / totalImpressions : 0,
+        },
+        message: null,
+        hasData: true,
+        _meta: { isLocalData: true },
       };
     }),
 
-  // ─── 19. aiDspStrategyLocal (placeholder) ──────────────────────
+  // ─── 19. aiDspStrategyLocal ────────────────────────────────────
   aiDspStrategyLocal: protectedProcedure
     .input(z.object({ question: z.string().optional() }))
-    .mutation(async () => {
-      return { strategy: null, error: '本地数据不包含DSP报告，无法生成DSP策略建议' };
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDbInstance();
+      const rows = await db.select().from(adDspReports).where(eq(adDspReports.userId, ctx.user.id));
+
+      if (rows.length === 0) {
+        return { strategy: null, error: '暂无DSP报告数据，请先上传DSP广告报告。' };
+      }
+
+      const totalSpends = rows.reduce((s, r) => s + n(r.spends), 0);
+      const totalSales = rows.reduce((s, r) => s + n(r.sales), 0);
+      const totalOrders = rows.reduce((s, r) => s + (r.orders || 0), 0);
+      const totalImpressions = rows.reduce((s, r) => s + (r.impressions || 0), 0);
+      const totalClicks = rows.reduce((s, r) => s + (r.clicks || 0), 0);
+      const topOrders = rows.sort((a, b) => n(b.spends) - n(a.spends)).slice(0, 10).map(r => `${r.orderName}: 花费$${n(r.spends).toFixed(0)} 销售$${n(r.sales).toFixed(0)} ROAS:${n(r.roas).toFixed(2)}`);
+
+      const summary = `DSP总览: 花费$${totalSpends.toFixed(0)} 销售$${totalSales.toFixed(0)} 订单${totalOrders} 曝光${totalImpressions} 点击${totalClicks} ROAS:${totalSpends>0?(totalSales/totalSpends).toFixed(2):'N/A'}\nTop订单:\n${topOrders.join('\n')}`;
+
+      const response = await invokeLLM({
+        messages: [
+          { role: 'system', content: '你是亚马逊DSP广告策略专家。基于DSP数据给出优化建议。输出严格JSON格式。' },
+          { role: 'user', content: `DSP数据分析：\n${summary}\n${input.question ? `\n用户问题：${input.question}` : ''}\n\n请给出DSP广告优化策略建议。` },
+        ],
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'dsp_strategy', strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                analysis: { type: 'string', description: 'DSP整体表现分析' },
+                recommendations: { type: 'array', items: { type: 'object', properties: { area: { type: 'string' }, suggestion: { type: 'string' }, priority: { type: 'string' } }, required: ['area','suggestion','priority'], additionalProperties: false } },
+                key_metrics: { type: 'object', properties: { roas_assessment: { type: 'string' }, budget_efficiency: { type: 'string' }, audience_quality: { type: 'string' } }, required: ['roas_assessment','budget_efficiency','audience_quality'], additionalProperties: false },
+              },
+              required: ['analysis','recommendations','key_metrics'],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+      const content = response.choices?.[0]?.message?.content || '{}';
+      try {
+        return { strategy: JSON.parse(content), error: null };
+      } catch {
+        return { strategy: content, error: null };
+      }
     }),
 
   // ─── 20. aiChannelStrategyLocal ────────────────────────────────

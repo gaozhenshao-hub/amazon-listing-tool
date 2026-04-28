@@ -11,32 +11,38 @@ import {
 } from "recharts";
 import {
   DollarSign, Eye, TrendingUp, ShoppingCart, MousePointerClick,
-  Sparkles, Loader2, Monitor, BarChart3,
+  Sparkles, Loader2, Monitor, BarChart3, Upload, FileSpreadsheet,
+  ArrowRight, AlertCircle, Info,
 } from "lucide-react";
+import { Link } from "wouter";
 
 interface Props {
   marketplace: string;
   reportDate: string;
+  weekStartDate?: string;
+  weekEndDate?: string;
 }
 
 const PIE_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#f97316", "#ec4899"];
 
-export default function DspAnalysis({ marketplace, reportDate }: Props) {
+export default function DspAnalysis({ marketplace, reportDate, weekStartDate, weekEndDate }: Props) {
   const [aiAdvice, setAiAdvice] = useState<any>(null);
   const [isEditingAdvice, setIsEditingAdvice] = useState(false);
   const [editedAdvice, setEditedAdvice] = useState<any>(null);
 
-
-
   const { data, isLoading, refetch } = trpc.adLocalAnalysis.getDspReportLocal.useQuery({
-    weekStartDate: reportDate,
-    weekEndDate: reportDate,
+    weekStartDate: weekStartDate || reportDate,
+    weekEndDate: weekEndDate || reportDate,
   });
 
   const aiMutation = trpc.adLocalAnalysis.aiDspStrategyLocal.useMutation({
     onSuccess: (result) => {
-      setAiAdvice(result);
-      setEditedAdvice(result);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      setAiAdvice(result.strategy);
+      setEditedAdvice(result.strategy);
       toast.success("AI DSP投放建议已生成");
     },
     onError: (err) => toast.error(`AI分析失败: ${err.message}`),
@@ -46,14 +52,14 @@ export default function DspAnalysis({ marketplace, reportDate }: Props) {
     aiMutation.mutate({ question: 'DSP投放策略建议' });
   };
 
-  // Chart data
+  // Chart data - use updated field names from local data
   const orderChartData = useMemo(() => {
     if (!data?.orders) return [];
     return data.orders
       .sort((a: any, b: any) => (b.spends || 0) - (a.spends || 0))
       .slice(0, 8)
       .map((o: any) => ({
-        name: (o.order_name || "").substring(0, 20),
+        name: (o.orderName || "").substring(0, 20),
         花费: +(o.spends || 0).toFixed(2),
         销售额: +(o.sales || 0).toFixed(2),
         DPV: o.dpv || 0,
@@ -62,10 +68,12 @@ export default function DspAnalysis({ marketplace, reportDate }: Props) {
 
   const spendDistribution = useMemo(() => {
     if (!data?.orders) return [];
-    return data.orders.map((o: any) => ({
-      name: (o.order_name || "").substring(0, 15),
-      value: +(o.spends || 0).toFixed(2),
-    }));
+    return data.orders
+      .filter((o: any) => (o.spends || 0) > 0)
+      .map((o: any) => ({
+        name: (o.orderName || "").substring(0, 15),
+        value: +(o.spends || 0).toFixed(2),
+      }));
   }, [data]);
 
   if (isLoading) {
@@ -79,6 +87,84 @@ export default function DspAnalysis({ marketplace, reportDate }: Props) {
     );
   }
 
+  // ─── Friendly Empty State ─────────────────────────────────────
+  if (!data?.hasData) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 px-4">
+        <div className="relative mb-6">
+          <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-100 to-blue-100 flex items-center justify-center">
+            <Monitor className="w-12 h-12 text-purple-400" />
+          </div>
+          <div className="absolute -bottom-1 -right-1 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center border-2 border-white">
+            <Upload className="w-5 h-5 text-amber-500" />
+          </div>
+        </div>
+
+        <h3 className="text-lg font-semibold text-gray-800 mb-2">暂无 DSP 广告数据</h3>
+        <p className="text-sm text-gray-500 text-center max-w-md mb-6 leading-relaxed">
+          DSP（Demand-Side Platform）是亚马逊的展示型广告平台，支持站内外精准投放。
+          上传 DSP 报告后，即可查看订单级别的花费、销售、ROAS 等核心指标分析。
+        </p>
+
+        <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl p-5 max-w-lg w-full mb-6">
+          <div className="flex items-start gap-3 mb-4">
+            <Info className="w-5 h-5 text-purple-500 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-1">如何获取 DSP 报告？</p>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                登录 Amazon DSP 控制台 → 报告中心 → 选择「订单报告」→ 设置日期范围 → 导出 Excel/CSV 文件
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-2.5 text-xs text-gray-600">
+              <div className="w-5 h-5 rounded-full bg-purple-200 text-purple-700 flex items-center justify-center font-bold text-[10px]">1</div>
+              <span>从 Amazon DSP 控制台导出订单报告（Excel 格式）</span>
+            </div>
+            <div className="flex items-center gap-2.5 text-xs text-gray-600">
+              <div className="w-5 h-5 rounded-full bg-purple-200 text-purple-700 flex items-center justify-center font-bold text-[10px]">2</div>
+              <span>前往「数据导入中心」，选择「DSP广告报告」类型上传</span>
+            </div>
+            <div className="flex items-center gap-2.5 text-xs text-gray-600">
+              <div className="w-5 h-5 rounded-full bg-purple-200 text-purple-700 flex items-center justify-center font-bold text-[10px]">3</div>
+              <span>上传成功后，返回此页面查看 DSP 数据分析和 AI 投放建议</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Link href="/ops/ad-report-upload">
+            <Button className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white gap-2">
+              <FileSpreadsheet className="w-4 h-4" />
+              前往数据导入中心
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+          </Link>
+          <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5" />
+            刷新检查
+          </Button>
+        </div>
+
+        <div className="mt-8 grid grid-cols-3 gap-4 max-w-lg w-full">
+          {[
+            { icon: DollarSign, label: "花费与ROAS分析", desc: "订单级别投入产出" },
+            { icon: Eye, label: "曝光与DPV追踪", desc: "品牌展示效果评估" },
+            { icon: Sparkles, label: "AI投放建议", desc: "智能优化策略推荐" },
+          ].map((f) => (
+            <div key={f.label} className="text-center p-3 rounded-lg bg-gray-50 border border-gray-100">
+              <f.icon className="w-5 h-5 text-gray-400 mx-auto mb-1.5" />
+              <p className="text-xs font-medium text-gray-600">{f.label}</p>
+              <p className="text-[10px] text-gray-400 mt-0.5">{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Data Display ─────────────────────────────────────────────
   const kpi = data?.kpi;
   const orders = data?.orders || [];
 
@@ -89,7 +175,7 @@ export default function DspAnalysis({ marketplace, reportDate }: Props) {
         {[
           { label: "DSP总花费", value: `$${(kpi?.totalSpends || 0).toFixed(2)}`, icon: DollarSign, color: "text-red-600", bg: "bg-red-50" },
           { label: "DSP总销售额", value: `$${(kpi?.totalSales || 0).toFixed(2)}`, icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50" },
-          { label: "ROAS", value: `${kpi?.roas || 0}x`, icon: BarChart3, color: "text-blue-600", bg: "bg-blue-50" },
+          { label: "ROAS", value: `${(kpi?.roas || 0).toFixed(2)}x`, icon: BarChart3, color: "text-blue-600", bg: "bg-blue-50" },
           { label: "DPV", value: (kpi?.totalDpv || 0).toLocaleString(), icon: Eye, color: "text-purple-600", bg: "bg-purple-50" },
           { label: "加购次数", value: (kpi?.totalAddToCart || 0).toLocaleString(), icon: ShoppingCart, color: "text-amber-600", bg: "bg-amber-50" },
         ].map((k) => (
@@ -110,8 +196,8 @@ export default function DspAnalysis({ marketplace, reportDate }: Props) {
         {[
           { label: "总曝光", value: (kpi?.totalImpressions || 0).toLocaleString() },
           { label: "可见曝光", value: (kpi?.totalViewable || 0).toLocaleString() },
-          { label: "可见曝光率", value: `${kpi?.viewabilityRate || 0}%` },
-          { label: "ACoS", value: `${kpi?.acos || 0}%` },
+          { label: "可见曝光率", value: `${((kpi?.viewabilityRate || 0) * 100).toFixed(1)}%` },
+          { label: "ACoS", value: `${((kpi?.acos || 0) * 100).toFixed(1)}%` },
         ].map((m) => (
           <Card key={m.label}>
             <CardContent className="pt-3 pb-2.5 px-4">
@@ -177,7 +263,7 @@ export default function DspAnalysis({ marketplace, reportDate }: Props) {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm">DSP订单明细 ({orders.length})</CardTitle>
-            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleAiAnalysis} disabled={aiMutation.isPending}>
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleAiAnalysis} disabled={aiMutation.isPending || orders.length === 0}>
               {aiMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
               AI DSP投放建议
             </Button>
@@ -190,6 +276,7 @@ export default function DspAnalysis({ marketplace, reportDate }: Props) {
                 <tr className="border-b bg-gray-50/50">
                   <th className="text-left p-2.5 font-medium text-gray-600 w-8">#</th>
                   <th className="text-left p-2.5 font-medium text-gray-600">订单名称</th>
+                  <th className="text-center p-2.5 font-medium text-gray-600">状态</th>
                   <th className="text-right p-2.5 font-medium text-gray-600">预算</th>
                   <th className="text-right p-2.5 font-medium text-gray-600">花费</th>
                   <th className="text-right p-2.5 font-medium text-gray-600">销售额</th>
@@ -201,31 +288,32 @@ export default function DspAnalysis({ marketplace, reportDate }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {orders.length === 0 ? (
-                  <tr><td colSpan={10} className="text-center py-8 text-gray-400">暂无DSP订单数据</td></tr>
-                ) : (
-                  orders.map((o: any, i: number) => {
-                    const roas = o.spends > 0 ? (o.sales / o.spends).toFixed(2) : "0";
-                    return (
-                      <tr key={i} className="border-b hover:bg-gray-50/50">
-                        <td className="p-2.5 text-gray-400 text-xs">{i + 1}</td>
-                        <td className="p-2.5 text-xs font-medium max-w-[200px] truncate">{o.order_name}</td>
-                        <td className="p-2.5 text-right text-xs">${(o.order_budget || 0).toFixed(2)}</td>
-                        <td className="p-2.5 text-right text-xs text-red-600">${(o.spends || 0).toFixed(2)}</td>
-                        <td className="p-2.5 text-right text-xs font-medium text-emerald-600">${(o.sales || 0).toFixed(2)}</td>
-                        <td className="p-2.5 text-right text-xs">
-                          <span className={`font-medium ${Number(roas) >= 2 ? "text-emerald-600" : Number(roas) >= 1 ? "text-amber-600" : "text-red-600"}`}>
-                            {roas}x
-                          </span>
-                        </td>
-                        <td className="p-2.5 text-right text-xs">{(o.impressions || 0).toLocaleString()}</td>
-                        <td className="p-2.5 text-right text-xs">{o.dpv || 0}</td>
-                        <td className="p-2.5 text-right text-xs">{o.total_add_to_cart || 0}</td>
-                        <td className="p-2.5 text-right text-xs">{o.orders || 0}</td>
-                      </tr>
-                    );
-                  })
-                )}
+                {orders.map((o: any, i: number) => {
+                  const roas = o.spends > 0 ? (o.sales / o.spends).toFixed(2) : "0";
+                  return (
+                    <tr key={i} className="border-b hover:bg-gray-50/50">
+                      <td className="p-2.5 text-gray-400 text-xs">{i + 1}</td>
+                      <td className="p-2.5 text-xs font-medium max-w-[200px] truncate">{o.orderName}</td>
+                      <td className="p-2.5 text-center">
+                        <Badge variant="outline" className={`text-[10px] ${o.orderStatus === 'RUNNING' ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-600'}`}>
+                          {o.orderStatus || '-'}
+                        </Badge>
+                      </td>
+                      <td className="p-2.5 text-right text-xs">${(o.orderBudget || 0).toFixed(2)}</td>
+                      <td className="p-2.5 text-right text-xs text-red-600">${(o.spends || 0).toFixed(2)}</td>
+                      <td className="p-2.5 text-right text-xs font-medium text-emerald-600">${(o.sales || 0).toFixed(2)}</td>
+                      <td className="p-2.5 text-right text-xs">
+                        <span className={`font-medium ${Number(roas) >= 2 ? "text-emerald-600" : Number(roas) >= 1 ? "text-amber-600" : "text-red-600"}`}>
+                          {roas}x
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-right text-xs">{(o.impressions || 0).toLocaleString()}</td>
+                      <td className="p-2.5 text-right text-xs">{o.dpv || 0}</td>
+                      <td className="p-2.5 text-right text-xs">{o.totalAddToCart || 0}</td>
+                      <td className="p-2.5 text-right text-xs">{o.orders || 0}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -268,33 +356,55 @@ export default function DspAnalysis({ marketplace, reportDate }: Props) {
               </div>
             ) : aiAdvice && (
               <>
-                {[
-                  { label: "问题分析", key: "problemAnalysis", color: "bg-red-100 text-red-700" },
-                  { label: "优化目标", key: "adPurpose", color: "bg-blue-100 text-blue-700" },
-                  { label: "优化策略", key: "adStrategy", color: "bg-emerald-100 text-emerald-700" },
-                  { label: "预期效果", key: "expectedResult", color: "bg-purple-100 text-purple-700" },
-                ].map(({ label, key, color }) => (
-                  <div key={key}>
-                    <Badge variant="outline" className={`${color} text-xs mb-1`}>{label}</Badge>
+                {/* Analysis */}
+                {aiAdvice.analysis && (
+                  <div>
+                    <Badge variant="outline" className="bg-blue-100 text-blue-700 text-xs mb-1">整体分析</Badge>
                     {isEditingAdvice ? (
                       <textarea
                         className="w-full text-sm p-2 border rounded-md bg-white min-h-[60px]"
-                        value={editedAdvice?.[key] || ""}
-                        onChange={(e) => setEditedAdvice({ ...editedAdvice, [key]: e.target.value })}
+                        value={editedAdvice?.analysis || ""}
+                        onChange={(e) => setEditedAdvice({ ...editedAdvice, analysis: e.target.value })}
                       />
                     ) : (
-                      <p className="text-sm text-gray-700 whitespace-pre-line">{aiAdvice[key]}</p>
+                      <p className="text-sm text-gray-700 whitespace-pre-line">{aiAdvice.analysis}</p>
                     )}
                   </div>
-                ))}
-                {aiAdvice.orderRecommendations?.length > 0 && (
+                )}
+
+                {/* Key Metrics */}
+                {aiAdvice.key_metrics && (
                   <div>
-                    <Badge variant="outline" className="bg-amber-100 text-amber-700 text-xs mb-1">订单优化建议</Badge>
-                    <div className="space-y-1">
-                      {aiAdvice.orderRecommendations.map((r: any, i: number) => (
-                        <div key={i} className="text-xs bg-white p-2 rounded border">
-                          <span className="font-medium">{r.orderName}</span>: {r.action}
-                          <span className="text-gray-500 ml-1">({r.reason})</span>
+                    <Badge variant="outline" className="bg-purple-100 text-purple-700 text-xs mb-1">关键指标评估</Badge>
+                    <div className="grid grid-cols-3 gap-2 mt-1">
+                      {[
+                        { label: "ROAS评估", value: aiAdvice.key_metrics.roas_assessment },
+                        { label: "预算效率", value: aiAdvice.key_metrics.budget_efficiency },
+                        { label: "受众质量", value: aiAdvice.key_metrics.audience_quality },
+                      ].map((m) => (
+                        <div key={m.label} className="bg-white p-2 rounded border text-xs">
+                          <span className="font-medium text-gray-600">{m.label}</span>
+                          <p className="text-gray-700 mt-0.5">{m.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recommendations */}
+                {aiAdvice.recommendations?.length > 0 && (
+                  <div>
+                    <Badge variant="outline" className="bg-emerald-100 text-emerald-700 text-xs mb-1">优化建议</Badge>
+                    <div className="space-y-1.5 mt-1">
+                      {aiAdvice.recommendations.map((r: any, i: number) => (
+                        <div key={i} className="text-xs bg-white p-2.5 rounded border flex items-start gap-2">
+                          <Badge variant="outline" className={`shrink-0 text-[10px] ${r.priority === '高' ? 'bg-red-50 text-red-600' : r.priority === '中' ? 'bg-amber-50 text-amber-600' : 'bg-gray-50 text-gray-600'}`}>
+                            {r.priority}
+                          </Badge>
+                          <div>
+                            <span className="font-medium">{r.area}</span>
+                            <p className="text-gray-600 mt-0.5">{r.suggestion}</p>
+                          </div>
                         </div>
                       ))}
                     </div>

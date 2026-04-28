@@ -26,10 +26,10 @@ import {
 import {
   Upload, FileSpreadsheet, CheckCircle2, Loader2, Trash2,
   ArrowUpFromLine, Search, BarChart3, MapPin, Clock, ShoppingCart,
-  FileText, Info,
+  FileText, Info, Monitor,
 } from "lucide-react";
 
-type ReportType = "search_term" | "campaign" | "placement" | "hourly" | "order";
+type ReportType = "search_term" | "campaign" | "placement" | "hourly" | "order" | "dsp";
 
 const REPORT_TYPES: { key: ReportType; label: string; icon: any; source: string; accept: string; desc: string }[] = [
   { key: "search_term", label: "搜索词报告", icon: Search, source: "领星导出", accept: ".xlsx,.xls", desc: "用户搜索词报告，支持搜索词12分类、趋势对比、否定词建议分析" },
@@ -37,6 +37,7 @@ const REPORT_TYPES: { key: ReportType; label: string; icon: any; source: string;
   { key: "placement", label: "广告位报告", icon: MapPin, source: "领星导出", accept: ".xlsx,.xls", desc: "广告位报告，支持首页/商品页/其他位置的效果分析" },
   { key: "hourly", label: "广告小时报告", icon: Clock, source: "亚马逊广告后台", accept: ".csv", desc: "亚马逊广告小时报告(CSV)，用于分时竞价策略和热力图分析" },
   { key: "order", label: "SC订单报告", icon: ShoppingCart, source: "领星导出", accept: ".xlsx,.xls", desc: "领星SC订单导出，用于分时出单分析（需含订购日期时间）" },
+  { key: "dsp", label: "DSP广告报告", icon: Monitor, source: "Amazon DSP", accept: ".xlsx,.xls,.csv", desc: "Amazon DSP订单报告，用于DSP花费、ROAS、DPV等展示广告效果分析" },
 ];
 
 function formatDate(d: Date | string | null) {
@@ -69,6 +70,7 @@ function ReportUploadCard({ reportType }: { reportType: typeof REPORT_TYPES[numb
   const uploadPlacement = trpc.adReportUpload.uploadPlacementReport.useMutation();
   const uploadHourly = trpc.adReportUpload.uploadHourlyReport.useMutation();
   const uploadOrder = trpc.adReportUpload.uploadOrderReport.useMutation();
+  const uploadDsp = trpc.adReportUpload.uploadDspReport.useMutation();
 
   const deleteMutation = trpc.adReportUpload.deleteUpload.useMutation({
     onSuccess: () => {
@@ -85,7 +87,7 @@ function ReportUploadCard({ reportType }: { reportType: typeof REPORT_TYPES[numb
   const handleFileSelect = useCallback(async (file: File) => {
     setSelectedFile(file);
     if (reportType.key === "hourly") {
-      // CSV: read as text
+      // Hourly CSV: read as text for legacy compatibility
       const text = await file.text();
       setFileBase64OrText(text);
     } else {
@@ -104,7 +106,7 @@ function ReportUploadCard({ reportType }: { reportType: typeof REPORT_TYPES[numb
       return;
     }
     // Order report doesn't need date range (auto-detected from data)
-    if (reportType.key !== "order" && reportType.key !== "hourly" && (!weekStartDate || !weekEndDate)) {
+    if (reportType.key !== "order" && reportType.key !== "hourly" && reportType.key !== "dsp" && (!weekStartDate || !weekEndDate)) {
       toast.error("请选择数据周期的起止日期");
       return;
     }
@@ -157,6 +159,15 @@ function ReportUploadCard({ reportType }: { reportType: typeof REPORT_TYPES[numb
             dateLabel: label || undefined,
           });
           break;
+        case "dsp":
+          result = await uploadDsp.mutateAsync({
+            fileBase64: fileBase64OrText,
+            fileName: selectedFile.name,
+            weekStartDate: weekStartDate || undefined,
+            weekEndDate: weekEndDate || undefined,
+            dateLabel: label || undefined,
+          });
+          break;
       }
 
       toast.success("导入成功", {
@@ -175,7 +186,7 @@ function ReportUploadCard({ reportType }: { reportType: typeof REPORT_TYPES[numb
     }
   };
 
-  const isOrderOrHourly = reportType.key === "order" || reportType.key === "hourly";
+  const isOrderOrHourly = reportType.key === "order" || reportType.key === "hourly" || reportType.key === "dsp";
 
   return (
     <div className="space-y-4">
@@ -417,14 +428,14 @@ export default function AdReportUploadCenter() {
             广告报告上传中心
           </h3>
           <p className="text-sm text-muted-foreground mt-1">
-            上传领星/亚马逊导出的广告报告，替代API数据源，支持5种报告类型
+            上传领星/亚马逊导出的广告报告，替代API数据源，支持6种报告类型
           </p>
         </div>
       </div>
 
       {/* Report Type Tabs */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ReportType)}>
-        <TabsList className="grid grid-cols-5 w-full">
+        <TabsList className="grid grid-cols-6 w-full">
           {REPORT_TYPES.map((rt) => (
             <TabsTrigger key={rt.key} value={rt.key} className="gap-1 text-xs">
               <rt.icon className="h-3.5 w-3.5" />

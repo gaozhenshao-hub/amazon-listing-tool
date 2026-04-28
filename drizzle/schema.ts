@@ -3903,6 +3903,7 @@ export const adReportUploads = mysqlTable("ad_report_uploads", {
     "placement",      // 领星广告位报告
     "hourly",         // 亚马逊广告小时报告 (CSV)
     "order",          // 领星SC订单导出
+    "dsp",            // DSP广告报告
   ]).notNull(),
   fileName: varchar("file_name", { length: 500 }).notNull(),
   fileUrl: text("file_url"),
@@ -4180,3 +4181,38 @@ export const adOrderHourly = mysqlTable("ad_order_hourly", {
 
 export type AdOrderHourly = typeof adOrderHourly.$inferSelect;
 export type InsertAdOrderHourly = typeof adOrderHourly.$inferInsert;
+
+// ─── DSP Report Table ────────────────────────────────────────────
+export const adDspReports = mysqlTable("ad_dsp_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  uploadId: int("upload_id").notNull(),
+  // Date range
+  weekStartDate: varchar("week_start_date", { length: 10 }),
+  weekEndDate: varchar("week_end_date", { length: 10 }),
+  // Order info
+  orderName: varchar("order_name", { length: 500 }),
+  orderBudget: decimal("order_budget", { precision: 12, scale: 2 }).default("0"),
+  orderStatus: varchar("order_status", { length: 50 }),
+  // Spend & Revenue
+  spends: decimal("spends", { precision: 12, scale: 2 }).default("0"),
+  sales: decimal("sales", { precision: 12, scale: 2 }).default("0"),
+  orders: int("orders").default(0),
+  // Impressions & Engagement
+  impressions: int("impressions").default(0),
+  viewableImpressions: int("viewable_impressions").default(0),
+  clicks: int("clicks").default(0),
+  dpv: int("dpv").default(0),
+  totalAddToCart: int("total_add_to_cart").default(0),
+  // Derived metrics (stored for convenience)
+  roas: decimal("roas", { precision: 8, scale: 2 }).default("0"),
+  acos: decimal("acos", { precision: 8, scale: 2 }).default("0"),
+  ctr: decimal("ctr", { precision: 8, scale: 4 }).default("0"),
+  // Raw extra fields
+  lineItemType: varchar("line_item_type", { length: 100 }),
+  creativeType: varchar("creative_type", { length: 100 }),
+  storeName: varchar("store_name", { length: 200 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AdDspReport = typeof adDspReports.$inferSelect;
+export type InsertAdDspReport = typeof adDspReports.$inferInsert;

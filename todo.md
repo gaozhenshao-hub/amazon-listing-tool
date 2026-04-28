@@ -3784,3 +3784,14 @@
 - [x] 前端：DspAnalysis切换为本地数据源（显示未上传DSP数据提示）
 - [x] 单元测试验证（21个测试全部通过）
 - [x] 构建验证并保存checkpoint
+### DSP分析优化：友好提示 + DSP报告上传支持
+- [x] 分析现有DspAnalysis组件和数据导入中心代码结构
+- [x] 后端：创建ad_dsp_reports数据库表
+- [x] 后端：创建DSP报告上传解析接口（parseDspReport支持CSV和Excel，uploadDspReport接口）
+- [x] 后端：更新getDspReportLocal从本地数据库读取DSP数据
+- [x] 后端：更新aiDspStrategyLocal基于本地DSP数据进行AI分析
+- [x] 前端：数据导入中心增加DSP报告上传入口（支持.xlsx和.csv格式）
+- [x] 前端：DspAnalysis空数据时显示友好引导提示（含上传入口链接）
+- [x] 前端：DspAnalysis有数据时正常展示KPI卡片+订单表格+AI分析
+- [x] 单元测试：27个测试全部通过（含5个DSP新增测试）
+- [x] 构建验证并保存checkpoint

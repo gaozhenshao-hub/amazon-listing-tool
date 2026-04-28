@@ -547,3 +547,69 @@ export async function parseOrderReport(buffer: Buffer, timezoneOffset: number = 
       };
     });
 }
+
+// ─── DSP Report Parser ─────────────────────────────────────────
+export interface ParsedDspRow {
+  orderName: string;
+  orderBudget: number | null;
+  orderStatus: string;
+  spends: number | null;
+  sales: number | null;
+  orders: number;
+  impressions: number;
+  viewableImpressions: number;
+  clicks: number;
+  dpv: number;
+  totalAddToCart: number;
+  roas: number | null;
+  acos: number | null;
+  ctr: number | null;
+  lineItemType: string;
+  creativeType: string;
+  storeName: string;
+}
+
+export async function parseDspReport(bufferOrCsv: Buffer | string): Promise<ParsedDspRow[]> {
+  let rows: Record<string, any>[];
+  if (typeof bufferOrCsv === 'string') {
+    // CSV text input
+    const result = readCsvRows(bufferOrCsv);
+    rows = result.rows;
+  } else {
+    const result = await readExcelRows(bufferOrCsv);
+    rows = result.rows;
+  }
+  return rows.map((r) => {
+    const spends = toNum(r["花费"] || r["Spends"] || r["花费-本币"] || r["Total Cost"]);
+    const sales = toNum(r["销售额"] || r["Sales"] || r["广告销售额"] || r["Total Sales"]);
+    const clicks = toInt(r["点击"] || r["Clicks"] || r["点击量"]);
+    const impressions = toInt(r["曝光"] || r["Impressions"] || r["曝光量"] || r["展示量"]);
+    // Compute derived metrics
+    let roas: number | null = null;
+    let acos: number | null = null;
+    let ctr: number | null = null;
+    if (spends && spends > 0 && sales) roas = sales / spends;
+    if (sales && sales > 0 && spends) acos = spends / sales;
+    if (impressions > 0 && clicks) ctr = clicks / impressions;
+
+    return {
+      orderName: String(r["订单名称"] || r["Order Name"] || r["广告活动"] || r["Campaign Name"] || ""),
+      orderBudget: toNum(r["预算"] || r["Budget"] || r["订单预算"]),
+      orderStatus: String(r["状态"] || r["Status"] || r["有效状态"] || ""),
+      spends,
+      sales,
+      orders: toInt(r["订单"] || r["Orders"] || r["广告订单"] || r["Purchases"]),
+      impressions,
+      viewableImpressions: toInt(r["可见曝光"] || r["Viewable Impressions"] || r["可见次数"]),
+      clicks,
+      dpv: toInt(r["DPV"] || r["详情页浏览"]),
+      totalAddToCart: toInt(r["加购"] || r["Add to Cart"] || r["加入购物车"]),
+      roas: roas ?? toNum(r["ROAS"]),
+      acos: acos ?? pctToDecimal(r["ACoS"] || r["ACOS"]),
+      ctr: ctr ?? pctToDecimal(r["CTR"]),
+      lineItemType: String(r["广告项类型"] || r["Line Item Type"] || r["投放类型"] || ""),
+      creativeType: String(r["创意类型"] || r["Creative Type"] || ""),
+      storeName: String(r["店铺名称"] || r["Store Name"] || ""),
+    };
+  });
+}

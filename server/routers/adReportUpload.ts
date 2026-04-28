@@ -13,6 +13,7 @@ import {
   adHourlyReports,
   adOrderHourly,
   adPortfolioMappings,
+  adDspReports,
 } from "../../drizzle/schema";
 import { eq, and, inArray, sql, desc } from "drizzle-orm";
 import {
@@ -21,6 +22,7 @@ import {
   parsePlacementReport,
   parseHourlyReport,
   parseOrderReport,
+  parseDspReport,
 } from "./adReportParsers";
 
 // Helper: get db instance
@@ -68,7 +70,7 @@ export const adReportUploadRouter = router({
   listUploads: protectedProcedure
     .input(
       z.object({
-        reportType: z.enum(["search_term", "campaign", "placement", "hourly", "order"]).optional(),
+        reportType: z.enum(["search_term", "campaign", "placement", "hourly", "order", "dsp"]).optional(),
         limit: z.number().min(1).max(100).default(50),
         offset: z.number().min(0).default(0),
       })
@@ -589,6 +591,7 @@ export const adReportUploadRouter = router({
         placement: adPlacementReports,
         hourly: adHourlyReports,
         order: adOrderHourly,
+        dsp: adDspReports,
       };
       const table = tableMap[upload.reportType];
       if (table) {
@@ -754,8 +757,91 @@ export const adReportUploadRouter = router({
     }),
 
   // ─── Get available date ranges per report type ───────────────
+  // ─── Upload DSP report ─────────────────────────────────────
+  uploadDspReport: protectedProcedure
+    .input(
+      z.object({
+        fileBase64: z.string(),
+        fileName: z.string(),
+        weekStartDate: z.string().optional(),
+        weekEndDate: z.string().optional(),
+        dateLabel: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Support both CSV text and Excel binary
+      let parsedRows;
+      if (input.fileName.toLowerCase().endsWith('.csv')) {
+        const csvText = Buffer.from(input.fileBase64, 'base64').toString('utf-8');
+        parsedRows = await parseDspReport(csvText);
+      } else {
+        const buffer = Buffer.from(input.fileBase64, "base64");
+        parsedRows = await parseDspReport(buffer);
+      }
+      if (parsedRows.length === 0) throw new Error("文件中没有有效DSP数据行");
+
+      // Default dates if not provided
+      const today = new Date().toISOString().slice(0, 10);
+      const wStart = input.weekStartDate || today;
+      const wEnd = input.weekEndDate || today;
+      const storeName = parsedRows[0]?.storeName || "";
+      const d = await getDbInstance();
+      const [uploadResult] = await d.insert(adReportUploads).values({
+        userId: ctx.user.id,
+        reportType: "dsp",
+        fileName: input.fileName,
+        weekStartDate: wStart,
+        weekEndDate: wEnd,
+        dateLabel: input.dateLabel || `${wStart} ~ ${wEnd}`,
+        totalRows: parsedRows.length,
+        storeName,
+        status: "parsing",
+      });
+      const uploadId = uploadResult.insertId;
+
+      try {
+        const dbRows = parsedRows.map((r) => ({
+          uploadId,
+          userId: ctx.user.id,
+          weekStartDate: wStart,
+          weekEndDate: wEnd,
+          orderName: r.orderName,
+          orderBudget: r.orderBudget,
+          orderStatus: r.orderStatus,
+          spends: r.spends,
+          sales: r.sales,
+          orders: r.orders,
+          impressions: r.impressions,
+          viewableImpressions: r.viewableImpressions,
+          clicks: r.clicks,
+          dpv: r.dpv,
+          totalAddToCart: r.totalAddToCart,
+          roas: r.roas,
+          acos: r.acos,
+          ctr: r.ctr,
+          lineItemType: r.lineItemType,
+          creativeType: r.creativeType,
+          storeName: r.storeName,
+        }));
+
+        await batchInsert(adDspReports, dbRows);
+        await d
+          .update(adReportUploads)
+          .set({ status: "completed", importedRows: parsedRows.length })
+          .where(eq(adReportUploads.id, uploadId));
+
+        return { uploadId, totalRows: parsedRows.length, importedRows: parsedRows.length };
+      } catch (err: any) {
+        await d
+          .update(adReportUploads)
+          .set({ status: "failed", errorMessage: err.message })
+          .where(eq(adReportUploads.id, uploadId));
+        throw err;
+      }
+    }),
+
   getAvailableDateRanges: protectedProcedure
-    .input(z.object({ reportType: z.enum(["search_term", "campaign", "placement", "hourly", "order"]) }))
+    .input(z.object({ reportType: z.enum(["search_term", "campaign", "placement", "hourly", "order", "dsp"]) }))
     .query(async ({ ctx, input }) => {
       const d = await getDbInstance();
       const uploads = await d

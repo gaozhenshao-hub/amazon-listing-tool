@@ -1047,6 +1047,8 @@ export default function OpsAds() {
           <DspAnalysis
             marketplace={marketplace}
             reportDate={selectedDate}
+            weekStartDate={dateMode === 'range' ? startDate : undefined}
+            weekEndDate={dateMode === 'range' ? endDate : undefined}
           />
         </TabsContent>
 
