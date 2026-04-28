@@ -18,8 +18,11 @@ import { toast } from "sonner";
 interface AdDiagnosticsProps {
   campaignId: string | null;
   campaignIds?: string[];
+  campaignNamesList?: string[];
   marketplace?: string;
   reportDate: string;
+  weekStartDate?: string;
+  weekEndDate?: string;
 }
 
 const HEALTH_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -33,15 +36,15 @@ const HEALTH_LABELS: Record<string, string> = {
   excellent: "优秀", good: "良好", warning: "需关注", critical: "需改善",
 };
 
-export default function AdDiagnostics({ campaignId, campaignIds, marketplace, reportDate }: AdDiagnosticsProps) {
+export default function AdDiagnostics({ campaignId, campaignIds, campaignNamesList, marketplace, reportDate, weekStartDate, weekEndDate }: AdDiagnosticsProps) {
   const [diagnosisResult, setDiagnosisResult] = useState<any>(null);
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const isLoading = false;
 
-  const aiDiagnosis = trpc.adAnalysis.getAdDiagnosis.useMutation({
+  const aiDiagnosis = trpc.adLocalAnalysis.getAdDiagnosisLocal.useMutation({
     onSuccess: (data) => {
       setDiagnosisResult(data);
-      toast.success("AI诊断完成");
+      toast.success("AI诊断完成（本地数据）");
     },
     onError: (err) => toast.error("诊断失败", { description: err.message }),
   });
@@ -58,10 +61,9 @@ export default function AdDiagnostics({ campaignId, campaignIds, marketplace, re
 
   const handleDiagnose = () => {
     aiDiagnosis.mutate({
-      campaignId: campaignId || undefined,
-      campaignIds: campaignIds && campaignIds.length > 0 ? campaignIds : undefined,
-      marketplace,
-      reportDate,
+      campaignNames: campaignNamesList && campaignNamesList.length > 0 ? campaignNamesList : undefined,
+      weekStartDate,
+      weekEndDate,
     });
   };
 

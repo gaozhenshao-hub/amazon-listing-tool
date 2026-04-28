@@ -13,6 +13,7 @@ import { Streamdown } from "streamdown";
 interface Props {
   campaignId: string | null;
   campaignIds?: string[];
+  campaignNamesList?: string[];
   marketplace: string;
 }
 
@@ -33,12 +34,12 @@ const QUICK_QUESTIONS = [
   "新品上架的广告投放策略是什么？",
 ];
 
-export default function AdChatBot({ campaignId, campaignIds, marketplace }: Props) {
+export default function AdChatBot({ campaignId, campaignIds, campaignNamesList, marketplace }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const chatMutation = trpc.adAnalysisP2.adChatBot.useMutation({
+  const chatMutation = trpc.adLocalAnalysis.adChatBotLocal.useMutation({
     onSuccess: (result) => {
       const assistantMsg: ChatMessage = {
         role: "assistant",
@@ -73,9 +74,7 @@ export default function AdChatBot({ campaignId, campaignIds, marketplace }: Prop
 
     chatMutation.mutate({
       question: q,
-      campaignId: campaignId || undefined,
-      campaignIds: campaignIds && campaignIds.length > 0 ? campaignIds : undefined,
-      marketplace,
+      campaignNames: campaignNamesList && campaignNamesList.length > 0 ? campaignNamesList : undefined,
       conversationHistory: messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
     });
   };

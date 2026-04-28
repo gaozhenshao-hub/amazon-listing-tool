@@ -3766,3 +3766,21 @@
 - [x] 前端：趋势对比Tab切换为本地数据源
 - [x] 单元测试验证（13个测试全部通过）
 - [x] 构建验证并保存checkpoint
+### AI分析Tab数据源切换（领星API→本地上传数据）
+- [x] 分析AdDiagnostics、BudgetAllocation、BudgetTracker等AI Tab的代码结构和数据依赖
+- [x] 后端：getAdDiagnosisLocal（从ad_campaign_reports读取数据+LLM诊断）
+- [x] 后端：aiBudgetAllocationLocal（从ad_campaign_reports读取广告活动+LLM预算建议）
+- [x] 后端：evaluateBudgetEffectLocal（从ad_campaign_reports读取效果数据+LLM评估）
+- [x] 后端：getCrossChannelDataLocal（从ad_campaign_reports按adType聚合SP/SB/SD）
+- [x] 后端：adChatBotLocal（从ad_campaign_reports读取上下文+LLM对话）
+- [x] 后端：getDspReportLocal（返回空数据+DSP未上传提示）
+- [x] 后端：aiDspStrategyLocal（返回DSP数据不可用提示）
+- [x] 后端：aiChannelStrategyLocal（从ad_campaign_reports聚合+LLM跨渠道策略）
+- [x] 前端：AdDiagnostics切换为本地数据源
+- [x] 前端：BudgetAllocation切换为本地数据源
+- [x] 前端：BudgetTracker切换为本地数据源
+- [x] 前端：CrossChannelAnalysis切换为本地数据源
+- [x] 前端：AdChatBot切换为本地数据源
+- [x] 前端：DspAnalysis切换为本地数据源（显示未上传DSP数据提示）
+- [x] 单元测试验证（21个测试全部通过）
+- [x] 构建验证并保存checkpoint

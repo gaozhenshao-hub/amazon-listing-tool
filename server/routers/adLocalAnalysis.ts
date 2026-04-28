@@ -13,8 +13,10 @@ import {
   adPlacementReports,
   adHourlyReports,
   adOrderHourly,
+  budgetTracking,
 } from "../../drizzle/schema";
-import { eq, and, inArray, gte, lte } from "drizzle-orm";
+import { eq, and, inArray, gte, lte, desc, sql } from "drizzle-orm";
+import { invokeLLM } from "../_core/llm";
 
 // ─── Helpers ────────────────────────────────────────────────────
 async function getDbInstance() {
@@ -961,5 +963,365 @@ export const adLocalAnalysisRouter = router({
   getCategoryDefinitionsLocal: protectedProcedure
     .query(async () => {
       return { categories: TWELVE_CATEGORIES, defaultThresholds: DEFAULT_THRESHOLDS };
+    }),
+
+  // ═══════════════════════════════════════════════════════════════════
+  // AI TAB LOCAL PROCEDURES
+  // ═══════════════════════════════════════════════════════════════════
+
+  // ─── 13. getAdDiagnosisLocal ────────────────────────────────────
+  getAdDiagnosisLocal: protectedProcedure
+    .input(z.object({
+      campaignNames: z.array(z.string()).optional(),
+      weekStartDate: z.string().optional(),
+      weekEndDate: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDbInstance();
+      const conditions: any[] = [eq(adCampaignReports.userId, ctx.user.id)];
+      if (input.campaignNames?.length) conditions.push(inArray(adCampaignReports.campaignName, input.campaignNames));
+      if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekStartDate, input.weekStartDate));
+      if (input.weekEndDate) conditions.push(lte(adCampaignReports.weekEndDate, input.weekEndDate));
+      const rows = await db.select().from(adCampaignReports).where(and(...conditions));
+      let totalImpressions = 0, totalClicks = 0, totalCost = 0, totalSales = 0, totalOrders = 0;
+      for (const r of rows) {
+        totalImpressions += n(r.impressions); totalClicks += n(r.clicks);
+        totalCost += n(r.spend); totalSales += n(r.sales); totalOrders += n(r.orders);
+      }
+      const metrics = {
+        acos: safePct(totalCost, totalSales), ctr: safePct(totalClicks, totalImpressions),
+        cvr: safePct(totalOrders, totalClicks), cpc: safeDiv(totalCost, totalClicks),
+        roas: safeDiv(totalSales, totalCost),
+        totalCost: Math.round(totalCost * 100) / 100, totalSales: Math.round(totalSales * 100) / 100,
+        totalOrders, totalImpressions, totalClicks,
+      };
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: `你是亚马逊广告诊断专家。基于广告整体数据，从6个维度评估广告健康度并给出诊断建议。\n6个维度：花费效率(ACoS/ROAS)、流量质量(CTR)、转化能力(CVR)、出价合理性(CPC)、预算利用率、广告结构合理性。\n每个维度评分0-100分，并给出具体问题和改进建议。输出严格JSON格式。` },
+          { role: "user", content: `诊断以下广告数据（本地上传数据汇总）：\n${JSON.stringify(metrics)}\n请从6个维度评分并给出诊断：` },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "ad_diagnosis", strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                overall_score: { type: "integer" },
+                overall_assessment: { type: "string" },
+                dimensions: { type: "array", items: { type: "object", properties: { name: { type: "string" }, score: { type: "integer" }, status: { type: "string" }, problems: { type: "array", items: { type: "string" } }, suggestions: { type: "array", items: { type: "string" } } }, required: ["name", "score", "status", "problems", "suggestions"], additionalProperties: false } },
+                priority_actions: { type: "array", items: { type: "string" } },
+              },
+              required: ["overall_score", "overall_assessment", "dimensions", "priority_actions"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+      const diagnosis = JSON.parse(response.choices?.[0]?.message?.content as string);
+      return { ...diagnosis, metrics };
+    }),
+
+  // ─── 14. aiBudgetAllocationLocal ────────────────────────────────
+  aiBudgetAllocationLocal: protectedProcedure
+    .input(z.object({
+      weekStartDate: z.string().optional(),
+      weekEndDate: z.string().optional(),
+      totalBudget: z.number().optional(),
+      targetAcos: z.number().optional().default(25),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDbInstance();
+      const conditions: any[] = [eq(adCampaignReports.userId, ctx.user.id)];
+      if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekStartDate, input.weekStartDate));
+      if (input.weekEndDate) conditions.push(lte(adCampaignReports.weekEndDate, input.weekEndDate));
+      const rows = await db.select().from(adCampaignReports).where(and(...conditions));
+      // Aggregate by campaign
+      const campPerf: Record<string, { name: string; budget: number; status: string; asin: string; impressions: number; clicks: number; cost: number; sales: number; orders: number }> = {};
+      for (const r of rows) {
+        const cName = r.campaignName;
+        if (!campPerf[cName]) {
+          const isPaused = ['paused','archived','suspended'].includes((r.effectiveStatus||'').toLowerCase());
+          campPerf[cName] = { name: cName, budget: n(r.budget), status: isPaused ? 'paused' : 'active', asin: r.parentAsin || '', impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0 };
+        }
+        campPerf[cName].impressions += n(r.impressions); campPerf[cName].clicks += n(r.clicks);
+        campPerf[cName].cost += n(r.spend); campPerf[cName].sales += n(r.sales); campPerf[cName].orders += n(r.orders);
+      }
+      const campaignSummaries = Object.entries(campPerf)
+        .filter(([_, c]) => c.status === 'active')
+        .map(([cName, c]) => ({ campaignId: cName, name: cName, asin: c.asin, currentBudget: c.budget, cost: Math.round(c.cost*100)/100, sales: Math.round(c.sales*100)/100, orders: c.orders, impressions: c.impressions, clicks: c.clicks, acos: safePct(c.cost, c.sales), roas: safeDiv(c.sales, c.cost) }))
+        .sort((a,b) => b.cost - a.cost).slice(0, 30);
+      const totalCurrentBudget = campaignSummaries.reduce((s,c) => s + c.currentBudget, 0);
+      const totalCost = campaignSummaries.reduce((s,c) => s + c.cost, 0);
+      const totalSales = campaignSummaries.reduce((s,c) => s + c.sales, 0);
+      const overallAcos = safePct(totalCost, totalSales);
+      const allStarts = rows.map(r => r.weekStartDate).filter(Boolean).sort();
+      const allEnds = rows.map(r => r.weekEndDate).filter(Boolean).sort();
+      const dateStart = allStarts[0] || ''; const dateEnd = allEnds[allEnds.length-1] || '';
+      const uniqueWeeks = new Set(rows.map(r => `${r.weekStartDate}_${r.weekEndDate}`));
+      try {
+        const llmRes = await invokeLLM({
+          messages: [
+            { role: 'system', content: '你是亚马逊广告预算优化AI助手。请严格按JSON格式输出分析结果。' },
+            { role: 'user', content: `你是资深亚马逊广告优化专家。基于以下本地上传数据提供预算调整建议。\n\n总预算:$${totalCurrentBudget}/天 | 总花费:$${totalCost} | 总销售:$${totalSales} | ACoS:${overallAcos}% | 目标ACoS:${input.targetAcos}%\n\n各活动:\n${campaignSummaries.map((c,i) => `${i+1}. [${c.name}] ASIN:${c.asin||'未知'} | 预算:$${c.currentBudget}/天 | 花费:$${c.cost} | 销售:$${c.sales} | ACoS:${c.acos}% | ROAS:${c.roas}x | 订单:${c.orders}`).join('\n')}\n\n调整原则：1.ACoS低且出单好→加预算 2.ACoS远超目标→减预算或暂停 3.数据不足→维持观察 4.总预算变动控制在±20%` },
+          ],
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'budget_allocation', strict: true,
+              schema: {
+                type: 'object',
+                properties: {
+                  overall_analysis: { type: 'string' },
+                  total_suggested_budget: { type: 'number' },
+                  campaigns: { type: 'array', items: { type: 'object', properties: { campaignId: { type: 'string' }, name: { type: 'string' }, action: { type: 'string' }, currentBudget: { type: 'number' }, suggestedBudget: { type: 'number' }, changePercent: { type: 'number' }, reason: { type: 'string' }, priority: { type: 'string' }, expectedAcos: { type: 'number' } }, required: ['campaignId','name','action','currentBudget','suggestedBudget','changePercent','reason','priority','expectedAcos'], additionalProperties: false } },
+                  key_insights: { type: 'array', items: { type: 'string' } },
+                },
+                required: ['overall_analysis','total_suggested_budget','campaigns','key_insights'],
+                additionalProperties: false,
+              },
+            },
+          },
+        });
+        const result = JSON.parse(String(llmRes.choices[0].message.content) || '{}');
+        return { allocation: result, campaignData: campaignSummaries, totals: { totalCurrentBudget, totalCost, totalSales, overallAcos }, dateRange: { start: dateStart, end: dateEnd, days: uniqueWeeks.size * 7 }, isMock: false, isLocalData: true };
+      } catch (err: any) {
+        console.error('[BudgetAllocLocal] AI error:', err.message);
+        return { allocation: null, campaignData: campaignSummaries, totals: { totalCurrentBudget, totalCost, totalSales, overallAcos }, dateRange: { start: dateStart, end: dateEnd, days: uniqueWeeks.size * 7 }, isMock: false, isLocalData: true, error: 'AI分析暂时不可用，请稍后重试' };
+      }
+    }),
+
+  // ─── 15. evaluateBudgetEffectLocal ──────────────────────────────
+  evaluateBudgetEffectLocal: protectedProcedure
+    .input(z.object({ trackingId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDbInstance();
+      const [record] = await db.select().from(budgetTracking)
+        .where(and(eq(budgetTracking.id, input.trackingId), eq(budgetTracking.userId, ctx.user.id)))
+        .limit(1);
+      if (!record) throw new Error('记录不存在');
+      const decisions = record.campaignDecisions ? JSON.parse(record.campaignDecisions as string) : [];
+      const campaignNames = decisions.map((d: any) => d.campaignName).filter(Boolean);
+      if (campaignNames.length === 0) return { success: false, error: '无广告活动数据' };
+      const conditions: any[] = [eq(adCampaignReports.userId, ctx.user.id), inArray(adCampaignReports.campaignName, campaignNames)];
+      const rows = await db.select().from(adCampaignReports).where(and(...conditions));
+      let totalSpend = 0, totalSales = 0, totalOrders = 0;
+      for (const r of rows) { totalSpend += n(r.spend); totalSales += n(r.sales); totalOrders += n(r.orders); }
+      const followupAcos = safePct(totalSpend, totalSales);
+      const followupRoas = safeDiv(totalSales, totalSpend);
+      const baseAcos = Number(record.baselineAcos) || 0;
+      const baseRoas = Number(record.baselineRoas) || 0;
+      const acosChange = baseAcos > 0 ? Math.round((followupAcos - baseAcos) / baseAcos * 100) : 0;
+      const roasChange = baseRoas > 0 ? Math.round((followupRoas - baseRoas) / baseRoas * 100) : 0;
+      let effectSummary = ''; let effectScore = 50;
+      try {
+        const llmRes = await invokeLLM({
+          messages: [
+            { role: 'system', content: '你是亚马逊广告效果评估专家。请严格按JSON格式输出。' },
+            { role: 'user', content: `请评估以下预算调整的执行效果（基于本地上传数据）：\n\n基线数据：花费$${Number(record.baselineSpend)||0} | 销售$${Number(record.baselineSales)||0} | ACoS:${baseAcos}% | ROAS:${baseRoas}x\n执行后：花费$${Math.round(totalSpend*100)/100} | 销售$${Math.round(totalSales*100)/100} | ACoS:${followupAcos}% | ROAS:${followupRoas}x\n变化：ACoS ${acosChange>0?'+':''}${acosChange}% | ROAS ${roasChange>0?'+':''}${roasChange}%\n活动数:${campaignNames.length} | 订单:${totalOrders}\n\n请给出简短评价(100字内)和评分(1-100)。` },
+          ],
+          response_format: { type: 'json_schema', json_schema: { name: 'budget_effect', strict: true, schema: { type: 'object', properties: { summary: { type: 'string' }, score: { type: 'integer' }, recommendation: { type: 'string' } }, required: ['summary','score','recommendation'], additionalProperties: false } } },
+        });
+        const parsed = JSON.parse(String(llmRes.choices[0].message.content) || '{}');
+        effectSummary = `${parsed.summary}\n\n建议：${parsed.recommendation}`;
+        effectScore = Math.max(1, Math.min(100, parsed.score || 50));
+      } catch {
+        effectSummary = `ACoS变化: ${acosChange>0?'+':''}${acosChange}%, ROAS变化: ${roasChange>0?'+':''}${roasChange}%`;
+        effectScore = acosChange < 0 ? 70 : (acosChange > 10 ? 30 : 50);
+      }
+      await db.update(budgetTracking).set({
+        followupSpend: String(Math.round(totalSpend * 100) / 100),
+        followupSales: String(Math.round(totalSales * 100) / 100),
+        followupAcos: String(followupAcos), followupRoas: String(followupRoas),
+        followupOrders: totalOrders, followupEvaluatedAt: new Date(),
+        effectSummary, effectScore,
+      }).where(eq(budgetTracking.id, input.trackingId));
+      return {
+        success: true,
+        followup: { spend: Math.round(totalSpend*100)/100, sales: Math.round(totalSales*100)/100, acos: followupAcos, roas: followupRoas, orders: totalOrders },
+        baseline: { spend: Number(record.baselineSpend)||0, sales: Number(record.baselineSales)||0, acos: baseAcos, roas: baseRoas, orders: record.baselineOrders||0 },
+        changes: { acosChange, roasChange }, effectSummary, effectScore,
+      };
+    }),
+
+  // ─── 16. getCrossChannelDataLocal ──────────────────────────────
+  getCrossChannelDataLocal: protectedProcedure
+    .input(z.object({ weekStartDate: z.string().optional(), weekEndDate: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDbInstance();
+      const conditions: any[] = [eq(adCampaignReports.userId, ctx.user.id)];
+      if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekStartDate, input.weekStartDate));
+      if (input.weekEndDate) conditions.push(lte(adCampaignReports.weekEndDate, input.weekEndDate));
+      const rows = await db.select().from(adCampaignReports).where(and(...conditions));
+      const channelMap: Record<string, { cost: number; sales: number; clicks: number; impressions: number; orders: number; count: number }> = {};
+      const dailyMap: Record<string, Record<string, { cost: number; sales: number; orders: number; clicks: number; impressions: number }>> = {};
+      for (const r of rows) {
+        const ch = (r.adType || 'SP').toUpperCase();
+        if (!channelMap[ch]) channelMap[ch] = { cost: 0, sales: 0, clicks: 0, impressions: 0, orders: 0, count: 0 };
+        channelMap[ch].cost += n(r.spend); channelMap[ch].sales += n(r.sales);
+        channelMap[ch].clicks += n(r.clicks); channelMap[ch].impressions += n(r.impressions);
+        channelMap[ch].orders += n(r.orders); channelMap[ch].count++;
+        const dateKey = r.weekStartDate;
+        if (!dailyMap[dateKey]) dailyMap[dateKey] = {};
+        if (!dailyMap[dateKey][ch]) dailyMap[dateKey][ch] = { cost: 0, sales: 0, orders: 0, clicks: 0, impressions: 0 };
+        dailyMap[dateKey][ch].cost += n(r.spend); dailyMap[dateKey][ch].sales += n(r.sales);
+        dailyMap[dateKey][ch].orders += n(r.orders); dailyMap[dateKey][ch].clicks += n(r.clicks);
+        dailyMap[dateKey][ch].impressions += n(r.impressions);
+      }
+      const channelNames = ['SP','SB','SD','DSP'];
+      const totalCost = Object.values(channelMap).reduce((s,c) => s + c.cost, 0);
+      const totalSales = Object.values(channelMap).reduce((s,c) => s + c.sales, 0);
+      const channels = channelNames.map(ch => {
+        const d = channelMap[ch] || { cost:0, sales:0, clicks:0, impressions:0, orders:0, count:0 };
+        return {
+          channel: ch, cost: +d.cost.toFixed(2), sales: +d.sales.toFixed(2),
+          clicks: d.clicks, impressions: d.impressions, orders: d.orders,
+          acos: d.sales > 0 ? +((d.cost/d.sales)*100).toFixed(2) : 0,
+          roas: d.cost > 0 ? +(d.sales/d.cost).toFixed(2) : 0,
+          ctr: d.impressions > 0 ? +((d.clicks/d.impressions)*100).toFixed(4) : 0,
+          cvr: d.clicks > 0 ? +((d.orders/d.clicks)*100).toFixed(2) : 0,
+          cpc: d.clicks > 0 ? +(d.cost/d.clicks).toFixed(2) : 0,
+          campaignCount: d.count,
+          costShare: totalCost > 0 ? +((d.cost/totalCost)*100).toFixed(1) : 0,
+          salesShare: totalSales > 0 ? +((d.sales/totalSales)*100).toFixed(1) : 0,
+        };
+      });
+      const sortedDates = Object.keys(dailyMap).sort();
+      const emptyDay = { cost:0, sales:0, orders:0, clicks:0, impressions:0 };
+      const dailyBreakdown = sortedDates.map(date => {
+        const dd = dailyMap[date] || {};
+        return {
+          date,
+          SP: dd['SP'] || {...emptyDay}, SB: dd['SB'] || {...emptyDay},
+          SD: dd['SD'] || {...emptyDay}, DSP: dd['DSP'] || {...emptyDay},
+          total: {
+            cost: +((dd['SP']?.cost||0)+(dd['SB']?.cost||0)+(dd['SD']?.cost||0)+(dd['DSP']?.cost||0)).toFixed(2),
+            sales: +((dd['SP']?.sales||0)+(dd['SB']?.sales||0)+(dd['SD']?.sales||0)+(dd['DSP']?.sales||0)).toFixed(2),
+            orders: (dd['SP']?.orders||0)+(dd['SB']?.orders||0)+(dd['SD']?.orders||0)+(dd['DSP']?.orders||0),
+          },
+        };
+      });
+      return {
+        channels,
+        total: { cost: +totalCost.toFixed(2), sales: +totalSales.toFixed(2), acos: totalSales>0 ? +((totalCost/totalSales)*100).toFixed(2) : 0, roas: totalCost>0 ? +(totalSales/totalCost).toFixed(2) : 0 },
+        dailyBreakdown,
+        dateRange: { startDate: sortedDates[0]||'', endDate: sortedDates[sortedDates.length-1]||'' },
+        isLocalData: true,
+      };
+    }),
+
+  // ─── 17. adChatBotLocal ────────────────────────────────────────
+  adChatBotLocal: protectedProcedure
+    .input(z.object({
+      question: z.string().min(1).max(2000),
+      campaignNames: z.array(z.string()).optional(),
+      conversationHistory: z.array(z.object({ role: z.enum(["user","assistant"]), content: z.string() })).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      let contextData = "";
+      if (input.campaignNames?.length) {
+        const db = await getDbInstance();
+        const rows = await db.select().from(adCampaignReports)
+          .where(and(eq(adCampaignReports.userId, ctx.user.id), inArray(adCampaignReports.campaignName, input.campaignNames)));
+        if (rows.length > 0) {
+          let tc=0,ts=0,tck=0,ti=0,to=0;
+          rows.forEach(d => { tc+=n(d.spend); ts+=n(d.sales); tck+=n(d.clicks); ti+=n(d.impressions); to+=n(d.orders); });
+          contextData = `\n当前分析的广告活动: ${input.campaignNames.slice(0,5).join(', ')}\n本地上传广告数据汇总：\n- 花费: $${tc.toFixed(2)}\n- 销售额: $${ts.toFixed(2)}\n- ACoS: ${ts>0?((tc/ts)*100).toFixed(2):"N/A"}%\n- 点击: ${tck}\n- 曝光: ${ti}\n- CTR: ${ti>0?((tck/ti)*100).toFixed(2):"N/A"}%\n- CVR: ${tck>0?((to/tck)*100).toFixed(2):"N/A"}%\n- 订单: ${to}`;
+        }
+      }
+      const AD_KB = `## 亚马逊广告类型\n### SP (Sponsored Products) 商品推广 - 最常用，按CPC付费\n### SB (Sponsored Brands) 品牌推广 - 仅限品牌注册卖家\n### SD (Sponsored Display) 展示型推广 - 支持站内外展示\n## 优化最佳实践\n- 新品期ACoS可接受30-50%，成长期20-30%，成熟期15-25%\n- 定期检查搜索词报告，否定不相关词\n- 核心词可使用Top of Search加价50-100%`;
+      const messages: any[] = [{
+        role: "system",
+        content: `你是一位亚马逊广告运营AI助手，精通SP/SB/SD/DSP四种广告类型。\n你可以访问用户的本地上传广告数据来回答问题。\n## 角色定位\n- 基于数据回答，不编造数据\n- 给出具体可操作的建议\n- 回答简洁专业，控制在300字以内\n## 可用数据上下文\n${contextData || "（未选择具体广告活动，无法获取数据）"}\n## 亚马逊广告知识库摘要\n${AD_KB}\n## 输出格式（JSON）\n{\n  "answer": "回答内容（支持Markdown格式）",\n  "data_cards": [{"title": "卡片标题", "metrics": [{"label": "指标名", "value": "值"}]}],\n  "actionable_suggestions": [{"action": "可执行操作", "can_auto_execute": false}],\n  "related_questions": ["相关问题1", "相关问题2"]\n}`
+      }];
+      if (input.conversationHistory) {
+        for (const msg of input.conversationHistory.slice(-6)) messages.push({ role: msg.role, content: msg.content });
+      }
+      messages.push({ role: "user", content: input.question });
+      const response = await invokeLLM({
+        messages,
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "ad_chat_response", strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                answer: { type: "string" },
+                data_cards: { type: "array", items: { type: "object", properties: { title: { type: "string" }, metrics: { type: "array", items: { type: "object", properties: { label: { type: "string" }, value: { type: "string" } }, required: ["label","value"], additionalProperties: false } } }, required: ["title","metrics"], additionalProperties: false } },
+                actionable_suggestions: { type: "array", items: { type: "object", properties: { action: { type: "string" }, can_auto_execute: { type: "boolean" } }, required: ["action","can_auto_execute"], additionalProperties: false } },
+                related_questions: { type: "array", items: { type: "string" } },
+              },
+              required: ["answer","data_cards","actionable_suggestions","related_questions"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+      return JSON.parse(response.choices?.[0]?.message?.content as string);
+    }),
+
+  // ─── 18. getDspReportLocal (returns empty with notice) ─────────
+  getDspReportLocal: protectedProcedure
+    .input(z.object({ weekStartDate: z.string().optional(), weekEndDate: z.string().optional() }))
+    .query(async () => {
+      return {
+        orders: [],
+        kpi: { totalBudget:0, totalSpends:0, totalSales:0, totalOrders:0, totalImpressions:0, totalViewable:0, totalClicks:0, totalDpv:0, totalAddToCart:0, roas:0, acos:0, ctr:0, viewabilityRate:0 },
+        message: '本地数据不包含DSP报告，请通过领星ERP获取DSP数据',
+        _meta: { isLocalData: true, notice: '本地数据不包含DSP报告，请通过领星ERP获取DSP数据' },
+      };
+    }),
+
+  // ─── 19. aiDspStrategyLocal (placeholder) ──────────────────────
+  aiDspStrategyLocal: protectedProcedure
+    .input(z.object({ question: z.string().optional() }))
+    .mutation(async () => {
+      return { strategy: null, error: '本地数据不包含DSP报告，无法生成DSP策略建议' };
+    }),
+
+  // ─── 20. aiChannelStrategyLocal ────────────────────────────────
+  aiChannelStrategyLocal: protectedProcedure
+    .input(z.object({
+      weekStartDate: z.string().optional(),
+      weekEndDate: z.string().optional(),
+      question: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDbInstance();
+      const conditions: any[] = [eq(adCampaignReports.userId, ctx.user.id)];
+      if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekStartDate, input.weekStartDate));
+      if (input.weekEndDate) conditions.push(lte(adCampaignReports.weekEndDate, input.weekEndDate));
+      const rows = await db.select().from(adCampaignReports).where(and(...conditions));
+      const channelMap: Record<string, { cost:number; sales:number; orders:number }> = {};
+      for (const r of rows) {
+        const ch = (r.adType||'SP').toUpperCase();
+        if (!channelMap[ch]) channelMap[ch] = { cost:0, sales:0, orders:0 };
+        channelMap[ch].cost += n(r.spend); channelMap[ch].sales += n(r.sales); channelMap[ch].orders += n(r.orders);
+      }
+      const summary = Object.entries(channelMap).map(([ch,d]) => `${ch}: 花费$${d.cost.toFixed(0)} 销售$${d.sales.toFixed(0)} ACoS:${d.sales>0?((d.cost/d.sales)*100).toFixed(1):'N/A'}%`).join('\n');
+      const response = await invokeLLM({
+        messages: [
+          { role: 'system', content: '你是亚马逊跨渠道广告策略专家。基于SP/SB/SD各渠道数据给出预算分配和策略建议。输出严格JSON格式。' },
+          { role: 'user', content: `基于本地上传数据的跨渠道分析：\n${summary}\n${input.question ? `\n用户问题：${input.question}` : ''}\n\n请给出跨渠道预算分配建议和策略优化方向。` },
+        ],
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'channel_strategy', strict: true,
+            schema: {
+              type: 'object',
+              properties: {
+                analysis: { type: 'string' },
+                channel_recommendations: { type: 'array', items: { type: 'object', properties: { channel: { type: 'string' }, currentShare: { type: 'number' }, suggestedShare: { type: 'number' }, action: { type: 'string' }, reason: { type: 'string' } }, required: ['channel','currentShare','suggestedShare','action','reason'], additionalProperties: false } },
+                key_insights: { type: 'array', items: { type: 'string' } },
+              },
+              required: ['analysis','channel_recommendations','key_insights'],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+      return JSON.parse(response.choices?.[0]?.message?.content as string);
     }),
 });

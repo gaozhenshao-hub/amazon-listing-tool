@@ -1034,8 +1034,11 @@ export default function OpsAds() {
           <AdDiagnostics
             campaignId={selectedCampaignId}
             campaignIds={selectedCampaignIds}
+            campaignNamesList={selectedCampaignNamesList}
             marketplace={marketplace}
             reportDate={selectedDate}
+            weekStartDate={dateMode === 'range' ? startDate : undefined}
+            weekEndDate={dateMode === 'range' ? endDate : undefined}
           />
         </TabsContent>
 
@@ -1054,6 +1057,8 @@ export default function OpsAds() {
             reportDate={selectedDate}
             startDate={dateMode === "range" ? startDate : selectedDate}
             endDate={dateMode === "range" ? endDate : selectedDate}
+            weekStartDate={dateMode === 'range' ? startDate : undefined}
+            weekEndDate={dateMode === 'range' ? endDate : undefined}
           />
         </TabsContent>
 
@@ -1074,6 +1079,8 @@ export default function OpsAds() {
             reportDate={selectedDate}
             startDate={dateMode === "range" ? startDate : undefined}
             endDate={dateMode === "range" ? endDate : undefined}
+            weekStartDate={dateMode === 'range' ? startDate : undefined}
+            weekEndDate={dateMode === 'range' ? endDate : undefined}
           />
         </TabsContent>
 
@@ -1097,6 +1104,7 @@ export default function OpsAds() {
           <AdChatBot
             campaignId={selectedCampaignId}
             campaignIds={selectedCampaignIds}
+            campaignNamesList={selectedCampaignNamesList}
             marketplace={marketplace}
           />
         </TabsContent>

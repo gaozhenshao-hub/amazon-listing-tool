@@ -22,6 +22,8 @@ interface BudgetAllocationProps {
   reportDate?: string;
   startDate?: string;
   endDate?: string;
+  weekStartDate?: string;
+  weekEndDate?: string;
 }
 
 const ACTION_CONFIG: Record<string, { label: string; color: string; bg: string; icon: any }> = {
@@ -37,15 +39,15 @@ const PRIORITY_COLORS: Record<string, string> = {
   low: "bg-gray-100 text-gray-600 border-gray-200",
 };
 
-export default function BudgetAllocation({ marketplace, reportDate, startDate, endDate }: BudgetAllocationProps) {
+export default function BudgetAllocation({ marketplace, reportDate, startDate, endDate, weekStartDate, weekEndDate }: BudgetAllocationProps) {
   const [targetAcos, setTargetAcos] = useState(25);
   const [editingBudgets, setEditingBudgets] = useState<Record<string, number>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [userNotes, setUserNotes] = useState("");
   const [saved, setSaved] = useState(false);
 
-  const budgetMutation = trpc.adAnalysis.aiBudgetAllocation.useMutation({
-    onSuccess: () => { toast.success("AI预算分析完成"); setSaved(false); },
+  const budgetMutation = trpc.adLocalAnalysis.aiBudgetAllocationLocal.useMutation({
+    onSuccess: () => { toast.success("AI预算分析完成（本地数据）"); setSaved(false); },
     onError: (err) => toast.error(`分析失败: ${err.message}`),
   });
 
@@ -61,7 +63,7 @@ export default function BudgetAllocation({ marketplace, reportDate, startDate, e
   const allocation = data?.allocation;
 
   const handleAnalyze = () => {
-    budgetMutation.mutate({ marketplace, reportDate, startDate, endDate, targetAcos });
+    budgetMutation.mutate({ weekStartDate, weekEndDate, targetAcos });
   };
 
   const handleEditBudget = (campaignId: string, value: number) => {

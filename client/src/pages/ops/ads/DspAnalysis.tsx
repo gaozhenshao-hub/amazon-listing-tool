@@ -28,13 +28,12 @@ export default function DspAnalysis({ marketplace, reportDate }: Props) {
 
 
 
-  const { data, isLoading, refetch } = trpc.adAnalysisP2.getDspReport.useQuery({
-    marketplace,
-    startDate: reportDate,
-    endDate: reportDate,
+  const { data, isLoading, refetch } = trpc.adLocalAnalysis.getDspReportLocal.useQuery({
+    weekStartDate: reportDate,
+    weekEndDate: reportDate,
   });
 
-  const aiMutation = trpc.adAnalysisP2.aiDspStrategy.useMutation({
+  const aiMutation = trpc.adLocalAnalysis.aiDspStrategyLocal.useMutation({
     onSuccess: (result) => {
       setAiAdvice(result);
       setEditedAdvice(result);
@@ -44,18 +43,7 @@ export default function DspAnalysis({ marketplace, reportDate }: Props) {
   });
 
   const handleAiAnalysis = () => {
-    if (!data?.kpi) return;
-    const topOrders = (data.orders || [])
-      .sort((a: any, b: any) => (b.spends || 0) - (a.spends || 0))
-      .slice(0, 5)
-      .map((o: any) => ({
-        order_name: o.order_name,
-        spends: o.spends || 0,
-        sales: o.sales || 0,
-        roas: o.spends > 0 ? +(o.sales / o.spends).toFixed(2) : 0,
-        dpv: o.dpv || 0,
-      }));
-    aiMutation.mutate({ kpi: data.kpi, topOrders });
+    aiMutation.mutate({ question: 'DSP投放策略建议' });
   };
 
   // Chart data

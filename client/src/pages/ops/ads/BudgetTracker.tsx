@@ -52,9 +52,9 @@ export default function BudgetTracker({ marketplace }: BudgetTrackerProps) {
     { staleTime: 30000 }
   );
 
-  const evaluateMutation = trpc.adAnalysis.evaluateBudgetEffect.useMutation({
+  const evaluateMutation = trpc.adLocalAnalysis.evaluateBudgetEffectLocal.useMutation({
     onSuccess: () => {
-      toast.success("效果评估完成");
+      toast.success("效果评估完成（本地数据）");
       refetch();
     },
     onError: (err) => toast.error(`评估失败: ${err.message}`),
@@ -266,7 +266,7 @@ export default function BudgetTracker({ marketplace }: BudgetTrackerProps) {
                           disabled={evaluateMutation.isPending}
                           onClick={(e) => {
                             e.stopPropagation();
-                            evaluateMutation.mutate({ trackingId: record.id, marketplace: record.marketplace || undefined });
+                            evaluateMutation.mutate({ trackingId: record.id });
                           }}
                         >
                           {evaluateMutation.isPending ? (

@@ -21,6 +21,8 @@ interface Props {
   reportDate: string;
   startDate?: string;
   endDate?: string;
+  weekStartDate?: string;
+  weekEndDate?: string;
 }
 
 const CHANNEL_COLORS: Record<string, string> = {
@@ -74,7 +76,7 @@ function EmptyChannelHint({ channel }: { channel: string }) {
   );
 }
 
-export default function CrossChannelAnalysis({ marketplace, reportDate, startDate, endDate }: Props) {
+export default function CrossChannelAnalysis({ marketplace, reportDate, startDate, endDate, weekStartDate, weekEndDate }: Props) {
   const [aiAdvice, setAiAdvice] = useState<any>(null);
   const [isEditingAdvice, setIsEditingAdvice] = useState(false);
   const [editedAdvice, setEditedAdvice] = useState<string>("");
@@ -84,36 +86,25 @@ export default function CrossChannelAnalysis({ marketplace, reportDate, startDat
   const effectiveEndDate = endDate || reportDate;
   const isMultiDay = effectiveStartDate !== effectiveEndDate;
 
-  const { data, isLoading } = trpc.adAnalysisP2.getCrossChannelData.useQuery({
-    marketplace,
-    startDate: effectiveStartDate,
-    endDate: effectiveEndDate,
+  const { data, isLoading } = trpc.adLocalAnalysis.getCrossChannelDataLocal.useQuery({
+    weekStartDate,
+    weekEndDate,
   });
 
-  const aiMutation = trpc.adAnalysisP2.aiChannelStrategy.useMutation({
+  const aiMutation = trpc.adLocalAnalysis.aiChannelStrategyLocal.useMutation({
     onSuccess: (result) => {
       const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
       setAiAdvice(text);
       setEditedAdvice(text);
-      toast.success("AI跨渠道策略已生成");
+      toast.success("AI跨渠道策略已生成（本地数据）");
     },
     onError: (err) => toast.error(`AI分析失败: ${err.message}`),
   });
 
   const handleAiAnalysis = () => {
-    if (!data?.channels) return;
     aiMutation.mutate({
-      channels: data.channels.map(c => ({
-        channel: c.channel,
-        cost: c.cost,
-        sales: c.sales,
-        acos: c.acos,
-        roas: c.roas,
-        orders: c.orders,
-        costShare: c.costShare,
-      })),
-      totalCost: data.total.cost,
-      totalSales: data.total.sales,
+      weekStartDate,
+      weekEndDate,
     });
   };
 
