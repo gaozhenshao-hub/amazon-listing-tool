@@ -15,20 +15,18 @@ import {
 interface NegativeKeywordsProps {
   campaignId: string | null;
   campaignIds?: string[];
+  campaignNamesList?: string[];
   marketplace?: string;
   reportDate: string;
 }
 
-export default function NegativeKeywords({ campaignId, campaignIds, marketplace, reportDate }: NegativeKeywordsProps) {
+export default function NegativeKeywords({ campaignId, campaignIds, campaignNamesList, marketplace, reportDate }: NegativeKeywordsProps) {
   const [negTab, setNegTab] = useState("exact");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Use the 12-category search term data to derive negative keyword suggestions
-  const { data: classData, isLoading } = trpc.adAnalysis.getSearchTerms12Category.useQuery({
-    campaignId: campaignId || undefined,
-    campaignIds: campaignIds && campaignIds.length > 0 ? campaignIds : undefined,
-    marketplace,
-    reportDate,
+  // Use the 12-category search term data to derive negative keyword suggestions (from local data)
+  const { data: classData, isLoading } = trpc.adLocalAnalysis.getSearchTerms12CategoryLocal.useQuery({
+    campaignNames: campaignNamesList && campaignNamesList.length > 0 ? campaignNamesList : undefined,
   });
 
   // Derive negative keywords from categories that indicate waste

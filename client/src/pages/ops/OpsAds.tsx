@@ -125,14 +125,16 @@ export default function OpsAds() {
   });
   const { marketplace } = useMarketplace();
 
-  // Overview data - campaign summary with portfolio structure
+  // Overview data - campaign summary with portfolio structure (from local uploaded data)
   const queryParams = useMemo(() => {
+    const params: any = { adState: adStateFilter as any };
     if (dateMode === 'range') {
-      return { marketplace, adState: adStateFilter as any, startDate, endDate };
+      params.weekStartDate = startDate;
+      params.weekEndDate = endDate;
     }
-    return { marketplace, adState: adStateFilter as any, reportDate: selectedDate };
-  }, [marketplace, adStateFilter, dateMode, selectedDate, startDate, endDate]);
-  const { data: campaignData, isLoading: campaignLoading, isFetching: campaignFetching, refetch: refetchCampaigns } = trpc.operations.getAdCampaigns.useQuery(queryParams);
+    return params;
+  }, [adStateFilter, dateMode, startDate, endDate]);
+  const { data: campaignData, isLoading: campaignLoading, isFetching: campaignFetching, refetch: refetchCampaigns } = trpc.adLocalAnalysis.getAdCampaignsLocal.useQuery(queryParams);
   const dateRange = (campaignData as any)?.dateRange;
   const cacheInfo = (campaignData as any)?.cacheInfo;
 
@@ -153,17 +155,8 @@ export default function OpsAds() {
     saveSelection(selectedCampaigns, primaryCampaignId);
   }, [selectedCampaigns, primaryCampaignId]);
 
-  // ASIN mapping warmup: silently trigger on mount to ensure product detail pages have mapping data
-  const warmupMutation = trpc.adAnalysis.warmupAsinMapping.useMutation();
-  useEffect(() => {
-    warmupMutation.mutate({ marketplace }, {
-      onSuccess: (res) => {
-        if (res.status === 'refreshed') {
-          console.log(`[AsinMapping] Warmup complete: ${res.asinCount} ASINs mapped`);
-        }
-      },
-    });
-  }, [marketplace]); // Re-warmup when marketplace changes
+  // ASIN mapping warmup disabled for local data mode
+  // const warmupMutation = trpc.adAnalysis.warmupAsinMapping.useMutation();
 
   // Auto-select a random campaign when data loads and no campaign is selected
   useEffect(() => {
@@ -208,6 +201,11 @@ export default function OpsAds() {
     const names: Record<string, string> = {};
     selectedCampaigns.forEach((info, id) => { names[id] = info.name; });
     return names;
+  }, [selectedCampaigns]);
+
+  // Build campaignNames array for local data queries
+  const selectedCampaignNamesList = useMemo(() => {
+    return Array.from(selectedCampaigns.values()).map(c => c.name);
   }, [selectedCampaigns]);
 
   // Toggle portfolio expansion
@@ -503,7 +501,11 @@ export default function OpsAds() {
           <p className="text-sm text-gray-500 mt-0.5">以广告组合(Portfolio)+广告活动(Campaign)为核心维度的全方位广告数据分析</p>
           {campaignData && !campaignLoading && (
             <div className="flex items-center gap-1.5 mt-1">
-              {(campaignData as any)?.isMock ? (
+              {(campaignData as any)?.isLocalData ? (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500" /> 本地上传数据
+                </span>
+              ) : (campaignData as any)?.isMock ? (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> 模拟数据
                 </span>
@@ -943,6 +945,7 @@ export default function OpsAds() {
             campaignId={selectedCampaignId}
             campaignIds={selectedCampaignIds}
             campaignNames={selectedCampaignNames}
+            campaignNamesList={selectedCampaignNamesList}
             marketplace={marketplace}
             reportDate={selectedDate}
             startDate={dateMode === 'range' ? startDate : undefined}
@@ -956,6 +959,7 @@ export default function OpsAds() {
           <TargetingAnalysis
             campaignId={selectedCampaignId}
             campaignIds={selectedCampaignIds}
+            campaignNamesList={selectedCampaignNamesList}
             marketplace={marketplace}
             reportDate={selectedDate}
             startDate={dateMode === 'range' ? startDate : undefined}
@@ -969,6 +973,7 @@ export default function OpsAds() {
           <AdPlacementAnalysis
             campaignId={selectedCampaignId}
             campaignIds={selectedCampaignIds}
+            campaignNamesList={selectedCampaignNamesList}
             marketplace={marketplace}
             reportDate={selectedDate}
             startDate={dateMode === 'range' ? startDate : undefined}
@@ -982,6 +987,7 @@ export default function OpsAds() {
           <HourlyBidStrategy
             campaignId={selectedCampaignId}
             campaignIds={selectedCampaignIds}
+            campaignNamesList={selectedCampaignNamesList}
             marketplace={marketplace}
             reportDate={selectedDate}
             startDate={dateMode === 'range' ? startDate : undefined}
@@ -995,6 +1001,7 @@ export default function OpsAds() {
           <NegativeKeywords
             campaignId={selectedCampaignId}
             campaignIds={selectedCampaignIds}
+            campaignNamesList={selectedCampaignNamesList}
             marketplace={marketplace}
             reportDate={selectedDate}
           />
@@ -1005,6 +1012,7 @@ export default function OpsAds() {
           <WordFrequencyAnalysis
             campaignId={selectedCampaignId}
             campaignIds={selectedCampaignIds}
+            campaignNamesList={selectedCampaignNamesList}
             marketplace={marketplace}
             reportDate={selectedDate}
           />
@@ -1015,6 +1023,7 @@ export default function OpsAds() {
           <EffectiveSearchTerms
             campaignId={selectedCampaignId}
             campaignIds={selectedCampaignIds}
+            campaignNamesList={selectedCampaignNamesList}
             marketplace={marketplace}
             reportDate={selectedDate}
           />
@@ -1079,6 +1088,7 @@ export default function OpsAds() {
             marketplace={marketplace}
             campaignId={selectedCampaignId || undefined}
             campaignIds={selectedCampaignIds.length > 0 ? selectedCampaignIds : undefined}
+            campaignNamesList={selectedCampaignNamesList}
           />
         </TabsContent>
 

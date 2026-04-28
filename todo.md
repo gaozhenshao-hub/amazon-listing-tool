@@ -3737,5 +3737,32 @@
 - [x] 后端：订单分时数据解析器（领星Excel格式，UTC→目标时区转换）
 - [x] 后端：统一上传/删除/列表/查询API（7个查询接口+5个上传+1个删除）
 - [x] 前端：数据导入中心增加5种报告上传入口（AdReportUploadCenter组件）
-- [ ] 前端：广告分析Tab切换为从本地数据库读取（下一步）
+- [x] 前端：广告分析Tab切换为从本地数据库读取（下一步）
 - [x] 构建验证通过（pnpm build成功）
+### 广告分析页面数据源切换（领星API→本地上传数据）
+- [x] 分析现有广告分析Tab的代码结构和数据流
+- [x] 后端：创建adLocalAnalysis.ts路由（本地数据查询，返回与领星API相同格式）
+- [x] 后端：getAdCampaignsLocal（从ad_campaign_reports聚合广告活动+组合列表）
+- [x] 后端：getSearchTerms12CategoryLocal（从ad_search_term_reports读取+12分类）
+- [x] 后端：getAdPlacementDataLocal（从ad_placement_reports聚合广告位数据）
+- [x] 后端：getAdPlacementByKeywordLocal（按关键词维度聚合广告位+placementNames）
+- [x] 后端：getAdHourlyDataLocal（从ad_hourly_reports聚合分时数据）
+- [x] 后端：getOrderHourlyHeatmapLocal（从ad_order_hourly聚合7天×24小时热力图）
+- [x] 后端：getTargetingAnalysisLocal（从ad_search_term_reports按投放对象聚合9分类）
+- [x] 后端：getWordFrequencyLocal（从ad_search_term_reports提取词频+categoryStats）
+- [x] 后端：getEffectiveSearchTermsLocal（筛选有效词+organicOnlyTerms）
+- [x] 后端：getAsinAdSummaryLocal（按ASIN聚合+sku字段+totals汇总）
+- [x] 后端：getSearchTermTrendLocal（按周度趋势对比+periods+topN）
+- [x] 后端：getCategoryDefinitionsLocal（返回categories+defaultThresholds）
+- [x] 前端：OpsAds.tsx总览Tab切换为本地数据源（getAdCampaignsLocal）
+- [x] 前端：搜索词12分类Tab切换为本地数据源
+- [x] 前端：投放对象Tab切换为本地数据源
+- [x] 前端：广告位Tab切换为本地数据源
+- [x] 前端：分时策略Tab切换为本地数据源
+- [x] 前端：否定词Tab切换为本地数据源
+- [x] 前端：词频分析Tab切换为本地数据源
+- [x] 前端：有效词Tab切换为本地数据源
+- [x] 前端：ASIN汇总Tab切换为本地数据源
+- [x] 前端：趋势对比Tab切换为本地数据源
+- [x] 单元测试验证（13个测试全部通过）
+- [x] 构建验证并保存checkpoint

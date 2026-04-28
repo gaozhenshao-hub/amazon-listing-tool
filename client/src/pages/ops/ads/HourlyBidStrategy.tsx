@@ -15,6 +15,7 @@ import { toast } from "sonner";
 interface HourlyBidStrategyProps {
   campaignId: string | null;
   campaignIds?: string[];
+  campaignNamesList?: string[];
   marketplace?: string;
   reportDate?: string;
   startDate?: string;
@@ -37,7 +38,7 @@ function getHeatColor(value: number, max: number): string {
   return "#f3f4f6";
 }
 
-export default function HourlyBidStrategy({ campaignId, campaignIds, marketplace, reportDate, startDate, endDate, defaultAdType }: HourlyBidStrategyProps) {
+export default function HourlyBidStrategy({ campaignId, campaignIds, campaignNamesList, marketplace, reportDate, startDate, endDate, defaultAdType }: HourlyBidStrategyProps) {
   const [heatmapMetric, setHeatmapMetric] = useState<"orders" | "sales" | "clicks" | "impressions">("orders");
   const [adType, setAdType] = useState<"SP" | "SB" | "SD">(defaultAdType === "SB" ? "SB" : defaultAdType === "SD" ? "SD" : "SP");
 
@@ -48,24 +49,12 @@ export default function HourlyBidStrategy({ campaignId, campaignIds, marketplace
     }
   }, [defaultAdType]);
 
-  const { data, isLoading } = trpc.adAnalysis.getAdHourlyData.useQuery({
-    campaignId: campaignId || undefined,
-    campaignIds: campaignIds && campaignIds.length > 0 ? campaignIds : undefined,
-    marketplace,
-    reportDate,
-    startDate,
-    endDate,
+  const { data, isLoading } = trpc.adLocalAnalysis.getAdHourlyDataLocal.useQuery({
+    campaignNames: campaignNamesList && campaignNamesList.length > 0 ? campaignNamesList : undefined,
     adType,
   });
 
-  const { data: heatmapRawData } = trpc.adAnalysis.getOrderHourlyHeatmap.useQuery({
-    campaignId: campaignId || undefined,
-    campaignIds: campaignIds && campaignIds.length > 0 ? campaignIds : undefined,
-    marketplace,
-    reportDate,
-    startDate,
-    endDate,
-  });
+  const { data: heatmapRawData } = trpc.adLocalAnalysis.getOrderHourlyHeatmapLocal.useQuery({});
 
   const aiBidStrategy = trpc.adAnalysis.aiDaypartingStrategy.useMutation({
     onSuccess: () => toast.success("AI分时竞价策略生成完成"),

@@ -16,6 +16,7 @@ import { toast } from "sonner";
 interface TargetingAnalysisProps {
   campaignId: string | null;
   campaignIds?: string[];
+  campaignNamesList?: string[];
   marketplace?: string;
   reportDate: string;
   startDate?: string;
@@ -35,7 +36,7 @@ const TARGET_CATEGORY_CONFIG: Record<number, { label: string; color: string; bg:
   9: { label: "低点击_低转化", color: "#ef4444", bg: "bg-red-50" },
 };
 
-export default function TargetingAnalysis({ campaignId, campaignIds, marketplace, reportDate, startDate, endDate, defaultAdType }: TargetingAnalysisProps) {
+export default function TargetingAnalysis({ campaignId, campaignIds, campaignNamesList, marketplace, reportDate, startDate, endDate, defaultAdType }: TargetingAnalysisProps) {
   const [categoryFilter, setCategoryFilter] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [adType, setAdType] = useState<"SP" | "SB" | "SD">(defaultAdType === "SB" ? "SB" : defaultAdType === "SD" ? "SD" : "SP");
@@ -48,13 +49,10 @@ export default function TargetingAnalysis({ campaignId, campaignIds, marketplace
     }
   }, [defaultAdType]);
 
-  const { data, isLoading } = trpc.adAnalysis.getTargetingAnalysis.useQuery({
-    campaignId: campaignId || undefined,
-    campaignIds: campaignIds && campaignIds.length > 0 ? campaignIds : undefined,
-    marketplace,
-    reportDate,
-    startDate,
-    endDate,
+  const { data, isLoading } = trpc.adLocalAnalysis.getTargetingAnalysisLocal.useQuery({
+    campaignNames: campaignNamesList && campaignNamesList.length > 0 ? campaignNamesList : undefined,
+    weekStartDate: startDate,
+    weekEndDate: endDate,
     adType,
   });
 

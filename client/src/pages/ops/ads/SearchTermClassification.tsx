@@ -48,6 +48,7 @@ interface SearchTermClassificationProps {
   campaignId: string | null;
   campaignIds?: string[];
   campaignNames?: Record<string, string>;
+  campaignNamesList?: string[];
   marketplace?: string;
   reportDate: string;
   startDate?: string;
@@ -55,7 +56,7 @@ interface SearchTermClassificationProps {
   defaultAdType?: "SP" | "SB";
 }
 
-export default function SearchTermClassification({ campaignId, campaignIds, campaignNames, marketplace, reportDate, startDate, endDate, defaultAdType }: SearchTermClassificationProps) {
+export default function SearchTermClassification({ campaignId, campaignIds, campaignNames, campaignNamesList, marketplace, reportDate, startDate, endDate, defaultAdType }: SearchTermClassificationProps) {
   const isMultiMode = (campaignIds?.length || 0) > 1;
   const [sourceCampaignFilter, setSourceCampaignFilter] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<number | null>(null);
@@ -76,38 +77,27 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
     if (defaultAdType) setAdType(defaultAdType === "SB" ? "SB" : "SP");
   }, [defaultAdType]);
 
-  // Single campaign query (backward compatible)
-  const singleQuery = trpc.adAnalysis.getSearchTerms12Category.useQuery({
-    campaignId: campaignId || undefined,
-    marketplace,
-    reportDate,
-    startDate,
-    endDate,
+  // Local data query (replaces Lingxing API)
+  const localQuery = trpc.adLocalAnalysis.getSearchTerms12CategoryLocal.useQuery({
+    campaignNames: campaignNamesList && campaignNamesList.length > 0 ? campaignNamesList : undefined,
+    weekStartDate: startDate,
+    weekEndDate: endDate,
     adType,
-  }, { enabled: !isMultiMode });
+  });
 
-  // Multi-campaign aggregated query
-  const multiQuery = trpc.adAnalysis.getSearchTermsMultiCampaign.useQuery({
-    campaignIds: campaignIds || [],
-    marketplace,
-    reportDate,
-    startDate,
-    endDate,
-    adType,
-  }, { enabled: isMultiMode && (campaignIds?.length || 0) > 0 });
+  // Keep singleQuery/multiQuery references for backward compatibility
+  const singleQuery = localQuery;
+  const multiQuery = localQuery;
 
   // Unified data access
   const data = isMultiMode ? multiQuery.data : singleQuery.data;
   const isLoading = isMultiMode ? multiQuery.isLoading : singleQuery.isLoading;
   const refetch = isMultiMode ? multiQuery.refetch : singleQuery.refetch;
 
-  const { data: categoryDefs } = trpc.adAnalysis.getCategoryDefinitions.useQuery();
+  const { data: categoryDefs } = trpc.adLocalAnalysis.getCategoryDefinitionsLocal.useQuery();
 
-  // ASIN mapping query
-  const { data: asinMapping } = trpc.adAnalysis.getAsinCampaignMapping.useQuery(
-    { marketplace },
-    { staleTime: 30 * 60 * 1000 }
-  );
+  // ASIN mapping disabled for local data mode
+  const asinMapping: any = null;
 
   const searchTerms = data?.searchTerms || [];
 

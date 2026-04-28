@@ -20,6 +20,7 @@ interface SearchTermTrendProps {
   marketplace?: string;
   campaignId?: string;
   campaignIds?: string[];
+  campaignNamesList?: string[];
 }
 
 const PERIOD_PRESETS = [
@@ -74,7 +75,7 @@ const METRIC_OPTIONS = [
 
 const PERIOD_COLORS = ["#3b82f6", "#f59e0b", "#10b981", "#8b5cf6"];
 
-export default function SearchTermTrend({ marketplace, campaignId, campaignIds }: SearchTermTrendProps) {
+export default function SearchTermTrend({ marketplace, campaignId, campaignIds, campaignNamesList }: SearchTermTrendProps) {
   const [selectedPreset, setSelectedPreset] = useState(0);
   const [selectedMetric, setSelectedMetric] = useState("cost");
   const [topN, setTopN] = useState(20);
@@ -82,11 +83,9 @@ export default function SearchTermTrend({ marketplace, campaignId, campaignIds }
 
   const periods = useMemo(() => PERIOD_PRESETS[selectedPreset].periods(), [selectedPreset]);
 
-  const { data, isLoading, refetch } = trpc.adAnalysis.getSearchTermTrend.useQuery(
+  const { data, isLoading, refetch } = trpc.adLocalAnalysis.getSearchTermTrendLocal.useQuery(
     {
-      marketplace,
-      campaignId,
-      campaignIds,
+      campaignNames: campaignNamesList && campaignNamesList.length > 0 ? campaignNamesList : undefined,
       periods,
       topN,
     },

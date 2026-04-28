@@ -14,6 +14,7 @@ import { Monitor, Smartphone, LayoutGrid, TrendingUp, Search, ArrowUpDown, Arrow
 interface AdPlacementAnalysisProps {
   campaignId: string | null;
   campaignIds?: string[];
+  campaignNamesList?: string[];
   marketplace?: string;
   reportDate: string;
   startDate?: string;
@@ -39,7 +40,7 @@ const getPlacementConfig = (name: string) => PLACEMENT_CONFIG[name] || { label: 
 
 type SortKey = "impressions" | "clicks" | "cost" | "sales" | "acos" | "ctr" | "cvr" | "orders";
 
-export default function AdPlacementAnalysis({ campaignId, campaignIds, marketplace, reportDate, startDate, endDate, defaultAdType }: AdPlacementAnalysisProps) {
+export default function AdPlacementAnalysis({ campaignId, campaignIds, campaignNamesList, marketplace, reportDate, startDate, endDate, defaultAdType }: AdPlacementAnalysisProps) {
   const [adType, setAdType] = useState<"SP" | "SB" | "SD">(defaultAdType === "SB" ? "SB" : defaultAdType === "SD" ? "SD" : "SP");
   const [viewMode, setViewMode] = useState<"overview" | "keyword">("overview");
   const [searchKw, setSearchKw] = useState("");
@@ -53,25 +54,19 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, marketpla
     }
   }, [defaultAdType]);
 
-  // Overview data (existing)
-  const { data: overviewData, isLoading: overviewLoading } = trpc.adAnalysis.getAdPlacementData.useQuery({
-    campaignId: campaignId || undefined,
-    campaignIds: campaignIds && campaignIds.length > 0 ? campaignIds : undefined,
-    marketplace,
-    reportDate,
-    startDate,
-    endDate,
+  // Overview data (from local uploaded data)
+  const { data: overviewData, isLoading: overviewLoading } = trpc.adLocalAnalysis.getAdPlacementDataLocal.useQuery({
+    campaignNames: campaignNamesList && campaignNamesList.length > 0 ? campaignNamesList : undefined,
+    weekStartDate: startDate,
+    weekEndDate: endDate,
     adType,
   });
 
-  // Keyword dimension data (new)
-  const { data: kwData, isLoading: kwLoading } = trpc.adAnalysis.getAdPlacementByKeyword.useQuery({
-    campaignId: campaignId || undefined,
-    campaignIds: campaignIds && campaignIds.length > 0 ? campaignIds : undefined,
-    marketplace,
-    startDate,
-    endDate,
-    days: 7,
+  // Keyword dimension data (from local uploaded data)
+  const { data: kwData, isLoading: kwLoading } = trpc.adLocalAnalysis.getAdPlacementByKeywordLocal.useQuery({
+    campaignNames: campaignNamesList && campaignNamesList.length > 0 ? campaignNamesList : undefined,
+    weekStartDate: startDate,
+    weekEndDate: endDate,
     adType,
     searchKeyword: searchKw || undefined,
     sortBy,

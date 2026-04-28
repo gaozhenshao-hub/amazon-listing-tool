@@ -81,6 +81,7 @@ import { operatorMappingRouter } from "./routers/operatorMapping";
 // Ad Keyword Tracking
 import { adTrackingRouter } from "./routers/adTracking";
 import { adReportUploadRouter } from "./routers/adReportUpload";
+import { adLocalAnalysisRouter } from "./routers/adLocalAnalysis";
 
 export const appRouter = router({
   system: systemRouter,
@@ -175,6 +176,8 @@ export const appRouter = router({
   taskManagement: taskManagementRouter,
   // Ad Report Upload (replaces Lingxing API)
   adReportUpload: adReportUploadRouter,
+  // Ad Local Analysis (reads from local uploaded data)
+  adLocalAnalysis: adLocalAnalysisRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -38,8 +38,9 @@ export default function AsinAdSummary({ marketplace, reportDate, startDate, endD
   const [sortField, setSortField] = useState<string>("cost");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
-  const { data, isLoading, refetch, isFetching } = trpc.adAnalysis.getAsinAdSummary.useQuery(
-    { marketplace, reportDate, startDate, endDate },
+
+  const { data, isLoading, refetch, isFetching } = trpc.adLocalAnalysis.getAsinAdSummaryLocal.useQuery(
+    { weekStartDate: startDate, weekEndDate: endDate },
     { staleTime: 5 * 60 * 1000 }
   );
 
