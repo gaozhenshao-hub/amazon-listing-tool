@@ -80,6 +80,7 @@ import { dataImportRouter } from "./routers/dataImport";
 import { operatorMappingRouter } from "./routers/operatorMapping";
 // Ad Keyword Tracking
 import { adTrackingRouter } from "./routers/adTracking";
+import { adReportUploadRouter } from "./routers/adReportUpload";
 
 export const appRouter = router({
   system: systemRouter,
@@ -172,6 +173,8 @@ export const appRouter = router({
   adTracking: adTrackingRouter,
   // Task Management
   taskManagement: taskManagementRouter,
+  // Ad Report Upload (replaces Lingxing API)
+  adReportUpload: adReportUploadRouter,
 });
 
 export type AppRouter = typeof appRouter;

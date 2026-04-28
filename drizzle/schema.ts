@@ -3888,3 +3888,295 @@ export const adCompetitorRanks = mysqlTable("ad_competitor_ranks", {
 
 export type AdCompetitorRank = typeof adCompetitorRanks.$inferSelect;
 export type InsertAdCompetitorRank = typeof adCompetitorRanks.$inferInsert;
+
+// ═══════════════════════════════════════════════════════════════
+// Ad Report Upload Tables (replacing Lingxing API with file uploads)
+// ═══════════════════════════════════════════════════════════════
+
+// Unified upload history for all ad report types
+export const adReportUploads = mysqlTable("ad_report_uploads", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  reportType: mysqlEnum("report_type", [
+    "search_term",    // 领星搜索词报告
+    "campaign",       // 领星广告活动报告
+    "placement",      // 领星广告位报告
+    "hourly",         // 亚马逊广告小时报告 (CSV)
+    "order",          // 领星SC订单导出
+  ]).notNull(),
+  fileName: varchar("file_name", { length: 500 }).notNull(),
+  fileUrl: text("file_url"),
+  weekStartDate: varchar("week_start_date", { length: 10 }), // YYYY-MM-DD (optional for hourly/order)
+  weekEndDate: varchar("week_end_date", { length: 10 }),
+  dateLabel: varchar("date_label", { length: 50 }), // e.g. "2026-W17" or "04/21-04/27"
+  totalRows: int("total_rows").default(0),
+  importedRows: int("imported_rows").default(0),
+  storeName: varchar("store_name", { length: 200 }), // detected from file
+  status: mysqlEnum("upload_status", ["pending", "parsing", "completed", "failed"]).default("pending").notNull(),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AdReportUpload = typeof adReportUploads.$inferSelect;
+export type InsertAdReportUpload = typeof adReportUploads.$inferInsert;
+
+// Search term report data (领星用户搜索词报告)
+export const adSearchTermReports = mysqlTable("ad_search_term_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  uploadId: int("upload_id").notNull(), // FK → ad_report_uploads.id
+  userId: int("user_id").notNull(),
+  productId: int("product_id"), // resolved via portfolio mapping
+  parentAsin: varchar("parent_asin", { length: 20 }),
+  weekStartDate: varchar("week_start_date", { length: 10 }).notNull(),
+  weekEndDate: varchar("week_end_date", { length: 10 }).notNull(),
+  // Structure
+  storeName: varchar("store_name", { length: 200 }),
+  country: varchar("country", { length: 50 }),
+  adType: varchar("ad_type", { length: 10 }).notNull(), // SP, SB, SD
+  portfolioName: varchar("portfolio_name", { length: 300 }),
+  campaignName: varchar("campaign_name", { length: 500 }),
+  adGroupName: varchar("ad_group_name", { length: 500 }),
+  keyword: varchar("keyword", { length: 500 }),
+  matchType: varchar("match_type", { length: 20 }),
+  targeting: varchar("targeting", { length: 500 }), // 投放
+  searchTerm: varchar("search_term", { length: 500 }).notNull(),
+  // Metrics
+  impressions: int("impressions").default(0),
+  clicks: int("clicks").default(0),
+  ctr: decimal("ctr", { precision: 8, scale: 4 }),
+  cpc: decimal("cpc", { precision: 10, scale: 2 }),
+  spend: decimal("spend", { precision: 12, scale: 2 }),
+  sales: decimal("sales", { precision: 12, scale: 2 }),
+  directSales: decimal("direct_sales", { precision: 12, scale: 2 }),
+  indirectSales: decimal("indirect_sales", { precision: 12, scale: 2 }),
+  acos: decimal("acos", { precision: 8, scale: 4 }),
+  roas: decimal("roas", { precision: 8, scale: 2 }),
+  orders: int("orders").default(0),
+  directOrders: int("direct_orders").default(0),
+  indirectOrders: int("indirect_orders").default(0),
+  indirectOrderRatio: decimal("indirect_order_ratio", { precision: 6, scale: 4 }),
+  cpa: decimal("cpa", { precision: 10, scale: 2 }),
+  cvr: decimal("cvr", { precision: 8, scale: 4 }),
+  avgOrderValue: decimal("avg_order_value", { precision: 10, scale: 2 }),
+  directAvgOrderValue: decimal("direct_avg_order_value", { precision: 10, scale: 2 }),
+  indirectAvgOrderValue: decimal("indirect_avg_order_value", { precision: 10, scale: 2 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AdSearchTermReport = typeof adSearchTermReports.$inferSelect;
+export type InsertAdSearchTermReport = typeof adSearchTermReports.$inferInsert;
+
+// Campaign report data (领星广告活动报告)
+export const adCampaignReports = mysqlTable("ad_campaign_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  uploadId: int("upload_id").notNull(),
+  userId: int("user_id").notNull(),
+  productId: int("product_id"),
+  parentAsin: varchar("parent_asin", { length: 20 }),
+  weekStartDate: varchar("week_start_date", { length: 10 }).notNull(),
+  weekEndDate: varchar("week_end_date", { length: 10 }).notNull(),
+  // Structure
+  storeName: varchar("store_name", { length: 200 }),
+  country: varchar("country", { length: 50 }),
+  adType: varchar("ad_type", { length: 10 }).notNull(),
+  portfolioName: varchar("portfolio_name", { length: 300 }),
+  campaignName: varchar("campaign_name", { length: 500 }).notNull(),
+  effectiveStatus: varchar("effective_status", { length: 50 }),
+  budget: decimal("budget", { precision: 10, scale: 2 }),
+  // Metrics
+  impressions: int("impressions").default(0),
+  impressionShare: varchar("impression_share", { length: 20 }),
+  clicks: int("clicks").default(0),
+  ctr: decimal("ctr", { precision: 8, scale: 4 }),
+  cpc: decimal("cpc", { precision: 10, scale: 2 }),
+  spend: decimal("spend", { precision: 12, scale: 2 }),
+  sales: decimal("sales", { precision: 12, scale: 2 }),
+  directSales: decimal("direct_sales", { precision: 12, scale: 2 }),
+  indirectSales: decimal("indirect_sales", { precision: 12, scale: 2 }),
+  acos: decimal("acos", { precision: 8, scale: 4 }),
+  roas: decimal("roas", { precision: 8, scale: 2 }),
+  orders: int("orders").default(0),
+  directOrders: int("direct_orders").default(0),
+  indirectOrders: int("indirect_orders").default(0),
+  indirectOrderRatio: decimal("indirect_order_ratio", { precision: 6, scale: 4 }),
+  cpa: decimal("cpa", { precision: 10, scale: 2 }),
+  cvr: decimal("cvr", { precision: 8, scale: 4 }),
+  avgOrderValue: decimal("avg_order_value", { precision: 10, scale: 2 }),
+  directAvgOrderValue: decimal("direct_avg_order_value", { precision: 10, scale: 2 }),
+  indirectAvgOrderValue: decimal("indirect_avg_order_value", { precision: 10, scale: 2 }),
+  // Brand metrics
+  brandNewOrders: int("brand_new_orders").default(0),
+  brandNewCvr: decimal("brand_new_cvr", { precision: 8, scale: 4 }),
+  brandNewSales: decimal("brand_new_sales", { precision: 12, scale: 2 }),
+  brandNewSalesQty: int("brand_new_sales_qty").default(0),
+  adSalesQty: int("ad_sales_qty").default(0),
+  directSalesQty: int("direct_sales_qty").default(0),
+  indirectSalesQty: int("indirect_sales_qty").default(0),
+  // Video metrics
+  vcpm: decimal("vcpm", { precision: 10, scale: 2 }),
+  viewableImpressions: int("viewable_impressions").default(0),
+  dpv: int("dpv").default(0),
+  fiveSecViews: int("five_sec_views").default(0),
+  fiveSecViewRate: decimal("five_sec_view_rate", { precision: 8, scale: 4 }),
+  videoQuarter: int("video_quarter").default(0),
+  videoHalf: int("video_half").default(0),
+  videoThreeQuarter: int("video_three_quarter").default(0),
+  videoComplete: int("video_complete").default(0),
+  videoUnmute: int("video_unmute").default(0),
+  vtr: decimal("vtr", { precision: 8, scale: 4 }),
+  vctr: decimal("vctr", { precision: 8, scale: 4 }),
+  brandSearchCount: int("brand_search_count").default(0),
+  avgReach: decimal("avg_reach", { precision: 8, scale: 2 }),
+  cumulativeReach: int("cumulative_reach").default(0),
+  tags: text("tags"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AdCampaignReport = typeof adCampaignReports.$inferSelect;
+export type InsertAdCampaignReport = typeof adCampaignReports.$inferInsert;
+
+// Placement report data (领星广告位报告)
+export const adPlacementReports = mysqlTable("ad_placement_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  uploadId: int("upload_id").notNull(),
+  userId: int("user_id").notNull(),
+  productId: int("product_id"),
+  parentAsin: varchar("parent_asin", { length: 20 }),
+  weekStartDate: varchar("week_start_date", { length: 10 }).notNull(),
+  weekEndDate: varchar("week_end_date", { length: 10 }).notNull(),
+  // Structure
+  storeName: varchar("store_name", { length: 200 }),
+  country: varchar("country", { length: 50 }),
+  adType: varchar("ad_type", { length: 10 }).notNull(),
+  portfolioName: varchar("portfolio_name", { length: 300 }),
+  campaignName: varchar("campaign_name", { length: 500 }).notNull(),
+  placement: varchar("placement", { length: 100 }).notNull(), // TOP_OF_SEARCH, DETAIL_PAGE, OTHER, OFF_AMAZON
+  // Metrics
+  impressions: int("impressions").default(0),
+  clicks: int("clicks").default(0),
+  ctr: decimal("ctr", { precision: 8, scale: 4 }),
+  cpc: decimal("cpc", { precision: 10, scale: 2 }),
+  spend: decimal("spend", { precision: 12, scale: 2 }),
+  sales: decimal("sales", { precision: 12, scale: 2 }),
+  directSales: decimal("direct_sales", { precision: 12, scale: 2 }),
+  indirectSales: decimal("indirect_sales", { precision: 12, scale: 2 }),
+  acos: decimal("acos", { precision: 8, scale: 4 }),
+  roas: decimal("roas", { precision: 8, scale: 2 }),
+  orders: int("orders").default(0),
+  directOrders: int("direct_orders").default(0),
+  indirectOrders: int("indirect_orders").default(0),
+  indirectOrderRatio: decimal("indirect_order_ratio", { precision: 6, scale: 4 }),
+  cpa: decimal("cpa", { precision: 10, scale: 2 }),
+  cvr: decimal("cvr", { precision: 8, scale: 4 }),
+  avgOrderValue: decimal("avg_order_value", { precision: 10, scale: 2 }),
+  directAvgOrderValue: decimal("direct_avg_order_value", { precision: 10, scale: 2 }),
+  indirectAvgOrderValue: decimal("indirect_avg_order_value", { precision: 10, scale: 2 }),
+  // Brand & video metrics
+  brandNewOrders: int("brand_new_orders").default(0),
+  brandNewCvr: decimal("brand_new_cvr", { precision: 8, scale: 4 }),
+  brandNewSales: decimal("brand_new_sales", { precision: 12, scale: 2 }),
+  brandNewSalesQty: int("brand_new_sales_qty").default(0),
+  adSalesQty: int("ad_sales_qty").default(0),
+  directSalesQty: int("direct_sales_qty").default(0),
+  indirectSalesQty: int("indirect_sales_qty").default(0),
+  viewableImpressions: int("viewable_impressions").default(0),
+  dpv: int("dpv").default(0),
+  fiveSecViews: int("five_sec_views").default(0),
+  fiveSecViewRate: decimal("five_sec_view_rate", { precision: 8, scale: 4 }),
+  videoQuarter: int("video_quarter").default(0),
+  videoHalf: int("video_half").default(0),
+  videoThreeQuarter: int("video_three_quarter").default(0),
+  videoComplete: int("video_complete").default(0),
+  videoUnmute: int("video_unmute").default(0),
+  vtr: decimal("vtr", { precision: 8, scale: 4 }),
+  vctr: decimal("vctr", { precision: 8, scale: 4 }),
+  brandSearchCount: int("brand_search_count").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AdPlacementReport = typeof adPlacementReports.$inferSelect;
+export type InsertAdPlacementReport = typeof adPlacementReports.$inferInsert;
+
+// Hourly report data (亚马逊广告小时报告 CSV)
+export const adHourlyReports = mysqlTable("ad_hourly_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  uploadId: int("upload_id").notNull(),
+  userId: int("user_id").notNull(),
+  productId: int("product_id"),
+  parentAsin: varchar("parent_asin", { length: 20 }),
+  // Time
+  hour: int("hour").notNull(), // 0-23
+  reportDate: varchar("report_date", { length: 10 }), // YYYY-MM-DD if available
+  // Structure
+  currency: varchar("currency", { length: 10 }),
+  accountName: varchar("account_name", { length: 200 }),
+  portfolioName: varchar("portfolio_name", { length: 300 }),
+  campaignName: varchar("campaign_name", { length: 500 }),
+  campaignId: varchar("campaign_id", { length: 100 }),
+  adGroupName: varchar("ad_group_name", { length: 500 }),
+  adGroupId: varchar("ad_group_id", { length: 100 }),
+  targetingValue: varchar("targeting_value", { length: 500 }),
+  searchTerm: varchar("search_term", { length: 500 }),
+  promotedSku: varchar("promoted_sku", { length: 100 }),
+  promotedAsin: varchar("promoted_asin", { length: 20 }),
+  placementName: varchar("placement_name", { length: 200 }),
+  placementClassification: varchar("placement_classification", { length: 100 }), // Top of Search, Detail Page, Other, Off Amazon
+  // Metrics
+  impressions: int("impressions").default(0),
+  invalidImpressions: int("invalid_impressions").default(0),
+  clicks: int("clicks").default(0),
+  invalidClicks: int("invalid_clicks").default(0),
+  ctr: decimal("ctr", { precision: 8, scale: 4 }),
+  cpc: decimal("cpc", { precision: 10, scale: 2 }),
+  cpm: decimal("cpm", { precision: 10, scale: 2 }),
+  vcpm: decimal("vcpm", { precision: 10, scale: 2 }),
+  vctr: decimal("vctr", { precision: 8, scale: 4 }),
+  spend: decimal("spend", { precision: 12, scale: 2 }), // derived: clicks * cpc
+  purchases: int("purchases").default(0),
+  sales: decimal("sales", { precision: 12, scale: 2 }),
+  costPerPurchase: decimal("cost_per_purchase", { precision: 10, scale: 2 }),
+  purchaseRate: decimal("purchase_rate", { precision: 8, scale: 4 }),
+  roas: decimal("roas", { precision: 8, scale: 2 }),
+  clickPurchases: int("click_purchases").default(0),
+  clickRoas: decimal("click_roas", { precision: 8, scale: 2 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AdHourlyReport = typeof adHourlyReports.$inferSelect;
+export type InsertAdHourlyReport = typeof adHourlyReports.$inferInsert;
+
+// Order hourly data (extracted from 领星SC订单导出, for dayparting analysis)
+export const adOrderHourly = mysqlTable("ad_order_hourly", {
+  id: int("id").autoincrement().primaryKey(),
+  uploadId: int("upload_id").notNull(),
+  userId: int("user_id").notNull(),
+  productId: int("product_id"),
+  parentAsin: varchar("parent_asin", { length: 20 }),
+  // Order info
+  orderId: varchar("order_id", { length: 50 }).notNull(),
+  orderStatus: varchar("order_status", { length: 50 }),
+  orderType: varchar("order_type", { length: 20 }), // AFN, MFN
+  orderDate: timestamp("order_date").notNull(), // original order datetime (UTC from Lingxing)
+  // Time dimensions (pre-computed for pivot analysis)
+  orderHour: int("order_hour").notNull(), // 0-23 (PST)
+  orderDayOfWeek: int("order_day_of_week").notNull(), // 0=Sunday, 6=Saturday
+  orderDateStr: varchar("order_date_str", { length: 10 }).notNull(), // YYYY-MM-DD (PST)
+  // Product info
+  storeName: varchar("store_name", { length: 200 }),
+  country: varchar("country", { length: 50 }),
+  asin: varchar("asin", { length: 20 }),
+  sku: varchar("sku", { length: 100 }),
+  msku: varchar("msku", { length: 100 }),
+  productName: varchar("product_name", { length: 500 }),
+  // Financials
+  quantity: int("quantity").default(1),
+  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }),
+  salesRevenue: decimal("sales_revenue", { precision: 10, scale: 2 }),
+  itemPrice: decimal("item_price", { precision: 10, scale: 2 }),
+  currency: varchar("currency", { length: 10 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AdOrderHourly = typeof adOrderHourly.$inferSelect;
+export type InsertAdOrderHourly = typeof adOrderHourly.$inferInsert;

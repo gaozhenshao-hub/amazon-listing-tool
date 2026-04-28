@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import OperatorMappingDialog from "@/components/OperatorMappingDialog";
 import AdReportImportTab from "./AdReportImportTab";
+import AdReportUploadCenter from "./AdReportUploadCenter";
 import OpsPlanImportTab from "./OpsPlanImportTab";
 import OpsReviewImportTab from "./OpsReviewImportTab";
 
@@ -344,7 +345,11 @@ export default function OpsDataImport() {
 
         {/* Ad Report Tab */}
         <TabsContent value="ad-report" className="space-y-4">
-          <AdReportImportTab />
+          <AdReportUploadCenter />
+          <div className="mt-6 pt-6 border-t">
+            <h3 className="text-sm font-medium text-muted-foreground mb-4">旧版投放报告上传（已有数据）</h3>
+            <AdReportImportTab />
+          </div>
         </TabsContent>
 
         {/* Ops Plan Import Tab */}

@@ -3723,3 +3723,19 @@
 - [x] AI分析结果各字段支持编辑（整体达成评估、关键发现、问题诊断、优化建议、下期重点）
 - [x] 编辑后可保存到数据库（通过updateExecutionReview的aiAnalysis字段）
 - [x] 构建验证通过（pnpm build成功）
+### 广告模块表格上传替代领星API
+- [x] 数据库：新建ad_search_term_reports表（搜索词报告）
+- [x] 数据库：新建ad_campaign_reports表（广告活动报告）
+- [x] 数据库：新建ad_placement_reports表（广告位报告）
+- [x] 数据库：新建ad_hourly_reports表（广告小时报告）
+- [x] 数据库：新建ad_order_hourly表（订单分时数据）
+- [x] 数据库：新建ad_report_uploads表（统一上传历史）
+- [x] 后端：搜索词报告解析器（领星Excel格式，32列字段映射）
+- [x] 后端：广告活动报告解析器（领星Excel格式，50列字段映射）
+- [x] 后端：广告位报告解析器（领星Excel格式，44列字段映射）
+- [x] 后端：广告小时报告解析器（亚马逊CSV格式，52列字段映射）
+- [x] 后端：订单分时数据解析器（领星Excel格式，UTC→目标时区转换）
+- [x] 后端：统一上传/删除/列表/查询API（7个查询接口+5个上传+1个删除）
+- [x] 前端：数据导入中心增加5种报告上传入口（AdReportUploadCenter组件）
+- [ ] 前端：广告分析Tab切换为从本地数据库读取（下一步）
+- [x] 构建验证通过（pnpm build成功）
