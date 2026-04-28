@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +21,7 @@ interface SearchTermTrendProps {
   campaignId?: string;
   campaignIds?: string[];
   campaignNamesList?: string[];
+  defaultAdType?: "SP" | "SB" | "SD";
 }
 
 const PERIOD_PRESETS = [
@@ -75,11 +76,16 @@ const METRIC_OPTIONS = [
 
 const PERIOD_COLORS = ["#3b82f6", "#f59e0b", "#10b981", "#8b5cf6"];
 
-export default function SearchTermTrend({ marketplace, campaignId, campaignIds, campaignNamesList }: SearchTermTrendProps) {
+export default function SearchTermTrend({ marketplace, campaignId, campaignIds, campaignNamesList, defaultAdType }: SearchTermTrendProps) {
   const [selectedPreset, setSelectedPreset] = useState(0);
   const [selectedMetric, setSelectedMetric] = useState("cost");
   const [topN, setTopN] = useState(20);
   const [searchFilter, setSearchFilter] = useState("");
+  const [adType, setAdType] = useState<"SP" | "SB" | "SD">(defaultAdType === "SD" ? "SD" : defaultAdType === "SB" ? "SB" : "SP");
+
+  useEffect(() => {
+    if (defaultAdType) setAdType(defaultAdType === "SD" ? "SD" : defaultAdType === "SB" ? "SB" : "SP");
+  }, [defaultAdType]);
 
   const periods = useMemo(() => PERIOD_PRESETS[selectedPreset].periods(), [selectedPreset]);
 
@@ -88,6 +94,7 @@ export default function SearchTermTrend({ marketplace, campaignId, campaignIds, 
       campaignNames: campaignNamesList && campaignNamesList.length > 0 ? campaignNamesList : undefined,
       periods,
       topN,
+      adType,
     },
     { enabled: false }
   );
@@ -154,6 +161,26 @@ export default function SearchTermTrend({ marketplace, campaignId, campaignIds, 
 
   return (
     <div className="space-y-4">
+      {/* Ad Type Switcher */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground font-medium">广告类型:</span>
+        <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+          {(["SP", "SB", "SD"] as const).map((type) => (
+            <button
+              key={type}
+              onClick={() => setAdType(type)}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                adType === type
+                  ? "bg-white text-blue-700 shadow-sm border border-blue-200"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {type === "SP" ? "SP 商品推广" : type === "SB" ? "SB 品牌推广" : "SD 展示型推广"}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Control Panel */}
       <Card>
         <CardHeader className="pb-3">

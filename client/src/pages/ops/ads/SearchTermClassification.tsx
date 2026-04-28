@@ -53,7 +53,7 @@ interface SearchTermClassificationProps {
   reportDate: string;
   startDate?: string;
   endDate?: string;
-  defaultAdType?: "SP" | "SB";
+  defaultAdType?: "SP" | "SB" | "SD";
 }
 
 export default function SearchTermClassification({ campaignId, campaignIds, campaignNames, campaignNamesList, marketplace, reportDate, startDate, endDate, defaultAdType }: SearchTermClassificationProps) {
@@ -67,14 +67,14 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
   const [showAiDialog, setShowAiDialog] = useState(false);
   const [aiCategoryId, setAiCategoryId] = useState<number>(1);
   const [userDecisions, setUserDecisions] = useState<Record<number, { decision: string; modifiedAction?: string; notes?: string }>>({}); 
-  const [adType, setAdType] = useState<"SP" | "SB">(defaultAdType === "SB" ? "SB" : "SP");
+  const [adType, setAdType] = useState<"SP" | "SB" | "SD">(defaultAdType === "SD" ? "SD" : defaultAdType === "SB" ? "SB" : "SP");
   const [viewMode, setViewMode] = useState<"aggregate" | "compare">("aggregate");
   const [asinFilter, setAsinFilter] = useState<string | null>(null);
   const [showAiKeywordActions, setShowAiKeywordActions] = useState(false);
 
   // Sync adType when parent campaign selection changes
   useEffect(() => {
-    if (defaultAdType) setAdType(defaultAdType === "SB" ? "SB" : "SP");
+    if (defaultAdType) setAdType(defaultAdType === "SD" ? "SD" : defaultAdType === "SB" ? "SB" : "SP");
   }, [defaultAdType]);
 
   // Local data query (replaces Lingxing API)
@@ -411,7 +411,7 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
       <div className="flex items-center gap-2">
         <span className="text-xs text-muted-foreground font-medium">广告类型:</span>
         <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
-          {(["SP", "SB"] as const).map((type) => (
+          {(["SP", "SB", "SD"] as const).map((type) => (
             <button
               key={type}
               onClick={() => setAdType(type)}
@@ -421,13 +421,18 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
                   : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              {type === "SP" ? "SP 商品推广" : "SB 品牌推广"}
+              {type === "SP" ? "SP 商品推广" : type === "SB" ? "SB 品牌推广" : "SD 展示型推广"}
             </button>
           ))}
         </div>
         {adType === "SB" && (
           <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
             SB搜索词含品牌新客指标
+          </Badge>
+        )}
+        {adType === "SD" && (
+          <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 border-purple-200">
+            SD含可见展示/DPV等展示型指标
           </Badge>
         )}
       </div>

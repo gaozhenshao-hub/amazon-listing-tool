@@ -111,6 +111,7 @@ export const adLocalAnalysisRouter = router({
       if (input.parentAsin) conditions.push(eq(adCampaignReports.parentAsin, input.parentAsin));
       if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekStartDate, input.weekStartDate));
       if (input.weekEndDate) conditions.push(lte(adCampaignReports.weekEndDate, input.weekEndDate));
+      if (input.adType && input.adType !== 'all') conditions.push(eq(adCampaignReports.adType, input.adType));
 
       const rows = await d.select().from(adCampaignReports).where(and(...conditions));
 
@@ -208,7 +209,7 @@ export const adLocalAnalysisRouter = router({
       parentAsin: z.string().optional(),
       weekStartDate: z.string().optional(),
       weekEndDate: z.string().optional(),
-      adType: z.enum(["SP", "SB"]).optional().default("SP"),
+      adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
       thresholds: z.object({
         highImpressions: z.number().optional(),
         lowImpressions: z.number().optional(),
@@ -654,7 +655,7 @@ export const adLocalAnalysisRouter = router({
       parentAsin: z.string().optional(),
       weekStartDate: z.string().optional(),
       weekEndDate: z.string().optional(),
-      adType: z.enum(["SP", "SB"]).optional().default("SP"),
+      adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
     }))
     .query(async ({ ctx, input }) => {
       const d = await getDbInstance();
@@ -733,7 +734,7 @@ export const adLocalAnalysisRouter = router({
       parentAsin: z.string().optional(),
       weekStartDate: z.string().optional(),
       weekEndDate: z.string().optional(),
-      adType: z.enum(["SP", "SB"]).optional().default("SP"),
+      adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
     }))
     .query(async ({ ctx, input }) => {
       const d = await getDbInstance();
@@ -882,7 +883,7 @@ export const adLocalAnalysisRouter = router({
     .input(z.object({
       campaignNames: z.array(z.string()).optional(),
       parentAsin: z.string().optional(),
-      adType: z.enum(["SP", "SB"]).optional().default("SP"),
+      adType: z.enum(["SP", "SB", "SD"]).optional().default("SP"),
       periods: z.array(z.object({
         label: z.string(),
         startDate: z.string(),

@@ -3795,3 +3795,21 @@
 - [x] 前端：DspAnalysis有数据时正常展示KPI卡片+订单表格+AI分析
 - [x] 单元测试：27个测试全部通过（含5个DSP新增测试）
 - [x] 构建验证并保存checkpoint
+
+### SB/SD广告类型完整支持
+- [x] 审查：解析器对SB/SD广告类型字段的识别和存储（解析器已正确支持）
+- [x] 审查：数据库schema中adType字段是否正确存储SP/SB/SD（varchar字段，无限制）
+- [x] 审查+修复：查询接口按广告类型过滤（原来只支持SP/SB，现已扩展为SP/SB/SD）
+- [x] 修复：getSearchTerms12CategoryLocal adType枚举添加SD
+- [x] 修复：getWordFrequencyLocal adType枚举添加SD
+- [x] 修复：getEffectiveSearchTermsLocal adType枚举添加SD
+- [x] 修复：getSearchTermTrendLocal adType枚举添加SD
+- [x] 修复：getAdCampaignsLocal添加adType过滤条件
+- [x] 修复：前端广告类型过滤器从长名称改为短名称(SP/SB/SD)匹配数据库
+- [x] 扩展：SearchTermClassification支持SD广告类型切换
+- [x] 扩展：WordFrequencyAnalysis添加adType选择器和查询参数
+- [x] 扩展：EffectiveSearchTerms添加adType选择器和查询参数
+- [x] 扩展：SearchTermTrend添加adType选择器和查询参数
+- [x] 扩展：OpsAds向所有子组件传递defaultAdType属性
+- [x] 单元测试验证（27个测试全部通过）
+- [x] 构建验证并保存checkpoint

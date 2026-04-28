@@ -781,7 +781,7 @@ export default function OpsAds() {
                   <div className="flex items-center gap-1.5">
                     <Filter className="w-3.5 h-3.5 text-gray-400" />
                     <div className="flex rounded-md border overflow-hidden">
-                      {["all", "sponsoredProducts", "sponsoredBrands", "sponsoredDisplay"].map((t) => (
+                      {["all", "SP", "SB", "SD"].map((t) => (
                         <button
                           key={t}
                           onClick={() => setTypeFilter(t)}
@@ -791,7 +791,7 @@ export default function OpsAds() {
                               : "bg-white text-gray-600 hover:bg-gray-50"
                           }`}
                         >
-                          {t === "all" ? "全部" : t === "sponsoredProducts" ? "SP" : t === "sponsoredBrands" ? "SB" : "SD"}
+                          {t === "all" ? "全部" : t}
                         </button>
                       ))}
                     </div>
@@ -1015,6 +1015,7 @@ export default function OpsAds() {
             campaignNamesList={selectedCampaignNamesList}
             marketplace={marketplace}
             reportDate={selectedDate}
+            defaultAdType={selectedCampaignType as any}
           />
         </TabsContent>
 
@@ -1026,6 +1027,7 @@ export default function OpsAds() {
             campaignNamesList={selectedCampaignNamesList}
             marketplace={marketplace}
             reportDate={selectedDate}
+            defaultAdType={selectedCampaignType as any}
           />
         </TabsContent>
 
@@ -1098,6 +1100,7 @@ export default function OpsAds() {
             campaignId={selectedCampaignId || undefined}
             campaignIds={selectedCampaignIds.length > 0 ? selectedCampaignIds : undefined}
             campaignNamesList={selectedCampaignNamesList}
+            defaultAdType={selectedCampaignType as any}
           />
         </TabsContent>
 

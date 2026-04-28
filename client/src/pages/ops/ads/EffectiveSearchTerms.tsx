@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -21,16 +21,22 @@ interface Props {
   campaignNamesList?: string[];
   marketplace: string;
   reportDate: string;
+  defaultAdType?: "SP" | "SB" | "SD";
 }
 
-export default function EffectiveSearchTerms({ campaignId, campaignIds, campaignNamesList, marketplace, reportDate }: Props) {
+export default function EffectiveSearchTerms({ campaignId, campaignIds, campaignNamesList, marketplace, reportDate, defaultAdType }: Props) {
   const [selectedTerms, setSelectedTerms] = useState<Set<string>>(new Set());
   const [editedBids, setEditedBids] = useState<Record<string, number>>({});
   const [editedMatchTypes, setEditedMatchTypes] = useState<Record<string, string>>({});
   const [filterMinOrders, setFilterMinOrders] = useState<string>("");
+  const [adType, setAdType] = useState<"SP" | "SB" | "SD">(defaultAdType === "SD" ? "SD" : defaultAdType === "SB" ? "SB" : "SP");
+
+  useEffect(() => {
+    if (defaultAdType) setAdType(defaultAdType === "SD" ? "SD" : defaultAdType === "SB" ? "SB" : "SP");
+  }, [defaultAdType]);
 
   const { data, isLoading } = trpc.adLocalAnalysis.getEffectiveSearchTermsLocal.useQuery(
-    { campaignNames: campaignNamesList && campaignNamesList.length > 0 ? campaignNamesList : undefined },
+    { campaignNames: campaignNamesList && campaignNamesList.length > 0 ? campaignNamesList : undefined, adType },
     { enabled: true }
   );
 
@@ -140,6 +146,26 @@ export default function EffectiveSearchTerms({ campaignId, campaignIds, campaign
 
   return (
     <div className="space-y-4">
+      {/* Ad Type Switcher */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground font-medium">广告类型:</span>
+        <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5">
+          {(["SP", "SB", "SD"] as const).map((type) => (
+            <button
+              key={type}
+              onClick={() => setAdType(type)}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+                adType === type
+                  ? "bg-white text-blue-700 shadow-sm border border-blue-200"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {type === "SP" ? "SP 商品推广" : type === "SB" ? "SB 品牌推广" : "SD 展示型推广"}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
