@@ -310,27 +310,32 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, campaignN
                   <thead>
                     <tr className="bg-gray-50 border-b">
                       <th className="text-left px-3 py-2 font-medium text-gray-600 sticky left-0 bg-gray-50 z-10 min-w-[200px]">关键词</th>
-                      <th className="text-center px-2 py-2 font-medium text-gray-600 w-16">匹配类型</th>
-                      {(["impressions", "clicks", "cost", "sales", "orders", "acos", "ctr", "cvr"] as SortKey[]).map(col => (
+
+                      {(["impressions", "clicks", "cost", "sales", "orders", "acos"] as SortKey[]).map(col => (
                         <th key={col}
                           className="text-right px-2 py-2 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 whitespace-nowrap"
                           onClick={() => toggleSort(col)}
                         >
                           <span className="inline-flex items-center gap-1">
                             {col === "impressions" ? "曝光" : col === "clicks" ? "点击" : col === "cost" ? "花费" :
-                              col === "sales" ? "销售额" : col === "orders" ? "订单" : col === "acos" ? "ACoS" :
-                              col === "ctr" ? "CTR" : "CVR"}
+                              col === "sales" ? "销售额" : col === "orders" ? "订单" : "ACoS"}
                             <SortIcon col={col} />
                           </span>
                         </th>
                       ))}
+                      <th className="text-right px-2 py-2 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 whitespace-nowrap" onClick={() => toggleSort("ctr")}>
+                        <span className="inline-flex items-center gap-1">CTR <SortIcon col={"ctr"} /></span>
+                      </th>
                       <th className="text-right px-2 py-2 font-medium text-gray-600">CPC</th>
+                      <th className="text-right px-2 py-2 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 whitespace-nowrap" onClick={() => toggleSort("cvr")}>
+                        <span className="inline-flex items-center gap-1">CVR <SortIcon col={"cvr"} /></span>
+                      </th>
                       <th className="text-right px-2 py-2 font-medium text-gray-600">ROAS</th>
                     </tr>
                   </thead>
                   <tbody>
                     {keywords.length === 0 && (
-                      <tr><td colSpan={12} className="text-center py-8 text-gray-400">暂无关键词数据</td></tr>
+                      <tr><td colSpan={11} className="text-center py-8 text-gray-400">暂无关键词数据</td></tr>
                     )}
                     {keywords.map((kw: any, idx: number) => {
                       const kwText = kw.keyword_text || kw.keyword || "";
@@ -348,15 +353,6 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, campaignN
                                 <span className="font-medium text-gray-800 truncate max-w-[180px]" title={kwText}>{kwText}</span>
                               </div>
                             </td>
-                            <td className="text-center px-2 py-2">
-                              <Badge variant="outline" className={`text-[9px] px-1 py-0 ${
-                                kw.match_type === "EXACT" ? "border-emerald-300 text-emerald-700 bg-emerald-50" :
-                                kw.match_type === "PHRASE" ? "border-blue-300 text-blue-700 bg-blue-50" :
-                                "border-gray-300 text-gray-600"
-                              }`}>
-                                {kw.match_type === "EXACT" ? "精确" : kw.match_type === "PHRASE" ? "词组" : "广泛"}
-                              </Badge>
-                            </td>
                             <td className="text-right px-2 py-2 font-mono">{(kw.totalImpressions || kw.impressions || 0).toLocaleString()}</td>
                             <td className="text-right px-2 py-2 font-mono">{(kw.totalClicks || kw.clicks || 0).toLocaleString()}</td>
                             <td className="text-right px-2 py-2 font-mono">${(kw.totalCost || kw.cost || 0).toFixed(2)}</td>
@@ -366,8 +362,8 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, campaignN
                               (kw.totalAcos || kw.acos || 0) <= 25 ? "text-emerald-600" : (kw.totalAcos || kw.acos || 0) <= 40 ? "text-amber-600" : "text-red-600"
                             }`}>{(kw.totalAcos || kw.acos || 0).toFixed(1)}%</td>
                             <td className="text-right px-2 py-2 font-mono">{(kw.totalClicks && kw.totalImpressions ? (kw.totalClicks / kw.totalImpressions * 100) : (kw.ctr || 0)).toFixed(2)}%</td>
-                            <td className="text-right px-2 py-2 font-mono">{(kw.totalOrders && kw.totalClicks ? (kw.totalOrders / kw.totalClicks * 100) : (kw.cvr || 0)).toFixed(1)}%</td>
                             <td className="text-right px-2 py-2 font-mono">${(kw.totalClicks ? (kw.totalCost / kw.totalClicks) : (kw.cpc || 0)).toFixed(2)}</td>
+                            <td className="text-right px-2 py-2 font-mono">{(kw.totalOrders && kw.totalClicks ? (kw.totalOrders / kw.totalClicks * 100) : (kw.cvr || 0)).toFixed(1)}%</td>
                             <td className="text-right px-2 py-2 font-mono text-blue-600">{(kw.totalRoas || kw.roas || 0).toFixed(2)}x</td>
                           </tr>
 
@@ -382,7 +378,6 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, campaignN
                                     <span className="text-gray-600 text-[11px]">{pConfig.label}</span>
                                   </div>
                                 </td>
-                                <td className="text-center px-2 py-1.5"><span className="text-[9px] text-gray-400">-</span></td>
                                 <td className="text-right px-2 py-1.5 font-mono text-gray-600">{(p.impressions || 0).toLocaleString()}</td>
                                 <td className="text-right px-2 py-1.5 font-mono text-gray-600">{(p.clicks || 0).toLocaleString()}</td>
                                 <td className="text-right px-2 py-1.5 font-mono text-gray-600">${(p.cost || 0).toFixed(2)}</td>
@@ -392,9 +387,9 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, campaignN
                                   (p.acos || 0) <= 25 ? "text-emerald-600" : (p.acos || 0) <= 40 ? "text-amber-600" : "text-red-600"
                                 }`}>{(p.acos || 0).toFixed(1)}%</td>
                                 <td className="text-right px-2 py-1.5 font-mono text-gray-600">{(p.ctr || 0).toFixed(2)}%</td>
-                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">{(p.cvr || 0).toFixed(1)}%</td>
                                 <td className="text-right px-2 py-1.5 font-mono text-gray-600">${(p.cpc || 0).toFixed(2)}</td>
-                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">-</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">{(p.cvr || 0).toFixed(1)}%</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">{(p.roas || 0).toFixed(2)}x</td>
                               </tr>
                             );
                           })}

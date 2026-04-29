@@ -3842,3 +3842,9 @@
 - [x] 分析adHourlyReports表（有targetingValue+placementClassification，可同时关联关键词和广告位）
 - [x] 修改getAdPlacementByKeywordLocal：优先使用adHourlyReports按真实关键词聚合，回退到adPlacementReports
 - [x] 27个测试全部通过
+
+### Bug修复：广告位关键词维度表头和数据列错乱
+- [x] 移除无效的"匹配类型"列（后端无match_type数据，全部显示"广泛"）
+- [x] 修复表头列顺序：关键词|曝光|点击|花费|销售额|订单|ACoS|CTR|CPC|CVR|ROAS
+- [x] 修复数据行列顺序与表头一致（主行+展开广告位子行）
+- [x] 27个测试全部通过
