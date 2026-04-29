@@ -333,18 +333,19 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, campaignN
                       <tr><td colSpan={12} className="text-center py-8 text-gray-400">暂无关键词数据</td></tr>
                     )}
                     {keywords.map((kw: any, idx: number) => {
-                      const isExpanded = expandedKw.has(kw.keyword_text);
+                      const kwText = kw.keyword_text || kw.keyword || "";
+                      const isExpanded = expandedKw.has(kwText);
                       const kwPlacements = kw.placements || [];
                       return (
-                        <tbody key={kw.keyword_text}>
+                        <tbody key={kwText || idx}>
                           {/* Main keyword row */}
                           <tr className={`border-b hover:bg-blue-50/30 cursor-pointer ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}
-                            onClick={() => toggleExpand(kw.keyword_text)}
+                            onClick={() => toggleExpand(kwText)}
                           >
                             <td className="px-3 py-2 sticky left-0 bg-inherit z-10">
                               <div className="flex items-center gap-1.5">
                                 {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />}
-                                <span className="font-medium text-gray-800 truncate max-w-[180px]" title={kw.keyword_text}>{kw.keyword_text}</span>
+                                <span className="font-medium text-gray-800 truncate max-w-[180px]" title={kwText}>{kwText}</span>
                               </div>
                             </td>
                             <td className="text-center px-2 py-2">
@@ -356,25 +357,25 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, campaignN
                                 {kw.match_type === "EXACT" ? "精确" : kw.match_type === "PHRASE" ? "词组" : "广泛"}
                               </Badge>
                             </td>
-                            <td className="text-right px-2 py-2 font-mono">{(kw.impressions || 0).toLocaleString()}</td>
-                            <td className="text-right px-2 py-2 font-mono">{(kw.clicks || 0).toLocaleString()}</td>
-                            <td className="text-right px-2 py-2 font-mono">${(kw.cost || 0).toFixed(2)}</td>
-                            <td className="text-right px-2 py-2 font-mono text-emerald-600">${(kw.sales || 0).toFixed(2)}</td>
-                            <td className="text-right px-2 py-2 font-mono">{kw.orders || 0}</td>
+                            <td className="text-right px-2 py-2 font-mono">{(kw.totalImpressions || kw.impressions || 0).toLocaleString()}</td>
+                            <td className="text-right px-2 py-2 font-mono">{(kw.totalClicks || kw.clicks || 0).toLocaleString()}</td>
+                            <td className="text-right px-2 py-2 font-mono">${(kw.totalCost || kw.cost || 0).toFixed(2)}</td>
+                            <td className="text-right px-2 py-2 font-mono text-emerald-600">${(kw.totalSales || kw.sales || 0).toFixed(2)}</td>
+                            <td className="text-right px-2 py-2 font-mono">{kw.totalOrders || kw.orders || 0}</td>
                             <td className={`text-right px-2 py-2 font-mono font-semibold ${
-                              (kw.acos || 0) <= 25 ? "text-emerald-600" : (kw.acos || 0) <= 40 ? "text-amber-600" : "text-red-600"
-                            }`}>{(kw.acos || 0).toFixed(1)}%</td>
-                            <td className="text-right px-2 py-2 font-mono">{(kw.ctr || 0).toFixed(2)}%</td>
-                            <td className="text-right px-2 py-2 font-mono">{(kw.cvr || 0).toFixed(1)}%</td>
-                            <td className="text-right px-2 py-2 font-mono">${(kw.cpc || 0).toFixed(2)}</td>
-                            <td className="text-right px-2 py-2 font-mono text-blue-600">{(kw.roas || 0).toFixed(2)}x</td>
+                              (kw.totalAcos || kw.acos || 0) <= 25 ? "text-emerald-600" : (kw.totalAcos || kw.acos || 0) <= 40 ? "text-amber-600" : "text-red-600"
+                            }`}>{(kw.totalAcos || kw.acos || 0).toFixed(1)}%</td>
+                            <td className="text-right px-2 py-2 font-mono">{(kw.totalClicks && kw.totalImpressions ? (kw.totalClicks / kw.totalImpressions * 100) : (kw.ctr || 0)).toFixed(2)}%</td>
+                            <td className="text-right px-2 py-2 font-mono">{(kw.totalOrders && kw.totalClicks ? (kw.totalOrders / kw.totalClicks * 100) : (kw.cvr || 0)).toFixed(1)}%</td>
+                            <td className="text-right px-2 py-2 font-mono">${(kw.totalClicks ? (kw.totalCost / kw.totalClicks) : (kw.cpc || 0)).toFixed(2)}</td>
+                            <td className="text-right px-2 py-2 font-mono text-blue-600">{(kw.totalRoas || kw.roas || 0).toFixed(2)}x</td>
                           </tr>
 
                           {/* Expanded: placement breakdown */}
                           {isExpanded && kwPlacements.map((p: any) => {
                             const pConfig = getPlacementConfig(p.placement);
                             return (
-                              <tr key={`${kw.keyword_text}-${p.placement}`} className="bg-blue-50/20 border-b border-dashed">
+                              <tr key={`${kwText}-${p.placement}`} className="bg-blue-50/20 border-b border-dashed">
                                 <td className="px-3 py-1.5 sticky left-0 bg-blue-50/20 z-10">
                                   <div className="flex items-center gap-1.5 pl-5">
                                     <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: pConfig.fill }} />
@@ -417,7 +418,8 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, campaignN
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       data={keywords.slice(0, 10).map((kw: any) => {
-                        const row: any = { name: kw.keyword_text.length > 20 ? kw.keyword_text.slice(0, 20) + "..." : kw.keyword_text };
+                        const kwText = kw.keyword_text || kw.keyword || "";
+                        const row: any = { name: kwText.length > 20 ? kwText.slice(0, 20) + "..." : kwText };
                         (kw.placements || []).forEach((p: any) => {
                           const pConfig = getPlacementConfig(p.placement);
                           row[pConfig.shortLabel] = p.cost || 0;
@@ -456,7 +458,8 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, campaignN
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
                       data={keywords.slice(0, 10).map((kw: any) => {
-                        const row: any = { name: kw.keyword_text.length > 20 ? kw.keyword_text.slice(0, 20) + "..." : kw.keyword_text };
+                        const kwText = kw.keyword_text || kw.keyword || "";
+                        const row: any = { name: kwText.length > 20 ? kwText.slice(0, 20) + "..." : kwText };
                         (kw.placements || []).forEach((p: any) => {
                           const pConfig = getPlacementConfig(p.placement);
                           row[pConfig.shortLabel] = p.acos || 0;

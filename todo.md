@@ -3831,3 +3831,8 @@
 - [x] getWordFrequencyLocal: 6分类改为基于数据分布的相对阈值
 - [x] 前端无需修改（已使用相对描述标签）
 - [x] 27个测试全部通过
+
+### Bug修复：广告位关键词维度页面TypeError
+- [x] 定位原因：前端使用kw.keyword_text但后端返回kw.keyword，导致undefined.length
+- [x] 修复：改为kw.keyword_text||kw.keyword兼容，同时修复totalImpressions等字段名映射
+- [x] 27个测试全部通过
