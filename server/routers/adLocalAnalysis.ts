@@ -61,6 +61,37 @@ const DEFAULT_THRESHOLDS: ClassificationThresholds = {
   lowCVR: 0.03,
 };
 
+// ─── Percentile-based dynamic threshold calculation ─────────
+function percentile(arr: number[], p: number): number {
+  if (arr.length === 0) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const idx = (p / 100) * (sorted.length - 1);
+  const lower = Math.floor(idx);
+  const upper = Math.ceil(idx);
+  if (lower === upper) return sorted[lower];
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (idx - lower);
+}
+
+/**
+ * Calculate dynamic thresholds based on actual data distribution.
+ * Uses P33/P67 percentiles to split data into 3 tiers (low/mid/high).
+ * Falls back to DEFAULT_THRESHOLDS if data is insufficient (<5 items).
+ */
+function computeDynamicThresholds(data: { impressions: number; clicks: number; orders: number }[]): ClassificationThresholds {
+  if (data.length < 5) return DEFAULT_THRESHOLDS;
+  const impressions = data.map(d => d.impressions).filter(v => v > 0);
+  const ctrs = data.filter(d => d.impressions > 0).map(d => d.clicks / d.impressions);
+  const cvrs = data.filter(d => d.clicks > 0).map(d => d.orders / d.clicks);
+  return {
+    highImpressions: impressions.length >= 3 ? percentile(impressions, 67) : DEFAULT_THRESHOLDS.highImpressions,
+    lowImpressions: impressions.length >= 3 ? percentile(impressions, 33) : DEFAULT_THRESHOLDS.lowImpressions,
+    highCTR: ctrs.length >= 3 ? percentile(ctrs, 67) : DEFAULT_THRESHOLDS.highCTR,
+    lowCTR: ctrs.length >= 3 ? percentile(ctrs, 33) : DEFAULT_THRESHOLDS.lowCTR,
+    highCVR: cvrs.length >= 3 ? percentile(cvrs, 67) : DEFAULT_THRESHOLDS.highCVR,
+    lowCVR: cvrs.length >= 3 ? percentile(cvrs, 33) : DEFAULT_THRESHOLDS.lowCVR,
+  };
+}
+
 const TWELVE_CATEGORIES = [
   { id: 1, key: "high_imp_high_ctr_high_cvr", label: "高曝光_高点击率_高转化", shortLabel: "核心大词" },
   { id: 2, key: "high_imp_high_ctr_low_cvr", label: "高曝光_高点击率_低转化", shortLabel: "流量漏斗词" },
@@ -221,7 +252,6 @@ export const adLocalAnalysisRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const d = await getDbInstance();
-      const thresholds: ClassificationThresholds = { ...DEFAULT_THRESHOLDS, ...input.thresholds };
       const adType = input.adType || "SP";
 
       const conditions: any[] = [eq(adSearchTermReports.userId, ctx.user.id)];
@@ -282,6 +312,11 @@ export const adLocalAnalysisRouter = router({
           src.set(cid, { campaignId: cid, campaignName: r.campaignName || "", cost: n(r.spend), sales: n(r.sales), orders: n(r.orders) });
         }
       }
+
+      // Compute dynamic thresholds from aggregated data, then merge with user overrides
+      const aggData = Object.values(termAggMap).map(t => ({ impressions: t.impressions, clicks: t.clicks, orders: t.orders }));
+      const dynamicThresholds = computeDynamicThresholds(aggData);
+      const thresholds: ClassificationThresholds = { ...dynamicThresholds, ...input.thresholds };
 
       const searchTerms = Object.values(termAggMap).map(t => {
         const acos = t.sales > 0 ? Math.round(t.cost / t.sales * 10000) / 100 : (t.cost > 0 ? 999 : 0);
@@ -625,8 +660,12 @@ export const adLocalAnalysisRouter = router({
         targetMap[key].searchTermCount += 1;
       }
 
-      const thresholds = DEFAULT_THRESHOLDS;
-      const targets = Object.values(targetMap).map(t => {
+      // Compute dynamic thresholds based on data distribution (P33/P67 percentiles)
+      const targetValues = Object.values(targetMap);
+      const targetAggData = targetValues.map(t => ({ impressions: t.impressions, clicks: t.clicks, orders: t.orders }));
+      const thresholds = computeDynamicThresholds(targetAggData);
+
+      const targets = targetValues.map(t => {
         const acos = safePct(t.cost, t.sales);
         const ctr = safePct(t.clicks, t.impressions);
         const cpc = safeDiv(t.cost, t.clicks);
@@ -636,17 +675,25 @@ export const adLocalAnalysisRouter = router({
       });
       targets.sort((a, b) => b.cost - a.cost);
 
+      // 9-grid categoryStats using relative percentile thresholds for clicks and CVR
+      const clickValues = targetValues.map(t => t.clicks).filter(v => v > 0);
+      const cvrValues = targetValues.filter(t => t.clicks > 0).map(t => t.orders / t.clicks);
+      const clickP67 = clickValues.length >= 3 ? percentile(clickValues, 67) : 10;
+      const clickP33 = clickValues.length >= 3 ? percentile(clickValues, 33) : 3;
+      const cvrP67 = cvrValues.length >= 3 ? percentile(cvrValues, 67) : 0.10;
+      const cvrP33 = cvrValues.length >= 3 ? percentile(cvrValues, 33) : 0.03;
+
       const categoryStats: Record<number, number> = {};
       for (let i = 1; i <= 9; i++) categoryStats[i] = 0;
       for (const t of targets) {
-        const clickLevel = t.clicks >= 10 ? 'high' : t.clicks >= 3 ? 'mid' : 'low';
+        const clickLevel = t.clicks >= clickP67 ? 'high' : t.clicks >= clickP33 ? 'mid' : 'low';
         const cvr = t.clicks > 0 ? t.orders / t.clicks : 0;
-        const cvrLevel = cvr >= 0.10 ? 'high' : cvr >= 0.03 ? 'mid' : 'low';
+        const cvrLevel = cvr >= cvrP67 ? 'high' : cvr >= cvrP33 ? 'mid' : 'low';
         const catIdx = ({ high: 0, mid: 1, low: 2 } as any)[clickLevel] * 3 + ({ high: 0, mid: 1, low: 2 } as any)[cvrLevel] + 1;
         categoryStats[catIdx] = (categoryStats[catIdx] || 0) + 1;
       }
 
-      return { targets, categoryStats, total: targets.length, isMock: false, isLocalData: true };
+      return { targets, categoryStats, thresholds, total: targets.length, isMock: false, isLocalData: true };
     }),
 
   // ─── 8. getWordFrequencyLocal ───────────────────────────────────
@@ -701,20 +748,35 @@ export const adLocalAnalysisRouter = router({
       }));
       words.sort((a, b) => b.frequency - a.frequency);
 
-      // Build categoryStats: group words by performance category
+      // Build categoryStats using relative thresholds based on data distribution
+      // Compute percentile-based thresholds for clicks and CVR
+      const wordsWithOrders = words.filter(w => w.orders > 0);
+      const wordsWithClicks = words.filter(w => w.clicks > 0);
+      const wordCvrValues = wordsWithOrders.filter(w => w.clicks > 0).map(w => w.orders / w.clicks);
+      const wordClickValues = wordsWithClicks.map(w => w.clicks);
+      // CVR tiers: P67 = high, P33 = medium boundary
+      const wordCvrP67 = wordCvrValues.length >= 3 ? percentile(wordCvrValues, 67) : 0.1;
+      const wordCvrP33 = wordCvrValues.length >= 3 ? percentile(wordCvrValues, 33) : 0.05;
+      // Click tiers for zero-conversion words: P67 = high clicks, P33 = medium clicks
+      const zeroConvWords = words.filter(w => w.orders === 0 && w.clicks > 0);
+      const zeroConvClicks = zeroConvWords.map(w => w.clicks);
+      const zeroClickP67 = zeroConvClicks.length >= 3 ? percentile(zeroConvClicks, 67) : 30;
+      const zeroClickP33 = zeroConvClicks.length >= 3 ? percentile(zeroConvClicks, 33) : 7;
+
       const categoryStats: Record<number, { count: number; totalImpressions: number; totalClicks: number; totalCost: number; totalSales: number; totalOrders: number }> = {};
       for (const w of words) {
-        let cat = 6; // default: 0 conversion <7 clicks
+        let cat = 6; // default: 0 conversion, low clicks
         if (w.orders > 0) {
           const cvr = w.clicks > 0 ? w.orders / w.clicks : 0;
-          if (cvr >= 0.1) cat = 1; // high conversion
-          else if (cvr >= 0.05) cat = 2; // medium conversion
-          else cat = 3; // low conversion
-        } else if (w.clicks >= 30) {
-          cat = 4; // 0 conversion 30+ clicks
-        } else if (w.clicks >= 7) {
-          cat = 5; // 0 conversion 7-30 clicks
+          if (cvr >= wordCvrP67) cat = 1; // high conversion (relative)
+          else if (cvr >= wordCvrP33) cat = 2; // medium conversion (relative)
+          else cat = 3; // low conversion (relative)
+        } else if (w.clicks >= zeroClickP67) {
+          cat = 4; // 0 conversion, high clicks (relative)
+        } else if (w.clicks >= zeroClickP33) {
+          cat = 5; // 0 conversion, medium clicks (relative)
         }
+        // cat = 6: 0 conversion, low clicks (relative)
         if (!categoryStats[cat]) categoryStats[cat] = { count: 0, totalImpressions: 0, totalClicks: 0, totalCost: 0, totalSales: 0, totalOrders: 0 };
         categoryStats[cat].count++;
         categoryStats[cat].totalImpressions += w.impressions;

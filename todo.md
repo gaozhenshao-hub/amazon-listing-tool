@@ -3820,3 +3820,14 @@
 - [x] 修复前端：改为读t.keyword字段
 - [x] 修复后端：处理空字符串情况，确保keyword不为空
 - [x] 27个测试全部通过
+
+### 优化：广告分析分类逻辑改为相对值（基于数据分布）
+- [x] 审查getTargetingAnalysisLocal中的分类阈值逻辑（固定 clicks>=10/3, CVR>=10%/3%）
+- [x] 审查getSearchTerms12CategoryLocal中的分类阈值逻辑（固定 impressions/CTR/CVR阈值）
+- [x] 审查getWordFrequencyLocal中的分类逻辑（固定 CVR>=10%/5%, clicks>=30/7）
+- [x] 新增percentile()和computeDynamicThresholds()工具函数
+- [x] getSearchTerms12CategoryLocal: 改为基于P33/P67百分位动态计算阈值
+- [x] getTargetingAnalysisLocal: 9宫格改为基于点击量P33/P67和CVR P33/P67相对分类
+- [x] getWordFrequencyLocal: 6分类改为基于数据分布的相对阈值
+- [x] 前端无需修改（已使用相对描述标签）
+- [x] 27个测试全部通过
