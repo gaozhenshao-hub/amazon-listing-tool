@@ -62,7 +62,9 @@ export default function TargetingAnalysis({ campaignId, campaignIds, campaignNam
       star: 1, stable: 2, waste: 3, potential: 4, test: 5, decline: 6,
       new: 7, observe: 8, negate: 9,
     };
-    return { ...t, target: t.targeting_expression || t.target_id, categoryId: catMap[t.category] || 8 };
+    // Backend returns: keyword (投放对象名称), match_type, categoryKey
+    const targetName = t.keyword || t.targeting_expression || t.target_id || "(未知)";
+    return { ...t, target: targetName, categoryId: catMap[t.categoryKey] || t.categoryId || 8 };
   });
   const categoryStats = useMemo(() => {
     const stats: Record<number, number> = {};

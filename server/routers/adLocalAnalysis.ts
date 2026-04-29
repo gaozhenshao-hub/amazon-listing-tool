@@ -611,7 +611,8 @@ export const adLocalAnalysisRouter = router({
       }> = {};
 
       for (const r of rows) {
-        const kw = r.keyword || r.targeting || r.searchTerm;
+        // Use non-empty targeting name: keyword > targeting > searchTerm
+        const kw = (r.keyword && r.keyword.trim()) || (r.targeting && r.targeting.trim()) || (r.searchTerm && r.searchTerm.trim()) || "(unknown)";
         const key = `${kw}||${r.matchType}`;
         if (!targetMap[key]) {
           targetMap[key] = { keyword: kw, match_type: r.matchType || "", impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0, searchTermCount: 0 };

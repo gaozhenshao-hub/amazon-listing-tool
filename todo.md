@@ -3813,3 +3813,10 @@
 - [x] 扩展：OpsAds向所有子组件传递defaultAdType属性
 - [x] 单元测试验证（27个测试全部通过）
 - [x] 构建验证并保存checkpoint
+
+### Bug修复：投放对象分析Tab中“投放对象”列内容为空
+- [x] 检查后端getTargetingAnalysisLocal返回的target字段（返回keyword字段）
+- [x] 检查前端TargetingAnalysis组件对target字段的渲染（原来读t.targeting_expression不存在）
+- [x] 修复前端：改为读t.keyword字段
+- [x] 修复后端：处理空字符串情况，确保keyword不为空
+- [x] 27个测试全部通过
