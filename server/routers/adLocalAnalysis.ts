@@ -456,6 +456,93 @@ export const adLocalAnalysisRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const d = await getDbInstance();
+
+      // Strategy: Use adHourlyReports which has both targetingValue (real keyword) and placementClassification
+      // Fallback to adPlacementReports (by campaignName) if no hourly data exists
+      const hourlyConditions: any[] = [eq(adHourlyReports.userId, ctx.user.id)];
+      if (input.parentAsin) hourlyConditions.push(eq(adHourlyReports.parentAsin, input.parentAsin));
+      if (input.campaignNames && input.campaignNames.length > 0) {
+        hourlyConditions.push(inArray(adHourlyReports.campaignName, input.campaignNames));
+      }
+
+      const hourlyRows = await d.select().from(adHourlyReports).where(and(...hourlyConditions));
+
+      // If hourly data exists, use real keywords (targetingValue) + placement breakdown
+      if (hourlyRows.length > 0) {
+        const kwMap: Record<string, {
+          keyword: string; matchType: string; campaignName: string;
+          placements: Record<string, { placement: string; impressions: number; clicks: number; cost: number; sales: number; orders: number }>;
+          totalImpressions: number; totalClicks: number; totalCost: number; totalSales: number; totalOrders: number;
+        }> = {};
+
+        for (const r of hourlyRows) {
+          // Extract real keyword from targetingValue field
+          const rawKw = (r.targetingValue || r.searchTerm || r.adGroupName || "").trim();
+          if (!rawKw) continue;
+          const placement = r.placementClassification || r.placementName || "Other";
+          if (input.searchKeyword && !rawKw.toLowerCase().includes(input.searchKeyword.toLowerCase())) continue;
+
+          const key = rawKw;
+          if (!kwMap[key]) {
+            kwMap[key] = {
+              keyword: rawKw, matchType: "", campaignName: r.campaignName || "",
+              placements: {},
+              totalImpressions: 0, totalClicks: 0, totalCost: 0, totalSales: 0, totalOrders: 0,
+            };
+          }
+          if (!kwMap[key].placements[placement]) {
+            kwMap[key].placements[placement] = { placement, impressions: 0, clicks: 0, cost: 0, sales: 0, orders: 0 };
+          }
+          kwMap[key].placements[placement].impressions += n(r.impressions);
+          kwMap[key].placements[placement].clicks += n(r.clicks);
+          kwMap[key].placements[placement].cost += n(r.spend);
+          kwMap[key].placements[placement].sales += n(r.sales);
+          kwMap[key].placements[placement].orders += n(r.purchases);
+          kwMap[key].totalImpressions += n(r.impressions);
+          kwMap[key].totalClicks += n(r.clicks);
+          kwMap[key].totalCost += n(r.spend);
+          kwMap[key].totalSales += n(r.sales);
+          kwMap[key].totalOrders += n(r.purchases);
+        }
+
+        const keywords = Object.values(kwMap).map(kw => ({
+          keyword: kw.keyword,
+          matchType: kw.matchType,
+          campaignName: kw.campaignName,
+          placements: Object.values(kw.placements).map(p => ({
+            ...p,
+            acos: safePct(p.cost, p.sales),
+            roas: safeDiv(p.sales, p.cost),
+            ctr: safePct(p.clicks, p.impressions),
+            cpc: safeDiv(p.cost, p.clicks),
+            cvr: safePct(p.orders, p.clicks),
+          })),
+          totalImpressions: kw.totalImpressions,
+          totalClicks: kw.totalClicks,
+          totalCost: kw.totalCost,
+          totalSales: kw.totalSales,
+          totalOrders: kw.totalOrders,
+          totalAcos: safePct(kw.totalCost, kw.totalSales),
+          totalRoas: safeDiv(kw.totalSales, kw.totalCost),
+        }));
+
+        const sortKey = input.sortBy as string;
+        keywords.sort((a, b) => {
+          const av = (a as any)[`total${sortKey.charAt(0).toUpperCase() + sortKey.slice(1)}`] || 0;
+          const bv = (b as any)[`total${sortKey.charAt(0).toUpperCase() + sortKey.slice(1)}`] || 0;
+          return input.sortDir === "asc" ? av - bv : bv - av;
+        });
+
+        const placementNamesSet = new Set<string>();
+        for (const kw of keywords) {
+          for (const p of kw.placements) placementNamesSet.add(p.placement);
+        }
+        const placementNames = Array.from(placementNamesSet);
+
+        return { keywords, placementNames, total: keywords.length, isMock: false, isLocalData: true, dataSource: "hourly" as const };
+      }
+
+      // Fallback: use adPlacementReports (by campaignName) if no hourly data
       const conditions: any[] = [eq(adPlacementReports.userId, ctx.user.id)];
       if (input.parentAsin) conditions.push(eq(adPlacementReports.parentAsin, input.parentAsin));
       if (input.adType) conditions.push(eq(adPlacementReports.adType, input.adType));
@@ -500,6 +587,7 @@ export const adLocalAnalysisRouter = router({
 
       const keywords = Object.values(kwMap).map(kw => ({
         keyword: kw.keyword,
+        campaignName: kw.campaignName,
         placements: Object.values(kw.placements).map(p => ({
           ...p,
           acos: safePct(p.cost, p.sales),
@@ -531,7 +619,7 @@ export const adLocalAnalysisRouter = router({
       }
       const placementNames = Array.from(placementNamesSet);
 
-      return { keywords, placementNames, total: keywords.length, isMock: false, isLocalData: true };
+      return { keywords, placementNames, total: keywords.length, isMock: false, isLocalData: true, dataSource: "placement" as const };
     }),
 
   // ─── 5. getAdHourlyDataLocal ────────────────────────────────────

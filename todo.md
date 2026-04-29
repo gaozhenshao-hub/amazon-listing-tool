@@ -3836,3 +3836,9 @@
 - [x] 定位原因：前端使用kw.keyword_text但后端返回kw.keyword，导致undefined.length
 - [x] 修复：改为kw.keyword_text||kw.keyword兼容，同时修复totalImpressions等字段名映射
 - [x] 27个测试全部通过
+
+### 优化：广告位关键词维度改为按真实关键词聚合
+- [x] 分析adPlacementReports表（无keyword字段，只有campaignName）
+- [x] 分析adHourlyReports表（有targetingValue+placementClassification，可同时关联关键词和广告位）
+- [x] 修改getAdPlacementByKeywordLocal：优先使用adHourlyReports按真实关键词聚合，回退到adPlacementReports
+- [x] 27个测试全部通过
