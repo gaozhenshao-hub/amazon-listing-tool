@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import React from "react";
 import AdEmptyState from "./AdEmptyState";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -306,11 +307,10 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, campaignN
           <Card>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
-                <table className="w-full text-xs">
+                <table className="min-w-full text-xs">
                   <thead>
                     <tr className="bg-gray-50 border-b">
-                      <th className="text-left px-3 py-2 font-medium text-gray-600 sticky left-0 bg-gray-50 z-10 min-w-[200px]">关键词</th>
-
+                      <th className="text-left px-3 py-2 font-medium text-gray-600 whitespace-nowrap" style={{ minWidth: '180px' }}>关键词</th>
                       {(["impressions", "clicks", "cost", "sales", "orders", "acos"] as SortKey[]).map(col => (
                         <th key={col}
                           className="text-right px-2 py-2 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 whitespace-nowrap"
@@ -342,29 +342,29 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, campaignN
                       const isExpanded = expandedKw.has(kwText);
                       const kwPlacements = kw.placements || [];
                       return (
-                        <tbody key={kwText || idx}>
+                        <React.Fragment key={kwText || `kw-${idx}`}>
                           {/* Main keyword row */}
                           <tr className={`border-b hover:bg-blue-50/30 cursor-pointer ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}
                             onClick={() => toggleExpand(kwText)}
                           >
-                            <td className="px-3 py-2 sticky left-0 bg-inherit z-10">
+                            <td className="px-3 py-2">
                               <div className="flex items-center gap-1.5">
                                 {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />}
                                 <span className="font-medium text-gray-800 truncate max-w-[180px]" title={kwText}>{kwText}</span>
                               </div>
                             </td>
-                            <td className="text-right px-2 py-2 font-mono">{(kw.totalImpressions || kw.impressions || 0).toLocaleString()}</td>
-                            <td className="text-right px-2 py-2 font-mono">{(kw.totalClicks || kw.clicks || 0).toLocaleString()}</td>
-                            <td className="text-right px-2 py-2 font-mono">${(kw.totalCost || kw.cost || 0).toFixed(2)}</td>
-                            <td className="text-right px-2 py-2 font-mono text-emerald-600">${(kw.totalSales || kw.sales || 0).toFixed(2)}</td>
-                            <td className="text-right px-2 py-2 font-mono">{kw.totalOrders || kw.orders || 0}</td>
-                            <td className={`text-right px-2 py-2 font-mono font-semibold ${
+                            <td className="text-right px-2 py-2 font-mono whitespace-nowrap">{(kw.totalImpressions || kw.impressions || 0).toLocaleString()}</td>
+                            <td className="text-right px-2 py-2 font-mono whitespace-nowrap">{(kw.totalClicks || kw.clicks || 0).toLocaleString()}</td>
+                            <td className="text-right px-2 py-2 font-mono whitespace-nowrap">${(kw.totalCost || kw.cost || 0).toFixed(2)}</td>
+                            <td className="text-right px-2 py-2 font-mono text-emerald-600 whitespace-nowrap">${(kw.totalSales || kw.sales || 0).toFixed(2)}</td>
+                            <td className="text-right px-2 py-2 font-mono whitespace-nowrap">{kw.totalOrders || kw.orders || 0}</td>
+                            <td className={`text-right px-2 py-2 font-mono font-semibold whitespace-nowrap ${
                               (kw.totalAcos || kw.acos || 0) <= 25 ? "text-emerald-600" : (kw.totalAcos || kw.acos || 0) <= 40 ? "text-amber-600" : "text-red-600"
                             }`}>{(kw.totalAcos || kw.acos || 0).toFixed(1)}%</td>
-                            <td className="text-right px-2 py-2 font-mono">{(kw.totalClicks && kw.totalImpressions ? (kw.totalClicks / kw.totalImpressions * 100) : (kw.ctr || 0)).toFixed(2)}%</td>
-                            <td className="text-right px-2 py-2 font-mono">${(kw.totalClicks ? (kw.totalCost / kw.totalClicks) : (kw.cpc || 0)).toFixed(2)}</td>
-                            <td className="text-right px-2 py-2 font-mono">{(kw.totalOrders && kw.totalClicks ? (kw.totalOrders / kw.totalClicks * 100) : (kw.cvr || 0)).toFixed(1)}%</td>
-                            <td className="text-right px-2 py-2 font-mono text-blue-600">{(kw.totalRoas || kw.roas || 0).toFixed(2)}x</td>
+                            <td className="text-right px-2 py-2 font-mono whitespace-nowrap">{(kw.totalClicks && kw.totalImpressions ? (kw.totalClicks / kw.totalImpressions * 100) : (kw.ctr || 0)).toFixed(2)}%</td>
+                            <td className="text-right px-2 py-2 font-mono whitespace-nowrap">${(kw.totalClicks ? (kw.totalCost / kw.totalClicks) : (kw.cpc || 0)).toFixed(2)}</td>
+                            <td className="text-right px-2 py-2 font-mono whitespace-nowrap">{(kw.totalOrders && kw.totalClicks ? (kw.totalOrders / kw.totalClicks * 100) : (kw.cvr || 0)).toFixed(1)}%</td>
+                            <td className="text-right px-2 py-2 font-mono text-blue-600 whitespace-nowrap">{(kw.totalRoas || kw.roas || 0).toFixed(2)}x</td>
                           </tr>
 
                           {/* Expanded: placement breakdown */}
@@ -372,28 +372,28 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, campaignN
                             const pConfig = getPlacementConfig(p.placement);
                             return (
                               <tr key={`${kwText}-${p.placement}`} className="bg-blue-50/20 border-b border-dashed">
-                                <td className="px-3 py-1.5 sticky left-0 bg-blue-50/20 z-10">
+                                <td className="px-3 py-1.5">
                                   <div className="flex items-center gap-1.5 pl-5">
                                     <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: pConfig.fill }} />
                                     <span className="text-gray-600 text-[11px]">{pConfig.label}</span>
                                   </div>
                                 </td>
-                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">{(p.impressions || 0).toLocaleString()}</td>
-                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">{(p.clicks || 0).toLocaleString()}</td>
-                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">${(p.cost || 0).toFixed(2)}</td>
-                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">${(p.sales || 0).toFixed(2)}</td>
-                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">{p.orders || 0}</td>
-                                <td className={`text-right px-2 py-1.5 font-mono ${
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600 whitespace-nowrap">{(p.impressions || 0).toLocaleString()}</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600 whitespace-nowrap">{(p.clicks || 0).toLocaleString()}</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600 whitespace-nowrap">${(p.cost || 0).toFixed(2)}</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600 whitespace-nowrap">${(p.sales || 0).toFixed(2)}</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600 whitespace-nowrap">{p.orders || 0}</td>
+                                <td className={`text-right px-2 py-1.5 font-mono whitespace-nowrap ${
                                   (p.acos || 0) <= 25 ? "text-emerald-600" : (p.acos || 0) <= 40 ? "text-amber-600" : "text-red-600"
                                 }`}>{(p.acos || 0).toFixed(1)}%</td>
-                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">{(p.ctr || 0).toFixed(2)}%</td>
-                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">${(p.cpc || 0).toFixed(2)}</td>
-                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">{(p.cvr || 0).toFixed(1)}%</td>
-                                <td className="text-right px-2 py-1.5 font-mono text-gray-600">{(p.roas || 0).toFixed(2)}x</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600 whitespace-nowrap">{(p.ctr || 0).toFixed(2)}%</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600 whitespace-nowrap">${(p.cpc || 0).toFixed(2)}</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600 whitespace-nowrap">{(p.cvr || 0).toFixed(1)}%</td>
+                                <td className="text-right px-2 py-1.5 font-mono text-gray-600 whitespace-nowrap">{(p.roas || 0).toFixed(2)}x</td>
                               </tr>
                             );
                           })}
-                        </tbody>
+                        </React.Fragment>
                       );
                     })}
                   </tbody>
