@@ -82,6 +82,8 @@ import { operatorMappingRouter } from "./routers/operatorMapping";
 import { adTrackingRouter } from "./routers/adTracking";
 import { adReportUploadRouter } from "./routers/adReportUpload";
 import { adLocalAnalysisRouter } from "./routers/adLocalAnalysis";
+import { adDailyReportUploadRouter } from "./routers/adDailyReportUpload";
+import { adDeepAnalysisRouter } from "./routers/adDeepAnalysis";
 
 export const appRouter = router({
   system: systemRouter,
@@ -178,6 +180,10 @@ export const appRouter = router({
   adReportUpload: adReportUploadRouter,
   // Ad Local Analysis (reads from local uploaded data)
   adLocalAnalysis: adLocalAnalysisRouter,
+  // Ad Daily Report Upload (5 daily report types for deep optimization)
+  adDailyReport: adDailyReportUploadRouter,
+  // Ad Deep Analysis (6 sub-modules AI engines)
+  adDeepAnalysis: adDeepAnalysisRouter,
 });
 
 export type AppRouter = typeof appRouter;

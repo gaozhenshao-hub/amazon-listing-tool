@@ -4216,3 +4216,323 @@ export const adDspReports = mysqlTable("ad_dsp_reports", {
 });
 export type AdDspReport = typeof adDspReports.$inferSelect;
 export type InsertAdDspReport = typeof adDspReports.$inferInsert;
+
+
+// ═══════════════════════════════════════════════════════════════
+// 广告深度优化模块 - 数据基座：五大每日报告表
+// ═══════════════════════════════════════════════════════════════
+
+// 每日广告位报告表 (Daily Placement Report)
+export const adDailyPlacementReports = mysqlTable("ad_daily_placement_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  uploadId: int("upload_id").notNull(),
+  userId: int("user_id").notNull(),
+  productId: int("product_id"),
+  parentAsin: varchar("parent_asin", { length: 20 }),
+  reportDate: varchar("report_date", { length: 10 }).notNull(), // YYYY-MM-DD
+  storeName: varchar("store_name", { length: 200 }),
+  country: varchar("country", { length: 50 }),
+  adType: varchar("ad_type", { length: 10 }).notNull(), // SP/SB/SD
+  portfolioName: varchar("portfolio_name", { length: 300 }),
+  campaignName: varchar("campaign_name", { length: 500 }).notNull(),
+  placement: varchar("placement", { length: 100 }).notNull(), // Top of Search, Detail Page, Other, Off Amazon
+  impressions: int("impressions").default(0),
+  clicks: int("clicks").default(0),
+  ctr: decimal("ctr", { precision: 8, scale: 4 }),
+  cpc: decimal("cpc", { precision: 10, scale: 2 }),
+  spend: decimal("spend", { precision: 12, scale: 2 }),
+  sales: decimal("sales", { precision: 12, scale: 2 }),
+  directSales: decimal("direct_sales", { precision: 12, scale: 2 }),
+  indirectSales: decimal("indirect_sales", { precision: 12, scale: 2 }),
+  acos: decimal("acos", { precision: 8, scale: 4 }),
+  roas: decimal("roas", { precision: 8, scale: 2 }),
+  orders: int("orders").default(0),
+  directOrders: int("direct_orders").default(0),
+  indirectOrders: int("indirect_orders").default(0),
+  cvr: decimal("cvr", { precision: 8, scale: 4 }),
+  cpa: decimal("cpa", { precision: 10, scale: 2 }),
+  brandNewOrders: int("brand_new_orders").default(0),
+  brandNewSales: decimal("brand_new_sales", { precision: 12, scale: 2 }),
+  viewableImpressions: int("viewable_impressions").default(0),
+  vtr: decimal("vtr", { precision: 8, scale: 4 }),
+  vctr: decimal("vctr", { precision: 8, scale: 4 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AdDailyPlacementReport = typeof adDailyPlacementReports.$inferSelect;
+export type InsertAdDailyPlacementReport = typeof adDailyPlacementReports.$inferInsert;
+
+// 每日搜索词报告表 (Daily Search Term Report)
+export const adDailySearchTermReports = mysqlTable("ad_daily_search_term_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  uploadId: int("upload_id").notNull(),
+  userId: int("user_id").notNull(),
+  productId: int("product_id"),
+  parentAsin: varchar("parent_asin", { length: 20 }),
+  reportDate: varchar("report_date", { length: 10 }).notNull(),
+  storeName: varchar("store_name", { length: 200 }),
+  country: varchar("country", { length: 50 }),
+  adType: varchar("ad_type", { length: 10 }).notNull(),
+  portfolioName: varchar("portfolio_name", { length: 300 }),
+  campaignName: varchar("campaign_name", { length: 500 }),
+  adGroupName: varchar("ad_group_name", { length: 500 }),
+  keyword: varchar("keyword", { length: 500 }),
+  matchType: varchar("match_type", { length: 20 }),
+  targeting: varchar("targeting", { length: 500 }),
+  searchTerm: varchar("search_term", { length: 500 }).notNull(),
+  impressions: int("impressions").default(0),
+  clicks: int("clicks").default(0),
+  ctr: decimal("ctr", { precision: 8, scale: 4 }),
+  cpc: decimal("cpc", { precision: 10, scale: 2 }),
+  spend: decimal("spend", { precision: 12, scale: 2 }),
+  sales: decimal("sales", { precision: 12, scale: 2 }),
+  directSales: decimal("direct_sales", { precision: 12, scale: 2 }),
+  indirectSales: decimal("indirect_sales", { precision: 12, scale: 2 }),
+  acos: decimal("acos", { precision: 8, scale: 4 }),
+  roas: decimal("roas", { precision: 8, scale: 2 }),
+  orders: int("orders").default(0),
+  directOrders: int("direct_orders").default(0),
+  indirectOrders: int("indirect_orders").default(0),
+  cvr: decimal("cvr", { precision: 8, scale: 4 }),
+  cpa: decimal("cpa", { precision: 10, scale: 2 }),
+  avgOrderValue: decimal("avg_order_value", { precision: 10, scale: 2 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AdDailySearchTermReport = typeof adDailySearchTermReports.$inferSelect;
+export type InsertAdDailySearchTermReport = typeof adDailySearchTermReports.$inferInsert;
+
+// 每日搜索词展示量份额报告表 (Daily Impression Share Report)
+export const adDailyImpressionShareReports = mysqlTable("ad_daily_impression_share_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  uploadId: int("upload_id").notNull(),
+  userId: int("user_id").notNull(),
+  productId: int("product_id"),
+  parentAsin: varchar("parent_asin", { length: 20 }),
+  reportDate: varchar("report_date", { length: 10 }).notNull(),
+  storeName: varchar("store_name", { length: 200 }),
+  country: varchar("country", { length: 50 }),
+  adType: varchar("ad_type", { length: 10 }).default("SP"),
+  portfolioName: varchar("portfolio_name", { length: 300 }),
+  campaignName: varchar("campaign_name", { length: 500 }),
+  adGroupName: varchar("ad_group_name", { length: 500 }),
+  targeting: varchar("targeting", { length: 500 }),
+  searchTerm: varchar("search_term", { length: 500 }),
+  impressionShare: decimal("impression_share", { precision: 8, scale: 4 }),
+  impressionRank: int("impression_rank"),
+  impressions: int("impressions").default(0),
+  clicks: int("clicks").default(0),
+  ctr: decimal("ctr", { precision: 8, scale: 4 }),
+  spend: decimal("spend", { precision: 12, scale: 2 }),
+  sales: decimal("sales", { precision: 12, scale: 2 }),
+  acos: decimal("acos", { precision: 8, scale: 4 }),
+  orders: int("orders").default(0),
+  topCompetitorShare: decimal("top_competitor_share", { precision: 8, scale: 4 }),
+  topCompetitorAsin: varchar("top_competitor_asin", { length: 20 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AdDailyImpressionShareReport = typeof adDailyImpressionShareReports.$inferSelect;
+export type InsertAdDailyImpressionShareReport = typeof adDailyImpressionShareReports.$inferInsert;
+
+// 每日SB Benchmark广告报告表 (Daily SB Benchmark Report)
+export const adDailySbBenchmarkReports = mysqlTable("ad_daily_sb_benchmark_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  uploadId: int("upload_id").notNull(),
+  userId: int("user_id").notNull(),
+  productId: int("product_id"),
+  parentAsin: varchar("parent_asin", { length: 20 }),
+  reportDate: varchar("report_date", { length: 10 }).notNull(),
+  storeName: varchar("store_name", { length: 200 }),
+  country: varchar("country", { length: 50 }),
+  campaignName: varchar("campaign_name", { length: 500 }).notNull(),
+  adFormat: varchar("ad_format", { length: 50 }), // Product Collection, Store Spotlight, Video
+  impressions: int("impressions").default(0),
+  clicks: int("clicks").default(0),
+  ctr: decimal("ctr", { precision: 8, scale: 4 }),
+  cpc: decimal("cpc", { precision: 10, scale: 2 }),
+  spend: decimal("spend", { precision: 12, scale: 2 }),
+  sales: decimal("sales", { precision: 12, scale: 2 }),
+  acos: decimal("acos", { precision: 8, scale: 4 }),
+  roas: decimal("roas", { precision: 8, scale: 2 }),
+  orders: int("orders").default(0),
+  dpv: int("dpv").default(0),
+  newToBrandOrders: int("new_to_brand_orders").default(0),
+  newToBrandSales: decimal("new_to_brand_sales", { precision: 12, scale: 2 }),
+  newToBrandRate: decimal("new_to_brand_rate", { precision: 8, scale: 4 }),
+  benchmarkCtr: decimal("benchmark_ctr", { precision: 8, scale: 4 }),
+  benchmarkCpc: decimal("benchmark_cpc", { precision: 10, scale: 2 }),
+  benchmarkAcos: decimal("benchmark_acos", { precision: 8, scale: 4 }),
+  benchmarkRoas: decimal("benchmark_roas", { precision: 8, scale: 2 }),
+  benchmarkCvr: decimal("benchmark_cvr", { precision: 8, scale: 4 }),
+  benchmarkDpvRate: decimal("benchmark_dpv_rate", { precision: 8, scale: 4 }),
+  benchmarkNewToBrandRate: decimal("benchmark_new_to_brand_rate", { precision: 8, scale: 4 }),
+  ctrVsBenchmark: varchar("ctr_vs_benchmark", { length: 20 }),
+  cpcVsBenchmark: varchar("cpc_vs_benchmark", { length: 20 }),
+  acosVsBenchmark: varchar("acos_vs_benchmark", { length: 20 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AdDailySbBenchmarkReport = typeof adDailySbBenchmarkReports.$inferSelect;
+export type InsertAdDailySbBenchmarkReport = typeof adDailySbBenchmarkReports.$inferInsert;
+
+// 每日业务报告表 (Daily Business Report)
+export const adDailyBusinessReports = mysqlTable("ad_daily_business_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  uploadId: int("upload_id").notNull(),
+  userId: int("user_id").notNull(),
+  productId: int("product_id"),
+  parentAsin: varchar("parent_asin", { length: 20 }),
+  childAsin: varchar("child_asin", { length: 20 }),
+  reportDate: varchar("report_date", { length: 10 }).notNull(),
+  storeName: varchar("store_name", { length: 200 }),
+  country: varchar("country", { length: 50 }),
+  sku: varchar("sku", { length: 100 }),
+  productName: varchar("product_name", { length: 500 }),
+  sessions: int("sessions").default(0),
+  sessionPercentage: decimal("session_percentage", { precision: 8, scale: 4 }),
+  pageViews: int("page_views").default(0),
+  pageViewsPercentage: decimal("page_views_percentage", { precision: 8, scale: 4 }),
+  buyBoxPercentage: decimal("buy_box_percentage", { precision: 8, scale: 4 }),
+  unitsOrdered: int("units_ordered").default(0),
+  unitsOrderedB2b: int("units_ordered_b2b").default(0),
+  unitSessionPercentage: decimal("unit_session_percentage", { precision: 8, scale: 4 }),
+  unitSessionPercentageB2b: decimal("unit_session_percentage_b2b", { precision: 8, scale: 4 }),
+  orderedProductSales: decimal("ordered_product_sales", { precision: 12, scale: 2 }),
+  orderedProductSalesB2b: decimal("ordered_product_sales_b2b", { precision: 12, scale: 2 }),
+  totalOrderItems: int("total_order_items").default(0),
+  totalOrderItemsB2b: int("total_order_items_b2b").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AdDailyBusinessReport = typeof adDailyBusinessReports.$inferSelect;
+export type InsertAdDailyBusinessReport = typeof adDailyBusinessReports.$inferInsert;
+
+// ═══════════════════════════════════════════════════════════════
+// 广告深度优化模块 - 子模块数据表
+// ═══════════════════════════════════════════════════════════════
+
+// 产品周期判定记录 (子模块1)
+export const adProductStages = mysqlTable("ad_product_stages", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  portfolioNames: text("portfolio_names"), // JSON array of selected portfolios
+  parentAsin: varchar("parent_asin", { length: 20 }),
+  dateRangeStart: varchar("date_range_start", { length: 10 }).notNull(),
+  dateRangeEnd: varchar("date_range_end", { length: 10 }).notNull(),
+  stage: varchar("stage", { length: 20 }).notNull(), // 止血期/稳结构期/放量期
+  confidence: int("confidence").default(0), // 0-100
+  evidence: text("evidence"), // JSON array of evidence strings
+  redFlags: text("red_flags"), // JSON array
+  dailyHighlights: text("daily_highlights"), // JSON array of {date, event, impact}
+  strategy: text("strategy"), // JSON: {core_action, keyword_strategy, budget_strategy, bid_strategy, dont_do}
+  transitionSignals: text("transition_signals"), // JSON array
+  userEdits: text("user_edits"), // JSON: user modifications to AI suggestions
+  status: mysqlEnum("status", ["draft", "confirmed", "archived"]).default("draft").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AdProductStage = typeof adProductStages.$inferSelect;
+export type InsertAdProductStage = typeof adProductStages.$inferInsert;
+
+// 关键词分级记录 (子模块2)
+export const adKeywordTiers = mysqlTable("ad_keyword_tiers", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  portfolioNames: text("portfolio_names"),
+  dateRangeStart: varchar("date_range_start", { length: 10 }).notNull(),
+  dateRangeEnd: varchar("date_range_end", { length: 10 }).notNull(),
+  keyword: varchar("keyword", { length: 500 }).notNull(),
+  tier: varchar("tier", { length: 20 }).notNull(), // 核心词/腰部词/长尾词
+  role: varchar("role", { length: 20 }), // 结构支点/输出核心/修复核心
+  currentPerformance: varchar("current_performance", { length: 20 }), // 优秀/良好/待优化/需止血
+  dailyTrend: varchar("daily_trend", { length: 20 }), // 上升/稳定/下降/波动
+  anomalyDates: text("anomaly_dates"), // JSON array
+  action: text("action"), // 具体操作建议
+  bidSuggestion: text("bid_suggestion"),
+  priority: varchar("priority", { length: 10 }), // 高/中/低
+  reason: text("reason"),
+  userEdited: int("user_edited").default(0),
+  userAction: text("user_action"), // User's modified action
+  status: mysqlEnum("status", ["pending", "confirmed", "ignored"]).default("pending").notNull(),
+  batchId: int("batch_id"), // Groups keywords from same analysis run
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AdKeywordTier = typeof adKeywordTiers.$inferSelect;
+export type InsertAdKeywordTier = typeof adKeywordTiers.$inferInsert;
+
+// 串联诊断记录 (子模块3)
+export const adDiagnoses = mysqlTable("ad_diagnoses", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  portfolioNames: text("portfolio_names"),
+  dateRangeStart: varchar("date_range_start", { length: 10 }).notNull(),
+  dateRangeEnd: varchar("date_range_end", { length: 10 }).notNull(),
+  diagnosisResult: text("diagnosis_result"), // Full JSON of 5-step diagnosis
+  overallVerdict: text("overall_verdict"),
+  priorityActions: text("priority_actions"), // JSON array of actions
+  warning: text("warning"),
+  userEdits: text("user_edits"),
+  status: mysqlEnum("status", ["draft", "confirmed", "archived"]).default("draft").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AdDiagnosis = typeof adDiagnoses.$inferSelect;
+export type InsertAdDiagnosis = typeof adDiagnoses.$inferInsert;
+
+// 五大报表独立分析记录 (子模块4)
+export const adReportAnalysisRecords = mysqlTable("ad_report_analysis_records", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  reportType: varchar("report_type", { length: 30 }).notNull(), // placement/search_term/impression_share/sb_benchmark/business_cross
+  portfolioNames: text("portfolio_names"),
+  dateRangeStart: varchar("date_range_start", { length: 10 }).notNull(),
+  dateRangeEnd: varchar("date_range_end", { length: 10 }).notNull(),
+  analysisResult: text("analysis_result"), // Full JSON of analysis output
+  actionItems: text("action_items"), // JSON array of editable action items
+  userEdits: text("user_edits"),
+  status: mysqlEnum("status", ["draft", "confirmed", "archived"]).default("draft").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AdReportAnalysisRecord = typeof adReportAnalysisRecords.$inferSelect;
+export type InsertAdReportAnalysisRecord = typeof adReportAnalysisRecords.$inferInsert;
+
+// SOP任务清单 (子模块5)
+export const adSopTasks = mysqlTable("ad_sop_tasks", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  portfolioNames: text("portfolio_names"),
+  period: varchar("period", { length: 20 }).notNull(), // daily/weekly/monthly
+  category: varchar("category", { length: 50 }).notNull(), // 止血/优化/拓展/监控
+  title: varchar("title", { length: 500 }).notNull(),
+  description: text("description"),
+  evidence: text("evidence"), // JSON: data basis for this task
+  priority: varchar("priority", { length: 10 }), // 高/中/低
+  status: mysqlEnum("status", ["pending", "in_progress", "completed", "skipped"]).default("pending").notNull(),
+  completedAt: timestamp("completedAt"),
+  completedNote: text("completed_note"),
+  sourceModule: varchar("source_module", { length: 30 }), // which sub-module generated this
+  sourceRecordId: int("source_record_id"),
+  dueDate: varchar("due_date", { length: 10 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AdSopTask = typeof adSopTasks.$inferSelect;
+export type InsertAdSopTask = typeof adSopTasks.$inferInsert;
+
+// 疑难杂症AI诊所记录 (子模块6)
+export const adClinicRecords = mysqlTable("ad_clinic_records", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  portfolioNames: text("portfolio_names"),
+  dateRangeStart: varchar("date_range_start", { length: 10 }),
+  dateRangeEnd: varchar("date_range_end", { length: 10 }),
+  symptomCategory: varchar("symptom_category", { length: 50 }), // ACoS飙升/自然排名下降/广告无曝光/...
+  symptomDescription: text("symptom_description"),
+  additionalContext: text("additional_context"), // User-provided extra info
+  diagnosis: text("diagnosis"), // JSON: AI diagnosis result
+  prescription: text("prescription"), // JSON array of treatment actions
+  userEdits: text("user_edits"),
+  status: mysqlEnum("status", ["consulting", "diagnosed", "treating", "resolved", "archived"]).default("consulting").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AdClinicRecord = typeof adClinicRecords.$inferSelect;
+export type InsertAdClinicRecord = typeof adClinicRecords.$inferInsert;

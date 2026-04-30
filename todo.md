@@ -3855,3 +3855,129 @@
 - [x] 右侧图例显示各广告位缩写和色块
 - [x] hover显示完整信息（广告位名称+花费金额+占比）
 - [x] 27个测试全部通过
+
+### 广告深度优化模块：五大报告每日数据基座（Phase 0）
+- [x] Phase0-1: 数据库Schema - 新增ad_daily_placement_reports表（每日广告位报告）
+- [x] Phase0-2: 数据库Schema - 新增ad_daily_search_term_reports表（每日搜索词报告）
+- [x] Phase0-3: 数据库Schema - 新增ad_daily_impression_share_reports表（每日展示量份额报告）
+- [x] Phase0-4: 数据库Schema - 新增ad_daily_sb_benchmark_reports表（每日SB Benchmark报告）
+- [x] Phase0-5: 数据库Schema - 新增ad_daily_business_reports表（每日业务报告）
+- [x] Phase0-6: 数据库Schema - ad_report_uploads表report_type枚举扩展（新增5种每日报告类型）
+- [x] Phase0-7: 数据库迁移 - drizzle-kit generate + webdev_execute_sql执行迁移
+- [x] Phase0-8: 解析器 - parseDailyPlacementReport（领星Excel + 亚马逊CSV双格式）
+- [x] Phase0-9: 解析器 - parseDailySearchTermReport（领星Excel + 亚马逊CSV双格式）
+- [x] Phase0-10: 解析器 - parseDailyImpressionShareReport（亚马逊CSV格式）
+- [x] Phase0-11: 解析器 - parseDailySbBenchmarkReport（亚马逊CSV格式）
+- [x] Phase0-12: 解析器 - parseDailyBusinessReport（亚马逊CSV + 领星Excel双格式）
+- [x] Phase0-13: 上传接口 - uploadDailyPlacement / uploadDailySearchTerm / uploadDailyImpressionShare / uploadDailySbBenchmark / uploadDailyBusiness
+- [x] Phase0-14: 前端 - AdReportUploadCenter新增"每日报告"分区（5个上传卡片）
+- [x] Phase0-15: 查询接口 - getDailyPlacementData（日期范围+广告组合多选+ASIN筛选）
+- [x] Phase0-16: 查询接口 - getDailySearchTermData（日期范围+广告组合多选）
+- [x] Phase0-17: 查询接口 - getDailyImpressionShareData（日期范围+广告组合多选）
+- [x] Phase0-18: 查询接口 - getDailySbBenchmarkData（日期范围筛选）
+- [x] Phase0-19: 查询接口 - getDailyBusinessData（日期范围+ASIN筛选）
+- [x] Phase0-20: 查询接口 - getDailyCrossReport（五大报告按日对齐交叉查询）
+- [x] Phase0-21: 前端 - 深度优化Tab入口 + 数据总览子页面（五大报告覆盖状态检查）
+- [x] Phase0-22: 单元测试 - 5个解析器测试 + 5个上传接口测试 + 6个查询接口测试
+
+### 广告深度优化模块：产品周期诊断（Phase 1a）
+- [x] Phase1a-1: 数据库Schema - 新增ad_product_stages表
+- [x] Phase1a-2: 后端 - TACOS日度计算接口（每日业务报告×广告报告交叉）
+- [x] Phase1a-3: 后端 - 自然单占比日度计算接口
+- [x] Phase1a-4: 后端 - runProductStageDiagnosis AI分析接口（LLM调用+结构化输出）
+- [x] Phase1a-5: 后端 - getProductStage查询接口（含历史记录）
+- [x] Phase1a-6: 前端 - 产品周期诊断页面（TACOS日趋势图+自然单占比图+策略卡片）
+- [x] Phase1a-7: 前端 - 策略建议可编辑交互（每项可编辑确认）
+- [x] Phase1a-8: 单元测试
+
+### 广告深度优化模块：关键词结构管理（Phase 1b）
+- [x] Phase1b-1: 数据库Schema - 新增ad_keyword_tiers表
+- [x] Phase1b-2: 后端 - runKeywordTierAnalysis AI分析接口（基于每日搜索词数据）
+- [x] Phase1b-3: 后端 - getKeywordTiers查询接口
+- [x] Phase1b-4: 后端 - 周度清洗建议生成接口
+- [x] Phase1b-5: 前端 - 关键词结构管理页面（金字塔图+健康度雷达图+明细表）
+- [x] Phase1b-6: 前端 - 日度趋势迷你图（每行关键词内嵌7天折线图）
+- [x] Phase1b-7: 前端 - 周度清洗建议面板（否定/升级/降级，可勾选确认）
+- [x] Phase1b-8: 单元测试
+
+### 广告深度优化模块：多报表串联诊断（Phase 2a）
+- [x] Phase2a-1: 数据库Schema - 新增ad_diagnoses表
+- [x] Phase2a-2: 后端 - runCrossReportDiagnosis AI分析接口（五步法，引用五大报告）
+- [x] Phase2a-3: 后端 - getDiagnosisHistory查询接口
+- [x] Phase2a-4: 后端 - updateDiagnosisAction编辑/确认接口
+- [x] Phase2a-5: 前端 - 五步诊断流程页面（横向步骤条+每步展开详情）
+- [x] Phase2a-6: 前端 - 日度趋势对比图（每个Step配对应图表）
+- [x] Phase2a-7: 前端 - 优先操作清单（可编辑/确认/忽略）
+- [x] Phase2a-8: 单元测试
+
+### 广告深度优化模块：SOP执行看板（Phase 2b）
+- [x] Phase2b-1: 数据库Schema - 新增ad_sop_tasks表
+- [x] Phase2b-2: 后端 - generateSopChecklist AI生成接口（日度/周度/月度）
+- [x] Phase2b-3: 后端 - updateSopTaskStatus状态更新接口
+- [x] Phase2b-4: 后端 - SOP触发规则引擎（基于每日数据自动检测异常）
+- [x] Phase2b-5: 前端 - 三栏Kanban看板布局（Daily/Weekly/Monthly）
+- [x] Phase2b-6: 前端 - 任务卡片（紧急度标签+数据证据+状态流转）
+- [x] Phase2b-7: 前端 - 执行率统计环形图 + 历史记录
+- [x] Phase2b-8: 单元测试
+
+### 广告深度优化模块：疑难杂症AI诊所（Phase 3）
+- [x] Phase3-1: 数据库Schema - 新增ad_clinic_records表
+- [x] Phase3-2: 后端 - runClinicDiagnosis AI诊断接口（引用每日数据作为证据）
+- [x] Phase3-3: 后端 - getClinicHistory查询接口
+- [x] Phase3-4: 后端 - 预设症状库配置（8个预设症状+自定义）
+- [x] Phase3-5: 前端 - 症状选择面板（预设卡片+自定义输入）
+- [x] Phase3-6: 前端 - 诊断报告展示（病因+处方+监控指标，可编辑）
+- [x] Phase3-7: 前端 - 历史病历列表 + 复诊对比
+- [x] Phase3-8: 单元测试
+
+### 广告深度优化模块：子模块4 五大报表独立深度分析（Phase 2c）
+
+#### 4a 每日广告位报告分析页面
+- [x] Phase2c-1: 广告位分析tRPC接口（adReportAnalysis.runPlacementAnalysis）
+- [x] Phase2c-2: AI Prompt实现：P-1/P-2/P-3规则引擎（TOS溢价决策+无效消耗预警）
+- [x] Phase2c-3: 三位置日度趋势对比图（TOS/ROS/PP的CTR和CVR折线图）
+- [x] Phase2c-4: 溢价建议卡片（可编辑溢价比例+确认/忽略操作）
+- [x] Phase2c-5: 无效消耗预警表（高花费低转化位置+浪费金额标注）
+- [x] Phase2c-6: 复盘追踪区（上次调整后效果变化对比）
+
+#### 4b 每日搜索词报告分析页面
+- [x] Phase2c-7: 搜索词分析tRPC接口（adReportAnalysis.runSearchTermAnalysis）
+- [x] Phase2c-8: AI Prompt实现：ST-1/ST-2/ST-3/ST-4规则引擎（否词决策+异常花费监控）
+- [x] Phase2c-9: 异常词热力图（日期×搜索词花费热度矩阵）
+- [x] Phase2c-10: 否词决策表（相关性判断+AI建议操作，可编辑确认）
+- [x] Phase2c-11: 批量否词导出功能（勾选确认后生成否定词清单）
+- [x] Phase2c-12: "养词"建议区（相关但转化差的词低价广泛策略）
+- [x] Phase2c-13: 7日交叉验证图表（问题词近7日花费/点击/转化趋势）
+
+#### 4c 每日展示量份额报告分析页面
+- [x] Phase2c-14: 展示量份额分析tRPC接口（adReportAnalysis.runImpressionShareAnalysis）
+- [x] Phase2c-15: AI Prompt实现：IS-1/IS-2/IS-3/IS-4规则引擎（竞争格局+份额趋势）
+- [x] Phase2c-16: 份额×CPC双轴趋势图（左轴份额右轴CPC，标注规则触发日期）
+- [x] Phase2c-17: 竞争格局矩阵图（份额变化×CPC变化四象限分布）
+- [x] Phase2c-18: 策略建议卡片（可编辑确认）
+- [x] Phase2c-19: 预算转移建议表（从哪些词转移到哪些词，可编辑金额）
+
+#### 4d 每日SB Benchmark报告分析页面
+- [x] Phase2c-20: SB Benchmark分析tRPC接口（adReportAnalysis.runSbBenchmarkAnalysis）
+- [x] Phase2c-21: AI Prompt实现：SB-1/SB-2/SB-3/SB-4规则引擎（品牌声量+素材优化）
+- [x] Phase2c-22: 自身vs基准对比雷达图（CTR/CPC/ACOS/ROAS多维对比）
+- [x] Phase2c-23: SB广告活动日度CTR趋势图（多活动对比，A/B测试判断）
+- [x] Phase2c-24: 素材优化建议卡片（可编辑确认）
+- [x] Phase2c-25: New-to-Brand指标趋势图（品牌新客日度变化）
+
+#### 4e 每日业务报告×广告报告交叉比对页面
+- [x] Phase2c-26: 业务报告交叉分析tRPC接口（adReportAnalysis.runBusinessCrossAnalysis）
+- [x] Phase2c-27: AI Prompt实现：BR-1/BR-2/BR-3/BR-4规则引擎（TACOS+自然单占比）
+- [x] Phase2c-28: TACOS日度趋势图（折线图+目标线+警戒线）
+- [x] Phase2c-29: 自然单占比日度面积图（堆叠面积图广告单vs自然单）
+- [x] Phase2c-30: 广告依赖度仪表盘（环形图低/中/高）
+- [x] Phase2c-31: 警报卡片（BR-2广告吃自然单红色醒目提示）
+- [x] Phase2c-32: 边际效益分析图（散点图花费增量vs订单增量）
+
+#### 模块通用
+- [x] Phase2c-33: 五大报表独立分析数据库表（ad_report_analysis_records）
+- [x] Phase2c-34: 分析历史查询接口（adReportAnalysis.getAnalysisHistory）
+- [x] Phase2c-35: 分析建议编辑/确认接口（adReportAnalysis.updateAnalysisAction）
+- [x] Phase2c-36: 五大报表分析顶部Tab切换布局
+- [x] Phase2c-37: 统一筛选器组件（广告组合多选+日期范围）
+- [x] Phase2c-38: 单元测试

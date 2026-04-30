@@ -58,6 +58,7 @@ import OpsCustomDashboard from "./pages/ops/OpsCustomDashboard";
 import OpsTaskManagement from "./pages/ops/OpsTaskManagement";
 import OpsDataImport from "./pages/ops/OpsDataImport";
 import OpsAdMapping from "./pages/ops/OpsAdMapping";
+import OpsAdDeep from "./pages/ops/OpsAdDeep";
 
 // ─── Module 4: After-sales Management ──────────────────────────
 import ComingSoonPage from "./pages/ComingSoonPage";
@@ -168,6 +169,7 @@ function Router() {
         <Route path="/ops/custom-dashboard">{() => <PermissionGuard><OpsCustomDashboard /></PermissionGuard>}</Route>
         <Route path="/ops/data-import">{() => <PermissionGuard><OpsDataImport /></PermissionGuard>}</Route>
         <Route path="/ops/ad-mapping">{() => <PermissionGuard><OpsAdMapping /></PermissionGuard>}</Route>
+        <Route path="/ops/ad-deep">{() => <PermissionGuard><OpsAdDeep /></PermissionGuard>}</Route>
         <Route path="/ops/tasks">{() => <PermissionGuard><OpsTaskManagement /></PermissionGuard>}</Route>
 
         {/* ─── Module 4: After-sales Management ─── */}
