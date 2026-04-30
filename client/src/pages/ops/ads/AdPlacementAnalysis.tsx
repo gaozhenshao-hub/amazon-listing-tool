@@ -367,7 +367,51 @@ export default function AdPlacementAnalysis({ campaignId, campaignIds, campaignN
                             <td className="text-right px-2 py-2 font-mono text-blue-600 whitespace-nowrap">{(kw.totalRoas || kw.roas || 0).toFixed(2)}x</td>
                           </tr>
 
-                          {/* Expanded: placement breakdown */}
+                          {/* Expanded: mini cost distribution bar + placement breakdown */}
+                          {isExpanded && kwPlacements.length > 0 && (() => {
+                            const totalCost = kwPlacements.reduce((sum: number, p: any) => sum + (p.cost || 0), 0);
+                            return (
+                              <tr className="bg-blue-50/30 border-b">
+                                <td colSpan={11} className="px-3 py-2">
+                                  <div className="flex items-center gap-2 pl-5">
+                                    <span className="text-[11px] text-gray-500 whitespace-nowrap">花费分布:</span>
+                                    <div className="flex-1 flex h-5 rounded overflow-hidden border border-gray-200">
+                                      {kwPlacements.map((p: any) => {
+                                        const pct = totalCost > 0 ? (p.cost || 0) / totalCost * 100 : 0;
+                                        if (pct < 0.5) return null;
+                                        const pConfig = getPlacementConfig(p.placement);
+                                        return (
+                                          <div
+                                            key={p.placement}
+                                            className="relative flex items-center justify-center group"
+                                            style={{ width: `${pct}%`, backgroundColor: pConfig.fill, minWidth: pct > 5 ? undefined : '2px' }}
+                                            title={`${pConfig.label}: $${(p.cost || 0).toFixed(2)} (${pct.toFixed(1)}%)`}
+                                          >
+                                            {pct >= 12 && (
+                                              <span className="text-[10px] text-white font-medium truncate px-1">
+                                                {pConfig.shortLabel} {pct.toFixed(0)}%
+                                              </span>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                      {kwPlacements.filter((p: any) => totalCost > 0 && (p.cost || 0) / totalCost >= 0.005).map((p: any) => {
+                                        const pConfig = getPlacementConfig(p.placement);
+                                        return (
+                                          <span key={p.placement} className="flex items-center gap-0.5 text-[10px] text-gray-500">
+                                            <span className="w-2 h-2 rounded-sm inline-block" style={{ backgroundColor: pConfig.fill }} />
+                                            {pConfig.shortLabel}
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })()}
                           {isExpanded && kwPlacements.map((p: any) => {
                             const pConfig = getPlacementConfig(p.placement);
                             return (
