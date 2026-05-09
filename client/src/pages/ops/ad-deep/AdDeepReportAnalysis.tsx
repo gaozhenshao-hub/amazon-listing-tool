@@ -9,11 +9,11 @@ import { toast } from "sonner";
 import {
   BarChart3, Monitor, Search, Eye, TrendingUp, ShoppingBag,
   CheckCircle, AlertTriangle, Edit2, Save, X, ArrowRight,
-  Loader2,
+  Loader2, History, Clock, Archive, FileCheck,
 } from "lucide-react";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-  LineChart, Line, AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  AreaChart, Area, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
 } from "recharts";
 import AdDeepFilters from "./AdDeepFilters";
 
@@ -25,22 +25,175 @@ const REPORT_TABS = [
   { value: "business-cross", label: "业务报告交叉", icon: ShoppingBag, color: "text-red-600" },
 ];
 
+const STATUS_MAP: Record<string, { label: string; color: string }> = {
+  draft: { label: "草稿", color: "bg-gray-100 text-gray-700" },
+  confirmed: { label: "已确认", color: "bg-green-100 text-green-700" },
+  archived: { label: "已归档", color: "bg-blue-100 text-blue-700" },
+};
+
+// ============================
+// Shared: History Panel Component
+// ============================
+function AnalysisHistoryPanel({ reportType, onViewDetail }: { reportType: string; onViewDetail: (record: any) => void }) {
+  const { data: history, isLoading, refetch } = trpc.adDeepAnalysis.getAnalysisHistory.useQuery({ reportType, limit: 20 });
+  const archiveMutation = trpc.adDeepAnalysis.archiveAnalysis.useMutation();
+
+  const handleArchive = async (id: number) => {
+    try {
+      await archiveMutation.mutateAsync({ id });
+      toast.success("已归档");
+      refetch();
+    } catch { toast.error("归档失败"); }
+  };
+
+  if (isLoading) return <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" />加载历史记录...</div>;
+
+  if (!history?.length) return <div className="p-4 text-sm text-muted-foreground text-center">暂无分析历史记录</div>;
+
+  return (
+    <div className="space-y-2 max-h-[500px] overflow-y-auto">
+      {history.map((record: any) => (
+        <div key={record.id} className="border rounded-lg p-3 hover:bg-muted/30 transition-colors">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">
+                {new Date(record.createdAt).toLocaleString("zh-CN")}
+              </span>
+            </div>
+            <Badge className={STATUS_MAP[record.status]?.color || "bg-gray-100"}>
+              {STATUS_MAP[record.status]?.label || record.status}
+            </Badge>
+          </div>
+          <div className="text-xs text-muted-foreground mb-2">
+            {record.dateRangeStart} ~ {record.dateRangeEnd}
+            {record.portfolioNames && <span className="ml-2">| {JSON.parse(record.portfolioNames).join(", ")}</span>}
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" className="text-xs h-7" onClick={() => onViewDetail(record)}>
+              <FileCheck className="w-3 h-3 mr-1" />查看详情
+            </Button>
+            {record.status !== "archived" && (
+              <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => handleArchive(record.id)}>
+                <Archive className="w-3 h-3 mr-1" />归档
+              </Button>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================
+// Shared: Action Items with Save/Confirm
+// ============================
+function ActionItemsPanel({ result, setResult, analysisId, onSaved }: {
+  result: any; setResult: (r: any) => void; analysisId: number | null; onSaved?: () => void;
+}) {
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [editText, setEditText] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const confirmMutation = trpc.adDeepAnalysis.confirmAnalysis.useMutation();
+
+  const actions = result?.actions || result?.action_items || [];
+
+  const handleSaveEdit = (idx: number) => {
+    const updated = [...actions];
+    updated[idx] = { ...updated[idx], action: editText };
+    setResult({ ...result, actions: updated, action_items: updated });
+    setEditingIdx(null);
+    toast.success("操作建议已更新");
+  };
+
+  const handleConfirmAll = async () => {
+    if (!analysisId) { toast.error("请先执行分析"); return; }
+    setSaving(true);
+    try {
+      await confirmMutation.mutateAsync({
+        id: analysisId,
+        confirmedActions: JSON.stringify(actions),
+      });
+      toast.success("分析结果已确认保存");
+      onSaved?.();
+    } catch (err: any) {
+      toast.error(`保存失败: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!actions.length) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <ArrowRight className="w-4 h-4" />
+            操作建议（可编辑确认）
+          </CardTitle>
+          <Button size="sm" onClick={handleConfirmAll} disabled={saving} className="bg-green-600 hover:bg-green-700 text-white">
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <CheckCircle className="w-3.5 h-3.5 mr-1" />}
+            确认保存
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {actions.map((a: any, i: number) => (
+          <div key={i} className="border rounded-lg p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Badge className={a.priority === "high" ? "bg-red-100 text-red-700" : a.priority === "medium" ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"}>
+                  {a.priority === "high" ? "高优" : a.priority === "medium" ? "中优" : "低优"}
+                </Badge>
+                <span className="text-sm font-medium">{a.campaign || a.title || a.term || ""}</span>
+              </div>
+              {editingIdx === i ? (
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="sm" onClick={() => handleSaveEdit(i)}><Save className="w-3.5 h-3.5 text-green-500" /></Button>
+                  <Button variant="ghost" size="sm" onClick={() => setEditingIdx(null)}><X className="w-3.5 h-3.5" /></Button>
+                </div>
+              ) : (
+                <Button variant="ghost" size="sm" onClick={() => { setEditingIdx(i); setEditText(a.action || a.suggestion || ""); }}>
+                  <Edit2 className="w-3.5 h-3.5" />
+                </Button>
+              )}
+            </div>
+            {editingIdx === i ? (
+              <Textarea value={editText} onChange={(e) => setEditText(e.target.value)} rows={3} />
+            ) : (
+              <p className="text-sm text-muted-foreground">{a.action || a.suggestion || ""}</p>
+            )}
+            {a.rule_id && <Badge variant="outline" className="text-xs">规则: {a.rule_id}</Badge>}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ============================
 // Sub-component: Placement Report Analysis
 // ============================
 function PlacementAnalysis() {
   const [result, setResult] = useState<any>(null);
+  const [analysisId, setAnalysisId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const [editText, setEditText] = useState("");
+  const [showHistory, setShowHistory] = useState(false);
+  const [viewingRecord, setViewingRecord] = useState<any>(null);
 
   const analyzeMutation = trpc.adDeepAnalysis.analyzePlacementReport.useMutation();
+  const utils = trpc.useUtils();
 
   const handleAnalyze = async (portfolios: string[], dateStart: string, dateEnd: string) => {
     setLoading(true);
+    setViewingRecord(null);
     try {
       const res = await analyzeMutation.mutateAsync({ portfolioNames: portfolios, dateStart, dateEnd });
       setResult(res);
+      setAnalysisId(res.id || null);
       toast.success("广告位报告分析完成");
     } catch (err: any) {
       toast.error(`分析失败: ${err.message}`);
@@ -49,29 +202,60 @@ function PlacementAnalysis() {
     }
   };
 
-  const handleSaveEdit = (idx: number) => {
-    if (result?.actions) {
-      const updated = [...result.actions];
-      updated[idx] = { ...updated[idx], action: editText };
-      setResult({ ...result, actions: updated });
-      setEditingIdx(null);
-      toast.success("操作建议已更新");
-    }
+  const handleViewDetail = (record: any) => {
+    try {
+      const parsed = JSON.parse(record.analysisResult || "{}");
+      setResult(parsed);
+      setAnalysisId(record.id);
+      setViewingRecord(record);
+      setShowHistory(false);
+    } catch { toast.error("解析历史记录失败"); }
   };
+
+  const displayResult = result;
 
   return (
     <div className="space-y-6">
-      <AdDeepFilters onFilter={handleAnalyze} loading={loading} actionLabel="分析广告位" />
+      <div className="flex items-center justify-between">
+        <AdDeepFilters onFilter={handleAnalyze} loading={loading} actionLabel="分析广告位" />
+        <Button variant="outline" size="sm" onClick={() => setShowHistory(!showHistory)} className="shrink-0 ml-4">
+          <History className="w-4 h-4 mr-1" />
+          {showHistory ? "关闭历史" : "分析历史"}
+        </Button>
+      </div>
 
-      {result && (
+      {viewingRecord && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-2">
+          <FileCheck className="w-4 h-4 text-blue-600" />
+          <span className="text-sm text-blue-800">
+            正在查看历史记录: {new Date(viewingRecord.createdAt).toLocaleString("zh-CN")}
+            ({viewingRecord.dateRangeStart} ~ {viewingRecord.dateRangeEnd})
+          </span>
+          <Badge className={STATUS_MAP[viewingRecord.status]?.color}>{STATUS_MAP[viewingRecord.status]?.label}</Badge>
+          <Button variant="ghost" size="sm" onClick={() => { setViewingRecord(null); setResult(null); }}>
+            <X className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      )}
+
+      {showHistory && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><History className="w-4 h-4" />广告位分析历史</CardTitle></CardHeader>
+          <CardContent>
+            <AnalysisHistoryPanel reportType="placement" onViewDetail={handleViewDetail} />
+          </CardContent>
+        </Card>
+      )}
+
+      {displayResult && (
         <div className="space-y-4">
           {/* Placement Trend Chart */}
-          {result.trend_data?.length > 0 && (
+          {displayResult.trend_data?.length > 0 && (
             <Card>
               <CardHeader><CardTitle className="text-sm">广告位日度趋势</CardTitle></CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={result.trend_data}>
+                  <LineChart data={displayResult.trend_data}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                     <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
@@ -91,10 +275,10 @@ function PlacementAnalysis() {
           )}
 
           {/* Placement Comparison */}
-          {result.placement_comparison && (
+          {displayResult.placement_comparison && (
             <div className="grid grid-cols-3 gap-4">
               {["top_of_search", "rest_of_search", "product_pages"].map((pos) => {
-                const data = result.placement_comparison[pos];
+                const data = displayResult.placement_comparison[pos];
                 if (!data) return null;
                 const label = pos === "top_of_search" ? "Top of Search" : pos === "rest_of_search" ? "Rest of Search" : "Product Pages";
                 return (
@@ -114,47 +298,13 @@ function PlacementAnalysis() {
             </div>
           )}
 
-          {/* Actions with Edit */}
-          {result.actions?.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <ArrowRight className="w-4 h-4" />
-                  操作建议（可编辑确认）
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {result.actions.map((a: any, i: number) => (
-                  <div key={i} className="border rounded-lg p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Badge className={a.priority === "high" ? "bg-red-100 text-red-700" : a.priority === "medium" ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"}>
-                          {a.priority === "high" ? "高优" : a.priority === "medium" ? "中优" : "低优"}
-                        </Badge>
-                        <span className="text-sm font-medium">{a.campaign || a.title}</span>
-                      </div>
-                      {editingIdx === i ? (
-                        <div className="flex gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => handleSaveEdit(i)}><Save className="w-3.5 h-3.5 text-green-500" /></Button>
-                          <Button variant="ghost" size="sm" onClick={() => setEditingIdx(null)}><X className="w-3.5 h-3.5" /></Button>
-                        </div>
-                      ) : (
-                        <Button variant="ghost" size="sm" onClick={() => { setEditingIdx(i); setEditText(a.action); }}>
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                    {editingIdx === i ? (
-                      <Textarea value={editText} onChange={(e) => setEditText(e.target.value)} rows={3} />
-                    ) : (
-                      <p className="text-sm text-muted-foreground">{a.action}</p>
-                    )}
-                    {a.rule_id && <Badge variant="outline" className="text-xs">规则: {a.rule_id}</Badge>}
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+          {/* Actions with Save */}
+          <ActionItemsPanel
+            result={displayResult}
+            setResult={setResult}
+            analysisId={analysisId}
+            onSaved={() => utils.adDeepAnalysis.getAnalysisHistory.invalidate()}
+          />
         </div>
       )}
     </div>
@@ -166,17 +316,21 @@ function PlacementAnalysis() {
 // ============================
 function SearchTermAnalysis() {
   const [result, setResult] = useState<any>(null);
+  const [analysisId, setAnalysisId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const [editText, setEditText] = useState("");
+  const [showHistory, setShowHistory] = useState(false);
+  const [viewingRecord, setViewingRecord] = useState<any>(null);
 
   const analyzeMutation = trpc.adDeepAnalysis.analyzeSearchTermReport.useMutation();
+  const utils = trpc.useUtils();
 
   const handleAnalyze = async (portfolios: string[], dateStart: string, dateEnd: string) => {
     setLoading(true);
+    setViewingRecord(null);
     try {
       const res = await analyzeMutation.mutateAsync({ portfolioNames: portfolios, dateStart, dateEnd });
       setResult(res);
+      setAnalysisId(res.id || null);
       toast.success("搜索词报告分析完成");
     } catch (err: any) {
       toast.error(`分析失败: ${err.message}`);
@@ -185,19 +339,45 @@ function SearchTermAnalysis() {
     }
   };
 
-  const handleSaveEdit = (idx: number) => {
-    if (result?.actions) {
-      const updated = [...result.actions];
-      updated[idx] = { ...updated[idx], action: editText };
-      setResult({ ...result, actions: updated });
-      setEditingIdx(null);
-      toast.success("操作建议已更新");
-    }
+  const handleViewDetail = (record: any) => {
+    try {
+      const parsed = JSON.parse(record.analysisResult || "{}");
+      setResult(parsed);
+      setAnalysisId(record.id);
+      setViewingRecord(record);
+      setShowHistory(false);
+    } catch { toast.error("解析历史记录失败"); }
   };
 
   return (
     <div className="space-y-6">
-      <AdDeepFilters onFilter={handleAnalyze} loading={loading} actionLabel="分析搜索词" />
+      <div className="flex items-center justify-between">
+        <AdDeepFilters onFilter={handleAnalyze} loading={loading} actionLabel="分析搜索词" />
+        <Button variant="outline" size="sm" onClick={() => setShowHistory(!showHistory)} className="shrink-0 ml-4">
+          <History className="w-4 h-4 mr-1" />
+          {showHistory ? "关闭历史" : "分析历史"}
+        </Button>
+      </div>
+
+      {viewingRecord && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-2">
+          <FileCheck className="w-4 h-4 text-blue-600" />
+          <span className="text-sm text-blue-800">
+            正在查看历史记录: {new Date(viewingRecord.createdAt).toLocaleString("zh-CN")}
+          </span>
+          <Badge className={STATUS_MAP[viewingRecord.status]?.color}>{STATUS_MAP[viewingRecord.status]?.label}</Badge>
+          <Button variant="ghost" size="sm" onClick={() => { setViewingRecord(null); setResult(null); }}><X className="w-3.5 h-3.5" /></Button>
+        </div>
+      )}
+
+      {showHistory && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><History className="w-4 h-4" />搜索词分析历史</CardTitle></CardHeader>
+          <CardContent>
+            <AnalysisHistoryPanel reportType="search_term" onViewDetail={handleViewDetail} />
+          </CardContent>
+        </Card>
+      )}
 
       {result && (
         <div className="space-y-4">
@@ -256,46 +436,13 @@ function SearchTermAnalysis() {
             </Card>
           )}
 
-          {/* Actions with Edit */}
-          {result.actions?.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <ArrowRight className="w-4 h-4" />
-                  操作建议（可编辑确认）
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {result.actions.map((a: any, i: number) => (
-                  <div key={i} className="border rounded-lg p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Badge className={a.priority === "high" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"}>
-                          {a.priority === "high" ? "高优" : "中优"}
-                        </Badge>
-                        <span className="text-sm font-medium">{a.title}</span>
-                      </div>
-                      {editingIdx === i ? (
-                        <div className="flex gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => handleSaveEdit(i)}><Save className="w-3.5 h-3.5 text-green-500" /></Button>
-                          <Button variant="ghost" size="sm" onClick={() => setEditingIdx(null)}><X className="w-3.5 h-3.5" /></Button>
-                        </div>
-                      ) : (
-                        <Button variant="ghost" size="sm" onClick={() => { setEditingIdx(i); setEditText(a.action); }}>
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                    {editingIdx === i ? (
-                      <Textarea value={editText} onChange={(e) => setEditText(e.target.value)} rows={3} />
-                    ) : (
-                      <p className="text-sm text-muted-foreground">{a.action}</p>
-                    )}
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+          {/* Actions with Save */}
+          <ActionItemsPanel
+            result={result}
+            setResult={setResult}
+            analysisId={analysisId}
+            onSaved={() => utils.adDeepAnalysis.getAnalysisHistory.invalidate()}
+          />
         </div>
       )}
     </div>
@@ -307,17 +454,21 @@ function SearchTermAnalysis() {
 // ============================
 function ImpressionShareAnalysis() {
   const [result, setResult] = useState<any>(null);
+  const [analysisId, setAnalysisId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const [editText, setEditText] = useState("");
+  const [showHistory, setShowHistory] = useState(false);
+  const [viewingRecord, setViewingRecord] = useState<any>(null);
 
   const analyzeMutation = trpc.adDeepAnalysis.analyzeImpressionShareReport.useMutation();
+  const utils = trpc.useUtils();
 
   const handleAnalyze = async (portfolios: string[], dateStart: string, dateEnd: string) => {
     setLoading(true);
+    setViewingRecord(null);
     try {
       const res = await analyzeMutation.mutateAsync({ portfolioNames: portfolios, dateStart, dateEnd });
       setResult(res);
+      setAnalysisId(res.id || null);
       toast.success("展示量份额分析完成");
     } catch (err: any) {
       toast.error(`分析失败: ${err.message}`);
@@ -326,19 +477,45 @@ function ImpressionShareAnalysis() {
     }
   };
 
-  const handleSaveEdit = (idx: number) => {
-    if (result?.actions) {
-      const updated = [...result.actions];
-      updated[idx] = { ...updated[idx], action: editText };
-      setResult({ ...result, actions: updated });
-      setEditingIdx(null);
-      toast.success("操作建议已更新");
-    }
+  const handleViewDetail = (record: any) => {
+    try {
+      const parsed = JSON.parse(record.analysisResult || "{}");
+      setResult(parsed);
+      setAnalysisId(record.id);
+      setViewingRecord(record);
+      setShowHistory(false);
+    } catch { toast.error("解析历史记录失败"); }
   };
 
   return (
     <div className="space-y-6">
-      <AdDeepFilters onFilter={handleAnalyze} loading={loading} actionLabel="分析展示量份额" />
+      <div className="flex items-center justify-between">
+        <AdDeepFilters onFilter={handleAnalyze} loading={loading} actionLabel="分析展示量份额" />
+        <Button variant="outline" size="sm" onClick={() => setShowHistory(!showHistory)} className="shrink-0 ml-4">
+          <History className="w-4 h-4 mr-1" />
+          {showHistory ? "关闭历史" : "分析历史"}
+        </Button>
+      </div>
+
+      {viewingRecord && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-2">
+          <FileCheck className="w-4 h-4 text-blue-600" />
+          <span className="text-sm text-blue-800">
+            正在查看历史记录: {new Date(viewingRecord.createdAt).toLocaleString("zh-CN")}
+          </span>
+          <Badge className={STATUS_MAP[viewingRecord.status]?.color}>{STATUS_MAP[viewingRecord.status]?.label}</Badge>
+          <Button variant="ghost" size="sm" onClick={() => { setViewingRecord(null); setResult(null); }}><X className="w-3.5 h-3.5" /></Button>
+        </div>
+      )}
+
+      {showHistory && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><History className="w-4 h-4" />展示量份额分析历史</CardTitle></CardHeader>
+          <CardContent>
+            <AnalysisHistoryPanel reportType="impression_share" onViewDetail={handleViewDetail} />
+          </CardContent>
+        </Card>
+      )}
 
       {result && (
         <div className="space-y-4">
@@ -386,46 +563,13 @@ function ImpressionShareAnalysis() {
             </Card>
           )}
 
-          {/* Actions */}
-          {result.actions?.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <ArrowRight className="w-4 h-4" />
-                  操作建议（可编辑确认）
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {result.actions.map((a: any, i: number) => (
-                  <div key={i} className="border rounded-lg p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Badge className={a.priority === "high" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"}>
-                          {a.priority === "high" ? "高优" : "中优"}
-                        </Badge>
-                        <span className="text-sm font-medium">{a.title}</span>
-                      </div>
-                      {editingIdx === i ? (
-                        <div className="flex gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => handleSaveEdit(i)}><Save className="w-3.5 h-3.5 text-green-500" /></Button>
-                          <Button variant="ghost" size="sm" onClick={() => setEditingIdx(null)}><X className="w-3.5 h-3.5" /></Button>
-                        </div>
-                      ) : (
-                        <Button variant="ghost" size="sm" onClick={() => { setEditingIdx(i); setEditText(a.action); }}>
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                    {editingIdx === i ? (
-                      <Textarea value={editText} onChange={(e) => setEditText(e.target.value)} rows={3} />
-                    ) : (
-                      <p className="text-sm text-muted-foreground">{a.action}</p>
-                    )}
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+          {/* Actions with Save */}
+          <ActionItemsPanel
+            result={result}
+            setResult={setResult}
+            analysisId={analysisId}
+            onSaved={() => utils.adDeepAnalysis.getAnalysisHistory.invalidate()}
+          />
         </div>
       )}
     </div>
@@ -437,17 +581,21 @@ function ImpressionShareAnalysis() {
 // ============================
 function SbBenchmarkAnalysis() {
   const [result, setResult] = useState<any>(null);
+  const [analysisId, setAnalysisId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const [editText, setEditText] = useState("");
+  const [showHistory, setShowHistory] = useState(false);
+  const [viewingRecord, setViewingRecord] = useState<any>(null);
 
   const analyzeMutation = trpc.adDeepAnalysis.analyzeSbBenchmarkReport.useMutation();
+  const utils = trpc.useUtils();
 
   const handleAnalyze = async (portfolios: string[], dateStart: string, dateEnd: string) => {
     setLoading(true);
+    setViewingRecord(null);
     try {
       const res = await analyzeMutation.mutateAsync({ portfolioNames: portfolios, dateStart, dateEnd });
       setResult(res);
+      setAnalysisId(res.id || null);
       toast.success("SB Benchmark分析完成");
     } catch (err: any) {
       toast.error(`分析失败: ${err.message}`);
@@ -456,19 +604,45 @@ function SbBenchmarkAnalysis() {
     }
   };
 
-  const handleSaveEdit = (idx: number) => {
-    if (result?.actions) {
-      const updated = [...result.actions];
-      updated[idx] = { ...updated[idx], action: editText };
-      setResult({ ...result, actions: updated });
-      setEditingIdx(null);
-      toast.success("操作建议已更新");
-    }
+  const handleViewDetail = (record: any) => {
+    try {
+      const parsed = JSON.parse(record.analysisResult || "{}");
+      setResult(parsed);
+      setAnalysisId(record.id);
+      setViewingRecord(record);
+      setShowHistory(false);
+    } catch { toast.error("解析历史记录失败"); }
   };
 
   return (
     <div className="space-y-6">
-      <AdDeepFilters onFilter={handleAnalyze} loading={loading} actionLabel="分析SB Benchmark" />
+      <div className="flex items-center justify-between">
+        <AdDeepFilters onFilter={handleAnalyze} loading={loading} actionLabel="分析SB Benchmark" />
+        <Button variant="outline" size="sm" onClick={() => setShowHistory(!showHistory)} className="shrink-0 ml-4">
+          <History className="w-4 h-4 mr-1" />
+          {showHistory ? "关闭历史" : "分析历史"}
+        </Button>
+      </div>
+
+      {viewingRecord && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-2">
+          <FileCheck className="w-4 h-4 text-blue-600" />
+          <span className="text-sm text-blue-800">
+            正在查看历史记录: {new Date(viewingRecord.createdAt).toLocaleString("zh-CN")}
+          </span>
+          <Badge className={STATUS_MAP[viewingRecord.status]?.color}>{STATUS_MAP[viewingRecord.status]?.label}</Badge>
+          <Button variant="ghost" size="sm" onClick={() => { setViewingRecord(null); setResult(null); }}><X className="w-3.5 h-3.5" /></Button>
+        </div>
+      )}
+
+      {showHistory && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><History className="w-4 h-4" />SB Benchmark分析历史</CardTitle></CardHeader>
+          <CardContent>
+            <AnalysisHistoryPanel reportType="sb_benchmark" onViewDetail={handleViewDetail} />
+          </CardContent>
+        </Card>
+      )}
 
       {result && (
         <div className="space-y-4">
@@ -518,46 +692,13 @@ function SbBenchmarkAnalysis() {
             </div>
           )}
 
-          {/* Actions */}
-          {result.actions?.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <ArrowRight className="w-4 h-4" />
-                  操作建议（可编辑确认）
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {result.actions.map((a: any, i: number) => (
-                  <div key={i} className="border rounded-lg p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Badge className={a.priority === "high" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"}>
-                          {a.priority === "high" ? "高优" : "中优"}
-                        </Badge>
-                        <span className="text-sm font-medium">{a.title}</span>
-                      </div>
-                      {editingIdx === i ? (
-                        <div className="flex gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => handleSaveEdit(i)}><Save className="w-3.5 h-3.5 text-green-500" /></Button>
-                          <Button variant="ghost" size="sm" onClick={() => setEditingIdx(null)}><X className="w-3.5 h-3.5" /></Button>
-                        </div>
-                      ) : (
-                        <Button variant="ghost" size="sm" onClick={() => { setEditingIdx(i); setEditText(a.action); }}>
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                    {editingIdx === i ? (
-                      <Textarea value={editText} onChange={(e) => setEditText(e.target.value)} rows={3} />
-                    ) : (
-                      <p className="text-sm text-muted-foreground">{a.action}</p>
-                    )}
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+          {/* Actions with Save */}
+          <ActionItemsPanel
+            result={result}
+            setResult={setResult}
+            analysisId={analysisId}
+            onSaved={() => utils.adDeepAnalysis.getAnalysisHistory.invalidate()}
+          />
         </div>
       )}
     </div>
@@ -569,17 +710,21 @@ function SbBenchmarkAnalysis() {
 // ============================
 function BusinessCrossAnalysis() {
   const [result, setResult] = useState<any>(null);
+  const [analysisId, setAnalysisId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  const [editText, setEditText] = useState("");
+  const [showHistory, setShowHistory] = useState(false);
+  const [viewingRecord, setViewingRecord] = useState<any>(null);
 
   const analyzeMutation = trpc.adDeepAnalysis.analyzeBusinessCrossReport.useMutation();
+  const utils = trpc.useUtils();
 
   const handleAnalyze = async (portfolios: string[], dateStart: string, dateEnd: string) => {
     setLoading(true);
+    setViewingRecord(null);
     try {
       const res = await analyzeMutation.mutateAsync({ portfolioNames: portfolios, dateStart, dateEnd });
       setResult(res);
+      setAnalysisId(res.id || null);
       toast.success("业务报告交叉分析完成");
     } catch (err: any) {
       toast.error(`分析失败: ${err.message}`);
@@ -588,19 +733,45 @@ function BusinessCrossAnalysis() {
     }
   };
 
-  const handleSaveEdit = (idx: number) => {
-    if (result?.actions) {
-      const updated = [...result.actions];
-      updated[idx] = { ...updated[idx], action: editText };
-      setResult({ ...result, actions: updated });
-      setEditingIdx(null);
-      toast.success("操作建议已更新");
-    }
+  const handleViewDetail = (record: any) => {
+    try {
+      const parsed = JSON.parse(record.analysisResult || "{}");
+      setResult(parsed);
+      setAnalysisId(record.id);
+      setViewingRecord(record);
+      setShowHistory(false);
+    } catch { toast.error("解析历史记录失败"); }
   };
 
   return (
     <div className="space-y-6">
-      <AdDeepFilters onFilter={handleAnalyze} loading={loading} actionLabel="交叉分析" />
+      <div className="flex items-center justify-between">
+        <AdDeepFilters onFilter={handleAnalyze} loading={loading} actionLabel="交叉分析" />
+        <Button variant="outline" size="sm" onClick={() => setShowHistory(!showHistory)} className="shrink-0 ml-4">
+          <History className="w-4 h-4 mr-1" />
+          {showHistory ? "关闭历史" : "分析历史"}
+        </Button>
+      </div>
+
+      {viewingRecord && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-2">
+          <FileCheck className="w-4 h-4 text-blue-600" />
+          <span className="text-sm text-blue-800">
+            正在查看历史记录: {new Date(viewingRecord.createdAt).toLocaleString("zh-CN")}
+          </span>
+          <Badge className={STATUS_MAP[viewingRecord.status]?.color}>{STATUS_MAP[viewingRecord.status]?.label}</Badge>
+          <Button variant="ghost" size="sm" onClick={() => { setViewingRecord(null); setResult(null); }}><X className="w-3.5 h-3.5" /></Button>
+        </div>
+      )}
+
+      {showHistory && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><History className="w-4 h-4" />业务报告交叉分析历史</CardTitle></CardHeader>
+          <CardContent>
+            <AnalysisHistoryPanel reportType="business_cross" onViewDetail={handleViewDetail} />
+          </CardContent>
+        </Card>
+      )}
 
       {result && (
         <div className="space-y-4">
@@ -659,46 +830,13 @@ function BusinessCrossAnalysis() {
             </Card>
           )}
 
-          {/* Actions */}
-          {result.actions?.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <ArrowRight className="w-4 h-4" />
-                  操作建议（可编辑确认）
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {result.actions.map((a: any, i: number) => (
-                  <div key={i} className="border rounded-lg p-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Badge className={a.priority === "high" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"}>
-                          {a.priority === "high" ? "高优" : "中优"}
-                        </Badge>
-                        <span className="text-sm font-medium">{a.title}</span>
-                      </div>
-                      {editingIdx === i ? (
-                        <div className="flex gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => handleSaveEdit(i)}><Save className="w-3.5 h-3.5 text-green-500" /></Button>
-                          <Button variant="ghost" size="sm" onClick={() => setEditingIdx(null)}><X className="w-3.5 h-3.5" /></Button>
-                        </div>
-                      ) : (
-                        <Button variant="ghost" size="sm" onClick={() => { setEditingIdx(i); setEditText(a.action); }}>
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </Button>
-                      )}
-                    </div>
-                    {editingIdx === i ? (
-                      <Textarea value={editText} onChange={(e) => setEditText(e.target.value)} rows={3} />
-                    ) : (
-                      <p className="text-sm text-muted-foreground">{a.action}</p>
-                    )}
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          )}
+          {/* Actions with Save */}
+          <ActionItemsPanel
+            result={result}
+            setResult={setResult}
+            analysisId={analysisId}
+            onSaved={() => utils.adDeepAnalysis.getAnalysisHistory.invalidate()}
+          />
         </div>
       )}
     </div>
@@ -716,7 +854,7 @@ export default function AdDeepReportAnalysis() {
       <div className="flex items-center gap-2 mb-2">
         <BarChart3 className="w-5 h-5 text-blue-600" />
         <h2 className="text-lg font-bold">五大报表独立深度分析</h2>
-        <Badge variant="outline" className="text-xs">广告组合维度 · 每日粒度</Badge>
+        <Badge variant="outline" className="text-xs">广告组合维度 · 每日粒度 · 可保存追溯</Badge>
       </div>
 
       <Tabs value={activeReport} onValueChange={setActiveReport}>

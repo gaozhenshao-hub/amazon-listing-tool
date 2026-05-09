@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import OperatorMappingDialog from "@/components/OperatorMappingDialog";
 import AdReportImportTab from "./AdReportImportTab";
 import AdReportUploadCenter from "./AdReportUploadCenter";
+import AdDeepDataUpload from "./ad-deep/AdDeepDataUpload";
 import OpsPlanImportTab from "./OpsPlanImportTab";
 import OpsReviewImportTab from "./OpsReviewImportTab";
 
@@ -254,6 +255,7 @@ export default function OpsDataImport() {
         <TabsList>
           <TabsTrigger value="upload">上传数据</TabsTrigger>
           <TabsTrigger value="ad-report">广告报表</TabsTrigger>
+          <TabsTrigger value="daily-report">每日报告</TabsTrigger>
           <TabsTrigger value="ops-plan">运营计划</TabsTrigger>
           <TabsTrigger value="review-import">执行复盘</TabsTrigger>
           <TabsTrigger value="history">导入历史</TabsTrigger>
@@ -350,6 +352,11 @@ export default function OpsDataImport() {
             <h3 className="text-sm font-medium text-muted-foreground mb-4">旧版投放报告上传（已有数据）</h3>
             <AdReportImportTab />
           </div>
+        </TabsContent>
+
+        {/* Daily Report Tab - 每日深度分析数据 */}
+        <TabsContent value="daily-report" className="space-y-4">
+          <AdDeepDataUpload />
         </TabsContent>
 
         {/* Ops Plan Import Tab */}

@@ -1045,4 +1045,41 @@ export const adDeepAnalysisRouter = router({
       const d = await getDbInstance();
       return d.select().from(adDiagnoses).where(eq(adDiagnoses.userId, ctx.user.id)).orderBy(desc(adDiagnoses.createdAt)).limit(input.limit);
     }),
+
+  // ─── Confirm Analysis (batch confirm action items) ─────────
+  confirmAnalysis: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      confirmedActions: z.string(), // JSON array of confirmed action items with user edits
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const d = await getDbInstance();
+      await d.update(adReportAnalysisRecords).set({
+        actionItems: input.confirmedActions,
+        userEdits: input.confirmedActions,
+        status: "confirmed",
+      }).where(and(eq(adReportAnalysisRecords.id, input.id), eq(adReportAnalysisRecords.userId, ctx.user.id)));
+      return { success: true };
+    }),
+
+  // ─── Get Analysis Detail ───────────────────────────────────
+  getAnalysisDetail: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const d = await getDbInstance();
+      const [record] = await d.select().from(adReportAnalysisRecords).where(
+        and(eq(adReportAnalysisRecords.id, input.id), eq(adReportAnalysisRecords.userId, ctx.user.id))
+      ).limit(1);
+      return record || null;
+    }),
+
+  // ─── Archive Analysis ──────────────────────────────────────
+  archiveAnalysis: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const d = await getDbInstance();
+      await d.update(adReportAnalysisRecords).set({ status: "archived" })
+        .where(and(eq(adReportAnalysisRecords.id, input.id), eq(adReportAnalysisRecords.userId, ctx.user.id)));
+      return { success: true };
+    }),
 });
