@@ -9,6 +9,7 @@ import { eq, and, asc } from "drizzle-orm";
 import {
   calcMarketOverview,
   calcPriceSegments,
+  calcPriceSegmentsEnhanced,
   calcBrandCompetition,
   calcSingleDimensionStats,
   calcCrossAnalysis,
@@ -510,15 +511,31 @@ export const devAnalysisRouter = router({
       });
 
       const products = await devDb.getDevProductsByProject(input.projectId);
+      const tags = await devDb.getDevProductTags(input.projectId);
       const productData: ProductData[] = products.map(mapToProductData);
-      const priceSegments = calcPriceSegments(productData);
+      const tagData: TagData[] = tags.map(t => ({
+        asin: t.asin ?? "",
+        dimensionName: t.dimensionName ?? "",
+        dimensionValue: t.dimensionValue ?? "",
+      }));
+      const priceSegments = calcPriceSegmentsEnhanced(productData, tagData);
+
+      // Build tag distribution summary for AI
+      const tagDistSummary = priceSegments.map(seg => ({
+        range: seg.range,
+        competitorCount: seg.competitorCount,
+        recentNewCount: seg.recentNewCount,
+        recentNewPct: seg.recentNewPct,
+        avgMonthlySales: seg.avgMonthlySales,
+        tagDistribution: seg.tagDistribution,
+      }));
 
       const response = await invokeLLM({
         messages: [
           { role: "system", content: PRICE_ANALYSIS_PROMPT },
           {
             role: "user",
-            content: `品类: ${project.name}\n\n价格段统计:\n${JSON.stringify(priceSegments, null, 2)}`,
+            content: `品类: ${project.name}\n\n价格段统计:\n${JSON.stringify(priceSegments.map(({ asins, ...rest }) => rest), null, 2)}\n\n各价格段标签分布与竞争数据:\n${JSON.stringify(tagDistSummary, null, 2)}`,
           },
         ],
         response_format: {
@@ -570,9 +587,33 @@ export const devAnalysisRouter = router({
                     additionalProperties: false,
                   },
                 },
+                tagRecommendations: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      priceRange: { type: "string" },
+                      recommendedTags: {
+                        type: "array",
+                        items: {
+                          type: "object",
+                          properties: {
+                            dimension: { type: "string" },
+                            value: { type: "string" },
+                            reason: { type: "string" },
+                          },
+                          required: ["dimension", "value", "reason"],
+                          additionalProperties: false,
+                        },
+                      },
+                    },
+                    required: ["priceRange", "recommendedTags"],
+                    additionalProperties: false,
+                  },
+                },
                 summary: { type: "string" },
               },
-              required: ["bestPriceRange", "priceRatingCorrelation", "pricingStrategy", "priceInsights", "summary"],
+              required: ["bestPriceRange", "priceRatingCorrelation", "pricingStrategy", "priceInsights", "tagRecommendations", "summary"],
               additionalProperties: false,
             },
           },

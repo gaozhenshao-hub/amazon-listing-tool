@@ -269,6 +269,120 @@ export interface PriceSegment {
   revenueShare: number;
 }
 
+export interface PriceSegmentEnhanced extends PriceSegment {
+  /** 竞对数量（独立品牌数） */
+  competitorCount: number;
+  /** 近半年上新数量 */
+  recentNewCount: number;
+  /** 近半年上新占比 */
+  recentNewPct: number;
+  /** 均价 */
+  avgPrice: number;
+  /** 均月销量 */
+  avgMonthlySales: number;
+  /** 均月销售额 */
+  avgMonthlyRevenue: number;
+  /** 各标签维度占比 { "材质": { "不锈钢": 0.4, "塑料": 0.3 }, ... } */
+  tagDistribution: Record<string, Record<string, number>>;
+  /** 该价格段内的ASIN列表 */
+  asins: string[];
+}
+
+/** 计算增强版价格段统计（含竞对数量、上新数量、标签分布） */
+export function calcPriceSegmentsEnhanced(
+  products: ProductData[],
+  tags: TagData[],
+  customRanges?: Array<{ min: number; max: number }>
+): PriceSegmentEnhanced[] {
+  const prices = products.map(p => parseFloat(p.price || "0")).filter(p => p > 0);
+  if (prices.length === 0) return [];
+
+  const ranges = customRanges || autoGeneratePriceRanges(prices);
+  const totalSalesAll = products.reduce((s, p) => s + (p.monthlySales || 0), 0);
+  const totalRevenueAll = products.reduce((s, p) => s + parseFloat(p.monthlyRevenue || "0"), 0);
+
+  // 建立ASIN→标签映射
+  const asinTagMap = new Map<string, Array<{ dim: string; val: string }>>();
+  for (const t of tags) {
+    const list = asinTagMap.get(t.asin) || [];
+    list.push({ dim: t.dimensionName, val: t.dimensionValue });
+    asinTagMap.set(t.asin, list);
+  }
+
+  // 近半年日期阈值
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+  return ranges.map(({ min, max }) => {
+    const inRange = products.filter(p => {
+      const price = parseFloat(p.price || "0");
+      return price >= min && price < max;
+    });
+
+    const totalSales = inRange.reduce((s, p) => s + (p.monthlySales || 0), 0);
+    const totalRevenue = inRange.reduce((s, p) => s + parseFloat(p.monthlyRevenue || "0"), 0);
+    const validPrices = inRange.map(p => parseFloat(p.price || "0")).filter(v => v > 0);
+    const ratings = inRange.map(p => parseFloat(p.rating || "0")).filter(r => r > 0);
+    const reviews = inRange.map(p => parseInt(p.reviewCount || "0", 10));
+
+    // 竞对数量：独立品牌数
+    const brandSet = new Set<string>();
+    for (const p of inRange) {
+      if (p.brand) brandSet.add(p.brand.toLowerCase().trim());
+    }
+    const competitorCount = brandSet.size;
+
+    // 近半年上新数量
+    const recentNewCount = inRange.filter(p => {
+      if (!p.listingDate) return false;
+      try {
+        const d = new Date(p.listingDate);
+        return d >= sixMonthsAgo;
+      } catch { return false; }
+    }).length;
+
+    // 标签分布
+    const tagDistribution: Record<string, Record<string, number>> = {};
+    for (const p of inRange) {
+      const pTags = asinTagMap.get(p.asin) || [];
+      for (const { dim, val } of pTags) {
+        if (!tagDistribution[dim]) tagDistribution[dim] = {};
+        tagDistribution[dim][val] = (tagDistribution[dim][val] || 0) + 1;
+      }
+    }
+    // 转换为占比
+    for (const dim of Object.keys(tagDistribution)) {
+      const total = Object.values(tagDistribution[dim]).reduce((s, c) => s + c, 0);
+      if (total > 0) {
+        for (const val of Object.keys(tagDistribution[dim])) {
+          tagDistribution[dim][val] = round2(tagDistribution[dim][val] / total);
+        }
+      }
+    }
+
+    return {
+      range: `$${min}-$${max}`,
+      min,
+      max,
+      asinCount: inRange.length,
+      totalSales,
+      totalRevenue: round2(totalRevenue),
+      avgPrice: round2(avg(validPrices)),
+      avgRating: round2(avg(ratings)),
+      avgReviewCount: Math.round(avg(reviews)),
+      avgMonthlySales: Math.round(avg(inRange.map(p => p.monthlySales || 0))),
+      avgMonthlyRevenue: round2(avg(inRange.map(p => parseFloat(p.monthlyRevenue || "0")))),
+      salesShare: totalSalesAll > 0 ? round2(totalSales / totalSalesAll) : 0,
+      revenueShare: totalRevenueAll > 0 ? round2(totalRevenue / totalRevenueAll) : 0,
+      competitorCount,
+      recentNewCount,
+      recentNewPct: inRange.length > 0 ? round2(recentNewCount / inRange.length) : 0,
+      tagDistribution,
+      asins: inRange.map(p => p.asin),
+    };
+  });
+}
+
 export function calcPriceSegments(products: ProductData[], customRanges?: Array<{ min: number; max: number }>): PriceSegment[] {
   const prices = products.map(p => parseFloat(p.price || "0")).filter(p => p > 0);
   if (prices.length === 0) return [];
