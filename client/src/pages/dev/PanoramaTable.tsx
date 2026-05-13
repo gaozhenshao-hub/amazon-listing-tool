@@ -20,7 +20,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer,
+  ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell,
 } from "recharts";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -388,6 +388,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
   const [tagFilters, setTagFilters] = useState<Record<string, Set<string>>>({});
   // Group by tag
   const [groupByTag, setGroupByTag] = useState<string | null>(null);
+  const [showGroupCharts, setShowGroupCharts] = useState(true);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [groupSortField, setGroupSortField] = useState<string>("count");
   const [groupSortDir, setGroupSortDir] = useState<"asc" | "desc">("desc");
@@ -1064,6 +1065,100 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
             </div>
           ) : (
             <>
+              {/* Group Charts - only show in grouped mode */}
+              {groupByTag && groupedData.length > 0 && (
+                <div className="space-y-3 mb-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <BarChart3 className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium">分组可视化分析</span>
+                      <Badge variant="secondary" className="text-[10px]">按「{groupByTag}」分组</Badge>
+                    </div>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs gap-1"
+                      onClick={() => setShowGroupCharts(!showGroupCharts)}>
+                      {showGroupCharts ? <><EyeOff className="h-3 w-3" />收起图表</> : <><Eye className="h-3 w-3" />展开图表</>}
+                    </Button>
+                  </div>
+                  {showGroupCharts && (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                      {/* Bar Chart - Sales Comparison */}
+                      <Card className="border-blue-100">
+                        <CardHeader className="pb-2 pt-3 px-4">
+                          <CardTitle className="text-xs font-medium text-blue-700">各分组销量对比</CardTitle>
+                        </CardHeader>
+                        <CardContent className="px-2 pb-3">
+                          <ResponsiveContainer width="100%" height={200}>
+                            <BarChart data={groupedData.map(g => ({ name: g.tagValue.length > 6 ? g.tagValue.slice(0, 6) + '...' : g.tagValue, fullName: g.tagValue, 月销量: g.monthlySalesSum, 产品数: g.count }))} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                              <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                              <YAxis tick={{ fontSize: 10 }} />
+                              <Tooltip
+                                contentStyle={{ fontSize: 11, borderRadius: 8 }}
+                                formatter={(value: number, name: string) => [value.toLocaleString(), name]}
+                                labelFormatter={(label: string, payload: any[]) => payload?.[0]?.payload?.fullName || label}
+                              />
+                              <Bar dataKey="月销量" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </CardContent>
+                      </Card>
+
+                      {/* Pie Chart - Sales Share */}
+                      <Card className="border-green-100">
+                        <CardHeader className="pb-2 pt-3 px-4">
+                          <CardTitle className="text-xs font-medium text-green-700">销量占比分布</CardTitle>
+                        </CardHeader>
+                        <CardContent className="px-2 pb-3">
+                          <ResponsiveContainer width="100%" height={200}>
+                            <PieChart>
+                              <Pie
+                                data={groupedData.map((g, i) => ({ name: g.tagValue, value: g.monthlySalesSum, count: g.count }))}
+                                cx="50%" cy="50%" innerRadius={40} outerRadius={75}
+                                paddingAngle={2} dataKey="value"
+                                label={({ name, percent }) => `${name.length > 4 ? name.slice(0, 4) + '..' : name} ${(percent * 100).toFixed(0)}%`}
+                                labelLine={{ strokeWidth: 1 }}
+                              >
+                                {groupedData.map((_, i) => (
+                                  <Cell key={i} fill={['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1'][i % 10]} />
+                                ))}
+                              </Pie>
+                              <Tooltip
+                                contentStyle={{ fontSize: 11, borderRadius: 8 }}
+                                formatter={(value: number, name: string, props: any) => [`销量: ${value.toLocaleString()} (产品数: ${props.payload.count})`, name]}
+                              />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </CardContent>
+                      </Card>
+
+                      {/* Bar Chart - Price Distribution */}
+                      <Card className="border-amber-100">
+                        <CardHeader className="pb-2 pt-3 px-4">
+                          <CardTitle className="text-xs font-medium text-amber-700">价格分布对比</CardTitle>
+                        </CardHeader>
+                        <CardContent className="px-2 pb-3">
+                          <ResponsiveContainer width="100%" height={200}>
+                            <BarChart data={groupedData.map(g => ({ name: g.tagValue.length > 6 ? g.tagValue.slice(0, 6) + '...' : g.tagValue, fullName: g.tagValue, 均价: Number(g.priceAvg.toFixed(1)), 平均评分: Number(g.ratingAvg.toFixed(2)) }))} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                              <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                              <YAxis yAxisId="left" tick={{ fontSize: 10 }} />
+                              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} domain={[0, 5]} />
+                              <Tooltip
+                                contentStyle={{ fontSize: 11, borderRadius: 8 }}
+                                labelFormatter={(label: string, payload: any[]) => payload?.[0]?.payload?.fullName || label}
+                              />
+                              <Legend wrapperStyle={{ fontSize: 10 }} />
+                              <Bar yAxisId="left" dataKey="均价" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                              <Bar yAxisId="right" dataKey="平均评分" fill="#10b981" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Table */}
               <div ref={tableRef} className="border rounded-lg overflow-auto max-h-[calc(100vh-320px)]"
                 style={{ position: "relative" }}>
