@@ -154,6 +154,17 @@ type ProductOverview = {
     currentStock: number | null;
     inTransitStock: number | null;
   } | null;
+  inventory?: {
+    fbaAvailable: number;
+    fbaInbound: number;
+    fbaInTransit: number;
+    fbaTotal: number;
+    availableStock: number;
+    fbaDaysOfSupply: number;
+    stockoutDate: string | null;
+    avgDailySales7d: number;
+    daysOfStock: number;
+  } | null;
   weeks: Array<{
     id: number;
     weekStartDate: string;
@@ -240,7 +251,7 @@ function getLatestWeekValue(product: ProductOverview, key: SortKey): number {
 }
 
 // ─── Product Row Component ───
-function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync, isSyncing, operatorList, onAssign, sortKey, sortDir, onSort, isImportMode }: {
+function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync, isSyncing, operatorList, onAssign, sortKey, sortDir, onSort, isImportMode, productionConfig, onUpdateProductionConfig }: {
   product: ProductOverview;
   onNavigate: (id: number) => void;
   onNavigateImport?: (parentAsin: string) => void;
@@ -253,11 +264,38 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
   sortDir: SortDir;
   onSort: (key: SortKey) => void;
   isImportMode?: boolean;
+  productionConfig?: { productionTimeDays: number; shippingTimeDays: number; notes: string | null };
+  onUpdateProductionConfig?: (config: { productionTimeDays: number; shippingTimeDays: number; marketplace: string }) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const [assignOpen, setAssignOpen] = useState(false);
   const [newOp, setNewOp] = useState("");
+  const [editingProduction, setEditingProduction] = useState(false);
+  const [prodDays, setProdDays] = useState(productionConfig?.productionTimeDays ?? 15);
+  const [shipDays, setShipDays] = useState(productionConfig?.shippingTimeDays ?? 30);
   const bi = product.basicInfo;
+
+  // Compute inventory status
+  const inventoryStatus = useMemo(() => {
+    const inv = product.inventory;
+    if (!inv || (inv.fbaAvailable === 0 && inv.avgDailySales7d === 0)) return null;
+    const totalLeadTime = (productionConfig?.productionTimeDays ?? 15) + (productionConfig?.shippingTimeDays ?? 30);
+    const inboundCoverDays = inv.avgDailySales7d > 0 ? Math.round(inv.fbaInbound / inv.avgDailySales7d) : 0;
+    const effectiveDays = inv.daysOfStock + inboundCoverDays;
+    let status: string, label: string, color: string;
+    if (inv.avgDailySales7d === 0 && inv.fbaAvailable === 0) {
+      status = "stockout_risk"; label = "断货"; color = "red";
+    } else if (effectiveDays <= 7) {
+      status = "stockout_risk"; label = "断货风险"; color = "red";
+    } else if (effectiveDays <= totalLeadTime) {
+      status = "urgent"; label = "紧急备货"; color = "orange";
+    } else if (effectiveDays <= totalLeadTime + 14) {
+      status = "warning"; label = "需备货"; color = "amber";
+    } else {
+      status = "sufficient"; label = "充足"; color = "green";
+    }
+    return { status, label, color, effectiveDays, totalLeadTime };
+  }, [product.inventory, productionConfig]);
 
   const statusColors: Record<string, string> = {
     active: "bg-emerald-100 text-emerald-700",
@@ -352,6 +390,74 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
                 <div className="font-semibold">{parseFloat(bi.rating || "0").toFixed(1)}/{bi.reviewCount || 0}</div>
               </div>
             </>
+          )}
+
+          {/* Inventory Status */}
+          {product.inventory && (product.inventory.fbaAvailable > 0 || product.inventory.avgDailySales7d > 0) && (
+            <div className="flex items-center gap-2">
+              <div className="text-center">
+                <div className="text-[10px] text-muted-foreground">可售库存</div>
+                <div className="font-semibold">{product.inventory.fbaAvailable.toLocaleString()}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] text-muted-foreground">在途</div>
+                <div className="font-semibold text-blue-600">{product.inventory.fbaInbound.toLocaleString()}</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] text-muted-foreground">可售天数</div>
+                <div className={`font-semibold ${
+                  product.inventory.daysOfStock <= 7 ? 'text-red-600' :
+                  product.inventory.daysOfStock <= 15 ? 'text-orange-600' :
+                  product.inventory.daysOfStock <= 30 ? 'text-amber-600' : 'text-emerald-600'
+                }`}>
+                  {product.inventory.daysOfStock >= 999 ? '999+' : product.inventory.daysOfStock}天
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] text-muted-foreground">日均销</div>
+                <div className="font-semibold">{product.inventory.avgDailySales7d}</div>
+              </div>
+              {/* Status Badge */}
+              {inventoryStatus && (
+                <div className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                  inventoryStatus.color === 'red' ? 'bg-red-100 text-red-700 border border-red-200' :
+                  inventoryStatus.color === 'orange' ? 'bg-orange-100 text-orange-700 border border-orange-200' :
+                  inventoryStatus.color === 'amber' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
+                  'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                }`}>
+                  {inventoryStatus.label}
+                </div>
+              )}
+              {/* Production Time Editor */}
+              {isImportMode && (
+                <Popover open={editingProduction} onOpenChange={setEditingProduction}>
+                  <PopoverTrigger asChild>
+                    <button className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-muted-foreground/40 text-muted-foreground hover:bg-muted/50 transition-colors" onClick={e => e.stopPropagation()}>
+                      生产{productionConfig?.productionTimeDays ?? 15}d + 物流{productionConfig?.shippingTimeDays ?? 30}d
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-56 p-3" align="end" onClick={e => e.stopPropagation()}>
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium">生产物流配置</p>
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] text-muted-foreground w-14">生产周期</label>
+                        <Input type="number" className="h-7 text-xs w-16" value={prodDays} onChange={e => setProdDays(Number(e.target.value))} min={0} max={365} />
+                        <span className="text-[11px] text-muted-foreground">天</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] text-muted-foreground w-14">物流时间</label>
+                        <Input type="number" className="h-7 text-xs w-16" value={shipDays} onChange={e => setShipDays(Number(e.target.value))} min={0} max={365} />
+                        <span className="text-[11px] text-muted-foreground">天</span>
+                      </div>
+                      <Button size="sm" className="w-full h-7 text-xs" onClick={() => {
+                        onUpdateProductionConfig?.({ productionTimeDays: prodDays, shippingTimeDays: shipDays, marketplace: product.marketplace || 'US' });
+                        setEditingProduction(false);
+                      }}>保存</Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              )}
+            </div>
           )}
 
           {/* Product Name (品名) */}
@@ -752,6 +858,16 @@ export default function OpsProducts() {
 
   // Import stats for showing data availability
   const { data: importStats } = trpc.dataImport.getImportStats.useQuery();
+
+  // Production config for inventory status
+  const { data: productionConfigs } = trpc.dataImport.getProductionConfigs.useQuery({
+    marketplace: marketplaceFilter !== "ALL" ? marketplaceFilter : "US",
+  }, { enabled: dataSource !== "system" });
+
+  // Update production config mutation
+  const updateProductionMut = trpc.dataImport.updateProductionConfig.useMutation({
+    onSuccess: () => { utils.dataImport.getProductionConfigs.invalidate(); toast.success("生产配置已更新"); },
+  });
 
   // Unified products & loading state
   const products = dataSource === "system" ? systemProducts : importProducts;
@@ -1178,6 +1294,8 @@ export default function OpsProducts() {
                 }
               }}
               isImportMode={dataSource !== "system"}
+              productionConfig={productionConfigs?.[product.parentAsin]}
+              onUpdateProductionConfig={(config) => updateProductionMut.mutate({ parentAsin: product.parentAsin, ...config })}
             />
           ))}
         </div>

@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { dataImports, lingxingProductWeekly, saihuProductWeekly, operatorNameMappings, users } from "../../drizzle/schema";
+import { dataImports, lingxingProductWeekly, saihuProductWeekly, operatorNameMappings, users, productionConfig } from "../../drizzle/schema";
 import { MANAGER_ROLES } from "../../shared/const";
 import { eq, desc, and, sql, or } from "drizzle-orm";
 import { parseExcelBuffer, parseDateRangeFromFilename, detectSourceType, type SourceType, type DateRange } from "../excelParser";
@@ -456,6 +456,136 @@ export const dataImportRouter = router({
       return filterByOperatorPermission(result, ctx.user) as typeof result;
     }),
 
+  // ─── Get/Set Production Config ───
+  getProductionConfigs: protectedProcedure
+    .input(z.object({
+      marketplace: z.string().default("US"),
+    }))
+    .query(async ({ ctx, input }) => {
+      const db = await getDb();
+      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
+      const configs = await db!.select().from(productionConfig)
+        .where(and(
+          eq(productionConfig.userId, effectiveUserId),
+          eq(productionConfig.marketplace, input.marketplace)
+        ));
+      // Return as a map: parentAsin -> config
+      const map: Record<string, { productionTimeDays: number; shippingTimeDays: number; notes: string | null }> = {};
+      for (const c of configs) {
+        map[c.parentAsin] = {
+          productionTimeDays: c.productionTimeDays || 15,
+          shippingTimeDays: c.shippingTimeDays || 30,
+          notes: c.notes,
+        };
+      }
+      return map;
+    }),
+
+  updateProductionConfig: protectedProcedure
+    .input(z.object({
+      parentAsin: z.string(),
+      marketplace: z.string().default("US"),
+      productionTimeDays: z.number().min(0).max(365),
+      shippingTimeDays: z.number().min(0).max(365),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await getDb();
+      const effectiveUserId = await resolveDataUserId(db!, ctx.user);
+      // Upsert
+      const existing = await db!.select().from(productionConfig)
+        .where(and(
+          eq(productionConfig.userId, effectiveUserId),
+          eq(productionConfig.parentAsin, input.parentAsin),
+          eq(productionConfig.marketplace, input.marketplace)
+        ))
+        .limit(1);
+      if (existing.length > 0) {
+        await db!.update(productionConfig)
+          .set({
+            productionTimeDays: input.productionTimeDays,
+            shippingTimeDays: input.shippingTimeDays,
+            notes: input.notes || null,
+          })
+          .where(eq(productionConfig.id, existing[0].id));
+      } else {
+        await db!.insert(productionConfig).values({
+          userId: effectiveUserId,
+          parentAsin: input.parentAsin,
+          marketplace: input.marketplace,
+          productionTimeDays: input.productionTimeDays,
+          shippingTimeDays: input.shippingTimeDays,
+          notes: input.notes || null,
+        });
+      }
+      return { success: true };
+    }),
+
+  // ─── AI Inventory Status Assessment ───
+  getInventoryStatus: protectedProcedure
+    .input(z.object({
+      parentAsin: z.string(),
+      marketplace: z.string().default("US"),
+      fbaAvailable: z.number(),
+      fbaInbound: z.number(),
+      avgDailySales7d: z.number(),
+      daysOfStock: z.number(),
+      productionTimeDays: z.number(),
+      shippingTimeDays: z.number(),
+    }))
+    .query(async ({ input }) => {
+      const { fbaAvailable, fbaInbound, avgDailySales7d, daysOfStock, productionTimeDays, shippingTimeDays } = input;
+      const totalLeadTime = productionTimeDays + shippingTimeDays;
+      const inboundCoverDays = avgDailySales7d > 0 ? Math.round(fbaInbound / avgDailySales7d) : 0;
+      const effectiveDays = daysOfStock + inboundCoverDays;
+
+      let status: "sufficient" | "warning" | "urgent" | "stockout_risk";
+      let label: string;
+      let color: string;
+      let suggestion: string;
+
+      if (avgDailySales7d === 0 && fbaAvailable === 0) {
+        status = "stockout_risk";
+        label = "断货";
+        color = "red";
+        suggestion = "产品已断货，无销量数据。建议评估是否需要补货或下架。";
+      } else if (effectiveDays <= 7) {
+        status = "stockout_risk";
+        label = "断货风险";
+        color = "red";
+        suggestion = `可售天数仅${daysOfStock}天（含在途约${effectiveDays}天），远低于生产+物流周期${totalLeadTime}天。建议立即启动紧急补货或空运。`;
+      } else if (effectiveDays <= totalLeadTime) {
+        status = "urgent";
+        label = "紧急备货";
+        color = "orange";
+        suggestion = `可售天数${daysOfStock}天（含在途约${effectiveDays}天），已接近生产+物流周期${totalLeadTime}天。建议立即下单生产。`;
+      } else if (effectiveDays <= totalLeadTime + 14) {
+        status = "warning";
+        label = "需备货";
+        color = "amber";
+        suggestion = `可售天数${daysOfStock}天（含在途约${effectiveDays}天），接近安全库存线。建议近期安排生产计划。`;
+      } else {
+        status = "sufficient";
+        label = "充足";
+        color = "green";
+        suggestion = `库存充足，可售约${daysOfStock}天（含在途约${effectiveDays}天），无需立即补货。`;
+      }
+
+      return {
+        status,
+        label,
+        color,
+        suggestion,
+        metrics: {
+          daysOfStock,
+          inboundCoverDays,
+          effectiveDays,
+          totalLeadTime,
+          avgDailySales7d,
+        },
+      };
+    }),
+
   // ─── Product Detail from Imported Data ───
   // Returns product info + ALL weekly data for a single parentAsin
   // Used by the product detail page in import mode
@@ -586,6 +716,20 @@ async function buildOverviewFromLingxing(db: any, userId: number, weeksToShow: n
       weeksWithComparison[0].salesTrend = pct !== null ? (pct > 5 ? "up" : pct < -5 ? "down" : "flat") : null;
     }
 
+    // Calculate inventory metrics
+    const fbaAvailable = latestRow.fbaAvailable || 0;
+    const fbaInbound = latestRow.fbaInbound || 0;
+    const fbaInTransit = latestRow.fbaInTransit || 0;
+    const fbaTotal = latestRow.fbaTotal || 0;
+    const availableStock = latestRow.availableStock || 0;
+    const fbaDaysOfSupply = latestRow.fbaDaysOfSupply || 0;
+    const stockoutDate = latestRow.stockoutDate || null;
+    // 7-day average daily sales = latest week salesQty / 7
+    const latestWeekSalesQty = latestRow.salesQty || 0;
+    const avgDailySales7d = latestWeekSalesQty / 7;
+    // Days of stock = fbaAvailable / avgDailySales7d
+    const daysOfStock = avgDailySales7d > 0 ? Math.round(fbaAvailable / avgDailySales7d) : (fbaAvailable > 0 ? 999 : 0);
+
     result.push({
       id: 0, // no productProfiles id
       parentAsin,
@@ -603,6 +747,18 @@ async function buildOverviewFromLingxing(db: any, userId: number, weeksToShow: n
       basicInfo: null,
       weeks: weeksWithComparison,
       monthlySummaries: [],
+      // Inventory fields
+      inventory: {
+        fbaAvailable,
+        fbaInbound,
+        fbaInTransit,
+        fbaTotal,
+        availableStock,
+        fbaDaysOfSupply,
+        stockoutDate,
+        avgDailySales7d: Math.round(avgDailySales7d * 10) / 10,
+        daysOfStock,
+      },
     });
   }
 

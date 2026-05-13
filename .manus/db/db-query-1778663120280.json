@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS production_config (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  user_id INT NOT NULL,\n  parent_asin VARCHAR(50) NOT NULL,\n  marketplace VARCHAR(10) DEFAULT 'US',\n  production_time_days INT DEFAULT 15,\n  shipping_time_days INT DEFAULT 30,\n  notes TEXT,\n  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,\n  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,\n  UNIQUE KEY uq_user_asin_market (user_id, parent_asin, marketplace)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute CREATE TABLE IF NOT EXISTS production_config (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  user_id INT NOT NULL,\n  parent_asin VARCHAR(50) NOT NULL,\n  marketplace VARCHAR(10) DEFAULT 'US',\n  production_time_days INT DEFAULT 15,\n  shipping_time_days INT DEFAULT 30,\n  notes TEXT,\n  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,\n  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,\n  UNIQUE KEY uq_user_asin_market (user_id, parent_asin, marketplace)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1893
+}

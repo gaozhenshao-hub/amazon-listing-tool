@@ -1551,6 +1551,7 @@ export const inventoryConfig = mysqlTable("inventory_config", {
   marketplace: varchar("marketplace", { length: 10 }).default("US"),
   // Replenishment params
   leadTimeDays: int("lead_time_days").default(30),
+  productionTimeDays: int("production_time_days").default(15),
   safetyStockDays: int("safety_stock_days").default(14),
   reviewCycleDays: int("review_cycle_days").default(7),
   moq: int("moq").default(100), // Minimum order quantity
@@ -1580,6 +1581,19 @@ export const inventorySnapshots = mysqlTable("inventory_snapshots", {
   daysOfSupply: int("days_of_supply"),
   storageFee: decimal("storage_fee", { precision: 10, scale: 2 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+// Production config (per parent ASIN production/shipping time settings)
+export const productionConfig = mysqlTable("production_config", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  parentAsin: varchar("parent_asin", { length: 50 }).notNull(),
+  marketplace: varchar("marketplace", { length: 10 }).default("US"),
+  productionTimeDays: int("production_time_days").default(15),
+  shippingTimeDays: int("shipping_time_days").default(30),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 // Profit snapshots (daily profit data)
