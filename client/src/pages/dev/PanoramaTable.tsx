@@ -11,8 +11,11 @@ import {
   CheckCircle2, AlertCircle, Download, Lock, Unlock, Save, X,
   FileText, Search, ChevronLeft, ChevronRight, ArrowUpDown,
   Table2, Eye, EyeOff, TrendingUp, BarChart3, Filter, XCircle,
-  ChevronDown, ChevronUp, Tag,
+  ChevronDown, ChevronUp, Tag, Layers, FolderOpen, FolderClosed,
 } from "lucide-react";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import {
@@ -383,6 +386,11 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
   const [filterOpen, setFilterOpen] = useState(false);
   // tagFilters: { [categoryName]: Set<selectedValue> }
   const [tagFilters, setTagFilters] = useState<Record<string, Set<string>>>({});
+  // Group by tag
+  const [groupByTag, setGroupByTag] = useState<string | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [groupSortField, setGroupSortField] = useState<string>("count");
+  const [groupSortDir, setGroupSortDir] = useState<"asc" | "desc">("desc");
   const tableRef = useRef<HTMLDivElement>(null);
   const utils = trpc.useUtils();
 
@@ -563,6 +571,111 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
 
   const totalPages = Math.ceil(filteredProducts.length / PAGE_SIZE);
   const pagedProducts = filteredProducts.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  // ── Group by tag logic ──
+  interface GroupSummary {
+    tagValue: string;
+    products: any[];
+    count: number;
+    monthlySalesSum: number;
+    monthlyRevenueSum: number;
+    priceAvg: number;
+    ratingAvg: number;
+    reviewCountSum: number;
+    bsrAvg: number;
+  }
+  const groupedData = useMemo<GroupSummary[]>(() => {
+    if (!groupByTag || !data?.tagMap) return [];
+    const groups: Record<string, any[]> = {};
+    for (const p of filteredProducts) {
+      const asinTags = data.tagMap[p.asin] || {};
+      const tagVal = asinTags[groupByTag] || "(未标注)";
+      if (!groups[tagVal]) groups[tagVal] = [];
+      groups[tagVal].push(p);
+    }
+    const summaries: GroupSummary[] = Object.entries(groups).map(([tagValue, products]) => {
+      const count = products.length;
+      const monthlySalesSum = products.reduce((s: number, p: any) => s + (Number(p.monthlySales) || 0), 0);
+      const monthlyRevenueSum = products.reduce((s: number, p: any) => s + (Number(p.monthlyRevenue) || 0), 0);
+      const pricesValid = products.filter((p: any) => Number(p.price) > 0);
+      const priceAvg = pricesValid.length > 0 ? pricesValid.reduce((s: number, p: any) => s + Number(p.price), 0) / pricesValid.length : 0;
+      const ratingsValid = products.filter((p: any) => Number(p.rating) > 0);
+      const ratingAvg = ratingsValid.length > 0 ? ratingsValid.reduce((s: number, p: any) => s + Number(p.rating), 0) / ratingsValid.length : 0;
+      const reviewCountSum = products.reduce((s: number, p: any) => s + (Number(p.reviewCount) || 0), 0);
+      const bsrValid = products.filter((p: any) => Number(p.bsr) > 0);
+      const bsrAvg = bsrValid.length > 0 ? bsrValid.reduce((s: number, p: any) => s + Number(p.bsr), 0) / bsrValid.length : 0;
+      return { tagValue, products, count, monthlySalesSum, monthlyRevenueSum, priceAvg, ratingAvg, reviewCountSum, bsrAvg };
+    });
+    // Sort groups
+    summaries.sort((a, b) => {
+      let va: number, vb: number;
+      switch (groupSortField) {
+        case "sales": va = a.monthlySalesSum; vb = b.monthlySalesSum; break;
+        case "revenue": va = a.monthlyRevenueSum; vb = b.monthlyRevenueSum; break;
+        case "price": va = a.priceAvg; vb = b.priceAvg; break;
+        case "rating": va = a.ratingAvg; vb = b.ratingAvg; break;
+        case "reviews": va = a.reviewCountSum; vb = b.reviewCountSum; break;
+        case "bsr": va = a.bsrAvg; vb = b.bsrAvg; break;
+        default: va = a.count; vb = b.count;
+      }
+      return groupSortDir === "desc" ? vb - va : va - vb;
+    });
+    return summaries;
+  }, [filteredProducts, groupByTag, data?.tagMap, groupSortField, groupSortDir]);
+
+  const toggleGroupCollapse = (tagValue: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(tagValue)) next.delete(tagValue);
+      else next.add(tagValue);
+      return next;
+    });
+  };
+  const collapseAllGroups = () => {
+    setCollapsedGroups(new Set(groupedData.map(g => g.tagValue)));
+  };
+  const expandAllGroups = () => {
+    setCollapsedGroups(new Set());
+  };
+
+  // Shared cell renderer for both grouped and ungrouped modes
+  const renderProductCells = (product: any) => {
+    return visibleColumns.map(col => {
+      const value = getCellValue(product, col);
+      const isEditing = editingCell?.productId === product.id && editingCell?.field === col.key;
+      const canEdit = col.editable && !isConfirmed;
+      const isTagCol = col.key.startsWith("tag_");
+      if (col.render && !isEditing) {
+        return (
+          <td key={col.key} className="px-2 py-1 border-r border-b"
+            style={{ width: col.width, minWidth: col.width }}>
+            {col.render(value, product)}
+          </td>
+        );
+      }
+      if (col.type === "boolean" && !isEditing) {
+        return (
+          <td key={col.key} className="px-2 py-1 border-r border-b text-center"
+            style={{ width: col.width, minWidth: col.width }}>
+            {value ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500 mx-auto" /> : <span className="text-muted-foreground/40">-</span>}
+          </td>
+        );
+      }
+      return (
+        <td key={col.key}
+          className={`px-2 py-1 border-r border-b truncate ${canEdit ? "cursor-pointer hover:bg-primary/5" : ""}`}
+          style={{ width: col.width, minWidth: col.width, maxWidth: col.width }}
+          onClick={() => canEdit && startEdit(product.id, col.key, value)}
+          title={String(value || "")}>
+          {value !== null && value !== undefined && value !== "" ? (
+            <span className="truncate block">{String(value)}</span>
+          ) : (
+            <span className="text-muted-foreground/40">-</span>
+          )}
+        </td>
+      );
+    });
+  };
 
   const startEdit = (productId: number, field: string, currentValue: any) => {
     if (isConfirmed) { toast.info("表格已锁定，请先解锁后编辑"); return; }
@@ -792,6 +905,60 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                 <XCircle className="h-3.5 w-3.5" />清除全部筛选
               </Button>
             )}
+            {/* Group by tag selector */}
+            {Object.keys(tagValueOptions).length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+                <Select
+                  value={groupByTag || "__none__"}
+                  onValueChange={(v) => {
+                    setGroupByTag(v === "__none__" ? null : v);
+                    setCollapsedGroups(new Set());
+                    setPage(0);
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-[140px] text-xs">
+                    <SelectValue placeholder="按标签分组" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">不分组</SelectItem>
+                    {(data?.tagCategories || []).map((tc: { key: string; name: string }) => (
+                      <SelectItem key={tc.key} value={tc.name}>{tc.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {groupByTag && (
+                  <>
+                    <Select value={groupSortField} onValueChange={setGroupSortField}>
+                      <SelectTrigger className="h-8 w-[110px] text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="count">按数量</SelectItem>
+                        <SelectItem value="sales">按销量</SelectItem>
+                        <SelectItem value="revenue">按销售额</SelectItem>
+                        <SelectItem value="price">按均价</SelectItem>
+                        <SelectItem value="rating">按评分</SelectItem>
+                        <SelectItem value="reviews">按评论数</SelectItem>
+                        <SelectItem value="bsr">按BSR</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button size="sm" variant="ghost" className="h-8 w-8 p-0"
+                      onClick={() => setGroupSortDir(d => d === "desc" ? "asc" : "desc")}>
+                      <ArrowUpDown className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-8 text-xs px-2"
+                      onClick={expandAllGroups}>
+                      <FolderOpen className="h-3 w-3 mr-1" />展开
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-8 text-xs px-2"
+                      onClick={collapseAllGroups}>
+                      <FolderClosed className="h-3 w-3 mr-1" />折叠
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
             <div className="flex items-center gap-1 flex-wrap">
               <span className="text-xs text-muted-foreground mr-1">列组:</span>
               {columnGroups.map(g => (
@@ -938,7 +1105,49 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {pagedProducts.map((product: any, rowIdx: number) => (
+                    {/* Grouped mode */}
+                    {groupByTag && groupedData.length > 0 && groupedData.map((group, gIdx) => {
+                      const isCollapsed = collapsedGroups.has(group.tagValue);
+                      return (
+                        <>
+                          {/* Group summary row */}
+                          <tr key={`group-${gIdx}`}
+                            className="bg-primary/5 hover:bg-primary/10 cursor-pointer border-b-2 border-primary/20 transition-colors"
+                            onClick={() => toggleGroupCollapse(group.tagValue)}>
+                            <td colSpan={visibleColumns.length}
+                              className="px-3 py-2">
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <div className="flex items-center gap-1.5">
+                                  {isCollapsed ? <FolderClosed className="h-4 w-4 text-primary" /> : <FolderOpen className="h-4 w-4 text-primary" />}
+                                  <Badge className="bg-primary/10 text-primary border-primary/20 text-xs font-semibold">
+                                    {group.tagValue}
+                                  </Badge>
+                                </div>
+                                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                  <span className="font-medium text-foreground">
+                                    <Tag className="h-3 w-3 inline mr-0.5" />{group.count} 个产品
+                                  </span>
+                                  <span>月销量合计: <strong className="text-foreground">{group.monthlySalesSum.toLocaleString()}</strong></span>
+                                  <span>月销售额: <strong className="text-foreground">${group.monthlyRevenueSum.toLocaleString()}</strong></span>
+                                  <span>均价: <strong className="text-foreground">${group.priceAvg.toFixed(2)}</strong></span>
+                                  <span>平均评分: <strong className="text-foreground">{group.ratingAvg.toFixed(1)}</strong></span>
+                                  <span>评论合计: <strong className="text-foreground">{group.reviewCountSum.toLocaleString()}</strong></span>
+                                  {group.bsrAvg > 0 && <span>平均BSR: <strong className="text-foreground">{Math.round(group.bsrAvg).toLocaleString()}</strong></span>}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                          {/* Group products */}
+                          {!isCollapsed && group.products.map((product: any, rowIdx: number) => (
+                            <tr key={product.id} className={`${rowIdx % 2 === 0 ? "bg-background" : "bg-muted/20"} hover:bg-accent/30 transition-colors`}>
+                              {renderProductCells(product)}
+                            </tr>
+                          ))}
+                        </>
+                      );
+                    })}
+                    {/* Ungrouped mode (original) */}
+                    {!groupByTag && pagedProducts.map((product: any, rowIdx: number) => (
                       <tr key={product.id} className={`${rowIdx % 2 === 0 ? "bg-background" : "bg-muted/20"} hover:bg-accent/30 transition-colors`}>
                         {visibleColumns.map(col => {
                           const value = getCellValue(product, col);
@@ -1064,11 +1273,15 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
               {/* Pagination */}
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>
-                  显示 {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, filteredProducts.length)} / 共 {filteredProducts.length} 个产品
-                  {(searchTerm || activeFilterCount > 0) && ` (筛选自 ${totalProducts} 个)`}
+                  {groupByTag ? (
+                    <>共 {filteredProducts.length} 个产品，分为 {groupedData.length} 个分组{(searchTerm || activeFilterCount > 0) && ` (筛选自 ${totalProducts} 个)`}</>
+                  ) : (
+                    <>显示 {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, filteredProducts.length)} / 共 {filteredProducts.length} 个产品
+                    {(searchTerm || activeFilterCount > 0) && ` (筛选自 ${totalProducts} 个)`}</>
+                  )}
                 </span>
                 <div className="flex items-center gap-2">
-                  <Button size="sm" variant="outline" className="h-6 text-xs px-2"
+                  {!groupByTag && <><Button size="sm" variant="outline" className="h-6 text-xs px-2"
                     disabled={page === 0} onClick={() => setPage(p => p - 1)}>
                     <ChevronLeft className="h-3 w-3" />上一页
                   </Button>
@@ -1077,6 +1290,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                     disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>
                     下一页<ChevronRight className="h-3 w-3" />
                   </Button>
+                  </>}
                 </div>
               </div>
             </>
