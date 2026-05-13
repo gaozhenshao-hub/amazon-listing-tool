@@ -392,7 +392,9 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [groupSortField, setGroupSortField] = useState<string>("count");
   const [groupSortDir, setGroupSortDir] = useState<"asc" | "desc">("desc");
+  const [highlightedGroup, setHighlightedGroup] = useState<string | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
+  const groupRowRefs = useRef<Record<string, HTMLTableRowElement | null>>({});
   const utils = trpc.useUtils();
 
   const { data, isLoading } = trpc.devPanorama.getData.useQuery({ projectId });
@@ -637,6 +639,27 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
   };
   const expandAllGroups = () => {
     setCollapsedGroups(new Set());
+  };
+
+  // Chart click handler: expand clicked group, collapse others, highlight and scroll
+  const handleChartGroupClick = (tagValue: string) => {
+    if (!tagValue) return;
+    // Expand only the clicked group, collapse all others
+    setCollapsedGroups(new Set(groupedData.filter(g => g.tagValue !== tagValue).map(g => g.tagValue)));
+    // Highlight the clicked group
+    setHighlightedGroup(tagValue);
+    // Auto-clear highlight after 3 seconds
+    setTimeout(() => setHighlightedGroup(null), 3000);
+    // Scroll to the group row after a short delay for DOM update
+    setTimeout(() => {
+      const rowEl = groupRowRefs.current[tagValue];
+      if (rowEl && tableRef.current) {
+        const tableTop = tableRef.current.getBoundingClientRect().top;
+        const rowTop = rowEl.getBoundingClientRect().top;
+        const offset = rowTop - tableTop - 80; // account for sticky header
+        tableRef.current.scrollTo({ top: tableRef.current.scrollTop + offset, behavior: 'smooth' });
+      }
+    }, 100);
   };
 
   // Shared cell renderer for both grouped and ungrouped modes
@@ -1080,6 +1103,11 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                     </Button>
                   </div>
                   {showGroupCharts && (
+                    <>
+                    <p className="text-[10px] text-muted-foreground mb-2 flex items-center gap-1">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                      点击图表中的柱状/扇形区域可展开对应分组并高亮显示
+                    </p>
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                       {/* Bar Chart - Sales Comparison */}
                       <Card className="border-blue-100">
@@ -1097,7 +1125,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                                 formatter={(value: number, name: string) => [value.toLocaleString(), name]}
                                 labelFormatter={(label: string, payload: any[]) => payload?.[0]?.payload?.fullName || label}
                               />
-                              <Bar dataKey="月销量" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                              <Bar dataKey="月销量" fill="#3b82f6" radius={[4, 4, 0, 0]} cursor="pointer" onClick={(data: any) => handleChartGroupClick(data?.fullName || data?.name)} />
                             </BarChart>
                           </ResponsiveContainer>
                         </CardContent>
@@ -1117,6 +1145,8 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                                 paddingAngle={2} dataKey="value"
                                 label={({ name, percent }) => `${name.length > 4 ? name.slice(0, 4) + '..' : name} ${(percent * 100).toFixed(0)}%`}
                                 labelLine={{ strokeWidth: 1 }}
+                                cursor="pointer"
+                                onClick={(data: any) => handleChartGroupClick(data?.name)}
                               >
                                 {groupedData.map((_, i) => (
                                   <Cell key={i} fill={['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1'][i % 10]} />
@@ -1148,13 +1178,14 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                                 labelFormatter={(label: string, payload: any[]) => payload?.[0]?.payload?.fullName || label}
                               />
                               <Legend wrapperStyle={{ fontSize: 10 }} />
-                              <Bar yAxisId="left" dataKey="均价" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                              <Bar yAxisId="right" dataKey="平均评分" fill="#10b981" radius={[4, 4, 0, 0]} />
+                              <Bar yAxisId="left" dataKey="均价" fill="#f59e0b" radius={[4, 4, 0, 0]} cursor="pointer" onClick={(data: any) => handleChartGroupClick(data?.fullName || data?.name)} />
+                              <Bar yAxisId="right" dataKey="平均评分" fill="#10b981" radius={[4, 4, 0, 0]} cursor="pointer" onClick={(data: any) => handleChartGroupClick(data?.fullName || data?.name)} />
                             </BarChart>
                           </ResponsiveContainer>
                         </CardContent>
                       </Card>
                     </div>
+                    </>
                   )}
                 </div>
               )}
@@ -1207,7 +1238,12 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                         <>
                           {/* Group summary row */}
                           <tr key={`group-${gIdx}`}
-                            className="bg-primary/5 hover:bg-primary/10 cursor-pointer border-b-2 border-primary/20 transition-colors"
+                            ref={(el) => { groupRowRefs.current[group.tagValue] = el; }}
+                            className={`cursor-pointer border-b-2 transition-all duration-500 ${
+                              highlightedGroup === group.tagValue
+                                ? 'bg-primary/20 border-primary/40 ring-2 ring-primary/30 ring-inset'
+                                : 'bg-primary/5 hover:bg-primary/10 border-primary/20'
+                            }`}
                             onClick={() => toggleGroupCollapse(group.tagValue)}>
                             <td colSpan={visibleColumns.length}
                               className="px-3 py-2">
@@ -1234,7 +1270,11 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
                           </tr>
                           {/* Group products */}
                           {!isCollapsed && group.products.map((product: any, rowIdx: number) => (
-                            <tr key={product.id} className={`${rowIdx % 2 === 0 ? "bg-background" : "bg-muted/20"} hover:bg-accent/30 transition-colors`}>
+                            <tr key={product.id} className={`${
+                              highlightedGroup === group.tagValue
+                                ? 'bg-primary/5 hover:bg-primary/10'
+                                : rowIdx % 2 === 0 ? 'bg-background' : 'bg-muted/20'
+                            } hover:bg-accent/30 transition-colors`}>
                               {renderProductCells(product)}
                             </tr>
                           ))}
