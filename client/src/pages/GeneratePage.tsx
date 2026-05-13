@@ -98,6 +98,16 @@ export default function GeneratePage() {
   const [aiResult, setAiResult] = useState<any>(null);
   const [aiResultEditing, setAiResultEditing] = useState(false);
 
+  // Locked mode fine-tuning state
+  const [lockedFineTuneIdx, setLockedFineTuneIdx] = useState<number | null>(null);
+  const [lockedFineTuneData, setLockedFineTuneData] = useState<{ subtitle: string; fullText: string }>({ subtitle: "", fullText: "" });
+  const [showLockedAddForm, setShowLockedAddForm] = useState(false);
+  const [lockedAddMode, setLockedAddMode] = useState<"ai" | "manual">("ai");
+  const [lockedAddKeyword, setLockedAddKeyword] = useState("");
+  const [lockedAiResult, setLockedAiResult] = useState<{ subtitle: string; fullText: string } | null>(null);
+  const [lockedAddSubtitle, setLockedAddSubtitle] = useState("");
+  const [lockedAddFullText, setLockedAddFullText] = useState("");
+
   // Lock state for each step (locked = confirmed + synced to preview)
   const [lockedSteps, setLockedSteps] = useState<Set<number>>(new Set());
   const lockedStepsInitialized = useRef(false);
@@ -673,7 +683,46 @@ export default function GeneratePage() {
 
   const handleUnlockBullets = () => {
     handleUnlockStep(1);
+    setLockedFineTuneIdx(null);
+    setShowLockedAddForm(false);
     toast.info("卖点已解锁，可重新编辑");
+  };
+
+  // Locked mode: AI generate a new bullet point from keyword
+  const handleLockedAiGenerate = async (currentBullets: { subtitle: string; fullText: string }[]) => {
+    if (!selectedProjectId || !lockedAddKeyword.trim()) {
+      toast.error("请输入关键词或主题");
+      return;
+    }
+    try {
+      // Step 1: Expand keyword to FABE framework
+      const fabe = await expandKeyword.mutateAsync({
+        projectId: selectedProjectId,
+        keyword: lockedAddKeyword.trim(),
+      });
+      // Step 2: Generate a full bullet point from the FABE
+      const bullet = await generateSingleBullet.mutateAsync({
+        projectId: selectedProjectId,
+        sellingPoint: {
+          index: currentBullets.length + 1,
+          theme: fabe.theme,
+          themeZh: fabe.themeZh || "",
+          description: fabe.description || "",
+          descriptionZh: fabe.descriptionZh || "",
+          fabeDirection: fabe.fabeDirection,
+          targetKeywords: fabe.targetKeywords || [],
+          addressesGap: fabe.addressesGap || "",
+        },
+        previousBullets: currentBullets,
+      });
+      setLockedAiResult({
+        subtitle: bullet.subtitle || fabe.theme,
+        fullText: bullet.fullText || fabe.description || "",
+      });
+      toast.success("AI已生成新卖点，请检查并确认");
+    } catch (err: any) {
+      toast.error("AI生成失败: " + (err.message || "未知错误"));
+    }
   };
 
   const allBulletsConfirmed = sellingPointCores
@@ -765,25 +814,22 @@ export default function GeneratePage() {
           </Card>
           {/* ===== Step 1: 卖点精雕 ===== */}
           {activeStep === 1 && (<>
-          {/* Locked state for Step 1 */}
+          {/* Locked state for Step 1 - with fine-tuning support */}
           {lockedSteps.has(1) && (() => {
             // Try to get bullets from memory first, then from DB
             const savedBullets: { subtitle: string; fullText: string }[] = (() => {
-              // First try from memory (generatedBullets + confirmedBullets)
               const memBullets = sellingPointCores?.map((_, idx) => {
                 const bullet = generatedBullets[idx];
                 if (bullet && confirmedBullets[idx]) return { subtitle: bullet.subtitle || "", fullText: bullet.fullText || "" };
                 return null;
               }).filter(Boolean) as { subtitle: string; fullText: string }[] || [];
               if (memBullets.length > 0) return memBullets;
-              // Fallback: load from activeListing.bulletPoints (DB)
               if (activeListing?.bulletPoints) {
                 try {
                   const parsed = JSON.parse(activeListing.bulletPoints);
                   if (Array.isArray(parsed)) {
                     return parsed.map((bp: any, i: number) => {
                       if (typeof bp === "string") {
-                        // Format: "subtitle fullText" - split at first space after subtitle
                         const parts = bp.match(/^(\S+)\s+(.+)$/);
                         return parts ? { subtitle: parts[1], fullText: parts[2] } : { subtitle: `卖点 ${i + 1}`, fullText: bp };
                       }
@@ -800,27 +846,323 @@ export default function GeneratePage() {
             return (
             <Card className="border-2 border-green-300 bg-green-50/30 dark:border-green-800 dark:bg-green-950/10">
               <CardContent className="p-4 space-y-3">
-                <LockedContentBar
-                  locked={true}
-                  label="卖点"
-                  onUnlock={handleUnlockBullets}
-                  info={`${savedBullets.length} 条卖点已同步到预览页`}
-                />
-                {/* Show locked bullet summaries */}
-                <div className="space-y-2 pl-2">
+                <div className="flex items-center justify-between px-3 py-2 rounded-lg border-2 border-green-300 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20">
+                  <div className="flex items-center gap-2">
+                    <Lock className="h-4 w-4 text-green-600" />
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <span className="text-sm font-medium text-green-800 dark:text-green-300">
+                      卖点已确认并锁定
+                    </span>
+                    <Badge className="bg-green-600 text-white text-[10px] px-1.5">已同步</Badge>
+                    <span className="text-xs text-green-600 dark:text-green-400">{savedBullets.length} 条卖点已同步到预览页</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-[10px] border-teal-400 text-teal-700 bg-teal-50">
+                      <Pencil className="h-3 w-3 mr-1" />支持微调
+                    </Badge>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
+                      onClick={handleUnlockBullets}
+                    >
+                      <Unlock className="h-3 w-3 mr-1" />完全解锁
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Fine-tunable bullet list */}
+                <div className="space-y-2">
                   {savedBullets.map((bullet, idx) => (
-                    <div key={idx} className="flex items-start gap-2 text-sm text-green-800 dark:text-green-300">
-                      <Badge variant="outline" className="text-[10px] shrink-0 border-green-400">{idx + 1}</Badge>
-                      <div className="min-w-0">
-                        <span className="font-medium">{bullet.subtitle}</span>
-                        <span className="text-xs text-green-600 dark:text-green-400 ml-2 line-clamp-1">{bullet.fullText}</span>
-                      </div>
+                    <div key={idx} className={`rounded-lg border p-3 transition-all ${
+                      lockedFineTuneIdx === idx
+                        ? "border-teal-400 bg-teal-50/50 shadow-sm"
+                        : "border-green-200 bg-white/60 hover:border-teal-300 hover:bg-teal-50/20"
+                    }`}>
+                      {lockedFineTuneIdx === idx ? (
+                        /* Inline editing mode */
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Badge className="bg-teal-600 text-white text-[10px]">{idx + 1}</Badge>
+                              <span className="text-xs font-medium text-teal-700">编辑模式</span>
+                            </div>
+                            <CharCountBadge
+                              count={(lockedFineTuneData.subtitle + " " + lockedFineTuneData.fullText).length}
+                              min={200}
+                              max={280}
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">小标题 (Subtitle)</Label>
+                            <Input
+                              value={lockedFineTuneData.subtitle}
+                              onChange={(e) => setLockedFineTuneData(prev => ({ ...prev, subtitle: e.target.value }))}
+                              className="h-8 text-sm font-bold mt-1"
+                              placeholder="例如: 【Premium Quality】"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">正文 (Full Text)</Label>
+                            <Textarea
+                              value={lockedFineTuneData.fullText}
+                              onChange={(e) => setLockedFineTuneData(prev => ({ ...prev, fullText: e.target.value }))}
+                              rows={3}
+                              className="text-sm resize-none mt-1"
+                              placeholder="卖点正文内容..."
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" className="bg-teal-600 hover:bg-teal-700" onClick={() => {
+                              // Save the fine-tuned bullet
+                              const newBullets = [...savedBullets];
+                              newBullets[idx] = { subtitle: lockedFineTuneData.subtitle, fullText: lockedFineTuneData.fullText };
+                              // Re-sync to DB
+                              if (selectedProjectId) {
+                                syncBulletsMut.mutate({ projectId: selectedProjectId, bullets: newBullets });
+                              }
+                              setLockedFineTuneIdx(null);
+                              toast.success(`第 ${idx + 1} 条卖点已更新并重新同步`);
+                            }} disabled={syncBulletsMut.isPending}>
+                              {syncBulletsMut.isPending ? (
+                                <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />保存中...</>
+                              ) : (
+                                <><Check className="h-3.5 w-3.5 mr-1" />保存并同步</>
+                              )}
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => setLockedFineTuneIdx(null)}>取消</Button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Read-only mode with edit trigger */
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2 flex-1 min-w-0">
+                            <Badge variant="outline" className="text-[10px] shrink-0 border-green-400 mt-0.5">{idx + 1}</Badge>
+                            <div className="min-w-0">
+                              <span className="font-medium text-sm text-green-800 dark:text-green-300">{bullet.subtitle}</span>
+                              <p className="text-xs text-green-600 dark:text-green-400 mt-0.5 line-clamp-2">{bullet.fullText}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <CharCountBadge
+                              count={(bullet.subtitle + " " + bullet.fullText).length}
+                              min={200}
+                              max={280}
+                            />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-teal-600 hover:text-teal-800 hover:bg-teal-50"
+                              onClick={() => {
+                                setLockedFineTuneIdx(idx);
+                                setLockedFineTuneData({ subtitle: bullet.subtitle, fullText: bullet.fullText });
+                              }}
+                            >
+                              <Pencil className="h-3 w-3 mr-1" />微调
+                            </Button>
+                            {savedBullets.length > 5 && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => {
+                                  const newBullets = savedBullets.filter((_, i) => i !== idx);
+                                  if (selectedProjectId && newBullets.length >= 1) {
+                                    syncBulletsMut.mutate({ projectId: selectedProjectId, bullets: newBullets });
+                                    toast.success(`已删除第 ${idx + 1} 条卖点并重新同步`);
+                                  }
+                                }}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                   {savedBullets.length === 0 && (
                     <p className="text-sm text-muted-foreground">卖点数据已同步到预览页（刷新后可在预览页查看完整内容）</p>
                   )}
                 </div>
+
+                {/* Add new bullet in locked mode */}
+                {savedBullets.length < 9 && (
+                  <div className="space-y-2">
+                    {!showLockedAddForm ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full border-dashed border-teal-300 text-teal-700 hover:bg-teal-50"
+                        onClick={() => setShowLockedAddForm(true)}
+                      >
+                        <Plus className="h-3.5 w-3.5 mr-1" />
+                        新增卖点 ({savedBullets.length}/9)
+                      </Button>
+                    ) : (
+                      <div className="rounded-lg border-2 border-dashed border-teal-300 p-4 bg-teal-50/30 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-medium text-teal-700 flex items-center gap-2">
+                            <Plus className="h-4 w-4" />
+                            新增卖点 (还可添加 {9 - savedBullets.length} 条)
+                          </h4>
+                          <div className="flex gap-1 bg-muted rounded-md p-0.5">
+                            <button
+                              className={`px-3 py-1 text-xs rounded transition-colors ${
+                                lockedAddMode === "ai"
+                                  ? "bg-background shadow-sm text-teal-700 font-medium"
+                                  : "text-muted-foreground hover:text-foreground"
+                              }`}
+                              onClick={() => setLockedAddMode("ai")}
+                            >
+                              <Wand2 className="h-3 w-3 inline mr-1" />AI辅助
+                            </button>
+                            <button
+                              className={`px-3 py-1 text-xs rounded transition-colors ${
+                                lockedAddMode === "manual"
+                                  ? "bg-background shadow-sm text-teal-700 font-medium"
+                                  : "text-muted-foreground hover:text-foreground"
+                              }`}
+                              onClick={() => setLockedAddMode("manual")}
+                            >
+                              <Pencil className="h-3 w-3 inline mr-1" />手动填写
+                            </button>
+                          </div>
+                        </div>
+
+                        {lockedAddMode === "ai" ? (
+                          <div className="space-y-2">
+                            <Label className="text-xs">输入关键词或卖点主题 <span className="text-red-500">*</span></Label>
+                            <p className="text-xs text-muted-foreground">输入一个关键词或简短主题，AI将自动生成完整的Bullet Point</p>
+                            <div className="flex gap-2">
+                              <Input
+                                placeholder="例如: waterproof, eco-friendly, easy assembly..."
+                                value={lockedAddKeyword}
+                                onChange={(e) => setLockedAddKeyword(e.target.value)}
+                                className="h-9 text-sm flex-1"
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && lockedAddKeyword.trim()) {
+                                    handleLockedAiGenerate(savedBullets);
+                                  }
+                                }}
+                              />
+                              <Button
+                                size="sm"
+                                onClick={() => handleLockedAiGenerate(savedBullets)}
+                                disabled={!lockedAddKeyword.trim() || expandKeyword.isPending}
+                                className="bg-teal-600 hover:bg-teal-700 h-9"
+                              >
+                                {expandKeyword.isPending ? (
+                                  <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />生成中...</>
+                                ) : (
+                                  <><Wand2 className="h-3.5 w-3.5 mr-1" />AI生成</>
+                                )}
+                              </Button>
+                            </div>
+                            {lockedAiResult && (
+                              <div className="space-y-2 rounded-lg border border-teal-200 bg-white/80 p-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <Sparkles className="h-4 w-4 text-teal-600" />
+                                    <span className="text-sm font-medium text-teal-700">AI生成结果</span>
+                                  </div>
+                                  <CharCountBadge
+                                    count={(lockedAiResult.subtitle + " " + lockedAiResult.fullText).length}
+                                    min={200}
+                                    max={280}
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-xs text-muted-foreground">小标题</Label>
+                                  <Input
+                                    value={lockedAiResult.subtitle}
+                                    onChange={(e) => setLockedAiResult((prev: any) => prev ? ({ ...prev, subtitle: e.target.value }) : prev)}
+                                    className="h-8 text-sm font-bold mt-1"
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-xs text-muted-foreground">正文</Label>
+                                  <Textarea
+                                    value={lockedAiResult.fullText}
+                                    onChange={(e) => setLockedAiResult((prev: any) => prev ? ({ ...prev, fullText: e.target.value }) : prev)}
+                                    rows={3}
+                                    className="text-sm resize-none mt-1"
+                                  />
+                                </div>
+                                <div className="flex gap-2">
+                                  <Button size="sm" className="bg-teal-600 hover:bg-teal-700" onClick={() => {
+                                    if (!lockedAiResult || !selectedProjectId) return;
+                                    const newBullets = [...savedBullets, { subtitle: lockedAiResult.subtitle, fullText: lockedAiResult.fullText }];
+                                    syncBulletsMut.mutate({ projectId: selectedProjectId, bullets: newBullets });
+                                    setLockedAiResult(null);
+                                    setLockedAddKeyword("");
+                                    setShowLockedAddForm(false);
+                                    toast.success("新卖点已添加并同步");
+                                  }} disabled={syncBulletsMut.isPending}>
+                                    <Check className="h-3.5 w-3.5 mr-1" />确认添加并同步
+                                  </Button>
+                                  <Button size="sm" variant="ghost" onClick={() => { setLockedAiResult(null); setLockedAddKeyword(""); }}>
+                                    <RotateCcw className="h-3 w-3 mr-1" />重新生成
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div>
+                              <Label className="text-xs">小标题 (Subtitle) <span className="text-red-500">*</span></Label>
+                              <Input
+                                placeholder="例如: 【Premium Quality】"
+                                value={lockedAddSubtitle}
+                                onChange={(e) => setLockedAddSubtitle(e.target.value)}
+                                className="h-8 text-sm mt-1"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">正文 (Full Text) <span className="text-red-500">*</span></Label>
+                              <Textarea
+                                placeholder="卖点正文内容..."
+                                value={lockedAddFullText}
+                                onChange={(e) => setLockedAddFullText(e.target.value)}
+                                rows={3}
+                                className="text-sm resize-none mt-1"
+                              />
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <CharCountBadge
+                                count={(lockedAddSubtitle + " " + lockedAddFullText).length}
+                                min={200}
+                                max={280}
+                              />
+                              <div className="flex gap-2">
+                                <Button size="sm" className="bg-teal-600 hover:bg-teal-700" onClick={() => {
+                                  if (!lockedAddSubtitle.trim() || !lockedAddFullText.trim() || !selectedProjectId) return;
+                                  const newBullets = [...savedBullets, { subtitle: lockedAddSubtitle, fullText: lockedAddFullText }];
+                                  syncBulletsMut.mutate({ projectId: selectedProjectId, bullets: newBullets });
+                                  setLockedAddSubtitle("");
+                                  setLockedAddFullText("");
+                                  setShowLockedAddForm(false);
+                                  toast.success("新卖点已添加并同步");
+                                }} disabled={!lockedAddSubtitle.trim() || !lockedAddFullText.trim() || syncBulletsMut.isPending}>
+                                  <Plus className="h-3.5 w-3.5 mr-1" />添加并同步
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => { setShowLockedAddForm(false); setLockedAddSubtitle(""); setLockedAddFullText(""); }}>取消</Button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Close button for AI mode */}
+                        {lockedAddMode === "ai" && !lockedAiResult && (
+                          <div className="flex justify-end">
+                            <Button size="sm" variant="ghost" onClick={() => { setShowLockedAddForm(false); setLockedAddKeyword(""); }}>取消</Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
             );
