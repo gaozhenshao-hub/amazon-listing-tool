@@ -5215,8 +5215,8 @@ export const productOpsRouter = router({
       // Record import history
       const createdCount = results.filter(r => r.status === "created").length;
       const updatedCount = results.filter(r => r.status === "updated").length;
-      const recordIds = results.filter(r => r.recordId).map(r => r.recordId);
-      const parentAsinSet = [...new Set(results.filter(r => r.status !== "skipped").map(r => r.parentAsin))];
+      const recordIds = results.filter((r: any) => r.recordId).map((r: any) => r.recordId);
+      const parentAsinSet = Array.from(new Set(results.filter(r => r.status !== "skipped").map(r => r.parentAsin)));
       try {
         await db!.insert(opsImportHistory).values({
           userId: ctx.user.id,
@@ -5458,7 +5458,7 @@ export const productOpsRouter = router({
             // Update existing review
             await db!.update(executionReviews).set(cleanData)
               .where(and(eq(executionReviews.id, existingReview.id), eq(executionReviews.userId, ctx.user.id)));
-            results.push({ parentAsin, period, status: "updated", recordId: existingReview.id });
+            (results as any[]).push({ parentAsin, period, status: "updated", recordId: existingReview.id });
           } else {
             // Create new review
             const [insertResult] = await db!.insert(executionReviews).values({
@@ -5466,7 +5466,7 @@ export const productOpsRouter = router({
               productProfileId,
               ...cleanData,
             } as any);
-            results.push({ parentAsin, period, status: "created", recordId: (insertResult as any).insertId });
+            (results as any[]).push({ parentAsin, period, status: "created", recordId: (insertResult as any).insertId });
           }
         } catch (err: any) {
           results.push({ parentAsin, period, status: "skipped", reason: err.message?.slice(0, 100) });
@@ -5476,8 +5476,8 @@ export const productOpsRouter = router({
       // Record import history
       const createdCount = results.filter(r => r.status === "created").length;
       const updatedCount = results.filter(r => r.status === "updated").length;
-      const recordIds = results.filter(r => r.recordId).map(r => r.recordId);
-      const parentAsinSet = [...new Set(results.filter(r => r.status !== "skipped").map(r => r.parentAsin))];
+      const recordIds = results.filter((r: any) => r.recordId).map((r: any) => r.recordId);
+      const parentAsinSet = Array.from(new Set(results.filter(r => r.status !== "skipped").map(r => r.parentAsin)));
       try {
         await db!.insert(opsImportHistory).values({
           userId: ctx.user.id,

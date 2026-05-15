@@ -46,7 +46,14 @@ export default function LoginPage() {
       }
     },
     onError: (error) => {
-      toast.error(error.message);
+      const msg = error.message || '';
+      if (msg.includes('Service Unavailable') || msg.includes('Unexpected token') || msg.includes('not valid JSON') || msg.includes('服务正在启动')) {
+        toast.error('服务正在启动中，请等待几秒后再试', { duration: 5000 });
+      } else if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+        toast.error('网络连接失败，请检查网络后重试');
+      } else {
+        toast.error(msg);
+      }
     },
   });
 
