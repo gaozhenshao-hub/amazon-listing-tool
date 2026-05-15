@@ -1592,8 +1592,8 @@ export const productionConfig = mysqlTable("production_config", {
   productionTimeDays: int("production_time_days").default(15),
   shippingTimeDays: int("shipping_time_days").default(30),
   notes: text("notes"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
 });
 
 // Profit snapshots (daily profit data)

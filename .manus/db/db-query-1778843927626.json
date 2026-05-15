@@ -1,0 +1,16 @@
+{
+  "query": "SELECT id, email, openId, loginMethod FROM users WHERE email = '970032132@qq.com';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT id, email, openId, loginMethod FROM users WHERE email = '970032132@qq.com';",
+  "rows": [
+    {
+      "id": "3783327",
+      "email": "970032132@qq.com",
+      "openId": "NULL",
+      "loginMethod": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\temail\topenId\tloginMethod\n3783327\t970032132@qq.com\tNULL\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 1704
+}

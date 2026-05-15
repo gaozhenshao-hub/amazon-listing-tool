@@ -4065,3 +4065,11 @@
 ### Bug修复：登录一直显示“服务器正在启动中”
 - [x] 排查前端重试逻辑（确认是bcrypt round 12在Cloud Run上太慢导致超时）
 - [x] 修复登录错误处理逻辑（降低到round 8 + 并行DB操作 + 自动rehash + 30s超时 + 友好提示）
+
+### Bug修复：production_config查询失败 + React key重复
+- [ ] 确认production_config表在线上数据库已创建
+- [ ] 修复React key重复问题（/ops/ad-deep页面）
+
+### Bug修复：登录成功后仍停留在登录页面
+- [x] 排查登录成功后跳转逻辑（根因：密码用户openId为NULL，auth.me找不到用户）
+- [x] 修复登录后不跳转问题（bcrypt→scrypt + 持久化openId + 过滤密码返回）

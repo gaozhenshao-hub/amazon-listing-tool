@@ -5,10 +5,29 @@ import * as db from "../db";
 import { sdk } from "../_core/sdk";
 import { getSessionCookieOptions } from "../_core/cookies";
 import bcrypt from "bcryptjs";
+import { scryptSync, randomBytes, timingSafeEqual } from "crypto";
 
 // Cloud Run (1vCPU, 512MB) makes bcrypt very slow at high rounds.
 // Use 8 rounds for acceptable security with fast response times.
 const BCRYPT_ROUNDS = 8;
+
+// Fast password hashing using Node.js native scrypt (much faster than bcrypt on low-resource environments)
+function hashPasswordFast(password: string): string {
+  const salt = randomBytes(16).toString("hex");
+  const hash = scryptSync(password, salt, 64).toString("hex");
+  return `scrypt:${salt}:${hash}`;
+}
+
+function verifyPasswordFast(password: string, stored: string): boolean {
+  if (stored.startsWith("scrypt:")) {
+    const [, salt, hash] = stored.split(":");
+    const hashBuf = Buffer.from(hash, "hex");
+    const derivedBuf = scryptSync(password, salt, 64);
+    return timingSafeEqual(hashBuf, derivedBuf);
+  }
+  // Legacy bcrypt hash - verify with bcrypt (slow but only once)
+  return bcrypt.compareSync(password, stored);
+}
 
 import {
   COOKIE_NAME, ONE_YEAR_MS,
@@ -58,7 +77,7 @@ export const userAuthRouter = router({
         throw new TRPCError({ code: "UNAUTHORIZED", message: "该账号未设置密码，请使用其他方式登录" });
       }
 
-      const passwordMatch = await bcrypt.compare(input.password, user.password);
+      const passwordMatch = verifyPasswordFast(input.password, user.password);
       if (!passwordMatch) {
         const attempts = (user.failedLoginAttempts || 0) + 1;
         const lockedUntil = attempts >= MAX_LOGIN_ATTEMPTS
@@ -99,18 +118,22 @@ export const userAuthRouter = router({
         }),
       ]);
 
-      // Rehash password with lower rounds if it was hashed with higher rounds (background, don't block response)
-      const currentRounds = bcrypt.getRounds(user.password);
-      if (currentRounds > BCRYPT_ROUNDS) {
-        bcrypt.hash(input.password, BCRYPT_ROUNDS).then(newHash => {
-          db.updateUserById(user.id, { password: newHash }).catch(() => {});
-        }).catch(() => {});
+      // Migrate from bcrypt to scrypt if needed (background, don't block response)
+      if (!user.password.startsWith("scrypt:")) {
+        const newHash = hashPasswordFast(input.password);
+        db.updateUserById(user.id, { password: newHash }).catch(() => {});
       }
 
       await loginUpdates;
 
       // Create session token using a pseudo openId for password users
       const sessionOpenId = user.openId || `pwd_${user.id}`;
+
+      // CRITICAL: persist the pseudo openId so auth.me can find this user later
+      if (!user.openId) {
+        await db.updateUserById(user.id, { openId: sessionOpenId });
+      }
+
       const sessionToken = await sdk.signSession(
         { openId: sessionOpenId, appId: process.env.VITE_APP_ID || "", name: user.name || "" },
         { expiresInMs: ONE_YEAR_MS }
@@ -147,13 +170,13 @@ export const userAuthRouter = router({
         if (!input.currentPassword) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "请输入当前密码" });
         }
-        const match = await bcrypt.compare(input.currentPassword, user.password);
+        const match = verifyPasswordFast(input.currentPassword, user.password);
         if (!match) {
           throw new TRPCError({ code: "UNAUTHORIZED", message: "当前密码错误" });
         }
       }
 
-      const hashedPassword = await bcrypt.hash(input.newPassword, BCRYPT_ROUNDS);
+      const hashedPassword = hashPasswordFast(input.newPassword);
       await db.updateUserById(user.id, {
         password: hashedPassword,
         mustChangePassword: 0,
@@ -206,7 +229,7 @@ export const userManagementRouter = router({
       }
 
       const password = input.initialPassword || "Abc12345";
-      const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
+      const hashedPassword = hashPasswordFast(password);
 
       await db.upsertUser({
         name: input.name,
@@ -281,7 +304,7 @@ export const userManagementRouter = router({
       }
 
       const newPassword = input.newPassword || "Abc12345";
-      const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+      const hashedPassword = hashPasswordFast(newPassword);
 
       await db.updateUserById(input.userId, {
         password: hashedPassword,
@@ -311,7 +334,7 @@ export const userManagementRouter = router({
       }
 
       const defaultPassword = "Abc12345";
-      const hashedPassword = await bcrypt.hash(defaultPassword, BCRYPT_ROUNDS);
+      const hashedPassword = hashPasswordFast(defaultPassword);
       let successCount = 0;
       let skipCount = 0;
       const errors: string[] = [];

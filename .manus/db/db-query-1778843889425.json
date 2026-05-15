@@ -1,0 +1,60 @@
+{
+  "query": "SELECT id, email, LEFT(password, 10) as pwd_prefix FROM users WHERE password LIKE '$2b$%' LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Vy724JxA6DGk2d.root --database a79tkwusxJ5HWpLxCXSSXN --execute SELECT id, email, LEFT(password, 10) as pwd_prefix FROM users WHERE password LIKE '$2b$%' LIMIT 10;",
+  "rows": [
+    {
+      "id": "1",
+      "email": "gaozhenshao@gmail.com",
+      "pwd_prefix": "$2b$08$Nry"
+    },
+    {
+      "id": "20",
+      "email": "gentlefuxinhua123@gmail.com",
+      "pwd_prefix": "$2b$12$GDb"
+    },
+    {
+      "id": "3783265",
+      "email": "1832664001@qq.com",
+      "pwd_prefix": "$2b$12$zyT"
+    },
+    {
+      "id": "3783274",
+      "email": "2268251998@qq.com",
+      "pwd_prefix": "$2b$12$OSt"
+    },
+    {
+      "id": "3783296",
+      "email": "2103587501@qq.com",
+      "pwd_prefix": "$2b$12$1os"
+    },
+    {
+      "id": "3783311",
+      "email": "2926794856@qq.com",
+      "pwd_prefix": "$2b$12$FZm"
+    },
+    {
+      "id": "3783335",
+      "email": "2835872291@qq.com",
+      "pwd_prefix": "$2b$12$fgY"
+    },
+    {
+      "id": "3783347",
+      "email": "1432454731@qq.com",
+      "pwd_prefix": "$2b$12$a5G"
+    },
+    {
+      "id": "3783362",
+      "email": "757608764@qq.com",
+      "pwd_prefix": "$2b$12$/Hw"
+    },
+    {
+      "id": "4230001",
+      "email": "471982152@qq.com",
+      "pwd_prefix": "$2b$12$4ev"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\temail\tpwd_prefix\n1\tgaozhenshao@gmail.com\t$2b$08$Nry\n20\tgentlefuxinhua123@gmail.com\t$2b$12$GDb\n3783265\t1832664001@qq.com\t$2b$12$zyT\n3783274\t2268251998@qq.com\t$2b$12$OSt\n3783296\t2103587501@qq.com\t$2b$12$1os\n3783311\t2926794856@qq.com\t$2b$12$FZm\n3783335\t2835872291@qq.com\t$2b$12$fgY\n3783347\t1432454731@qq.com\t$2b$12$a5G\n3783362\t757608764@qq.com\t$2b$12$/Hw\n4230001\t471982152@qq.com\t$2b$12$4ev\n",
+  "stderr": "",
+  "execution_time_ms": 1802
+}
