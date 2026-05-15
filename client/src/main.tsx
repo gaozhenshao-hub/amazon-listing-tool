@@ -73,21 +73,34 @@ const trpcClient = trpc.createClient({
       url: "/api/trpc",
       transformer: superjson,
       async fetch(input, init) {
-        const res = await globalThis.fetch(input, {
-          ...(init ?? {}),
-          credentials: "include",
-        });
-        // Handle 503 Service Unavailable (Cloud Run cold start)
-        if (res.status === 503 || res.status === 502) {
-          throw new TRPCClientError(`服务正在启动中，请稍后重试... (${res.status})`);
+        const controller = new AbortController();
+        // 30s timeout for all requests (Cloud Run can be slow on cold start)
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        try {
+          const res = await globalThis.fetch(input, {
+            ...(init ?? {}),
+            credentials: "include",
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          // Handle 502/503 - Cloud Run cold start or overload
+          if (res.status === 503 || res.status === 502) {
+            throw new TRPCClientError('服务暂时不可用，正在重试...');
+          }
+          // Check if response is actually JSON before returning
+          const contentType = res.headers.get('content-type') || '';
+          if (!contentType.includes('application/json') && res.status >= 400) {
+            const text = await res.text();
+            throw new TRPCClientError(`服务器返回异常: ${text.substring(0, 100)}`);
+          }
+          return res;
+        } catch (err) {
+          clearTimeout(timeoutId);
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            throw new TRPCClientError('请求超时，正在重试...');
+          }
+          throw err;
         }
-        // Check if response is actually JSON before returning
-        const contentType = res.headers.get('content-type') || '';
-        if (!contentType.includes('application/json') && res.status >= 400) {
-          const text = await res.text();
-          throw new TRPCClientError(`服务器错误: ${text.substring(0, 100)}`);
-        }
-        return res;
       },
     }),
   ],

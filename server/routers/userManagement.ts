@@ -5,6 +5,11 @@ import * as db from "../db";
 import { sdk } from "../_core/sdk";
 import { getSessionCookieOptions } from "../_core/cookies";
 import bcrypt from "bcryptjs";
+
+// Cloud Run (1vCPU, 512MB) makes bcrypt very slow at high rounds.
+// Use 8 rounds for acceptable security with fast response times.
+const BCRYPT_ROUNDS = 8;
+
 import {
   COOKIE_NAME, ONE_YEAR_MS,
   ALL_ROLES, ADMIN_ROLES, ROLE_LABELS,
@@ -80,19 +85,29 @@ export const userAuthRouter = router({
         });
       }
 
-      // Login success - reset attempts
-      await db.updateLoginAttempts(user.id, 0, null);
-      await db.updateUserById(user.id, { lastSignedIn: new Date() });
+      // Login success - run DB updates in parallel for speed
+      const loginUpdates = Promise.all([
+        db.updateLoginAttempts(user.id, 0, null),
+        db.updateUserById(user.id, { lastSignedIn: new Date() }),
+        db.insertLoginLog({
+          userId: user.id,
+          loginMethod: "password",
+          loginIdentifier: input.identifier,
+          ipAddress: ctx.req.ip || null,
+          userAgent: ctx.req.headers["user-agent"]?.substring(0, 512) || null,
+          success: 1,
+        }),
+      ]);
 
-      // Log success
-      await db.insertLoginLog({
-        userId: user.id,
-        loginMethod: "password",
-        loginIdentifier: input.identifier,
-        ipAddress: ctx.req.ip || null,
-        userAgent: ctx.req.headers["user-agent"]?.substring(0, 512) || null,
-        success: 1,
-      });
+      // Rehash password with lower rounds if it was hashed with higher rounds (background, don't block response)
+      const currentRounds = bcrypt.getRounds(user.password);
+      if (currentRounds > BCRYPT_ROUNDS) {
+        bcrypt.hash(input.password, BCRYPT_ROUNDS).then(newHash => {
+          db.updateUserById(user.id, { password: newHash }).catch(() => {});
+        }).catch(() => {});
+      }
+
+      await loginUpdates;
 
       // Create session token using a pseudo openId for password users
       const sessionOpenId = user.openId || `pwd_${user.id}`;
@@ -138,7 +153,7 @@ export const userAuthRouter = router({
         }
       }
 
-      const hashedPassword = await bcrypt.hash(input.newPassword, 12);
+      const hashedPassword = await bcrypt.hash(input.newPassword, BCRYPT_ROUNDS);
       await db.updateUserById(user.id, {
         password: hashedPassword,
         mustChangePassword: 0,
@@ -191,7 +206,7 @@ export const userManagementRouter = router({
       }
 
       const password = input.initialPassword || "Abc12345";
-      const hashedPassword = await bcrypt.hash(password, 12);
+      const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
       await db.upsertUser({
         name: input.name,
@@ -266,7 +281,7 @@ export const userManagementRouter = router({
       }
 
       const newPassword = input.newPassword || "Abc12345";
-      const hashedPassword = await bcrypt.hash(newPassword, 12);
+      const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
 
       await db.updateUserById(input.userId, {
         password: hashedPassword,
@@ -296,7 +311,7 @@ export const userManagementRouter = router({
       }
 
       const defaultPassword = "Abc12345";
-      const hashedPassword = await bcrypt.hash(defaultPassword, 12);
+      const hashedPassword = await bcrypt.hash(defaultPassword, BCRYPT_ROUNDS);
       let successCount = 0;
       let skipCount = 0;
       const errors: string[] = [];
