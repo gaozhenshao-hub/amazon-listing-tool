@@ -17,7 +17,7 @@ const queryClient = new QueryClient({
         // Retry on 503 Service Unavailable (cold start) up to 3 times
         if (error instanceof TRPCClientError) {
           const msg = error.message || '';
-          if (msg.includes('Service Unavailable') || msg.includes('Unexpected token') || msg.includes('not valid JSON') || msg.includes('Failed to fetch')) {
+          if (msg.includes('Service Unavailable') || msg.includes('Unexpected token') || msg.includes('not valid JSON') || msg.includes('Failed to fetch') || msg.includes('服务暂时不可用') || msg.includes('请求超时') || msg.includes('正在重试')) {
             return failureCount < 3;
           }
         }
@@ -29,7 +29,7 @@ const queryClient = new QueryClient({
       retry: (failureCount, error) => {
         if (error instanceof TRPCClientError) {
           const msg = error.message || '';
-          if (msg.includes('Service Unavailable') || msg.includes('Unexpected token') || msg.includes('not valid JSON') || msg.includes('Failed to fetch')) {
+          if (msg.includes('Service Unavailable') || msg.includes('Unexpected token') || msg.includes('not valid JSON') || msg.includes('Failed to fetch') || msg.includes('服务暂时不可用') || msg.includes('请求超时') || msg.includes('正在重试')) {
             return failureCount < 2;
           }
         }
@@ -40,18 +40,44 @@ const queryClient = new QueryClient({
   },
 });
 
+// Track whether auth.me has been successfully resolved at least once
+let authMeResolved = false;
+
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
   if (typeof window === "undefined") return;
 
   const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
-
   if (!isUnauthorized) return;
+
+  // Don't redirect if we're already on the login page
+  if (window.location.pathname === '/login') return;
+
+  // Only redirect if auth.me has already confirmed the user is authenticated.
+  // During initial page load, auth.me might still be loading/retrying (Cloud Run cold start),
+  // and other protected queries firing before auth.me resolves will get UNAUTHORIZED.
+  // We should NOT redirect in that case — just let them retry after auth.me succeeds.
+  if (!authMeResolved) {
+    console.warn("[Auth] Suppressed login redirect: auth.me not yet resolved. Query will retry after auth is ready.");
+    return;
+  }
 
   window.location.href = getLoginUrl();
 };
 
 queryClient.getQueryCache().subscribe(event => {
+  // Track when auth.me successfully resolves
+  if (event.type === "updated" && event.action.type === "success") {
+    const queryKey = event.query.queryKey;
+    // tRPC query keys are arrays like [["auth","me"], ...]
+    const keyStr = JSON.stringify(queryKey);
+    if (keyStr.includes('"auth"') && keyStr.includes('"me"')) {
+      if (event.query.state.data) {
+        authMeResolved = true;
+      }
+    }
+  }
+
   if (event.type === "updated" && event.action.type === "error") {
     const error = event.query.state.error;
     redirectToLoginIfUnauthorized(error);
@@ -64,6 +90,17 @@ queryClient.getMutationCache().subscribe(event => {
     const error = event.mutation.state.error;
     redirectToLoginIfUnauthorized(error);
     console.error("[API Mutation Error]", error);
+  }
+});
+
+// Also track auth.me resolution via logout (reset the flag)
+queryClient.getMutationCache().subscribe(event => {
+  if (event.type === "updated" && event.action.type === "success") {
+    // Check if this is a logout mutation
+    const mutKey = JSON.stringify(event.mutation.options.mutationKey || []);
+    if (mutKey.includes('"logout"')) {
+      authMeResolved = false;
+    }
   }
 });
 

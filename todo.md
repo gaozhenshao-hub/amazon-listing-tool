@@ -4073,3 +4073,5 @@
 ### Bug修复：登录成功后仍停留在登录页面
 - [x] 排查登录成功后跳转逻辑（根因：密码用户openId为NULL，auth.me找不到用户）
 - [x] 修复登录后不跳转问题（bcrypt→scrypt + 持久化openId + 过滤密码返回）
+- [x] 修复 auth.me 重试策略（503时重试4次，保持loading状态）
+- [x] 修复 redirectToLoginIfUnauthorized 误触发（增加authMeResolved守卫，auth.me未确认前不跳转登录）
