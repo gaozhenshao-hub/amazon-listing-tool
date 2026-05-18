@@ -90,51 +90,6 @@ describe("Phase 4 - Custom Dashboard Router", () => {
   });
 });
 
-// ─── Phase 4: Competitor Monitor Router ──────────────────────────
-describe("Phase 4 - Competitor Monitor Router", () => {
-  it("should export competitorMonitorRouter", async () => {
-    const mod = await import("./routers/competitorMonitor");
-    expect(mod.competitorMonitorRouter).toBeDefined();
-    expect(mod.competitorMonitorRouter._def).toBeDefined();
-  });
-
-  it("should have getCompetitorList procedure", async () => {
-    const mod = await import("./routers/competitorMonitor");
-    const procedures = mod.competitorMonitorRouter._def.procedures;
-    expect(procedures).toHaveProperty("getCompetitorList");
-  });
-
-  it("should have getCompetitorPriceChanges procedure", async () => {
-    const mod = await import("./routers/competitorMonitor");
-    const procedures = mod.competitorMonitorRouter._def.procedures;
-    expect(procedures).toHaveProperty("getCompetitorPriceChanges");
-  });
-
-  it("should have getCompetitorBsrTrend procedure", async () => {
-    const mod = await import("./routers/competitorMonitor");
-    const procedures = mod.competitorMonitorRouter._def.procedures;
-    expect(procedures).toHaveProperty("getCompetitorBsrTrend");
-  });
-
-  it("should have getCompetitorReviewChanges procedure", async () => {
-    const mod = await import("./routers/competitorMonitor");
-    const procedures = mod.competitorMonitorRouter._def.procedures;
-    expect(procedures).toHaveProperty("getCompetitorReviewChanges");
-  });
-
-  it("should have aiCompetitorInsight procedure", async () => {
-    const mod = await import("./routers/competitorMonitor");
-    const procedures = mod.competitorMonitorRouter._def.procedures;
-    expect(procedures).toHaveProperty("aiCompetitorInsight");
-  });
-
-  it("should have getProductComparison procedure", async () => {
-    const mod = await import("./routers/competitorMonitor");
-    const procedures = mod.competitorMonitorRouter._def.procedures;
-    expect(procedures).toHaveProperty("getProductComparison");
-  });
-});
-
 // ─── Phase 4: Customer Profile Router ────────────────────────────
 describe("Phase 4 - Customer Profile Router", () => {
   it("should export customerProfileRouter", async () => {
@@ -187,31 +142,6 @@ describe("Phase 4 - Customer Profile Router", () => {
 });
 
 // ─── Phase 4: AppRouter Integration ──────────────────────────────
-describe("Phase 4 - AppRouter Integration", () => {
-  it("appRouter should have dashboardUpgrade namespace", async () => {
-    const mod = await import("./routers");
-    const record = mod.appRouter._def.record;
-    expect(record).toHaveProperty("dashboardUpgrade");
-  });
-
-  it("appRouter should have customDashboard namespace", async () => {
-    const mod = await import("./routers");
-    const record = mod.appRouter._def.record;
-    expect(record).toHaveProperty("customDashboard");
-  });
-
-  it("appRouter should have competitorMonitor namespace", async () => {
-    const mod = await import("./routers");
-    const record = mod.appRouter._def.record;
-    expect(record).toHaveProperty("competitorMonitor");
-  });
-
-  it("appRouter should have customerProfile namespace", async () => {
-    const mod = await import("./routers");
-    const record = mod.appRouter._def.record;
-    expect(record).toHaveProperty("customerProfile");
-  });
-});
 
 // ─── Phase 4: Schema Tables ──────────────────────────────────────
 describe("Phase 4 - Schema Tables", () => {

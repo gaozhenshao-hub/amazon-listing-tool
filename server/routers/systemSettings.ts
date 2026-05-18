@@ -411,7 +411,7 @@ export const systemSettingsRouter = router({
     .query(async ({ input }) => {
       const { getLingxingAdapter } = await import("../lingxingAdapter");
       const adapter = getLingxingAdapter();
-      return adapter.getRecentLogs(input?.limit || 50);
+      return adapter.getRecentLogs();
     }),
 
   // ═══════════════════ Scraper Proxy Config ═══════════════════

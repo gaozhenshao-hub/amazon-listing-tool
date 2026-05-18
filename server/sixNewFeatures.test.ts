@@ -36,14 +36,7 @@ describe("Feature 1: Crawler Engine", () => {
 });
 
 describe("Feature 2: Dashboard-to-Detail Navigation", () => {
-  it("OpsProfit page should have click-to-navigate on product rows", async () => {
-    const fs = await import("fs");
-    const content = fs.readFileSync("client/src/pages/ops/OpsProfit.tsx", "utf-8");
-    expect(content).toContain("setLocation");
-    expect(content).toContain("cursor-pointer");
-    expect(content).toContain("highlight");
-    expect(content).toContain("点击查看产品详情");
-  });
+  it.skip("OpsProfit page removed - profit data now in dashboard", () => {});
 
   it("OpsDashboard should have product ranking section", async () => {
     const fs = await import("fs");
@@ -74,15 +67,7 @@ describe("Feature 4: Lingxing API Settings Page", () => {
     expect(appRouter._def.procedures).toHaveProperty("systemSettings.testLingxingConnection");
   });
 
-  it("SystemSettings page should have Lingxing API tab with form fields", async () => {
-    const fs = await import("fs");
-    const content = fs.readFileSync("client/src/pages/SystemSettings.tsx", "utf-8");
-    expect(content).toContain("lingxing");
-    expect(content).toContain("领星API");
-    expect(content).toContain("App ID");
-    expect(content).toContain("App Secret");
-    expect(content).toContain("API Host");
-  });
+  it.skip("Lingxing API Settings tab removed - API deprecated", () => {});
 });
 
 describe("Feature 5: Conversion-to-Plan Sync Enhancement", () => {

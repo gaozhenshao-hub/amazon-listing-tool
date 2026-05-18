@@ -48,7 +48,7 @@ interface WorkflowStep {
 const stats: StatCard[] = [
   { icon: Layers, value: "5", label: "工具模块", sub: "3 已完成" },
   { icon: Zap, value: "20+", label: "AI能力", sub: "持续扩展" },
-  { icon: BarChart3, value: "50+", label: "数据接口", sub: "领星ERP" },
+  { icon: BarChart3, value: "50+", label: "数据接口", sub: "Excel导入" },
   { icon: Globe, value: "8", label: "支持站点", sub: "全球市场" },
 ];
 
@@ -82,7 +82,7 @@ const moduleCards: ModuleCard[] = [
     iconBg: "bg-orange-500",
     title: "运营AI提效工具",
     description:
-      "基于领星ERP数据的运营智能分析，覆盖广告优化、库存预警、运营计划和执行复盘",
+      "基于Excel数据导入的运营智能分析，覆盖广告优化、库存预警、运营计划和执行复盘",
     path: "/ops",
     status: "developing",
     cardBg: "bg-gradient-to-br from-rose-50 to-pink-50/50 border-rose-200/60",

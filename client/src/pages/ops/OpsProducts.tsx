@@ -1082,20 +1082,9 @@ export default function OpsProducts() {
             </PopoverContent>
           </Popover>)}
           {dataSource === "system" && (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => syncMut.mutate()}
-                disabled={syncMut.isPending}
-                className="gap-2"
-              >
-                {syncMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                {syncMut.isPending ? "同步中..." : "从领星同步"}
-              </Button>
-              <Button onClick={() => setShowCreate(true)} className="gap-2">
-                <Plus className="h-4 w-4" /> 添加产品
-              </Button>
-            </>
+            <Button onClick={() => setShowCreate(true)} className="gap-2">
+              <Plus className="h-4 w-4" /> 添加产品
+            </Button>
           )}
         </div>
       </div>
@@ -1265,7 +1254,7 @@ export default function OpsProducts() {
             <p className="text-muted-foreground">
               {searchTerm || marketplaceFilter !== "ALL" || statusFilter !== "ALL"
                 ? "没有找到匹配的产品"
-                : dataSource === "system" ? "还没有添加产品，点击\"从领星同步\"或\"添加产品\"开始"
+                : dataSource === "system" ? "还没有添加产品，点击\"添加产品\"或在数据导入中心上传Excel开始"
                 : `暂无${dataSource === "lingxing" ? "领星" : "赛狐"}导入数据，请先在数据导入中心上传Excel文件`}
             </p>
           </CardContent>

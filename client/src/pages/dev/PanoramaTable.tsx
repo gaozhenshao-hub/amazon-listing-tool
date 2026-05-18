@@ -470,7 +470,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
     const counts: Record<string, Record<string, number>> = {};
     for (const p of data.products) {
       if (!p.asin) continue;
-      const asinTags = data.tagMap[p.asin] || {};
+      const asinTags = data.tagMap[p.asin as string] || {};
       for (const [catName, catValue] of Object.entries(asinTags as Record<string, string>)) {
         if (!catValue) continue;
         if (!counts[catName]) counts[catName] = {};
@@ -549,7 +549,7 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
     const filterEntries = Object.entries(tagFilters);
     if (filterEntries.length > 0 && data?.tagMap) {
       products = products.filter((p: any) => {
-        const asinTags = data.tagMap[p.asin] || {};
+        const asinTags = data.tagMap[p.asin as string] || {};
         // AND: every category must match at least one selected value
         return filterEntries.every(([catName, selectedValues]) => {
           if (selectedValues.size === 0) return true;
@@ -591,8 +591,8 @@ export default function PanoramaTable({ projectId }: { projectId: number }) {
     if (!groupByTag || !data?.tagMap) return [];
     const groups: Record<string, any[]> = {};
     for (const p of filteredProducts) {
-      const asinTags = data.tagMap[p.asin] || {};
-      const tagVal = asinTags[groupByTag] || "(未标注)";
+      const asinTags = data.tagMap[p.asin as string] || {};
+      const tagVal = asinTags[groupByTag!] || "(未标注)";
       if (!groups[tagVal]) groups[tagVal] = [];
       groups[tagVal].push(p);
     }

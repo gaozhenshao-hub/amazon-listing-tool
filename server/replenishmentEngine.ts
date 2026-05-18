@@ -11,7 +11,7 @@
 import { getDb } from "./db";
 import { shippingBatches, batchStepConfigs, stepTimeHistory, replenishmentPredictions, batchProducts } from "../drizzle/schema";
 import { eq, and, sql, desc, gte, isNotNull } from "drizzle-orm";
-import { getLingxingAdapter } from "./lingxingAdapter";
+// Lingxing API removed - inventory data now comes from Excel uploads
 import { invokeLLM } from "./_core/llm";
 import { getMappedStepDaysForRoute, type MappedStepDays } from "./nextsls/transitTimeService";
 import { nextSlsAdapter } from "./nextsls/adapter";
@@ -540,26 +540,13 @@ export async function recordStepTime(
  */
 export async function runReplenishmentPredictions(userId: string): Promise<ReplenishmentResult[]> {
   const db = await getDb();
-  const lingxing = getLingxingAdapter();
   
-  // 1. Get FBA inventory from Lingxing
-  const fbaInventoryRes = await lingxing.request({
-    path: '/erp/sc/routing/storage/fbaInventoryV2',
-    body: {},
-  });
+  // Lingxing API removed - FBA inventory data now comes from Excel uploads
+  // TODO: Read inventory data from lingxingProductWeekly or other imported tables
+  const fbaItems: any[] = [];
+  const forecastMap = new Map<string, any>();
   
-  const fbaItems = Array.isArray(fbaInventoryRes.data) ? fbaInventoryRes.data : [];
-  
-  // 2. Get sales forecast from Lingxing
-  const forecastRes = await lingxing.request({
-    path: '/erp/sc/data/replenish/salesForecast',
-    body: {},
-  });
-  
-  const forecasts = Array.isArray(forecastRes.data) ? forecastRes.data : [];
-  const forecastMap = new Map(forecasts.map((f: any) => [f.sku, f]));
-  
-  // 3. Get in-transit inventory
+  // Get in-transit inventory from shipping batches
   const inTransit = await getInTransitInventory(userId);
   
   // 4. Run prediction for each SKU

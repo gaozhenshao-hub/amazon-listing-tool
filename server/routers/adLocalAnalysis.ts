@@ -1521,7 +1521,7 @@ export const adLocalAnalysisRouter = router({
           },
         },
       });
-      const content = response.choices?.[0]?.message?.content || '{}';
+      const content = String(response.choices?.[0]?.message?.content || '{}');
       try {
         return { strategy: JSON.parse(content), error: null };
       } catch {

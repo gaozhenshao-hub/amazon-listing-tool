@@ -70,8 +70,7 @@ async function startServer() {
     intelScheduler.start();
     // Start todo reminder scheduler (check every hour)
     import("../todoReminder").then(m => m.startTodoReminderScheduler()).catch(err => console.error("[TodoReminder] Failed to start:", err));
-    // Initialize Lingxing API adapter from DB settings (proxy config, credentials)
-    import("../lingxingAdapter").then(m => m.initLingxingAdapterFromDb()).catch(err => console.error("[LingxingAdapter] Failed to init:", err));
+    // Lingxing API adapter removed - data now imported via Excel uploads only
     // Initialize NextSLS logistics API adapter from DB settings
     import("../nextsls/adapter").then(m => m.initNextSlsAdapterFromDb()).catch(err => console.error("[NextSLS] Failed to init:", err));
     // Initialize weekly auto-sync cron job (every Monday 02:00 Asia/Shanghai)

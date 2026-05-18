@@ -504,7 +504,7 @@ export default function OpsProductDetail() {
                     <div className="flex items-start gap-2 p-2.5 mb-3 rounded-md bg-amber-50 border border-amber-200">
                       <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
                       <div className="text-xs">
-                        <p className="font-medium text-amber-800">领星API连接失败，当前显示为模拟数据</p>
+                        <p className="font-medium text-amber-800">数据加载失败，当前显示为模拟数据</p>
                         {profitData.dataSource.reason && <p className="text-amber-600 mt-0.5">{profitData.dataSource.reason}</p>}
                       </div>
                     </div>
@@ -635,16 +635,16 @@ export default function OpsProductDetail() {
                     <div className="flex items-start gap-2 p-2.5 mb-3 rounded-md bg-amber-50 border border-amber-200">
                       <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
                       <div className="text-xs">
-                        <p className="font-medium text-amber-800">领星API连接失败，当前显示为模拟数据</p>
+                        <p className="font-medium text-amber-800">数据加载失败，当前显示为模拟数据</p>
                       </div>
                     </div>
                   )}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
                     {[
-                      { label: "FBA可售", value: inventoryData.fba.available, color: "text-emerald-600" },
-                      { label: "FBA在途", value: inventoryData.fba.inbound, color: "text-blue-600" },
-                      { label: "FBA预留", value: inventoryData.fba.reserved, color: "text-amber-600" },
-                      { label: "可售天数", value: `${inventoryData.fba.daysOfSupply}天`, color: inventoryData.fba.daysOfSupply < 14 ? "text-red-600" : "text-emerald-600" },
+                      { label: "FBA可售", value: (inventoryData as any).fba?.available ?? inventoryData.total.fulfillableQty, color: "text-emerald-600" },
+                      { label: "FBA在途", value: (inventoryData as any).fba?.inbound ?? inventoryData.total.inboundQty, color: "text-blue-600" },
+                      { label: "FBA预留", value: (inventoryData as any).fba?.reserved ?? inventoryData.total.reservedQty, color: "text-amber-600" },
+                      { label: "可售天数", value: `${(inventoryData as any).fba?.daysOfSupply ?? inventoryData.total.daysOfSupply}天`, color: ((inventoryData as any).fba?.daysOfSupply ?? inventoryData.total.daysOfSupply) < 14 ? "text-red-600" : "text-emerald-600" },
                     ].map((item, idx) => (
                       <div key={idx} className="text-center p-3 rounded-lg bg-muted/50">
                         <p className="text-xs text-muted-foreground">{item.label}</p>
@@ -652,17 +652,17 @@ export default function OpsProductDetail() {
                       </div>
                     ))}
                   </div>
-                  {inventoryData.alert && (
+                  {(inventoryData as any).alert && (
                     <div className={`flex items-center gap-2 p-2 rounded-md ${
-                      inventoryData.alert.level === "danger" ? "bg-red-50 border border-red-200" :
-                      inventoryData.alert.level === "warning" ? "bg-amber-50 border border-amber-200" :
+                      (inventoryData as any).alert.level === "danger" ? "bg-red-50 border border-red-200" :
+                      (inventoryData as any).alert.level === "warning" ? "bg-amber-50 border border-amber-200" :
                       "bg-blue-50 border border-blue-200"
                     }`}>
                       <AlertTriangle className={`h-4 w-4 ${
-                        inventoryData.alert.level === "danger" ? "text-red-600" :
-                        inventoryData.alert.level === "warning" ? "text-amber-600" : "text-blue-600"
+                        (inventoryData as any).alert.level === "danger" ? "text-red-600" :
+                        (inventoryData as any).alert.level === "warning" ? "text-amber-600" : "text-blue-600"
                       }`} />
-                      <p className="text-xs font-medium">{inventoryData.alert.message}</p>
+                      <p className="text-xs font-medium">{(inventoryData as any).alert.message}</p>
                     </div>
                   )}
                 </div>
@@ -713,7 +713,7 @@ export default function OpsProductDetail() {
                     <div className="flex items-start gap-2 p-2.5 mb-3 rounded-md bg-amber-50 border border-amber-200">
                       <AlertTriangle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
                       <div className="text-xs">
-                        <p className="font-medium text-amber-800">领星API连接失败，当前显示为模拟数据</p>
+                        <p className="font-medium text-amber-800">数据加载失败，当前显示为模拟数据</p>
                         {adsData.dataSource.reason && <p className="text-amber-600 mt-0.5">{adsData.dataSource.reason}</p>}
                       </div>
                     </div>

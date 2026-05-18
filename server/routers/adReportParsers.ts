@@ -31,7 +31,7 @@ function toInt(val: any): number {
 }
 
 // ─── Helper: read Excel rows as array of objects
-async function readExcelRows(buffer: Buffer): Promise<{ headers: string[]; rows: Record<string, any>[] }> {
+async function readExcelRows(buffer: any): Promise<{ headers: string[]; rows: Record<string, any>[] }> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
   const sheet = workbook.worksheets[0];

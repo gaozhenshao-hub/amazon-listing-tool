@@ -567,25 +567,7 @@ describe("Phase 2 P1 - adAnalysisP2 router module", () => {
   });
 });
 
-describe("Phase 2 P1 - profitDeep router module", () => {
-  it("should export profitDeepRouter", async () => {
-    const mod = await import("./routers/profitDeep");
-    expect(mod.profitDeepRouter).toBeDefined();
-    expect(mod.profitDeepRouter._def).toBeDefined();
-  });
 
-  it("profitDeepRouter should have profit detail procedure", async () => {
-    const mod = await import("./routers/profitDeep");
-    const procedures = Object.keys(mod.profitDeepRouter._def.procedures);
-    expect(procedures).toContain("getParentAsinProfit");
-  });
-
-  it("profitDeepRouter should have AI profit diagnosis procedure", async () => {
-    const mod = await import("./routers/profitDeep");
-    const procedures = Object.keys(mod.profitDeepRouter._def.procedures);
-    expect(procedures).toContain("aiProfitDiagnosis");
-  });
-});
 
 describe("Phase 2 P1 - opsProductPlan router module", () => {
   it("should export opsProductPlanRouter", async () => {
@@ -633,10 +615,8 @@ describe("Phase 2 P1 - appRouter integration", () => {
     const mod = await import("./routers");
     const routerKeys = Object.keys(mod.appRouter._def.procedures);
     const hasAdP2 = routerKeys.some(k => k.startsWith("adAnalysisP2."));
-    const hasProfitDeep = routerKeys.some(k => k.startsWith("profitDeep."));
     const hasOpsProductPlan = routerKeys.some(k => k.startsWith("opsProductPlan."));
     expect(hasAdP2).toBe(true);
-    expect(hasProfitDeep).toBe(true);
     expect(hasOpsProductPlan).toBe(true);
   });
 });

@@ -24,7 +24,7 @@ export default function AdDeepClinic() {
   const [dateEnd, setDateEnd] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const clinicMutation = trpc.adDeepAnalysis.clinicDiagnosis.useMutation();
+  const clinicMutation = trpc.adDeepAnalysis.startClinicConsultation.useMutation();
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -54,8 +54,8 @@ export default function AdDeepClinic() {
         portfolioNames: selectedPortfolios,
         dateStart,
         dateEnd,
-        symptom: input.trim(),
-        conversationHistory: messages.map((m) => ({ role: m.role, content: m.content })),
+        symptomDescription: input.trim(), symptomCategory: "other",
+        additionalContext: messages.map((m) => `${m.role}: ${m.content}`).join("\n"),
       });
 
       const assistantMsg: Message = {

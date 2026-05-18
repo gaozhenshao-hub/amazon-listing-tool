@@ -67,10 +67,8 @@ describe("Platform - Routing", () => {
     expect(code).toContain("ServiceEmails");
     // Module 3 (ops) is now fully implemented with real routes
     expect(code).toContain("OpsDashboard");
-    expect(code).toContain("OpsProfit");
     expect(code).toContain("OpsInventory");
     expect(code).toContain("OpsAds");
-    expect(code).toContain("OpsCompetitor");
   });
 
   it("App.tsx should have a platform home page", () => {

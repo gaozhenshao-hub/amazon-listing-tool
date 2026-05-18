@@ -3912,12 +3912,17 @@ export const adReportUploads = mysqlTable("ad_report_uploads", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("user_id").notNull(),
   reportType: mysqlEnum("report_type", [
-    "search_term",    // 领星搜索词报告
-    "campaign",       // 领星广告活动报告
-    "placement",      // 领星广告位报告
-    "hourly",         // 亚马逊广告小时报告 (CSV)
-    "order",          // 领星SC订单导出
+    "search_term",    // 搜索词报告
+    "campaign",       // 广告活动报告
+    "placement",      // 广告位报告
+    "hourly",         // 广告小时报告 (CSV)
+    "order",          // SC订单导出
     "dsp",            // DSP广告报告
+    "daily_placement",          // 每日广告位报告
+    "daily_search_term",        // 每日搜索词报告
+    "daily_impression_share",   // 每日展示份额报告
+    "daily_sb_benchmark",       // 每日SB基准报告
+    "daily_business",           // 每日业务报告
   ]).notNull(),
   fileName: varchar("file_name", { length: 500 }).notNull(),
   fileUrl: text("file_url"),

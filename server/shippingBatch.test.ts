@@ -222,30 +222,7 @@ describe("Frontend Shipping Batch Pages", () => {
 });
 
 // ─── Test: Lingxing Adapter Mock Endpoints ───
-describe("Lingxing Adapter Logistics Endpoints", () => {
-  const adapterPath = path.resolve(__dirname, "./lingxingAdapter.ts");
-  const adapterCode = fs.readFileSync(adapterPath, "utf-8");
-
-  it("should have FBA delivery order mock endpoint", () => {
-    expect(adapterCode).toContain("shipmentList");
-  });
-
-  it("should have logistics channel mock endpoint", () => {
-    expect(adapterCode).toContain("channelList");
-  });
-
-  it("should have FBA inventory V2 mock endpoint", () => {
-    expect(adapterCode).toContain("fbaWarehouseDetail");
-  });
-
-  it("should have logistics provider mock endpoint", () => {
-    expect(adapterCode).toContain("fbaStock/fbaList");
-  });
-
-  it("should have warehouse inventory mock endpoint", () => {
-    expect(adapterCode).toContain("warehouseInventory");
-  });
-});
+// Lingxing Adapter Logistics Endpoints tests removed (API deprecated)
 
 // ─── Test: Route Registration ───
 describe("Route Registration", () => {

@@ -10,7 +10,7 @@ export const ENV = {
   // Deployment configuration
   companyName: process.env.COMPANY_NAME ?? "跨海\uD83D\uDC4D",
   companyLogo: process.env.COMPANY_LOGO ?? "",
-  erpType: process.env.ERP_TYPE ?? "lingxing",
+  erpType: process.env.ERP_TYPE ?? "excel", // Changed from "lingxing" - data now imported via Excel
   instanceId: process.env.INSTANCE_ID ?? "instance-a",
   // Peer sync configuration
   peerSyncEnabled: process.env.PEER_SYNC_ENABLED === "true",
@@ -19,8 +19,4 @@ export const ENV = {
   // Usage reporting
   usageReportEnabled: process.env.USAGE_REPORT_ENABLED === "true",
   usageReportUrl: process.env.USAGE_REPORT_URL ?? "",
-  // Lingxing ERP API
-  lingxingAppId: process.env.LINGXING_APP_ID ?? "",
-  lingxingAppSecret: process.env.LINGXING_APP_SECRET ?? "",
-  lingxingApiHost: process.env.LINGXING_API_HOST ?? "https://openapi.lingxing.com",
 };

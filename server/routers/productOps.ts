@@ -3579,7 +3579,7 @@ export const productOpsRouter = router({
           },
         });
 
-        const aiResult = JSON.parse(response.choices[0].message.content || '{}');
+        const aiResult = JSON.parse(String(response.choices[0].message.content) || '{}');
 
         // 保存AI分析结果
         await db!.update(executionReviews).set({
@@ -4968,8 +4968,8 @@ export const productOpsRouter = router({
       // Deduplicate by parentAsin, keep latest row
       const asinMap = new Map<string, any>();
       for (const row of filtered) {
-        const key = row.parentAsin;
-        if (!asinMap.has(key)) asinMap.set(key, row);
+        const key = row.parentAsin ?? '';
+        if (key && !asinMap.has(key)) asinMap.set(key, row);
       }
 
       // Apply operator permission filter for non-admin users
@@ -5195,7 +5195,7 @@ export const productOpsRouter = router({
             // Update existing plan - also set parentAsin for data isolation
             await db!.update(opsPlans).set({ ...cleanData, parentAsin })
               .where(and(eq(opsPlans.id, existingPlan.id), eq(opsPlans.userId, ctx.user.id)));
-            results.push({ parentAsin, planName, status: "updated", recordId: existingPlan.id });
+            results.push({ parentAsin, planName, status: "updated" as const });
           } else {
             // Create new plan with parentAsin for data isolation
             const [insertResult] = await db!.insert(opsPlans).values({
@@ -5205,7 +5205,7 @@ export const productOpsRouter = router({
               planName,
               ...cleanData,
             } as any);
-            results.push({ parentAsin, planName, status: "created", recordId: (insertResult as any).insertId });
+            results.push({ parentAsin, planName, status: "created" as const });
           }
         } catch (err: any) {
           results.push({ parentAsin, planName, status: "skipped", reason: err.message?.slice(0, 100) });
@@ -5274,7 +5274,7 @@ export const productOpsRouter = router({
       // Deduplicate by parentAsin, keep latest row
       const asinMap = new Map<string, any>();
       for (const row of filtered) {
-        const key = row.parentAsin;
+        const key = row.parentAsin ?? "";
         if (!asinMap.has(key)) asinMap.set(key, row);
       }
 

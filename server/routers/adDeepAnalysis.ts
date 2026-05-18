@@ -549,7 +549,7 @@ export const adDeepAnalysisRouter = router({
         response_format: { type: "json_object" },
       });
 
-      const result = JSON.parse(response.choices[0].message.content || "{}");
+      const result = JSON.parse(String(response.choices[0].message.content) || "{}");
 
       // Save to DB
       const [insertResult] = await d.insert(adProductStages).values({
@@ -595,7 +595,7 @@ export const adDeepAnalysisRouter = router({
 
       let keywords: any[] = [];
       try {
-        const parsed = JSON.parse(response.choices[0].message.content || "[]");
+        const parsed = JSON.parse(String(response.choices[0].message.content) || "[]");
         keywords = Array.isArray(parsed) ? parsed : (parsed.keywords || []);
       } catch { keywords = []; }
 
@@ -653,7 +653,7 @@ export const adDeepAnalysisRouter = router({
         response_format: { type: "json_object" },
       });
 
-      const result = JSON.parse(response.choices[0].message.content || "{}");
+      const result = JSON.parse(String(response.choices[0].message.content) || "{}");
 
       const [insertResult] = await d.insert(adDiagnoses).values({
         userId: ctx.user.id,
@@ -687,7 +687,7 @@ export const adDeepAnalysisRouter = router({
         messages: [{ role: "system", content: PLACEMENT_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下广告位数据:\n\n${dataSummary}` }],
         response_format: { type: "json_object" },
       });
-      const result = JSON.parse(response.choices[0].message.content || "{}");
+      const result = JSON.parse(String(response.choices[0].message.content) || "{}");
       const [insertResult] = await d.insert(adReportAnalysisRecords).values({
         userId: ctx.user.id, reportType: "placement", portfolioNames: JSON.stringify(input.portfolioNames),
         dateRangeStart: input.dateStart, dateRangeEnd: input.dateEnd,
@@ -712,7 +712,7 @@ export const adDeepAnalysisRouter = router({
         messages: [{ role: "system", content: SEARCH_TERM_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下搜索词数据:\n\n${dataSummary}` }],
         response_format: { type: "json_object" },
       });
-      const result = JSON.parse(response.choices[0].message.content || "{}");
+      const result = JSON.parse(String(response.choices[0].message.content) || "{}");
       const [insertResult] = await d.insert(adReportAnalysisRecords).values({
         userId: ctx.user.id, reportType: "search_term", portfolioNames: JSON.stringify(input.portfolioNames),
         dateRangeStart: input.dateStart, dateRangeEnd: input.dateEnd,
@@ -737,7 +737,7 @@ export const adDeepAnalysisRouter = router({
         messages: [{ role: "system", content: IMPRESSION_SHARE_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下展示量份额数据:\n\n${dataSummary}` }],
         response_format: { type: "json_object" },
       });
-      const result = JSON.parse(response.choices[0].message.content || "{}");
+      const result = JSON.parse(String(response.choices[0].message.content) || "{}");
       const [insertResult] = await d.insert(adReportAnalysisRecords).values({
         userId: ctx.user.id, reportType: "impression_share", portfolioNames: JSON.stringify(input.portfolioNames),
         dateRangeStart: input.dateStart, dateRangeEnd: input.dateEnd,
@@ -762,7 +762,7 @@ export const adDeepAnalysisRouter = router({
         messages: [{ role: "system", content: SB_BENCHMARK_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下SB Benchmark数据:\n\n${dataSummary}` }],
         response_format: { type: "json_object" },
       });
-      const result = JSON.parse(response.choices[0].message.content || "{}");
+      const result = JSON.parse(String(response.choices[0].message.content) || "{}");
       const [insertResult] = await d.insert(adReportAnalysisRecords).values({
         userId: ctx.user.id, reportType: "sb_benchmark", portfolioNames: JSON.stringify(input.portfolioNames),
         dateRangeStart: input.dateStart, dateRangeEnd: input.dateEnd,
@@ -788,7 +788,7 @@ export const adDeepAnalysisRouter = router({
         messages: [{ role: "system", content: BUSINESS_CROSS_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下业务×广告交叉数据:\n\n${dataSummary}` }],
         response_format: { type: "json_object" },
       });
-      const result = JSON.parse(response.choices[0].message.content || "{}");
+      const result = JSON.parse(String(response.choices[0].message.content) || "{}");
       const [insertResult] = await d.insert(adReportAnalysisRecords).values({
         userId: ctx.user.id, reportType: "business_cross", portfolioNames: JSON.stringify(input.portfolioNames),
         dateRangeStart: input.dateStart, dateRangeEnd: input.dateEnd,
@@ -862,7 +862,7 @@ export const adDeepAnalysisRouter = router({
 
       let tasks: any[] = [];
       try {
-        const parsed = JSON.parse(response.choices[0].message.content || "[]");
+        const parsed = JSON.parse(String(response.choices[0].message.content) || "[]");
         tasks = Array.isArray(parsed) ? parsed : (parsed.tasks || []);
       } catch { tasks = []; }
 
@@ -946,7 +946,7 @@ export const adDeepAnalysisRouter = router({
         response_format: { type: "json_object" },
       });
 
-      const result = JSON.parse(response.choices[0].message.content || "{}");
+      const result = JSON.parse(String(response.choices[0].message.content) || "{}");
 
       const [insertResult] = await d.insert(adClinicRecords).values({
         userId: ctx.user.id,

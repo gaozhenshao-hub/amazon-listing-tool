@@ -22,12 +22,12 @@ export const afterSalesRouter = router({
       // Use requestWithMockFallback for all after-sales APIs since many Lingxing
       // after-sales endpoints return "服务不存在" (service not found) for some accounts
       const [reviewRes, feedbackRes, returnRes, rmaRes, emailRes, perfRes] = await Promise.all([
-        lx.requestWithMockFallback<any>({ path: "/erp/sc/v2/ca/reviewReport/lists", body: { sid: input.sid } }),
-        lx.requestWithMockFallback<any>({ path: "/erp/sc/data/fba/feedbackReport", body: { sid: input.sid } }),
-        lx.requestWithMockFallback<any>({ path: "/erp/sc/data/fba/returnAnalysis", body: { sid: input.sid } }),
-        lx.requestWithMockFallback<any>({ path: "/erp/sc/open/customerService/rmaManage/list", body: { sid: input.sid } }),
-        lx.requestWithMockFallback<any>({ path: "/erp/sc/data/mail/lists", body: { sid: input.sid, email: "all", flag: "all" } }),
-        lx.requestWithMockFallback<any>({ path: "/erp/sc/cs/performance/list", body: { sid: input.sid } }),
+        lx.requestWithMockFallback({ path: "/erp/sc/v2/ca/reviewReport/lists", body: { sid: input.sid } }),
+        lx.requestWithMockFallback({ path: "/erp/sc/data/fba/feedbackReport", body: { sid: input.sid } }),
+        lx.requestWithMockFallback({ path: "/erp/sc/data/fba/returnAnalysis", body: { sid: input.sid } }),
+        lx.requestWithMockFallback({ path: "/erp/sc/open/customerService/rmaManage/list", body: { sid: input.sid } }),
+        lx.requestWithMockFallback({ path: "/erp/sc/data/mail/lists", body: { sid: input.sid, email: "all", flag: "all" } }),
+        lx.requestWithMockFallback({ path: "/erp/sc/cs/performance/list", body: { sid: input.sid } }),
       ]);
       return {
         reviews: {
@@ -70,10 +70,10 @@ export const afterSalesRouter = router({
     .mutation(async ({ input }) => {
       const lx = getLingxingAdapter();
       const [reviewRes, returnRes, emailRes, perfRes] = await Promise.all([
-        lx.requestWithMockFallback<any>({ path: "/erp/sc/v2/ca/reviewReport/lists", body: { sid: input.sid } }),
-        lx.requestWithMockFallback<any>({ path: "/erp/sc/data/fba/returnAnalysis", body: { sid: input.sid } }),
-        lx.requestWithMockFallback<any>({ path: "/erp/sc/data/mail/lists", body: { sid: input.sid, email: "all", flag: "all" } }),
-        lx.requestWithMockFallback<any>({ path: "/erp/sc/cs/performance/list", body: { sid: input.sid } }),
+        lx.requestWithMockFallback({ path: "/erp/sc/v2/ca/reviewReport/lists", body: { sid: input.sid } }),
+        lx.requestWithMockFallback({ path: "/erp/sc/data/fba/returnAnalysis", body: { sid: input.sid } }),
+        lx.requestWithMockFallback({ path: "/erp/sc/data/mail/lists", body: { sid: input.sid, email: "all", flag: "all" } }),
+        lx.requestWithMockFallback({ path: "/erp/sc/cs/performance/list", body: { sid: input.sid } }),
       ]);
       const prompt = `你是一位资深亚马逊售后运营专家。请根据以下售后数据生成今日售后简报。
 
@@ -130,7 +130,7 @@ export const afterSalesRouter = router({
     }))
     .query(async ({ input }) => {
       const lx = getLingxingAdapter();
-      const res = await lx.requestWithMockFallback<any>({ path: "/erp/comment/data/review/listNewReview", body: { sid: input.sid, asin: input.asin, length: input.pageSize, offset: (input.page - 1) * input.pageSize } });
+      const res = await lx.requestWithMockFallback({ path: "/erp/comment/data/review/listNewReview", body: { sid: input.sid, asin: input.asin, length: input.pageSize, offset: (input.page - 1) * input.pageSize } });
       let list = res.data?.list || res.data || [];
       if (Array.isArray(list) && input.starFilter) list = list.filter((r: any) => r.star_rating === input.starFilter);
       return { total: res.data?.total || (Array.isArray(list) ? list.length : 0), list, _dataSource: res._meta?.source || 'unknown' };
@@ -141,7 +141,7 @@ export const afterSalesRouter = router({
     .input(z.object({ sid: z.number().optional(), asin: z.string().optional() }))
     .query(async ({ input }) => {
       const lx = getLingxingAdapter();
-      const res = await lx.requestWithMockFallback<any>({ path: "/erp/sc/v2/ca/reviewReport/lists", body: { sid: input.sid, asin: input.asin } });
+      const res = await lx.requestWithMockFallback({ path: "/erp/sc/v2/ca/reviewReport/lists", body: { sid: input.sid, asin: input.asin } });
       return { ...(res.data || {}), _dataSource: res._meta?.source || 'unknown' };
     }),
 
@@ -284,7 +284,7 @@ export const afterSalesRouter = router({
     .input(z.object({ sid: z.number().optional(), asin: z.string().optional() }))
     .query(async ({ input }) => {
       const lx = getLingxingAdapter();
-      const res = await lx.requestWithMockFallback<any>({ path: "/erp/sc/data/fba/returnAnalysis", body: { sid: input.sid, asin: input.asin } });
+      const res = await lx.requestWithMockFallback({ path: "/erp/sc/data/fba/returnAnalysis", body: { sid: input.sid, asin: input.asin } });
       const raw = res.data || {};
       // Normalize mock/real data to match frontend expected structure
       const totalReturns = raw.total_returns || 0;
@@ -318,7 +318,7 @@ export const afterSalesRouter = router({
     .input(z.object({ sid: z.number().optional(), page: z.number().default(1), pageSize: z.number().default(20) }))
     .query(async ({ input }) => {
       const lx = getLingxingAdapter();
-      const res = await lx.requestWithMockFallback<any>({ path: "/erp/sc/open/customerService/rmaManage/list", body: { sid: input.sid, length: input.pageSize, offset: (input.page - 1) * input.pageSize } });
+      const res = await lx.requestWithMockFallback({ path: "/erp/sc/open/customerService/rmaManage/list", body: { sid: input.sid, length: input.pageSize, offset: (input.page - 1) * input.pageSize } });
       return { ...(res.data || {}), _dataSource: res._meta?.source || 'unknown' };
     }),
 
@@ -326,7 +326,7 @@ export const afterSalesRouter = router({
     .input(z.object({ sid: z.number().optional() }))
     .query(async ({ input }) => {
       const lx = getLingxingAdapter();
-      const res = await lx.requestWithMockFallback<any>({ path: "/v2/open/customerService/voiceOfBuyer/list", body: { sid: input.sid } });
+      const res = await lx.requestWithMockFallback({ path: "/v2/open/customerService/voiceOfBuyer/list", body: { sid: input.sid } });
       return { ...(res.data || {}), _dataSource: res._meta?.source || 'unknown' };
     }),
 
@@ -417,7 +417,7 @@ ${input.voiceOfBuyerData ? JSON.stringify(input.voiceOfBuyerData, null, 2) : '�
     .input(z.object({ sid: z.number().optional(), page: z.number().default(1), pageSize: z.number().default(20) }))
     .query(async ({ input }) => {
       const lx = getLingxingAdapter();
-      const res = await lx.requestWithMockFallback<any>({ path: "/erp/sc/data/mail/lists", body: { sid: input.sid, email: "all", flag: "all", length: input.pageSize, offset: (input.page - 1) * input.pageSize } });
+      const res = await lx.requestWithMockFallback({ path: "/erp/sc/data/mail/lists", body: { sid: input.sid, email: "all", flag: "all", length: input.pageSize, offset: (input.page - 1) * input.pageSize } });
       return { ...(res.data || {}), _dataSource: res._meta?.source || 'unknown' };
     }),
 
@@ -425,7 +425,7 @@ ${input.voiceOfBuyerData ? JSON.stringify(input.voiceOfBuyerData, null, 2) : '�
     .input(z.object({ mailId: z.string() }))
     .query(async ({ input }) => {
       const lx = getLingxingAdapter();
-      const res = await lx.requestWithMockFallback<any>({ path: "/erp/sc/data/mail/info", body: { mail_id: input.mailId } });
+      const res = await lx.requestWithMockFallback({ path: "/erp/sc/data/mail/info", body: { mail_id: input.mailId } });
       return { ...(res.data || {}), _dataSource: res._meta?.source || 'unknown' };
     }),
 
@@ -717,7 +717,7 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
     .input(z.object({ sid: z.number().optional() }))
     .query(async ({ input }) => {
       const lx = getLingxingAdapter();
-      const res = await lx.requestWithMockFallback<any>({ path: "/erp/sc/cs/feedback/listMws", body: { sid: input.sid } });
+      const res = await lx.requestWithMockFallback({ path: "/erp/sc/cs/feedback/listMws", body: { sid: input.sid } });
       return { ...(res.data || {}), _dataSource: res._meta?.source || 'unknown' };
     }),
 
@@ -726,7 +726,7 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
     .input(z.object({ sid: z.number().optional() }))
     .query(async ({ input }) => {
       const lx = getLingxingAdapter();
-      const res = await lx.requestWithMockFallback<any>({ path: "/basicOpen/customerService/performanceNotice/list", body: { sid: input.sid } });
+      const res = await lx.requestWithMockFallback({ path: "/basicOpen/customerService/performanceNotice/list", body: { sid: input.sid } });
       return { ...(res.data || {}), _dataSource: res._meta?.source || 'unknown' };
     }),
 });

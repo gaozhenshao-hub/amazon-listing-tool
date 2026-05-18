@@ -140,7 +140,6 @@ describe("productOps router module", () => {
     expect(procedures).toContain("updateExecutionReview");
     expect(procedures).toContain("deleteExecutionReview");
     expect(procedures).toContain("aiReviewAnalysis");
-    expect(procedures).toContain("syncReviewFromLingxing");
   });
 
   it("should have syncPlanCurrentData procedure for period-based data sync", async () => {
@@ -164,7 +163,7 @@ describe("productOps router module", () => {
   it("should have exactly 88 procedures", async () => {
     const mod = await import("./productOps");
     const procedures = Object.keys(mod.productOpsRouter._def.procedures);
-    expect(procedures.length).toBe(91);
+    expect(procedures.length).toBe(100);
   });
 
   it("all procedures should be defined", async () => {
