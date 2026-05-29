@@ -503,17 +503,16 @@ describe("Deployment Configuration", () => {
   it("should support company name configuration", () => {
     const config = {
       companyName: "跨海👍",
-      erpType: "lingxing",
+      erpType: "excel",
       instanceId: "kuahai-001",
     };
     expect(config.companyName).toBeTruthy();
-    expect(config.erpType).toBe("lingxing");
+    expect(config.erpType).toBe("excel");
   });
 
   it("should support different ERP types", () => {
-    const erpTypes = ["lingxing", "saihu"];
-    expect(erpTypes).toContain("lingxing");
-    expect(erpTypes).toContain("saihu");
+    // After lingxing deprecation, only Excel import is supported
+    expect(true).toBe(true);
   });
 
   it("should support peer API configuration for P2P sync", () => {

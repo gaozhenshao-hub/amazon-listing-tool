@@ -1,58 +1,68 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { customDashboards, dashboardWidgets } from "../../drizzle/schema";
-import { eq, and, desc } from "drizzle-orm";
-import { getLingxingAdapter } from "../lingxingAdapter";
+import { customDashboards, dashboardWidgets, lingxingProductWeekly } from "../../drizzle/schema";
+import { eq, and, desc, sql, gte } from "drizzle-orm";
 
 function getDateNDaysAgo(n: number) {
   const d = new Date(); d.setDate(d.getDate() - n);
   return d.toISOString().slice(0, 10);
 }
-function getYesterday() { return getDateNDaysAgo(1); }
 
-// Widget data fetchers
-async function fetchWidgetData(dataSource: string, config: any) {
-  const adapter = getLingxingAdapter();
+// Widget data fetchers - now reads from imported Excel data in DB
+async function fetchWidgetData(dataSource: string, _config: any) {
+  const db = await getDb();
+  if (!db) return { items: [] };
+
   switch (dataSource) {
     case 'sales': {
-      const res = await adapter.requestWithMockFallback({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 50, startDate: getDateNDaysAgo(30), endDate: getYesterday(), summaryEnabled: true } });
-      const data = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
-      return {
-        totalRevenue: data.reduce((s: number, d: any) => s + Number(d.totalSalesAmount || 0), 0),
-        totalProfit: data.reduce((s: number, d: any) => s + Number(d.grossProfit || 0), 0),
-        totalOrders: data.reduce((s: number, d: any) => s + Number(d.totalSalesQuantity || 0), 0),
-        items: data.slice(0, 20),
-      };
+      const rows = await db.select().from(lingxingProductWeekly)
+        .where(gte(lingxingProductWeekly.weekStartDate, getDateNDaysAgo(30)))
+        .orderBy(desc(lingxingProductWeekly.weekStartDate))
+        .limit(50);
+      const totalRevenue = rows.reduce((s, r) => s + Number(r.salesAmount || 0), 0);
+      const totalProfit = rows.reduce((s, r) => s + Number(r.orderProfit || 0), 0);
+      const totalOrders = rows.reduce((s, r) => s + Number(r.orderQty || 0), 0);
+      return { totalRevenue, totalProfit, totalOrders, items: rows.slice(0, 20) };
     }
     case 'ads_sp': {
-      const res = await adapter.requestWithMockFallback({ path: "/ph/openaps/newad/spAdvertiseHourData", body: { report_date: getYesterday(), offset: 0, length: 100 } });
-      const data = Array.isArray(res.data) ? res.data : (res.data as any)?.list || [];
-      return {
-        totalSpend: data.reduce((s: number, d: any) => s + (Number(d.cost) || 0), 0),
-        totalSales: data.reduce((s: number, d: any) => s + (Number(d.sales) || 0), 0),
-        items: data.slice(0, 20),
-      };
+      // Read from imported ad data
+      const rows = await db.select().from(lingxingProductWeekly)
+        .where(gte(lingxingProductWeekly.weekStartDate, getDateNDaysAgo(30)))
+        .orderBy(desc(lingxingProductWeekly.weekStartDate))
+        .limit(50);
+      const totalSpend = rows.reduce((s, r) => s + Number(r.adSpend || 0), 0);
+      const totalSales = rows.reduce((s, r) => s + Number(r.adSales || 0), 0);
+      return { totalSpend, totalSales, items: rows.slice(0, 20) };
     }
     case 'inventory': {
-      const res = await adapter.requestWithMockFallback({ path: "/erp/sc/data/fba/FbaStockLists", body: { offset: 0, length: 200 } });
-      const data = Array.isArray(res.data) ? res.data : (res.data as any)?.list || [];
+      const rows = await db.select().from(lingxingProductWeekly)
+        .orderBy(desc(lingxingProductWeekly.weekStartDate))
+        .limit(200);
+      // Deduplicate by parentAsin to get latest inventory per product
+      const seen = new Set<string>();
+      const unique = rows.filter(r => {
+        if (seen.has(r.parentAsin || "")) return false;
+        seen.add(r.parentAsin || "");
+        return true;
+      });
       return {
-        totalSkus: data.length,
-        lowStock: data.filter((i: any) => (Number(i.sellable_days) || 0) < 14).length,
-        overstock: data.filter((i: any) => (Number(i.sellable_days) || 0) > 90).length,
-        items: data.slice(0, 20),
+        totalSkus: unique.length,
+        lowStock: unique.filter(i => Number(i.availableStock || 0) < 50).length,
+        overstock: unique.filter(i => Number(i.availableStock || 0) > 500).length,
+        items: unique.slice(0, 20),
       };
     }
     case 'profit': {
-      const res = await adapter.requestWithMockFallback({ path: "/bd/profit/report/open/report/msku/list", body: { offset: 0, length: 50, startDate: getDateNDaysAgo(30), endDate: getYesterday() } });
-      const data = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
-      return { items: data.slice(0, 20) };
+      const rows = await db.select().from(lingxingProductWeekly)
+        .where(gte(lingxingProductWeekly.weekStartDate, getDateNDaysAgo(30)))
+        .orderBy(desc(lingxingProductWeekly.weekStartDate))
+        .limit(50);
+      return { items: rows.slice(0, 20) };
     }
     case 'reviews': {
-      const res = await adapter.requestWithMockFallback({ path: "/erp/sc/data/mws/reviewList", body: { offset: 0, length: 50 } });
-      const data = Array.isArray(res.data) ? res.data : (res.data as any)?.list || [];
-      return { items: data.slice(0, 20), total: data.length };
+      // Reviews data not available from weekly imports - return empty
+      return { items: [], total: 0 };
     }
     default:
       return { items: [] };

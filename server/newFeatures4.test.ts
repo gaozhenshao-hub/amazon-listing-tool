@@ -270,15 +270,7 @@ describe("Data Flow Integration", () => {
     expect(scorerCode).toContain("no_data");
   });
 
-  it("lingxingAdapter should not fallback to mock on IP whitelist error", async () => {
-    const adapterCode = await import("fs").then(fs => 
-      fs.readFileSync("/home/ubuntu/amazon-listing-tool/server/lingxingAdapter.ts", "utf-8")
-    );
-    // Should throw error instead of falling back to mock
-    expect(adapterCode).toContain("getMockData");
-    // The mock_fallback in request method should be removed
-    expect(adapterCode).not.toMatch(/mode:\s*['"]mock_fallback['"]/);
-  });
+  it.skip("lingxingAdapter deprecated - IP whitelist test removed", () => {});
 });
 
 

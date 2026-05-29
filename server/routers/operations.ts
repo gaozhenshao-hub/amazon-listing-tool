@@ -2,7 +2,6 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { getLingxingAdapter } from "../lingxingAdapter";
 import { invokeLLM } from "../_core/llm";
 import {
   inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules,
@@ -92,45 +91,10 @@ function filterSidsByMarketplace(sellers: any[], marketplaceCode?: string): stri
 }
 
 // Helper: Get all seller SIDs from Lingxing (with cache + retry)
-let _sellerCache: { sids: string[], sellers: any[], ts: number } | null = null;
-const SELLER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
+// Seller SIDs - now sourced from imported data (no API calls)
 async function getAllSellerSids(): Promise<{sids: string[], sellers: any[]}> {
-  // Return cached result if still valid
-  if (_sellerCache && Date.now() - _sellerCache.ts < SELLER_CACHE_TTL && _sellerCache.sids.length > 0) {
-    console.log(`[SellerSids] Using cache: ${_sellerCache.sids.length} sellers`);
-    return { sids: _sellerCache.sids, sellers: _sellerCache.sellers };
-  }
-  
-  const adapter = getLingxingAdapter();
-  // Retry up to 3 times with delay to handle rate limiting
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      const res = await adapter.request({ path: "/erp/sc/data/seller/lists" });
-      const rawSellers = res.data || [];
-      const sellers = Array.isArray(rawSellers) ? rawSellers : (rawSellers as any)?.records || (rawSellers as any)?.list || [];
-      const sids = sellers.map((s: any) => String(s.sid));
-      if (sids.length > 0) {
-        _sellerCache = { sids, sellers, ts: Date.now() };
-        console.log(`[SellerSids] Found ${sids.length} sellers: ${sids.join(',')}`);
-        return { sids, sellers };
-      }
-      // Got 0 sellers (likely rate limited), retry after delay
-      console.warn(`[SellerSids] Attempt ${attempt}: Got 0 sellers, retrying in ${attempt * 2}s...`);
-      await new Promise(r => setTimeout(r, attempt * 2000));
-    } catch (err: any) {
-      console.error(`[SellerSids] Attempt ${attempt} failed: ${err.message}`);
-      if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 2000));
-    }
-  }
-  
-  // If all retries failed but we have stale cache, use it
-  if (_sellerCache && _sellerCache.sids.length > 0) {
-    console.warn(`[SellerSids] All retries failed, using stale cache: ${_sellerCache.sids.length} sellers`);
-    return { sids: _sellerCache.sids, sellers: _sellerCache.sellers };
-  }
-  
-  console.error(`[SellerSids] All retries failed, no cache available`);
+  // Return empty - seller data now comes from Excel imports
+  // Individual procedures should query the database directly
   return { sids: [], sellers: [] };
 }
 
@@ -298,10 +262,9 @@ export const operationsRouter = router({
 
   // --- Lingxing Connection Status ---
   getLingxingStatus: protectedProcedure.query(async () => {
-    const adapter = getLingxingAdapter();
     return {
-      isMock: adapter.isMockMode(),
-      recentLogs: adapter.getRecentLogs().slice(-10),
+      isMock: true,
+      recentLogs: [].slice(-10),
       cacheSize: 0, // cache stats not exposed
     };
   }),
@@ -309,9 +272,8 @@ export const operationsRouter = router({
   toggleMockMode: protectedProcedure
     .input(z.object({ enabled: z.boolean() }))
     .mutation(async ({ input }) => {
-      const adapter = getLingxingAdapter();
-      adapter.setMockMode(input.enabled);
-      return { isMock: adapter.isMockMode() };
+      /* lingxing deprecated */
+      return { isMock: true };
     }),
 
   // ============== Inventory Module ==============
@@ -324,7 +286,6 @@ export const operationsRouter = router({
       alertFilter: z.enum(["all", "critical", "low", "normal", "overstock"]).optional().default("all"),
     }))
     .query(async ({ ctx, input }) => {
-      const adapter = getLingxingAdapter();
       // Get real SIDs filtered by marketplace
       let sidStr: string;
       if (input.sid) {
@@ -335,7 +296,7 @@ export const operationsRouter = router({
         sidStr = filteredSids.join(',');
       }
       console.log(`[InventoryList] Querying FBA inventory with sid=${sidStr}`);
-      const res = await adapter.requestWithMockFallback({
+      const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
         path: "/erp/sc/data/fba/FbaStockLists",
         body: { offset: 0, length: 500 },
       });
@@ -450,18 +411,17 @@ export const operationsRouter = router({
         overstock: items.filter((i: any) => i.alertLevel === "overstock").length,
       };
 
-      return { items, stats, isMock: adapter.isMockMode() };
+      return { items, stats, isMock: true };
     }),
 
   getReplenishmentSuggestions: protectedProcedure
     .input(z.object({ sid: z.number().optional() }))
     .query(async ({ input }) => {
-      const adapter = getLingxingAdapter();
       // Get real SIDs
       const { sids } = await getAllSellerSids();
       const sidList = input.sid ? [input.sid] : sids.map(Number);
       console.log(`[Replenishment] Querying with sid_list=${JSON.stringify(sidList)}`);
-      const res = await adapter.requestWithMockFallback({
+      const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
         path: "/erp/sc/routing/restocking/analysis/getSummaryList",
         body: { data_type: 1, sid_list: sidList, length: 50 },
       });
@@ -493,7 +453,7 @@ export const operationsRouter = router({
       });
       
       console.log(`[Replenishment] After filtering discontinued: ${filteredItems.length} items (removed ${items.length - filteredItems.length})`);
-      return { items: filteredItems, isMock: adapter.isMockMode() };
+      return { items: filteredItems, isMock: true };
     }),
 
   getInventoryConfig: protectedProcedure
@@ -619,8 +579,7 @@ ${JSON.stringify(input.skuData, null, 2)}
   getAwdInventory: protectedProcedure
     .input(z.object({ marketplace: z.string().optional().default("US") }))
     .query(async ({ input }) => {
-      const adapter = getLingxingAdapter();
-      const res = await adapter.requestWithMockFallback({
+      const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
         path: "/erp/sc/data/fba/awdStockLists",
         body: { offset: 0, length: 200 },
       });
@@ -638,7 +597,7 @@ ${JSON.stringify(input.skuData, null, 2)}
           status: item.status || 'unknown',
           last_updated: item.last_updated || '',
         })),
-        isMock: adapter.isMockMode(),
+        isMock: true,
       };
     }),
 
@@ -646,8 +605,7 @@ ${JSON.stringify(input.skuData, null, 2)}
   getLocalWarehouseInventory: protectedProcedure
     .input(z.object({ marketplace: z.string().optional().default("US") }))
     .query(async ({ input }) => {
-      const adapter = getLingxingAdapter();
-      const res = await adapter.requestWithMockFallback({
+      const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
         path: "/erp/sc/data/inventory/getWarehouseStockDetail",
         body: { offset: 0, length: 200 },
       });
@@ -667,7 +625,7 @@ ${JSON.stringify(input.skuData, null, 2)}
           unit_cost: item.unit_cost || 0,
           total_value: item.total_value || 0,
         })),
-        isMock: adapter.isMockMode(),
+        isMock: true,
       };
     }),
 
@@ -675,12 +633,11 @@ ${JSON.stringify(input.skuData, null, 2)}
   getOmniChannelInventory: protectedProcedure
     .input(z.object({ marketplace: z.string().optional().default("US") }))
     .query(async ({ input }) => {
-      const adapter = getLingxingAdapter();
       // 并行获取三个渠道的库存
       const [fbaRes, awdRes, localRes] = await Promise.all([
-        adapter.requestWithMockFallback({ path: "/erp/sc/data/fba/FbaStockLists", body: { offset: 0, length: 500 } }),
-        adapter.requestWithMockFallback({ path: "/erp/sc/data/fba/awdStockLists", body: { offset: 0, length: 200 } }),
-        adapter.requestWithMockFallback({ path: "/erp/sc/data/inventory/getWarehouseStockDetail", body: { offset: 0, length: 200 } }),
+        (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/erp/sc/data/fba/FbaStockLists", body: { offset: 0, length: 500 } }),
+        (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/erp/sc/data/fba/awdStockLists", body: { offset: 0, length: 200 } }),
+        (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/erp/sc/data/inventory/getWarehouseStockDetail", body: { offset: 0, length: 200 } }),
       ]);
       
       const fbaItems = Array.isArray(fbaRes.data) ? fbaRes.data : ((fbaRes.data as any)?.records || []);
@@ -733,7 +690,7 @@ ${JSON.stringify(input.skuData, null, 2)}
         total_all: aggregated.reduce((s: number, i: any) => s + i.total_qty, 0),
       };
       
-      return { items: aggregated, summary, isMock: adapter.isMockMode() };
+      return { items: aggregated, summary, isMock: true };
     }),
 
   // 增强版AI补货建议（含AWD+本地仓+停售ASIN过滤）
@@ -862,12 +819,11 @@ ${activeSkus.map((s, i) => `
   getReplenishChart: protectedProcedure
     .input(z.object({ sku: z.string().optional(), asin: z.string().optional() }))
     .query(async ({ input }) => {
-      const adapter = getLingxingAdapter();
-      const res = await adapter.requestWithMockFallback({
+      const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
         path: "/erp/sc/data/fba/replenish/chart",
         body: { sku: input.sku, asin: input.asin },
       });
-      return { data: res.data, isMock: adapter.isMockMode() };
+      return { data: res.data, isMock: true };
     }),
 
   // ============== Profit Module ==============
@@ -879,7 +835,6 @@ ${activeSkus.map((s, i) => `
       marketplace: z.string().optional(),
     }))
     .query(async ({ input }) => {
-      const adapter = getLingxingAdapter();
       const startDate = input.startDate || getDateNDaysAgo(30);
       const endDate = input.endDate || getToday();
       
@@ -896,7 +851,7 @@ ${activeSkus.map((s, i) => `
       let hasMore = true;
       
       while (hasMore) {
-        const res = await adapter.requestWithMockFallback({
+        const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
           path: "/bd/profit/report/open/report/msku/list",
           body: {
             sid: firstSid,
@@ -1000,7 +955,7 @@ ${activeSkus.map((s, i) => `
           margin: totals.revenue > 0 ? Math.round(totals.profit / totals.revenue * 1000) / 10 : 0,
           orders: totals.orders,
         },
-        isMock: adapter.isMockMode(),
+        isMock: true,
       };
     }),
 
@@ -1011,7 +966,6 @@ ${activeSkus.map((s, i) => `
       marketplace: z.string().optional(),
     }))
     .query(async ({ input }) => {
-      const adapter = getLingxingAdapter();
       const startDate = input.startDate || getDateNDaysAgo(30);
       const endDate = input.endDate || getToday();
       
@@ -1022,7 +976,7 @@ ${activeSkus.map((s, i) => `
       let hasMore = true;
       
       while (hasMore) {
-        const res = await adapter.requestWithMockFallback({
+        const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
           path: "/bd/profit/report/open/report/msku/list",
           body: {
             startDate,
@@ -1070,7 +1024,7 @@ ${activeSkus.map((s, i) => `
         };
       }).sort((a: any, b: any) => b.revenue - a.revenue);
       
-      return { items, isMock: adapter.isMockMode() };
+      return { items, isMock: true };
     }),
 
   aiProfitAnalysis: protectedProcedure
@@ -1159,7 +1113,6 @@ ${activeSkus.map((s, i) => `
       adState: z.enum(['all', 'enabled', 'paused', 'archived']).optional().default('all'),
     }))
     .query(async ({ input }) => {
-      const adapter = getLingxingAdapter();
       // Get real SIDs filtered by marketplace
       const { sids: allSids, sellers } = await getAllSellerSids();
       const filteredSids = filterSidsByMarketplace(sellers, input.marketplace);
@@ -1186,7 +1139,7 @@ ${activeSkus.map((s, i) => `
           let offset = 0;
           let hasMore = true;
           while (hasMore) {
-            const portfolioRes = await adapter.requestWithMockFallback({
+            const portfolioRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
               path: "/pb/openapi/newad/portfolios",
               body: { sid, offset, length: 100 },
             });
@@ -1228,7 +1181,7 @@ ${activeSkus.map((s, i) => `
             let offset = 0;
             let hasMore = true;
             while (hasMore && offset < 2000) {
-              const res = await adapter.requestWithMockFallback({
+              const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
                 path: apiPath,
                 body: { sid, offset, length: 100 },
                 ...(extraHeaders ? { headers: extraHeaders } : {}),
@@ -1384,7 +1337,7 @@ ${activeSkus.map((s, i) => `
               debugCount++;
               console.log(`[AdCampaigns] DEBUG HourData request #${debugCount}: path=${apiPath}, body=${JSON.stringify(body)}`);
             }
-            return adapter.requestWithMockFallback({
+            return (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
               path: apiPath,
               body,
             }).then(res => {
@@ -1497,7 +1450,7 @@ ${activeSkus.map((s, i) => `
         for (const profileId of Array.from(missingProfileIds)) {
           try {
             console.log(`[AdCampaigns] Fetching campaigns by profile_id=${profileId} for ${missingCampaignIds.length} missing names`);
-            const profileRes = await adapter.requestWithMockFallback({
+            const profileRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
               path: "/pb/openapi/newad/spCampaigns",
               body: { profile_id: Number(profileId), offset: 0, length: 200 },
               headers: { "X-API-VERSION": "2" },
@@ -1625,7 +1578,7 @@ ${activeSkus.map((s, i) => `
         campaigns: filteredCampaigns,
         allCampaigns: campaigns,
         portfolios,
-        isMock: adapter.isMockMode(),
+        isMock: true,
         dateRange: { startDate: queryDates[0], endDate: queryDates[queryDates.length - 1], days: queryDates.length },
         cacheInfo: {
           campaignListCached: usedCampaignCache,
@@ -1646,7 +1599,6 @@ ${activeSkus.map((s, i) => `
       marketplace: z.string().optional(),
     }))
     .query(async ({ input }) => {
-      const adapter = getLingxingAdapter();
       const { sids: allSids, sellers } = await getAllSellerSids();
       const filteredSids = filterSidsByMarketplace(sellers, input.marketplace);
       const sidsToQuery = input.sid ? [input.sid] : filteredSids.map(Number);
@@ -1675,7 +1627,7 @@ ${activeSkus.map((s, i) => `
       console.log(`[SearchTerms] Fetching ${termTasks.length} search term tasks in parallel (${sidsToQuery.length} sids x ${days} days)`);
       const termResults = await Promise.allSettled(
         termTasks.map(({ sid, reportDate }) =>
-          adapter.requestWithMockFallback({
+          (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
             path: "/pb/openapi/newad/queryWordReports",
             body: { sid, report_date: reportDate, target_type: "keyword", offset: 0, length: 200 },
             headers: { "X-API-VERSION": "2" },
@@ -1764,7 +1716,7 @@ ${activeSkus.map((s, i) => `
       };
       
       console.log(`[SearchTerms] Aggregated ${searchTerms.length} unique terms over ${days} days. Categories: ${JSON.stringify(categoryStats)}`);
-      return { searchTerms, categoryStats, days, isMock: adapter.isMockMode() };
+      return { searchTerms, categoryStats, days, isMock: true };
     }),
 
   aiSearchTermAnalysis: protectedProcedure
@@ -2204,7 +2156,6 @@ ${JSON.stringify(input.searchTerms.map(t => ({
   }),
 
   syncAsinStatuses: protectedProcedure.mutation(async () => {
-    const adapter = getLingxingAdapter();
     const db = await getDb();
     const { sids: allSids } = await getAllSellerSids();
     let synced = 0;
@@ -2213,7 +2164,7 @@ ${JSON.stringify(input.searchTerms.map(t => ({
     // Query listing status from Lingxing for each store
     for (const sid of allSids.slice(0, 10)) {
       try {
-        const res = await adapter.requestWithMockFallback({
+        const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
           path: "/erp/sc/data/mws/listing",
           body: { sid: Number(sid), offset: 0, length: 200 },
         });

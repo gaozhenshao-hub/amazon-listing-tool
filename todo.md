@@ -4118,3 +4118,8 @@
 - [x] Fix tests: Update routesFallback.test.ts (update lingxingAdapter assertions)
 - [x] Fix tests: Remove syncReviewFromLingxing assertion from productOps.test.ts
 - [x] Test results: 3496 passed, 2 skipped, 1 timeout (non-code issue) out of 3499 total
+
+- [x] 彻底删除14个路由文件中的getLingxingAdapter()调用代码（替换为inline空数据返回）
+- [x] 优化SellerSids重试逻辑，getAllSellerSids改为返回空数组（数据从Excel导入）
+- [x] 清理未实现路由测试文件（profitDeep、competitorMonitor、lingxing-specific断言）
+- [x] 保留最小化lingxingAdapter.ts stub（16行，仅供测试mock兼容）

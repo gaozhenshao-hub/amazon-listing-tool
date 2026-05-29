@@ -13,8 +13,6 @@
 
 import { scrapeAmazonProduct, type AmazonProductData, type ProductImage } from "../scraper";
 import { crawlCompetitorData, type CompetitorCrawlData } from "../crawlerEngine";
-import { getLingxingAdapter } from "../lingxingAdapter";
-
 // ═══════════════════════════════════════════════════════════════
 // Types
 // ═══════════════════════════════════════════════════════════════
@@ -507,23 +505,21 @@ interface AdData {
 
 async function collectAdData(asin: string, sid?: number): Promise<AdData | null> {
   try {
-    const adapter = getLingxingAdapter();
-    
     // 并行获取广告数据
     const [campaignsRes, keywordsRes, searchTermsRes, productReportsRes] = await Promise.allSettled([
-      adapter.requestWithMockFallback({
+      (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
         path: "/pb/openapi/newad/spCampaigns",
         body: { sid: sid || 0, asin },
       }),
-      adapter.requestWithMockFallback({
+      (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
         path: "/pb/openapi/newad/spKeywords",
         body: { sid: sid || 0, asin },
       }),
-      adapter.requestWithMockFallback({
+      (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
         path: "/pb/openapi/newad/queryWordReports",
         body: { sid: sid || 0, asin },
       }),
-      adapter.requestWithMockFallback({
+      (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
         path: "/pb/openapi/newad/spProductAdReports",
         body: { sid: sid || 0, asin },
       }),

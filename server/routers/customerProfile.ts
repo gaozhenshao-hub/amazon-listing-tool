@@ -3,7 +3,6 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { customerProfiles } from "../../drizzle/schema";
 import { eq, desc, like, and, sql } from "drizzle-orm";
-import { getLingxingAdapter } from "../lingxingAdapter";
 import { invokeLLM } from "../_core/llm";
 
 export const customerProfileRouter = router({
@@ -121,8 +120,7 @@ export const customerProfileRouter = router({
   syncFromLingxing: protectedProcedure
     .input(z.object({ sid: z.number().optional() }))
     .mutation(async ({ ctx }) => {
-      const adapter = getLingxingAdapter();
-      const ordersRes = await adapter.requestWithMockFallback({
+      const ordersRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
         path: "/erp/sc/data/mws/orders",
         body: { offset: 0, length: 200 },
       });

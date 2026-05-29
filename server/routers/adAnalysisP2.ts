@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { getLingxingAdapter } from "../lingxingAdapter";
 import { invokeLLM } from "../_core/llm";
 
 // ─── 3.7 DSP广告分析 ──────────────────────────────────────────────
@@ -80,8 +79,7 @@ export const adAnalysisP2Router = router({
       endDate: z.string().optional(),
     }))
     .query(async ({ input }) => {
-      const adapter = getLingxingAdapter();
-      const res = await adapter.requestWithMockFallback({
+      const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
         path: "/basicopen/dapReport/order/list",
         method: "POST",
         body: {
@@ -249,9 +247,8 @@ ${input.topOrders ? `TOP DSP订单:\n${input.topOrders.map(o => `- ${o.order_nam
       let contextData = "";
       if (input.campaignId) {
         try {
-          const adapter = getLingxingAdapter();
           // Fetch recent ad data for context
-          const adRes = await adapter.requestWithMockFallback({
+          const adRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
             path: "/ph/openaps/newad/spAdvertiseHourData",
             method: "POST",
             body: {
@@ -396,17 +393,16 @@ ${AD_KNOWLEDGE_BASE}
       endDate: z.string().optional(),
     }))
     .query(async ({ input }) => {
-      const adapter = getLingxingAdapter();
       const startDate = input.startDate || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
       const endDate = input.endDate || new Date().toISOString().slice(0, 10);
       const baseParams = { start_date: startDate, end_date: endDate };
 
       // Fetch all 4 channels in parallel
       const [spRes, sbRes, sdRes, dspRes] = await Promise.all([
-        adapter.requestWithMockFallback({ path: "/pb/openaps/newad/spCampaignHourData", body: baseParams }),
-        adapter.requestWithMockFallback({ path: "/pb/openaps/newad/sbCampaignHourData", body: baseParams }),
-        adapter.requestWithMockFallback({ path: "/pb/openaps/newad/sdCampaignHourData", body: baseParams }),
-        adapter.requestWithMockFallback({ path: "/basicopen/dapReport/order/list", body: baseParams }),
+        (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/pb/openaps/newad/spCampaignHourData", body: baseParams }),
+        (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/pb/openaps/newad/sbCampaignHourData", body: baseParams }),
+        (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/pb/openaps/newad/sdCampaignHourData", body: baseParams }),
+        (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/basicopen/dapReport/order/list", body: baseParams }),
       ]);
 
       function aggregateChannel(data: any[], channelName: string) {

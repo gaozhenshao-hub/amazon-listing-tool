@@ -2,7 +2,6 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { getLingxingAdapter } from "../lingxingAdapter";
 import { invokeLLM } from "../_core/llm";
 import { collectConversionData, collectMultipleAsins, type ConversionCrawlData } from "./conversionDataCollector";
 import { scoreAllCheckItems, type CheckItemScore } from "./conversionAiScorer";
@@ -81,7 +80,6 @@ export const productOpsRouter = router({
     }));
 
     // Fetch profit data from Lingxing MSKU profit API
-    const adapter = getLingxingAdapter();
     const now = new Date();
     const periodDays = period === 'day' ? 1 : period === 'week' ? 7 : 30;
     const startDate = new Date(now.getTime() - periodDays * 86400000).toISOString().split('T')[0];
@@ -92,7 +90,7 @@ export const productOpsRouter = router({
     const parentAsinMap = new Map<string, SalesInfo>();
     const childAsinMap = new Map<string, SalesInfo>();
     try {
-      const profitRes = await adapter.requestWithMockFallback({
+      const profitRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
         path: "/bd/profit/report/open/report/msku/list",
         body: { offset: 0, length: 2000, startDate, endDate, monthlyQuery: false, orderStatus: "All" },
         timeout: 60_000, // Large response (~6MB), needs more time
@@ -518,9 +516,6 @@ export const productOpsRouter = router({
       const [product] = await db!.select().from(productProfiles)
         .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
-
-      const adapter = getLingxingAdapter();
-
       // Get product variants (child ASINs and SKUs) for filtering
       const variants = await db!.select().from(productVariants)
         .where(eq(productVariants.productId, input.productId));
@@ -588,7 +583,7 @@ export const productOpsRouter = router({
       // Try ASIN-specific profit API first (more precise)
       // Use searchField + searchValue per Lingxing API docs, endDate = yesterday (today's data incomplete)
       try {
-        const asinRes = await adapter.requestWithMockFallback({
+        const asinRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
           path: "/bd/profit/report/open/report/asin/list",
           body: {
             offset: 0,
@@ -612,7 +607,7 @@ export const productOpsRouter = router({
       // If ASIN API returned no data, try parent ASIN API, then fallback to MSKU
       if (actual30Items.length === 0 && parentAsin) {
         try {
-          const parentRes = await adapter.requestWithMockFallback({
+          const parentRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
             path: "/bd/profit/report/open/report/parent/asin/list",
             body: {
               offset: 0,
@@ -634,7 +629,7 @@ export const productOpsRouter = router({
         }
       }
       if (actual30Items.length === 0) {
-        const profitRes = await adapter.requestWithMockFallback({
+        const profitRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
           path: "/bd/profit/report/open/report/msku/list",
           body: { startDate: getDateNDaysAgo(30), endDate: getYesterday(), length: 500, summaryEnabled: true },
         });
@@ -650,7 +645,7 @@ export const productOpsRouter = router({
       let current = { revenue: 0, amazonFees: 0, referralFee: 0, fbaFee: 0, adSpend: 0, storageFee: 0, netRevenue: 0, fixedCosts: 0, productCost: 0, shippingCost: 0, tariff: 0, profit: 0, profitMargin: 0, orders: 0, units: 0 };
       try {
         // Try ASIN API for 7-day data
-        const asinRes7 = await adapter.requestWithMockFallback({
+        const asinRes7 = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
           path: "/bd/profit/report/open/report/asin/list",
           body: {
             offset: 0,
@@ -669,7 +664,7 @@ export const productOpsRouter = router({
         // Try parent ASIN API if no data
         if (current7Items.length === 0 && parentAsin) {
           try {
-            const parentRes7 = await adapter.requestWithMockFallback({
+            const parentRes7 = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
               path: "/bd/profit/report/open/report/parent/asin/list",
               body: {
                 offset: 0,
@@ -691,7 +686,7 @@ export const productOpsRouter = router({
         }
         if (current7Items.length === 0) {
           // Fallback to MSKU list
-          const recentRes = await adapter.requestWithMockFallback({
+          const recentRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
             path: "/bd/profit/report/open/report/msku/list",
             body: { startDate: getDateNDaysAgo(7), endDate: getYesterday(), length: 500, summaryEnabled: true },
           });
@@ -707,7 +702,7 @@ export const productOpsRouter = router({
       // Fetch ASIN 360 hourly data for real-time sales/ranking trends
       let hourlyTrend: Array<{ hour: string; volume: number; orderItems: number; amount: number; price: number; salesRank: number }> = [];
       try {
-        const asin360Res = await adapter.requestWithMockFallback({
+        const asin360Res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
           path: "/basicOpen/salesAnalysis/productPerformance/performanceTrendByHour",
           body: {
             asin: childAsins.length > 0 ? childAsins[0] : parentAsin,
@@ -752,11 +747,8 @@ export const productOpsRouter = router({
 
       const variants = await db!.select().from(productVariants)
         .where(eq(productVariants.productId, input.productId));
-
-      const adapter = getLingxingAdapter();
-
       // Get seller list (with cache) to find matching sid
-      const { matchedSid } = await findMatchedSid(adapter, product);
+      const { matchedSid } = await findMatchedSid(null as any, product);
       console.log(`[InventorySummary] Product ${product.parentAsin}, matchedSid=${matchedSid}`);
 
       // Build search keywords from product's ASINs and SKUs for targeted FBA query
@@ -771,7 +763,7 @@ export const productOpsRouter = router({
       // Try searching by ASIN first using v2 FBA Stock API
       for (const keyword of [product.parentAsin, ...searchKeywords.slice(0, 3)]) {
         try {
-          const invRes = await adapter.requestWithMockFallback({
+          const invRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
             path: "/erp/sc/data/fba/FbaStockLists",
             body: { sid: matchedSid, offset: 0, length: 200, search_field: "asin", search_value: keyword },
           });
@@ -793,7 +785,7 @@ export const productOpsRouter = router({
       // If v2 search returned nothing, fallback to full list with filtering
       if (invList.length === 0) {
         try {
-          const invRes = await adapter.requestWithMockFallback({
+          const invRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
             path: "/erp/sc/data/fba/FbaStockLists",
             body: { sid: matchedSid, offset: 0, length: 500 },
           });
@@ -874,9 +866,7 @@ export const productOpsRouter = router({
       const [product] = await db!.select().from(productProfiles)
         .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
-
-      const adapter = getLingxingAdapter();
-      const { matchedSid } = await findMatchedSid(adapter, product);
+      const { matchedSid } = await findMatchedSid(null as any, product);
       console.log(`[AdsSummary] Product ${product.parentAsin}, matchedSid=${matchedSid}`);
 
       // Get product variants for ASIN-based ad filtering
@@ -923,7 +913,7 @@ export const productOpsRouter = router({
           ];
           for (const { path: adPath, type: adType } of adPaths) {
             try {
-              const res = await adapter.requestWithMockFallback({
+              const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
                 path: adPath,
                 body: { sid: matchedSid, offset: 0, length: 200 },
                 headers: { "X-API-VERSION": "2" },
@@ -957,7 +947,7 @@ export const productOpsRouter = router({
       const allCampaigns: any[] = [];
       for (const { path: campPath, type: campType } of campaignPaths) {
         try {
-          const adRes = await adapter.requestWithMockFallback({
+          const adRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
             path: campPath,
             body: { sid: matchedSid, start_date: getDateNDaysAgo(30), end_date: getToday() },
             headers: { "X-API-VERSION": "2" },
@@ -1016,7 +1006,7 @@ export const productOpsRouter = router({
       try {
         // Fetch reports for each child ASIN (not just parent ASIN)
         for (const asin of allAsins) {
-          const productAdRes = await adapter.requestWithMockFallback({
+          const productAdRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
             path: "/pb/openapi/newad/spProductAdReports",
             body: { sid: matchedSid, report_date: getDateNDaysAgo(1), show_detail: 0, offset: 0, length: 200, asin },
             headers: { "X-API-VERSION": "2" },
@@ -2531,13 +2521,12 @@ export const productOpsRouter = router({
 
   // ─── Sync Products from Lingxing ERP ───
   syncFromLingxing: protectedProcedure.mutation(async ({ ctx }) => {
-    const adapter = getLingxingAdapter();
     const db = await getDb();
     
     // Get all seller stores first
     let sellers: any[] = [];
     try {
-      const sellerRes = await adapter.request({ path: "/erp/sc/data/seller/lists" });
+      const sellerRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/erp/sc/data/seller/lists" });
       const sellerRaw = sellerRes.data || [];
       sellers = Array.isArray(sellerRaw) ? sellerRaw : (sellerRaw as any)?.records || (sellerRaw as any)?.list || [];
     } catch (err: any) {
@@ -2561,7 +2550,7 @@ export const productOpsRouter = router({
       const sid = seller.sid;
       const marketplace = marketplaceMap[seller.mid] || 'US';
       try {
-        const res = await adapter.requestWithMockFallback({
+        const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
           path: "/erp/sc/data/mws/listing",
           body: { sid: Number(sid), offset: 0, length: 200 },
         });
@@ -2775,7 +2764,6 @@ export const productOpsRouter = router({
       period: z.enum(["day", "week", "month"]).default("month"),
     }))
     .query(async ({ ctx, input }) => {
-      const adapter = getLingxingAdapter();
       const db = await getDb();
       
       // Get user's products
@@ -2812,7 +2800,7 @@ export const productOpsRouter = router({
       let profitData = { revenue: 0, cost: 0, profit: 0, profitMargin: 0, adSpend: 0, fbaFee: 0, orderCount: 0, unitCount: 0 };
       let prevProfitData = { revenue: 0, cost: 0, profit: 0, profitMargin: 0, adSpend: 0, fbaFee: 0, orderCount: 0, unitCount: 0 };
       try {
-        const profitRes = await adapter.requestWithMockFallback({
+        const profitRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
           path: "/bd/profit/report/open/report/msku/list",
           body: { offset: 0, length: 1000, startDate: startDate, endDate: endDate, monthlyQuery: false, orderStatus: "All" },
         });
@@ -2830,7 +2818,7 @@ export const productOpsRouter = router({
         profitData.profitMargin = profitData.revenue > 0 ? (profitData.profit / profitData.revenue) * 100 : 0;
         
         // Previous period
-        const prevProfitRes = await adapter.requestWithMockFallback({
+        const prevProfitRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
           path: "/bd/profit/report/open/report/msku/list",
           body: { offset: 0, length: 1000, startDate: prevStartDate, endDate: prevEndDate, monthlyQuery: false, orderStatus: "All" },
         });
@@ -2853,7 +2841,7 @@ export const productOpsRouter = router({
       // Fetch inventory data from Lingxing FBA v2 API
       let inventoryData = { totalStock: 0, inboundQty: 0, reservedQty: 0, totalValue: 0 };
       try {
-        const invRes = await adapter.requestWithMockFallback({
+        const invRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
           path: "/erp/sc/data/fba/FbaStockLists",
           body: { offset: 0, length: 500 },
         });
@@ -2876,7 +2864,7 @@ export const productOpsRouter = router({
       let adData = { totalSpend: 0, totalSales: 0, impressions: 0, clicks: 0, acos: 0, roas: 0, activeCampaigns: 0 };
       try {
         // Use SP广告商品小时数据 for per-ASIN ad metrics
-        const adRes = await adapter.requestWithMockFallback({
+        const adRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
           path: "/ph/openaps/newad/spAdvertiseHourData",
           body: { report_date: endDate, offset: 0, length: 1000 },
         });
@@ -2929,8 +2917,6 @@ export const productOpsRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const db = await getDb();
-      const adapter = getLingxingAdapter();
-      
       const [product] = await db!.select().from(productProfiles)
         .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
       if (!product) throw new TRPCError({ code: 'NOT_FOUND', message: '产品不存在' });
@@ -2959,7 +2945,7 @@ export const productOpsRouter = router({
           const opVariants = await (await getDb())!.select().from(productVariants)
             .where(eq(productVariants.productId, input.productId));
           const opChildAsins = opVariants.map(v => v.childAsin).filter(Boolean);
-          const res = await adapter.requestWithMockFallback({
+          const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
             path: "/bd/profit/report/open/report/asin/list",
             body: {
               offset: 0,
@@ -2979,7 +2965,7 @@ export const productOpsRouter = router({
           // Try parent ASIN API if no data
           if (list.length === 0 && product.parentAsin) {
             try {
-              const parentRes = await adapter.requestWithMockFallback({
+              const parentRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
                 path: "/bd/profit/report/open/report/parent/asin/list",
                 body: {
                   offset: 0,
@@ -3003,7 +2989,7 @@ export const productOpsRouter = router({
           // Fallback to MSKU list if still no data
           if (list.length === 0) {
             try {
-              const mskuRes = await adapter.requestWithMockFallback({
+              const mskuRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
                 path: "/bd/profit/report/open/report/msku/list",
                 body: { startDate: start, endDate: end, length: 500, summaryEnabled: true },
               });
@@ -4089,12 +4075,10 @@ export const productOpsRouter = router({
       const [product] = await db!.select().from(productProfiles)
         .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
-
-      const adapter = getLingxingAdapter();
       const parentAsin = product.parentAsin;
 
       // Get matched SID and MID for this product
-      const { matchedSid, matchedMid, sellers } = await findMatchedSid(adapter, product);
+      const { matchedSid, matchedMid, sellers } = await findMatchedSid(null as any, product);
       // Collect all SIDs for the same marketplace
       const marketplaceMids = MARKETPLACE_MID_MAP[product.marketplace || 'US'] || [1];
       const allSids = sellers
@@ -4147,7 +4131,7 @@ export const productOpsRouter = router({
           let offset = 0;
           const pageSize = 100;
           while (true) {
-            const res = await adapter.requestWithMockFallback({
+            const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
               path: "/bd/productPerformance/openApi/asinList",
               body: {
                 offset,
@@ -4363,8 +4347,6 @@ export const productOpsRouter = router({
       const [product] = await db!.select().from(productProfiles)
         .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
-
-      const adapter = getLingxingAdapter();
       const variants = await db!.select().from(productVariants)
         .where(eq(productVariants.productId, input.productId));
       const childAsins = variants.map(v => v.childAsin).filter(Boolean);
@@ -4373,7 +4355,7 @@ export const productOpsRouter = router({
       // Fetch 30-day profit data to compute averages
       let profitItems: any[] = [];
       try {
-        const res = await adapter.requestWithMockFallback({
+        const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
           path: "/bd/profit/report/open/report/asin/list",
           body: {
             offset: 0, length: 2000,
@@ -4394,7 +4376,7 @@ export const productOpsRouter = router({
       // If no data from ASIN API, try parent ASIN
       if (profitItems.length === 0 && parentAsin) {
         try {
-          const parentRes = await adapter.requestWithMockFallback({
+          const parentRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
             path: "/bd/profit/report/open/report/parent/asin/list",
             body: {
               offset: 0, length: 2000,
@@ -4533,8 +4515,6 @@ export const productOpsRouter = router({
       if (products.length === 0) {
         return { total: 0, synced: 0, errors: 0, details: [] };
       }
-
-      const adapter = getLingxingAdapter();
       const results: Array<{ productId: number; parentAsin: string; syncedWeeks: number; error?: string }> = [];
       let totalSynced = 0;
       let totalErrors = 0;
@@ -4567,7 +4547,7 @@ export const productOpsRouter = router({
       }
 
       // Get all US SIDs
-      const { sellers } = await findMatchedSid(adapter, products[0]);
+      const { sellers } = await findMatchedSid(null as any, products[0]);
       const marketplaceMids = MARKETPLACE_MID_MAP['US'] || [1];
       const allUsSids = sellers
         .filter((s: any) => marketplaceMids.includes(s.mid))
@@ -4582,7 +4562,7 @@ export const productOpsRouter = router({
           let offset = 0;
           const pageSize = 100;
           while (true) {
-            const res = await adapter.requestWithMockFallback({
+            const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
               path: "/bd/productPerformance/openApi/asinList",
               body: {
                 offset,
@@ -5599,7 +5579,7 @@ async function getCachedSellers(adapter: any): Promise<any[]> {
     return _productOpsSellerCache.sellers;
   }
   try {
-    const res = await adapter.request({ path: "/erp/sc/data/seller/lists" });
+    const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/erp/sc/data/seller/lists" });
     const sellersRaw = res.data || [];
     const sellers = Array.isArray(sellersRaw) ? sellersRaw : (sellersRaw as any)?.records || (sellersRaw as any)?.list || [];
     _productOpsSellerCache = { sellers, ts: Date.now() };

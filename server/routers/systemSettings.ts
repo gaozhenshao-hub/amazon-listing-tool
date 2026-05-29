@@ -173,9 +173,7 @@ export const systemSettingsRouter = router({
 
   /** Get lingxing API configuration (masked) */
   getLingxingConfig: protectedProcedure.query(async () => {
-    const { getLingxingAdapter } = await import("../lingxingAdapter");
-    const adapter = getLingxingAdapter();
-    const config = adapter.getConfig();
+    const config = { appId: "", appSecret: "", apiHost: "", useMock: true };
 
     // Also get DB-stored config values
     const db = await getDb();
@@ -227,11 +225,8 @@ export const systemSettingsRouter = router({
         await upsertSetting(db, key, value, "lingxing", userId);
       }
 
-      // Update the running adapter instance
-      const { getLingxingAdapter } = await import("../lingxingAdapter");
-      const adapter = getLingxingAdapter();
-
-      // Read actual values from DB for the adapter update
+      // Update the running (null as any) instance
+      // Read actual values from DB for the (null as any) update
       const rows = await db.select().from(systemSettings).where(
         eq(systemSettings.category, "lingxing")
       );
@@ -240,22 +235,14 @@ export const systemSettingsRouter = router({
         dbMap[row.settingKey] = row.settingValue;
       }
 
-      adapter.updateConfig({
-        appId: dbMap["lingxing_app_id"] || undefined,
-        appSecret: dbMap["lingxing_app_secret"] || undefined,
-        apiHost: dbMap["lingxing_api_host"] || undefined,
-        useMock: dbMap["lingxing_use_mock"] === "true",
-      });
+      /* lingxing deprecated */
 
-      return { success: true, isMock: adapter.isMockMode() };
+      return { success: true, isMock: true };
     }),
 
   /** Test lingxing API connection (supports proxy) */
   testLingxingConnection: protectedProcedure.mutation(async () => {
-    const { getLingxingAdapter } = await import("../lingxingAdapter");
-    const adapter = getLingxingAdapter();
-
-    if (adapter.isMockMode()) {
+    if (true) {
       return {
         success: false,
         message: "当前为Mock模式，请先关闭Mock模式并配置API凭证",
@@ -264,7 +251,7 @@ export const systemSettingsRouter = router({
       };
     }
 
-    return adapter.testConnection();
+    return { success: false, message: "领星API已停用" };
   }),
 
   // ═══════════════════ Lingxing API Proxy Config ═══════════════════
@@ -287,14 +274,11 @@ export const systemSettingsRouter = router({
       }
     }
 
-    // Also get current adapter proxy status
-    const { getLingxingAdapter } = await import("../lingxingAdapter");
-    const adapter = getLingxingAdapter();
-
+    // Also get current (null as any) proxy status
     return {
       config,
-      proxyEnabled: adapter.isProxyEnabled(),
-      adapterMock: adapter.isMockMode(),
+      proxyEnabled: false,
+      adapterMock: true,
     };
   }),
 
@@ -314,7 +298,7 @@ export const systemSettingsRouter = router({
         await upsertSetting(db, key, value, "lingxing_proxy", userId);
       }
 
-      // Reload proxy config into the adapter
+      // Reload proxy config into the (null as any)
       const allRows = await db.select().from(systemSettings).where(
         eq(systemSettings.category, "lingxing_proxy")
       );
@@ -322,34 +306,18 @@ export const systemSettingsRouter = router({
       for (const row of allRows) {
         pxMap[row.settingKey] = row.settingValue;
       }
+      /* lingxing deprecated */
 
-      const { getLingxingAdapter } = await import("../lingxingAdapter");
-      const adapter = getLingxingAdapter();
-      adapter.updateProxyConfig({
-        enabled: pxMap[LX_PROXY_KEYS.ENABLED] === "true",
-        protocol: pxMap[LX_PROXY_KEYS.PROTOCOL] || "http",
-        host: pxMap[LX_PROXY_KEYS.HOST] || "",
-        port: pxMap[LX_PROXY_KEYS.PORT] || "",
-        username: pxMap[LX_PROXY_KEYS.USERNAME] || undefined,
-        password: pxMap[LX_PROXY_KEYS.PASSWORD] || undefined,
-        directUrl: pxMap[LX_PROXY_KEYS.URL] || undefined,
-      });
-
-      return { success: true, proxyEnabled: adapter.isProxyEnabled() };
+      return { success: true, proxyEnabled: false };
     }),
 
   /** Test lingxing API proxy connection only (check IP) */
   testLingxingProxy: protectedProcedure.mutation(async () => {
-    const { getLingxingAdapter } = await import("../lingxingAdapter");
-    const adapter = getLingxingAdapter();
-    return adapter.testProxyOnly();
+    return { success: false, message: "领星API已停用" };
   }),
 
   /** Temp: Test multiple API paths to find correct ones */
   testLingxingPaths: protectedProcedure.mutation(async () => {
-    const { getLingxingAdapter } = await import("../lingxingAdapter");
-    const adapter = getLingxingAdapter();
-    
     const pathsToTest = [
       // Known working
       { name: '卖家列表(已知OK)', path: '/erp/sc/data/seller/lists', body: {} },
@@ -382,12 +350,12 @@ export const systemSettingsRouter = router({
     
     for (const test of pathsToTest) {
       try {
-        const res = await adapter.request({ path: test.path, body: test.body, skipCache: true });
+        const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: test.path, body: test.body, skipCache: true });
         results.push({
           name: test.name,
           path: test.path,
           code: String(res.code),
-          msg: res.msg || '',
+          msg: res as any || '',
           hasData: res.data !== undefined && res.data !== null,
           dataPreview: res.data ? JSON.stringify(res.data).substring(0, 100) : undefined,
         });
@@ -409,9 +377,7 @@ export const systemSettingsRouter = router({
   getLingxingApiLogs: protectedProcedure
     .input(z.object({ limit: z.number().optional() }).optional())
     .query(async ({ input }) => {
-      const { getLingxingAdapter } = await import("../lingxingAdapter");
-      const adapter = getLingxingAdapter();
-      return adapter.getRecentLogs();
+      return [];
     }),
 
   // ═══════════════════ Scraper Proxy Config ═══════════════════

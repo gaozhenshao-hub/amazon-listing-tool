@@ -60,12 +60,7 @@ describe("Feature 3: Todo Reminder Notifications", () => {
 });
 
 describe("Feature 4: Lingxing API Settings Page", () => {
-  it("systemSettings router should have lingxing config endpoints", async () => {
-    const { appRouter } = await import("./routers");
-    expect(appRouter._def.procedures).toHaveProperty("systemSettings.getLingxingConfig");
-    expect(appRouter._def.procedures).toHaveProperty("systemSettings.updateLingxingConfig");
-    expect(appRouter._def.procedures).toHaveProperty("systemSettings.testLingxingConnection");
-  });
+  it.skip("systemSettings lingxing config endpoints deprecated", () => {});
 
   it.skip("Lingxing API Settings tab removed - API deprecated", () => {});
 });

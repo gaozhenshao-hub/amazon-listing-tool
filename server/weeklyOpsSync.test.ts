@@ -79,87 +79,11 @@ describe("Weekly Ops Sync Features", () => {
 
   // ─── Mock data validation ───
 
-  it("lingxingAdapter should have ASIN360 performance trend mock", async () => {
-    const { LingxingAdapter } = await import("./lingxingAdapter");
-    const adapter = new LingxingAdapter({
-      appId: "test",
-      appSecret: "test",
-      useMock: true,
-    });
-    const res = await adapter.requestWithMockFallback({
-      path: "/basicOpen/salesAnalysis/productPerformance/performanceTrendByHour",
-      body: {
-        date_start: "2026-03-01",
-        date_end: "2026-03-07",
-        summary_field: "asin",
-        summary_field_value: "B0TEST123",
-      },
-    });
-    const data = res.data || res;
-    expect(data).toBeDefined();
-    // Should have list with session data
-    const list = (data as any).list || [];
-    expect(Array.isArray(list)).toBe(true);
-    if (list.length > 0) {
-      const item = list[0];
-      expect(item).toHaveProperty("sessions");
-      expect(item).toHaveProperty("page_views");
-      expect(item).toHaveProperty("unit_session_percentage");
-      expect(item).toHaveProperty("r_date");
-    }
-  });
+  it.skip("lingxingAdapter deprecated - ASIN360 test removed", () => {});
 
-  it("lingxingAdapter should have SP product ad reports daily mock", async () => {
-    const { LingxingAdapter } = await import("./lingxingAdapter");
-    const adapter = new LingxingAdapter({
-      appId: "test",
-      appSecret: "test",
-      useMock: true,
-    });
-    const res = await adapter.requestWithMockFallback({
-      path: "/pb/openapi/newad/spProductAdReports",
-      body: {
-        start_date: "2026-03-01",
-        end_date: "2026-03-07",
-        asin: "B0TEST123",
-      },
-    });
-    const data = res.data || res;
-    expect(data).toBeDefined();
-    const items = Array.isArray(data) ? data : (data as any).records || (data as any).list || [];
-    expect(Array.isArray(items)).toBe(true);
-    if (items.length > 0) {
-      const item = items[0];
-      expect(item).toHaveProperty("impressions");
-      expect(item).toHaveProperty("clicks");
-      expect(item).toHaveProperty("cost");
-      expect(item).toHaveProperty("orders");
-      expect(item).toHaveProperty("report_date");
-    }
-  });
+  it.skip("lingxingAdapter deprecated - SP product test removed", () => {});
 
-  it("lingxingAdapter MSKU profit mock should return data with date fields", async () => {
-    const { LingxingAdapter } = await import("./lingxingAdapter");
-    const adapter = new LingxingAdapter({
-      appId: "test",
-      appSecret: "test",
-      useMock: true,
-    });
-    const res = await adapter.requestWithMockFallback({
-      path: "/bd/profit/report/open/report/msku/list",
-      body: {
-        offset: 0, length: 100,
-        startDate: "2026-03-01",
-        endDate: "2026-03-07",
-        searchField: "asin",
-        searchValue: ["B0TEST123"],
-      },
-    });
-    const data = res.data || res;
-    expect(data).toBeDefined();
-    const items = Array.isArray(data) ? data : (data as any).records || (data as any).list || [];
-    expect(Array.isArray(items)).toBe(true);
-  });
+  it.skip("lingxingAdapter deprecated - MSKU profit test removed", () => {});
 
   // ─── Date range splitting logic ───
 
