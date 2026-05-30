@@ -507,22 +507,10 @@ async function collectAdData(asin: string, sid?: number): Promise<AdData | null>
   try {
     // 并行获取广告数据
     const [campaignsRes, keywordsRes, searchTermsRes, productReportsRes] = await Promise.allSettled([
-      (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-        path: "/pb/openapi/newad/spCampaigns",
-        body: { sid: sid || 0, asin },
-      }),
-      (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-        path: "/pb/openapi/newad/spKeywords",
-        body: { sid: sid || 0, asin },
-      }),
-      (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-        path: "/pb/openapi/newad/queryWordReports",
-        body: { sid: sid || 0, asin },
-      }),
-      (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-        path: "/pb/openapi/newad/spProductAdReports",
-        body: { sid: sid || 0, asin },
-      }),
+      ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
+      ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
+      ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
+      ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
     ]);
 
     return {
@@ -563,7 +551,6 @@ export async function collectConversionData(
   asin: string,
   options: CollectionOptions = {}
 ): Promise<ConversionCrawlData> {
-  console.log(`[ConversionCollector] Starting data collection for ASIN: ${asin}`);
   const startTime = Date.now();
 
   // Step 1: 并行爬取
@@ -824,7 +811,6 @@ export async function collectConversionData(
   }
 
   const duration = Date.now() - startTime;
-  console.log(`[ConversionCollector] Completed data collection for ${asin} in ${duration}ms`);
 
   return {
     asin,

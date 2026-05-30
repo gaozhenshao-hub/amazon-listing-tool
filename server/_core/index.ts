@@ -10,6 +10,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { startUsageTracking } from "../usageTracking";
 import { intelScheduler } from "../intelAutoCollect";
+import { weeklyReportHandler, dataCleanupHandler } from "../scheduledHandlers";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -40,6 +41,9 @@ async function startServer() {
   registerOAuthRoutes(app);
   // Knowledge base P2P sync routes
   app.use("/api/sync", syncRouter);
+  // Scheduled task handlers (Heartbeat HTTP cron)
+  app.post("/api/scheduled/weekly-report", weeklyReportHandler);
+  app.post("/api/scheduled/data-cleanup", dataCleanupHandler);
   // tRPC API
   app.use(
     "/api/trpc",

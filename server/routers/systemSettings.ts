@@ -350,7 +350,7 @@ export const systemSettingsRouter = router({
     
     for (const test of pathsToTest) {
       try {
-        const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: test.path, body: test.body, skipCache: true });
+        const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         results.push({
           name: test.name,
           path: test.path,

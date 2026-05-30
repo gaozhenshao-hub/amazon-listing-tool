@@ -890,25 +890,25 @@ export const shippingBatchRouter = router({
   // ─── Lingxing API Data ───
 
   getLingxingDeliveryOrders: protectedProcedure.query(async () => {
-    const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: '/erp/sc/routing/storage/shipment/getInboundShipmentList', body: {} });
+    const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
     const raw = res.data || [];
     return Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
   }),
 
   getLingxingLogisticsChannels: protectedProcedure.query(async () => {
-    const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: '/erp/sc/data/local_inventory/channelList', body: {} });
+    const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
     const raw = res.data || [];
     return Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
   }),
 
   getLingxingFbaInventory: protectedProcedure.query(async () => {
-    const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: '/basicOpen/openapi/storage/fbaWarehouseDetail', body: {} });
+    const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
     const raw = res.data || [];
     return Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
   }),
 
   getLingxingPurchaseOrders: protectedProcedure.query(async () => {
-    const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: '/erp/sc/routing/data/local_inventory/purchaseOrderList', body: {} });
+    const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
     const raw = res.data || [];
     return Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
   }),
@@ -1119,10 +1119,7 @@ export const shippingBatchRouter = router({
     const db = (await getDb())!;
     const userId = String(ctx.user.id);
     // 1. 获取领星发货单列表
-    const shipmentRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-      path: '/erp/sc/routing/storage/shipment/getInboundShipmentList',
-      body: {},
-    });
+    const shipmentRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
     const shipmentRaw = shipmentRes.data || [];
     const shipments = Array.isArray(shipmentRaw) ? shipmentRaw : (shipmentRaw as any)?.records || (shipmentRaw as any)?.list || [];
     if (shipments.length === 0) return { synced: 0, created: 0, updated: 0, message: '领星无发货单数据' };
@@ -1185,10 +1182,7 @@ export const shippingBatchRouter = router({
         
         // 获取发货单详情以创建产品记录
         try {
-          const detailRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: '/erp/sc/data/fba_report/shipmentList',
-            body: { delivery_id: shipment.delivery_id || fbaId },
-          });
+          const detailRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
           const detail = detailRes.data;
           if (detail && detail.items && Array.isArray(detail.items)) {
             const batchId = (result as any).insertId || (result as any)[0]?.insertId;

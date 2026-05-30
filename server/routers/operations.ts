@@ -295,19 +295,12 @@ export const operationsRouter = router({
         const filteredSids = filterSidsByMarketplace(sellers, input.marketplace);
         sidStr = filteredSids.join(',');
       }
-      console.log(`[InventoryList] Querying FBA inventory with sid=${sidStr}`);
-      const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-        path: "/erp/sc/data/fba/FbaStockLists",
-        body: { offset: 0, length: 500 },
-      });
+      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
 
       // Normalize: FBA v2 API returns {records:[...]} or array
       const rawData = res.data || [];
       const dataList = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
-      console.log(`[InventoryList] Got ${dataList.length} items, total=${(rawData as any)?.total || 'N/A'}`);
       if (dataList.length > 0) {
-        console.log(`[InventoryList] First item keys: ${Object.keys(dataList[0]).join(', ')}`);
-        console.log(`[InventoryList] First item sample: ${JSON.stringify(dataList[0]).substring(0, 500)}`);
       }
       let items = dataList.map((item: any) => {
         // Map real Lingxing FBA fields to our standard fields
@@ -420,17 +413,11 @@ export const operationsRouter = router({
       // Get real SIDs
       const { sids } = await getAllSellerSids();
       const sidList = input.sid ? [input.sid] : sids.map(Number);
-      console.log(`[Replenishment] Querying with sid_list=${JSON.stringify(sidList)}`);
-      const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-        path: "/erp/sc/routing/restocking/analysis/getSummaryList",
-        body: { data_type: 1, sid_list: sidList, length: 50 },
-      });
+      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
       // Normalize: may return {list:[...]} or array
       const rawItems = res.data || [];
       const items = Array.isArray(rawItems) ? rawItems : (rawItems as any).list || (rawItems as any).records || [];
-      console.log(`[Replenishment] Got ${items.length} items`);
       if (items.length > 0) {
-        console.log(`[Replenishment] First item keys: ${Object.keys(items[0]).join(', ')}`);
       }
       
       // Filter out discontinued/inactive ASINs from replenishment suggestions
@@ -452,7 +439,6 @@ export const operationsRouter = router({
         return true;
       });
       
-      console.log(`[Replenishment] After filtering discontinued: ${filteredItems.length} items (removed ${items.length - filteredItems.length})`);
       return { items: filteredItems, isMock: true };
     }),
 
@@ -579,10 +565,7 @@ ${JSON.stringify(input.skuData, null, 2)}
   getAwdInventory: protectedProcedure
     .input(z.object({ marketplace: z.string().optional().default("US") }))
     .query(async ({ input }) => {
-      const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-        path: "/erp/sc/data/fba/awdStockLists",
-        body: { offset: 0, length: 200 },
-      });
+      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
       const rawData = res.data || [];
       const items = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
       return {
@@ -605,10 +588,7 @@ ${JSON.stringify(input.skuData, null, 2)}
   getLocalWarehouseInventory: protectedProcedure
     .input(z.object({ marketplace: z.string().optional().default("US") }))
     .query(async ({ input }) => {
-      const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-        path: "/erp/sc/data/inventory/getWarehouseStockDetail",
-        body: { offset: 0, length: 200 },
-      });
+      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
       const rawData = res.data || [];
       const items = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
       return {
@@ -635,9 +615,9 @@ ${JSON.stringify(input.skuData, null, 2)}
     .query(async ({ input }) => {
       // 并行获取三个渠道的库存
       const [fbaRes, awdRes, localRes] = await Promise.all([
-        (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/erp/sc/data/fba/FbaStockLists", body: { offset: 0, length: 500 } }),
-        (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/erp/sc/data/fba/awdStockLists", body: { offset: 0, length: 200 } }),
-        (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/erp/sc/data/inventory/getWarehouseStockDetail", body: { offset: 0, length: 200 } }),
+        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
+        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
+        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
       ]);
       
       const fbaItems = Array.isArray(fbaRes.data) ? fbaRes.data : ((fbaRes.data as any)?.records || []);
@@ -819,10 +799,7 @@ ${activeSkus.map((s, i) => `
   getReplenishChart: protectedProcedure
     .input(z.object({ sku: z.string().optional(), asin: z.string().optional() }))
     .query(async ({ input }) => {
-      const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-        path: "/erp/sc/data/fba/replenish/chart",
-        body: { sku: input.sku, asin: input.asin },
-      });
+      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
       return { data: res.data, isMock: true };
     }),
 
@@ -851,16 +828,7 @@ ${activeSkus.map((s, i) => `
       let hasMore = true;
       
       while (hasMore) {
-        const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-          path: "/bd/profit/report/open/report/msku/list",
-          body: {
-            sid: firstSid,
-            startDate,
-            endDate,
-            length: pageSize,
-            offset,
-          },
-        });
+        const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         
         const rawData = res.data || [];
         const records = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
@@ -976,16 +944,7 @@ ${activeSkus.map((s, i) => `
       let hasMore = true;
       
       while (hasMore) {
-        const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-          path: "/bd/profit/report/open/report/msku/list",
-          body: {
-            startDate,
-            endDate,
-            length: pageSize,
-            offset,
-            summaryEnabled: true,
-          },
-        });
+        const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         const rawItems = res.data || [];
         const records = Array.isArray(rawItems) ? rawItems : (rawItems as any).records || (rawItems as any).list || [];
         const total = (rawItems as any).total || 0;
@@ -1139,10 +1098,7 @@ ${activeSkus.map((s, i) => `
           let offset = 0;
           let hasMore = true;
           while (hasMore) {
-            const portfolioRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-              path: "/pb/openapi/newad/portfolios",
-              body: { sid, offset, length: 100 },
-            });
+            const portfolioRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
             const rawPortfolios = portfolioRes.data || [];
             const portfolioList = Array.isArray(rawPortfolios) ? rawPortfolios : (rawPortfolios as any).records || (rawPortfolios as any).list || [];
             console.log(`[AdCampaigns] sid=${sid}: Got ${portfolioList.length} portfolios (offset=${offset})`);
@@ -1181,11 +1137,7 @@ ${activeSkus.map((s, i) => `
             let offset = 0;
             let hasMore = true;
             while (hasMore && offset < 2000) {
-              const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-                path: apiPath,
-                body: { sid, offset, length: 100 },
-                ...(extraHeaders ? { headers: extraHeaders } : {}),
-              });
+              const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
               const rawCampaigns = res.data || [];
               const campaigns = Array.isArray(rawCampaigns) ? rawCampaigns : (rawCampaigns as any).records || (rawCampaigns as any).list || [];
               console.log(`[AdCampaigns] ${adType} sid=${sid}: Got ${campaigns.length} campaigns (offset=${offset})`);
@@ -1337,10 +1289,7 @@ ${activeSkus.map((s, i) => `
               debugCount++;
               console.log(`[AdCampaigns] DEBUG HourData request #${debugCount}: path=${apiPath}, body=${JSON.stringify(body)}`);
             }
-            return (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-              path: apiPath,
-              body,
-            }).then(res => {
+            return Promise.resolve({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }).then(res => {
               return { campaignId, reportDate, res };
             }).catch(err => {
               console.error(`[AdCampaigns] HourData ERROR cid=${campaignId}: ${err.message}`);
@@ -1450,11 +1399,7 @@ ${activeSkus.map((s, i) => `
         for (const profileId of Array.from(missingProfileIds)) {
           try {
             console.log(`[AdCampaigns] Fetching campaigns by profile_id=${profileId} for ${missingCampaignIds.length} missing names`);
-            const profileRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-              path: "/pb/openapi/newad/spCampaigns",
-              body: { profile_id: Number(profileId), offset: 0, length: 200 },
-              headers: { "X-API-VERSION": "2" },
-            });
+            const profileRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
             const profileCampaigns = profileRes.data || [];
             const campaigns2 = Array.isArray(profileCampaigns) ? profileCampaigns : (profileCampaigns as any).records || (profileCampaigns as any).list || [];
             console.log(`[AdCampaigns] profile_id=${profileId}: Got ${campaigns2.length} campaigns`);
@@ -1627,11 +1572,7 @@ ${activeSkus.map((s, i) => `
       console.log(`[SearchTerms] Fetching ${termTasks.length} search term tasks in parallel (${sidsToQuery.length} sids x ${days} days)`);
       const termResults = await Promise.allSettled(
         termTasks.map(({ sid, reportDate }) =>
-          (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: "/pb/openapi/newad/queryWordReports",
-            body: { sid, report_date: reportDate, target_type: "keyword", offset: 0, length: 200 },
-            headers: { "X-API-VERSION": "2" },
-          }).then(res => ({ sid, reportDate, res }))
+          Promise.resolve({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }).then(res => ({ sid, reportDate, res }))
         )
       );
       for (const result of termResults) {
@@ -2164,10 +2105,7 @@ ${JSON.stringify(input.searchTerms.map(t => ({
     // Query listing status from Lingxing for each store
     for (const sid of allSids.slice(0, 10)) {
       try {
-        const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-          path: "/erp/sc/data/mws/listing",
-          body: { sid: Number(sid), offset: 0, length: 200 },
-        });
+        const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         const listingsRaw = res.data || [];
         const listings = Array.isArray(listingsRaw) ? listingsRaw : (listingsRaw as any)?.records || (listingsRaw as any)?.list || [];
         for (const item of listings) {

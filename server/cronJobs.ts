@@ -1,39 +1,29 @@
 /**
- * Cron Jobs - Periodic maintenance tasks
- * Lingxing API auto-sync has been removed - data is now imported via Excel uploads
+ * Cron Jobs - Legacy placeholder
+ * 
+ * All periodic tasks now use the Heartbeat system (HTTP cron via platform).
+ * See /api/scheduled/* handlers for active periodic tasks.
+ * 
+ * This file is kept for backward compatibility with server/_core/index.ts import.
  */
-import * as cron from 'node-cron';
-
-let cronTask: ReturnType<typeof cron.schedule> | null = null;
 
 /**
- * Initialize the cron job
- * Currently a no-op placeholder since Lingxing API sync was removed.
- * Future periodic tasks (e.g., data cleanup, report generation) can be added here.
+ * Initialize cron jobs - no-op since we use Heartbeat system
  */
 export function initCronJobs() {
-  if (cronTask) {
-    cronTask.stop();
-  }
-
-  // Placeholder: future periodic tasks can be scheduled here
-  console.log('[CronJobs] Initialized (no active cron tasks - Lingxing API sync removed)');
+  console.log('[CronJobs] Using Heartbeat system for periodic tasks (no in-process timers)');
 }
 
 /**
- * Manually trigger sync - now a no-op since data comes from Excel uploads
+ * Manual sync is no longer available - data comes from Excel uploads
  */
 export async function triggerManualSync() {
   console.log('[CronJobs] Manual sync is no longer available. Please use Excel upload to import data.');
 }
 
 /**
- * Stop the cron job
+ * Stop cron jobs - no-op
  */
 export function stopCronJobs() {
-  if (cronTask) {
-    cronTask.stop();
-    cronTask = null;
-    console.log('[CronJobs] Cron job stopped');
-  }
+  // No-op: Heartbeat crons are managed by the platform
 }

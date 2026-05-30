@@ -13,6 +13,7 @@ import {
 import {
   Upload, FileSpreadsheet, CheckCircle2, XCircle, Clock, Loader2,
   Trash2, AlertTriangle, Database, BarChart3, ArrowUpFromLine,
+  BookOpen, ArrowRight, Download, HelpCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import OperatorMappingDialog from "@/components/OperatorMappingDialog";
@@ -21,6 +22,7 @@ import AdReportUploadCenter from "./AdReportUploadCenter";
 import AdDeepDataUpload from "./ad-deep/AdDeepDataUpload";
 import OpsPlanImportTab from "./OpsPlanImportTab";
 import OpsReviewImportTab from "./OpsReviewImportTab";
+import ImportWizardTab from "./ImportWizardTab";
 
 // ─── Helper: format date ───
 function formatDate(d: Date | string | null) {
@@ -56,7 +58,7 @@ function SourceBadge({ source }: { source: string }) {
 }
 
 export default function OpsDataImport() {
-  const [activeTab, setActiveTab] = useState("upload");
+  const [activeTab, setActiveTab] = useState("wizard");
   const [uploading, setUploading] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewData, setPreviewData] = useState<any>(null);
@@ -253,6 +255,7 @@ export default function OpsDataImport() {
       {/* Main Content */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
+          <TabsTrigger value="wizard">导入向导</TabsTrigger>
           <TabsTrigger value="upload">上传数据</TabsTrigger>
           <TabsTrigger value="ad-report">广告报表</TabsTrigger>
           <TabsTrigger value="daily-report">每日报告</TabsTrigger>
@@ -260,6 +263,11 @@ export default function OpsDataImport() {
           <TabsTrigger value="review-import">执行复盘</TabsTrigger>
           <TabsTrigger value="history">导入历史</TabsTrigger>
         </TabsList>
+
+        {/* Wizard Tab */}
+        <TabsContent value="wizard" className="space-y-4">
+          <ImportWizardTab onNavigate={setActiveTab} />
+        </TabsContent>
 
         {/* Upload Tab */}
         <TabsContent value="upload" className="space-y-4">

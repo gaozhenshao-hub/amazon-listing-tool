@@ -120,10 +120,7 @@ export const customerProfileRouter = router({
   syncFromLingxing: protectedProcedure
     .input(z.object({ sid: z.number().optional() }))
     .mutation(async ({ ctx }) => {
-      const ordersRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-        path: "/erp/sc/data/mws/orders",
-        body: { offset: 0, length: 200 },
-      });
+      const ordersRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
       const orders = Array.isArray(ordersRes.data) ? ordersRes.data : (ordersRes.data as any)?.list || [];
 
       // 按买家聚合

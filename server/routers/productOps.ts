@@ -90,11 +90,7 @@ export const productOpsRouter = router({
     const parentAsinMap = new Map<string, SalesInfo>();
     const childAsinMap = new Map<string, SalesInfo>();
     try {
-      const profitRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-        path: "/bd/profit/report/open/report/msku/list",
-        body: { offset: 0, length: 2000, startDate, endDate, monthlyQuery: false, orderStatus: "All" },
-        timeout: 60_000, // Large response (~6MB), needs more time
-      });
+      const profitRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
       const profitRaw = profitRes.data || [];
       const profitList = Array.isArray(profitRaw) ? profitRaw : (profitRaw as any).records || (profitRaw as any).list || [];
 
@@ -583,19 +579,7 @@ export const productOpsRouter = router({
       // Try ASIN-specific profit API first (more precise)
       // Use searchField + searchValue per Lingxing API docs, endDate = yesterday (today's data incomplete)
       try {
-        const asinRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-          path: "/bd/profit/report/open/report/asin/list",
-          body: {
-            offset: 0,
-            length: 1000,
-            startDate: getDateNDaysAgo(30),
-            endDate: getYesterday(),
-            searchField: "asin",
-            searchValue: childAsins.length > 0 ? childAsins : [parentAsin],
-            monthlyQuery: false,
-            orderStatus: "All",
-          },
-        });
+        const asinRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         if (asinRes._meta) dataSourceMeta = asinRes._meta;
         const rawAsin = asinRes.data || [];
         actual30Items = Array.isArray(rawAsin) ? rawAsin : (rawAsin as any).records || (rawAsin as any).list || [];
@@ -607,19 +591,7 @@ export const productOpsRouter = router({
       // If ASIN API returned no data, try parent ASIN API, then fallback to MSKU
       if (actual30Items.length === 0 && parentAsin) {
         try {
-          const parentRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: "/bd/profit/report/open/report/parent/asin/list",
-            body: {
-              offset: 0,
-              length: 1000,
-              startDate: getDateNDaysAgo(30),
-              endDate: getYesterday(),
-              searchField: "parent_asin",
-              searchValue: [parentAsin],
-              monthlyQuery: false,
-              orderStatus: "All",
-            },
-          });
+          const parentRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
           if (parentRes._meta) dataSourceMeta = parentRes._meta;
           const rawParent = parentRes.data || [];
           actual30Items = Array.isArray(rawParent) ? rawParent : (rawParent as any).records || (rawParent as any).list || [];
@@ -629,10 +601,7 @@ export const productOpsRouter = router({
         }
       }
       if (actual30Items.length === 0) {
-        const profitRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-          path: "/bd/profit/report/open/report/msku/list",
-          body: { startDate: getDateNDaysAgo(30), endDate: getYesterday(), length: 500, summaryEnabled: true },
-        });
+        const profitRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         if (profitRes._meta && profitRes._meta.source !== 'real') dataSourceMeta = profitRes._meta;
         const rawProfit = profitRes.data || [];
         const allItems = Array.isArray(rawProfit) ? rawProfit : (rawProfit as any).records || (rawProfit as any).list || [];
@@ -645,38 +614,14 @@ export const productOpsRouter = router({
       let current = { revenue: 0, amazonFees: 0, referralFee: 0, fbaFee: 0, adSpend: 0, storageFee: 0, netRevenue: 0, fixedCosts: 0, productCost: 0, shippingCost: 0, tariff: 0, profit: 0, profitMargin: 0, orders: 0, units: 0 };
       try {
         // Try ASIN API for 7-day data
-        const asinRes7 = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-          path: "/bd/profit/report/open/report/asin/list",
-          body: {
-            offset: 0,
-            length: 1000,
-            startDate: getDateNDaysAgo(7),
-            endDate: getYesterday(),
-            searchField: "asin",
-            searchValue: childAsins.length > 0 ? childAsins : [parentAsin],
-            monthlyQuery: false,
-            orderStatus: "All",
-          },
-        });
+        const asinRes7 = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         const raw7 = asinRes7.data || [];
         current7Items = Array.isArray(raw7) ? raw7 : (raw7 as any).records || (raw7 as any).list || [];
 
         // Try parent ASIN API if no data
         if (current7Items.length === 0 && parentAsin) {
           try {
-            const parentRes7 = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-              path: "/bd/profit/report/open/report/parent/asin/list",
-              body: {
-                offset: 0,
-                length: 1000,
-                startDate: getDateNDaysAgo(7),
-                endDate: getYesterday(),
-                searchField: "parent_asin",
-                searchValue: [parentAsin],
-                monthlyQuery: false,
-                orderStatus: "All",
-              },
-            });
+            const parentRes7 = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
             const raw7p = parentRes7.data || [];
             current7Items = Array.isArray(raw7p) ? raw7p : (raw7p as any).records || (raw7p as any).list || [];
             console.log(`[ProfitSummary] Parent ASIN 7-day API returned ${current7Items.length} items`);
@@ -686,10 +631,7 @@ export const productOpsRouter = router({
         }
         if (current7Items.length === 0) {
           // Fallback to MSKU list
-          const recentRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: "/bd/profit/report/open/report/msku/list",
-            body: { startDate: getDateNDaysAgo(7), endDate: getYesterday(), length: 500, summaryEnabled: true },
-          });
+          const recentRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
           const rawRecent = recentRes.data || [];
           const allRecent = Array.isArray(rawRecent) ? rawRecent : (rawRecent as any).records || (rawRecent as any).list || [];
           current7Items = filterByProduct(allRecent);
@@ -702,13 +644,7 @@ export const productOpsRouter = router({
       // Fetch ASIN 360 hourly data for real-time sales/ranking trends
       let hourlyTrend: Array<{ hour: string; volume: number; orderItems: number; amount: number; price: number; salesRank: number }> = [];
       try {
-        const asin360Res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-          path: "/basicOpen/salesAnalysis/productPerformance/performanceTrendByHour",
-          body: {
-            asin: childAsins.length > 0 ? childAsins[0] : parentAsin,
-            report_date: getYesterday(),
-          },
-        });
+        const asin360Res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         const rawHourly = asin360Res.data || [];
         const hourlyList = Array.isArray(rawHourly) ? rawHourly : (rawHourly as any).records || (rawHourly as any).list || [];
         hourlyTrend = hourlyList.map((h: any) => ({
@@ -763,10 +699,7 @@ export const productOpsRouter = router({
       // Try searching by ASIN first using v2 FBA Stock API
       for (const keyword of [product.parentAsin, ...searchKeywords.slice(0, 3)]) {
         try {
-          const invRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: "/erp/sc/data/fba/FbaStockLists",
-            body: { sid: matchedSid, offset: 0, length: 200, search_field: "asin", search_value: keyword },
-          });
+          const invRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
           if (invRes._meta && invRes._meta.source !== 'real') dataSourceMeta = invRes._meta;
           const rawInv = invRes.data || [];
           const items = Array.isArray(rawInv) ? rawInv : (rawInv as any).records || (rawInv as any).list || [];
@@ -785,10 +718,7 @@ export const productOpsRouter = router({
       // If v2 search returned nothing, fallback to full list with filtering
       if (invList.length === 0) {
         try {
-          const invRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: "/erp/sc/data/fba/FbaStockLists",
-            body: { sid: matchedSid, offset: 0, length: 500 },
-          });
+          const invRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
           const rawInv = invRes.data || [];
           const allItems = Array.isArray(rawInv) ? rawInv : (rawInv as any).records || (rawInv as any).list || [];
           invList = allItems.filter((inv: any) =>
@@ -913,11 +843,7 @@ export const productOpsRouter = router({
           ];
           for (const { path: adPath, type: adType } of adPaths) {
             try {
-              const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-                path: adPath,
-                body: { sid: matchedSid, offset: 0, length: 200 },
-                headers: { "X-API-VERSION": "2" },
-              });
+              const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
               if (res._meta && res._meta.source !== 'real') dataSourceMeta = res._meta;
               const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
               // Filter items that match any of our ASINs (parent or child)
@@ -947,11 +873,7 @@ export const productOpsRouter = router({
       const allCampaigns: any[] = [];
       for (const { path: campPath, type: campType } of campaignPaths) {
         try {
-          const adRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: campPath,
-            body: { sid: matchedSid, start_date: getDateNDaysAgo(30), end_date: getToday() },
-            headers: { "X-API-VERSION": "2" },
-          });
+          const adRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
           if (adRes._meta && adRes._meta.source !== 'real') dataSourceMeta = adRes._meta;
           const rawAd = adRes.data || [];
           const campaigns = Array.isArray(rawAd) ? rawAd : (rawAd as any).records || (rawAd as any).list || [];
@@ -1006,11 +928,7 @@ export const productOpsRouter = router({
       try {
         // Fetch reports for each child ASIN (not just parent ASIN)
         for (const asin of allAsins) {
-          const productAdRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: "/pb/openapi/newad/spProductAdReports",
-            body: { sid: matchedSid, report_date: getDateNDaysAgo(1), show_detail: 0, offset: 0, length: 200, asin },
-            headers: { "X-API-VERSION": "2" },
-          });
+          const productAdRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
           if (productAdRes._meta && productAdRes._meta.source !== 'real') dataSourceMeta = productAdRes._meta;
           const rawProductAd = productAdRes.data || [];
           const allProductAds = Array.isArray(rawProductAd) ? rawProductAd : (rawProductAd as any).records || (rawProductAd as any).list || [];
@@ -1480,12 +1398,10 @@ export const productOpsRouter = router({
     const existing = await db!.select({ count: sql<number>`count(*)` }).from(conversionCheckItems)
       .where(isNull(conversionCheckItems.userId));
     if (Number(existing[0]?.count) === 0) {
-      console.log('[ConversionCheck] No default items found, auto-initializing 129 check items...');
       const defaultItems = getDefault129CheckItems();
       for (const item of defaultItems) {
         await db!.insert(conversionCheckItems).values({ ...item, userId: null });
       }
-      console.log(`[ConversionCheck] Initialized ${defaultItems.length} default check items`);
     }
     // Get system defaults (userId IS NULL) + user custom items
     const items = await db!.select().from(conversionCheckItems)
@@ -1539,7 +1455,6 @@ export const productOpsRouter = router({
     for (const item of defaultItems) {
       await db!.insert(conversionCheckItems).values({ ...item, userId: null });
     }
-    console.log(`[ConversionCheck] Reset & re-initialized ${defaultItems.length} check items for user ${ctx.user.id}`);
     return { message: "Reset and re-initialized", count: defaultItems.length };
   }),
 
@@ -2526,7 +2441,7 @@ export const productOpsRouter = router({
     // Get all seller stores first
     let sellers: any[] = [];
     try {
-      const sellerRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/erp/sc/data/seller/lists" });
+      const sellerRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
       const sellerRaw = sellerRes.data || [];
       sellers = Array.isArray(sellerRaw) ? sellerRaw : (sellerRaw as any)?.records || (sellerRaw as any)?.list || [];
     } catch (err: any) {
@@ -2550,10 +2465,7 @@ export const productOpsRouter = router({
       const sid = seller.sid;
       const marketplace = marketplaceMap[seller.mid] || 'US';
       try {
-        const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-          path: "/erp/sc/data/mws/listing",
-          body: { sid: Number(sid), offset: 0, length: 200 },
-        });
+        const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         const listingsRaw = res.data || [];
         const listings = Array.isArray(listingsRaw) ? listingsRaw : (listingsRaw as any)?.records || (listingsRaw as any)?.list || [];
         
@@ -2800,10 +2712,7 @@ export const productOpsRouter = router({
       let profitData = { revenue: 0, cost: 0, profit: 0, profitMargin: 0, adSpend: 0, fbaFee: 0, orderCount: 0, unitCount: 0 };
       let prevProfitData = { revenue: 0, cost: 0, profit: 0, profitMargin: 0, adSpend: 0, fbaFee: 0, orderCount: 0, unitCount: 0 };
       try {
-        const profitRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-          path: "/bd/profit/report/open/report/msku/list",
-          body: { offset: 0, length: 1000, startDate: startDate, endDate: endDate, monthlyQuery: false, orderStatus: "All" },
-        });
+        const profitRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         const profitRaw = profitRes.data || [];
         const profitList = Array.isArray(profitRaw) ? profitRaw : (profitRaw as any).records || (profitRaw as any).list || [];
         for (const item of profitList) {
@@ -2818,10 +2727,7 @@ export const productOpsRouter = router({
         profitData.profitMargin = profitData.revenue > 0 ? (profitData.profit / profitData.revenue) * 100 : 0;
         
         // Previous period
-        const prevProfitRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-          path: "/bd/profit/report/open/report/msku/list",
-          body: { offset: 0, length: 1000, startDate: prevStartDate, endDate: prevEndDate, monthlyQuery: false, orderStatus: "All" },
-        });
+        const prevProfitRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         const prevProfitRaw = prevProfitRes.data || [];
         const prevProfitList = Array.isArray(prevProfitRaw) ? prevProfitRaw : (prevProfitRaw as any).records || (prevProfitRaw as any).list || [];
         for (const item of prevProfitList) {
@@ -2841,10 +2747,7 @@ export const productOpsRouter = router({
       // Fetch inventory data from Lingxing FBA v2 API
       let inventoryData = { totalStock: 0, inboundQty: 0, reservedQty: 0, totalValue: 0 };
       try {
-        const invRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-          path: "/erp/sc/data/fba/FbaStockLists",
-          body: { offset: 0, length: 500 },
-        });
+        const invRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         const invRaw = invRes.data || [];
         const invList = Array.isArray(invRaw) ? invRaw : (invRaw as any).records || (invRaw as any).list || [];
         for (const item of invList) {
@@ -2864,10 +2767,7 @@ export const productOpsRouter = router({
       let adData = { totalSpend: 0, totalSales: 0, impressions: 0, clicks: 0, acos: 0, roas: 0, activeCampaigns: 0 };
       try {
         // Use SP广告商品小时数据 for per-ASIN ad metrics
-        const adRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-          path: "/ph/openaps/newad/spAdvertiseHourData",
-          body: { report_date: endDate, offset: 0, length: 1000 },
-        });
+        const adRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         const adRaw = adRes.data || [];
         const adList = Array.isArray(adRaw) ? adRaw : (adRaw as any).records || (adRaw as any).list || [];
         for (const item of adList) {
@@ -2945,19 +2845,7 @@ export const productOpsRouter = router({
           const opVariants = await (await getDb())!.select().from(productVariants)
             .where(eq(productVariants.productId, input.productId));
           const opChildAsins = opVariants.map(v => v.childAsin).filter(Boolean);
-          const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: "/bd/profit/report/open/report/asin/list",
-            body: {
-              offset: 0,
-              length: 1000,
-              startDate: start,
-              endDate: end,
-              searchField: "asin",
-              searchValue: opChildAsins.length > 0 ? opChildAsins : [product.parentAsin],
-              monthlyQuery: false,
-              orderStatus: "All",
-            },
-          });
+          const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
           const rawData = res.data || [];
           let list = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
           console.log(`[OpsPlanComparison] ASIN API returned ${list.length} items for ${product.parentAsin} (${start}-${end})`);
@@ -2965,19 +2853,7 @@ export const productOpsRouter = router({
           // Try parent ASIN API if no data
           if (list.length === 0 && product.parentAsin) {
             try {
-              const parentRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-                path: "/bd/profit/report/open/report/parent/asin/list",
-                body: {
-                  offset: 0,
-                  length: 1000,
-                  startDate: start,
-                  endDate: end,
-                  searchField: "parent_asin",
-                  searchValue: [product.parentAsin],
-                  monthlyQuery: false,
-                  orderStatus: "All",
-                },
-              });
+              const parentRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
               const rawParent = parentRes.data || [];
               list = Array.isArray(rawParent) ? rawParent : (rawParent as any).records || (rawParent as any).list || [];
               console.log(`[OpsPlanComparison] Parent ASIN API returned ${list.length} items`);
@@ -2989,10 +2865,7 @@ export const productOpsRouter = router({
           // Fallback to MSKU list if still no data
           if (list.length === 0) {
             try {
-              const mskuRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-                path: "/bd/profit/report/open/report/msku/list",
-                body: { startDate: start, endDate: end, length: 500, summaryEnabled: true },
-              });
+              const mskuRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
               const rawMsku = mskuRes.data || [];
               const allItems = Array.isArray(rawMsku) ? rawMsku : (rawMsku as any).records || (rawMsku as any).list || [];
               // Get variants for filtering
@@ -4131,21 +4004,7 @@ export const productOpsRouter = router({
           let offset = 0;
           const pageSize = 100;
           while (true) {
-            const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-              path: "/bd/productPerformance/openApi/asinList",
-              body: {
-                offset,
-                length: pageSize,
-                sort_field: "volume",
-                sort_type: "desc",
-                mid: matchedMid,
-                sid: sidArray,
-                start_date: week.start,
-                end_date: week.end,
-                summary_field: "parent_asin",
-                currency_code: "CNY",
-              },
-            });
+            const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
             const raw = res.data || [];
             const pageItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
             allItems.push(...pageItems);
@@ -4355,18 +4214,7 @@ export const productOpsRouter = router({
       // Fetch 30-day profit data to compute averages
       let profitItems: any[] = [];
       try {
-        const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-          path: "/bd/profit/report/open/report/asin/list",
-          body: {
-            offset: 0, length: 2000,
-            startDate: getDateNDaysAgo(30),
-            endDate: getYesterday(),
-            searchField: "asin",
-            searchValue: childAsins.length > 0 ? childAsins : [parentAsin],
-            monthlyQuery: false,
-            orderStatus: "All",
-          },
-        });
+        const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         const raw = res.data || [];
         profitItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
       } catch (err: any) {
@@ -4376,15 +4224,7 @@ export const productOpsRouter = router({
       // If no data from ASIN API, try parent ASIN
       if (profitItems.length === 0 && parentAsin) {
         try {
-          const parentRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: "/bd/profit/report/open/report/parent/asin/list",
-            body: {
-              offset: 0, length: 2000,
-              startDate: getDateNDaysAgo(30), endDate: getYesterday(),
-              searchField: "parent_asin", searchValue: [parentAsin],
-              monthlyQuery: false, orderStatus: "All",
-            },
-          });
+          const parentRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
           const raw = parentRes.data || [];
           profitItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
         } catch (err: any) {
@@ -4562,21 +4402,7 @@ export const productOpsRouter = router({
           let offset = 0;
           const pageSize = 100;
           while (true) {
-            const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-              path: "/bd/productPerformance/openApi/asinList",
-              body: {
-                offset,
-                length: pageSize,
-                sort_field: "volume",
-                sort_type: "desc",
-                mid: matchedMid,
-                sid: allUsSids,
-                start_date: week.start,
-                end_date: week.end,
-                summary_field: "parent_asin",
-                currency_code: "CNY",
-              },
-            });
+            const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
             const raw = res.data || [];
             const pageItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
             allApiItems.push(...pageItems);
@@ -5579,7 +5405,7 @@ async function getCachedSellers(adapter: any): Promise<any[]> {
     return _productOpsSellerCache.sellers;
   }
   try {
-    const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/erp/sc/data/seller/lists" });
+    const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
     const sellersRaw = res.data || [];
     const sellers = Array.isArray(sellersRaw) ? sellersRaw : (sellersRaw as any)?.records || (sellersRaw as any)?.list || [];
     _productOpsSellerCache = { sellers, ts: Date.now() };

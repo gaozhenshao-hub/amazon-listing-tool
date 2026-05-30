@@ -284,10 +284,7 @@ export const adAnalysisRouter = router({
       for (const sid of sidsToQuery) {
         try {
           // Get product list with ASIN info
-          const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: "/erp/sc/data/mws/listing",
-            body: { sid, offset: 0, length: 200 },
-          });
+          const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
           const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
           for (const item of items) {
             const asin = item.asin || item.asin1 || '';
@@ -381,11 +378,7 @@ export const adAnalysisRouter = router({
           let offset = 0;
           let hasMore = true;
           while (hasMore && offset < 1000) {
-            const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-              path: searchTermApiPath,
-              body: { sid, report_date: reportDate, show_detail: 1, target_type: "keyword", offset, length: 200, ...(hasCampaignFilter && effectiveCampaignIds.length === 1 && !/^C\d+$/.test(effectiveCampaignIds[0]) ? { campaign_id: effectiveCampaignIds[0] } : {}) },
-              headers: { "X-API-VERSION": "2" },
-            });
+            const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
             const rawData = res.data || [];
             const batch = Array.isArray(rawData) ? rawData : (rawData as any).records || [];
             items.push(...batch);
@@ -623,10 +616,7 @@ ${JSON.stringify(anonymizedTerms)}
             offset: 0,
             length: 1000,
           };
-          return (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: placementApiPath,
-            body,
-          });
+          return ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         }));
         for (const result of results) {
           if (result.status !== 'fulfilled') continue;
@@ -721,10 +711,7 @@ ${JSON.stringify(anonymizedTerms)}
       for (let i = 0; i < tasks.length; i += CONCURRENCY) {
         const batch = tasks.slice(i, i + CONCURRENCY);
         const results = await Promise.allSettled(batch.map(async ({ sid, date }) => {
-          return (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: keywordApiPath,
-            body: { sid, report_date: date, offset: 0, length: 1000 },
-          });
+          return ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         }));
         for (const result of results) {
           if (result.status !== 'fulfilled') continue;
@@ -764,10 +751,7 @@ ${JSON.stringify(anonymizedTerms)}
       for (let i = 0; i < tasks.length; i += CONCURRENCY) {
         const batch = tasks.slice(i, i + CONCURRENCY);
         const results = await Promise.allSettled(batch.map(async ({ sid, date }) => {
-          return (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: placementApiPath,
-            body: { sid, report_date: date, show_detail: 1, offset: 0, length: 1000 },
-          });
+          return ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         }));
         for (const result of results) {
           if (result.status !== 'fulfilled') continue;
@@ -910,11 +894,7 @@ ${JSON.stringify(anonymizedTerms)}
             if (hasCampaignFilter_h && effectiveCampaignIds_h.length === 1) body.campaign_id = Number(effectiveCampaignIds_h[0]);
             else body.sid = sid;
             
-            const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-              path: hourlyApiPath,
-              body,
-              headers: { "X-API-VERSION": "2" },
-            });
+            const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
             const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
             for (const item of items) {
               // Filter by campaign IDs when multiple selected
@@ -975,10 +955,7 @@ ${JSON.stringify(anonymizedTerms)}
           : input.campaignId;
         if (heatmapCampaignId) body.summary_field_value = heatmapCampaignId;
 
-        const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-          path: "/basicOpen/salesAnalysis/productPerformance/performanceTrendByHour",
-          body,
-        });
+        const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         const list = (res.data as any)?.list || res.data || [];
         
         // Build 24h × 7day heatmap
@@ -1095,11 +1072,7 @@ ${JSON.stringify(input.hourlyData)}
       for (const sid of sidsToQuery) {
         for (let d = 1; d <= Math.min(input.days || 30, 30); d++) {
           try {
-            const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: "/pb/openapi/newad/spCampaignHourData",
-              body: { sid, report_date: getDateNDaysAgo(d), show_detail: 0, offset: 0, length: 200 },
-              headers: { "X-API-VERSION": "2" },
-            });
+            const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
             const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
             for (const item of items) {
               totalImpressions += Number(item.impressions) || 0;
@@ -1248,10 +1221,7 @@ ${JSON.stringify(metrics)}
             offset: 0,
             length: 1000,
           };
-          return (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: targetingApiPath,
-            body,
-          });
+          return ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
         }));
         for (const result of results) {
           if (result.status !== 'fulfilled') continue;
@@ -1340,10 +1310,7 @@ ${JSON.stringify(metrics)}
             const body: any = { sid, report_date: getDateNDaysAgo(d), offset: 0, length: 500 };
             // For single campaign, pass campaign_id to API; for multi, fetch all and filter
             if (hasCampaignFilter_w && effectiveCampaignIds_w.length === 1) body.campaign_id = effectiveCampaignIds_w[0];
-            const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-              path: "/erp/sp/query/queryUserSearchTerm",
-              body,
-            });
+            const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
             const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
             for (const item of items) {
               // Filter by campaign IDs when multiple selected
@@ -1463,10 +1430,7 @@ ${JSON.stringify(metrics)}
           try {
             const body: any = { sid, report_date: getDateNDaysAgo(d), offset: 0, length: 500 };
             if (hasCampaignFilter_e && effectiveCampaignIds_e.length === 1) body.campaign_id = effectiveCampaignIds_e[0];
-            const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-              path: "/erp/sp/query/queryUserSearchTerm",
-              body,
-            });
+            const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
             const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
             for (const item of items) {
               // Filter by campaign IDs when multiple selected
@@ -1491,10 +1455,7 @@ ${JSON.stringify(metrics)}
       const targetedKeywords = new Set<string>();
       for (const sid of sidsToQuery) {
         try {
-          const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: "/erp/sp/data/getKeywordsReports",
-            body: { sid, report_date: getDateNDaysAgo(1), offset: 0, length: 500 },
-          });
+          const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
           const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
           for (const item of items) {
             const kw = (item.keyword || item.keyword_text || '').toLowerCase().trim();
@@ -1673,11 +1634,7 @@ ${JSON.stringify(input.terms.slice(0, 20))}
           let offset = 0;
           let hasMore = true;
           while (hasMore && offset < 1000) {
-            const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-              path: searchTermApiPath,
-              body: { sid, report_date: reportDate, show_detail: 1, target_type: "keyword", offset, length: 200, campaign_id: campaignId },
-              headers: { "X-API-VERSION": "2" },
-            });
+            const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
             const rawData = res.data || [];
             const batch = Array.isArray(rawData) ? rawData : (rawData as any).records || [];
             items.push(...batch.map((b: any) => ({ ...b, _campaignId: campaignId })));
@@ -1850,16 +1807,7 @@ ${JSON.stringify(input.terms.slice(0, 20))}
             let offset = 0;
             let hasMore = true;
             while (hasMore && offset < 5000) {
-              const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-                path: adPath,
-                body: {
-                  sid,
-                  ...(input.state ? { state: input.state } : {}),
-                  offset,
-                  length: 100,
-                },
-                headers: { "X-API-VERSION": "2" },
-              });
+              const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
               const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
               for (const item of items) {
                 allAds.push({
@@ -1984,11 +1932,7 @@ ${JSON.stringify(input.terms.slice(0, 20))}
             let offset = 0;
             let hasMore = true;
             while (hasMore && offset < 5000) {
-              const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-                path: adPath,
-                body: { sid, offset, length: 100 },
-                headers: { "X-API-VERSION": "2" },
-              });
+              const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
               const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
               allAds.push(...items.map((item: any) => ({ ...item, sid, adType })));
               hasMore = items.length >= 100;
@@ -2079,11 +2023,7 @@ ${JSON.stringify(input.terms.slice(0, 20))}
         for (const sid of sidsToQuery) {
           for (const { path: adPath, type: adType } of adPaths) {
             try {
-              const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-                path: adPath,
-                body: { sid, offset: 0, length: 100 },
-                headers: { "X-API-VERSION": "2" },
-              });
+              const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
               const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
               allAds.push(...items.map((item: any) => ({ ...item, sid, adType })));
             } catch (err: any) {
@@ -2139,10 +2079,7 @@ ${JSON.stringify(input.terms.slice(0, 20))}
         const results = await Promise.allSettled(
           batch.flatMap(cid =>
             datesToQuery.map(reportDate =>
-              (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-                path: '/pb/openapi/newad/spCampaignHourData',
-                body: { campaign_id: Number(cid), report_date: reportDate },
-              }).then(res => ({ cid, res })).catch(() => null)
+              Promise.resolve({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }).then(res => ({ cid, res })).catch(() => null)
             )
           )
         );
@@ -2379,11 +2316,7 @@ ${JSON.stringify(anonymize(addCandidates.slice(0, 80)))}
       const campaigns: any[] = [];
       for (const sid of sidsToQuery) {
         try {
-          const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: '/pb/openapi/newad/spCampaigns',
-            body: { sid, offset: 0, length: 100 },
-            headers: { "X-API-VERSION": "2" },
-          });
+          const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
           const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
           campaigns.push(...items.map((c: any) => ({ ...c, sid })));
         } catch (err: any) {
@@ -2428,10 +2361,7 @@ ${JSON.stringify(anonymize(addCandidates.slice(0, 80)))}
         const results = await Promise.allSettled(
           batch.flatMap(cid =>
             datesToQuery.slice(0, 3).map(reportDate =>
-              (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-                path: '/pb/openapi/newad/spCampaignHourData',
-                body: { campaign_id: Number(cid), report_date: reportDate },
-              }).then(res => ({ cid, res })).catch(() => null)
+              Promise.resolve({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }).then(res => ({ cid, res })).catch(() => null)
             )
           )
         );
@@ -2556,11 +2486,7 @@ ${JSON.stringify(anonymize(addCandidates.slice(0, 80)))}
           for (const reportDate of dates.slice(0, 7)) {
             tasks.push(async () => {
               try {
-                const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-                  path: searchTermApiPath,
-                  body: { sid, report_date: reportDate, show_detail: 1, target_type: 'keyword', offset: 0, length: 200, ...(hasCampaignFilter && effectiveCampaignIds.length === 1 ? { campaign_id: effectiveCampaignIds[0] } : {}) },
-                  headers: { 'X-API-VERSION': '2' },
-                });
+                const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
                 return Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
               } catch { return []; }
             });
@@ -2649,10 +2575,7 @@ ${JSON.stringify(anonymize(addCandidates.slice(0, 80)))}
         for (const sid of sidsToQuery) {
           for (const { path: adPath, type: adType } of adPaths) {
             try {
-              const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-                path: adPath,
-                body: { sid, offset: 0, length: 100 },
-              });
+              const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
               const raw = res.data || [];
               const records = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
               records.forEach((r: any) => { r._adType = adType; r._sid = sid; });
@@ -2789,10 +2712,7 @@ ${JSON.stringify(anonymize(addCandidates.slice(0, 80)))}
         const results = await Promise.allSettled(
           batch.flatMap((cid: string) =>
             dates.slice(0, 3).map(reportDate =>
-              (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-                path: '/pb/openapi/newad/spCampaignHourData',
-                body: { campaign_id: Number(cid), report_date: reportDate },
-              }).then(res => ({ cid, res })).catch(() => null)
+              Promise.resolve({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }).then(res => ({ cid, res })).catch(() => null)
             )
           )
         );

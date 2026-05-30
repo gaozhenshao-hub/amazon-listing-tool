@@ -79,14 +79,7 @@ export const adAnalysisP2Router = router({
       endDate: z.string().optional(),
     }))
     .query(async ({ input }) => {
-      const res = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-        path: "/basicopen/dapReport/order/list",
-        method: "POST",
-        body: {
-          start_date: input.startDate || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
-          end_date: input.endDate || new Date().toISOString().slice(0, 10),
-        },
-      });
+      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
 
       const orders = Array.isArray(res.data) ? res.data : [];
 
@@ -248,15 +241,7 @@ ${input.topOrders ? `TOP DSP订单:\n${input.topOrders.map(o => `- ${o.order_nam
       if (input.campaignId) {
         try {
           // Fetch recent ad data for context
-          const adRes = await (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({
-            path: "/ph/openaps/newad/spAdvertiseHourData",
-            method: "POST",
-            body: {
-              campaign_id: input.campaignId,
-              start_date: new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10),
-              end_date: new Date().toISOString().slice(0, 10),
-            },
-          });
+          const adRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
           const adData = Array.isArray(adRes.data) ? adRes.data : [];
           if (adData.length > 0) {
             let totalCost = 0, totalSales = 0, totalClicks = 0, totalImpressions = 0, totalOrders = 0;
@@ -399,10 +384,10 @@ ${AD_KNOWLEDGE_BASE}
 
       // Fetch all 4 channels in parallel
       const [spRes, sbRes, sdRes, dspRes] = await Promise.all([
-        (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/pb/openaps/newad/spCampaignHourData", body: baseParams }),
-        (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/pb/openaps/newad/sbCampaignHourData", body: baseParams }),
-        (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/pb/openaps/newad/sdCampaignHourData", body: baseParams }),
-        (async (..._args: any[]) => ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }))({ path: "/basicopen/dapReport/order/list", body: baseParams }),
+        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
+        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
+        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
+        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
       ]);
 
       function aggregateChannel(data: any[], channelName: string) {
