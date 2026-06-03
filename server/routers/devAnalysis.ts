@@ -1825,6 +1825,12 @@ export const devAnalysisRouter = router({
 // ─── Helper Functions ────────────────────────────────────────
 
 function mapToProductData(p: any): ProductData {
+  // 优先使用子ASIN数据（childSales/childRevenue），如果存在则覆盖父ASIN数据
+  // 这确保品牌竞争分析等统计使用更精确的子体级别数据
+  const effectiveSales = (p.childSales != null && p.childSales > 0) ? p.childSales : p.monthlySales;
+  const effectiveRevenue = (p.childRevenue != null && parseFloat(p.childRevenue) > 0)
+    ? String(p.childRevenue)
+    : p.monthlyRevenue;
   return {
     asin: p.asin ?? "",
     title: p.title,
@@ -1832,9 +1838,9 @@ function mapToProductData(p: any): ProductData {
     price: p.price,
     rating: p.rating,
     reviewCount: p.reviewCount,
-    monthlySales: p.monthlySales,
+    monthlySales: effectiveSales,
     bsr: p.bsr,
-    monthlyRevenue: p.monthlyRevenue,
+    monthlyRevenue: effectiveRevenue,
     listingDate: p.listingDate,
     fulfillment: p.fulfillment,
     sellerName: p.sellerName,

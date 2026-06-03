@@ -4127,3 +4127,4 @@
 - [x] 清理路由文件中的inline stub死代码（112个调用简化为直接空数据返回）
 - [x] 优化CronJobs添加每周运营周报定时任务（Heartbeat方式，/api/scheduled/weekly-report）
 - [x] 创建数据导入向导页面（ImportWizardTab组件，5步流程引导+模板说明）
+- [x] 修复模块一市场分析：品牌竞争格局数据从父ASIN改为子ASIN（mapToProductData优先使用childSales/childRevenue）
