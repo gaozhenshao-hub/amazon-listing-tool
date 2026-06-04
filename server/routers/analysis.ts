@@ -87,8 +87,8 @@ async function analyzeSingleAsin(
     }
   }
 
-  // Step 5: Save analysis to database
-  const saved = await db.createCompetitorAnalysis({
+  // Step 5: Save analysis to database (upsert to prevent duplicates)
+  const saved = await db.upsertCompetitorAnalysis({
     projectId,
     asin,
     title: scrapedData?.title ?? null,
@@ -291,8 +291,8 @@ export const analysisRouter = router({
         ? input.bulletPoints.split("\n").filter((line: string) => line.trim().length > 0)
         : [];
 
-      // Save analysis to database
-      const saved = await db.createCompetitorAnalysis({
+      // Save analysis to database (upsert to prevent duplicates)
+      const saved = await db.upsertCompetitorAnalysis({
         projectId: input.projectId,
         asin: input.asin,
         title: input.title ?? null,
@@ -551,7 +551,7 @@ export const analysisRouter = router({
               analysisData = { raw: analysisContent };
             }
 
-            const saved = await db.createCompetitorAnalysis({
+            const saved = await db.upsertCompetitorAnalysis({
               projectId: input.projectId,
               asin,
               title: null,
@@ -840,7 +840,7 @@ export const analysisRouter = router({
 
           const bulletPointsArray = product.bulletPoints || [];
 
-          const saved = await db.createCompetitorAnalysis({
+          const saved = await db.upsertCompetitorAnalysis({
             projectId: input.projectId,
             asin: product.asin,
             title: product.title ?? null,

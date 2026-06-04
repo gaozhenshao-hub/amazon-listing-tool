@@ -1,4 +1,4 @@
-import { eq, desc, and, or, inArray } from "drizzle-orm";
+import { eq, desc, and, or, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
@@ -232,6 +232,39 @@ export async function createCompetitorAnalysis(data: InsertCompetitorAnalysis) {
   const insertId = result[0].insertId;
   const rows = await db.select().from(competitorAnalyses).where(eq(competitorAnalyses.id, insertId)).limit(1);
   return rows[0];
+}
+
+/**
+ * Upsert competitor analysis: if same projectId+asin exists, update it; otherwise insert new.
+ * This prevents duplicate entries when re-uploading the same SellerSprite file.
+ */
+export async function upsertCompetitorAnalysis(data: InsertCompetitorAnalysis) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Check if an entry with same projectId + asin already exists
+  const existing = await db.select({ id: competitorAnalyses.id })
+    .from(competitorAnalyses)
+    .where(and(
+      eq(competitorAnalyses.projectId, data.projectId),
+      eq(competitorAnalyses.asin, data.asin)
+    ))
+    .limit(1);
+  
+  if (existing.length > 0) {
+    // Update existing record
+    const { projectId, asin, ...updateData } = data;
+    await db.update(competitorAnalyses)
+      .set(updateData)
+      .where(eq(competitorAnalyses.id, existing[0].id));
+    const rows = await db.select().from(competitorAnalyses).where(eq(competitorAnalyses.id, existing[0].id)).limit(1);
+    return rows[0];
+  } else {
+    // Insert new record
+    const result = await db.insert(competitorAnalyses).values(data);
+    const insertId = result[0].insertId;
+    const rows = await db.select().from(competitorAnalyses).where(eq(competitorAnalyses.id, insertId)).limit(1);
+    return rows[0];
+  }
 }
 
 export async function getCompetitorAnalysesByProject(projectId: number) {

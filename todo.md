@@ -4128,3 +4128,4 @@
 - [x] 优化CronJobs添加每周运营周报定时任务（Heartbeat方式，/api/scheduled/weekly-report）
 - [x] 创建数据导入向导页面（ImportWizardTab组件，5步流程引导+模板说明）
 - [x] 修复模块一市场分析：品牌竞争格局数据从父ASIN改为子ASIN（mapToProductData优先使用childSales/childRevenue）
+- [x] 修复模块二竞品分析重复产品bug：上传卖家精灵数据后同一ASIN出现多次（upsert去重+解析器去重+数据库唯一索引+清理历史重复数据）

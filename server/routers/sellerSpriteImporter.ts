@@ -667,6 +667,7 @@ export function parseSellerSpriteXlsx(buffer: Buffer, targetAsin?: string): Impo
     
     // 解析数据行
     const seenReviews = new Set<string>(); // 用于评论去重
+    const seenProductAsins = new Set<string>(); // 用于产品ASIN去重
     
     for (let i = 0; i < rows.length; i++) {
       try {
@@ -691,8 +692,12 @@ export function parseSellerSpriteXlsx(buffer: Buffer, targetAsin?: string): Impo
           const product = parseProductRow(rows[i], colMap);
           if (product) {
             if (targetAsin && product.asin !== targetAsin.toUpperCase()) continue;
-            result.products.push(product);
-            result.parsedRows++;
+            // 去重：同一ASIN只保留第一条（通常是子体数据最完整的那条）
+            if (!seenProductAsins.has(product.asin)) {
+              seenProductAsins.add(product.asin);
+              result.products.push(product);
+              result.parsedRows++;
+            }
           }
         }
       } catch (e: any) {
@@ -764,6 +769,7 @@ export function parseSellerSpriteData(text: string, targetAsin?: string): Import
     });
     
     const seenReviews = new Set<string>();
+    const seenProductAsins = new Set<string>(); // 用于产品ASIN去重
     
     for (let i = 0; i < rows.length; i++) {
       try {
@@ -784,8 +790,12 @@ export function parseSellerSpriteData(text: string, targetAsin?: string): Import
           const product = parseProductRow(rows[i], colMap);
           if (product) {
             if (targetAsin && product.asin !== targetAsin.toUpperCase()) continue;
-            result.products.push(product);
-            result.parsedRows++;
+            // 去重：同一ASIN只保留第一条
+            if (!seenProductAsins.has(product.asin)) {
+              seenProductAsins.add(product.asin);
+              result.products.push(product);
+              result.parsedRows++;
+            }
           }
         }
       } catch (e: any) {
