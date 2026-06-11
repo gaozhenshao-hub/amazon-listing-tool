@@ -1,0 +1,1 @@
+ALTER TABLE `conversion_scores` ADD `source` varchar(20) DEFAULT 'ai';

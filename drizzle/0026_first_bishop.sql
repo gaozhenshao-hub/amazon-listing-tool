@@ -1,0 +1,1 @@
+ALTER TABLE `dev_manual_assets` MODIFY COLUMN `assetType` enum('logo','cover','content_bg','qrcode','chapter_image','reference','other') NOT NULL;

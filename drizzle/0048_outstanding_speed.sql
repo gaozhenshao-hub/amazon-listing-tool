@@ -1,0 +1,1 @@
+ALTER TABLE `image_workflow_sessions` ADD `step6LovartConfirmed` int DEFAULT 0 NOT NULL;

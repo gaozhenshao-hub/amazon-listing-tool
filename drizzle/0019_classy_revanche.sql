@@ -1,0 +1,1 @@
+ALTER TABLE `dev_project_tag_items` ADD `sourceEvidence` text;

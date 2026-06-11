@@ -14,8 +14,30 @@ export function useAuth(options?: UseAuthOptions) {
   const utils = trpc.useUtils();
 
   const meQuery = trpc.auth.me.useQuery(undefined, {
-    retry: false,
+    // Retry on 503/network errors (Cloud Run cold start can take 5-10s)
+    retry: (failureCount, error) => {
+      if (error instanceof TRPCClientError) {
+        const msg = error.message || '';
+        // Retry on service unavailable, network errors, and non-JSON responses
+        if (
+          msg.includes('Service Unavailable') ||
+          msg.includes('服务暂时不可用') ||
+          msg.includes('请求超时') ||
+          msg.includes('Unexpected token') ||
+          msg.includes('not valid JSON') ||
+          msg.includes('Failed to fetch') ||
+          msg.includes('NetworkError') ||
+          msg.includes('正在重试')
+        ) {
+          return failureCount < 4; // Up to 4 retries for cold start
+        }
+      }
+      return false; // Don't retry auth errors (UNAUTHORIZED etc.)
+    },
+    retryDelay: (attemptIndex) => Math.min(2000 * 2 ** attemptIndex, 10000),
     refetchOnWindowFocus: false,
+    // Keep stale data while refetching to avoid flicker
+    staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   const logoutMutation = trpc.auth.logout.useMutation({
@@ -46,9 +68,14 @@ export function useAuth(options?: UseAuthOptions) {
       "manus-runtime-user-info",
       JSON.stringify(meQuery.data)
     );
+
+    // Consider "loading" if the query is fetching (including retries)
+    // This prevents showing the login screen while retrying after 503
+    const isLoading = meQuery.isLoading || meQuery.isFetching || logoutMutation.isPending;
+
     return {
       user: meQuery.data ?? null,
-      loading: meQuery.isLoading || logoutMutation.isPending,
+      loading: isLoading,
       error: meQuery.error ?? logoutMutation.error ?? null,
       isAuthenticated: Boolean(meQuery.data),
     };
@@ -56,13 +83,14 @@ export function useAuth(options?: UseAuthOptions) {
     meQuery.data,
     meQuery.error,
     meQuery.isLoading,
+    meQuery.isFetching,
     logoutMutation.error,
     logoutMutation.isPending,
   ]);
 
   useEffect(() => {
     if (!redirectOnUnauthenticated) return;
-    if (meQuery.isLoading || logoutMutation.isPending) return;
+    if (meQuery.isLoading || meQuery.isFetching || logoutMutation.isPending) return;
     if (state.user) return;
     if (typeof window === "undefined") return;
     if (window.location.pathname === redirectPath) return;
@@ -73,6 +101,7 @@ export function useAuth(options?: UseAuthOptions) {
     redirectPath,
     logoutMutation.isPending,
     meQuery.isLoading,
+    meQuery.isFetching,
     state.user,
   ]);
 

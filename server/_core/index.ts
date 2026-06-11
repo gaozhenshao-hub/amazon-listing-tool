@@ -4,10 +4,13 @@ import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
-import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
+import { syncRouter } from "../syncRoutes";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { startUsageTracking } from "../usageTracking";
+import { intelScheduler } from "../intelAutoCollect";
+import { weeklyReportHandler, dataCleanupHandler } from "../scheduledHandlers";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -34,8 +37,13 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  registerStorageProxy(app);
+  // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
+  // Knowledge base P2P sync routes
+  app.use("/api/sync", syncRouter);
+  // Scheduled task handlers (Heartbeat HTTP cron)
+  app.post("/api/scheduled/weekly-report", weeklyReportHandler);
+  app.post("/api/scheduled/data-cleanup", dataCleanupHandler);
   // tRPC API
   app.use(
     "/api/trpc",
@@ -60,6 +68,17 @@ async function startServer() {
 
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+    // Start usage tracking background flush
+    startUsageTracking();
+    // Start intel auto-collect scheduler
+    intelScheduler.start();
+    // Start todo reminder scheduler (check every hour)
+    import("../todoReminder").then(m => m.startTodoReminderScheduler()).catch(err => console.error("[TodoReminder] Failed to start:", err));
+    // Lingxing API adapter removed - data now imported via Excel uploads only
+    // Initialize NextSLS logistics API adapter from DB settings
+    import("../nextsls/adapter").then(m => m.initNextSlsAdapterFromDb()).catch(err => console.error("[NextSLS] Failed to init:", err));
+    // Initialize weekly auto-sync cron job (every Monday 02:00 Asia/Shanghai)
+    import("../cronJobs").then(m => m.initCronJobs()).catch(err => console.error("[AutoSync] Failed to init:", err));
   });
 }
 

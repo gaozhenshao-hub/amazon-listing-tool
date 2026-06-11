@@ -1,0 +1,20 @@
+CREATE TABLE `reviewImports` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`projectId` int NOT NULL,
+	`userId` int NOT NULL,
+	`asin` varchar(20) NOT NULL,
+	`filename` varchar(500) NOT NULL,
+	`fileSize` int,
+	`totalRows` int,
+	`parsedRows` int,
+	`skippedRows` int,
+	`detectedFormat` varchar(100),
+	`columns` text,
+	`analysisId` int,
+	`status` enum('pending','analyzing','completed','failed') NOT NULL DEFAULT 'pending',
+	`errorMessage` text,
+	`metadata` text,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `reviewImports_id` PRIMARY KEY(`id`)
+);

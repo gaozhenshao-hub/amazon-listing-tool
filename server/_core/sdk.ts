@@ -256,7 +256,7 @@ class SDKServer {
     } as GetUserInfoWithJwtResponse;
   }
 
-  async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
+  async authenticateRequest(req: Request): Promise<User> {
     // Regular authentication flow
     const cookies = this.parseCookies(req.headers.cookie);
     const sessionCookie = cookies.get(COOKIE_NAME);
@@ -266,32 +266,52 @@ class SDKServer {
       throw ForbiddenError("Invalid session cookie");
     }
 
-    if (session.openId.startsWith(CRON_OPEN_ID_PREFIX)) {
-      const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
-      const taskUid = userInfo.taskUid ?? null;
-      if (!taskUid) {
-        throw ForbiddenError("Cron session missing task_uid");
-      }
-      return buildCronUser(userInfo);
-    }
-
     const sessionUserId = session.openId;
     const signedInAt = new Date();
     let user = await db.getUserByOpenId(sessionUserId);
 
-    // If user not in DB, sync from OAuth server automatically
+    // --- 禁止自动注册逻辑 ---
+    // 如果按openId找不到用户，尝试按邮箱匹配已有账号
     if (!user) {
       try {
         const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
-        await db.upsertUser({
-          openId: userInfo.openId,
-          name: userInfo.name || null,
-          email: userInfo.email ?? null,
-          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
-          lastSignedIn: signedInAt,
-        });
-        user = await db.getUserByOpenId(userInfo.openId);
+        
+        // 检查是否是Owner
+        if (userInfo.openId === ENV.ownerOpenId) {
+          // Owner可以自动创建
+          await db.upsertUser({
+            openId: userInfo.openId,
+            name: userInfo.name || null,
+            email: userInfo.email ?? null,
+            loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+            lastSignedIn: signedInAt,
+          });
+          user = await db.getUserByOpenId(userInfo.openId);
+        } else if (userInfo.email) {
+          // 非Owner → 按邮箱查找已有账号
+          const existingUser = await db.getUserByEmailOrPhone(userInfo.email);
+          if (existingUser) {
+            // 绑定openId到已有账号
+            console.log(`[Auth] Binding openId to existing user: ${existingUser.name} (${existingUser.email})`);
+            await db.updateUserById(existingUser.id, {
+              openId: userInfo.openId,
+              loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+              lastSignedIn: signedInAt,
+            });
+            user = await db.getUserByOpenId(userInfo.openId);
+          } else {
+            // 未找到已有账号 → 拒绝
+            console.warn(`[Auth] Rejected: no pre-created account for email=${userInfo.email}`);
+            throw ForbiddenError("您的账号尚未被管理员创建，请联系管理员添加账号后再登录");
+          }
+        } else {
+          console.warn(`[Auth] Rejected: no openId match and no email available`);
+          throw ForbiddenError("您的账号尚未被管理员创建，请联系管理员添加账号后再登录");
+        }
       } catch (error) {
+        if ((error as any)?.message?.includes("管理员创建")) {
+          throw error; // Re-throw our custom error
+        }
         console.error("[Auth] Failed to sync user from OAuth:", error);
         throw ForbiddenError("Failed to sync user info");
       }
@@ -301,40 +321,17 @@ class SDKServer {
       throw ForbiddenError("User not found");
     }
 
-    await db.upsertUser({
-      openId: user.openId,
+    // 检查账号状态
+    if (user.status === "disabled") {
+      throw ForbiddenError("您的账号已被禁用，请联系管理员");
+    }
+
+    await db.updateUserById(user.id, {
       lastSignedIn: signedInAt,
     });
 
     return user;
   }
-}
-
-const CRON_OPEN_ID_PREFIX = "cron_";
-
-/** Result of `sdk.authenticateRequest`. Cron callbacks set `isCron=true` and `taskUid`; see `references/periodic-updates.md`. */
-export type AuthenticatedUser = User & {
-  taskUid?: string;
-  isCron?: boolean;
-};
-
-function buildCronUser(
-  userInfo: GetUserInfoWithJwtResponse
-): AuthenticatedUser {
-  const now = new Date();
-  return {
-    id: -1,
-    openId: userInfo.openId,
-    name: userInfo.name || "Manus Scheduled Task",
-    email: null,
-    loginMethod: null,
-    role: "user",
-    createdAt: now,
-    updatedAt: now,
-    lastSignedIn: now,
-    taskUid: userInfo.taskUid ?? undefined,
-    isCron: true,
-  } as AuthenticatedUser;
 }
 
 export const sdk = new SDKServer();
