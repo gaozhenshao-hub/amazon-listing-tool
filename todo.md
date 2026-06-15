@@ -4129,3 +4129,20 @@
 - [x] 创建数据导入向导页面（ImportWizardTab组件，5步流程引导+模板说明）
 - [x] 修复模块一市场分析：品牌竞争格局数据从父ASIN改为子ASIN（mapToProductData优先使用childSales/childRevenue）
 - [x] 修复模块二竞品分析重复产品bug：上传卖家精灵数据后同一ASIN出现多次（upsert去重+解析器去重+数据库唯一索引+清理历史重复数据）
+
+## 第一优先级：标题两段式改造（政策合规 - 2026年7月27日截止）
+- [x] 数据库新增 itemHighlights 字段到 listings 表
+- [x] 重写 TITLE_GENERATION_PROMPT 为两段式输出（Title ≤75字符 + Item Highlights ≤125字符）
+- [x] 修改 validateTitles() 验证逻辑适配两段式
+- [x] 修改 scoringEngine.ts 标题评分规则适配两段式
+- [x] 重构 StepTitle.tsx 前端UI为两段式编辑界面
+- [x] 更新 EVALUATE_TITLE_CHECKLIST_PROMPT 自检清单
+- [x] 更新 PreviewPage.tsx 预览展示两段式标题
+
+## 第二优先级：买家问题闭环 + 五维文案优化法
+- [x] 新增 buyerQuestions 数据表
+- [x] 新增买家问题库后端tRPC路由（CRUD + AI提取）
+- [x] 从广告搜索词报告中自动提取疑问类词
+- [x] 新增买家问题库前端管理界面
+- [x] 在Bullet生成prompt中强制问题覆盖
+- [x] 在自检清单中增加问题覆盖度量化检查

@@ -190,6 +190,7 @@ export const listings = mysqlTable("listings", {
   id: int("id").autoincrement().primaryKey(),
   projectId: int("projectId").notNull(),
   title: text("title"),
+  itemHighlights: text("itemHighlights"), // Two-stage title: value highlights layer (≤125 chars)
   bulletPoints: text("bulletPoints"), // JSON array of 5 bullet points
   description: text("description"),
   searchTerms: text("searchTerms"), // Backend keywords
@@ -197,6 +198,7 @@ export const listings = mysqlTable("listings", {
   imageAdviceCn: text("imageAdviceCn"), // JSON: Chinese translation of image advice
   // Chinese translation fields
   titleCn: text("titleCn"),
+  itemHighlightsCn: text("itemHighlightsCn"), // Chinese translation of item highlights
   bulletPointsCn: text("bulletPointsCn"), // JSON array of 5 bullet points in Chinese
   descriptionCn: text("descriptionCn"),
   searchTermsCn: text("searchTermsCn"),
@@ -405,10 +407,12 @@ export const listingVersions = mysqlTable("listingVersions", {
   changeDescription: text("changeDescription"),
   // Snapshot of listing content at this version
   title: text("title"),
+  itemHighlights: text("itemHighlights"),
   bulletPoints: text("bulletPoints"),
   description: text("description"),
   searchTerms: text("searchTerms"),
   titleCn: text("titleCn"),
+  itemHighlightsCn: text("itemHighlightsCn"),
   bulletPointsCn: text("bulletPointsCn"),
   descriptionCn: text("descriptionCn"),
   searchTermsCn: text("searchTermsCn"),
@@ -4555,3 +4559,31 @@ export const adClinicRecords = mysqlTable("ad_clinic_records", {
 });
 export type AdClinicRecord = typeof adClinicRecords.$inferSelect;
 export type InsertAdClinicRecord = typeof adClinicRecords.$inferInsert;
+
+// 买家问题库 (Buyer Questions Library) - 用于Listing文案闭环
+export const buyerQuestions = mysqlTable("buyer_questions", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("project_id").notNull(),
+  userId: int("user_id").notNull(),
+  question: text("question").notNull(), // 买家问题原文
+  questionCn: text("question_cn"), // 中文翻译
+  source: mysqlEnum("source", [
+    "ad_search_term",    // 从广告搜索词报告中提取的疑问类词
+    "sp_prompts",        // SP Prompts问题库
+    "qa_section",        // 来自QA模块的问题
+    "competitor_review", // 竞品评论中提取的问题
+    "manual",            // 手动添加
+  ]).default("manual").notNull(),
+  category: varchar("category", { length: 100 }), // 问题分类: 功能/尺寸/材质/使用场景/兼容性等
+  frequency: int("frequency").default(1), // 出现频次
+  priority: mysqlEnum("priority", ["high", "medium", "low"]).default("medium").notNull(),
+  coveredInBullet: int("covered_in_bullet").default(0), // 是否已在Bullet中覆盖 (0/1)
+  coveredInDescription: int("covered_in_description").default(0), // 是否已在Description中覆盖
+  coveredInQA: int("covered_in_qa").default(0), // 是否已在QA中覆盖
+  suggestedAnswer: text("suggested_answer"), // AI建议的回答
+  status: mysqlEnum("status", ["active", "dismissed", "covered"]).default("active").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type BuyerQuestion = typeof buyerQuestions.$inferSelect;
+export type InsertBuyerQuestion = typeof buyerQuestions.$inferInsert;

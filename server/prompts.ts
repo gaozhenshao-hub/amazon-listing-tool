@@ -52,7 +52,25 @@ Respond in JSON format:
 
 export const TITLE_GENERATION_PROMPT = `${EXPERT_ROLE}
 
-Your task: Generate an optimized Amazon product title following Amazon's rules AND passing ALL 10 dimensions of the Title Check List.
+Your task: Generate an optimized Amazon product title using the NEW TWO-STAGE TITLE FORMAT (effective July 27, 2026).
+
+=== CRITICAL: TWO-STAGE TITLE POLICY (Amazon 2026 Update) ===
+
+Amazon now requires titles to be split into TWO layers:
+
+**Layer 1 - Title (基础信息层):** ≤75 characters
+- Purpose: Quick identification + core keyword coverage
+- Content: Brand + Core Category Keyword + Key Differentiator
+- This is what appears in search results and mobile thumbnails
+- MUST contain the most important 1-2 core keywords for A9 indexing
+
+**Layer 2 - Item Highlights (价值亮点层):** ≤125 characters
+- Purpose: Persuasion + conversion + extended keyword coverage
+- Content: Key specs, usage scenarios, unique selling points, secondary keywords
+- This appears below the title on the product detail page
+- Should complement (NOT repeat) Layer 1 content
+
+**Combined Total:** ≤200 characters (Layer 1 + Layer 2)
 
 === DATA CONTEXT ===
 
@@ -62,54 +80,54 @@ You will receive structured data from 4 modules:
 [Module 2 - Competitor Insights]: Competitor titles, bullet points, review pain/itch/delight points.
 [Module 3 - COSMO Scenes]: Top usage scenes from keyword scene tags.
 [Module 4 - A9 Keywords]: Keywords grouped by strategyCategory and listingPlacement.
-  - Use keywords with listingPlacement="title_front" at the BEGINNING of the title
-  - Use keywords with listingPlacement="title_mid" in the MIDDLE
-  - Use keywords with listingPlacement="title_end" at the END
-  - Use keywords with strategyCategory="core_main" as mandatory core keywords
+  - Use keywords with listingPlacement="title_front" in Layer 1 (Title)
+  - Use keywords with listingPlacement="title_mid" or "title_end" in Layer 2 (Item Highlights)
+  - Use keywords with strategyCategory="core_main" as mandatory in Layer 1
 
-=== AMAZON TITLE RULES ===
+=== LAYER 1 (TITLE) RULES - Max 75 Characters ===
 
-- Core selling point FIRST
-- Include 1-2 core keywords (from strategyCategory="core_main")
+- Brand name FIRST (if recognized brand)
+- 1-2 core keywords from strategyCategory="core_main" (MANDATORY)
+- Key differentiator or product identity
 - Use Arabic numerals (not spelled out)
-- Logical word order following listingPlacement positions
-- Structure: Brand + Core Keyword (title_front) + Selling Point + Product + Specs (title_mid) + Scene/Users (title_end)
-- **CRITICAL: Each title MUST be between 180-200 characters (inclusive). This is the MOST IMPORTANT requirement.**
-- You MUST fully utilize the character space. Titles shorter than 180 characters are NOT acceptable.
-- No promotional language (e.g., "best", "#1", "sale")
-- Capitalize first letter of each major word
+- Title Case capitalization
+- No promotional language ("best", "#1", "sale")
 - No special characters except necessary punctuation
-- Spell out measurement units (e.g., "6 inches" NOT "6\"")
+- Spell out measurement units
+- **CRITICAL: MUST be ≤75 characters. This is the HARD LIMIT.**
 
-=== TITLE CHECK LIST (10 Dimensions) ===
+=== LAYER 2 (ITEM HIGHLIGHTS) RULES - Max 125 Characters ===
 
-Before outputting each title, you MUST self-check against ALL 10 dimensions:
+- Expand on specs, features, and use cases NOT covered in Layer 1
+- Include secondary keywords (title_mid, title_end placement)
+- Add usage scenarios and target user groups
+- Include quantified claims (dimensions, capacity, speed, etc.)
+- Complement Layer 1 — NO repetition of words already in Layer 1
+- Natural, readable flow — not keyword stuffing
+- **CRITICAL: MUST be ≤125 characters. This is the HARD LIMIT.**
 
-[T1] READABILITY: No grammar errors. Logical flow. Natural for North American readers.
-     NO keyword stuffing. Use proper sentence breaks with commas.
-[T2] FORMATTING: Use Arabic numerals. Consistent capitalization (Title Case).
-     Spell out measurement units (e.g., "6 Inches" NOT "6\""). Proper punctuation.
-[T3] CHARACTER COUNT: Must be 180-200 characters. Fully utilize the allowed length.
-[T4] CONTENT COVERAGE: Must include: core selling points, key features,
-     specifications/parameters, usage scenarios, and target user groups.
-[T5] CORE KEYWORDS: Include 1-2 core keywords from strategyCategory="core_main".
-     Example: "power bank", "portable charger".
-[T6] WORD ORDER: Place core selling points and differentiators FIRST.
-     Follow listingPlacement order: title_front → title_mid → title_end.
-     Emphasize product highlights and brand differentiation.
-[T7] BUNDLE/PACK: If product is multi-pack/bundle (from Module 1 attributes), clearly state pack quantity.
-[T8] TRAFFIC KEYWORDS: Incorporate high-traffic keywords with title_* placement.
-     Blend long-tail keywords and traffic keywords organically with product context.
-[T9] BRAND: If brand has recognition, position brand name prominently at the start.
-[T10] SEASONAL: Optionally include holiday/seasonal terms from rootCategory="gift_holiday".
+=== TITLE CHECK LIST (10 Dimensions — Applied Across Both Layers) ===
+
+[T1] READABILITY: Both layers read naturally. No grammar errors. No keyword stuffing.
+[T2] FORMATTING: Arabic numerals. Title Case. Spelled-out units. Proper punctuation.
+[T3] CHARACTER COUNT: Layer 1 ≤75 chars. Layer 2 ≤125 chars. Combined ≤200 chars.
+[T4] CONTENT COVERAGE: Together must include: core selling points, key features, specs, scenarios, target users.
+[T5] CORE KEYWORDS: Layer 1 MUST include 1-2 core keywords (strategyCategory="core_main").
+[T6] WORD ORDER: Layer 1: Brand→Core Keyword→Differentiator. Layer 2: Specs→Scenes→Users.
+[T7] BUNDLE/PACK: If multi-pack/bundle, state quantity in Layer 1.
+[T8] TRAFFIC KEYWORDS: Distribute traffic keywords across both layers for maximum coverage.
+[T9] BRAND: Position brand prominently at start of Layer 1.
+[T10] SEASONAL: Optionally include seasonal terms in Layer 2 if relevant.
 
 === CHARACTER COUNT STRATEGY ===
 
-1. Start by drafting the title with all key elements
-2. Count characters precisely (including spaces and punctuation)
-3. If under 180 characters: add more descriptive keywords, additional specs, usage scenarios, or compatible models
-4. If over 200 characters: trim less important modifiers while keeping core keywords
-5. Double-check the final character count before submitting
+1. Draft Layer 1 with brand + core keyword + differentiator (aim for 60-75 chars)
+2. Draft Layer 2 with remaining specs, scenes, and keywords (aim for 100-125 chars)
+3. Verify NO word repetition between layers
+4. If Layer 1 > 75: move secondary info to Layer 2
+5. If Layer 2 > 125: trim less important modifiers
+6. If combined < 150: add more descriptive keywords to Layer 2
+7. Double-check both character counts before submitting
 
 Generate 3 title variations with different keyword emphasis and positioning strategies.
 
@@ -118,12 +136,16 @@ Respond in JSON format:
   "titles": [
     {
       "title": "",
-      "characterCount": 0,
-      "inRange": true,
+      "itemHighlights": "",
+      "titleCharCount": 0,
+      "itemHighlightsCharCount": 0,
+      "combinedCharCount": 0,
+      "titleInRange": true,
+      "itemHighlightsInRange": true,
       "coreKeywords": [],
       "trafficKeywords": [],
       "strategy": "",
-      "wordOrderStrategy": "Brand→Core(title_front)→Differentiator(title_mid)→Specs+Scene(title_end)",
+      "layerDistribution": "How keywords and content are distributed between Layer 1 and Layer 2",
       "contentCoverage": {
         "sellingPoints": true,
         "features": true,
@@ -146,6 +168,7 @@ Respond in JSON format:
     }
   ],
   "recommendedTitle": "",
+  "recommendedItemHighlights": "",
   "reasoning": ""
 }`;
 
@@ -463,6 +486,7 @@ You will receive the English content as a JSON object. Return the Chinese transl
 Input format:
 {
   "title": "English title",
+  "itemHighlights": "English item highlights (Layer 2 of two-stage title)",
   "bulletPoints": [
     { "subtitle": "English subtitle", "fullText": "English full text" }
   ],
@@ -473,6 +497,7 @@ Input format:
 Output format (return ONLY this JSON):
 {
   "titleCn": "Chinese title translation",
+  "itemHighlightsCn": "Chinese item highlights translation",
   "bulletPointsCn": [
     { "subtitle": "Chinese subtitle", "fullText": "Chinese full text" }
   ],
@@ -535,6 +560,8 @@ When designing the 7 selling point cores, ensure the OVERALL set covers:
 [B9] FAQ COVERAGE: At least 2 cores must address top pain points from reviewAggregations.
      Identify the top 5 frequently asked questions from reviews and Q&A, and ensure
      they are answered within the 5 final bullet points.
+     **CRITICAL**: If a [买家问题库] section is provided in the data context, ALL high-priority
+     questions MUST be covered by at least one selling point core. This is a hard requirement.
 [B10] QUANTIFIED DATA: At least 3 cores should include quantifiable claims
       (e.g., "30% lighter", "charges 2x faster", "compared to Anker, lasts 1 more year").
 [B11] SCENE INTEGRATION: At least 3 cores should incorporate COSMO scenes naturally
@@ -664,9 +691,10 @@ Before outputting the bullet, you MUST self-check against ALL 15 dimensions:
 [B8] USER PSYCHOLOGY: Apply consumer psychology principles where appropriate.
      Examples: loss aversion ("Don't settle for..."), social proof ("Join 50,000+ satisfied users"),
      scarcity, anchoring, etc.
-[B9] FAQ COVERAGE: Address common questions identified from reviews and Q&A.
-     Through reviews, Q&A, and brand analysis, identify high-frequency questions
-     and answer them within the 5 bullet points.
+[B9] FAQ COVERAGE: Address common questions identified from reviews, Q&A, and the Buyer Questions Library.
+      Through reviews, Q&A, and brand analysis, identify high-frequency questions
+      and answer them within the 5 bullet points.
+      **If [买家高优先级问题] data is provided, ensure this bullet addresses at least one of those questions.**
 [B10] QUANTIFIED DATA: Include specific numbers and comparisons.
       Examples: "30% lighter", "charges 2x faster", "compared to Anker, lasts 1 more year".
 [B11] SCENE INTEGRATION: Naturally embed usage scenarios from COSMO scenes.
@@ -897,23 +925,27 @@ Respond in JSON format:
 }`;
 
 // ─── Title 10-Dimension Checklist Evaluation Prompt ─────────────────────
-export const EVALUATE_TITLE_CHECKLIST_PROMPT = `You are an expert Amazon listing quality auditor. Your task is to evaluate an Amazon product title against 10 quality dimensions.
+export const EVALUATE_TITLE_CHECKLIST_PROMPT = `You are an expert Amazon listing quality auditor. Your task is to evaluate an Amazon product title (TWO-STAGE FORMAT) against 10 quality dimensions.
+
+You will receive TWO parts:
+- **Title (Layer 1):** The base identification layer (≤75 characters)
+- **Item Highlights (Layer 2):** The value proposition layer (≤125 characters)
 
 For each dimension, provide:
 - "pass": true/false (whether the title meets this criterion)
 - "notes": a brief explanation in English of why it passes or fails
 
-=== 10 DIMENSIONS ===
-[T1] READABILITY: No grammar errors. Logical flow. Natural for North American readers. NO keyword stuffing. Use proper sentence breaks with commas.
-[T2] FORMATTING: Use Arabic numerals. Consistent capitalization (Title Case). Spell out measurement units (e.g., "6 Inches" NOT "6\\""). Proper punctuation.
-[T3] CHARACTER COUNT: Must be 180-200 characters. Fully utilize the allowed length. Count precisely.
-[T4] CONTENT COVERAGE: Must include: core selling points, key features, specifications/parameters, usage scenarios, and target user groups.
-[T5] CORE KEYWORDS: Include 1-2 core keywords that define the product category. These should be the most searched terms for this product type.
-[T6] WORD ORDER: Place core selling points and differentiators FIRST. Follow logical order: Brand → Core Keyword → Differentiator → Specs → Scene/Users.
-[T7] BUNDLE/PACK: If product is multi-pack/bundle, clearly state pack quantity. If not a bundle product, this dimension passes by default.
-[T8] TRAFFIC KEYWORDS: Incorporate high-traffic keywords naturally. Blend long-tail keywords organically with product context.
-[T9] BRAND: If brand has recognition, position brand name prominently at the start. If no brand or generic brand, this passes by default.
-[T10] SEASONAL: Optionally include holiday/seasonal terms if relevant. If not seasonal, this passes by default.
+=== 10 DIMENSIONS (Applied Across Both Layers) ===
+[T1] READABILITY: Both layers read naturally. No grammar errors. Logical flow. Natural for North American readers. NO keyword stuffing.
+[T2] FORMATTING: Use Arabic numerals. Consistent capitalization (Title Case). Spell out measurement units (e.g., "6 Inches" NOT "6\""). Proper punctuation in both layers.
+[T3] CHARACTER COUNT: Layer 1 (Title) MUST be ≤75 characters. Layer 2 (Item Highlights) MUST be ≤125 characters. Combined ≤200 characters. Count precisely.
+[T4] CONTENT COVERAGE: Together must include: core selling points, key features, specifications/parameters, usage scenarios, and target user groups. Layer 1 handles identification, Layer 2 handles persuasion.
+[T5] CORE KEYWORDS: Layer 1 MUST include 1-2 core keywords that define the product category.
+[T6] WORD ORDER: Layer 1: Brand→Core Keyword→Differentiator. Layer 2: Specs→Scenes→Users. No repetition between layers.
+[T7] BUNDLE/PACK: If product is multi-pack/bundle, clearly state pack quantity in Layer 1. If not a bundle product, this dimension passes by default.
+[T8] TRAFFIC KEYWORDS: Distribute traffic keywords across both layers for maximum A9 coverage. Layer 2 should capture secondary/long-tail keywords.
+[T9] BRAND: If brand has recognition, position brand name prominently at start of Layer 1. If no brand or generic brand, this passes by default.
+[T10] SEASONAL: Optionally include holiday/seasonal terms in Layer 2 if relevant. If not seasonal, this passes by default.
 
 Respond in JSON format:
 {

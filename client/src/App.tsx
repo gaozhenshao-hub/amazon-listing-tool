@@ -23,6 +23,7 @@ import KeywordPage from "./pages/KeywordPage";
 import AdStructurePage from "./pages/AdStructurePage";
 import ReviewAggregationPage from "./pages/ReviewAggregationPage";
 import VideoScriptPage from "./pages/VideoScriptPage";
+import BuyerQuestionsPage from "./pages/BuyerQuestionsPage";
 
 // ─── Module 1: Product Development ─────────────────────────────
 import DevDashboard from "./pages/dev/DevDashboard";
@@ -120,6 +121,7 @@ function Router() {
         <Route path="/listing/review-aggregation">{() => <PermissionGuard><ReviewAggregationPage /></PermissionGuard>}</Route>
         <Route path="/listing/video-script">{() => <PermissionGuard><VideoScriptPage /></PermissionGuard>}</Route>
         <Route path="/listing/video-script/:id">{() => <PermissionGuard><VideoScriptPage /></PermissionGuard>}</Route>
+        <Route path="/listing/buyer-questions">{() => <PermissionGuard><BuyerQuestionsPage /></PermissionGuard>}</Route>
         <Route path="/listing/project/:id">{() => <PermissionGuard><ProjectDetailPage /></PermissionGuard>}</Route>
 
         {/* Legacy routes → redirect to /listing/* */}

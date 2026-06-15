@@ -64,6 +64,7 @@ import {
   CheckCircle,
   ClipboardList,
   Upload,
+  HelpCircle,
   type LucideIcon,
 } from "lucide-react";
 import { ROLE_LABELS, ROLE_MODULE_ACCESS, ADMIN_ROLES } from "@shared/const";
@@ -133,6 +134,7 @@ const modules: ModuleDef[] = [
       { icon: Sparkles, label: "Listing生成", path: "/listing/generate" },
       { icon: FileText, label: "结果预览", path: "/listing/preview" },
       { icon: Gauge, label: "Listing评分", path: "/listing/score" },
+      { icon: HelpCircle, label: "买家问题库", path: "/listing/buyer-questions" },
       { icon: Image, label: "智能图片建议", path: "/listing/image-workflow" },
       { icon: Video, label: "视频脚本生成", path: "/listing/video-script" },
     ],

@@ -8,7 +8,7 @@ import { scoreListing } from "../scoringEngine";
 const OPTIMIZE_PROMPTS: Record<string, (current: string, issues: string[], keywords: string[]) => string> = {
   "Title Optimization": (current, issues, keywords) => `You are a senior Amazon listing optimization expert with 10 years of experience.
 
-Current product title:
+Current product title (TWO-STAGE FORMAT):
 ${current}
 
 Issues found in scoring:
@@ -16,15 +16,16 @@ ${issues.map(i => `- ${i}`).join("\n")}
 
 ${keywords.length > 0 ? `Core keywords that MUST be included:\n${keywords.slice(0, 20).join(", ")}` : ""}
 
-Requirements:
-1. Title must be 180-200 characters (this is CRITICAL - fully utilize the space)
-2. Follow Amazon title formula: Brand + Core Keyword + Key Feature + Use Case + Differentiator
-3. Capitalize first letter of each major word (Title Case)
-4. Do NOT use special characters, emojis, or all caps
-5. Front-load the most important keywords
-6. Fix all the issues listed above
+Requirements (TWO-STAGE TITLE FORMAT - Amazon 2026 Policy):
+1. Layer 1 (Title): MUST be ≤75 characters. Contains Brand + Core Keyword + Differentiator.
+2. Layer 2 (Item Highlights): MUST be ≤125 characters. Contains specs, scenes, secondary keywords.
+3. NO word repetition between Layer 1 and Layer 2.
+4. Capitalize first letter of each major word (Title Case)
+5. Do NOT use special characters, emojis, or all caps
+6. Front-load the most important keywords in Layer 1
+7. Fix all the issues listed above
 
-Return ONLY the optimized title text, nothing else. No quotes, no explanation.`,
+Return the result as JSON: {"title": "Layer 1 text", "itemHighlights": "Layer 2 text"}`,
 
   "Bullet Points Quality": (current, issues, keywords) => `You are a senior Amazon listing optimization expert with 10 years of experience.
 
@@ -257,10 +258,12 @@ export const scoringRouter = router({
       return scoreListing(
         {
           title: listing.title,
+          itemHighlights: listing.itemHighlights,
           bulletPoints: listing.bulletPoints,
           description: listing.description,
           searchTerms: listing.searchTerms,
           titleCn: listing.titleCn,
+          itemHighlightsCn: listing.itemHighlightsCn,
           bulletPointsCn: listing.bulletPointsCn,
           descriptionCn: listing.descriptionCn,
           searchTermsCn: listing.searchTermsCn,
@@ -294,8 +297,9 @@ export const scoringRouter = router({
       let updateField = "";
       switch (input.dimension) {
         case "Title Optimization":
-          currentContent = listing.title || "";
-          updateField = "title";
+          // Pass both layers as JSON for the optimization prompt
+          currentContent = JSON.stringify({ title: listing.title || "", itemHighlights: listing.itemHighlights || "" });
+          updateField = "title"; // Will handle specially below
           break;
         case "Bullet Points Quality":
           currentContent = listing.bulletPoints || "";
@@ -353,8 +357,29 @@ export const scoringRouter = router({
         }
       }
 
-      // Save optimized content
-      await db.updateListing(listing.id, { [updateField]: optimizedContent });
+      // Save optimized content - handle title specially for two-stage format
+      if (input.dimension === "Title Optimization") {
+        // Parse the JSON response for two-stage title
+        try {
+          let titleResult: { title: string; itemHighlights: string };
+          const jsonMatch = optimizedContent.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            titleResult = JSON.parse(jsonMatch[0]);
+          } else {
+            // Fallback: treat as single title (legacy)
+            titleResult = { title: optimizedContent.slice(0, 75), itemHighlights: optimizedContent.slice(75) };
+          }
+          await db.updateListing(listing.id, {
+            title: titleResult.title || optimizedContent,
+            itemHighlights: titleResult.itemHighlights || null,
+          });
+        } catch {
+          // Fallback: save as title only
+          await db.updateListing(listing.id, { title: optimizedContent });
+        }
+      } else {
+        await db.updateListing(listing.id, { [updateField]: optimizedContent });
+      }
 
       // Save version snapshot after optimization
       try {
@@ -370,10 +395,12 @@ export const scoringRouter = router({
             changeType: "optimize",
             changeDescription: `AI优化: ${dimMap[input.dimension] || input.dimension}`,
             title: updatedListing.title || null,
+            itemHighlights: updatedListing.itemHighlights || null,
             bulletPoints: updatedListing.bulletPoints || null,
             description: updatedListing.description || null,
             searchTerms: updatedListing.searchTerms || null,
             titleCn: updatedListing.titleCn || null,
+            itemHighlightsCn: updatedListing.itemHighlightsCn || null,
             bulletPointsCn: updatedListing.bulletPointsCn || null,
             descriptionCn: updatedListing.descriptionCn || null,
             searchTermsCn: updatedListing.searchTermsCn || null,

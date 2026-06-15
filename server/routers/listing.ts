@@ -65,10 +65,12 @@ async function saveListingVersion(
       changeType,
       changeDescription,
       title: listing.title || null,
+      itemHighlights: listing.itemHighlights || null,
       bulletPoints: listing.bulletPoints || null,
       description: listing.description || null,
       searchTerms: listing.searchTerms || null,
       titleCn: listing.titleCn || null,
+      itemHighlightsCn: listing.itemHighlightsCn || null,
       bulletPointsCn: listing.bulletPointsCn || null,
       descriptionCn: listing.descriptionCn || null,
       searchTermsCn: listing.searchTermsCn || null,
@@ -112,19 +114,40 @@ function validateTitles(titleData: any): { valid: boolean; issues: string[] } {
   if (titleData.titles && Array.isArray(titleData.titles)) {
     for (let i = 0; i < titleData.titles.length; i++) {
       const t = titleData.titles[i];
-      t.actualCharacterCount = t.title ? t.title.length : 0;
-      t.characterCount = t.actualCharacterCount;
-      t.inRange = t.actualCharacterCount >= 180 && t.actualCharacterCount <= 200;
-      if (t.actualCharacterCount > 200) {
-        issues.push(`Title ${i + 1} is ${t.actualCharacterCount} chars (max 200)`);
-      } else if (t.actualCharacterCount < 180) {
-        issues.push(`Title ${i + 1} is only ${t.actualCharacterCount} chars (min 180)`);
+      // Two-stage title validation
+      const titleLen = t.title ? t.title.length : 0;
+      const highlightsLen = t.itemHighlights ? t.itemHighlights.length : 0;
+      const combinedLen = titleLen + highlightsLen;
+
+      t.titleCharCount = titleLen;
+      t.itemHighlightsCharCount = highlightsLen;
+      t.combinedCharCount = combinedLen;
+      t.titleInRange = titleLen > 0 && titleLen <= 75;
+      t.itemHighlightsInRange = highlightsLen > 0 && highlightsLen <= 125;
+
+      // Backward compatibility: also set legacy fields
+      t.characterCount = combinedLen;
+      t.inRange = t.titleInRange && t.itemHighlightsInRange;
+
+      if (titleLen > 75) {
+        issues.push(`Title ${i + 1} Layer 1 is ${titleLen} chars (max 75)`);
+      } else if (titleLen === 0) {
+        issues.push(`Title ${i + 1} Layer 1 is empty`);
+      }
+      if (highlightsLen > 125) {
+        issues.push(`Title ${i + 1} Layer 2 (Item Highlights) is ${highlightsLen} chars (max 125)`);
+      } else if (highlightsLen === 0) {
+        issues.push(`Title ${i + 1} Layer 2 (Item Highlights) is empty`);
       }
     }
   }
   if (titleData.recommendedTitle) {
     titleData.recommendedTitleCharCount = titleData.recommendedTitle.length;
-    titleData.recommendedTitleInRange = titleData.recommendedTitle.length >= 180 && titleData.recommendedTitle.length <= 200;
+    titleData.recommendedTitleInRange = titleData.recommendedTitle.length <= 75 && titleData.recommendedTitle.length > 0;
+  }
+  if (titleData.recommendedItemHighlights) {
+    titleData.recommendedItemHighlightsCharCount = titleData.recommendedItemHighlights.length;
+    titleData.recommendedItemHighlightsInRange = titleData.recommendedItemHighlights.length <= 125 && titleData.recommendedItemHighlights.length > 0;
   }
   return { valid: issues.length === 0, issues };
 }
@@ -181,9 +204,9 @@ Return the CORRECTED bullet points in the same JSON format:
   }
 }
 
-// Ask AI to refine titles that are out of range
+// Ask AI to refine titles that are out of range (two-stage format)
 async function refineTitles(titleData: any, issues: string[]): Promise<any> {
-  const refinementPrompt = `You previously generated Amazon product titles, but some do NOT meet the character requirements.
+  const refinementPrompt = `You previously generated Amazon product titles in TWO-STAGE format, but some do NOT meet the character requirements.
 
 ISSUES:
 ${issues.join("\n")}
@@ -191,10 +214,13 @@ ${issues.join("\n")}
 CURRENT TITLES:
 ${JSON.stringify(titleData.titles, null, 2)}
 
-RULES:
-- Each title MUST be 180-200 characters. NO EXCEPTIONS.
-- If a title is TOO LONG (>200): condense by removing less important modifiers, combining phrases, or using shorter synonyms. Do NOT just cut off the end.
-- If a title is TOO SHORT (<180): add more relevant keywords, specs, use cases, compatible models, or descriptive details.
+RULES (TWO-STAGE TITLE FORMAT):
+- Layer 1 (title): MUST be ≤75 characters. Contains Brand + Core Keyword + Differentiator.
+- Layer 2 (itemHighlights): MUST be ≤125 characters. Contains specs, scenes, secondary keywords.
+- NO word repetition between Layer 1 and Layer 2.
+- If Layer 1 is TOO LONG (>75): move secondary info to Layer 2.
+- If Layer 2 is TOO LONG (>125): trim less important modifiers.
+- If either layer is EMPTY: generate appropriate content.
 - Keep the same core keywords and brand positioning.
 - Count EVERY character including spaces, commas, and hyphens.
 
@@ -203,18 +229,22 @@ Return the CORRECTED titles in the same JSON format:
   "titles": [
     {
       "title": "",
-      "characterCount": 0,
+      "itemHighlights": "",
+      "titleCharCount": 0,
+      "itemHighlightsCharCount": 0,
+      "combinedCharCount": 0,
       "coreKeywords": [],
       "strategy": ""
     }
   ],
   "recommendedTitle": "",
+  "recommendedItemHighlights": "",
   "reasoning": ""
 }`;
 
   const response = await invokeLLM({
     messages: [
-      { role: "system", content: `You are an expert Amazon listing copywriter. Your ONLY job right now is to fix character count issues in titles. Each title MUST be 180-200 characters. Count precisely.` },
+      { role: "system", content: `You are an expert Amazon listing copywriter. Your ONLY job right now is to fix character count issues in two-stage titles. Layer 1 (title) MUST be ≤75 chars. Layer 2 (itemHighlights) MUST be ≤125 chars. Count precisely.` },
       { role: "user", content: refinementPrompt },
     ],
     response_format: { type: "json_object" },
@@ -237,10 +267,12 @@ async function generateChineseTranslation(
   bulletPoints: any[],
   description: string,
   searchTerms: string,
-  qaContent?: string
-): Promise<{ titleCn: string; bulletPointsCn: any[]; descriptionCn: string; searchTermsCn: string; qaContentCn?: string }> {
+  qaContent?: string,
+  itemHighlights?: string
+): Promise<{ titleCn: string; itemHighlightsCn: string; bulletPointsCn: any[]; descriptionCn: string; searchTermsCn: string; qaContentCn?: string }> {
   const inputContent: any = {
     title,
+    itemHighlights: itemHighlights || "",
     bulletPoints: bulletPoints.map(bp => ({
       subtitle: bp.subtitle || "",
       fullText: bp.fullText || bp.sellingPoint || "",
@@ -279,13 +311,14 @@ async function generateChineseTranslation(
     const parsed = JSON.parse(content);
     return {
       titleCn: parsed.titleCn || "",
+      itemHighlightsCn: parsed.itemHighlightsCn || "",
       bulletPointsCn: parsed.bulletPointsCn || [],
       descriptionCn: parsed.descriptionCn || "",
       searchTermsCn: parsed.searchTermsCn || "",
       qaContentCn: parsed.qaContentCn ? JSON.stringify(parsed.qaContentCn) : undefined,
     };
   } catch {
-    return { titleCn: "", bulletPointsCn: [], descriptionCn: "", searchTermsCn: "" };
+    return { titleCn: "", itemHighlightsCn: "", bulletPointsCn: [], descriptionCn: "", searchTermsCn: "" };
   }
 }
 
@@ -853,7 +886,7 @@ export const listingRouter = router({
       const response = await invokeLLM({
         messages: [
           { role: "system", content: TITLE_GENERATION_PROMPT },
-          { role: "user", content: `Generate optimized Amazon titles for this product. Each title MUST be exactly 180-200 characters. Count every character precisely before outputting.\n\n${context}` },
+          { role: "user", content: `Generate optimized Amazon titles in TWO-STAGE format for this product. Layer 1 (title) MUST be ≤75 characters. Layer 2 (itemHighlights) MUST be ≤125 characters. Count every character precisely before outputting.\n\n${context}` },
         ],
         response_format: { type: "json_object" },
       });
@@ -1164,17 +1197,20 @@ export const listingRouter = router({
 
       // Generate Chinese translation
       const englishTitle = titleData.recommendedTitle || titleData.titles?.[0]?.title || "";
+      const englishItemHighlights = titleData.recommendedItemHighlights || titleData.titles?.[0]?.itemHighlights || "";
       const englishBullets = bulletData.bulletPoints || [];
       const englishDesc = descData.description || descData.htmlDescription || "";
       const englishSearchTerms = searchData.searchTerms || "";
 
-      let cnData = { titleCn: "", bulletPointsCn: [] as any[], descriptionCn: "", searchTermsCn: "" };
+      let cnData = { titleCn: "", itemHighlightsCn: "", bulletPointsCn: [] as any[], descriptionCn: "", searchTermsCn: "" };
       try {
         cnData = await generateChineseTranslation(
           englishTitle,
           englishBullets,
           englishDesc,
-          englishSearchTerms
+          englishSearchTerms,
+          undefined,
+          englishItemHighlights
         );
       } catch (err) {
         console.error("Chinese translation failed:", err);
@@ -1200,12 +1236,14 @@ export const listingRouter = router({
       const savedListing = await db.createListing({
         projectId: input.projectId,
         title: englishTitle,
+        itemHighlights: englishItemHighlights || null,
         bulletPoints: JSON.stringify(bulletData.bulletPoints || []),
         description: englishDesc,
         searchTerms: englishSearchTerms,
         imageAdvice: imageAdviceJsonStr,
         imageAdviceCn: imageAdviceCnStr || null,
         titleCn: cnData.titleCn || null,
+        itemHighlightsCn: cnData.itemHighlightsCn || null,
         bulletPointsCn: cnData.bulletPointsCn.length > 0 ? JSON.stringify(cnData.bulletPointsCn) : null,
         descriptionCn: cnData.descriptionCn || null,
         searchTermsCn: cnData.searchTermsCn || null,
@@ -1312,7 +1350,7 @@ export const listingRouter = router({
       const data: Record<string, string> = { [input.field]: input.value };
       const result = await db.updateListing(listing.id, data);
       if (result && ctx.user) {
-        const fieldMap: Record<string, string> = { title: '标题', bulletPoints: '卖点', description: '描述', searchTerms: '搜索词', qaContent: 'QA问答', titleCn: '中文标题', bulletPointsCn: '中文卖点', descriptionCn: '中文描述', searchTermsCn: '中文搜索词', qaContentCn: '中文QA问答' };
+        const fieldMap: Record<string, string> = { title: '标题', itemHighlights: '价值亮点', bulletPoints: '卖点', description: '描述', searchTerms: '搜索词', qaContent: 'QA问答', titleCn: '中文标题', itemHighlightsCn: '中文价值亮点', bulletPointsCn: '中文卖点', descriptionCn: '中文描述', searchTermsCn: '中文搜索词', qaContentCn: '中文QA问答' };
         await saveListingVersion(result, ctx.user.id, "manual_edit", `Step编辑: ${fieldMap[input.field] || input.field}`);
       }
       return result;
@@ -1322,11 +1360,13 @@ export const listingRouter = router({
     .input(z.object({
       id: z.number(),
       title: z.string().optional(),
+      itemHighlights: z.string().optional(),
       bulletPoints: z.string().optional(),
       description: z.string().optional(),
       searchTerms: z.string().optional(),
       qaContent: z.string().optional(),
       titleCn: z.string().optional(),
+      itemHighlightsCn: z.string().optional(),
       bulletPointsCn: z.string().optional(),
       descriptionCn: z.string().optional(),
       searchTermsCn: z.string().optional(),
@@ -1338,7 +1378,7 @@ export const listingRouter = router({
       // Save version snapshot after manual edit
       if (result && ctx.user) {
         const updatedFields = Object.keys(data).filter(k => (data as any)[k] !== undefined);
-        const fieldMap: Record<string, string> = { title: '标题', bulletPoints: '卖点', description: '描述', searchTerms: '搜索词', qaContent: 'QA问答', titleCn: '中文标题', bulletPointsCn: '中文卖点', descriptionCn: '中文描述', searchTermsCn: '中文搜索词', qaContentCn: '中文QA问答' };
+        const fieldMap: Record<string, string> = { title: '标题', itemHighlights: '价值亮点', bulletPoints: '卖点', description: '描述', searchTerms: '搜索词', qaContent: 'QA问答', titleCn: '中文标题', itemHighlightsCn: '中文价值亮点', bulletPointsCn: '中文卖点', descriptionCn: '中文描述', searchTermsCn: '中文搜索词', qaContentCn: '中文QA问答' };
         const fieldNames = updatedFields.map(f => fieldMap[f] || f).join('、');
         await saveListingVersion(result, ctx.user.id, "manual_edit", `手动编辑: ${fieldNames}`);
       }
@@ -1570,6 +1610,31 @@ export const listingRouter = router({
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
 
+      // Inject buyer questions for coverage requirement
+      try {
+        const { getDb } = await import("../db");
+        const dbInst = await getDb();
+        const { buyerQuestions: bqTable } = await import("../../drizzle/schema");
+        const { eq, and } = await import("drizzle-orm");
+        const activeQuestions = await dbInst!.select().from(bqTable).where(
+          and(eq(bqTable.projectId, input.projectId), eq(bqTable.status, "active"))
+        );
+        if (activeQuestions.length > 0) {
+          const highPriority = activeQuestions.filter((q: any) => q.priority === "high");
+          const others = activeQuestions.filter((q: any) => q.priority !== "high");
+          context += `\n\n--- [买家问题库 - Buyer Questions to Address] ---`;
+          context += `\n以下是买家常见问题，卖点必须覆盖高优先级问题，尽量覆盖中低优先级问题：`;
+          if (highPriority.length > 0) {
+            context += `\n【高优先级 - 必须覆盖】`;
+            highPriority.forEach((q: any, i: number) => { context += `\n  ${i + 1}. ${q.question}${q.questionCn ? ` (中: ${q.questionCn})` : ""}`; });
+          }
+          if (others.length > 0) {
+            context += `\n【中/低优先级 - 尽量覆盖】`;
+            others.slice(0, 10).forEach((q: any, i: number) => { context += `\n  ${i + 1}. ${q.question}`; });
+          }
+        }
+      } catch (e) { /* buyer questions not available, continue without */ }
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: SELLING_POINTS_CORE_PROMPT },
@@ -1626,6 +1691,24 @@ export const listingRouter = router({
       if (input.emphasis?.trim()) {
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
+
+      // Inject buyer questions for single bullet coverage
+      try {
+        const { getDb } = await import("../db");
+        const dbInst = await getDb();
+        const { buyerQuestions: bqTable } = await import("../../drizzle/schema");
+        const { eq, and } = await import("drizzle-orm");
+        const activeQuestions = await dbInst!.select().from(bqTable).where(
+          and(eq(bqTable.projectId, input.projectId), eq(bqTable.status, "active"))
+        );
+        if (activeQuestions.length > 0) {
+          const highPriority = activeQuestions.filter((q: any) => q.priority === "high");
+          if (highPriority.length > 0) {
+            context += `\n\n--- [买家高优先级问题 - Must Address in Bullets] ---`;
+            highPriority.forEach((q: any, i: number) => { context += `\n  ${i + 1}. ${q.question}`; });
+          }
+        }
+      } catch (e) { /* buyer questions not available, continue without */ }
 
       // Build the selling point instruction
       const sp = input.sellingPoint;

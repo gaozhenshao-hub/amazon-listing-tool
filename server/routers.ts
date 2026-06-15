@@ -8,6 +8,7 @@ import { listingRouter } from "./routers/listing";
 import { projectFileRouter } from "./routers/projectFile";
 import { reportRouter } from "./routers/report";
 import { scoringRouter } from "./routers/scoring";
+import { buyerQuestionsRouter } from "./routers/buyerQuestions";
 import { keywordRouter, keywordAiRouter } from "./routers/keyword";
 import { adStructureRouter } from "./routers/adStructure";
 import { reviewAggregationRouter } from "./routers/reviewAggregation";
@@ -105,6 +106,7 @@ export const appRouter = router({
   projectFile: projectFileRouter,
   report: reportRouter,
   scoring: scoringRouter,
+  buyerQuestions: buyerQuestionsRouter,
   keyword: keywordRouter,
   keywordAi: keywordAiRouter,
   adStructure: adStructureRouter,
