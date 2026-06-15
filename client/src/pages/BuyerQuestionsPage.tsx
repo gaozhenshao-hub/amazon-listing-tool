@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { useProject } from "@/contexts/ProjectContext";
+import ProjectSelector from "@/components/ProjectSelector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -155,7 +156,8 @@ export default function BuyerQuestionsPage() {
         <div className="text-center text-muted-foreground">
           <HelpCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
           <p className="text-lg font-medium">请先选择一个项目</p>
-          <p className="text-sm mt-1">选择项目后可管理买家问题库</p>
+          <p className="text-sm mt-1 mb-4">选择项目后可管理买家问题库</p>
+          <ProjectSelector />
         </div>
       </div>
     );
@@ -165,14 +167,17 @@ export default function BuyerQuestionsPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <HelpCircle className="h-6 w-6 text-blue-600" />
-            买家问题库
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            收集和管理买家常见问题，确保Listing内容覆盖所有关键疑问
-          </p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <HelpCircle className="h-6 w-6 text-blue-600" />
+              买家问题库
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              收集和管理买家常见问题，确保Listing内容覆盖所有关键疑问
+            </p>
+          </div>
+          <ProjectSelector />
         </div>
         <div className="flex gap-2">
           <Dialog open={showExtractDialog} onOpenChange={setShowExtractDialog}>
