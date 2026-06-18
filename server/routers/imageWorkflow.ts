@@ -487,10 +487,17 @@ export const imageWorkflowRouter = router({
       if (!session) throw new Error("No workflow session found");
       if (!session.step4Confirmed) throw new Error("Step 4 not confirmed yet");
 
+      // Truncate step inputs to reduce token count and avoid LLM timeout
+      const truncate = (s: string | null, maxLen = 3000) => s ? s.substring(0, maxLen) : '';
+      const step1Content = truncate(session.step1UserEdit || session.step1AiResult, 4000);
+      const step2Content = truncate(session.step2UserEdit || session.step2AiResult, 4000);
+      const step3Content = truncate(session.step3UserEdit || session.step3AiResult, 3000);
+      const step4Content = truncate(session.step4UserEdit || session.step4AiResult, 3000);
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: STEP5_FINAL_SUGGESTION_PROMPT },
-          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}\n\n--- 已确认的风格方案 ---\n${session.step3UserEdit || session.step3AiResult}\n\n--- 已确认的参考图 ---\n${session.step4UserEdit || session.step4AiResult}\n\n请综合以上所有确认结果，输出每张图的完整图片建议。` },
+          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}\n\n请综合以上所有确认结果，输出每张图的完整图片建议。` },
         ],
         response_format: { type: "json_object" },
       });
@@ -498,28 +505,10 @@ export const imageWorkflowRouter = router({
       const result = parseLLMJson(response);
       const resultStr = JSON.stringify(result);
 
-      // Also generate Chinese translation
-      let cnStr: string | null = null;
-      try {
-        const cnResponse = await invokeLLM({
-          messages: [
-            { role: "system", content: STEP5_TRANSLATION_PROMPT },
-            { role: "user", content: `请将以下图片建议翻译为简体中文：\n\n${resultStr}` },
-          ],
-          response_format: { type: "json_object" },
-        });
-        const cnContent = typeof cnResponse.choices[0].message.content === "string"
-          ? cnResponse.choices[0].message.content
-          : JSON.stringify(cnResponse.choices[0].message.content);
-        JSON.parse(cnContent); // validate
-        cnStr = cnContent;
-      } catch (err) {
-        console.error("Step 5 CN translation failed:", err);
-      }
-
+      // Save English result immediately so user sees it fast
       await db.updateImageWorkflowSession(session.id, {
         step5AiResult: resultStr,
-        step5AiResultCn: cnStr,
+        step5AiResultCn: null, // Will be filled by async translation
         currentStep: 5,
       });
 
@@ -530,12 +519,44 @@ export const imageWorkflowRouter = router({
         if (activeListing) {
           await db.updateListing(activeListing.id, {
             imageAdvice: resultStr,
-            imageAdviceCn: cnStr || null,
+            imageAdviceCn: null,
           });
         }
       } catch {}
 
-      return { en: result, cn: cnStr ? JSON.parse(cnStr) : null };
+      // Fire-and-forget: generate Chinese translation asynchronously
+      (async () => {
+        try {
+          const cnResponse = await invokeLLM({
+            messages: [
+              { role: "system", content: STEP5_TRANSLATION_PROMPT },
+              { role: "user", content: `请将以下图片建议翻译为简体中文：\n\n${resultStr}` },
+            ],
+            response_format: { type: "json_object" },
+          });
+          const cnContent = typeof cnResponse.choices[0].message.content === "string"
+            ? cnResponse.choices[0].message.content
+            : JSON.stringify(cnResponse.choices[0].message.content);
+          JSON.parse(cnContent); // validate
+          await db.updateImageWorkflowSession(session.id, {
+            step5AiResultCn: cnContent,
+          });
+          // Update listing too
+          try {
+            const existingListings = await db.getListingsByProject(input.projectId);
+            const activeListing = existingListings.find((l) => l.isActive === 1);
+            if (activeListing) {
+              await db.updateListing(activeListing.id, {
+                imageAdviceCn: cnContent,
+              });
+            }
+          } catch {}
+        } catch (err) {
+          console.error("Step 5 CN translation failed (async):", err);
+        }
+      })();
+
+      return { en: result, cn: null };
     }),
 
   // ─── Step 5: Save user edits and confirm ──────────────────────
@@ -768,12 +789,20 @@ export const imageWorkflowRouter = router({
 
       const step5Data = session.step5OptimizedResult || session.step5UserEdit || session.step5AiResult;
 
+      // Truncate inputs to avoid timeout
+      const truncate = (s: string | null, maxLen = 3000) => s ? s.substring(0, maxLen) : '';
+      const step1Short = truncate(session.step1UserEdit || session.step1AiResult, 3000);
+      const step2Short = truncate(session.step2UserEdit || session.step2AiResult, 3000);
+      const step3Short = truncate(session.step3UserEdit || session.step3AiResult, 2000);
+      const step4Short = truncate(session.step4UserEdit || session.step4AiResult, 2000);
+      const step5Short = truncate(step5Data, 6000);
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: STEP6_AI_PROMPT_GENERATION },
           {
             role: "user",
-            content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}\n\n--- 已确认的风格方案 ---\n${session.step3UserEdit || session.step3AiResult}\n\n--- 已确认的参考图 ---\n${session.step4UserEdit || session.step4AiResult}\n\n--- 已确认的图片建议 ---\n${step5Data}\n\n请为每张图生成可直接使用的AI图片生成提示词（prompt），包含正面提示词、负面提示词和推荐参数。`,
+            content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Short}\n\n--- 已确认的图片大纲 ---\n${step2Short}\n\n--- 已确认的风格方案 ---\n${step3Short}\n\n--- 已确认的参考图 ---\n${step4Short}\n\n--- 已确认的图片建议 ---\n${step5Short}\n\n请为每张图生成可直接使用的AI图片生成提示词（prompt），包含正面提示词、负面提示词和推荐参数。`,
           },
         ],
         response_format: { type: "json_object" },
@@ -782,32 +811,36 @@ export const imageWorkflowRouter = router({
       const result = parseLLMJson(response);
       const resultStr = JSON.stringify(result);
 
-      // Generate Chinese translation
-      let cnStr: string | null = null;
-      try {
-        const cnResponse = await invokeLLM({
-          messages: [
-            { role: "system", content: STEP6_TRANSLATION_PROMPT },
-            { role: "user", content: `请将以下AI提示词建议翻译为简体中文：\n\n${resultStr}` },
-          ],
-          response_format: { type: "json_object" },
-        });
-        const cnContent = typeof cnResponse.choices[0].message.content === "string"
-          ? cnResponse.choices[0].message.content
-          : JSON.stringify(cnResponse.choices[0].message.content);
-        JSON.parse(cnContent); // validate
-        cnStr = cnContent;
-      } catch (err) {
-        console.error("Step 6 CN translation failed:", err);
-      }
-
+      // Save English result immediately
       await db.updateImageWorkflowSession(session.id, {
         step6AiResult: resultStr,
-        step6AiResultCn: cnStr,
+        step6AiResultCn: null,
         currentStep: 6,
       });
 
-      return { en: result, cn: cnStr ? JSON.parse(cnStr) : null };
+      // Fire-and-forget: generate Chinese translation asynchronously
+      (async () => {
+        try {
+          const cnResponse = await invokeLLM({
+            messages: [
+              { role: "system", content: STEP6_TRANSLATION_PROMPT },
+              { role: "user", content: `请将以下AI提示词建议翻译为简体中文：\n\n${resultStr}` },
+            ],
+            response_format: { type: "json_object" },
+          });
+          const cnContent = typeof cnResponse.choices[0].message.content === "string"
+            ? cnResponse.choices[0].message.content
+            : JSON.stringify(cnResponse.choices[0].message.content);
+          JSON.parse(cnContent); // validate
+          await db.updateImageWorkflowSession(session.id, {
+            step6AiResultCn: cnContent,
+          });
+        } catch (err) {
+          console.error("Step 6 CN translation failed (async):", err);
+        }
+      })();
+
+      return { en: result, cn: null };
     }),
 
   // ─── Step 6: Confirm ──────────────────────────────────────────────
@@ -843,13 +876,21 @@ export const imageWorkflowRouter = router({
 
       const step5Data = session.step5OptimizedResult || session.step5UserEdit || session.step5AiResult;
 
+      // Truncate inputs to avoid timeout
+      const truncate = (s: string | null, maxLen = 3000) => s ? s.substring(0, maxLen) : '';
+      const step1Short = truncate(session.step1UserEdit || session.step1AiResult, 3000);
+      const step2Short = truncate(session.step2UserEdit || session.step2AiResult, 3000);
+      const step3Short = truncate(session.step3UserEdit || session.step3AiResult, 2000);
+      const step4Short = truncate(session.step4UserEdit || session.step4AiResult, 2000);
+      const step5Short = truncate(step5Data, 6000);
+
       // Generate Lovart-optimized prompts (Chinese primary)
       const response = await invokeLLM({
         messages: [
           { role: "system", content: STEP6_LOVART_PROMPT_GENERATION },
           {
             role: "user",
-            content: `\u4ea7\u54c1\u540d\u79f0: ${project.productName || project.name}\n\u54c1\u724c: ${project.brand || '\u672a\u6307\u5b9a'}\n\u7c7b\u76ee: ${project.category || '\u672a\u6307\u5b9a'}\n\n--- \u5df2\u786e\u8ba4\u7684\u5356\u70b9\u4f53\u7cfb ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- \u5df2\u786e\u8ba4\u7684\u56fe\u7247\u5927\u7eb2 ---\n${session.step2UserEdit || session.step2AiResult}\n\n--- \u5df2\u786e\u8ba4\u7684\u98ce\u683c\u65b9\u6848 ---\n${session.step3UserEdit || session.step3AiResult}\n\n--- \u5df2\u786e\u8ba4\u7684\u53c2\u8003\u56fe ---\n${session.step4UserEdit || session.step4AiResult}\n\n--- \u5df2\u786e\u8ba4\u7684\u56fe\u7247\u5efa\u8bae ---\n${step5Data}\n\n\u8bf7\u4e3a\u6bcf\u5f20\u56fe\u751f\u6210\u4e13\u95e8\u9002\u914dLovart ChatCanvas\u7684\u63d0\u793a\u8bcd\uff0c\u5305\u542b\u54c1\u724cDNA\u5b9a\u4e49\u3001\u4e00\u81f4\u6027\u7b56\u7565\u3001\u6bcf\u5f20\u56fe\u7684\u8be6\u7ec6\u63d0\u793a\u8bcd\u548c\u8fed\u4ee3\u6307\u5357\u3002`,
+            content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Short}\n\n--- 已确认的图片大纲 ---\n${step2Short}\n\n--- 已确认的风格方案 ---\n${step3Short}\n\n--- 已确认的参考图 ---\n${step4Short}\n\n--- 已确认的图片建议 ---\n${step5Short}\n\n请为每张图生成专门适配Lovart ChatCanvas的提示词，包含品牌DNA定义、一致性策略、每张图的详细提示词和迭代指南。`,
           },
         ],
         response_format: { type: "json_object" },
@@ -858,32 +899,36 @@ export const imageWorkflowRouter = router({
       const result = parseLLMJson(response);
       const resultStr = JSON.stringify(result);
 
-      // Generate English translation
-      let enStr: string | null = null;
-      try {
-        const enResponse = await invokeLLM({
-          messages: [
-            { role: "system", content: STEP6_LOVART_TRANSLATION_PROMPT },
-            { role: "user", content: `\u8bf7\u5c06\u4ee5\u4e0bLovart\u63d0\u793a\u8bcd\u65b9\u6848\u7ffb\u8bd1\u4e3a\u82f1\u6587\uff1a\n\n${resultStr}` },
-          ],
-          response_format: { type: "json_object" },
-        });
-        const enContent = typeof enResponse.choices[0].message.content === "string"
-          ? enResponse.choices[0].message.content
-          : JSON.stringify(enResponse.choices[0].message.content);
-        JSON.parse(enContent); // validate
-        enStr = enContent;
-      } catch (err) {
-        console.error("Step 6 Lovart EN translation failed:", err);
-      }
-
+      // Save Chinese result immediately
       await db.updateImageWorkflowSession(session.id, {
         step6LovartResult: resultStr,
-        step6LovartResultEn: enStr,
+        step6LovartResultEn: null,
         currentStep: 6,
       });
 
-      return { cn: result, en: enStr ? JSON.parse(enStr) : null };
+      // Fire-and-forget: generate English translation asynchronously
+      (async () => {
+        try {
+          const enResponse = await invokeLLM({
+            messages: [
+              { role: "system", content: STEP6_LOVART_TRANSLATION_PROMPT },
+              { role: "user", content: `请将以下Lovart提示词方案翻译为英文：\n\n${resultStr}` },
+            ],
+            response_format: { type: "json_object" },
+          });
+          const enContent = typeof enResponse.choices[0].message.content === "string"
+            ? enResponse.choices[0].message.content
+            : JSON.stringify(enResponse.choices[0].message.content);
+          JSON.parse(enContent); // validate
+          await db.updateImageWorkflowSession(session.id, {
+            step6LovartResultEn: enContent,
+          });
+        } catch (err) {
+          console.error("Step 6 Lovart EN translation failed (async):", err);
+        }
+      })();
+
+      return { cn: result, en: null };
     }),
 
   // ─── Step 6 Lovart: Save user edits ───────────────────────────

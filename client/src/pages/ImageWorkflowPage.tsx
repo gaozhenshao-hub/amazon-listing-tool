@@ -2358,6 +2358,10 @@ function Step5FinalSuggestions({
       setEnData(result.en);
       setCnData(result.cn);
       toast.success("图片建议生成完成");
+      // Chinese translation is generated asynchronously - show hint
+      if (!result.cn) {
+        toast.info("中文翻译正在后台生成，稍后刷新页面即可查看", { duration: 5000 });
+      }
     } catch (err: any) {
       toast.error(err.message || "生成失败");
     }
