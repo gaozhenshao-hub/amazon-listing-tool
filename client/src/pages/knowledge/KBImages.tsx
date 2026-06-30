@@ -106,6 +106,7 @@ export default function KBImages() {
   const [filterSellingPointDetail, setFilterSellingPointDetail] = useState("all");
   const [filterComposition, setFilterComposition] = useState("all");
   const [filterColorV2, setFilterColorV2] = useState("all");
+  const [filterAccentColor, setFilterAccentColor] = useState("all");
   const [filterStyleV2, setFilterStyleV2] = useState("all");
   const [useV2Filters, setUseV2Filters] = useState(true);
   const [selectedImageId, setSelectedImageId] = useState<number | null>(null);
@@ -234,13 +235,15 @@ export default function KBImages() {
       if (filterCategory !== "all" && s.setCategory !== filterCategory) return false;
       // Filter by setPrimaryColor (set-level)
       if (filterColorV2 !== "all" && s.setPrimaryColor !== filterColorV2) return false;
+      // Filter by setAccentColor (set-level)
+      if (filterAccentColor !== "all" && s.setAccentColor !== filterAccentColor) return false;
       // Filter by setStyle (set-level)
       if (filterStyleV2 !== "all" && s.setStyle !== filterStyleV2) return false;
       if (!searchQuery) return true;
       const q = searchQuery.toLowerCase();
       return (s.asin || "").toLowerCase().includes(q) || (s.productTitle || "").toLowerCase().includes(q) || (s.brand || "").toLowerCase().includes(q);
     });
-  }, [sets, searchQuery, filterCategory, filterColorV2, filterStyleV2]);
+  }, [sets, searchQuery, filterCategory, filterColorV2, filterAccentColor, filterStyleV2]);
 
   // Filter images for waterfall/grid view
   const filteredImages = useMemo(() => {
@@ -305,7 +308,15 @@ export default function KBImages() {
             <Select value={filterColorV2} onValueChange={setFilterColorV2}>
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="主颜色" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">全部颜色</SelectItem>
+                <SelectItem value="all">全部主色</SelectItem>
+                {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {/* 提亮色 */}
+            <Select value={filterAccentColor} onValueChange={setFilterAccentColor}>
+              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="提亮色" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部提亮</SelectItem>
                 {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -383,7 +394,15 @@ export default function KBImages() {
             <Select value={filterColorV2} onValueChange={setFilterColorV2}>
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="主颜色" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">全部颜色</SelectItem>
+                <SelectItem value="all">全部主色</SelectItem>
+                {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {/* 提亮色 */}
+            <Select value={filterAccentColor} onValueChange={setFilterAccentColor}>
+              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="提亮色" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部提亮</SelectItem>
                 {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -1122,77 +1141,68 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
       </div>
 
       {isExpanded && (
-        <div className="p-4 space-y-4 bg-card">
-          {/* V2 Seven-dimension tag selectors */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">图片归属</Label>
+        <div className="p-3 space-y-3 bg-card">
+          {/* V2 Compact tag selectors - horizontal flow layout */}
+          <div className="flex flex-wrap gap-2">
+            <div className="w-[calc(50%-4px)]">
               <Select value={img.tagImageBelong || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageBelong: v })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择归属" /></SelectTrigger>
+                <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="归属" /></SelectTrigger>
                 <SelectContent>
                   {IMAGE_BELONG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            {/* 类目已移到套图级别，单图不再显示 */}
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">图片大类</Label>
+            <div className="w-[calc(50%-4px)]">
               <Select value={img.tagImageTypeMain || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageTypeMain: v, tagImageTypeSub: "" })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择大类" /></SelectTrigger>
+                <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="图片大类" /></SelectTrigger>
                 <SelectContent>
                   {IMAGE_TYPE_MAIN_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">图片子类</Label>
+            <div className="w-[calc(50%-4px)]">
               <Select value={img.tagImageTypeSub || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageTypeSub: v })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择子类" /></SelectTrigger>
+                <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="图片子类" /></SelectTrigger>
                 <SelectContent>
                   {(img.tagImageTypeMain && IMAGE_TYPE_HIERARCHY[img.tagImageTypeMain] ? IMAGE_TYPE_HIERARCHY[img.tagImageTypeMain] : Object.values(IMAGE_TYPE_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">卖点分类</Label>
+            <div className="w-[calc(50%-4px)]">
               <Select value={img.tagSellingPointCategory || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagSellingPointCategory: v })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择卖点" /></SelectTrigger>
+                <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="卖点大类" /></SelectTrigger>
                 <SelectContent>
                   {SELLING_POINT_MAIN_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">卖点明细</Label>
+            <div className="w-[calc(50%-4px)]">
               <Select value={img.tagSellingPointDetail || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagSellingPointDetail: v })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择明细" /></SelectTrigger>
+                <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="卖点明细" /></SelectTrigger>
                 <SelectContent>
                   {(img.tagSellingPointCategory && SELLING_POINT_HIERARCHY[img.tagSellingPointCategory] ? SELLING_POINT_HIERARCHY[img.tagSellingPointCategory] : Object.values(SELLING_POINT_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">构图类型</Label>
+            <div className="w-[calc(50%-4px)]">
               <Select value={img.tagComposition || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagComposition: v })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择构图" /></SelectTrigger>
+                <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="构图" /></SelectTrigger>
                 <SelectContent>
                   {COMPOSITION_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">主颜色</Label>
+            <div className="w-[calc(50%-4px)]">
               <Select value={img.tagColorSchemeV2 || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagColorSchemeV2: v })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择颜色" /></SelectTrigger>
+                <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="主颜色" /></SelectTrigger>
                 <SelectContent>
                   {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            <div className="col-span-2 space-y-1">
-              <Label className="text-xs text-muted-foreground">设计风格</Label>
+            <div className="w-[calc(50%-4px)]">
               <Select value={img.tagDesignStyleV2 || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagDesignStyleV2: v })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择风格" /></SelectTrigger>
+                <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="设计风格" /></SelectTrigger>
                 <SelectContent>
                   {STYLE_NAME_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
