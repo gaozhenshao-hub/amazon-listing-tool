@@ -163,7 +163,10 @@ export async function listAllImages(userId: number, scope: Scope = "mine", filte
     conditions.push(sql`${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE status = 'confirmed')`);
   }
   // "all" — no filter on ownership
-  if (filters?.tagCategory) conditions.push(eq(kbImages.tagCategory, filters.tagCategory));
+  // tagCategory: check both single image AND parent set's setCategory
+  if (filters?.tagCategory) {
+    conditions.push(sql`(${kbImages.tagCategory} = ${filters.tagCategory} OR ${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE setCategory = ${filters.tagCategory}))`);
+  }
   if (filters?.tagColorScheme) conditions.push(eq(kbImages.tagColorScheme, filters.tagColorScheme));
   if (filters?.tagImageType) conditions.push(eq(kbImages.tagImageType, filters.tagImageType));
   if (filters?.tagDesignStyle) conditions.push(eq(kbImages.tagDesignStyle, filters.tagDesignStyle));
@@ -175,8 +178,13 @@ export async function listAllImages(userId: number, scope: Scope = "mine", filte
   if (filters?.tagSellingPointCategory) conditions.push(eq(kbImages.tagSellingPointCategory, filters.tagSellingPointCategory));
   if (filters?.tagSellingPointDetail) conditions.push(like(kbImages.tagSellingPointDetail, `%${filters.tagSellingPointDetail}%`));
   if (filters?.tagComposition) conditions.push(eq(kbImages.tagComposition, filters.tagComposition));
-  if (filters?.tagColorSchemeV2) conditions.push(eq(kbImages.tagColorSchemeV2, filters.tagColorSchemeV2));
-  if (filters?.tagDesignStyleV2) conditions.push(eq(kbImages.tagDesignStyleV2, filters.tagDesignStyleV2));
+  // Set-level tag inheritance: colorSchemeV2 and designStyleV2 check both single image AND parent set
+  if (filters?.tagColorSchemeV2) {
+    conditions.push(sql`(${kbImages.tagColorSchemeV2} = ${filters.tagColorSchemeV2} OR ${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE setPrimaryColor = ${filters.tagColorSchemeV2}))`);
+  }
+  if (filters?.tagDesignStyleV2) {
+    conditions.push(sql`(${kbImages.tagDesignStyleV2} = ${filters.tagDesignStyleV2} OR ${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE setStyle = ${filters.tagDesignStyleV2}))`);
+  }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
   return _d.select().from(kbImages).where(where).orderBy(desc(kbImages.createdAt));
