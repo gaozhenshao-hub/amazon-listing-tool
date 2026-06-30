@@ -21,6 +21,7 @@ import { ScoreSlider } from "@/components/ScoreSlider";
 import { usePermissions } from "@/hooks/usePermissions";
 import { KBScopeToggle, type KBScope } from "@/components/KBScopeToggle";
 import { KBTagManagement } from "./KBTagManagement";
+import { useKBTagOptions } from "@/hooks/useKBTagOptions";
 import { Settings2 } from "lucide-react";
 
 type ViewMode = "asin" | "waterfall" | "grid";
@@ -84,6 +85,8 @@ export default function KBImages() {
   const utils = trpc.useUtils();
   const { canEdit, canDelete } = usePermissions();
   const allowEdit = canEdit('knowledge', 'kb_images');
+  // Dynamic tag options from database (with fallback to hardcoded constants)
+  const dbTags = useKBTagOptions();
   const allowDelete = canDelete('knowledge', 'kb_images');
   const [showImport, setShowImport] = useState(false);
   const [asinInput, setAsinInput] = useState("");
@@ -353,7 +356,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="类目" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部类目</SelectItem>
-                {CATEGORY_OPTIONS_V2.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.categoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             {/* 主颜色 */}
@@ -361,7 +364,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="主颜色" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部主色</SelectItem>
-                {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.colorOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             {/* 提亮色 */}
@@ -369,7 +372,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="提亮色" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部提亮</SelectItem>
-                {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.colorOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             {/* 风格 */}
@@ -377,7 +380,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[120px] h-8 text-xs"><SelectValue placeholder="设计风格" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部风格</SelectItem>
-                {STYLE_NAME_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.styleOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -389,7 +392,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="归属" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部归属</SelectItem>
-                {IMAGE_BELONG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.imageBelongOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             {/* 类目 */}
@@ -397,7 +400,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="类目" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部类目</SelectItem>
-                {CATEGORY_OPTIONS_V2.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.categoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             {/* 图片类型 - 二级联动 */}
@@ -405,15 +408,15 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="图片大类" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部大类</SelectItem>
-                {IMAGE_TYPE_MAIN_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.imageTypeMainOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
-            {filterTypeMain !== "all" && IMAGE_TYPE_HIERARCHY[filterTypeMain] && (
+            {filterTypeMain !== "all" && dbTags.imageTypeHierarchy[filterTypeMain] && (
               <Select value={filterTypeSub} onValueChange={setFilterTypeSub}>
                 <SelectTrigger className="w-[110px] h-8 text-xs"><SelectValue placeholder="子类型" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部子类</SelectItem>
-                  {IMAGE_TYPE_HIERARCHY[filterTypeMain].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  {dbTags.imageTypeHierarchy[filterTypeMain].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             )}
@@ -422,15 +425,15 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="卖点大类" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部卖点</SelectItem>
-                {SELLING_POINT_MAIN_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.sellingPointMainOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
-            {filterSellingPoint !== "all" && SELLING_POINT_HIERARCHY[filterSellingPoint] && (
+            {filterSellingPoint !== "all" && dbTags.sellingPointHierarchy[filterSellingPoint] && (
               <Select value={filterSellingPointDetail} onValueChange={setFilterSellingPointDetail}>
                 <SelectTrigger className="w-[130px] h-8 text-xs"><SelectValue placeholder="卖点子类" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部子类</SelectItem>
-                  {SELLING_POINT_HIERARCHY[filterSellingPoint].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  {dbTags.sellingPointHierarchy[filterSellingPoint].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             )}
@@ -439,7 +442,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="构图" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部构图</SelectItem>
-                {COMPOSITION_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.compositionOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             {/* 主颜色 */}
@@ -447,7 +450,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="主颜色" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部主色</SelectItem>
-                {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.colorOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             {/* 提亮色 */}
@@ -455,7 +458,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="提亮色" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部提亮</SelectItem>
-                {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.colorOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             {/* 风格 */}
@@ -463,7 +466,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[120px] h-8 text-xs"><SelectValue placeholder="设计风格" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部风格</SelectItem>
-                {STYLE_NAME_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.styleOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -829,6 +832,7 @@ export default function KBImages() {
                         onUpdateScore={updateImageScoreMutation}
                         onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
                         onReorder={allowEdit ? (newOrder) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders: newOrder }) : undefined}
+                        tagOptions={dbTags}
                       />
                     </div>
                   )}
@@ -850,6 +854,7 @@ export default function KBImages() {
                         onUpdateScore={updateImageScoreMutation}
                         onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
                         onReorder={allowEdit ? (newOrder) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders: newOrder }) : undefined}
+                        tagOptions={dbTags}
                       />
                     </div>
                   )}
@@ -871,6 +876,7 @@ export default function KBImages() {
                         onUpdateScore={updateImageScoreMutation}
                         onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
                         onReorder={allowEdit ? (newOrder) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders: newOrder }) : undefined}
+                        tagOptions={dbTags}
                       />
                     </div>
                   )}
@@ -892,6 +898,7 @@ export default function KBImages() {
                         onUpdateScore={updateImageScoreMutation}
                         onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
                         onReorder={allowEdit ? (newOrder) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders: newOrder }) : undefined}
+                        tagOptions={dbTags}
                       />
                     </div>
                   )}
@@ -1147,13 +1154,14 @@ function AsinThumbnailStrip({ setId }: { setId: number }) {
 }
 
 /** Enhanced single image card with expandable tag editing, score slider, and 12-dimension analysis */
-function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, onUpdateScore, onDeleteImage }: {
+function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, onUpdateScore, onDeleteImage, tagOptions }: {
   img: any;
   onSelectImage: (id: number | null) => void;
   selectedImageId: number | null;
   onUpdateTags: any;
   onUpdateScore: any;
   onDeleteImage?: (imageId: number) => void;
+  tagOptions?: ReturnType<typeof import('@/hooks/useKBTagOptions').useKBTagOptions>;
 }) {
   const isExpanded = selectedImageId === img.id;
   let dimensions: any = {};
@@ -1232,49 +1240,49 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
             <Select value={img.tagImageBelong || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageBelong: v })}>
               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="图片归属" /></SelectTrigger>
               <SelectContent>
-                {IMAGE_BELONG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {(tagOptions?.imageBelongOptions || IMAGE_BELONG_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={img.tagImageTypeMain || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageTypeMain: v, tagImageTypeSub: "" })}>
               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="图片大类" /></SelectTrigger>
               <SelectContent>
-                {IMAGE_TYPE_MAIN_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {(tagOptions?.imageTypeMainOptions || IMAGE_TYPE_MAIN_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={img.tagImageTypeSub || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageTypeSub: v })}>
               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="图片子类" /></SelectTrigger>
               <SelectContent>
-                {(img.tagImageTypeMain && IMAGE_TYPE_HIERARCHY[img.tagImageTypeMain] ? IMAGE_TYPE_HIERARCHY[img.tagImageTypeMain] : Object.values(IMAGE_TYPE_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {(img.tagImageTypeMain && (tagOptions?.imageTypeHierarchy || IMAGE_TYPE_HIERARCHY)[img.tagImageTypeMain] ? (tagOptions?.imageTypeHierarchy || IMAGE_TYPE_HIERARCHY)[img.tagImageTypeMain] : Object.values(tagOptions?.imageTypeHierarchy || IMAGE_TYPE_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={img.tagSellingPointCategory || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagSellingPointCategory: v })}>
               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="卖点大类" /></SelectTrigger>
               <SelectContent>
-                {SELLING_POINT_MAIN_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {(tagOptions?.sellingPointMainOptions || SELLING_POINT_MAIN_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={img.tagSellingPointDetail || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagSellingPointDetail: v })}>
               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="卖点明细" /></SelectTrigger>
               <SelectContent>
-                {(img.tagSellingPointCategory && SELLING_POINT_HIERARCHY[img.tagSellingPointCategory] ? SELLING_POINT_HIERARCHY[img.tagSellingPointCategory] : Object.values(SELLING_POINT_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {(img.tagSellingPointCategory && (tagOptions?.sellingPointHierarchy || SELLING_POINT_HIERARCHY)[img.tagSellingPointCategory] ? (tagOptions?.sellingPointHierarchy || SELLING_POINT_HIERARCHY)[img.tagSellingPointCategory] : Object.values(tagOptions?.sellingPointHierarchy || SELLING_POINT_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={img.tagComposition || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagComposition: v })}>
               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="构图类型" /></SelectTrigger>
               <SelectContent>
-                {COMPOSITION_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {(tagOptions?.compositionOptions || COMPOSITION_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={img.tagColorSchemeV2 || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagColorSchemeV2: v })}>
               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="主颜色" /></SelectTrigger>
               <SelectContent>
-                {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {(tagOptions?.colorOptions || COLOR_TAG_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={img.tagDesignStyleV2 || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagDesignStyleV2: v })}>
               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="设计风格" /></SelectTrigger>
               <SelectContent>
-                {STYLE_NAME_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {(tagOptions?.styleOptions || STYLE_NAME_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -1315,13 +1323,14 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
 }
 
 /** Sortable wrapper for ImageCardEnhanced using @dnd-kit */
-function SortableImageCard({ img, onSelectImage, selectedImageId, onUpdateTags, onUpdateScore, onDeleteImage }: {
+function SortableImageCard({ img, onSelectImage, selectedImageId, onUpdateTags, onUpdateScore, onDeleteImage, tagOptions }: {
   img: any;
   onSelectImage: (id: number | null) => void;
   selectedImageId: number | null;
   onUpdateTags: any;
   onUpdateScore: any;
   onDeleteImage?: (imageId: number) => void;
+  tagOptions?: ReturnType<typeof import('@/hooks/useKBTagOptions').useKBTagOptions>;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: img.id });
   const style = {
@@ -1333,13 +1342,13 @@ function SortableImageCard({ img, onSelectImage, selectedImageId, onUpdateTags, 
   const isExpanded = selectedImageId === img.id;
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={isExpanded ? "col-span-full" : ""}>
-      <ImageCardEnhanced img={img} onSelectImage={onSelectImage} selectedImageId={selectedImageId} onUpdateTags={onUpdateTags} onUpdateScore={onUpdateScore} onDeleteImage={onDeleteImage} />
+      <ImageCardEnhanced img={img} onSelectImage={onSelectImage} selectedImageId={selectedImageId} onUpdateTags={onUpdateTags} onUpdateScore={onUpdateScore} onDeleteImage={onDeleteImage} tagOptions={tagOptions} />
     </div>
   );
 }
 
 /** Sortable grid for a group of images */
-function SortableImageGrid({ images, gridCols, onSelectImage, selectedImageId, onUpdateTags, onUpdateScore, onDeleteImage, onReorder }: {
+function SortableImageGrid({ images, gridCols, onSelectImage, selectedImageId, onUpdateTags, onUpdateScore, onDeleteImage, onReorder, tagOptions }: {
   images: any[];
   gridCols: string;
   onSelectImage: (id: number | null) => void;
@@ -1348,6 +1357,7 @@ function SortableImageGrid({ images, gridCols, onSelectImage, selectedImageId, o
   onUpdateScore: any;
   onDeleteImage?: (imageId: number) => void;
   onReorder?: (newOrder: { id: number; positionIndex: number }[]) => void;
+  tagOptions?: ReturnType<typeof import('@/hooks/useKBTagOptions').useKBTagOptions>;
 }) {
   const [items, setItems] = useState<any[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
@@ -1383,7 +1393,7 @@ function SortableImageGrid({ images, gridCols, onSelectImage, selectedImageId, o
     return (
       <div className={`grid ${gridCols} gap-3`}>
         {items.map((img) => (
-          <ImageCardEnhanced key={img.id} img={img} onSelectImage={onSelectImage} selectedImageId={selectedImageId} onUpdateTags={onUpdateTags} onUpdateScore={onUpdateScore} onDeleteImage={onDeleteImage} />
+          <ImageCardEnhanced key={img.id} img={img} onSelectImage={onSelectImage} selectedImageId={selectedImageId} onUpdateTags={onUpdateTags} onUpdateScore={onUpdateScore} onDeleteImage={onDeleteImage} tagOptions={tagOptions} />
         ))}
       </div>
     );
@@ -1394,7 +1404,7 @@ function SortableImageGrid({ images, gridCols, onSelectImage, selectedImageId, o
       <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
         <div className={`grid ${gridCols} gap-3`}>
           {items.map((img) => (
-            <SortableImageCard key={img.id} img={img} onSelectImage={onSelectImage} selectedImageId={selectedImageId} onUpdateTags={onUpdateTags} onUpdateScore={onUpdateScore} onDeleteImage={onDeleteImage} />
+            <SortableImageCard key={img.id} img={img} onSelectImage={onSelectImage} selectedImageId={selectedImageId} onUpdateTags={onUpdateTags} onUpdateScore={onUpdateScore} onDeleteImage={onDeleteImage} tagOptions={tagOptions} />
           ))}
         </div>
       </SortableContext>
