@@ -557,6 +557,12 @@ export const kbImageSets = mysqlTable("kb_image_sets", {
   overallAnalysis: text("overallAnalysis"), // Overall visual analysis JSON
   userEditedOverallAnalysis: text("userEditedOverallAnalysis"),
   overallScore: int("overallScore"), // 1-100
+  // Set-level style (v2)
+  setStyle: varchar("setStyle", { length: 30 }), // 套图风格（13种之一）
+  setStyleParams: text("setStyleParams"), // 风格结构化参数JSON（光线/色温/材质/禁忌/参考品牌/AI关键词）
+  setColorScheme: varchar("setColorScheme", { length: 30 }), // 套图配色方案（10种之一）
+  setTargetAudience: varchar("setTargetAudience", { length: 200 }), // 目标人群
+  setCategoryScene: varchar("setCategoryScene", { length: 200 }), // 类目场景
   status: mysqlEnum("status", ["crawling", "analyzing", "pending_review", "confirmed", "archived"]).default("crawling").notNull(),
   reviewStatus: mysqlEnum("reviewStatus", ["draft", "pending_review", "approved", "rejected"]).default("draft").notNull(),
   reviewedBy: int("reviewedBy"),
@@ -584,11 +590,20 @@ export const kbImages = mysqlTable("kb_images", {
   imageUrl: varchar("imageUrl", { length: 1024 }).notNull(), // S3 URL
   imagePosition: mysqlEnum("imagePosition", ["main", "secondary", "aplus", "brand_story"]).notNull(),
   positionIndex: int("positionIndex"), // e.g. secondary image #2
-  // Four-dimension tags
+  // Four-dimension tags (legacy)
   tagCategory: varchar("tagCategory", { length: 64 }),
   tagColorScheme: varchar("tagColorScheme", { length: 64 }),
   tagImageType: varchar("tagImageType", { length: 64 }),
   tagDesignStyle: varchar("tagDesignStyle", { length: 64 }),
+  // New 7-dimension tags (v2)
+  tagImageBelong: varchar("tagImageBelong", { length: 20 }), // 图片归属：主图/套图/A+/品牌故事
+  tagImageTypeMain: varchar("tagImageTypeMain", { length: 20 }), // 图片类型大类：对比/细节/场景/特效/必要/品牌
+  tagImageTypeSub: varchar("tagImageTypeSub", { length: 30 }), // 图片类型子类型
+  tagSellingPointCategory: varchar("tagSellingPointCategory", { length: 20 }), // 卖点大类：质量/功能/设计/操作/安全/附加值
+  tagSellingPointDetail: varchar("tagSellingPointDetail", { length: 200 }), // 卖点标签详情（逗号分隔）
+  tagComposition: varchar("tagComposition", { length: 20 }), // 构图类型
+  tagColorSchemeV2: varchar("tagColorSchemeV2", { length: 30 }), // 新配色方案（10种）
+  tagDesignStyleV2: varchar("tagDesignStyleV2", { length: 30 }), // 新设计风格（13种）
   // AI analysis
   aiDimensionAnalysis: text("aiDimensionAnalysis"), // 12-dimension analysis JSON
   userEditedDimensionAnalysis: text("userEditedDimensionAnalysis"),

@@ -6,6 +6,71 @@ import { getScraperConfig } from "./systemSettings";
 import { invokeLLM } from "../_core/llm";
 import { storagePut } from "../storage";
 import axios from "axios";
+import {
+  STYLE_NAME_OPTIONS, IMAGE_BELONG_OPTIONS, IMAGE_TYPE_HIERARCHY,
+  IMAGE_TYPE_MAIN_OPTIONS, SELLING_POINT_HIERARCHY, SELLING_POINT_MAIN_OPTIONS,
+  COLOR_SCHEME_OPTIONS, COMPOSITION_OPTIONS, CATEGORY_OPTIONS, getStyleParams
+} from "../constants/imageTagConstants";
+
+/**
+ * Build the upgraded single-image analysis prompt with 7-dimension constrained enum tags
+ */
+function buildSingleImageAnalysisPrompt(): string {
+  const imageTypeOptions = Object.entries(IMAGE_TYPE_HIERARCHY)
+    .map(([k, v]) => `${k}: [${(v as readonly string[]).join(", ")}]`).join("; ");
+  const sellingPointOptions = Object.entries(SELLING_POINT_HIERARCHY)
+    .map(([k, v]) => `${k}: [${(v as readonly string[]).join(", ")}]`).join("; ");
+
+  return `你是一位资深的亚马逊产品图片分析专家。请从以下12个维度分析这张产品图片：
+1. 构图与布局 2. 色彩搭配 3. 产品展示角度 4. 场景化程度 5. 文字/信息图层
+6. 品牌一致性 7. 目标受众匹配度 8. 情感传达 9. 技术质量 10. 差异化程度
+11. 转化驱动力 12. 合规性
+
+同时请为图片打上以下标签（必须从给定选项中选择）：
+
+【图片归属】从以下选项中选一个：${IMAGE_BELONG_OPTIONS.join("、")}
+【图片类型-大类】从以下选项中选一个：${IMAGE_TYPE_MAIN_OPTIONS.join("、")}
+【图片类型-子类】根据大类选择对应子类型：${imageTypeOptions}
+【卖点分类-大类】从以下选项中选一个：${SELLING_POINT_MAIN_OPTIONS.join("、")}（如果图片没有明确卖点可留空）
+【卖点分类-子类】根据大类选择对应子选项：${sellingPointOptions}
+【配色方案】从以下选项中选一个：${COLOR_SCHEME_OPTIONS.join("、")}
+【构图类型】从以下选项中选一个：${COMPOSITION_OPTIONS.join("、")}
+【设计风格】从以下选项中选一个：${STYLE_NAME_OPTIONS.join("、")}
+【产品类目】从以下选项中选一个：${CATEGORY_OPTIONS.join("、")}
+
+返回JSON：
+{
+  "dimensions": {
+    "composition": {"score": 8, "comment": ""},
+    "colorScheme": {"score": 8, "comment": ""},
+    "productAngle": {"score": 8, "comment": ""},
+    "sceneSetting": {"score": 7, "comment": ""},
+    "textOverlay": {"score": 7, "comment": ""},
+    "brandConsistency": {"score": 8, "comment": ""},
+    "audienceMatch": {"score": 8, "comment": ""},
+    "emotionalImpact": {"score": 7, "comment": ""},
+    "technicalQuality": {"score": 8, "comment": ""},
+    "differentiation": {"score": 7, "comment": ""},
+    "conversionPower": {"score": 8, "comment": ""},
+    "compliance": {"score": 9, "comment": ""}
+  },
+  "tagCategory": "产品类目",
+  "tagColorScheme": "配色方案（旧字段兼容）",
+  "tagImageType": "图片类型（旧字段兼容）",
+  "tagDesignStyle": "设计风格（旧字段兼容）",
+  "tagImageBelong": "图片归属",
+  "tagImageTypeMain": "图片类型大类",
+  "tagImageTypeSub": "图片类型子类",
+  "tagSellingPointCategory": "卖点大类（可为空字符串）",
+  "tagSellingPointDetail": "卖点子类（可为空字符串）",
+  "tagComposition": "构图类型",
+  "tagColorSchemeV2": "配色方案",
+  "tagDesignStyleV2": "设计风格",
+  "highlights": ["亮点1", "亮点2"],
+  "singleImageScore": 8,
+  "summary": "一句话总结"
+}`;
+}
 
 async function downloadAndStoreImage(imageUrl: string, asin: string, index: number, prefix = "kb-images"): Promise<string> {
   try {
@@ -80,29 +145,8 @@ async function processImport(setId: number, asin: string, userId: number, runAna
 
           const response = await invokeLLM({
             messages: [
-              { role: "system", content: `你是一位资深的亚马逊产品图片分析专家。请从以下12个维度分析这张产品图片：
-1. 构图与布局 2. 色彩搭配 3. 产品展示角度 4. 场景化程度 5. 文字/信息图层
-6. 品牌一致性 7. 目标受众匹配度 8. 情感传达 9. 技术质量 10. 差异化程度
-11. 转化驱动力 12. 合规性
-
-同时请为图片打上四维标签：
-- tagCategory: 产品类目标签（如 "厨房用品", "电子产品"）
-- tagColorScheme: 色彩方案（如 "暖色系", "冷色系", "黑白"）
-- tagImageType: 图片类型（如 "主图白底", "场景图", "对比图", "信息图", "生活方式图", "A+全幅图", "A+轮播图", "品牌故事图"）
-- tagDesignStyle: 设计风格（如 "极简", "科技感", "自然", "奢华"）
-
-返回JSON：
-{
-  "dimensions": { "composition": {"score":8,"comment":""}, "colorScheme": {"score":8,"comment":""}, "productAngle": {"score":8,"comment":""}, "sceneSetting": {"score":7,"comment":""}, "textOverlay": {"score":7,"comment":""}, "brandConsistency": {"score":8,"comment":""}, "audienceMatch": {"score":8,"comment":""}, "emotionalImpact": {"score":7,"comment":""}, "technicalQuality": {"score":8,"comment":""}, "differentiation": {"score":7,"comment":""}, "conversionPower": {"score":8,"comment":""}, "compliance": {"score":9,"comment":""} },
-  "tagCategory": "",
-  "tagColorScheme": "",
-  "tagImageType": "",
-  "tagDesignStyle": "",
-  "highlights": ["亮点1", "亮点2"],
-  "singleImageScore": 8,
-  "summary": ""
-}` },
-              { role: "user", content: [{ type: "image_url" as const, image_url: { url: img.imageUrl } }, { type: "text" as const, text: `这是ASIN ${asin}的${posLabel}` }] }
+              { role: "system", content: buildSingleImageAnalysisPrompt() },
+              { role: "user", content: [{ type: "image_url" as const, image_url: { url: img.imageUrl } }, { type: "text" as const, text: `这是ASIN ${asin}的${posLabel}，图片位置: ${img.imagePosition}` }] }
             ],
             response_format: { type: "json_object" as const },
           });
@@ -114,6 +158,15 @@ async function processImport(setId: number, asin: string, userId: number, runAna
             tagColorScheme: parsed.tagColorScheme || null,
             tagImageType: parsed.tagImageType || null,
             tagDesignStyle: parsed.tagDesignStyle || null,
+            // New v2 tags
+            tagImageBelong: parsed.tagImageBelong || null,
+            tagImageTypeMain: parsed.tagImageTypeMain || null,
+            tagImageTypeSub: parsed.tagImageTypeSub || null,
+            tagSellingPointCategory: parsed.tagSellingPointCategory || null,
+            tagSellingPointDetail: parsed.tagSellingPointDetail || null,
+            tagComposition: parsed.tagComposition || null,
+            tagColorSchemeV2: parsed.tagColorSchemeV2 || null,
+            tagDesignStyleV2: parsed.tagDesignStyleV2 || null,
             singleImageScore: parsed.singleImageScore || null,
             highlights: JSON.stringify(parsed.highlights || []),
           });
@@ -245,29 +298,8 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
 
         const response = await invokeLLM({
           messages: [
-            { role: "system", content: `你是一位资深的亚马逊产品图片分析专家。请从以下12个维度分析这张产品图片：
-1. 构图与布局 2. 色彩搭配 3. 产品展示角度 4. 场景化程度 5. 文字/信息图层
-6. 品牌一致性 7. 目标受众匹配度 8. 情感传达 9. 技术质量 10. 差异化程度
-11. 转化驱动力 12. 合规性
-
-同时请为图片打上四维标签：
-- tagCategory: 产品类目标签
-- tagColorScheme: 色彩方案
-- tagImageType: 图片类型
-- tagDesignStyle: 设计风格
-
-返回JSON：
-{
-  "dimensions": { "composition": {"score":8,"comment":""}, "colorScheme": {"score":8,"comment":""}, "productAngle": {"score":8,"comment":""}, "sceneSetting": {"score":7,"comment":""}, "textOverlay": {"score":7,"comment":""}, "brandConsistency": {"score":8,"comment":""}, "audienceMatch": {"score":8,"comment":""}, "emotionalImpact": {"score":7,"comment":""}, "technicalQuality": {"score":8,"comment":""}, "differentiation": {"score":7,"comment":""}, "conversionPower": {"score":8,"comment":""}, "compliance": {"score":9,"comment":""} },
-  "tagCategory": "",
-  "tagColorScheme": "",
-  "tagImageType": "",
-  "tagDesignStyle": "",
-  "highlights": ["亮点1", "亮点2"],
-  "singleImageScore": 8,
-  "summary": ""
-}` },
-            { role: "user", content: [{ type: "image_url" as const, image_url: { url: img.imageUrl } }, { type: "text" as const, text: `这是ASIN ${asin}的${posLabel}` }] }
+            { role: "system", content: buildSingleImageAnalysisPrompt() },
+            { role: "user", content: [{ type: "image_url" as const, image_url: { url: img.imageUrl } }, { type: "text" as const, text: `这是ASIN ${asin}的${posLabel}，图片位置: ${img.imagePosition}` }] }
           ],
           response_format: { type: "json_object" as const },
         });
@@ -279,6 +311,14 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
           tagColorScheme: parsed.tagColorScheme || null,
           tagImageType: parsed.tagImageType || null,
           tagDesignStyle: parsed.tagDesignStyle || null,
+          tagImageBelong: parsed.tagImageBelong || null,
+          tagImageTypeMain: parsed.tagImageTypeMain || null,
+          tagImageTypeSub: parsed.tagImageTypeSub || null,
+          tagSellingPointCategory: parsed.tagSellingPointCategory || null,
+          tagSellingPointDetail: parsed.tagSellingPointDetail || null,
+          tagComposition: parsed.tagComposition || null,
+          tagColorSchemeV2: parsed.tagColorSchemeV2 || null,
+          tagDesignStyleV2: parsed.tagDesignStyleV2 || null,
           singleImageScore: parsed.singleImageScore || null,
           highlights: JSON.stringify(parsed.highlights || []),
         });
@@ -293,15 +333,43 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
     const aplusImgs = allDbImages.filter(i => i.imagePosition === "aplus");
     const brandImgs = allDbImages.filter(i => i.imagePosition === "brand_story");
 
+    // Build tag coverage summary for overall analysis
+    const tagCoverage = allDbImages.map(i => ({
+      pos: `${i.imagePosition}#${i.positionIndex}`,
+      score: i.singleImageScore,
+      belong: (i as any).tagImageBelong || "unknown",
+      typeMain: (i as any).tagImageTypeMain || "unknown",
+      typeSub: (i as any).tagImageTypeSub || "",
+      sellingPoint: (i as any).tagSellingPointCategory || "",
+      composition: (i as any).tagComposition || "",
+      style: (i as any).tagDesignStyleV2 || (i as any).tagDesignStyle || "",
+    }));
+
     const overallResponse = await invokeLLM({
       messages: [
-        { role: "system", content: `你是亚马逊产品图片策略分析专家。请对这组产品图片进行整体评估，返回JSON：
+        { role: "system", content: `你是亚马逊产品图片策略分析专家。请对这组产品图片进行整体评估。
+
+评估维度：
+1. 图片类型覆盖率：是否涵盖了对比/细节/场景/特效/必要信息等关键类型
+2. 卖点覆盖率：图片是否充分展示了产品的各类卖点（质量/功能/设计/操作/安全/附加值）
+3. 构图多样性：是否使用了多种构图方式避免单调
+4. 风格一致性：套图整体风格是否统一
+5. 叙事流逻辑：副图排序是否有清晰的叙事逻辑
+
+返回JSON：
 {
   "overallStrategy": "整体图片策略评价",
   "mainImageAssessment": "主图评估",
   "secondaryImageFlow": "副图叙事流评估",
   "aplusAssessment": "A+内容图片评估（如有）",
   "brandStoryAssessment": "品牌故事图片评估（如有）",
+  "tagCoverageAnalysis": {
+    "imageTypeCoverage": "图片类型覆盖分析",
+    "sellingPointCoverage": "卖点覆盖分析",
+    "compositionDiversity": "构图多样性分析",
+    "styleConsistency": "风格一致性分析"
+  },
+  "recommendedStyle": "建议的套图风格名称",
   "missingImageTypes": ["缺少的图片类型"],
   "improvementSuggestions": ["改进建议"],
   "overallScore": 75,
@@ -310,7 +378,10 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
         { role: "user", content: `ASIN: ${asin}
 产品图: ${productImgs.length}张 (${productImgs.map(i => `${i.imagePosition}#${i.positionIndex}: ${i.singleImageScore}/10`).join(", ")})
 A+图: ${aplusImgs.length}张
-品牌故事图: ${brandImgs.length}张` }
+品牌故事图: ${brandImgs.length}张
+
+各图标签详情:
+${JSON.stringify(tagCoverage, null, 1)}` }
       ],
       response_format: { type: "json_object" as const },
     });
@@ -318,6 +389,7 @@ A+图: ${aplusImgs.length}张
     const overallParsed = JSON.parse(overallAnalysis);
     await kbDb.updateImageSet(setId, userId, {
       overallAnalysis, overallScore: overallParsed.overallScore ?? 70, status: "pending_review",
+      setStyle: overallParsed.recommendedStyle || null,
     });
   } catch (err: any) {
     console.error(`[KB Images] Re-analysis failed for set ${setId}:`, err.message);
@@ -343,15 +415,24 @@ export const kbImagesRouter = router({
       return { ...set, images };
     }),
 
-  // List all images with 4-dimension filters (waterfall view)
+  // List all images with 7-dimension filters (waterfall view)
   listAllImages: protectedProcedure
     .input(z.object({
       scope: z.enum(["mine", "shared", "all"]).optional(),
+      // Legacy filters
       tagCategory: z.string().optional(),
       tagColorScheme: z.string().optional(),
       tagImageType: z.string().optional(),
       tagDesignStyle: z.string().optional(),
       imagePosition: z.string().optional(),
+      // V2 filters
+      tagImageBelong: z.string().optional(),
+      tagImageTypeMain: z.string().optional(),
+      tagImageTypeSub: z.string().optional(),
+      tagSellingPointCategory: z.string().optional(),
+      tagComposition: z.string().optional(),
+      tagColorSchemeV2: z.string().optional(),
+      tagDesignStyleV2: z.string().optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
       return kbDb.listAllImages(ctx.user.id, input?.scope ?? "mine", input);
@@ -395,18 +476,32 @@ export const kbImagesRouter = router({
       return { id: Number(setId), asin };
     }),
 
-  // Confirm image tags
+  // Confirm image tags (v2: supports 7-dimension tags)
   confirmImageTags: protectedProcedure
     .input(z.object({
       imageId: z.number(),
+      // Legacy fields (backward compatible)
       tagCategory: z.string().optional(),
       tagColorScheme: z.string().optional(),
       tagImageType: z.string().optional(),
       tagDesignStyle: z.string().optional(),
+      // V2 new fields
+      tagImageBelong: z.string().optional(),
+      tagImageTypeMain: z.string().optional(),
+      tagImageTypeSub: z.string().optional(),
+      tagSellingPointCategory: z.string().optional(),
+      tagSellingPointDetail: z.string().optional(),
+      tagComposition: z.string().optional(),
+      tagColorSchemeV2: z.string().optional(),
+      tagDesignStyleV2: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { imageId, ...tags } = input;
-      await kbDb.updateImage(imageId, { ...tags, tagsConfirmed: 1 });
+      // Filter out undefined values
+      const cleanTags = Object.fromEntries(
+        Object.entries(tags).filter(([_, v]) => v !== undefined)
+      );
+      await kbDb.updateImage(imageId, { ...cleanTags, tagsConfirmed: 1 } as any);
       return { success: true };
     }),
 
@@ -525,6 +620,28 @@ export const kbImagesRouter = router({
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
       await kbDb.deleteImageSet(input.id, ctx.user.id);
+      return { success: true };
+    }),
+
+  // Update set-level style configuration (Phase 6)
+  updateSetStyle: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      setStyle: z.string().nullable().optional(),
+      setStyleParams: z.string().nullable().optional(), // JSON string of style params
+      setColorScheme: z.string().nullable().optional(),
+      setTargetAudience: z.string().nullable().optional(),
+      setCategoryScene: z.string().nullable().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...data } = input;
+      const update: any = {};
+      if (data.setStyle !== undefined) update.setStyle = data.setStyle;
+      if (data.setStyleParams !== undefined) update.setStyleParams = data.setStyleParams;
+      if (data.setColorScheme !== undefined) update.setColorScheme = data.setColorScheme;
+      if (data.setTargetAudience !== undefined) update.setTargetAudience = data.setTargetAudience;
+      if (data.setCategoryScene !== undefined) update.setCategoryScene = data.setCategoryScene;
+      await kbDb.updateImageSet(id, ctx.user.id, update);
       return { success: true };
     }),
 });

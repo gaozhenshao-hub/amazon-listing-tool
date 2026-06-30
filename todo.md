@@ -4147,3 +4147,13 @@
 - [x] 在Bullet生成prompt中强制问题覆盖
 - [x] 在自检清单中增加问题覆盖度量化检查
 - [x] 修复模块二图片工作流Step5"最终图片建议"AI生成超时问题（前端30s超时+双重LLM调用）
+
+## 图片知识库标签体系优化
+- [x] Phase1: 数据库Schema升级（kbImages新增imageOwnership/sellingPointCategory/compositionType字段）+ 标签常量文件新建
+- [x] Phase2: AI分析提示词升级（单图12维→7维枚举约束+套图风格结构化参数）
+- [x] Phase3: 后端confirmImageTags接口扩展（支持新字段写入和查询过滤）
+- [x] Phase4: 前端筛选器升级（7维+图片归属二级联动）
+- [x] Phase5: 前端标签编辑面板升级（枚举下拉替代自由文本）
+- [x] Phase6: 套图风格面板新增（选择风格自动填充结构化参数）
+- [x] Phase7: 知识库→图片工作流联动（生成建议时参考同类目高分图片）
+- [x] Phase8: 测试验证

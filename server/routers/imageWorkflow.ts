@@ -176,7 +176,81 @@ async function buildImageWorkflowContext(projectId: number) {
   return parts.join("\n");
 }
 
-// ─── Helper: Parse LLM JSON response ─────────────────────────────
+// ─── Helper: Get KB reference for image workflow (Phase 7 联动) ─────
+async function getKBReference(category: string, userId: number): Promise<string> {
+  try {
+    // 1. Get confirmed high-score image sets in the same category
+    const allSets = await kbDb.listImageSets(userId, "all");
+    const relevantSets = (allSets as any[]).filter((s: any) =>
+      s.status === "confirmed" &&
+      s.category === category &&
+      (s.overallScore ?? 0) >= 70
+    );
+    if (relevantSets.length === 0) return "";
+
+    // 2. Style distribution statistics
+    const styleDistribution: Record<string, number> = {};
+    relevantSets.forEach((s: any) => {
+      if (s.setStyle) styleDistribution[s.setStyle] = (styleDistribution[s.setStyle] || 0) + 1;
+    });
+
+    // 3. Get high-score individual images for type distribution
+    const allImages = await kbDb.listAllImages(userId, "all", { tagCategory: category });
+    const highScoreImages = (allImages as any[]).filter((i: any) => (i.singleImageScore ?? 0) >= 8);
+    const imageTypeDistribution: Record<string, number> = {};
+    highScoreImages.forEach((i: any) => {
+      const typeMain = i.tagImageTypeMain || i.tagImageType;
+      if (typeMain) imageTypeDistribution[typeMain] = (imageTypeDistribution[typeMain] || 0) + 1;
+    });
+
+    // 4. Build reference text
+    const parts: string[] = ["\n--- 知识库参考（同类目高分图片集） ---"];
+
+    // Top 3 reference sets
+    const topSets = relevantSets
+      .sort((a: any, b: any) => (b.overallScore ?? 0) - (a.overallScore ?? 0))
+      .slice(0, 3);
+    parts.push(`参考高分图片集: ${topSets.map((s: any) => `${s.asin}(风格:${s.setStyle || '未标注'}, 分数:${s.overallScore})`).join("; ")}`);
+
+    // Style distribution
+    const topStyles = Object.entries(styleDistribution)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5);
+    if (topStyles.length > 0) {
+      parts.push(`风格分布: ${topStyles.map(([style, count]) => `${style}(${count}套)`).join(", ")}`);
+    }
+
+    // Image type distribution
+    const topTypes = Object.entries(imageTypeDistribution)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 6);
+    if (topTypes.length > 0) {
+      parts.push(`高分图片类型分布: ${topTypes.map(([type, count]) => `${type}(${count}张)`).join(", ")}`);
+    }
+
+    // Style params from top set
+    if (topSets[0]?.setStyleParams) {
+      try {
+        const params = JSON.parse(topSets[0].setStyleParams);
+        if (params.aiKeywords) {
+          parts.push(`推荐AI关键词: ${params.aiKeywords}`);
+        }
+        if (params.materialKeywords) {
+          parts.push(`推荐材质: ${params.materialKeywords}`);
+        }
+        if (params.tabooElements) {
+          parts.push(`禁忌元素: ${params.tabooElements}`);
+        }
+      } catch {}
+    }
+
+    return parts.join("\n");
+  } catch {
+    return "";
+  }
+}
+
+// ─── Helper: Parse LLM JSON response ─────────────────────
 function parseLLMJson(response: any): any {
   const content = typeof response.choices[0].message.content === "string"
     ? response.choices[0].message.content
@@ -368,7 +442,7 @@ export const imageWorkflowRouter = router({
       if (!session) throw new Error("No workflow session found");
       if (!session.step2Confirmed) throw new Error("Step 2 not confirmed yet");
 
-      // Load product profile for color info
+            // Load product profile for color info
       const profile = await devDb.getDevProductProfile(input.projectId);
       let colorInfo = "";
       if (profile?.appearanceColors) {
@@ -376,11 +450,12 @@ export const imageWorkflowRouter = router({
           colorInfo = `产品外观颜色: ${profile.appearanceColors}`;
         } catch {}
       }
-
+      // Phase 7: Get KB reference for style recommendations
+      const kbReference = await getKBReference(project.category || '', ctx.user.id);
       const response = await invokeLLM({
         messages: [
           { role: "system", content: STEP3_STYLE_PROMPT },
-          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n${colorInfo}\n\n--- 已确认的卖点 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}\n\n请推荐3-4个适合的视觉风格方案。` },
+          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n${colorInfo}\n\n--- 已确认的卖点 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}${kbReference}\n\n请参考知识库中同类目高分图片的风格分布，推荐3-4个适合的视觉风格方案。` },
         ],
         response_format: { type: "json_object" },
       });
@@ -494,10 +569,13 @@ export const imageWorkflowRouter = router({
       const step3Content = truncate(session.step3UserEdit || session.step3AiResult, 3000);
       const step4Content = truncate(session.step4UserEdit || session.step4AiResult, 3000);
 
+      // Phase 7: Get KB reference for same-category high-score images
+      const kbReference = await getKBReference(project.category || '', ctx.user.id);
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: STEP5_FINAL_SUGGESTION_PROMPT },
-          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}\n\n请综合以上所有确认结果，输出每张图的完整图片建议。` },
+          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}${kbReference}\n\n请综合以上所有确认结果（包括知识库参考），输出每张图的完整图片建议。` },
         ],
         response_format: { type: "json_object" },
       });
