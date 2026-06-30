@@ -1141,94 +1141,81 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
       </div>
 
       {isExpanded && (
-        <div className="p-3 space-y-3 bg-card">
-          {/* V2 Compact tag selectors - horizontal flow layout */}
-          <div className="flex flex-wrap gap-2">
-            <div className="w-[calc(50%-4px)]">
-              <Select value={img.tagImageBelong || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageBelong: v })}>
-                <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="归属" /></SelectTrigger>
-                <SelectContent>
-                  {IMAGE_BELONG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="w-[calc(50%-4px)]">
-              <Select value={img.tagImageTypeMain || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageTypeMain: v, tagImageTypeSub: "" })}>
-                <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="图片大类" /></SelectTrigger>
-                <SelectContent>
-                  {IMAGE_TYPE_MAIN_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="w-[calc(50%-4px)]">
-              <Select value={img.tagImageTypeSub || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageTypeSub: v })}>
-                <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="图片子类" /></SelectTrigger>
-                <SelectContent>
-                  {(img.tagImageTypeMain && IMAGE_TYPE_HIERARCHY[img.tagImageTypeMain] ? IMAGE_TYPE_HIERARCHY[img.tagImageTypeMain] : Object.values(IMAGE_TYPE_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="w-[calc(50%-4px)]">
-              <Select value={img.tagSellingPointCategory || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagSellingPointCategory: v })}>
-                <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="卖点大类" /></SelectTrigger>
-                <SelectContent>
-                  {SELLING_POINT_MAIN_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="w-[calc(50%-4px)]">
-              <Select value={img.tagSellingPointDetail || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagSellingPointDetail: v })}>
-                <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="卖点明细" /></SelectTrigger>
-                <SelectContent>
-                  {(img.tagSellingPointCategory && SELLING_POINT_HIERARCHY[img.tagSellingPointCategory] ? SELLING_POINT_HIERARCHY[img.tagSellingPointCategory] : Object.values(SELLING_POINT_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="w-[calc(50%-4px)]">
-              <Select value={img.tagComposition || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagComposition: v })}>
-                <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="构图" /></SelectTrigger>
-                <SelectContent>
-                  {COMPOSITION_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="w-[calc(50%-4px)]">
-              <Select value={img.tagColorSchemeV2 || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagColorSchemeV2: v })}>
-                <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="主颜色" /></SelectTrigger>
-                <SelectContent>
-                  {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="w-[calc(50%-4px)]">
-              <Select value={img.tagDesignStyleV2 || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagDesignStyleV2: v })}>
-                <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="设计风格" /></SelectTrigger>
-                <SelectContent>
-                  {STYLE_NAME_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
+        <div className="p-4 bg-card border-t">
+          {/* Horizontal layout: tags on left, score+analysis on right */}
+          <div className="flex gap-6">
+            {/* Left: Tag selectors in a wider grid */}
+            <div className="flex-1 space-y-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <Select value={img.tagImageBelong || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageBelong: v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="归属" /></SelectTrigger>
+                  <SelectContent>
+                    {IMAGE_BELONG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={img.tagImageTypeMain || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageTypeMain: v, tagImageTypeSub: "" })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="图片大类" /></SelectTrigger>
+                  <SelectContent>
+                    {IMAGE_TYPE_MAIN_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={img.tagImageTypeSub || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageTypeSub: v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="图片子类" /></SelectTrigger>
+                  <SelectContent>
+                    {(img.tagImageTypeMain && IMAGE_TYPE_HIERARCHY[img.tagImageTypeMain] ? IMAGE_TYPE_HIERARCHY[img.tagImageTypeMain] : Object.values(IMAGE_TYPE_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={img.tagSellingPointCategory || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagSellingPointCategory: v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="卖点大类" /></SelectTrigger>
+                  <SelectContent>
+                    {SELLING_POINT_MAIN_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={img.tagSellingPointDetail || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagSellingPointDetail: v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="卖点明细" /></SelectTrigger>
+                  <SelectContent>
+                    {(img.tagSellingPointCategory && SELLING_POINT_HIERARCHY[img.tagSellingPointCategory] ? SELLING_POINT_HIERARCHY[img.tagSellingPointCategory] : Object.values(SELLING_POINT_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={img.tagComposition || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagComposition: v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="构图" /></SelectTrigger>
+                  <SelectContent>
+                    {COMPOSITION_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={img.tagColorSchemeV2 || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagColorSchemeV2: v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="主颜色" /></SelectTrigger>
+                  <SelectContent>
+                    {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={img.tagDesignStyleV2 || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagDesignStyleV2: v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="设计风格" /></SelectTrigger>
+                  <SelectContent>
+                    {STYLE_NAME_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* Score Slider */}
+              <ScoreSlider
+                value={img.singleImageScore || 5}
+                onChange={() => {}}
+                onSave={(val) => onUpdateScore.mutate({ imageId: img.id, score: val })}
+                min={1}
+                max={10}
+                label="单图评分"
+                disabled={onUpdateScore.isPending}
+              />
             </div>
           </div>
-
-          {/* Score Slider */}
-          <ScoreSlider
-            value={img.singleImageScore || 5}
-            onChange={() => {}}
-            onSave={(val) => onUpdateScore.mutate({ imageId: img.id, score: val })}
-            min={1}
-            max={10}
-            label="单图评分"
-            disabled={onUpdateScore.isPending}
-          />
-
-          {/* 12-Dimension Analysis Display */}
+          {/* 12-Dimension Analysis Display - full width below */}
           {img.aiDimensionAnalysis && (
-            <div className="space-y-2">
+            <div className="mt-3 space-y-2">
               <h5 className="text-xs font-semibold flex items-center gap-1.5">
                 <Sparkles className="h-3.5 w-3.5 text-purple-500" />
                 12维度分析
               </h5>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
                 {Object.entries(DIMENSION_LABELS).map(([key, label]) => {
                   const dim = dimensions[key];
                   if (!dim) return null;
@@ -1236,7 +1223,7 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
                   return (
                     <div key={key} className="bg-muted/50 rounded-md p-2">
                       <span className="text-[10px] font-medium text-muted-foreground">{label}</span>
-                      <p className="text-xs mt-0.5 line-clamp-3">{analysis}</p>
+                      <p className="text-xs mt-0.5 line-clamp-2">{analysis}</p>
                     </div>
                   );
                 })}
