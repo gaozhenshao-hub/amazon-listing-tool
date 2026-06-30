@@ -4177,3 +4177,15 @@
 
 ## 图片知识库手动上传独立入口
 - [x] 增加独立的手动上传入口（不依赖爬取失败），支持直接上传图片创建套图
+
+## 图片知识库标签管理页面
+- [x] 数据库：创建kb_tag_definitions表（dimension/parentValue/value/sortOrder/isSystem/metadata/usageCount）
+- [x] 后端：标签管理CRUD Router（listByDimension/create/update/delete/reorder/getUsageStats）
+- [x] 后端：系统标签初始化脚本（将现有常量写入数据库）
+- [x] 后端：标签使用统计查询（统计每个标签被引用次数）
+- [x] 前端：标签管理Tab页面（左侧维度列表 + 右侧选项管理）
+- [x] 前端：标签CRUD操作（新增/编辑/删除/排序）
+- [x] 前端：二级联动标签管理（图片类型/卖点分类的树形管理）
+- [x] 前端：风格参数管理（13种风格的结构化参数编辑）
+- [x] 前端：标签使用统计图表（覆盖率进度条+TOP使用排名）
+- [ ] 集成：图片标签编辑面板从数据库读取标签选项（替代硬编码常量）

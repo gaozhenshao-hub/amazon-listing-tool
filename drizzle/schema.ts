@@ -4604,3 +4604,20 @@ export const buyerQuestions = mysqlTable("buyer_questions", {
 });
 export type BuyerQuestion = typeof buyerQuestions.$inferSelect;
 export type InsertBuyerQuestion = typeof buyerQuestions.$inferInsert;
+
+// ============ 图片知识库标签定义表 ============
+export const kbTagDefinitions = mysqlTable("kb_tag_definitions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // 创建者
+  dimension: varchar("dimension", { length: 50 }).notNull(), // 维度名：category/color/style/imageType/sellingPoint/composition/imageBelong
+  parentValue: varchar("parentValue", { length: 100 }), // 父级值（用于二级联动，如图片类型大类→子类）
+  value: varchar("value", { length: 200 }).notNull(), // 标签值
+  sortOrder: int("sortOrder").default(0).notNull(), // 排序
+  isSystem: int("isSystem").default(0).notNull(), // 是否系统内置 (0=用户自定义, 1=系统内置)
+  metadata: text("metadata"), // 扩展数据JSON（如风格参数：lightType/colorTemp/materialKeywords等）
+  usageCount: int("usageCount").default(0).notNull(), // 使用计数（缓存）
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type KbTagDefinition = typeof kbTagDefinitions.$inferSelect;
+export type InsertKbTagDefinition = typeof kbTagDefinitions.$inferInsert;

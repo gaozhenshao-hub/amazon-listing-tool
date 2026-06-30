@@ -20,6 +20,8 @@ import { TagEditor } from "@/components/TagEditor";
 import { ScoreSlider } from "@/components/ScoreSlider";
 import { usePermissions } from "@/hooks/usePermissions";
 import { KBScopeToggle, type KBScope } from "@/components/KBScopeToggle";
+import { KBTagManagement } from "./KBTagManagement";
+import { Settings2 } from "lucide-react";
 
 type ViewMode = "asin" | "waterfall" | "grid";
 
@@ -89,6 +91,7 @@ export default function KBImages() {
   const [batchInput, setBatchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("asin");
+  const [activeMainTab, setActiveMainTab] = useState<"browse" | "tags">("browse");
   const [detailSetId, setDetailSetId] = useState<number | null>(null);
   const [editingAnalysis, setEditingAnalysis] = useState("");
 
@@ -306,8 +309,35 @@ export default function KBImages() {
           </h1>
           <p className="text-muted-foreground text-sm mt-1">AI七维分类（归属/类目/图片类型/卖点/构图/配色/风格），按ASIN整合浏览</p>
         </div>
-        <Button onClick={() => setShowImport(true)} className="gap-2"><PlusCircle className="h-4 w-4" /> 导入图片</Button>
+        <div className="flex items-center gap-2">
+          <div className="flex bg-muted rounded-lg p-0.5">
+            <Button
+              variant={activeMainTab === "browse" ? "default" : "ghost"}
+              size="sm"
+              className="gap-1.5 h-8"
+              onClick={() => setActiveMainTab("browse")}
+            >
+              <ImageIcon className="h-3.5 w-3.5" /> 图片浏览
+            </Button>
+            <Button
+              variant={activeMainTab === "tags" ? "default" : "ghost"}
+              size="sm"
+              className="gap-1.5 h-8"
+              onClick={() => setActiveMainTab("tags")}
+            >
+              <Settings2 className="h-3.5 w-3.5" /> 标签管理
+            </Button>
+          </div>
+          {activeMainTab === "browse" && (
+            <Button onClick={() => setShowImport(true)} className="gap-2"><PlusCircle className="h-4 w-4" /> 导入图片</Button>
+          )}
+        </div>
       </div>
+
+      {activeMainTab === "tags" ? (
+        <KBTagManagement />
+      ) : (
+        <>
 
       {/* Scope Toggle + Filters */}
       <div className="flex flex-wrap gap-3 items-center">
@@ -1075,6 +1105,8 @@ export default function KBImages() {
           )}
         </DialogContent>
       </Dialog>
+      </>
+      )}
     </div>
   );
 }

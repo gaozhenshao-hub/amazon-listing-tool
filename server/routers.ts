@@ -35,6 +35,7 @@ import { kbImagesRouter } from "./routers/kbImages";
 import { kbSkillsRouter } from "./routers/kbSkills";
 import { kbVideosRouter } from "./routers/kbVideos";
 import { kbSearchRouter } from "./routers/kbSearch";
+import { kbTagsRouter } from "./routers/kbTags";
 // System Settings
 import { systemSettingsRouter } from "./routers/systemSettings";
 // KB Review & Access Control
@@ -134,6 +135,7 @@ export const appRouter = router({
   kbSkills: kbSkillsRouter,
   kbVideos: kbVideosRouter,
   kbSearch: kbSearchRouter,
+  kbTags: kbTagsRouter,
   kbBot: kbBotRouter,
   kbIntel: kbIntelRouter,
   kbFeedback: kbFeedbackRouter,
