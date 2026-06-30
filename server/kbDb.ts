@@ -169,14 +169,14 @@ export async function listAllImages(userId: number, scope: Scope = "mine", filte
   if (filters?.tagDesignStyle) conditions.push(eq(kbImages.tagDesignStyle, filters.tagDesignStyle));
   if (filters?.imagePosition) conditions.push(eq(kbImages.imagePosition, filters.imagePosition as any));
   // V2 filters
-  if (filters?.tagImageBelong) conditions.push(sql`${kbImages}.tag_image_belong = ${filters.tagImageBelong}`);
-  if (filters?.tagImageTypeMain) conditions.push(sql`${kbImages}.tag_image_type_main = ${filters.tagImageTypeMain}`);
-  if (filters?.tagImageTypeSub) conditions.push(sql`${kbImages}.tag_image_type_sub = ${filters.tagImageTypeSub}`);
-  if (filters?.tagSellingPointCategory) conditions.push(sql`${kbImages}.tag_selling_point_category = ${filters.tagSellingPointCategory}`);
-  if (filters?.tagSellingPointDetail) conditions.push(sql`${kbImages}.tagSellingPointDetail LIKE CONCAT('%', ${filters.tagSellingPointDetail}, '%')`);
-  if (filters?.tagComposition) conditions.push(sql`${kbImages}.tag_composition = ${filters.tagComposition}`);
-  if (filters?.tagColorSchemeV2) conditions.push(sql`${kbImages}.tag_color_scheme_v2 = ${filters.tagColorSchemeV2}`);
-  if (filters?.tagDesignStyleV2) conditions.push(sql`${kbImages}.tag_design_style_v2 = ${filters.tagDesignStyleV2}`);
+  if (filters?.tagImageBelong) conditions.push(eq(kbImages.tagImageBelong, filters.tagImageBelong));
+  if (filters?.tagImageTypeMain) conditions.push(eq(kbImages.tagImageTypeMain, filters.tagImageTypeMain));
+  if (filters?.tagImageTypeSub) conditions.push(eq(kbImages.tagImageTypeSub, filters.tagImageTypeSub));
+  if (filters?.tagSellingPointCategory) conditions.push(eq(kbImages.tagSellingPointCategory, filters.tagSellingPointCategory));
+  if (filters?.tagSellingPointDetail) conditions.push(like(kbImages.tagSellingPointDetail, `%${filters.tagSellingPointDetail}%`));
+  if (filters?.tagComposition) conditions.push(eq(kbImages.tagComposition, filters.tagComposition));
+  if (filters?.tagColorSchemeV2) conditions.push(eq(kbImages.tagColorSchemeV2, filters.tagColorSchemeV2));
+  if (filters?.tagDesignStyleV2) conditions.push(eq(kbImages.tagDesignStyleV2, filters.tagDesignStyleV2));
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
   return _d.select().from(kbImages).where(where).orderBy(desc(kbImages.createdAt));

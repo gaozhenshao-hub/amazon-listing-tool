@@ -1298,8 +1298,9 @@ function SortableImageCard({ img, onSelectImage, selectedImageId, onUpdateTags, 
     opacity: isDragging ? 0.4 : 1,
     zIndex: isDragging ? 50 : undefined,
   };
+  const isExpanded = selectedImageId === img.id;
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={isExpanded ? "col-span-full" : ""}>
       <ImageCardEnhanced img={img} onSelectImage={onSelectImage} selectedImageId={selectedImageId} onUpdateTags={onUpdateTags} onUpdateScore={onUpdateScore} onDeleteImage={onDeleteImage} />
     </div>
   );
