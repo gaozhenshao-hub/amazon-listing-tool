@@ -147,6 +147,28 @@ export default function KBImages() {
     onSuccess: (r: any) => { toast.success(`已开始导入 ${r.imported} 个ASIN的图片`); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setShowImport(false); setBatchInput(""); },
     onError: (e: any) => toast.error(e.message),
   });
+  // Manual upload state
+  const [manualAsin, setManualAsin] = useState("");
+  const [manualFiles, setManualFiles] = useState<File[]>([]);
+  const [manualPosition, setManualPosition] = useState<string>("secondary");
+  const [manualAutoAnalyze, setManualAutoAnalyze] = useState(true);
+  const createFromUpload = trpc.kbImages.createSetFromUpload.useMutation({
+    onSuccess: (r: any) => { toast.success(`已创建图片集 ${r.asin}，共${r.imageCount}张图片`); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setShowImport(false); setManualAsin(""); setManualFiles([]); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const handleManualUpload = async () => {
+    if (!manualAsin || manualFiles.length === 0) return;
+    const images: { base64: string; filename: string; position: "main" | "secondary" | "aplus" | "brand_story" }[] = [];
+    for (const file of manualFiles) {
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve) => {
+        reader.onload = () => resolve((reader.result as string).split(",")[1]);
+        reader.readAsDataURL(file);
+      });
+      images.push({ base64, filename: file.name, position: manualPosition as any });
+    }
+    createFromUpload.mutate({ asin: manualAsin, images, autoAnalyze: manualAutoAnalyze });
+  };
   const submitReviewMutation = trpc.kbReview.submitForReview.useMutation({
     onSuccess: () => { toast.success("已提交审核，等待管理员审批"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listSets.invalidate(); },
     onError: (e: any) => toast.error(e.message),
@@ -558,6 +580,7 @@ export default function KBImages() {
               <TabsTrigger value="asin" className="flex-1 gap-1.5"><Upload className="h-3.5 w-3.5" /> ASIN导入</TabsTrigger>
               <TabsTrigger value="link" className="flex-1 gap-1.5"><Link2 className="h-3.5 w-3.5" /> 链接导入</TabsTrigger>
               <TabsTrigger value="batch" className="flex-1 gap-1.5"><PlusCircle className="h-3.5 w-3.5" /> 批量ASIN</TabsTrigger>
+              <TabsTrigger value="manual" className="flex-1 gap-1.5"><UploadCloud className="h-3.5 w-3.5" /> 手动上传</TabsTrigger>
             </TabsList>
             <TabsContent value="asin" className="space-y-4 mt-4">
               <div className="space-y-2">
@@ -594,6 +617,37 @@ export default function KBImages() {
               }} disabled={batchImport.isPending || !batchInput} className="w-full gap-2">
                 {batchImport.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                 <Sparkles className="h-4 w-4" /> 批量采集并AI分析
+              </Button>
+            </TabsContent>
+            <TabsContent value="manual" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label>产品ASIN / 标识符</Label>
+                <Input placeholder="B0XXXXXXXXX 或自定义名称" value={manualAsin} onChange={(e) => setManualAsin(e.target.value)} className="font-mono" />
+              </div>
+              <div className="space-y-2">
+                <Label>图片位置</Label>
+                <Select value={manualPosition} onValueChange={setManualPosition}>
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="main">主图</SelectItem>
+                    <SelectItem value="secondary">副图</SelectItem>
+                    <SelectItem value="aplus">A+内容图</SelectItem>
+                    <SelectItem value="brand_story">品牌故事图</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>选择图片文件（最多50张）</Label>
+                <input type="file" multiple accept="image/*" className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer" onChange={(e) => setManualFiles(Array.from(e.target.files || []).slice(0, 50))} />
+                {manualFiles.length > 0 && <p className="text-xs text-muted-foreground">已选择 {manualFiles.length} 张图片</p>}
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="autoAnalyze" checked={manualAutoAnalyze} onChange={(e) => setManualAutoAnalyze(e.target.checked)} className="rounded" />
+                <label htmlFor="autoAnalyze" className="text-sm">上传后自动进AI分析</label>
+              </div>
+              <Button onClick={handleManualUpload} disabled={createFromUpload.isPending || !manualAsin || manualFiles.length === 0} className="w-full gap-2">
+                {createFromUpload.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                <UploadCloud className="h-4 w-4" /> 上传并创建图片集
               </Button>
             </TabsContent>
           </Tabs>

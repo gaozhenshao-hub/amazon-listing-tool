@@ -664,4 +664,41 @@ export const kbImagesRouter = router({
       await kbDb.updateImageSet(id, ctx.user.id, update);
       return { success: true };
     }),
+  // ── Manual upload: create a new set from uploaded images (no ASIN crawl) ──
+  createSetFromUpload: protectedProcedure
+    .input(z.object({
+      asin: z.string().min(1).describe("ASIN or custom identifier for the set"),
+      images: z.array(z.object({
+        base64: z.string(),
+        filename: z.string(),
+        position: z.enum(["main", "secondary", "aplus", "brand_story"]),
+      })).min(1).max(50),
+      autoAnalyze: z.boolean().default(true),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const asin = input.asin.trim().toUpperCase();
+      const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "pending_review" });
+      const numericSetId = Number(setId);
+      // Upload images to S3
+      for (let i = 0; i < input.images.length; i++) {
+        const img = input.images[i];
+        const buffer = Buffer.from(img.base64, "base64");
+        const ext = img.filename.match(/\.(jpg|jpeg|png|webp|gif)$/i)?.[1] || "jpg";
+        const prefix = img.position === "aplus" ? "kb-aplus" : img.position === "brand_story" ? "kb-brand-story" : "kb-images";
+        const key = `${prefix}/${asin}/${Date.now()}-manual-${i}.${ext}`;
+        const { url } = await storagePut(key, buffer, `image/${ext}`);
+        await kbDb.createImage({
+          imageSetId: numericSetId,
+          imageUrl: url,
+          imagePosition: img.position,
+          positionIndex: i,
+        });
+      }
+      // Optionally trigger AI analysis
+      if (input.autoAnalyze) {
+        await kbDb.updateImageSet(numericSetId, ctx.user.id, { status: "analyzing" });
+        runAnalysisOnly(numericSetId, asin, ctx.user.id).catch(() => {});
+      }
+      return { id: numericSetId, asin, imageCount: input.images.length };
+    }),
 });
