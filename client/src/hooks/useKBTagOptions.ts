@@ -5,6 +5,7 @@ import { trpc } from "@/lib/trpc";
  * Hook that fetches KB image tag options from the database (kbTags Router)
  * and provides them in the same format as the old hardcoded constants.
  * Falls back to hardcoded defaults if no database tags are available.
+ * Also provides count maps (value → usageCount) for displaying counts in filter dropdowns.
  */
 
 // Hardcoded fallbacks (used when DB has no tags yet)
@@ -30,7 +31,7 @@ const FALLBACK_SELLING_POINT_HIERARCHY: Record<string, string[]> = {
   "附加值": ["易清洗/打理/维护", "易收纳/便携/移动", "额外用途"],
 };
 
-interface TagOptions {
+export interface TagOptions {
   categoryOptions: string[];
   colorOptions: string[];
   imageBelongOptions: string[];
@@ -40,6 +41,8 @@ interface TagOptions {
   imageTypeMainOptions: string[];
   sellingPointHierarchy: Record<string, string[]>;
   sellingPointMainOptions: string[];
+  // Count maps: value → usage count (for displaying "(N)" suffix in filter dropdowns)
+  countMap: Record<string, number>;
   isLoading: boolean;
   isFromDb: boolean;
 }
@@ -146,6 +149,27 @@ export function useKBTagOptions(): TagOptions {
     };
   }, [sellingPointTags]);
 
+  // Build a unified count map: value → usageCount (from all dimensions)
+  const countMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    const allTags = [
+      ...(categoryTags || []),
+      ...(colorTags || []),
+      ...(imageBelongTags || []),
+      ...(compositionTags || []),
+      ...(styleTags || []),
+      ...(imageTypeTags || []),
+      ...(sellingPointTags || []),
+    ];
+    for (const tag of allTags) {
+      // Use dimension:value as key to avoid conflicts between dimensions
+      map[`${tag.dimension}:${tag.value}`] = tag.usageCount || 0;
+      // Also store plain value for simpler lookups (last write wins if same value in different dimensions)
+      map[tag.value] = (map[tag.value] || 0) + (tag.usageCount || 0);
+    }
+    return map;
+  }, [categoryTags, colorTags, imageBelongTags, compositionTags, styleTags, imageTypeTags, sellingPointTags]);
+
   // Determine if data is from DB (at least one dimension has DB tags)
   const isFromDb = !!(
     (categoryTags && categoryTags.length > 0) ||
@@ -163,6 +187,7 @@ export function useKBTagOptions(): TagOptions {
     imageTypeMainOptions,
     sellingPointHierarchy,
     sellingPointMainOptions,
+    countMap,
     isLoading,
     isFromDb,
   };

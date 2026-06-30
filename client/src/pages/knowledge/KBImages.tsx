@@ -356,7 +356,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="类目" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部类目</SelectItem>
-                {dbTags.categoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.categoryOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`category:${c}`] ? ` (${dbTags.countMap[`category:${c}`]})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
             {/* 主颜色 */}
@@ -364,7 +364,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="主颜色" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部主色</SelectItem>
-                {dbTags.colorOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.colorOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`color:${c}`] ? ` (${dbTags.countMap[`color:${c}`]})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
             {/* 提亮色 */}
@@ -372,7 +372,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="提亮色" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部提亮</SelectItem>
-                {dbTags.colorOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.colorOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`color:${c}`] ? ` (${dbTags.countMap[`color:${c}`]})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
             {/* 风格 */}
@@ -380,7 +380,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[120px] h-8 text-xs"><SelectValue placeholder="设计风格" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部风格</SelectItem>
-                {dbTags.styleOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.styleOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`style:${c}`] ? ` (${dbTags.countMap[`style:${c}`]})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -392,7 +392,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="归属" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部归属</SelectItem>
-                {dbTags.imageBelongOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.imageBelongOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`imageBelong:${c}`] ? ` (${dbTags.countMap[`imageBelong:${c}`]})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
             {/* 类目 */}
@@ -400,7 +400,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="类目" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部类目</SelectItem>
-                {dbTags.categoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.categoryOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`category:${c}`] ? ` (${dbTags.countMap[`category:${c}`]})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
             {/* 图片类型 - 二级联动 */}
@@ -408,7 +408,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="图片大类" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部大类</SelectItem>
-                {dbTags.imageTypeMainOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.imageTypeMainOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`imageType:${c}`] ? ` (${dbTags.countMap[`imageType:${c}`]})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
             {filterTypeMain !== "all" && dbTags.imageTypeHierarchy[filterTypeMain] && (
@@ -416,7 +416,7 @@ export default function KBImages() {
                 <SelectTrigger className="w-[110px] h-8 text-xs"><SelectValue placeholder="子类型" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部子类</SelectItem>
-                  {dbTags.imageTypeHierarchy[filterTypeMain].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  {dbTags.imageTypeHierarchy[filterTypeMain].map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`imageType:${c}`] ? ` (${dbTags.countMap[`imageType:${c}`]})` : ""}</SelectItem>)}
                 </SelectContent>
               </Select>
             )}
@@ -425,7 +425,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="卖点大类" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部卖点</SelectItem>
-                {dbTags.sellingPointMainOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.sellingPointMainOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`sellingPoint:${c}`] ? ` (${dbTags.countMap[`sellingPoint:${c}`]})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
             {filterSellingPoint !== "all" && dbTags.sellingPointHierarchy[filterSellingPoint] && (
@@ -433,7 +433,7 @@ export default function KBImages() {
                 <SelectTrigger className="w-[130px] h-8 text-xs"><SelectValue placeholder="卖点子类" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部子类</SelectItem>
-                  {dbTags.sellingPointHierarchy[filterSellingPoint].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  {dbTags.sellingPointHierarchy[filterSellingPoint].map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`sellingPoint:${c}`] ? ` (${dbTags.countMap[`sellingPoint:${c}`]})` : ""}</SelectItem>)}
                 </SelectContent>
               </Select>
             )}
@@ -442,7 +442,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="构图" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部构图</SelectItem>
-                {dbTags.compositionOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.compositionOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`composition:${c}`] ? ` (${dbTags.countMap[`composition:${c}`]})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
             {/* 主颜色 */}
@@ -450,7 +450,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="主颜色" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部主色</SelectItem>
-                {dbTags.colorOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.colorOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`color:${c}`] ? ` (${dbTags.countMap[`color:${c}`]})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
             {/* 提亮色 */}
@@ -458,7 +458,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="提亮色" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部提亮</SelectItem>
-                {dbTags.colorOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.colorOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`color:${c}`] ? ` (${dbTags.countMap[`color:${c}`]})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
             {/* 风格 */}
@@ -466,7 +466,7 @@ export default function KBImages() {
               <SelectTrigger className="w-[120px] h-8 text-xs"><SelectValue placeholder="设计风格" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部风格</SelectItem>
-                {dbTags.styleOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.styleOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`style:${c}`] ? ` (${dbTags.countMap[`style:${c}`]})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
