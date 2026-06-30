@@ -1273,18 +1273,7 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
                 {(tagOptions?.compositionOptions || COMPOSITION_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select value={img.tagColorSchemeV2 || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagColorSchemeV2: v })}>
-              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="主颜色" /></SelectTrigger>
-              <SelectContent>
-                {(tagOptions?.colorOptions || COLOR_TAG_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={img.tagDesignStyleV2 || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagDesignStyleV2: v })}>
-              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="设计风格" /></SelectTrigger>
-              <SelectContent>
-                {(tagOptions?.styleOptions || STYLE_NAME_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-              </SelectContent>
-            </Select>
+
           </div>
           <ScoreSlider
             value={img.singleImageScore || 5}
