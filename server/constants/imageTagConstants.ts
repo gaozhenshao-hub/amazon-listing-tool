@@ -188,14 +188,23 @@ export const COMPOSITION_OPTIONS = [
 ] as const;
 export type CompositionType = typeof COMPOSITION_OPTIONS[number];
 
-// ============ 产品类目 ============
+// ============ 产品类目（18种） ============
 
 export const CATEGORY_OPTIONS = [
-  "3C数码", "家居生活", "户外运动", "美妆个护", "母婴玩具",
-  "宠物用品", "服装鞋包", "厨房用品", "汽车配件", "办公用品",
-  "健康保健", "食品饮料", "工具五金", "其他"
+  "家居", "餐厨", "庭院花园", "房车户外", "泳池",
+  "玩具", "个护", "大小家电", "3C数码", "五金工具",
+  "家电配件", "母婴（儿童）", "老人", "运动健身",
+  "宠物", "工业品", "农业品", "实验室品"
 ] as const;
 export type CategoryType = typeof CATEGORY_OPTIONS[number];
+
+// ============ 颜色标签选项（13种） ============
+
+export const COLOR_TAG_OPTIONS = [
+  "红色", "绿色", "蓝色", "黄色", "橙色", "紫色", "金色",
+  "浅灰", "深灰", "浅棕", "深棕", "白色", "黑色"
+] as const;
+export type ColorTag = typeof COLOR_TAG_OPTIONS[number];
 
 // ============ 辅助函数 ============
 

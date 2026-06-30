@@ -51,6 +51,26 @@ describe("imageTagConstants exports", () => {
     expect(mod.COLOR_SCHEME_OPTIONS.length).toBe(10);
   });
 
+  it("should export COLOR_TAG_OPTIONS with 13 color options", async () => {
+    const mod = await import("./constants/imageTagConstants");
+    expect(mod.COLOR_TAG_OPTIONS).toBeDefined();
+    expect(Array.isArray(mod.COLOR_TAG_OPTIONS)).toBe(true);
+    expect(mod.COLOR_TAG_OPTIONS.length).toBe(13);
+    expect(mod.COLOR_TAG_OPTIONS).toContain("红色");
+    expect(mod.COLOR_TAG_OPTIONS).toContain("金色");
+    expect(mod.COLOR_TAG_OPTIONS).toContain("黑色");
+  });
+
+  it("should export CATEGORY_OPTIONS with 18 categories", async () => {
+    const mod = await import("./constants/imageTagConstants");
+    expect(mod.CATEGORY_OPTIONS).toBeDefined();
+    expect(Array.isArray(mod.CATEGORY_OPTIONS)).toBe(true);
+    expect(mod.CATEGORY_OPTIONS.length).toBe(18);
+    expect(mod.CATEGORY_OPTIONS).toContain("家居");
+    expect(mod.CATEGORY_OPTIONS).toContain("餐厨");
+    expect(mod.CATEGORY_OPTIONS).toContain("实验室品");
+  });
+
   it("each IMAGE_STYLES entry should have all required fields", async () => {
     const mod = await import("./constants/imageTagConstants");
     for (const style of mod.IMAGE_STYLES) {
@@ -181,9 +201,11 @@ describe("schema v2 fields", () => {
     expect(schema.kbImageSets.setStyleParams).toBeDefined();
   });
 
-  it("kbImageSets should have setColorScheme field", async () => {
+  it("kbImageSets should have setPrimaryColor and setAccentColor fields", async () => {
     const schema = await import("../drizzle/schema");
-    expect(schema.kbImageSets.setColorScheme).toBeDefined();
+    expect(schema.kbImageSets.setPrimaryColor).toBeDefined();
+    expect(schema.kbImageSets.setAccentColor).toBeDefined();
+    expect(schema.kbImageSets.setCategory).toBeDefined();
   });
 
   it("kbImages should have tagImageTypeMain field", async () => {

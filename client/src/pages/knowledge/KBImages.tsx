@@ -24,7 +24,8 @@ import { KBScopeToggle, type KBScope } from "@/components/KBScopeToggle";
 type ViewMode = "asin" | "waterfall" | "grid";
 
 // V2 Tag Constants (from server/constants/imageTagConstants.ts)
-const CATEGORY_OPTIONS_V2 = ["3C数码","家居生活","户外运动","美妆个护","母婴玩具","宠物用品","服装鞋包","厨房用品","汽车配件","办公用品","健康保健","食品饮料","工具五金","其他"];
+const CATEGORY_OPTIONS_V2 = ["家居","餐厨","庭院花园","房车户外","泳池","玩具","个护","大小家电","3C数码","五金工具","家电配件","母婴（儿童）","老人","运动健身","宠物","工业品","农业品","实验室品"];
+const COLOR_TAG_OPTIONS = ["红色","绿色","蓝色","黄色","橙色","紫色","金色","浅灰","深灰","浅棕","深棕","白色","黑色"];
 const IMAGE_BELONG_OPTIONS = ["主图", "套图", "A+", "品牌故事"];
 const IMAGE_TYPE_HIERARCHY: Record<string, string[]> = {
   "对比": ["综合对比", "细节对比", "尺寸对比", "参数对比"],
@@ -44,6 +45,7 @@ const SELLING_POINT_HIERARCHY: Record<string, string[]> = {
   "附加值": ["易清洗/打理/维护", "易收纳/便携/移动", "额外用途"],
 };
 const SELLING_POINT_MAIN_OPTIONS = Object.keys(SELLING_POINT_HIERARCHY);
+// COLOR_SCHEME_OPTIONS kept for backward compatibility in single-image tags
 const COLOR_SCHEME_OPTIONS = ["莫兰迪色系", "高饱和撞色", "黑金配色", "大地色系", "马卡龙色系", "渐变色系", "纯白极简", "对比撞色", "金属色系", "自然绿植色系"];
 const COMPOSITION_OPTIONS = ["居中构图", "三分法构图", "对角线构图", "模块化构图", "二分构图", "环绕构图", "层叠构图", "大面积留白"];
 const STYLE_NAME_OPTIONS = ["大厂极简风","日系小清新","美式家居温馨风","北欧原木治愈风","户外探险风","科技未来感","轻奢高端风","工业硬核风","ins网红风","母婴柔和风","国潮新中式","暗黑酷炫风","田园自然风"];
@@ -226,11 +228,13 @@ export default function KBImages() {
   const filteredSets = useMemo(() => {
     if (!sets) return [];
     return (sets as any[]).filter((s: any) => {
+      // Filter by setCategory (set-level)
+      if (filterCategory !== "all" && s.setCategory !== filterCategory) return false;
       if (!searchQuery) return true;
       const q = searchQuery.toLowerCase();
       return (s.asin || "").toLowerCase().includes(q) || (s.productTitle || "").toLowerCase().includes(q) || (s.brand || "").toLowerCase().includes(q);
     });
-  }, [sets, searchQuery]);
+  }, [sets, searchQuery, filterCategory]);
 
   // Filter images for waterfall/grid view
   const filteredImages = useMemo(() => {
@@ -776,14 +780,40 @@ export default function KBImages() {
                           </Select>
                         </div>
                         <div className="space-y-2">
-                          <Label className="text-xs font-medium">配色方案</Label>
+                          <Label className="text-xs font-medium">主颜色</Label>
                           <Select
-                            value={d.setColorScheme || ""}
-                            onValueChange={(val) => updateSetStyleMutation.mutate({ id: detailSetId!, setColorScheme: val })}
+                            value={d.setPrimaryColor || ""}
+                            onValueChange={(val) => updateSetStyleMutation.mutate({ id: detailSetId!, setPrimaryColor: val })}
                           >
-                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择配色" /></SelectTrigger>
+                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择主色" /></SelectTrigger>
                             <SelectContent>
-                              {COLOR_SCHEME_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                              {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-xs font-medium">提亮色</Label>
+                          <Select
+                            value={d.setAccentColor || ""}
+                            onValueChange={(val) => updateSetStyleMutation.mutate({ id: detailSetId!, setAccentColor: val })}
+                          >
+                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择提亮色" /></SelectTrigger>
+                            <SelectContent>
+                              {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs font-medium">套图类目</Label>
+                          <Select
+                            value={d.setCategory || ""}
+                            onValueChange={(val) => updateSetStyleMutation.mutate({ id: detailSetId!, setCategory: val })}
+                          >
+                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择类目" /></SelectTrigger>
+                            <SelectContent>
+                              {CATEGORY_OPTIONS_V2.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                             </SelectContent>
                           </Select>
                         </div>
@@ -1061,15 +1091,7 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">类目</Label>
-              <Select value={img.tagCategory || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagCategory: v })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择类目" /></SelectTrigger>
-                <SelectContent>
-                  {CATEGORY_OPTIONS_V2.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* 类目已移到套图级别，单图不再显示 */}
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">图片大类</Label>
               <Select value={img.tagImageTypeMain || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageTypeMain: v, tagImageTypeSub: "" })}>

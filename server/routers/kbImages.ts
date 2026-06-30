@@ -9,7 +9,7 @@ import axios from "axios";
 import {
   STYLE_NAME_OPTIONS, IMAGE_BELONG_OPTIONS, IMAGE_TYPE_HIERARCHY,
   IMAGE_TYPE_MAIN_OPTIONS, SELLING_POINT_HIERARCHY, SELLING_POINT_MAIN_OPTIONS,
-  COLOR_SCHEME_OPTIONS, COMPOSITION_OPTIONS, CATEGORY_OPTIONS, getStyleParams
+  COLOR_SCHEME_OPTIONS, COMPOSITION_OPTIONS, CATEGORY_OPTIONS, COLOR_TAG_OPTIONS, getStyleParams
 } from "../constants/imageTagConstants";
 
 /**
@@ -36,7 +36,6 @@ function buildSingleImageAnalysisPrompt(): string {
 【配色方案】从以下选项中选一个：${COLOR_SCHEME_OPTIONS.join("、")}
 【构图类型】从以下选项中选一个：${COMPOSITION_OPTIONS.join("、")}
 【设计风格】从以下选项中选一个：${STYLE_NAME_OPTIONS.join("、")}
-【产品类目】从以下选项中选一个：${CATEGORY_OPTIONS.join("、")}
 
 返回JSON：
 {
@@ -54,7 +53,6 @@ function buildSingleImageAnalysisPrompt(): string {
     "conversionPower": {"score": 8, "comment": ""},
     "compliance": {"score": 9, "comment": ""}
   },
-  "tagCategory": "产品类目",
   "tagColorScheme": "配色方案（旧字段兼容）",
   "tagImageType": "图片类型（旧字段兼容）",
   "tagDesignStyle": "设计风格（旧字段兼容）",
@@ -183,7 +181,12 @@ async function processImport(setId: number, asin: string, userId: number, runAna
 
       const overallResponse = await invokeLLM({
         messages: [
-          { role: "system", content: `你是亚马逊产品图片策略分析专家。请对这组产品图片进行整体评估，返回JSON：
+          { role: "system", content: `你是亚马逊产品图片策略分析专家。请对这组产品图片进行整体评估。
+
+同时请判断该产品属于以下哪个类目：${CATEGORY_OPTIONS.join("、")}
+并判断套图的主颜色和提亮色（从以下选项中选）：${COLOR_TAG_OPTIONS.join("、")}
+
+返回JSON：
 {
   "overallStrategy": "整体图片策略评价",
   "mainImageAssessment": "主图评估",
@@ -193,6 +196,9 @@ async function processImport(setId: number, asin: string, userId: number, runAna
   "missingImageTypes": ["缺少的图片类型"],
   "improvementSuggestions": ["改进建议"],
   "overallScore": 75,
+  "setCategory": "产品类目",
+  "setPrimaryColor": "主颜色",
+  "setAccentColor": "提亮色",
   "summary": ""
 }` },
           { role: "user", content: `ASIN: ${asin}
@@ -206,6 +212,9 @@ A+图: ${aplusImgs.length}张
       const overallParsed = JSON.parse(overallAnalysis);
       await kbDb.updateImageSet(setId, userId, {
         overallAnalysis, overallScore: overallParsed.overallScore ?? 70, status: "pending_review",
+        ...(overallParsed.setCategory && { setCategory: overallParsed.setCategory }),
+        ...(overallParsed.setPrimaryColor && { setPrimaryColor: overallParsed.setPrimaryColor }),
+        ...(overallParsed.setAccentColor && { setAccentColor: overallParsed.setAccentColor }),
       });
     } else {
       await kbDb.updateImageSet(setId, userId, { status: "pending_review" });
@@ -370,6 +379,9 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
     "styleConsistency": "风格一致性分析"
   },
   "recommendedStyle": "建议的套图风格名称",
+  "setCategory": "产品类目（从以下选：${CATEGORY_OPTIONS.join("、")}）",
+  "setPrimaryColor": "主颜色（从以下选：${COLOR_TAG_OPTIONS.join("、")}）",
+  "setAccentColor": "提亮色（从以下选：${COLOR_TAG_OPTIONS.join("、")}）",
   "missingImageTypes": ["缺少的图片类型"],
   "improvementSuggestions": ["改进建议"],
   "overallScore": 75,
@@ -390,6 +402,9 @@ ${JSON.stringify(tagCoverage, null, 1)}` }
     await kbDb.updateImageSet(setId, userId, {
       overallAnalysis, overallScore: overallParsed.overallScore ?? 70, status: "pending_review",
       setStyle: overallParsed.recommendedStyle || null,
+      ...(overallParsed.setCategory && { setCategory: overallParsed.setCategory }),
+      ...(overallParsed.setPrimaryColor && { setPrimaryColor: overallParsed.setPrimaryColor }),
+      ...(overallParsed.setAccentColor && { setAccentColor: overallParsed.setAccentColor }),
     });
   } catch (err: any) {
     console.error(`[KB Images] Re-analysis failed for set ${setId}:`, err.message);
@@ -629,7 +644,9 @@ export const kbImagesRouter = router({
       id: z.number(),
       setStyle: z.string().nullable().optional(),
       setStyleParams: z.string().nullable().optional(), // JSON string of style params
-      setColorScheme: z.string().nullable().optional(),
+      setPrimaryColor: z.string().nullable().optional(), // 主颜色
+      setAccentColor: z.string().nullable().optional(), // 提亮色
+      setCategory: z.string().nullable().optional(), // 套图类目
       setTargetAudience: z.string().nullable().optional(),
       setCategoryScene: z.string().nullable().optional(),
     }))
@@ -638,7 +655,9 @@ export const kbImagesRouter = router({
       const update: any = {};
       if (data.setStyle !== undefined) update.setStyle = data.setStyle;
       if (data.setStyleParams !== undefined) update.setStyleParams = data.setStyleParams;
-      if (data.setColorScheme !== undefined) update.setColorScheme = data.setColorScheme;
+      if (data.setPrimaryColor !== undefined) update.setPrimaryColor = data.setPrimaryColor;
+      if (data.setAccentColor !== undefined) update.setAccentColor = data.setAccentColor;
+      if (data.setCategory !== undefined) update.setCategory = data.setCategory;
       if (data.setTargetAudience !== undefined) update.setTargetAudience = data.setTargetAudience;
       if (data.setCategoryScene !== undefined) update.setCategoryScene = data.setCategoryScene;
       await kbDb.updateImageSet(id, ctx.user.id, update);

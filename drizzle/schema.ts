@@ -560,7 +560,9 @@ export const kbImageSets = mysqlTable("kb_image_sets", {
   // Set-level style (v2)
   setStyle: varchar("setStyle", { length: 30 }), // 套图风格（13种之一）
   setStyleParams: text("setStyleParams"), // 风格结构化参数JSON（光线/色温/材质/禁忌/参考品牌/AI关键词）
-  setColorScheme: varchar("setColorScheme", { length: 30 }), // 套图配色方案（10种之一）
+  setPrimaryColor: varchar("setPrimaryColor", { length: 20 }), // 主颜色（13种之一）
+  setAccentColor: varchar("setAccentColor", { length: 20 }), // 提亮色（13种之一）
+  setCategory: varchar("setCategory", { length: 30 }), // 套图类目（从单图移到套图级别）
   setTargetAudience: varchar("setTargetAudience", { length: 200 }), // 目标人群
   setCategoryScene: varchar("setCategoryScene", { length: 200 }), // 类目场景
   status: mysqlEnum("status", ["crawling", "analyzing", "pending_review", "confirmed", "archived"]).default("crawling").notNull(),

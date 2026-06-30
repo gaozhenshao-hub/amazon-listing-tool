@@ -4157,3 +4157,12 @@
 - [x] Phase6: 套图风格面板新增（选择风格自动填充结构化参数）
 - [x] Phase7: 知识库→图片工作流联动（生成建议时参考同类目高分图片）
 - [x] Phase8: 测试验证
+
+## 图片知识库标签修正
+- [x] 套图标签：删除"配色方案"(setColorScheme)，改为"主颜色"(setPrimaryColor)+"提亮色"(setAccentColor)两个字段，颜色选项13种
+- [x] 类目标签：从单图片(tagCategory)移到套图级别(kbImageSets.setCategory)，前端同步调整
+- [x] 数据库迁移：kbImageSets新增setPrimaryColor/setAccentColor/setCategory字段
+- [x] 后端router：updateSetStyle接口支持新字段
+- [x] 前端套图风格面板：配色方案→主颜色+提亮色
+- [x] 前端单图标签编辑：移除类目选择
+- [x] 前端筛选器：类目筛选改为基于套图级别
