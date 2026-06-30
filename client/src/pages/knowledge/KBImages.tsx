@@ -21,6 +21,7 @@ import { ScoreSlider } from "@/components/ScoreSlider";
 import { usePermissions } from "@/hooks/usePermissions";
 import { KBScopeToggle, type KBScope } from "@/components/KBScopeToggle";
 import { KBTagManagement } from "./KBTagManagement";
+import { AmazonStyleGallery } from "./AmazonStyleGallery";
 import { useKBTagOptions } from "@/hooks/useKBTagOptions";
 import { Settings2 } from "lucide-react";
 
@@ -815,93 +816,16 @@ export default function KBImages() {
                     </Card>
                   )}
 
-                  {/* ── Main Image Section ── */}
-                  {groupedImages.main.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                        <div className="w-1 h-4 bg-blue-500 rounded-full" />
-                        主图 <Badge variant="secondary" className="text-[10px]">{groupedImages.main.length}张</Badge>
-                        {allowEdit && groupedImages.main.length > 1 && <span className="text-[10px] text-muted-foreground ml-auto">拖拽排序</span>}
-                      </h4>
-                      <SortableImageGrid
-                        images={groupedImages.main}
-                        gridCols="grid-cols-2 md:grid-cols-3"
-                        onSelectImage={setSelectedImageId}
-                        selectedImageId={selectedImageId}
-                        onUpdateTags={updateImageTagsMutation}
-                        onUpdateScore={updateImageScoreMutation}
-                        onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
-                        onReorder={allowEdit ? (newOrder) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders: newOrder }) : undefined}
-                        tagOptions={dbTags}
-                      />
-                    </div>
-                  )}
-
-                  {/* ── Secondary Images Section ── */}
-                  {groupedImages.secondary.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                        <div className="w-1 h-4 bg-emerald-500 rounded-full" />
-                        副图 <Badge variant="secondary" className="text-[10px]">{groupedImages.secondary.length}张</Badge>
-                        {allowEdit && groupedImages.secondary.length > 1 && <span className="text-[10px] text-muted-foreground ml-auto">拖拽排序</span>}
-                      </h4>
-                      <SortableImageGrid
-                        images={groupedImages.secondary}
-                        gridCols="grid-cols-3 md:grid-cols-4"
-                        onSelectImage={setSelectedImageId}
-                        selectedImageId={selectedImageId}
-                        onUpdateTags={updateImageTagsMutation}
-                        onUpdateScore={updateImageScoreMutation}
-                        onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
-                        onReorder={allowEdit ? (newOrder) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders: newOrder }) : undefined}
-                        tagOptions={dbTags}
-                      />
-                    </div>
-                  )}
-
-                  {/* ── A+ Images Section ── */}
-                  {groupedImages.aplus.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                        <div className="w-1 h-4 bg-purple-500 rounded-full" />
-                        A+ 图片 <Badge variant="secondary" className="text-[10px]">{groupedImages.aplus.length}张</Badge>
-                        {allowEdit && groupedImages.aplus.length > 1 && <span className="text-[10px] text-muted-foreground ml-auto">拖拽排序</span>}
-                      </h4>
-                      <SortableImageGrid
-                        images={groupedImages.aplus}
-                        gridCols="grid-cols-3 md:grid-cols-4"
-                        onSelectImage={setSelectedImageId}
-                        selectedImageId={selectedImageId}
-                        onUpdateTags={updateImageTagsMutation}
-                        onUpdateScore={updateImageScoreMutation}
-                        onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
-                        onReorder={allowEdit ? (newOrder) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders: newOrder }) : undefined}
-                        tagOptions={dbTags}
-                      />
-                    </div>
-                  )}
-
-                  {/* ── Brand Story Images Section ── */}
-                  {groupedImages.brand_story.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                        <div className="w-1 h-4 bg-amber-500 rounded-full" />
-                        品牌故事 <Badge variant="secondary" className="text-[10px]">{groupedImages.brand_story.length}张</Badge>
-                        {allowEdit && groupedImages.brand_story.length > 1 && <span className="text-[10px] text-muted-foreground ml-auto">拖拽排序</span>}
-                      </h4>
-                      <SortableImageGrid
-                        images={groupedImages.brand_story}
-                        gridCols="grid-cols-3 md:grid-cols-4"
-                        onSelectImage={setSelectedImageId}
-                        selectedImageId={selectedImageId}
-                        onUpdateTags={updateImageTagsMutation}
-                        onUpdateScore={updateImageScoreMutation}
-                        onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
-                        onReorder={allowEdit ? (newOrder) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders: newOrder }) : undefined}
-                        tagOptions={dbTags}
-                      />
-                    </div>
-                  )}
+                  {/* ── Amazon-Style Gallery (Main + Secondary + Brand Story + A+) ── */}
+                  <AmazonStyleGallery
+                    mainImages={groupedImages.main}
+                    secondaryImages={groupedImages.secondary}
+                    brandStoryImages={groupedImages.brand_story}
+                    aplusImages={groupedImages.aplus}
+                    onSelectImage={setSelectedImageId}
+                    selectedImageId={selectedImageId}
+                    onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
+                  />
 
                   {/* ── Set Style Configuration (Phase 6) ── */}
                   <Card className="border-indigo-200/50 bg-gradient-to-br from-indigo-50/30 to-purple-50/20">
