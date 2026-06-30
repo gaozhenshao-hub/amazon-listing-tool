@@ -154,7 +154,7 @@ export async function reorderImages(imageOrders: { id: number; positionIndex: nu
     await _d.update(kbImages).set({ positionIndex: item.positionIndex }).where(eq(kbImages.id, item.id));
   }
 }
-export async function listAllImages(userId: number, scope: Scope = "mine", filters?: { tagCategory?: string; tagColorScheme?: string; tagImageType?: string; tagDesignStyle?: string; imagePosition?: string; tagImageBelong?: string; tagImageTypeMain?: string; tagImageTypeSub?: string; tagSellingPointCategory?: string; tagComposition?: string; tagColorSchemeV2?: string; tagDesignStyleV2?: string }) {
+export async function listAllImages(userId: number, scope: Scope = "mine", filters?: { tagCategory?: string; tagColorScheme?: string; tagImageType?: string; tagDesignStyle?: string; imagePosition?: string; tagImageBelong?: string; tagImageTypeMain?: string; tagImageTypeSub?: string; tagSellingPointCategory?: string; tagSellingPointDetail?: string; tagComposition?: string; tagColorSchemeV2?: string; tagDesignStyleV2?: string }) {
   const _d = await db();
   const conditions: any[] = [];
   if (scope === "mine") {
@@ -173,6 +173,7 @@ export async function listAllImages(userId: number, scope: Scope = "mine", filte
   if (filters?.tagImageTypeMain) conditions.push(sql`${kbImages}.tag_image_type_main = ${filters.tagImageTypeMain}`);
   if (filters?.tagImageTypeSub) conditions.push(sql`${kbImages}.tag_image_type_sub = ${filters.tagImageTypeSub}`);
   if (filters?.tagSellingPointCategory) conditions.push(sql`${kbImages}.tag_selling_point_category = ${filters.tagSellingPointCategory}`);
+  if (filters?.tagSellingPointDetail) conditions.push(sql`${kbImages}.tagSellingPointDetail LIKE CONCAT('%', ${filters.tagSellingPointDetail}, '%')`);
   if (filters?.tagComposition) conditions.push(sql`${kbImages}.tag_composition = ${filters.tagComposition}`);
   if (filters?.tagColorSchemeV2) conditions.push(sql`${kbImages}.tag_color_scheme_v2 = ${filters.tagColorSchemeV2}`);
   if (filters?.tagDesignStyleV2) conditions.push(sql`${kbImages}.tag_design_style_v2 = ${filters.tagDesignStyleV2}`);

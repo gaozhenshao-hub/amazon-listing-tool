@@ -33,7 +33,7 @@ function buildSingleImageAnalysisPrompt(): string {
 【图片类型-子类】根据大类选择对应子类型：${imageTypeOptions}
 【卖点分类-大类】从以下选项中选一个：${SELLING_POINT_MAIN_OPTIONS.join("、")}（如果图片没有明确卖点可留空）
 【卖点分类-子类】根据大类选择对应子选项：${sellingPointOptions}
-【配色方案】从以下选项中选一个：${COLOR_SCHEME_OPTIONS.join("、")}
+【主颜色】从以下颜色中选一个：${COLOR_TAG_OPTIONS.join("、")}
 【构图类型】从以下选项中选一个：${COMPOSITION_OPTIONS.join("、")}
 【设计风格】从以下选项中选一个：${STYLE_NAME_OPTIONS.join("、")}
 
@@ -62,7 +62,7 @@ function buildSingleImageAnalysisPrompt(): string {
   "tagSellingPointCategory": "卖点大类（可为空字符串）",
   "tagSellingPointDetail": "卖点子类（可为空字符串）",
   "tagComposition": "构图类型",
-  "tagColorSchemeV2": "配色方案",
+  "tagColorSchemeV2": "主颜色",
   "tagDesignStyleV2": "设计风格",
   "highlights": ["亮点1", "亮点2"],
   "singleImageScore": 8,
@@ -445,6 +445,7 @@ export const kbImagesRouter = router({
       tagImageTypeMain: z.string().optional(),
       tagImageTypeSub: z.string().optional(),
       tagSellingPointCategory: z.string().optional(),
+      tagSellingPointDetail: z.string().optional(),
       tagComposition: z.string().optional(),
       tagColorSchemeV2: z.string().optional(),
       tagDesignStyleV2: z.string().optional(),

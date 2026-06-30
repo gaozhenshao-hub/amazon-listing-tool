@@ -53,7 +53,7 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     aiKeywords: "scandinavian design, light oak wood, natural materials, hygge atmosphere, muted pastels, clean lines"
   },
   {
-    name: "赛博科技风",
+    name: "科技未来感",
     lightType: "RGB灯带 + 点光源 + 硬光",
     colorTemp: "7000-9000K（冷蓝）+ 彩色点缀",
     materialKeywords: "碳纤维、钢化玻璃、LED、金属网格",
@@ -62,7 +62,7 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     aiKeywords: "cyberpunk tech aesthetic, neon glow, dark background with RGB accents, futuristic, metallic surfaces"
   },
   {
-    name: "户外探险硬核风",
+    name: "户外探险风",
     lightType: "强烈日光 + 硬阴影",
     colorTemp: "5500-6500K（日光）",
     materialKeywords: "岩石、泥土、帐篷面料、登山绳",
@@ -71,7 +71,7 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     aiKeywords: "outdoor adventure, rugged terrain, harsh natural light, action shot, durable equipment, wilderness backdrop"
   },
   {
-    name: "母婴柔和安全风",
+    name: "母婴柔和风",
     lightType: "超柔散射光 + 无阴影",
     colorTemp: "4000-5000K（柔和暖白）",
     materialKeywords: "纯棉、硅胶、圆角、马卡龙色",
@@ -80,7 +80,7 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     aiKeywords: "baby safe aesthetic, pastel colors, soft rounded shapes, gentle lighting, cotton textures, nurturing mood"
   },
   {
-    name: "轻奢精致风",
+    name: "轻奢高端风",
     lightType: "聚光灯 + 反射面营造光泽",
     colorTemp: "4000-5000K + 金色反射",
     materialKeywords: "大理石、黄铜、丝绒、水晶",
@@ -89,7 +89,7 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     aiKeywords: "luxury premium aesthetic, marble and brass, velvet textures, golden accents, sophisticated composition"
   },
   {
-    name: "国潮新中式风",
+    name: "国潮新中式",
     lightType: "侧光 + 局部聚光",
     colorTemp: "4000-5000K（暖中性）",
     materialKeywords: "宣纸、竹、漆器、祥云纹、水墨",
@@ -98,7 +98,7 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     aiKeywords: "chinese modern style, ink wash painting elements, bamboo and lacquer, traditional patterns, cultural fusion"
   },
   {
-    name: "ins网红生活方式风",
+    name: "ins网红风",
     lightType: "golden hour自然光 + 柔焦",
     colorTemp: "4500-5500K（自然偏暖）",
     materialKeywords: "绿植、咖啡、书籍、针织毯",
@@ -107,7 +107,7 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     aiKeywords: "instagram lifestyle, golden hour light, flat lay composition, aesthetic arrangement, natural props, bokeh"
   },
   {
-    name: "工业极简写实风",
+    name: "工业硬核风",
     lightType: "硬光侧光 + 强对比",
     colorTemp: "5500-7000K（冷白偏蓝）",
     materialKeywords: "水泥、铁件、裸砖、黑色哑光",
@@ -116,7 +116,7 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     aiKeywords: "industrial minimalist, concrete and steel, harsh directional light, high contrast, raw materials, utilitarian"
   },
   {
-    name: "清新自然有机风",
+    name: "田园自然风",
     lightType: "自然散射光 + 绿色反射",
     colorTemp: "5000-5500K（自然白）",
     materialKeywords: "牛皮纸、干花、棉布、木托盘",
@@ -125,13 +125,13 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     aiKeywords: "organic natural style, botanical elements, kraft paper, dried flowers, earth tones, sustainable aesthetic"
   },
   {
-    name: "高端商务专业风",
-    lightType: "三点布光（主光+辅光+轮廓光）",
-    colorTemp: "5000-5500K（标准白）",
-    materialKeywords: "皮革、钢笔、深色木桌、玻璃",
-    tabooElements: "卡通元素、鲜艳色彩、休闲场景",
-    refBrands: "ThinkPad、Montblanc、Herman Miller",
-    aiKeywords: "professional business style, three-point lighting, leather and glass, corporate aesthetic, clean sharp focus"
+    name: "暗黑酷炫风",
+    lightType: "单点硬光 + 大面积暗部",
+    colorTemp: "6000-8000K（冷调）",
+    materialKeywords: "黑色哑光、金属、烟雾、激光",
+    tabooElements: "明亮色彩、可爱元素、自然场景",
+    refBrands: "GoPro、DJI、Alienware",
+    aiKeywords: "dark moody aesthetic, dramatic single light source, smoke effects, metallic highlights, mysterious atmosphere"
   }
 ] as const;
 

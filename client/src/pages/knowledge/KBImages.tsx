@@ -103,6 +103,7 @@ export default function KBImages() {
   const [filterTypeMain, setFilterTypeMain] = useState("all");
   const [filterTypeSub, setFilterTypeSub] = useState("all");
   const [filterSellingPoint, setFilterSellingPoint] = useState("all");
+  const [filterSellingPointDetail, setFilterSellingPointDetail] = useState("all");
   const [filterComposition, setFilterComposition] = useState("all");
   const [filterColorV2, setFilterColorV2] = useState("all");
   const [filterStyleV2, setFilterStyleV2] = useState("all");
@@ -126,6 +127,7 @@ export default function KBImages() {
     tagImageTypeMain: (useV2Filters && filterTypeMain !== "all") ? filterTypeMain : undefined,
     tagImageTypeSub: (useV2Filters && filterTypeSub !== "all") ? filterTypeSub : undefined,
     tagSellingPointCategory: (useV2Filters && filterSellingPoint !== "all") ? filterSellingPoint : undefined,
+    tagSellingPointDetail: (useV2Filters && filterSellingPointDetail !== "all") ? filterSellingPointDetail : undefined,
     tagComposition: (useV2Filters && filterComposition !== "all") ? filterComposition : undefined,
     tagColorSchemeV2: (useV2Filters && filterColorV2 !== "all") ? filterColorV2 : undefined,
     tagDesignStyleV2: (useV2Filters && filterStyleV2 !== "all") ? filterStyleV2 : undefined,
@@ -230,11 +232,15 @@ export default function KBImages() {
     return (sets as any[]).filter((s: any) => {
       // Filter by setCategory (set-level)
       if (filterCategory !== "all" && s.setCategory !== filterCategory) return false;
+      // Filter by setPrimaryColor (set-level)
+      if (filterColorV2 !== "all" && s.setPrimaryColor !== filterColorV2) return false;
+      // Filter by setStyle (set-level)
+      if (filterStyleV2 !== "all" && s.setStyle !== filterStyleV2) return false;
       if (!searchQuery) return true;
       const q = searchQuery.toLowerCase();
       return (s.asin || "").toLowerCase().includes(q) || (s.productTitle || "").toLowerCase().includes(q) || (s.brand || "").toLowerCase().includes(q);
     });
-  }, [sets, searchQuery, filterCategory]);
+  }, [sets, searchQuery, filterCategory, filterColorV2, filterStyleV2]);
 
   // Filter images for waterfall/grid view
   const filteredImages = useMemo(() => {
@@ -285,6 +291,34 @@ export default function KBImages() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="搜索ASIN、产品名、品牌..." className="pl-9" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
+        {viewMode === "asin" && (
+          <div className="flex flex-wrap gap-2">
+            {/* 类目 */}
+            <Select value={filterCategory} onValueChange={setFilterCategory}>
+              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="类目" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部类目</SelectItem>
+                {CATEGORY_OPTIONS_V2.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {/* 主颜色 */}
+            <Select value={filterColorV2} onValueChange={setFilterColorV2}>
+              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="主颜色" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部颜色</SelectItem>
+                {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {/* 风格 */}
+            <Select value={filterStyleV2} onValueChange={setFilterStyleV2}>
+              <SelectTrigger className="w-[120px] h-8 text-xs"><SelectValue placeholder="设计风格" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部风格</SelectItem>
+                {STYLE_NAME_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         {viewMode !== "asin" && (
           <div className="flex flex-wrap gap-2 w-full">
             {/* 图片归属 */}
@@ -320,14 +354,23 @@ export default function KBImages() {
                 </SelectContent>
               </Select>
             )}
-            {/* 卖点分类 */}
-            <Select value={filterSellingPoint} onValueChange={setFilterSellingPoint}>
-              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="卖点" /></SelectTrigger>
+            {/* 卖点分类 - 二级联动 */}
+            <Select value={filterSellingPoint} onValueChange={(v) => { setFilterSellingPoint(v); setFilterSellingPointDetail("all"); }}>
+              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="卖点大类" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部卖点</SelectItem>
                 {SELLING_POINT_MAIN_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
+            {filterSellingPoint !== "all" && SELLING_POINT_HIERARCHY[filterSellingPoint] && (
+              <Select value={filterSellingPointDetail} onValueChange={setFilterSellingPointDetail}>
+                <SelectTrigger className="w-[130px] h-8 text-xs"><SelectValue placeholder="卖点子类" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部子类</SelectItem>
+                  {SELLING_POINT_HIERARCHY[filterSellingPoint].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
             {/* 构图 */}
             <Select value={filterComposition} onValueChange={setFilterComposition}>
               <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="构图" /></SelectTrigger>
@@ -336,12 +379,12 @@ export default function KBImages() {
                 {COMPOSITION_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
-            {/* 配色 */}
+            {/* 主颜色 */}
             <Select value={filterColorV2} onValueChange={setFilterColorV2}>
-              <SelectTrigger className="w-[110px] h-8 text-xs"><SelectValue placeholder="配色" /></SelectTrigger>
+              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="主颜色" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">全部配色</SelectItem>
-                {COLOR_SCHEME_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                <SelectItem value="all">全部颜色</SelectItem>
+                {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
             {/* 风格 */}
@@ -1138,11 +1181,11 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
               </Select>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">配色方案</Label>
+              <Label className="text-xs text-muted-foreground">主颜色</Label>
               <Select value={img.tagColorSchemeV2 || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagColorSchemeV2: v })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择配色" /></SelectTrigger>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择颜色" /></SelectTrigger>
                 <SelectContent>
-                  {COLOR_SCHEME_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
