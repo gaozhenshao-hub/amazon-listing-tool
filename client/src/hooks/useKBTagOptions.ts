@@ -5,7 +5,7 @@ import { trpc } from "@/lib/trpc";
  * Hook that fetches KB image tag options from the database (kbTags Router)
  * and provides them in the same format as the old hardcoded constants.
  * Falls back to hardcoded defaults if no database tags are available.
- * Also provides count maps (value → usageCount) for displaying counts in filter dropdowns.
+ * Also provides live count maps (dimension:value → count) from actual image data.
  */
 
 // Hardcoded fallbacks (used when DB has no tags yet)
@@ -41,7 +41,7 @@ export interface TagOptions {
   imageTypeMainOptions: string[];
   sellingPointHierarchy: Record<string, string[]>;
   sellingPointMainOptions: string[];
-  // Count maps: value → usage count (for displaying "(N)" suffix in filter dropdowns)
+  // Live count map: "dimension:value" → count (from actual image/set data)
   countMap: Record<string, number>;
   isLoading: boolean;
   isFromDb: boolean;
@@ -51,7 +51,7 @@ export function useKBTagOptions(): TagOptions {
   // Fetch all dimensions in parallel
   const { data: categoryTags, isLoading: catLoading } = trpc.kbTags.listAllForDimension.useQuery(
     { dimension: "category" },
-    { staleTime: 5 * 60 * 1000 } // Cache for 5 minutes
+    { staleTime: 5 * 60 * 1000 }
   );
   const { data: colorTags, isLoading: colorLoading } = trpc.kbTags.listAllForDimension.useQuery(
     { dimension: "color" },
@@ -77,6 +77,11 @@ export function useKBTagOptions(): TagOptions {
     { dimension: "sellingPoint" },
     { staleTime: 5 * 60 * 1000 }
   );
+
+  // Fetch LIVE tag counts from actual image/set data (not cached usageCount)
+  const { data: liveCounts } = trpc.kbTags.getTagCountsLive.useQuery(undefined, {
+    staleTime: 2 * 60 * 1000, // Refresh every 2 minutes
+  });
 
   const isLoading = catLoading || colorLoading || belongLoading || compLoading || styleLoading || typeLoading || spLoading;
 
@@ -114,7 +119,6 @@ export function useKBTagOptions(): TagOptions {
         imageTypeMainOptions: Object.keys(FALLBACK_IMAGE_TYPE_HIERARCHY),
       };
     }
-    // Parents have no parentValue, children have parentValue
     const parents = imageTypeTags.filter(t => !t.parentValue);
     const hierarchy: Record<string, string[]> = {};
     parents.forEach(p => {
@@ -149,26 +153,10 @@ export function useKBTagOptions(): TagOptions {
     };
   }, [sellingPointTags]);
 
-  // Build a unified count map: value → usageCount (from all dimensions)
+  // Use live counts directly from the API (real-time from kb_images/kb_image_sets)
   const countMap = useMemo(() => {
-    const map: Record<string, number> = {};
-    const allTags = [
-      ...(categoryTags || []),
-      ...(colorTags || []),
-      ...(imageBelongTags || []),
-      ...(compositionTags || []),
-      ...(styleTags || []),
-      ...(imageTypeTags || []),
-      ...(sellingPointTags || []),
-    ];
-    for (const tag of allTags) {
-      // Use dimension:value as key to avoid conflicts between dimensions
-      map[`${tag.dimension}:${tag.value}`] = tag.usageCount || 0;
-      // Also store plain value for simpler lookups (last write wins if same value in different dimensions)
-      map[tag.value] = (map[tag.value] || 0) + (tag.usageCount || 0);
-    }
-    return map;
-  }, [categoryTags, colorTags, imageBelongTags, compositionTags, styleTags, imageTypeTags, sellingPointTags]);
+    return liveCounts || {};
+  }, [liveCounts]);
 
   // Determine if data is from DB (at least one dimension has DB tags)
   const isFromDb = !!(

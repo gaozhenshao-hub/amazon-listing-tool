@@ -271,6 +271,107 @@ export const kbTagsRouter = router({
     return stats;
   }),
 
+  // Get live tag counts from actual image/set data (for filter dropdown suffixes)
+  getTagCountsLive: protectedProcedure.query(async () => {
+    const d = await db();
+    const counts: Record<string, number> = {};
+
+    // Style counts (set-level: setStyle)
+    const styleCounts = await d.select({
+      value: kbImageSets.setStyle,
+      count: sql<number>`COUNT(*)`
+    }).from(kbImageSets)
+      .where(sql`${kbImageSets.setStyle} IS NOT NULL AND ${kbImageSets.setStyle} != ''`)
+      .groupBy(kbImageSets.setStyle);
+    for (const r of styleCounts) if (r.value) counts[`style:${r.value}`] = r.count;
+
+    // Category counts (set-level: setCategory)
+    const catCounts = await d.select({
+      value: kbImageSets.setCategory,
+      count: sql<number>`COUNT(*)`
+    }).from(kbImageSets)
+      .where(sql`${kbImageSets.setCategory} IS NOT NULL AND ${kbImageSets.setCategory} != ''`)
+      .groupBy(kbImageSets.setCategory);
+    for (const r of catCounts) if (r.value) counts[`category:${r.value}`] = r.count;
+
+    // Primary Color counts (set-level: setPrimaryColor)
+    const colorCounts = await d.select({
+      value: kbImageSets.setPrimaryColor,
+      count: sql<number>`COUNT(*)`
+    }).from(kbImageSets)
+      .where(sql`${kbImageSets.setPrimaryColor} IS NOT NULL AND ${kbImageSets.setPrimaryColor} != ''`)
+      .groupBy(kbImageSets.setPrimaryColor);
+    for (const r of colorCounts) if (r.value) counts[`color:${r.value}`] = r.count;
+
+    // Accent Color counts (set-level: setAccentColor)
+    const accentCounts = await d.select({
+      value: kbImageSets.setAccentColor,
+      count: sql<number>`COUNT(*)`
+    }).from(kbImageSets)
+      .where(sql`${kbImageSets.setAccentColor} IS NOT NULL AND ${kbImageSets.setAccentColor} != ''`)
+      .groupBy(kbImageSets.setAccentColor);
+    for (const r of accentCounts) if (r.value) counts[`accentColor:${r.value}`] = r.count;
+
+    // Image Belong counts (image-level: tagImageBelong)
+    const belongCounts = await d.select({
+      value: kbImages.tagImageBelong,
+      count: sql<number>`COUNT(*)`
+    }).from(kbImages)
+      .where(sql`${kbImages.tagImageBelong} IS NOT NULL AND ${kbImages.tagImageBelong} != ''`)
+      .groupBy(kbImages.tagImageBelong);
+    for (const r of belongCounts) if (r.value) counts[`imageBelong:${r.value}`] = r.count;
+
+    // Image Type Main counts (image-level)
+    const typeCounts = await d.select({
+      value: kbImages.tagImageTypeMain,
+      count: sql<number>`COUNT(*)`
+    }).from(kbImages)
+      .where(sql`${kbImages.tagImageTypeMain} IS NOT NULL AND ${kbImages.tagImageTypeMain} != ''`)
+      .groupBy(kbImages.tagImageTypeMain);
+    for (const r of typeCounts) if (r.value) counts[`imageType:${r.value}`] = r.count;
+
+    // Image Type Sub counts (image-level)
+    const typeSubCounts = await d.select({
+      value: kbImages.tagImageTypeSub,
+      count: sql<number>`COUNT(*)`
+    }).from(kbImages)
+      .where(sql`${kbImages.tagImageTypeSub} IS NOT NULL AND ${kbImages.tagImageTypeSub} != ''`)
+      .groupBy(kbImages.tagImageTypeSub);
+    for (const r of typeSubCounts) if (r.value) counts[`imageType:${r.value}`] = r.count;
+
+    // Selling Point Category counts (image-level)
+    const spCounts = await d.select({
+      value: kbImages.tagSellingPointCategory,
+      count: sql<number>`COUNT(*)`
+    }).from(kbImages)
+      .where(sql`${kbImages.tagSellingPointCategory} IS NOT NULL AND ${kbImages.tagSellingPointCategory} != ''`)
+      .groupBy(kbImages.tagSellingPointCategory);
+    for (const r of spCounts) if (r.value) counts[`sellingPoint:${r.value}`] = r.count;
+
+    // Composition counts (image-level)
+    const compCounts = await d.select({
+      value: kbImages.tagComposition,
+      count: sql<number>`COUNT(*)`
+    }).from(kbImages)
+      .where(sql`${kbImages.tagComposition} IS NOT NULL AND ${kbImages.tagComposition} != ''`)
+      .groupBy(kbImages.tagComposition);
+    for (const r of compCounts) if (r.value) counts[`composition:${r.value}`] = r.count;
+
+    // Design Style V2 counts (image-level, for individual images)
+    const imgStyleCounts = await d.select({
+      value: kbImages.tagDesignStyleV2,
+      count: sql<number>`COUNT(*)`
+    }).from(kbImages)
+      .where(sql`${kbImages.tagDesignStyleV2} IS NOT NULL AND ${kbImages.tagDesignStyleV2} != ''`)
+      .groupBy(kbImages.tagDesignStyleV2);
+    for (const r of imgStyleCounts) if (r.value) {
+      // Merge with set-level style counts
+      counts[`style:${r.value}`] = (counts[`style:${r.value}`] || 0) + r.count;
+    }
+
+    return counts;
+  }),
+
   // Initialize system tags from constants (admin only)
   initSystemTags: adminProcedure
     .mutation(async ({ ctx }) => {
