@@ -164,8 +164,8 @@ describe("kbTags Router", () => {
       expect(typeof result.inserted).toBe("number");
     });
 
-    it("should be idempotent (running twice should not duplicate)", async () => {
-      // Run init twice
+    it("should be idempotent (running twice should not duplicate)", { timeout: 15000 }, async () => {
+      // Run init twice (more tags now with A+ modules, needs longer timeout)
       await caller.kbTags.initSystemTags();
       const result2 = await caller.kbTags.initSystemTags();
       // Second run should insert 0 (all already exist)

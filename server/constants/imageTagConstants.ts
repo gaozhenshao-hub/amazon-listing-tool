@@ -152,6 +152,7 @@ export const IMAGE_TYPE_HIERARCHY = {
   "特效": ["透视", "局部提亮", "原理结构"],
   "必要": ["参数", "尺寸", "适配性", "全家福", "步骤图", "使用说明", "标注（爆炸图）"],
   "品牌": ["A+首图", "品牌故事", "买家秀", "证书-质保", "logo设计"],
+  "A+模块": ["图片轮播", "对比表格", "全宽图", "图文叠加", "四图文", "三图文", "热点交互", "视频模块", "导航轮播", "单图侧文", "技术参数表", "品牌故事卡"],
 } as const;
 
 export const IMAGE_TYPE_MAIN_OPTIONS = Object.keys(IMAGE_TYPE_HIERARCHY) as Array<keyof typeof IMAGE_TYPE_HIERARCHY>;
