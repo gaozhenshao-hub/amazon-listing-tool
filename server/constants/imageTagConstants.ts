@@ -138,10 +138,17 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
 // 风格名称列表（用于下拉选项）
 export const STYLE_NAME_OPTIONS = IMAGE_STYLES.map(s => s.name);
 
-// ============ 图片归属 ============
+// ============ 图片归属（二级分类） ============
 
-export const IMAGE_BELONG_OPTIONS = ["主图", "套图", "A+", "品牌故事"] as const;
-export type ImageBelong = typeof IMAGE_BELONG_OPTIONS[number];
+export const IMAGE_BELONG_HIERARCHY = {
+  "主图": [] as string[],
+  "套图": [] as string[],
+  "A+": ["图片轮播", "对比表格", "全宽图", "图文叠加", "四图文", "三图文", "热点交互", "视频模块", "导航轮播", "单图侧文", "技术参数表", "品牌故事卡"],
+  "品牌故事": [] as string[],
+} as const;
+
+export const IMAGE_BELONG_OPTIONS = Object.keys(IMAGE_BELONG_HIERARCHY) as Array<keyof typeof IMAGE_BELONG_HIERARCHY>;
+export type ImageBelong = keyof typeof IMAGE_BELONG_HIERARCHY;
 
 // ============ 图片类型（二级分类） ============
 
@@ -152,7 +159,6 @@ export const IMAGE_TYPE_HIERARCHY = {
   "特效": ["透视", "局部提亮", "原理结构"],
   "必要": ["参数", "尺寸", "适配性", "全家福", "步骤图", "使用说明", "标注（爆炸图）"],
   "品牌": ["A+首图", "品牌故事", "买家秀", "证书-质保", "logo设计"],
-  "A+模块": ["图片轮播", "对比表格", "全宽图", "图文叠加", "四图文", "三图文", "热点交互", "视频模块", "导航轮播", "单图侧文", "技术参数表", "品牌故事卡"],
 } as const;
 
 export const IMAGE_TYPE_MAIN_OPTIONS = Object.keys(IMAGE_TYPE_HIERARCHY) as Array<keyof typeof IMAGE_TYPE_HIERARCHY>;

@@ -13,11 +13,19 @@ describe("imageTagConstants exports", () => {
     expect(mod.IMAGE_STYLES.length).toBe(13);
   });
 
-  it("should export IMAGE_TYPE_MAIN_OPTIONS with 7 main types", async () => {
+  it("should export IMAGE_TYPE_MAIN_OPTIONS with 6 main types", async () => {
     const mod = await import("./constants/imageTagConstants");
     expect(mod.IMAGE_TYPE_MAIN_OPTIONS).toBeDefined();
     expect(Array.isArray(mod.IMAGE_TYPE_MAIN_OPTIONS)).toBe(true);
-    expect(mod.IMAGE_TYPE_MAIN_OPTIONS.length).toBe(7);
+    expect(mod.IMAGE_TYPE_MAIN_OPTIONS.length).toBe(6);
+  });
+
+  it("should export IMAGE_BELONG_HIERARCHY with A+ sub-modules", async () => {
+    const mod = await import("./constants/imageTagConstants");
+    expect(mod.IMAGE_BELONG_HIERARCHY).toBeDefined();
+    expect(mod.IMAGE_BELONG_HIERARCHY["A+"].length).toBe(12);
+    expect(mod.IMAGE_BELONG_HIERARCHY["A+"]).toContain("图片轮播");
+    expect(mod.IMAGE_BELONG_HIERARCHY["A+"]).toContain("品牌故事卡");
   });
 
   it("should export IMAGE_TYPE_HIERARCHY with correct structure", async () => {

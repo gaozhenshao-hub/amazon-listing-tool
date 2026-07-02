@@ -154,7 +154,7 @@ export async function reorderImages(imageOrders: { id: number; positionIndex: nu
     await _d.update(kbImages).set({ positionIndex: item.positionIndex }).where(eq(kbImages.id, item.id));
   }
 }
-export async function listAllImages(userId: number, scope: Scope = "mine", filters?: { tagCategory?: string; tagColorScheme?: string; tagImageType?: string; tagDesignStyle?: string; imagePosition?: string; tagImageBelong?: string; tagImageTypeMain?: string; tagImageTypeSub?: string; tagSellingPointCategory?: string; tagSellingPointDetail?: string; tagComposition?: string; tagColorSchemeV2?: string; tagDesignStyleV2?: string }) {
+export async function listAllImages(userId: number, scope: Scope = "mine", filters?: { tagCategory?: string; tagColorScheme?: string; tagImageType?: string; tagDesignStyle?: string; imagePosition?: string; tagImageBelong?: string; tagImageBelongSub?: string; tagImageTypeMain?: string; tagImageTypeSub?: string; tagSellingPointCategory?: string; tagSellingPointDetail?: string; tagComposition?: string; tagColorSchemeV2?: string; tagDesignStyleV2?: string }) {
   const _d = await db();
   const conditions: any[] = [];
   if (scope === "mine") {
@@ -173,6 +173,7 @@ export async function listAllImages(userId: number, scope: Scope = "mine", filte
   if (filters?.imagePosition) conditions.push(eq(kbImages.imagePosition, filters.imagePosition as any));
   // V2 filters
   if (filters?.tagImageBelong) conditions.push(eq(kbImages.tagImageBelong, filters.tagImageBelong));
+  if (filters?.tagImageBelongSub) conditions.push(eq(kbImages.tagImageBelongSub, filters.tagImageBelongSub));
   if (filters?.tagImageTypeMain) conditions.push(eq(kbImages.tagImageTypeMain, filters.tagImageTypeMain));
   if (filters?.tagImageTypeSub) conditions.push(eq(kbImages.tagImageTypeSub, filters.tagImageTypeSub));
   if (filters?.tagSellingPointCategory) conditions.push(eq(kbImages.tagSellingPointCategory, filters.tagSellingPointCategory));

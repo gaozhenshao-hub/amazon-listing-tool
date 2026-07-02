@@ -599,6 +599,7 @@ export const kbImages = mysqlTable("kb_images", {
   tagDesignStyle: varchar("tagDesignStyle", { length: 64 }),
   // New 7-dimension tags (v2)
   tagImageBelong: varchar("tagImageBelong", { length: 20 }), // 图片归属：主图/套图/A+/品牌故事
+  tagImageBelongSub: varchar("tagImageBelongSub", { length: 30 }), // A+子模块类型（图片轮播/对比表格/全宽图等）
   tagImageTypeMain: varchar("tagImageTypeMain", { length: 20 }), // 图片类型大类：对比/细节/场景/特效/必要/品牌
   tagImageTypeSub: varchar("tagImageTypeSub", { length: 30 }), // 图片类型子类型
   tagSellingPointCategory: varchar("tagSellingPointCategory", { length: 20 }), // 卖点大类：质量/功能/设计/操作/安全/附加值

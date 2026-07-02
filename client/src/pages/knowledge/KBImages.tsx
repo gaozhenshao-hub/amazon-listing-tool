@@ -31,6 +31,12 @@ type ViewMode = "asin" | "waterfall" | "grid";
 const CATEGORY_OPTIONS_V2 = ["家居","餐厨","庭院花园","房车户外","泳池","玩具","个护","大小家电","3C数码","五金工具","家电配件","母婴（儿童）","老人","运动健身","宠物","工业品","农业品","实验室品"];
 const COLOR_TAG_OPTIONS = ["红色","绿色","蓝色","黄色","橙色","紫色","金色","浅灰","深灰","浅棕","深棕","白色","黑色"];
 const IMAGE_BELONG_OPTIONS = ["主图", "套图", "A+", "品牌故事"];
+const IMAGE_BELONG_HIERARCHY: Record<string, string[]> = {
+  "主图": [],
+  "套图": [],
+  "A+": ["图片轮播", "对比表格", "全宽图", "图文叠加", "四图文", "三图文", "热点交互", "视频模块", "导航轮播", "单图侧文", "技术参数表", "品牌故事卡"],
+  "品牌故事": [],
+};
 const IMAGE_TYPE_HIERARCHY: Record<string, string[]> = {
   "对比": ["综合对比", "细节对比", "尺寸对比", "参数对比"],
   "细节": ["单一特写", "多细节", "场景加细节"],
@@ -837,12 +843,20 @@ export default function KBImages() {
                       return (
                         <div className="space-y-3">
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                            <Select value={img.tagImageBelong || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagImageBelong: v })}>
+                            <Select value={img.tagImageBelong || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagImageBelong: v, tagImageBelongSub: "" })}>
                               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="图片归属" /></SelectTrigger>
                               <SelectContent>
                                 {(dbTags.imageBelongOptions.length > 0 ? dbTags.imageBelongOptions : IMAGE_BELONG_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                               </SelectContent>
                             </Select>
+                            {img.tagImageBelong === "A+" && (
+                              <Select value={(img as any).tagImageBelongSub || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagImageBelongSub: v })}>
+                                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="A+子模块" /></SelectTrigger>
+                                <SelectContent>
+                                  {IMAGE_BELONG_HIERARCHY["A+"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            )}
                             <Select value={img.tagImageTypeMain || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagImageTypeMain: v, tagImageTypeSub: "" })}>
                               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="图片大类" /></SelectTrigger>
                               <SelectContent>
@@ -1190,7 +1204,7 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
         )}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
           <div className="flex flex-wrap gap-1">
-            {img.tagImageBelong && <Badge variant="secondary" className="text-[9px] bg-blue-500/70 text-white border-0">{img.tagImageBelong}</Badge>}
+            {img.tagImageBelong && <Badge variant="secondary" className="text-[9px] bg-blue-500/70 text-white border-0">{img.tagImageBelong}{(img as any).tagImageBelongSub ? `·${(img as any).tagImageBelongSub}` : ''}</Badge>}
             {img.tagImageTypeMain && <Badge variant="secondary" className="text-[9px] bg-purple-500/70 text-white border-0">{img.tagImageTypeMain}{img.tagImageTypeSub ? `·${img.tagImageTypeSub}` : ''}</Badge>}
             {img.tagSellingPointCategory && <Badge variant="secondary" className="text-[9px] bg-green-500/70 text-white border-0">{img.tagSellingPointCategory}</Badge>}
             {img.tagComposition && <Badge variant="secondary" className="text-[9px] bg-orange-500/70 text-white border-0">{img.tagComposition}</Badge>}
@@ -1245,12 +1259,20 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
       {isExpanded && (
         <div className="p-4 bg-card border-t space-y-3">
           <div className="grid grid-cols-2 gap-2">
-            <Select value={img.tagImageBelong || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageBelong: v })}>
+            <Select value={img.tagImageBelong || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageBelong: v, tagImageBelongSub: "" })}>
               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="图片归属" /></SelectTrigger>
               <SelectContent>
                 {(tagOptions?.imageBelongOptions || IMAGE_BELONG_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
               </SelectContent>
             </Select>
+            {img.tagImageBelong === "A+" && (
+              <Select value={(img as any).tagImageBelongSub || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageBelongSub: v })}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="A+子模块" /></SelectTrigger>
+                <SelectContent>
+                  {IMAGE_BELONG_HIERARCHY["A+"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
             <Select value={img.tagImageTypeMain || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageTypeMain: v, tagImageTypeSub: "" })}>
               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="图片大类" /></SelectTrigger>
               <SelectContent>

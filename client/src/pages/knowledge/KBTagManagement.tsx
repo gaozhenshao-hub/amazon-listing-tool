@@ -22,7 +22,7 @@ const DIMENSION_META: Record<string, { label: string; icon: string; level: strin
   imageType: { label: "图片类型", icon: "🖼️", level: "单图", hasParent: true, description: "图片大类→子类（二级联动）" },
   sellingPoint: { label: "卖点分类", icon: "💡", level: "单图", hasParent: true, description: "卖点大类→明细（二级联动）" },
   composition: { label: "构图类型", icon: "📐", level: "单图", hasParent: false, description: "图片构图方式（8种）" },
-  imageBelong: { label: "图片归属", icon: "📋", level: "单图", hasParent: false, description: "图片位置归属（主图/套图/A+/品牌故事）" },
+  imageBelong: { label: "图片归属", icon: "📋", level: "单图", hasParent: true, description: "图片位置归属（主图/套图/A+/品牌故事），A+下含12个子模块" },
 };
 
 interface StyleParams {

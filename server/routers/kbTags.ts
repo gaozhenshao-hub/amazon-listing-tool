@@ -18,7 +18,7 @@ const DIMENSIONS = [
   { key: "imageType", label: "图片类型", level: "image", hasParent: true },
   { key: "sellingPoint", label: "卖点分类", level: "image", hasParent: true },
   { key: "composition", label: "构图类型", level: "image", hasParent: false },
-  { key: "imageBelong", label: "图片归属", level: "image", hasParent: false },
+  { key: "imageBelong", label: "图片归属", level: "image", hasParent: true },
 ] as const;
 
 export const kbTagsRouter = router({
@@ -382,7 +382,7 @@ export const kbTagsRouter = router({
       const {
         CATEGORY_OPTIONS, COLOR_TAG_OPTIONS, IMAGE_STYLES,
         IMAGE_TYPE_HIERARCHY, SELLING_POINT_HIERARCHY,
-        COMPOSITION_OPTIONS, IMAGE_BELONG_OPTIONS
+        COMPOSITION_OPTIONS, IMAGE_BELONG_HIERARCHY
       } = await import("../constants/imageTagConstants");
 
       let inserted = 0;
@@ -447,9 +447,12 @@ export const kbTagsRouter = router({
       for (const comp of COMPOSITION_OPTIONS) {
         await upsertTag("composition", comp);
       }
-      // Image Belong
-      for (const belong of IMAGE_BELONG_OPTIONS) {
-        await upsertTag("imageBelong", belong);
+      // Image Belong (hierarchical - A+ has sub-modules)
+      for (const [belong, subs] of Object.entries(IMAGE_BELONG_HIERARCHY)) {
+        await upsertTag("imageBelong", belong); // parent entry
+        for (const sub of subs as string[]) {
+          await upsertTag("imageBelong", sub, belong); // child entry
+        }
       }
 
       return { inserted, message: `成功初始化 ${inserted} 个系统标签` };

@@ -7,7 +7,7 @@ import { invokeLLM } from "../_core/llm";
 import { storagePut } from "../storage";
 import axios from "axios";
 import {
-  STYLE_NAME_OPTIONS, IMAGE_BELONG_OPTIONS, IMAGE_TYPE_HIERARCHY,
+  STYLE_NAME_OPTIONS, IMAGE_BELONG_OPTIONS, IMAGE_BELONG_HIERARCHY, IMAGE_TYPE_HIERARCHY,
   IMAGE_TYPE_MAIN_OPTIONS, SELLING_POINT_HIERARCHY, SELLING_POINT_MAIN_OPTIONS,
   COLOR_SCHEME_OPTIONS, COMPOSITION_OPTIONS, CATEGORY_OPTIONS, COLOR_TAG_OPTIONS, getStyleParams
 } from "../constants/imageTagConstants";
@@ -28,7 +28,7 @@ function buildSingleImageAnalysisPrompt(): string {
 
 同时请为图片打上以下标签（必须从给定选项中选择）：
 
-【图片归属】从以下选项中选一个：${IMAGE_BELONG_OPTIONS.join("、")}
+【图片归属】从以下选项中选一个：${IMAGE_BELONG_OPTIONS.join("、")}（如果是A+内容，请进一步选择A+子模块类型：${(IMAGE_BELONG_HIERARCHY["A+"] as readonly string[]).join("、")}，填入tagImageBelongSub字段）
 【图片类型-大类】从以下选项中选一个：${IMAGE_TYPE_MAIN_OPTIONS.join("、")}
 【图片类型-子类】根据大类选择对应子类型：${imageTypeOptions}
 【卖点分类-大类】从以下选项中选一个：${SELLING_POINT_MAIN_OPTIONS.join("、")}（如果图片没有明确卖点可留空）
@@ -57,6 +57,7 @@ function buildSingleImageAnalysisPrompt(): string {
   "tagImageType": "图片类型（旧字段兼容）",
   "tagDesignStyle": "设计风格（旧字段兼容）",
   "tagImageBelong": "图片归属",
+  "tagImageBelongSub": "A+子模块类型（仅当tagImageBelong为A+时填写，否则为空字符串）",
   "tagImageTypeMain": "图片类型大类",
   "tagImageTypeSub": "图片类型子类",
   "tagSellingPointCategory": "卖点大类（可为空字符串）",
@@ -158,6 +159,7 @@ async function processImport(setId: number, asin: string, userId: number, runAna
             tagDesignStyle: parsed.tagDesignStyle || null,
             // New v2 tags
             tagImageBelong: parsed.tagImageBelong || null,
+            tagImageBelongSub: parsed.tagImageBelongSub || null,
             tagImageTypeMain: parsed.tagImageTypeMain || null,
             tagImageTypeSub: parsed.tagImageTypeSub || null,
             tagSellingPointCategory: parsed.tagSellingPointCategory || null,
@@ -321,6 +323,7 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
           tagImageType: parsed.tagImageType || null,
           tagDesignStyle: parsed.tagDesignStyle || null,
           tagImageBelong: parsed.tagImageBelong || null,
+          tagImageBelongSub: parsed.tagImageBelongSub || null,
           tagImageTypeMain: parsed.tagImageTypeMain || null,
           tagImageTypeSub: parsed.tagImageTypeSub || null,
           tagSellingPointCategory: parsed.tagSellingPointCategory || null,
@@ -442,6 +445,7 @@ export const kbImagesRouter = router({
       imagePosition: z.string().optional(),
       // V2 filters
       tagImageBelong: z.string().optional(),
+      tagImageBelongSub: z.string().optional(),
       tagImageTypeMain: z.string().optional(),
       tagImageTypeSub: z.string().optional(),
       tagSellingPointCategory: z.string().optional(),
@@ -503,6 +507,7 @@ export const kbImagesRouter = router({
       tagDesignStyle: z.string().optional(),
       // V2 new fields
       tagImageBelong: z.string().optional(),
+      tagImageBelongSub: z.string().optional(),
       tagImageTypeMain: z.string().optional(),
       tagImageTypeSub: z.string().optional(),
       tagSellingPointCategory: z.string().optional(),
