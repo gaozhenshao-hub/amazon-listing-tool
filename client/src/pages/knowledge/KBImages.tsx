@@ -517,7 +517,7 @@ export default function KBImages() {
                 <Card key={set.id} className="group cursor-pointer hover:shadow-lg transition-all overflow-hidden" onClick={() => { setDetailSetId(set.id); setEditingAnalysis(""); }}>
                   {/* Thumbnail strip - show first 4 images from the set */}
                   <div className="relative h-40 bg-muted overflow-hidden">
-                    <AsinThumbnailStrip setId={set.id} />
+                    <AsinThumbnailStrip thumbnailImages={(set as any).thumbnailImages} />
                     <div className="absolute top-2 right-2">
                       <Badge variant={status.variant} className="text-[10px] shadow-sm">{status.label}</Badge>
                     </div>
@@ -837,6 +837,8 @@ export default function KBImages() {
                     onSelectImage={setSelectedImageId}
                     selectedImageId={selectedImageId}
                     onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
+                    allowEdit={allowEdit}
+                    onReorder={allowEdit ? (imageOrders) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders }) : undefined}
                     renderTagEditor={(img) => {
                       let dimensions: any = {};
                       try { dimensions = JSON.parse(img.aiDimensionAnalysis || "{}"); } catch {}
@@ -1140,11 +1142,9 @@ export default function KBImages() {
   );
 }
 
-/** Thumbnail strip for ASIN card - loads images for the set */
-function AsinThumbnailStrip({ setId }: { setId: number }) {
-  const { data } = trpc.kbImages.getSet.useQuery({ id: setId });
-  const images = (data as any)?.images || [];
-  const displayImages = images.slice(0, 5);
+/** Thumbnail strip for ASIN card - uses pre-fetched thumbnailImages from listSets */
+function AsinThumbnailStrip({ thumbnailImages }: { thumbnailImages?: { id: number; imageUrl: string; imagePosition: string; positionIndex?: number | null }[] }) {
+  const displayImages = (thumbnailImages || []).slice(0, 5);
 
   if (displayImages.length === 0) {
     return (

@@ -96,6 +96,27 @@ export async function listImageSets(userId: number, scope: Scope = "mine") {
   const _d = await db();
   return _d.select().from(kbImageSets).where(scopeCondition(kbImageSets, userId, scope)).orderBy(desc(kbImageSets.updatedAt));
 }
+export async function listImageSetsWithThumbnails(userId: number, scope: Scope = "mine") {
+  const _d = await db();
+  const sets = await _d.select().from(kbImageSets).where(scopeCondition(kbImageSets, userId, scope)).orderBy(desc(kbImageSets.updatedAt));
+  if (sets.length === 0) return [];
+  const setIds = sets.map(s => s.id);
+  // Fetch first 5 images per set in a single query (ordered by positionIndex)
+  const allImages = await _d.select({
+    id: kbImages.id,
+    imageSetId: kbImages.imageSetId,
+    imageUrl: kbImages.imageUrl,
+    imagePosition: kbImages.imagePosition,
+    positionIndex: kbImages.positionIndex,
+  }).from(kbImages).where(inArray(kbImages.imageSetId, setIds)).orderBy(kbImages.imageSetId, kbImages.positionIndex);
+  // Group by setId and take first 5
+  const imagesBySet: Record<number, typeof allImages> = {};
+  for (const img of allImages) {
+    if (!imagesBySet[img.imageSetId]) imagesBySet[img.imageSetId] = [];
+    if (imagesBySet[img.imageSetId].length < 5) imagesBySet[img.imageSetId].push(img);
+  }
+  return sets.map(s => ({ ...s, thumbnailImages: imagesBySet[s.id] || [] }));
+}
 export async function getImageSet(id: number, userId: number) {
   const _d = await db();
   const rows = await _d.select().from(kbImageSets).where(and(eq(kbImageSets.id, id), eq(kbImageSets.userId, userId)));

@@ -420,7 +420,7 @@ export const kbImagesRouter = router({
   listSets: protectedProcedure
     .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional() }).optional())
     .query(async ({ ctx, input }) => {
-    return kbDb.listImageSets(ctx.user.id, input?.scope ?? "mine");
+    return kbDb.listImageSetsWithThumbnails(ctx.user.id, input?.scope ?? "mine");
   }),
 
   // Get image set with all images
