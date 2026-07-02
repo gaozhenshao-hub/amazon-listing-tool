@@ -64,16 +64,28 @@ export function AmazonStyleGallery({
   const currentImage = galleryImages[currentIndex];
 
   const goToPrev = useCallback(() => {
-    setCurrentIndex((prev) => (prev > 0 ? prev - 1 : galleryImages.length - 1));
-  }, [galleryImages.length]);
+    setCurrentIndex((prev) => {
+      const newIdx = prev > 0 ? prev - 1 : galleryImages.length - 1;
+      const img = galleryImages[newIdx];
+      if (img) onSelectImage(img.id);
+      return newIdx;
+    });
+  }, [galleryImages, onSelectImage]);
 
   const goToNext = useCallback(() => {
-    setCurrentIndex((prev) => (prev < galleryImages.length - 1 ? prev + 1 : 0));
-  }, [galleryImages.length]);
+    setCurrentIndex((prev) => {
+      const newIdx = prev < galleryImages.length - 1 ? prev + 1 : 0;
+      const img = galleryImages[newIdx];
+      if (img) onSelectImage(img.id);
+      return newIdx;
+    });
+  }, [galleryImages, onSelectImage]);
 
   const handleThumbnailClick = useCallback((index: number) => {
     setCurrentIndex(index);
-  }, []);
+    const img = [...mainImages, ...secondaryImages][index];
+    if (img) onSelectImage(img.id);
+  }, [mainImages, secondaryImages, onSelectImage]);
 
   return (
     <div className="space-y-6">
