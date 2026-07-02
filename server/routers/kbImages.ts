@@ -668,6 +668,7 @@ export const kbImagesRouter = router({
   createSetFromUpload: protectedProcedure
     .input(z.object({
       asin: z.string().min(1).describe("ASIN or custom identifier for the set"),
+      title: z.string().min(1).describe("Title for the image set").optional(),
       images: z.array(z.object({
         base64: z.string(),
         filename: z.string(),
@@ -677,7 +678,7 @@ export const kbImagesRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const asin = input.asin.trim().toUpperCase();
-      const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "pending_review" });
+      const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, productTitle: input.title || undefined, status: "pending_review" });
       const numericSetId = Number(setId);
       // Upload images to S3
       for (let i = 0; i < input.images.length; i++) {

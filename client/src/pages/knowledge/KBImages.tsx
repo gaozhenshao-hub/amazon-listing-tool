@@ -156,15 +156,16 @@ export default function KBImages() {
   });
   // Manual upload state
   const [manualAsin, setManualAsin] = useState("");
+  const [manualTitle, setManualTitle] = useState("");
   const [manualFiles, setManualFiles] = useState<File[]>([]);
   const [manualPosition, setManualPosition] = useState<string>("secondary");
   const [manualAutoAnalyze, setManualAutoAnalyze] = useState(true);
   const createFromUpload = trpc.kbImages.createSetFromUpload.useMutation({
-    onSuccess: (r: any) => { toast.success(`已创建图片集 ${r.asin}，共${r.imageCount}张图片`); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setShowImport(false); setManualAsin(""); setManualFiles([]); },
+    onSuccess: (r: any) => { toast.success(`已创建图片集 ${r.asin}，共${r.imageCount}张图片`); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setShowImport(false); setManualAsin(""); setManualTitle(""); setManualFiles([]); },
     onError: (e: any) => toast.error(e.message),
   });
   const handleManualUpload = async () => {
-    if (!manualAsin || manualFiles.length === 0) return;
+    if (!manualAsin || !manualTitle || manualFiles.length === 0) return;
     const images: { base64: string; filename: string; position: "main" | "secondary" | "aplus" | "brand_story" }[] = [];
     for (const file of manualFiles) {
       const reader = new FileReader();
@@ -174,7 +175,7 @@ export default function KBImages() {
       });
       images.push({ base64, filename: file.name, position: manualPosition as any });
     }
-    createFromUpload.mutate({ asin: manualAsin, images, autoAnalyze: manualAutoAnalyze });
+    createFromUpload.mutate({ asin: manualAsin, title: manualTitle, images, autoAnalyze: manualAutoAnalyze });
   };
   const submitReviewMutation = trpc.kbReview.submitForReview.useMutation({
     onSuccess: () => { toast.success("已提交审核，等待管理员审批"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listSets.invalidate(); },
@@ -659,6 +660,11 @@ export default function KBImages() {
                 <Input placeholder="B0XXXXXXXXX 或自定义名称" value={manualAsin} onChange={(e) => setManualAsin(e.target.value)} className="font-mono" />
               </div>
               <div className="space-y-2">
+                <Label>图片集标题 <span className="text-destructive">*</span></Label>
+                <Input placeholder="例如：无线电饭盒产品图片" value={manualTitle} onChange={(e) => setManualTitle(e.target.value)} />
+                {!manualTitle && <p className="text-xs text-destructive">请输入图片集标题，用于快速识别和搜索</p>}
+              </div>
+              <div className="space-y-2">
                 <Label>图片位置</Label>
                 <Select value={manualPosition} onValueChange={setManualPosition}>
                   <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
@@ -679,7 +685,7 @@ export default function KBImages() {
                 <input type="checkbox" id="autoAnalyze" checked={manualAutoAnalyze} onChange={(e) => setManualAutoAnalyze(e.target.checked)} className="rounded" />
                 <label htmlFor="autoAnalyze" className="text-sm">上传后自动进AI分析</label>
               </div>
-              <Button onClick={handleManualUpload} disabled={createFromUpload.isPending || !manualAsin || manualFiles.length === 0} className="w-full gap-2">
+              <Button onClick={handleManualUpload} disabled={createFromUpload.isPending || !manualAsin || !manualTitle || manualFiles.length === 0} className="w-full gap-2">
                 {createFromUpload.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                 <UploadCloud className="h-4 w-4" /> 上传并创建图片集
               </Button>
