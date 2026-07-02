@@ -1,7 +1,7 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, X, ZoomIn } from "lucide-react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 
 interface GalleryImage {
   id: number;
@@ -28,6 +28,7 @@ interface AmazonStyleGalleryProps {
   onSelectImage: (id: number | null) => void;
   selectedImageId: number | null;
   onDeleteImage?: (imageId: number) => void;
+  renderTagEditor?: (img: GalleryImage) => ReactNode;
 }
 
 const APLUS_MODULE_LABELS: Record<string, string> = {
@@ -55,37 +56,42 @@ export function AmazonStyleGallery({
   onSelectImage,
   selectedImageId,
   onDeleteImage,
+  renderTagEditor,
 }: AmazonStyleGalleryProps) {
   // Combine main + secondary for the gallery carousel
   const galleryImages = [...mainImages, ...secondaryImages];
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const currentImage = galleryImages[currentIndex];
 
   const goToPrev = useCallback(() => {
     setCurrentIndex((prev) => {
       const newIdx = prev > 0 ? prev - 1 : galleryImages.length - 1;
-      const img = galleryImages[newIdx];
-      if (img) onSelectImage(img.id);
       return newIdx;
     });
-  }, [galleryImages, onSelectImage]);
+  }, [galleryImages.length]);
 
   const goToNext = useCallback(() => {
     setCurrentIndex((prev) => {
       const newIdx = prev < galleryImages.length - 1 ? prev + 1 : 0;
-      const img = galleryImages[newIdx];
-      if (img) onSelectImage(img.id);
       return newIdx;
     });
-  }, [galleryImages, onSelectImage]);
+  }, [galleryImages.length]);
 
   const handleThumbnailClick = useCallback((index: number) => {
     setCurrentIndex(index);
     const img = [...mainImages, ...secondaryImages][index];
-    if (img) onSelectImage(img.id);
-  }, [mainImages, secondaryImages, onSelectImage]);
+    if (img) {
+      // Toggle: if already selected, deselect; otherwise select
+      onSelectImage(selectedImageId === img.id ? null : img.id);
+    }
+  }, [mainImages, secondaryImages, onSelectImage, selectedImageId]);
+
+  const handleMainImageClick = useCallback(() => {
+    if (currentImage) {
+      onSelectImage(selectedImageId === currentImage.id ? null : currentImage.id);
+    }
+  }, [currentImage, onSelectImage, selectedImageId]);
 
   return (
     <div className="space-y-6">
@@ -132,9 +138,11 @@ export function AmazonStyleGallery({
               {currentImage && (
                 <>
                   <div
-                    className="relative bg-gray-50 rounded-lg overflow-hidden border cursor-pointer"
+                    className={`relative bg-gray-50 rounded-lg overflow-hidden border cursor-pointer transition-all ${
+                      selectedImageId === currentImage.id ? "ring-2 ring-primary" : ""
+                    }`}
                     style={{ minHeight: "360px", maxHeight: "480px" }}
-                    onClick={() => setLightboxOpen(true)}
+                    onClick={handleMainImageClick}
                   >
                     <img
                       src={currentImage.imageUrl}
@@ -175,10 +183,10 @@ export function AmazonStyleGallery({
                         )}
                       </div>
                     </div>
-                    {/* Zoom icon */}
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <div className="bg-black/40 rounded-full p-2">
-                        <ZoomIn className="h-5 w-5 text-white" />
+                    {/* Click hint */}
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                      <div className="bg-black/40 rounded-full px-3 py-1.5">
+                        <span className="text-white text-xs">{selectedImageId === currentImage.id ? "收起面板" : "展开标签"}</span>
                       </div>
                     </div>
                   </div>
@@ -214,6 +222,13 @@ export function AmazonStyleGallery({
             </div>
           </div>
 
+          {/* Inline tag editor panel - expands below main image when selected */}
+          {selectedImageId && currentImage && selectedImageId === currentImage.id && renderTagEditor && (
+            <div className="mt-3 animate-in slide-in-from-top-2 duration-200">
+              {renderTagEditor(currentImage)}
+            </div>
+          )}
+
           {/* Mobile: Horizontal thumbnail strip */}
           <div className="flex md:hidden gap-1.5 mt-2 overflow-x-auto pb-2">
             {galleryImages.map((img, idx) => (
@@ -241,31 +256,44 @@ export function AmazonStyleGallery({
             品牌故事 <Badge variant="secondary" className="text-[10px]">{brandStoryImages.length}张</Badge>
           </h4>
           <div className="flex flex-col gap-0 rounded-lg overflow-hidden border">
-            {brandStoryImages.map((img, idx) => (
-              <div key={img.id} className="relative group/vs">
-                <img
-                  src={img.imageUrl}
-                  alt=""
-                  className="w-full object-contain bg-white"
-                  loading="lazy"
-                />
-                {onDeleteImage && (
-                  <button
-                    className="absolute top-2 right-2 z-10 bg-destructive/90 hover:bg-destructive text-white rounded-full p-1 opacity-0 group-hover/vs:opacity-100 transition-opacity shadow-sm"
-                    onClick={() => { if (confirm("确定删除这张图片？")) onDeleteImage(img.id); }}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
-                {img.aplusModuleType && img.aplusModuleType !== "unknown" && (
-                  <Badge className="absolute top-2 left-2 text-[9px] bg-amber-500/80 text-white border-0">
-                    {APLUS_MODULE_LABELS[img.aplusModuleType] || img.aplusModuleType}
-                  </Badge>
-                )}
-                {img.singleImageScore && (
-                  <Badge className="absolute bottom-2 right-2 text-[9px] bg-primary/80 border-0">
-                    {img.singleImageScore}/10
-                  </Badge>
+            {brandStoryImages.map((img) => (
+              <div key={img.id}>
+                <div
+                  className={`relative group/vs cursor-pointer transition-all ${
+                    selectedImageId === img.id ? "ring-2 ring-primary ring-inset" : ""
+                  }`}
+                  onClick={() => onSelectImage(selectedImageId === img.id ? null : img.id)}
+                >
+                  <img
+                    src={img.imageUrl}
+                    alt=""
+                    className="w-full object-contain bg-white"
+                    loading="lazy"
+                  />
+                  {onDeleteImage && (
+                    <button
+                      className="absolute top-2 right-2 z-10 bg-destructive/90 hover:bg-destructive text-white rounded-full p-1 opacity-0 group-hover/vs:opacity-100 transition-opacity shadow-sm"
+                      onClick={(e) => { e.stopPropagation(); if (confirm("确定删除这张图片？")) onDeleteImage(img.id); }}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                  {img.aplusModuleType && img.aplusModuleType !== "unknown" && (
+                    <Badge className="absolute top-2 left-2 text-[9px] bg-amber-500/80 text-white border-0">
+                      {APLUS_MODULE_LABELS[img.aplusModuleType] || img.aplusModuleType}
+                    </Badge>
+                  )}
+                  {img.singleImageScore && (
+                    <Badge className="absolute bottom-2 right-2 text-[9px] bg-primary/80 border-0">
+                      {img.singleImageScore}/10
+                    </Badge>
+                  )}
+                </div>
+                {/* Inline tag editor for brand story image */}
+                {selectedImageId === img.id && renderTagEditor && (
+                  <div className="bg-muted/30 border-t p-3 animate-in slide-in-from-top-2 duration-200">
+                    {renderTagEditor(img)}
+                  </div>
                 )}
               </div>
             ))}
@@ -281,82 +309,55 @@ export function AmazonStyleGallery({
             A+ 图片 <Badge variant="secondary" className="text-[10px]">{aplusImages.length}张</Badge>
           </h4>
           <div className="flex flex-col gap-0 rounded-lg overflow-hidden border">
-            {aplusImages.map((img, idx) => (
-              <div key={img.id} className="relative group/ap">
-                <img
-                  src={img.imageUrl}
-                  alt=""
-                  className="w-full object-contain bg-white"
-                  loading="lazy"
-                />
-                {onDeleteImage && (
-                  <button
-                    className="absolute top-2 right-2 z-10 bg-destructive/90 hover:bg-destructive text-white rounded-full p-1 opacity-0 group-hover/ap:opacity-100 transition-opacity shadow-sm"
-                    onClick={() => { if (confirm("确定删除这张图片？")) onDeleteImage(img.id); }}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                )}
-                {img.aplusModuleType && img.aplusModuleType !== "unknown" && (
-                  <Badge className={`absolute top-2 left-2 text-[9px] border-0 backdrop-blur-sm ${
-                    img.aplusModuleType === "comparison_table" ? "bg-blue-500/80 text-white" :
-                    img.aplusModuleType === "image_carousel" ? "bg-green-500/80 text-white" :
-                    img.aplusModuleType === "full_width_image" ? "bg-purple-500/80 text-white" :
-                    img.aplusModuleType === "image_text_overlay" ? "bg-orange-500/80 text-white" :
-                    img.aplusModuleType === "four_image_text" ? "bg-cyan-500/80 text-white" :
-                    img.aplusModuleType === "three_image_text" ? "bg-teal-500/80 text-white" :
-                    "bg-violet-500/80 text-white"
-                  }`}>
-                    {APLUS_MODULE_LABELS[img.aplusModuleType] || img.aplusModuleType}
-                  </Badge>
-                )}
-                {img.singleImageScore && (
-                  <Badge className="absolute bottom-2 right-2 text-[9px] bg-primary/80 border-0">
-                    {img.singleImageScore}/10
-                  </Badge>
+            {aplusImages.map((img) => (
+              <div key={img.id}>
+                <div
+                  className={`relative group/ap cursor-pointer transition-all ${
+                    selectedImageId === img.id ? "ring-2 ring-primary ring-inset" : ""
+                  }`}
+                  onClick={() => onSelectImage(selectedImageId === img.id ? null : img.id)}
+                >
+                  <img
+                    src={img.imageUrl}
+                    alt=""
+                    className="w-full object-contain bg-white"
+                    loading="lazy"
+                  />
+                  {onDeleteImage && (
+                    <button
+                      className="absolute top-2 right-2 z-10 bg-destructive/90 hover:bg-destructive text-white rounded-full p-1 opacity-0 group-hover/ap:opacity-100 transition-opacity shadow-sm"
+                      onClick={(e) => { e.stopPropagation(); if (confirm("确定删除这张图片？")) onDeleteImage(img.id); }}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                  {img.aplusModuleType && img.aplusModuleType !== "unknown" && (
+                    <Badge className={`absolute top-2 left-2 text-[9px] border-0 backdrop-blur-sm ${
+                      img.aplusModuleType === "comparison_table" ? "bg-blue-500/80 text-white" :
+                      img.aplusModuleType === "image_carousel" ? "bg-green-500/80 text-white" :
+                      img.aplusModuleType === "full_width_image" ? "bg-purple-500/80 text-white" :
+                      img.aplusModuleType === "image_text_overlay" ? "bg-orange-500/80 text-white" :
+                      img.aplusModuleType === "four_image_text" ? "bg-cyan-500/80 text-white" :
+                      img.aplusModuleType === "three_image_text" ? "bg-teal-500/80 text-white" :
+                      "bg-violet-500/80 text-white"
+                    }`}>
+                      {APLUS_MODULE_LABELS[img.aplusModuleType] || img.aplusModuleType}
+                    </Badge>
+                  )}
+                  {img.singleImageScore && (
+                    <Badge className="absolute bottom-2 right-2 text-[9px] bg-primary/80 border-0">
+                      {img.singleImageScore}/10
+                    </Badge>
+                  )}
+                </div>
+                {/* Inline tag editor for A+ image */}
+                {selectedImageId === img.id && renderTagEditor && (
+                  <div className="bg-muted/30 border-t p-3 animate-in slide-in-from-top-2 duration-200">
+                    {renderTagEditor(img)}
+                  </div>
                 )}
               </div>
             ))}
-          </div>
-        </div>
-      )}
-
-      {/* ═══ Lightbox ═══ */}
-      {lightboxOpen && currentImage && (
-        <div
-          className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center"
-          onClick={() => setLightboxOpen(false)}
-        >
-          <button
-            className="absolute top-4 right-4 text-white/80 hover:text-white z-10"
-            onClick={() => setLightboxOpen(false)}
-          >
-            <X className="h-8 w-8" />
-          </button>
-          {galleryImages.length > 1 && (
-            <>
-              <button
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2 z-10"
-                onClick={(e) => { e.stopPropagation(); goToPrev(); }}
-              >
-                <ChevronLeft className="h-8 w-8" />
-              </button>
-              <button
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2 z-10"
-                onClick={(e) => { e.stopPropagation(); goToNext(); }}
-              >
-                <ChevronRight className="h-8 w-8" />
-              </button>
-            </>
-          )}
-          <img
-            src={currentImage.imageUrl}
-            alt=""
-            className="max-w-[90vw] max-h-[90vh] object-contain"
-            onClick={(e) => e.stopPropagation()}
-          />
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/80 text-sm">
-            {currentIndex + 1} / {galleryImages.length}
           </div>
         </div>
       )}

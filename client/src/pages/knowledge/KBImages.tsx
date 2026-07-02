@@ -825,58 +825,43 @@ export default function KBImages() {
                     onSelectImage={setSelectedImageId}
                     selectedImageId={selectedImageId}
                     onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
-                                    />
-
-                  {/* ── Single Image Tag Editor (below gallery, for currently selected image) ── */}
-                  {(() => {
-                    const allImgs = [...groupedImages.main, ...groupedImages.secondary, ...groupedImages.brand_story, ...groupedImages.aplus];
-                    const selectedImg = selectedImageId ? allImgs.find((i: any) => i.id === selectedImageId) : allImgs[0];
-                    if (!selectedImg) return null;
-                    const dimensions = selectedImg.aiDimensionAnalysis ? (typeof selectedImg.aiDimensionAnalysis === 'string' ? (() => { try { return JSON.parse(selectedImg.aiDimensionAnalysis); } catch { return {}; } })() : selectedImg.aiDimensionAnalysis) : {};
-                    return (
-                      <Card className="border-blue-200/50 bg-gradient-to-br from-blue-50/20 to-slate-50/30">
-                        <CardHeader className="pb-3">
-                          <CardTitle className="text-sm flex items-center gap-2">
-                            <Tag className="h-4 w-4 text-blue-500" /> 单图标签编辑
-                            <Badge variant="secondary" className="text-[10px]">
-                              {selectedImg.imagePosition === 'main' ? '主图' : selectedImg.imagePosition === 'secondary' ? `副图#${selectedImg.positionIndex || ''}` : selectedImg.imagePosition === 'aplus' ? 'A+' : '品牌故事'}
-                            </Badge>
-                            {selectedImg.singleImageScore && <Badge className="text-[10px] bg-primary/80 border-0">{selectedImg.singleImageScore}/10</Badge>}
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
+                    renderTagEditor={(img) => {
+                      let dimensions: any = {};
+                      try { dimensions = JSON.parse(img.aiDimensionAnalysis || "{}"); } catch {}
+                      return (
+                        <div className="space-y-3">
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                            <Select value={selectedImg.tagImageBelong || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: selectedImg.id, tagImageBelong: v })}>
+                            <Select value={img.tagImageBelong || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagImageBelong: v })}>
                               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="图片归属" /></SelectTrigger>
                               <SelectContent>
                                 {(dbTags.imageBelongOptions.length > 0 ? dbTags.imageBelongOptions : IMAGE_BELONG_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                               </SelectContent>
                             </Select>
-                            <Select value={selectedImg.tagImageTypeMain || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: selectedImg.id, tagImageTypeMain: v, tagImageTypeSub: "" })}>
+                            <Select value={img.tagImageTypeMain || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagImageTypeMain: v, tagImageTypeSub: "" })}>
                               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="图片大类" /></SelectTrigger>
                               <SelectContent>
                                 {(dbTags.imageTypeMainOptions.length > 0 ? dbTags.imageTypeMainOptions : IMAGE_TYPE_MAIN_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                               </SelectContent>
                             </Select>
-                            <Select value={selectedImg.tagImageTypeSub || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: selectedImg.id, tagImageTypeSub: v })}>
+                            <Select value={img.tagImageTypeSub || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagImageTypeSub: v })}>
                               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="图片子类" /></SelectTrigger>
                               <SelectContent>
-                                {(selectedImg.tagImageTypeMain && (dbTags.imageTypeHierarchy[selectedImg.tagImageTypeMain] || IMAGE_TYPE_HIERARCHY[selectedImg.tagImageTypeMain]) ? (dbTags.imageTypeHierarchy[selectedImg.tagImageTypeMain] || IMAGE_TYPE_HIERARCHY[selectedImg.tagImageTypeMain]) : Object.values(dbTags.imageTypeHierarchy).flat().length > 0 ? Object.values(dbTags.imageTypeHierarchy).flat() : Object.values(IMAGE_TYPE_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                                {(img.tagImageTypeMain && (dbTags.imageTypeHierarchy[img.tagImageTypeMain] || IMAGE_TYPE_HIERARCHY[img.tagImageTypeMain]) ? (dbTags.imageTypeHierarchy[img.tagImageTypeMain] || IMAGE_TYPE_HIERARCHY[img.tagImageTypeMain]) : Object.values(dbTags.imageTypeHierarchy).flat().length > 0 ? Object.values(dbTags.imageTypeHierarchy).flat() : Object.values(IMAGE_TYPE_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                               </SelectContent>
                             </Select>
-                            <Select value={selectedImg.tagSellingPointCategory || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: selectedImg.id, tagSellingPointCategory: v })}>
+                            <Select value={img.tagSellingPointCategory || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagSellingPointCategory: v })}>
                               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="卖点大类" /></SelectTrigger>
                               <SelectContent>
                                 {(dbTags.sellingPointMainOptions.length > 0 ? dbTags.sellingPointMainOptions : SELLING_POINT_MAIN_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                               </SelectContent>
                             </Select>
-                            <Select value={selectedImg.tagSellingPointDetail || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: selectedImg.id, tagSellingPointDetail: v })}>
+                            <Select value={img.tagSellingPointDetail || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagSellingPointDetail: v })}>
                               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="卖点明细" /></SelectTrigger>
                               <SelectContent>
-                                {(selectedImg.tagSellingPointCategory && (dbTags.sellingPointHierarchy[selectedImg.tagSellingPointCategory] || SELLING_POINT_HIERARCHY[selectedImg.tagSellingPointCategory]) ? (dbTags.sellingPointHierarchy[selectedImg.tagSellingPointCategory] || SELLING_POINT_HIERARCHY[selectedImg.tagSellingPointCategory]) : Object.values(dbTags.sellingPointHierarchy).flat().length > 0 ? Object.values(dbTags.sellingPointHierarchy).flat() : Object.values(SELLING_POINT_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                                {(img.tagSellingPointCategory && (dbTags.sellingPointHierarchy[img.tagSellingPointCategory] || SELLING_POINT_HIERARCHY[img.tagSellingPointCategory]) ? (dbTags.sellingPointHierarchy[img.tagSellingPointCategory] || SELLING_POINT_HIERARCHY[img.tagSellingPointCategory]) : Object.values(dbTags.sellingPointHierarchy).flat().length > 0 ? Object.values(dbTags.sellingPointHierarchy).flat() : Object.values(SELLING_POINT_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                               </SelectContent>
                             </Select>
-                            <Select value={selectedImg.tagComposition || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: selectedImg.id, tagComposition: v })}>
+                            <Select value={img.tagComposition || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagComposition: v })}>
                               <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="构图类型" /></SelectTrigger>
                               <SelectContent>
                                 {(dbTags.compositionOptions.length > 0 ? dbTags.compositionOptions : COMPOSITION_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
@@ -884,15 +869,15 @@ export default function KBImages() {
                             </Select>
                           </div>
                           <ScoreSlider
-                            value={selectedImg.singleImageScore || 5}
+                            value={img.singleImageScore || 5}
                             onChange={() => {}}
-                            onSave={(val) => updateImageScoreMutation.mutate({ imageId: selectedImg.id, score: val })}
+                            onSave={(val) => updateImageScoreMutation.mutate({ imageId: img.id, score: val })}
                             min={1}
                             max={10}
                             label="单图评分"
                             disabled={updateImageScoreMutation.isPending}
                           />
-                          {selectedImg.aiDimensionAnalysis && (
+                          {img.aiDimensionAnalysis && (
                             <div className="space-y-2">
                               <h5 className="text-xs font-semibold flex items-center gap-1.5">
                                 <Sparkles className="h-3.5 w-3.5 text-purple-500" />
@@ -913,10 +898,12 @@ export default function KBImages() {
                               </div>
                             </div>
                           )}
-                        </CardContent>
-                      </Card>
-                    );
-                  })()}
+                        </div>
+                      );
+                    }}
+                  />
+
+
 
                   {/* ── Set Style Configuration (Phase 6) ── */}
                   <Card className="border-indigo-200/50 bg-gradient-to-br from-indigo-50/30 to-purple-50/20">
