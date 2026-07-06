@@ -190,6 +190,7 @@ export const listings = mysqlTable("listings", {
   id: int("id").autoincrement().primaryKey(),
   projectId: int("projectId").notNull(),
   title: text("title"),
+  itemHighlights: text("itemHighlights"), // Two-stage title: value highlights layer (≤125 chars)
   bulletPoints: text("bulletPoints"), // JSON array of 5 bullet points
   description: text("description"),
   searchTerms: text("searchTerms"), // Backend keywords
@@ -197,6 +198,7 @@ export const listings = mysqlTable("listings", {
   imageAdviceCn: text("imageAdviceCn"), // JSON: Chinese translation of image advice
   // Chinese translation fields
   titleCn: text("titleCn"),
+  itemHighlightsCn: text("itemHighlightsCn"), // Chinese translation of item highlights
   bulletPointsCn: text("bulletPointsCn"), // JSON array of 5 bullet points in Chinese
   descriptionCn: text("descriptionCn"),
   searchTermsCn: text("searchTermsCn"),
@@ -405,10 +407,12 @@ export const listingVersions = mysqlTable("listingVersions", {
   changeDescription: text("changeDescription"),
   // Snapshot of listing content at this version
   title: text("title"),
+  itemHighlights: text("itemHighlights"),
   bulletPoints: text("bulletPoints"),
   description: text("description"),
   searchTerms: text("searchTerms"),
   titleCn: text("titleCn"),
+  itemHighlightsCn: text("itemHighlightsCn"),
   bulletPointsCn: text("bulletPointsCn"),
   descriptionCn: text("descriptionCn"),
   searchTermsCn: text("searchTermsCn"),
@@ -553,6 +557,14 @@ export const kbImageSets = mysqlTable("kb_image_sets", {
   overallAnalysis: text("overallAnalysis"), // Overall visual analysis JSON
   userEditedOverallAnalysis: text("userEditedOverallAnalysis"),
   overallScore: int("overallScore"), // 1-100
+  // Set-level style (v2)
+  setStyle: varchar("setStyle", { length: 30 }), // 套图风格（13种之一）
+  setStyleParams: text("setStyleParams"), // 风格结构化参数JSON（光线/色温/材质/禁忌/参考品牌/AI关键词）
+  setPrimaryColor: varchar("setPrimaryColor", { length: 20 }), // 主颜色（13种之一）
+  setAccentColor: varchar("setAccentColor", { length: 20 }), // 提亮色（13种之一）
+  setCategory: varchar("setCategory", { length: 30 }), // 套图类目（从单图移到套图级别）
+  setTargetAudience: varchar("setTargetAudience", { length: 200 }), // 目标人群
+  setCategoryScene: varchar("setCategoryScene", { length: 200 }), // 类目场景
   status: mysqlEnum("status", ["crawling", "analyzing", "pending_review", "confirmed", "archived"]).default("crawling").notNull(),
   reviewStatus: mysqlEnum("reviewStatus", ["draft", "pending_review", "approved", "rejected"]).default("draft").notNull(),
   reviewedBy: int("reviewedBy"),
@@ -580,11 +592,21 @@ export const kbImages = mysqlTable("kb_images", {
   imageUrl: varchar("imageUrl", { length: 1024 }).notNull(), // S3 URL
   imagePosition: mysqlEnum("imagePosition", ["main", "secondary", "aplus", "brand_story"]).notNull(),
   positionIndex: int("positionIndex"), // e.g. secondary image #2
-  // Four-dimension tags
+  // Four-dimension tags (legacy)
   tagCategory: varchar("tagCategory", { length: 64 }),
   tagColorScheme: varchar("tagColorScheme", { length: 64 }),
   tagImageType: varchar("tagImageType", { length: 64 }),
   tagDesignStyle: varchar("tagDesignStyle", { length: 64 }),
+  // New 7-dimension tags (v2)
+  tagImageBelong: varchar("tagImageBelong", { length: 20 }), // 图片归属：主图/套图/A+/品牌故事
+  tagImageBelongSub: varchar("tagImageBelongSub", { length: 30 }), // A+子模块类型（图片轮播/对比表格/全宽图等）
+  tagImageTypeMain: varchar("tagImageTypeMain", { length: 20 }), // 图片类型大类：对比/细节/场景/特效/必要/品牌
+  tagImageTypeSub: varchar("tagImageTypeSub", { length: 30 }), // 图片类型子类型
+  tagSellingPointCategory: varchar("tagSellingPointCategory", { length: 20 }), // 卖点大类：质量/功能/设计/操作/安全/附加值
+  tagSellingPointDetail: varchar("tagSellingPointDetail", { length: 200 }), // 卖点标签详情（逗号分隔）
+  tagComposition: varchar("tagComposition", { length: 20 }), // 构图类型
+  tagColorSchemeV2: varchar("tagColorSchemeV2", { length: 30 }), // 新配色方案（10种）
+  tagDesignStyleV2: varchar("tagDesignStyleV2", { length: 30 }), // 新设计风格（13种）
   // AI analysis
   aiDimensionAnalysis: text("aiDimensionAnalysis"), // 12-dimension analysis JSON
   userEditedDimensionAnalysis: text("userEditedDimensionAnalysis"),
@@ -4555,3 +4577,48 @@ export const adClinicRecords = mysqlTable("ad_clinic_records", {
 });
 export type AdClinicRecord = typeof adClinicRecords.$inferSelect;
 export type InsertAdClinicRecord = typeof adClinicRecords.$inferInsert;
+
+// 买家问题库 (Buyer Questions Library) - 用于Listing文案闭环
+export const buyerQuestions = mysqlTable("buyer_questions", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("project_id").notNull(),
+  userId: int("user_id").notNull(),
+  question: text("question").notNull(), // 买家问题原文
+  questionCn: text("question_cn"), // 中文翻译
+  source: mysqlEnum("source", [
+    "ad_search_term",    // 从广告搜索词报告中提取的疑问类词
+    "sp_prompts",        // SP Prompts问题库
+    "qa_section",        // 来自QA模块的问题
+    "competitor_review", // 竞品评论中提取的问题
+    "manual",            // 手动添加
+  ]).default("manual").notNull(),
+  category: varchar("category", { length: 100 }), // 问题分类: 功能/尺寸/材质/使用场景/兼容性等
+  frequency: int("frequency").default(1), // 出现频次
+  priority: mysqlEnum("priority", ["high", "medium", "low"]).default("medium").notNull(),
+  coveredInBullet: int("covered_in_bullet").default(0), // 是否已在Bullet中覆盖 (0/1)
+  coveredInDescription: int("covered_in_description").default(0), // 是否已在Description中覆盖
+  coveredInQA: int("covered_in_qa").default(0), // 是否已在QA中覆盖
+  suggestedAnswer: text("suggested_answer"), // AI建议的回答
+  status: mysqlEnum("status", ["active", "dismissed", "covered"]).default("active").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type BuyerQuestion = typeof buyerQuestions.$inferSelect;
+export type InsertBuyerQuestion = typeof buyerQuestions.$inferInsert;
+
+// ============ 图片知识库标签定义表 ============
+export const kbTagDefinitions = mysqlTable("kb_tag_definitions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(), // 创建者
+  dimension: varchar("dimension", { length: 50 }).notNull(), // 维度名：category/color/style/imageType/sellingPoint/composition/imageBelong
+  parentValue: varchar("parentValue", { length: 100 }), // 父级值（用于二级联动，如图片类型大类→子类）
+  value: varchar("value", { length: 200 }).notNull(), // 标签值
+  sortOrder: int("sortOrder").default(0).notNull(), // 排序
+  isSystem: int("isSystem").default(0).notNull(), // 是否系统内置 (0=用户自定义, 1=系统内置)
+  metadata: text("metadata"), // 扩展数据JSON（如风格参数：lightType/colorTemp/materialKeywords等）
+  usageCount: int("usageCount").default(0).notNull(), // 使用计数（缓存）
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type KbTagDefinition = typeof kbTagDefinitions.$inferSelect;
+export type InsertKbTagDefinition = typeof kbTagDefinitions.$inferInsert;

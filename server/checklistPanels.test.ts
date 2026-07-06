@@ -164,8 +164,8 @@ describe("StepTitle 10-Dimension Checklist", () => {
       expect(componentCode).toContain('code: "T6"');
     });
 
-    it("should have T7 bundlePack dimension", () => {
-      expect(componentCode).toContain('key: "bundlePack"');
+    it("should have T7 noRepetition dimension", () => {
+      expect(componentCode).toContain('key: "noRepetition"');
       expect(componentCode).toContain('code: "T7"');
     });
 

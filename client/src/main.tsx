@@ -111,8 +111,18 @@ const trpcClient = trpc.createClient({
       transformer: superjson,
       async fetch(input, init) {
         const controller = new AbortController();
-        // 30s timeout for all requests (Cloud Run can be slow on cold start)
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        // Determine timeout based on request type
+        // AI-heavy mutations (imageWorkflow, generate, evaluate, analyze) need longer timeout
+        const inputUrl = typeof input === 'string' ? input : (input as Request).url || '';
+        const isAiMutation = inputUrl.includes('imageWorkflow') || 
+          inputUrl.includes('generate') || 
+          inputUrl.includes('evaluate') || 
+          inputUrl.includes('analyze') ||
+          inputUrl.includes('adDeep') ||
+          inputUrl.includes('runStage') ||
+          inputUrl.includes('Checklist');
+        const timeoutMs = isAiMutation ? 180000 : 30000; // 180s for AI, 30s for others
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         try {
           const res = await globalThis.fetch(input, {
             ...(init ?? {}),

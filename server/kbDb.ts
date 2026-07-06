@@ -96,6 +96,27 @@ export async function listImageSets(userId: number, scope: Scope = "mine") {
   const _d = await db();
   return _d.select().from(kbImageSets).where(scopeCondition(kbImageSets, userId, scope)).orderBy(desc(kbImageSets.updatedAt));
 }
+export async function listImageSetsWithThumbnails(userId: number, scope: Scope = "mine") {
+  const _d = await db();
+  const sets = await _d.select().from(kbImageSets).where(scopeCondition(kbImageSets, userId, scope)).orderBy(desc(kbImageSets.updatedAt));
+  if (sets.length === 0) return [];
+  const setIds = sets.map(s => s.id);
+  // Fetch first 5 images per set in a single query (ordered by positionIndex)
+  const allImages = await _d.select({
+    id: kbImages.id,
+    imageSetId: kbImages.imageSetId,
+    imageUrl: kbImages.imageUrl,
+    imagePosition: kbImages.imagePosition,
+    positionIndex: kbImages.positionIndex,
+  }).from(kbImages).where(inArray(kbImages.imageSetId, setIds)).orderBy(kbImages.imageSetId, kbImages.positionIndex);
+  // Group by setId and take first 5
+  const imagesBySet: Record<number, typeof allImages> = {};
+  for (const img of allImages) {
+    if (!imagesBySet[img.imageSetId]) imagesBySet[img.imageSetId] = [];
+    if (imagesBySet[img.imageSetId].length < 5) imagesBySet[img.imageSetId].push(img);
+  }
+  return sets.map(s => ({ ...s, thumbnailImages: imagesBySet[s.id] || [] }));
+}
 export async function getImageSet(id: number, userId: number) {
   const _d = await db();
   const rows = await _d.select().from(kbImageSets).where(and(eq(kbImageSets.id, id), eq(kbImageSets.userId, userId)));
@@ -154,7 +175,7 @@ export async function reorderImages(imageOrders: { id: number; positionIndex: nu
     await _d.update(kbImages).set({ positionIndex: item.positionIndex }).where(eq(kbImages.id, item.id));
   }
 }
-export async function listAllImages(userId: number, scope: Scope = "mine", filters?: { tagCategory?: string; tagColorScheme?: string; tagImageType?: string; tagDesignStyle?: string; imagePosition?: string }) {
+export async function listAllImages(userId: number, scope: Scope = "mine", filters?: { tagCategory?: string; tagColorScheme?: string; tagImageType?: string; tagDesignStyle?: string; imagePosition?: string; tagImageBelong?: string; tagImageBelongSub?: string; tagImageTypeMain?: string; tagImageTypeSub?: string; tagSellingPointCategory?: string; tagSellingPointDetail?: string; tagComposition?: string; tagColorSchemeV2?: string; tagDesignStyleV2?: string }) {
   const _d = await db();
   const conditions: any[] = [];
   if (scope === "mine") {
@@ -163,11 +184,30 @@ export async function listAllImages(userId: number, scope: Scope = "mine", filte
     conditions.push(sql`${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE status = 'confirmed')`);
   }
   // "all" — no filter on ownership
-  if (filters?.tagCategory) conditions.push(eq(kbImages.tagCategory, filters.tagCategory));
+  // tagCategory: check both single image AND parent set's setCategory
+  if (filters?.tagCategory) {
+    conditions.push(sql`(${kbImages.tagCategory} = ${filters.tagCategory} OR ${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE setCategory = ${filters.tagCategory}))`);
+  }
   if (filters?.tagColorScheme) conditions.push(eq(kbImages.tagColorScheme, filters.tagColorScheme));
   if (filters?.tagImageType) conditions.push(eq(kbImages.tagImageType, filters.tagImageType));
   if (filters?.tagDesignStyle) conditions.push(eq(kbImages.tagDesignStyle, filters.tagDesignStyle));
   if (filters?.imagePosition) conditions.push(eq(kbImages.imagePosition, filters.imagePosition as any));
+  // V2 filters
+  if (filters?.tagImageBelong) conditions.push(eq(kbImages.tagImageBelong, filters.tagImageBelong));
+  if (filters?.tagImageBelongSub) conditions.push(eq(kbImages.tagImageBelongSub, filters.tagImageBelongSub));
+  if (filters?.tagImageTypeMain) conditions.push(eq(kbImages.tagImageTypeMain, filters.tagImageTypeMain));
+  if (filters?.tagImageTypeSub) conditions.push(eq(kbImages.tagImageTypeSub, filters.tagImageTypeSub));
+  if (filters?.tagSellingPointCategory) conditions.push(eq(kbImages.tagSellingPointCategory, filters.tagSellingPointCategory));
+  if (filters?.tagSellingPointDetail) conditions.push(like(kbImages.tagSellingPointDetail, `%${filters.tagSellingPointDetail}%`));
+  if (filters?.tagComposition) conditions.push(eq(kbImages.tagComposition, filters.tagComposition));
+  // Set-level tag inheritance: colorSchemeV2 and designStyleV2 check both single image AND parent set
+  if (filters?.tagColorSchemeV2) {
+    conditions.push(sql`(${kbImages.tagColorSchemeV2} = ${filters.tagColorSchemeV2} OR ${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE setPrimaryColor = ${filters.tagColorSchemeV2}))`);
+  }
+  if (filters?.tagDesignStyleV2) {
+    conditions.push(sql`(${kbImages.tagDesignStyleV2} = ${filters.tagDesignStyleV2} OR ${kbImages.imageSetId} IN (SELECT id FROM kb_image_sets WHERE setStyle = ${filters.tagDesignStyleV2}))`);
+  }
+
   const where = conditions.length > 0 ? and(...conditions) : undefined;
   return _d.select().from(kbImages).where(where).orderBy(desc(kbImages.createdAt));
 }

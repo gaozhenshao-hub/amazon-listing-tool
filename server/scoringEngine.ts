@@ -98,59 +98,69 @@ function getOverallGrade(percentage: number): "A+" | "A" | "B+" | "B" | "C" | "D
 }
 
 // ─── Dimension 1: Title Optimization (25 points) ─────────────────
+// Updated for Two-Stage Title Format (July 2026 policy)
 
-function scoreTitleOptimization(title: string | null, keywords: string[]): ScoreDimension {
+function scoreTitleOptimization(title: string | null, keywords: string[], itemHighlights?: string | null): ScoreDimension {
   const details: ScoreDetail[] = [];
   let totalScore = 0;
 
   const titleText = title || "";
+  const highlightsText = itemHighlights || "";
   const titleLen = titleText.length;
+  const highlightsLen = highlightsText.length;
+  const combinedLen = titleLen + highlightsLen;
+  const combinedText = `${titleText} ${highlightsText}`;
 
-  // Rule 1: Title length 180-200 chars (8 points)
-  if (titleLen >= 180 && titleLen <= 200) {
+  // Rule 1: Two-Stage Title Length (8 points)
+  // Layer 1 (Title): ≤75 chars, Layer 2 (Item Highlights): ≤125 chars
+  const titleOk = titleLen > 0 && titleLen <= 75;
+  const highlightsOk = highlightsLen > 0 && highlightsLen <= 125;
+  const bothOk = titleOk && highlightsOk;
+
+  if (bothOk) {
     details.push({
-      rule: "Title Length (180-200 chars)",
-      ruleCn: "标题长度 (180-200字符)",
+      rule: "Two-Stage Title Length (Title ≤75 + Highlights ≤125)",
+      ruleCn: "两段式标题长度 (标题≤75 + 亮点≤125)",
       passed: true, score: 8, maxScore: 8,
-      message: `Title is ${titleLen} characters - optimal range`,
-      messageCn: `标题${titleLen}字符 - 在最佳范围内`,
+      message: `Title: ${titleLen} chars (≤75✓), Item Highlights: ${highlightsLen} chars (≤125✓), Combined: ${combinedLen}`,
+      messageCn: `标题: ${titleLen}字符 (≤75✓), 价值亮点: ${highlightsLen}字符 (≤125✓), 合计: ${combinedLen}`,
       severity: "info",
     });
     totalScore += 8;
-  } else if (titleLen >= 150 && titleLen < 180) {
+  } else if (titleLen > 0 && highlightsLen === 0) {
+    // Legacy single-title mode - partial credit based on old rules
+    const legacyOk = titleLen >= 180 && titleLen <= 200;
+    const legacyScore = legacyOk ? 5 : (titleLen >= 150 ? 3 : 1);
     details.push({
-      rule: "Title Length (180-200 chars)",
-      ruleCn: "标题长度 (180-200字符)",
-      passed: false, score: 4, maxScore: 8,
-      message: `Title is ${titleLen} characters - slightly short, aim for 180-200`,
-      messageCn: `标题${titleLen}字符 - 偏短，建议180-200字符`,
-      severity: "warning",
-    });
-    totalScore += 4;
-  } else if (titleLen > 200 && titleLen <= 250) {
-    details.push({
-      rule: "Title Length (180-200 chars)",
-      ruleCn: "标题长度 (180-200字符)",
-      passed: false, score: 3, maxScore: 8,
-      message: `Title is ${titleLen} characters - too long, may be truncated`,
-      messageCn: `标题${titleLen}字符 - 过长，可能被截断`,
-      severity: "warning",
-    });
-    totalScore += 3;
-  } else {
-    details.push({
-      rule: "Title Length (180-200 chars)",
-      ruleCn: "标题长度 (180-200字符)",
-      passed: false, score: titleLen > 0 ? 1 : 0, maxScore: 8,
-      message: titleLen === 0 ? "Title is empty" : `Title is ${titleLen} characters - far from optimal range`,
-      messageCn: titleLen === 0 ? "标题为空" : `标题${titleLen}字符 - 远离最佳范围`,
+      rule: "Two-Stage Title Length (Title ≤75 + Highlights ≤125)",
+      ruleCn: "两段式标题长度 (标题≤75 + 亮点≤125)",
+      passed: false, score: legacyScore, maxScore: 8,
+      message: `Item Highlights (Layer 2) is missing! Title: ${titleLen} chars. Amazon requires two-stage format after July 27, 2026.`,
+      messageCn: `价值亮点（第二层）缺失！标题: ${titleLen}字符。亚马逊2026年7月27日后强制要求两段式格式。`,
       severity: "critical",
     });
-    totalScore += titleLen > 0 ? 1 : 0;
+    totalScore += legacyScore;
+  } else {
+    let lenScore = 0;
+    const msgs: string[] = [];
+    if (titleLen > 75) { msgs.push(`Title ${titleLen} chars (>75)`); lenScore = 3; }
+    else if (titleLen === 0) { msgs.push("Title is empty"); }
+    else { lenScore += 2; }
+    if (highlightsLen > 125) { msgs.push(`Highlights ${highlightsLen} chars (>125)`); lenScore = Math.min(lenScore + 2, 4); }
+    else if (highlightsLen === 0) { msgs.push("Item Highlights is empty"); }
+    else { lenScore += 2; }
+    details.push({
+      rule: "Two-Stage Title Length (Title ≤75 + Highlights ≤125)",
+      ruleCn: "两段式标题长度 (标题≤75 + 亮点≤125)",
+      passed: false, score: lenScore, maxScore: 8,
+      message: msgs.join("; ") || `Title: ${titleLen}, Highlights: ${highlightsLen}`,
+      messageCn: msgs.join("; ") || `标题: ${titleLen}, 亮点: ${highlightsLen}`,
+      severity: "warning",
+    });
+    totalScore += lenScore;
   }
 
-  // Rule 2: Brand name in title (3 points)
-  const hasBrand = titleText.length > 0; // We check if title exists; brand detection is done via keyword matching
+  // Rule 2: Title Not Empty (3 points)
   details.push({
     rule: "Title Not Empty",
     ruleCn: "标题非空",
@@ -161,9 +171,9 @@ function scoreTitleOptimization(title: string | null, keywords: string[]): Score
   });
   totalScore += titleLen > 0 ? 3 : 0;
 
-  // Rule 3: No all-caps abuse (2 points)
-  const allCapsWords = titleText.split(/\s+/).filter(w => w.length > 3 && w === w.toUpperCase() && /[A-Z]/.test(w));
-  const capsRatio = titleText.split(/\s+/).length > 0 ? allCapsWords.length / titleText.split(/\s+/).length : 0;
+  // Rule 3: No all-caps abuse (2 points) - check across both layers
+  const allCapsWords = combinedText.split(/\s+/).filter(w => w.length > 3 && w === w.toUpperCase() && /[A-Z]/.test(w));
+  const capsRatio = combinedText.split(/\s+/).length > 0 ? allCapsWords.length / combinedText.split(/\s+/).length : 0;
   const capsOk = capsRatio < 0.3;
   details.push({
     rule: "No Excessive Capitalization",
@@ -176,7 +186,7 @@ function scoreTitleOptimization(title: string | null, keywords: string[]): Score
   totalScore += capsOk ? 2 : 0;
 
   // Rule 4: No special characters abuse (2 points)
-  const specialChars = (titleText.match(/[!@#$%^&*(){}[\]|\\<>~`]/g) || []).length;
+  const specialChars = (combinedText.match(/[!@#$%^&*(){}[\]|\\<>~`]/g) || []).length;
   const specialOk = specialChars <= 3;
   details.push({
     rule: "No Special Character Abuse",
@@ -188,9 +198,9 @@ function scoreTitleOptimization(title: string | null, keywords: string[]): Score
   });
   totalScore += specialOk ? 2 : 0;
 
-  // Rule 5: Keyword density in title (5 points)
-  const titleLower = titleText.toLowerCase();
-  const matchedKeywords = keywords.filter(kw => titleLower.includes(kw.toLowerCase()));
+  // Rule 5: Keyword density across both layers (5 points)
+  const combinedLower = combinedText.toLowerCase();
+  const matchedKeywords = keywords.filter(kw => combinedLower.includes(kw.toLowerCase()));
   const keywordCoverage = keywords.length > 0 ? matchedKeywords.length / Math.min(keywords.length, 10) : 0;
   let kwScore = 0;
   if (keywordCoverage >= 0.6) kwScore = 5;
@@ -198,34 +208,43 @@ function scoreTitleOptimization(title: string | null, keywords: string[]): Score
   else if (keywordCoverage >= 0.2) kwScore = 2;
   else if (keywords.length === 0) kwScore = 3; // No keywords uploaded, give partial credit
   details.push({
-    rule: "Core Keyword Coverage in Title",
-    ruleCn: "标题核心关键词覆盖",
+    rule: "Core Keyword Coverage (Both Layers)",
+    ruleCn: "核心关键词覆盖 (两层合计)",
     passed: kwScore >= 3, score: kwScore, maxScore: 5,
     message: keywords.length > 0
-      ? `${matchedKeywords.length}/${Math.min(keywords.length, 10)} core keywords found in title (${Math.round(keywordCoverage * 100)}%)`
+      ? `${matchedKeywords.length}/${Math.min(keywords.length, 10)} core keywords found across both layers (${Math.round(keywordCoverage * 100)}%)`
       : "No keyword data available - add keywords in the keyword management module for detailed analysis",
     messageCn: keywords.length > 0
-      ? `标题中包含${matchedKeywords.length}/${Math.min(keywords.length, 10)}个核心关键词 (${Math.round(keywordCoverage * 100)}%)`
+      ? `两层合计包含${matchedKeywords.length}/${Math.min(keywords.length, 10)}个核心关键词 (${Math.round(keywordCoverage * 100)}%)`
       : "无关键词数据 - 请在关键词管理模块添加关键词以获得详细分析",
     severity: kwScore >= 3 ? "info" : "warning",
   });
   totalScore += kwScore;
 
-  // Rule 6: Title structure (pipe/dash separators) (5 points)
+  // Rule 6: Title structure - two-stage separation quality (5 points)
   const hasSeparators = /[|,\-–—]/.test(titleText);
-  const wordCount = titleText.split(/\s+/).filter(Boolean).length;
-  const structureOk = hasSeparators && wordCount >= 15;
-  const structScore = structureOk ? 5 : (hasSeparators || wordCount >= 10) ? 3 : (titleLen > 0 ? 1 : 0);
+  const wordCount = combinedText.split(/\s+/).filter(Boolean).length;
+  // Check for word repetition between layers (penalty)
+  const titleWords = new Set(titleText.toLowerCase().split(/[\s,\-|]+/).filter(w => w.length > 3));
+  const highlightWords = highlightsText.toLowerCase().split(/[\s,\-|]+/).filter(w => w.length > 3);
+  const repeatedWords = highlightWords.filter(w => titleWords.has(w));
+  const noRepetition = repeatedWords.length <= 2; // Allow up to 2 common words
+  const structureOk = bothOk && noRepetition && wordCount >= 15;
+  const structScore = structureOk ? 5 : (noRepetition && wordCount >= 10) ? 3 : (titleLen > 0 ? 1 : 0);
   details.push({
-    rule: "Title Structure & Readability",
-    ruleCn: "标题结构与可读性",
+    rule: "Two-Stage Structure & No Repetition",
+    ruleCn: "两段式结构与无重复",
     passed: structScore >= 3, score: structScore, maxScore: 5,
     message: structureOk
-      ? `Well-structured title with ${wordCount} words and proper separators`
-      : `Title structure could be improved (${wordCount} words, ${hasSeparators ? "has" : "no"} separators)`,
+      ? `Well-structured two-stage title with ${wordCount} words, minimal repetition between layers`
+      : highlightsLen > 0 && repeatedWords.length > 2
+        ? `${repeatedWords.length} words repeated between Layer 1 and Layer 2 - reduce redundancy`
+        : `Title structure could be improved (${wordCount} words total)`,
     messageCn: structureOk
-      ? `标题结构良好，${wordCount}个单词，分隔符使用得当`
-      : `标题结构可改进 (${wordCount}个单词，${hasSeparators ? "有" : "无"}分隔符)`,
+      ? `两段式标题结构良好，共${wordCount}个单词，层间重复少`
+      : highlightsLen > 0 && repeatedWords.length > 2
+        ? `第一层和第二层之间有${repeatedWords.length}个重复词 - 建议减少冗余`
+        : `标题结构可改进 (共${wordCount}个单词)`,
     severity: structScore >= 3 ? "info" : "warning",
   });
   totalScore += structScore;
@@ -881,10 +900,12 @@ function generateSuggestions(dimensions: ScoreDimension[]): OptimizationSuggesti
 export function scoreListing(
   listing: {
     title: string | null;
+    itemHighlights: string | null;
     bulletPoints: string | null;
     description: string | null;
     searchTerms: string | null;
     titleCn: string | null;
+    itemHighlightsCn: string | null;
     bulletPointsCn: string | null;
     descriptionCn: string | null;
     searchTermsCn: string | null;
@@ -897,7 +918,7 @@ export function scoreListing(
   const hasImageAdvice = !!listing.imageAdvice;
 
   const dimensions: ScoreDimension[] = [
-    scoreTitleOptimization(listing.title, coreKeywords),
+    scoreTitleOptimization(listing.title, coreKeywords, listing.itemHighlights),
     scoreBulletPoints(listing.bulletPoints, coreKeywords),
     scoreDescription(listing.description, coreKeywords),
     scoreSearchTerms(listing.searchTerms, listing.title, listing.bulletPoints),

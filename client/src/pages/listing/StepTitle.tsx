@@ -20,19 +20,20 @@ import {
   ChevronUp,
   Type,
   AlertCircle,
+  Layers,
 } from "lucide-react";
 
-// ─── Title 10 Dimensions Definition ─────────────────────────────────────
+// ─── Title 10 Dimensions Definition (Updated for Two-Stage) ─────────────────
 const TITLE_CHECKLIST_DIMENSIONS = [
   { key: "readability", code: "T1", label: "可读性", labelEn: "Readability", description: "无语法错误，逻辑通顺，无关键词堆砌" },
   { key: "formatting", code: "T2", label: "格式规范", labelEn: "Formatting", description: "阿拉伯数字、Title Case大小写、拼写计量单位" },
-  { key: "characterCount", code: "T3", label: "字符数", labelEn: "Character Count", description: "180-200字符区间，充分利用长度" },
-  { key: "contentCoverage", code: "T4", label: "内容覆盖", labelEn: "Content Coverage", description: "包含核心卖点、关键特性、规格参数、使用场景、目标用户" },
-  { key: "coreKeywords", code: "T5", label: "核心关键词", labelEn: "Core Keywords", description: "包含1-2个core_main策略关键词" },
-  { key: "wordOrder", code: "T6", label: "词序策略", labelEn: "Word Order", description: "核心卖点前置，遵循title_front→mid→end布局" },
-  { key: "bundlePack", code: "T7", label: "套装/多件装", labelEn: "Bundle/Pack", description: "多件装产品是否标注数量" },
-  { key: "trafficKeywords", code: "T8", label: "流量词", labelEn: "Traffic Keywords", description: "融入高流量关键词" },
-  { key: "brand", code: "T9", label: "品牌", labelEn: "Brand", description: "品牌名是否合理放置" },
+  { key: "characterCount", code: "T3", label: "字符数", labelEn: "Character Count", description: "Layer1 ≤75字符, Layer2 ≤125字符" },
+  { key: "contentCoverage", code: "T4", label: "内容覆盖", labelEn: "Content Coverage", description: "Layer1含核心词+品牌+差异化; Layer2含规格+场景+次要词" },
+  { key: "coreKeywords", code: "T5", label: "核心关键词", labelEn: "Core Keywords", description: "Layer1包含1-2个core_main策略关键词" },
+  { key: "wordOrder", code: "T6", label: "词序策略", labelEn: "Word Order", description: "核心卖点前置于Layer1，遵循title_front→mid→end布局" },
+  { key: "noRepetition", code: "T7", label: "层间不重复", labelEn: "No Repetition", description: "Layer1和Layer2之间无重复词汇" },
+  { key: "trafficKeywords", code: "T8", label: "流量词", labelEn: "Traffic Keywords", description: "融入高流量关键词（可分布在两层）" },
+  { key: "brand", code: "T9", label: "品牌", labelEn: "Brand", description: "品牌名放置在Layer1开头" },
   { key: "seasonal", code: "T10", label: "季节性", labelEn: "Seasonal", description: "是否适当包含节日/季节性词汇" },
 ] as const;
 
@@ -41,20 +42,21 @@ interface StepTitleProps {
   emphasis: string;
   locked?: boolean;
   savedContent?: string | null;
+  savedItemHighlights?: string | null;
   onLock?: () => void;
   onUnlock?: () => void;
   onComplete: () => void;
 }
 
-function CharCountBadge({ count, min, max }: { count: number; min: number; max: number }) {
-  const inRange = count >= min && count <= max;
-  const tooShort = count < min;
+function CharCountBadge({ count, max, label }: { count: number; max: number; label?: string }) {
+  const inRange = count > 0 && count <= max;
+  const tooLong = count > max;
   return (
     <Badge
       variant={inRange ? "default" : "destructive"}
-      className={`text-xs ${inRange ? "bg-green-600" : tooShort ? "bg-amber-500" : "bg-red-500"}`}
+      className={`text-xs ${inRange ? "bg-green-600" : tooLong ? "bg-red-500" : "bg-amber-500"}`}
     >
-      {count} / {min}-{max} 字符{inRange && " ✓"}{tooShort && " ↑偏短"}{!inRange && !tooShort && " ↓偏长"}
+      {label ? `${label}: ` : ""}{count} / ≤{max} 字符{inRange && " ✓"}{tooLong && " ↓超长"}{count === 0 && " (空)"}
     </Badge>
   );
 }
@@ -66,16 +68,29 @@ const CHECK_LIST_LABELS: Record<string, string> = {
   contentCoverage: "T4 内容覆盖",
   coreKeywords: "T5 核心关键词",
   wordOrder: "T6 词序",
-  bundlePack: "T7 套装产品",
+  noRepetition: "T7 层间不重复",
   trafficKeywords: "T8 流量词",
   brand: "T9 品牌词",
   seasonal: "T10 节日",
 };
 
-export default function StepTitle({ projectId, emphasis, locked, savedContent, onLock, onUnlock, onComplete }: StepTitleProps) {
-  const [candidates, setCandidates] = useState<any[]>([]);
+interface TitleCandidate {
+  title: string;
+  itemHighlights: string;
+  characterCount?: number;
+  highlightsCount?: number;
+  coreKeywords?: string[];
+  trafficKeywords?: string[];
+  strategy?: string;
+  wordOrderStrategy?: string;
+  checkListScores?: Record<string, { pass: boolean; notes: string }>;
+}
+
+export default function StepTitle({ projectId, emphasis, locked, savedContent, savedItemHighlights, onLock, onUnlock, onComplete }: StepTitleProps) {
+  const [candidates, setCandidates] = useState<TitleCandidate[]>([]);
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
+  const [editingHighlights, setEditingHighlights] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [expandedCheckList, setExpandedCheckList] = useState<number | null>(null);
@@ -95,22 +110,27 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
   // Auto-trigger title checklist when candidates are generated
   useEffect(() => {
     if (candidates.length > 0 && selectedIdx !== null && !autoCheckTriggered.current) {
-      const title = candidates[selectedIdx]?.title;
-      if (title && !titleCheckScores) {
+      const c = candidates[selectedIdx];
+      if (c?.title && !titleCheckScores) {
         autoCheckTriggered.current = true;
-        evaluateTitleCheck.mutate({ title });
+        evaluateTitleCheck.mutate({ title: `${c.title} | ${c.itemHighlights || ""}` });
       }
     }
   }, [candidates, selectedIdx]);
 
   const handleRunTitleCheck = () => {
-    const title = isEditing ? editingTitle : (selectedIdx !== null ? candidates[selectedIdx]?.title : null);
-    if (!title) {
+    let titleForCheck: string;
+    if (isEditing) {
+      titleForCheck = `${editingTitle} | ${editingHighlights}`;
+    } else if (selectedIdx !== null) {
+      const c = candidates[selectedIdx];
+      titleForCheck = `${c.title} | ${c.itemHighlights || ""}`;
+    } else {
       toast.error("请先选择或生成标题");
       return;
     }
     setTitleCheckScores(undefined);
-    evaluateTitleCheck.mutate({ title });
+    evaluateTitleCheck.mutate({ title: titleForCheck });
   };
 
   const generateTitle = trpc.listing.generateTitle.useMutation({
@@ -128,29 +148,44 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
         } else {
           parsed = content;
         }
-        
+
         const titles = parsed.titles || parsed.candidates || [parsed];
         if (Array.isArray(titles) && titles.length > 0) {
-          setCandidates(titles);
+          const normalizedTitles: TitleCandidate[] = titles.map((t: any) => ({
+            title: t.title || t.layer1 || "",
+            itemHighlights: t.itemHighlights || t.item_highlights || t.layer2 || "",
+            characterCount: (t.title || t.layer1 || "").length,
+            highlightsCount: (t.itemHighlights || t.item_highlights || t.layer2 || "").length,
+            coreKeywords: t.coreKeywords || t.core_keywords || [],
+            trafficKeywords: t.trafficKeywords || t.traffic_keywords || [],
+            strategy: t.strategy || "",
+            wordOrderStrategy: t.wordOrderStrategy || t.word_order_strategy || "",
+            checkListScores: t.checkListScores || {},
+          }));
+          setCandidates(normalizedTitles);
           setSelectedIdx(null);
           setConfirmed(false);
           setTitleCheckScores(undefined);
           autoCheckTriggered.current = false;
-          toast.success(`已生成 ${titles.length} 个候选标题`);
+          toast.success(`已生成 ${normalizedTitles.length} 个候选标题（两段式）`);
         } else {
+          // Fallback: single title
+          const text = typeof content === "string" ? content : JSON.stringify(content);
           setCandidates([{
-            title: typeof content === "string" ? content : JSON.stringify(content),
-            characterCount: (typeof content === "string" ? content : "").length,
-            checkListScores: {},
+            title: text.slice(0, 75),
+            itemHighlights: text.slice(75) || "",
+            characterCount: Math.min(text.length, 75),
+            highlightsCount: Math.max(0, text.length - 75),
           }]);
           toast.success("标题已生成");
         }
       } catch {
         const text = typeof data.title === "string" ? data.title : JSON.stringify(data);
         setCandidates([{
-          title: text,
-          characterCount: text.length,
-          checkListScores: {},
+          title: text.slice(0, 75),
+          itemHighlights: text.slice(75) || "",
+          characterCount: Math.min(text.length, 75),
+          highlightsCount: Math.max(0, text.length - 75),
         }]);
         toast.success("标题已生成");
       }
@@ -168,6 +203,10 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
     onError: (err) => toast.error("保存失败: " + err.message),
   });
 
+  const updateItemHighlights = trpc.listing.updateByProject.useMutation({
+    onError: (err) => console.error("Failed to save itemHighlights:", err.message),
+  });
+
   const handleGenerate = () => {
     generateTitle.mutate({
       projectId,
@@ -178,6 +217,7 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
   const handleSelect = (idx: number) => {
     setSelectedIdx(idx);
     setEditingTitle(candidates[idx].title);
+    setEditingHighlights(candidates[idx].itemHighlights || "");
     setIsEditing(false);
   };
 
@@ -187,19 +227,35 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
       return;
     }
     const finalTitle = isEditing ? editingTitle : candidates[selectedIdx].title;
+    const finalHighlights = isEditing ? editingHighlights : candidates[selectedIdx].itemHighlights;
+
+    // Save title
     updateListing.mutate({
       projectId,
       field: "title",
       value: finalTitle,
     });
+
+    // Save item highlights separately
+    if (finalHighlights) {
+      updateItemHighlights.mutate({
+        projectId,
+        field: "itemHighlights",
+        value: finalHighlights,
+      });
+    }
   };
 
   const handleUnlock = () => {
-    // Auto-fill editing area with saved content on unlock
     if (savedContent) {
       setEditingTitle(savedContent);
-      // Set candidates with saved content so user can continue editing
-      setCandidates([{ title: savedContent, score: 0, analysis: "" }]);
+      setEditingHighlights(savedItemHighlights || "");
+      setCandidates([{
+        title: savedContent,
+        itemHighlights: savedItemHighlights || "",
+        characterCount: savedContent.length,
+        highlightsCount: (savedItemHighlights || "").length,
+      }]);
       setSelectedIdx(0);
     }
     setConfirmed(false);
@@ -215,12 +271,15 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
     const displayTitle = confirmed
       ? (editingTitle || candidates[selectedIdx!]?.title || "")
       : (savedContent || "");
+    const displayHighlights = confirmed
+      ? (editingHighlights || candidates[selectedIdx!]?.itemHighlights || "")
+      : (savedItemHighlights || "");
     return (
       <Card className="border-2 border-green-300 bg-green-50/30 dark:border-green-800 dark:bg-green-950/10">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Type className="h-5 w-5 text-blue-600" />
-            Step 2: 标题生成
+            Step 2: 标题生成（两段式）
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -228,12 +287,26 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
             locked={true}
             label="标题"
             onUnlock={handleUnlock}
-            info={displayTitle ? `${displayTitle.length} 字符 · 已同步到预览页` : "已同步到预览页"}
+            info={displayTitle ? `Layer1: ${displayTitle.length}字符 + Layer2: ${displayHighlights.length}字符 · 已同步到预览页` : "已同步到预览页"}
           />
           {displayTitle ? (
-            <div className="pl-2 space-y-2">
-              <p className="text-sm text-green-800 dark:text-green-300 leading-relaxed">{displayTitle}</p>
-              <CharCountBadge count={displayTitle.length} min={180} max={200} />
+            <div className="pl-2 space-y-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-[10px] border-blue-400 text-blue-700">Layer 1 - Title</Badge>
+                  <CharCountBadge count={displayTitle.length} max={75} />
+                </div>
+                <p className="text-sm text-green-800 dark:text-green-300 leading-relaxed font-medium">{displayTitle}</p>
+              </div>
+              {displayHighlights && (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-[10px] border-purple-400 text-purple-700">Layer 2 - Item Highlights</Badge>
+                    <CharCountBadge count={displayHighlights.length} max={125} />
+                  </div>
+                  <p className="text-sm text-green-700 dark:text-green-400 leading-relaxed">{displayHighlights}</p>
+                </div>
+              )}
             </div>
           ) : (
             <p className="text-sm text-muted-foreground pl-2">标题内容已锁定</p>
@@ -248,10 +321,10 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Type className="h-5 w-5 text-blue-600" />
-          Step 2: 标题生成
+          Step 2: 标题生成（两段式）
         </CardTitle>
         <CardDescription>
-          AI生成3个候选标题 → 10维度Check List自检 → 选择/编辑 → 确认
+          AI生成3个候选标题（两段式格式）→ 10维度Check List自检 → 选择/编辑 → 确认
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -266,12 +339,15 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
           />
         </div>
 
-        {/* Amazon title rules */}
-        <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50/50 border border-blue-200">
-          <AlertCircle className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
-          <p className="text-xs text-blue-700">
-            亚马逊标题规则：<strong>180-200字符</strong>，包含核心关键词、卖点、参数、场景、目标人群。品牌词前置，核心卖点词优先。
-          </p>
+        {/* Two-Stage Title Policy Notice */}
+        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50/50 border border-amber-200">
+          <Layers className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="text-xs text-amber-800 space-y-1">
+            <p className="font-semibold">亚马逊两段式标题新规（2026年7月27日强制执行）</p>
+            <p><strong>Layer 1 (Title):</strong> ≤75字符 — 品牌 + 核心关键词 + 差异化卖点</p>
+            <p><strong>Layer 2 (Item Highlights):</strong> ≤125字符 — 规格参数 + 使用场景 + 次要关键词</p>
+            <p className="text-amber-600">两层之间不可有重复词汇，合计≤200字符</p>
+          </div>
         </div>
 
         {/* Generate button */}
@@ -286,14 +362,14 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
             ) : candidates.length > 0 ? (
               <><RotateCcw className="h-4 w-4 mr-2" />重新生成标题</>
             ) : (
-              <><Sparkles className="h-4 w-4 mr-2" />AI生成候选标题</>
+              <><Sparkles className="h-4 w-4 mr-2" />AI生成候选标题（两段式）</>
             )}
           </Button>
         )}
 
         {generateTitle.isPending && (
           <p className="text-xs text-muted-foreground text-center">
-            AI正在基于4大数据源和10维度Check List生成候选标题...
+            AI正在基于4大数据源生成两段式候选标题...
           </p>
         )}
 
@@ -316,14 +392,15 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
                 onClick={() => handleSelect(idx)}
               >
                 <div className="flex items-start justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Badge variant="outline" className="text-xs">
                       方案 {idx + 1}
                     </Badge>
-                    <CharCountBadge count={c.characterCount || c.title?.length || 0} min={180} max={200} />
+                    <CharCountBadge count={c.title?.length || 0} max={75} label="L1" />
+                    <CharCountBadge count={c.itemHighlights?.length || 0} max={125} label="L2" />
                     {c.checkListScores && Object.keys(c.checkListScores).length > 0 && (
                       <Badge variant="secondary" className="text-xs">
-                        Check List: {passCount(c.checkListScores)}/{Object.keys(c.checkListScores).length} 通过
+                        Check: {passCount(c.checkListScores)}/{Object.keys(c.checkListScores).length}
                       </Badge>
                     )}
                   </div>
@@ -334,7 +411,23 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
                   )}
                 </div>
 
-                <p className="text-sm leading-relaxed">{c.title}</p>
+                {/* Layer 1 - Title */}
+                <div className="mb-2">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-700 px-1.5 py-0">Layer 1</Badge>
+                  </div>
+                  <p className="text-sm leading-relaxed font-medium">{c.title}</p>
+                </div>
+
+                {/* Layer 2 - Item Highlights */}
+                {c.itemHighlights && (
+                  <div className="mb-2">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Badge variant="outline" className="text-[10px] border-purple-300 text-purple-700 px-1.5 py-0">Layer 2</Badge>
+                    </div>
+                    <p className="text-sm leading-relaxed text-muted-foreground">{c.itemHighlights}</p>
+                  </div>
+                )}
 
                 {/* Core keywords */}
                 {c.coreKeywords && c.coreKeywords.length > 0 && (
@@ -407,12 +500,12 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
               </div>
             ))}
 
-            {/* Edit area for selected title */}
+            {/* Edit area for selected title - Two-Stage */}
             {selectedIdx !== null && (
               <div className="rounded-lg border-2 border-blue-300 p-4 bg-blue-50/30 space-y-3">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-medium text-blue-700">
-                    {isEditing ? "编辑标题" : "已选标题"}
+                    {isEditing ? "编辑标题（两段式）" : "已选标题"}
                   </h4>
                   <div className="flex gap-2">
                     {!isEditing ? (
@@ -428,21 +521,62 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
                 </div>
 
                 {isEditing ? (
-                  <div className="space-y-2">
-                    <Textarea
-                      value={editingTitle}
-                      onChange={(e) => setEditingTitle(e.target.value)}
-                      rows={3}
-                      className="text-sm resize-none"
-                    />
-                    <div className="flex items-center justify-between">
-                      <CharCountBadge count={editingTitle.length} min={180} max={200} />
+                  <div className="space-y-3">
+                    {/* Layer 1 editing */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs font-medium text-blue-700">Layer 1 - Title（品牌+核心词+差异化）</Label>
+                        <CharCountBadge count={editingTitle.length} max={75} />
+                      </div>
+                      <Textarea
+                        value={editingTitle}
+                        onChange={(e) => setEditingTitle(e.target.value)}
+                        rows={2}
+                        className="text-sm resize-none"
+                        placeholder="Brand + Core Keyword + Differentiator (≤75 chars)"
+                      />
+                    </div>
+                    {/* Layer 2 editing */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs font-medium text-purple-700">Layer 2 - Item Highlights（规格+场景+次要词）</Label>
+                        <CharCountBadge count={editingHighlights.length} max={125} />
+                      </div>
+                      <Textarea
+                        value={editingHighlights}
+                        onChange={(e) => setEditingHighlights(e.target.value)}
+                        rows={2}
+                        className="text-sm resize-none"
+                        placeholder="Specs + Use Cases + Secondary Keywords (≤125 chars)"
+                      />
+                    </div>
+                    {/* Combined count */}
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>合计: {editingTitle.length + editingHighlights.length} 字符</span>
+                      {editingTitle.length + editingHighlights.length <= 200 && editingTitle.length + editingHighlights.length > 0 && (
+                        <Badge className="bg-green-600 text-xs">合规 ✓</Badge>
+                      )}
+                      {editingTitle.length + editingHighlights.length > 200 && (
+                        <Badge className="bg-red-500 text-xs">超出200字符限制</Badge>
+                      )}
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    <p className="text-sm leading-relaxed">{candidates[selectedIdx].title}</p>
-                    <CharCountBadge count={candidates[selectedIdx].title?.length || 0} min={180} max={200} />
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[10px] border-blue-400 text-blue-700">Layer 1</Badge>
+                        <CharCountBadge count={candidates[selectedIdx].title?.length || 0} max={75} />
+                      </div>
+                      <p className="text-sm leading-relaxed font-medium">{candidates[selectedIdx].title}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[10px] border-purple-400 text-purple-700">Layer 2</Badge>
+                        <CharCountBadge count={candidates[selectedIdx].itemHighlights?.length || 0} max={125} />
+                      </div>
+                      <p className="text-sm leading-relaxed text-muted-foreground">{candidates[selectedIdx].itemHighlights}</p>
+                    </div>
                   </div>
                 )}
 
@@ -454,7 +588,7 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
                   {updateListing.isPending ? (
                     <><Loader2 className="h-4 w-4 mr-2 animate-spin" />保存中...</>
                   ) : (
-                    <><Check className="h-4 w-4 mr-2" />确认并锁定标题</>
+                    <><Check className="h-4 w-4 mr-2" />确认并锁定标题（两段式）</>
                   )}
                 </Button>
               </div>
@@ -465,7 +599,7 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
               <ChecklistPanel
                 dimensions={TITLE_CHECKLIST_DIMENSIONS}
                 checkListScores={titleCheckScores}
-                panelTitle="标题 - 10维度质量自检"
+                panelTitle="标题 - 10维度质量自检（两段式）"
                 checkLabel="10维度自检"
                 onRunCheck={handleRunTitleCheck}
                 isRunningCheck={evaluateTitleCheck.isPending}
@@ -479,9 +613,18 @@ export default function StepTitle({ projectId, emphasis, locked, savedContent, o
           <div className="p-4 rounded-lg border-2 border-green-300 bg-green-50/50">
             <div className="flex items-center gap-2 mb-2">
               <CheckCircle2 className="h-5 w-5 text-green-600" />
-              <span className="text-sm font-semibold text-green-800">标题已确认</span>
+              <span className="text-sm font-semibold text-green-800">标题已确认（两段式）</span>
             </div>
-            <p className="text-sm text-green-700">{editingTitle || candidates[selectedIdx!]?.title}</p>
+            <div className="space-y-2">
+              <div>
+                <Badge variant="outline" className="text-[10px] border-blue-400 text-blue-700 mb-1">Layer 1</Badge>
+                <p className="text-sm text-green-700">{editingTitle || candidates[selectedIdx!]?.title}</p>
+              </div>
+              <div>
+                <Badge variant="outline" className="text-[10px] border-purple-400 text-purple-700 mb-1">Layer 2</Badge>
+                <p className="text-sm text-green-700">{editingHighlights || candidates[selectedIdx!]?.itemHighlights}</p>
+              </div>
+            </div>
             <Button
               size="sm"
               variant="outline"

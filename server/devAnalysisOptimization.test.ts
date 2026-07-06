@@ -13,7 +13,7 @@ const sampleProducts: ProductData[] = [
   { asin: "A1", title: "Product 1", brand: "BrandA", price: "29.99", rating: "4.5", reviewCount: "150", monthlySales: 500, monthlyRevenue: "14995", bsr: 100, category: "Pet", fulfillment: "FBA", listingDate: "2023-01-15", sellerName: null, sellerLocation: null, variantCount: null, monthlySalesHistory: null, monthlyRevenueHistory: null, imageUrl: null, searchRank: null },
   { asin: "A2", title: "Product 2", brand: "BrandA", price: "34.99", rating: "4.2", reviewCount: "80", monthlySales: 300, monthlyRevenue: "10497", bsr: 200, category: "Pet", fulfillment: "FBA", listingDate: "2023-06-20", sellerName: null, sellerLocation: null, variantCount: null, monthlySalesHistory: null, monthlyRevenueHistory: null, imageUrl: null, searchRank: null },
   { asin: "A3", title: "Product 3", brand: "BrandB", price: "19.99", rating: "3.8", reviewCount: "200", monthlySales: 800, monthlyRevenue: "15992", bsr: 50, category: "Pet", fulfillment: "FBM", listingDate: "2022-03-10", sellerName: null, sellerLocation: null, variantCount: null, monthlySalesHistory: null, monthlyRevenueHistory: null, imageUrl: null, searchRank: null },
-  { asin: "A4", title: "Product 4", brand: "BrandC", price: "49.99", rating: "4.8", reviewCount: "50", monthlySales: 100, monthlyRevenue: "4999", bsr: 500, category: "Pet", fulfillment: "FBA", listingDate: "2026-01-15", sellerName: null, sellerLocation: null, variantCount: null, monthlySalesHistory: null, monthlyRevenueHistory: null, imageUrl: null, searchRank: null },
+  { asin: "A4", title: "Product 4", brand: "BrandC", price: "49.99", rating: "4.8", reviewCount: "50", monthlySales: 100, monthlyRevenue: "4999", bsr: 500, category: "Pet", fulfillment: "FBA", listingDate: "2026-01-05", sellerName: null, sellerLocation: null, variantCount: null, monthlySalesHistory: null, monthlyRevenueHistory: null, imageUrl: null, searchRank: null },
   { asin: "A5", title: "Product 5", brand: "BrandD", price: "24.99", rating: "4.0", reviewCount: "120", monthlySales: 400, monthlyRevenue: "9996", bsr: 150, category: "Pet", fulfillment: "FBA", listingDate: "2023-09-01", sellerName: null, sellerLocation: null, variantCount: null, monthlySalesHistory: null, monthlyRevenueHistory: null, imageUrl: null, searchRank: null },
 ];
 
@@ -71,7 +71,7 @@ describe("P0: Stats Engine - Missing Indicators", () => {
     const result = calcMarketOverview(sampleProducts);
     expect(result.newProductRatio).toBeDefined();
     expect(typeof result.newProductRatio).toBe("number");
-    // A4 has listingDate 2025-06-05 which is < 12 months from now (2026-03-16)
+    // A4 has listingDate 2026-01-05 which is < 12 months from now (2026-07-02)
     expect(result.newProductRatio).toBeGreaterThan(0);
   });
 

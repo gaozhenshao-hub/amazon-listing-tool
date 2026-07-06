@@ -2060,6 +2060,7 @@ export default function GeneratePage() {
               emphasis={emphasis}
               locked={lockedSteps.has(2)}
               savedContent={activeListing?.title || null}
+              savedItemHighlights={activeListing?.itemHighlights || null}
               onLock={() => handleLockStep(2)}
               onUnlock={() => { handleUnlockStep(2); toast.info("标题已解锁，可重新编辑"); }}
               onComplete={() => handleStepComplete(2)}

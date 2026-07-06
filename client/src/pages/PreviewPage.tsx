@@ -79,6 +79,7 @@ export default function PreviewPage() {
   const [editBulletData, setEditBulletData] = useState<{ subtitle: string; fullText: string }>({ subtitle: "", fullText: "" });
   const [editData, setEditData] = useState({
     title: "",
+    itemHighlights: "",
     bulletPoints: "",
     description: "",
     searchTerms: "",
@@ -114,6 +115,7 @@ export default function PreviewPage() {
     if (listing) {
       setEditData({
         title: listing.title || "",
+        itemHighlights: (listing as any).itemHighlights || "",
         bulletPoints: listing.bulletPoints || "",
         description: listing.description || "",
         searchTerms: listing.searchTerms || "",
@@ -260,9 +262,12 @@ export default function PreviewPage() {
     const rows: string[][] = [];
     // Header
     rows.push(["Section", "Language", "Content"]);
-    // Title
-    rows.push(["Title", "EN", listing.title || ""]);
-    if (listing.titleCn) rows.push(["Title", "CN", listing.titleCn]);
+    // Title (Layer 1)
+    rows.push(["Title (Layer 1)", "EN", listing.title || ""]);
+    if (listing.titleCn) rows.push(["Title (Layer 1)", "CN", listing.titleCn]);
+    // Item Highlights (Layer 2)
+    if ((listing as any).itemHighlights) rows.push(["Item Highlights (Layer 2)", "EN", (listing as any).itemHighlights]);
+    if ((listing as any).itemHighlightsCn) rows.push(["Item Highlights (Layer 2)", "CN", (listing as any).itemHighlightsCn]);
     // Bullet Points
     bulletPointsArray.forEach((bp: any, i: number) => {
       const text = typeof bp === "string" ? bp : (bp?.subtitle ? `${bp.subtitle} ${bp.fullText || ""}` : JSON.stringify(bp));
@@ -305,12 +310,13 @@ export default function PreviewPage() {
     toast.success("Listing包已导出为CSV文件");
   };
 
-  // Save full listing (title, description, searchTerms)
+  // Save full listing (title, itemHighlights, description, searchTerms)
   const handleSaveGeneral = () => {
     if (!listing) return;
     updateListing.mutate({
       id: listing.id,
       title: editData.title,
+      itemHighlights: editData.itemHighlights,
       description: editData.description,
       searchTerms: editData.searchTerms,
     });
@@ -619,19 +625,18 @@ export default function PreviewPage() {
               </CardContent>
             </Card>
 
-            {/* Title */}
+            {/* Title - Two-Stage Format */}
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Type className="h-4 w-4 text-blue-600" />
-                    产品标题
+                    产品标题（两段式）
                   </CardTitle>
                   <div className="flex items-center gap-2">
-                    <CharCountBadge count={(isEditing ? editData.title : listing.title)?.length || 0} min={180} max={200} />
                     {!isEditing && (
                       <>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyToClipboard(listing.title || "", "标题")}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => copyToClipboard(`${listing.title || ""}\n${(listing as any).itemHighlights || ""}`, "标题")}>
                           <Copy className="h-3.5 w-3.5" />
                         </Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setIsEditing(true)}>
@@ -644,25 +649,68 @@ export default function PreviewPage() {
               </CardHeader>
               <CardContent>
                 {isEditing ? (
-                  <div className="space-y-2">
-                    <Textarea
-                      value={editData.title}
-                      onChange={(e) => setEditData({ ...editData, title: e.target.value })}
-                      rows={3}
-                      className="font-medium"
-                    />
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[10px] border-blue-400 text-blue-700">Layer 1 - Title</Badge>
+                        <CharCountBadge count={editData.title?.length || 0} min={1} max={75} />
+                      </div>
+                      <Textarea
+                        value={editData.title}
+                        onChange={(e) => setEditData({ ...editData, title: e.target.value })}
+                        rows={2}
+                        className="font-medium text-sm"
+                        placeholder="Brand + Core Keyword + Differentiator (≤75 chars)"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[10px] border-purple-400 text-purple-700">Layer 2 - Item Highlights</Badge>
+                        <CharCountBadge count={editData.itemHighlights?.length || 0} min={1} max={125} />
+                      </div>
+                      <Textarea
+                        value={editData.itemHighlights}
+                        onChange={(e) => setEditData({ ...editData, itemHighlights: e.target.value })}
+                        rows={2}
+                        className="text-sm"
+                        placeholder="Specs + Use Cases + Secondary Keywords (≤125 chars)"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>合计: {(editData.title?.length || 0) + (editData.itemHighlights?.length || 0)} / ≤200 字符</span>
+                    </div>
                     <div className="flex gap-2 justify-end">
                       <Button size="sm" onClick={handleSaveGeneral} disabled={updateListing.isPending}>
                         {updateListing.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
                         保存
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => { setIsEditing(false); setEditData(prev => ({ ...prev, title: listing.title || "" })); }}>
+                      <Button size="sm" variant="ghost" onClick={() => { setIsEditing(false); setEditData(prev => ({ ...prev, title: listing.title || "", itemHighlights: (listing as any).itemHighlights || "" })); }}>
                         取消
                       </Button>
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm font-medium leading-relaxed">{listing.title}</p>
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[10px] border-blue-400 text-blue-700">Layer 1 - Title</Badge>
+                        <CharCountBadge count={listing.title?.length || 0} min={1} max={75} />
+                      </div>
+                      <p className="text-sm font-medium leading-relaxed">{listing.title}</p>
+                    </div>
+                    {(listing as any).itemHighlights && (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-[10px] border-purple-400 text-purple-700">Layer 2 - Item Highlights</Badge>
+                          <CharCountBadge count={(listing as any).itemHighlights?.length || 0} min={1} max={125} />
+                        </div>
+                        <p className="text-sm leading-relaxed text-muted-foreground">{(listing as any).itemHighlights}</p>
+                      </div>
+                    )}
+                    <div className="text-xs text-muted-foreground">
+                      合计: {(listing.title?.length || 0) + ((listing as any).itemHighlights?.length || 0)} 字符
+                    </div>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -947,7 +995,7 @@ export default function PreviewPage() {
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base flex items-center gap-2">
                       <Type className="h-4 w-4 text-blue-600" />
-                      产品标题
+                      产品标题（两段式）
                       <Badge variant="outline" className="text-xs border-orange-300 text-orange-600">
                         <Languages className="h-3 w-3 mr-1" />中英对照
                       </Badge>
@@ -955,24 +1003,43 @@ export default function PreviewPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      <div className="p-4 rounded-lg border bg-blue-50/30 border-blue-200">
-                        <div className="flex items-center justify-between mb-2">
+                      {/* English */}
+                      <div className="p-4 rounded-lg border bg-blue-50/30 border-blue-200 space-y-3">
+                        <div className="flex items-center justify-between mb-1">
                           <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">English</span>
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.title || "", "英文标题")}>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(`${listing.title || ""}\n${(listing as any).itemHighlights || ""}`, "英文标题")}>
                             <Copy className="h-3 w-3" />
                           </Button>
                         </div>
-                        <p className="text-sm font-medium leading-relaxed">{listing.title}</p>
-                        <CharCountBadge count={listing.title?.length || 0} min={180} max={200} />
+                        <div>
+                          <Badge variant="outline" className="text-[9px] border-blue-300 text-blue-600 mb-1">Layer 1</Badge>
+                          <p className="text-sm font-medium leading-relaxed">{listing.title}</p>
+                        </div>
+                        {(listing as any).itemHighlights && (
+                          <div>
+                            <Badge variant="outline" className="text-[9px] border-purple-300 text-purple-600 mb-1">Layer 2</Badge>
+                            <p className="text-sm leading-relaxed text-muted-foreground">{(listing as any).itemHighlights}</p>
+                          </div>
+                        )}
                       </div>
-                      <div className="p-4 rounded-lg border bg-orange-50/30 border-orange-200">
-                        <div className="flex items-center justify-between mb-2">
+                      {/* Chinese */}
+                      <div className="p-4 rounded-lg border bg-orange-50/30 border-orange-200 space-y-3">
+                        <div className="flex items-center justify-between mb-1">
                           <span className="text-xs font-semibold text-orange-700 uppercase tracking-wide">中文</span>
-                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(listing.titleCn || "", "中文标题")}>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(`${listing.titleCn || ""}\n${(listing as any).itemHighlightsCn || ""}`, "中文标题")}>
                             <Copy className="h-3 w-3" />
                           </Button>
                         </div>
-                        <p className="text-sm font-medium leading-relaxed">{listing.titleCn}</p>
+                        <div>
+                          <Badge variant="outline" className="text-[9px] border-blue-300 text-blue-600 mb-1">Layer 1</Badge>
+                          <p className="text-sm font-medium leading-relaxed">{listing.titleCn}</p>
+                        </div>
+                        {(listing as any).itemHighlightsCn && (
+                          <div>
+                            <Badge variant="outline" className="text-[9px] border-purple-300 text-purple-600 mb-1">Layer 2</Badge>
+                            <p className="text-sm leading-relaxed text-muted-foreground">{(listing as any).itemHighlightsCn}</p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </CardContent>

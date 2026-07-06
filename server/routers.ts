@@ -8,6 +8,7 @@ import { listingRouter } from "./routers/listing";
 import { projectFileRouter } from "./routers/projectFile";
 import { reportRouter } from "./routers/report";
 import { scoringRouter } from "./routers/scoring";
+import { buyerQuestionsRouter } from "./routers/buyerQuestions";
 import { keywordRouter, keywordAiRouter } from "./routers/keyword";
 import { adStructureRouter } from "./routers/adStructure";
 import { reviewAggregationRouter } from "./routers/reviewAggregation";
@@ -34,6 +35,7 @@ import { kbImagesRouter } from "./routers/kbImages";
 import { kbSkillsRouter } from "./routers/kbSkills";
 import { kbVideosRouter } from "./routers/kbVideos";
 import { kbSearchRouter } from "./routers/kbSearch";
+import { kbTagsRouter } from "./routers/kbTags";
 // System Settings
 import { systemSettingsRouter } from "./routers/systemSettings";
 // KB Review & Access Control
@@ -105,6 +107,7 @@ export const appRouter = router({
   projectFile: projectFileRouter,
   report: reportRouter,
   scoring: scoringRouter,
+  buyerQuestions: buyerQuestionsRouter,
   keyword: keywordRouter,
   keywordAi: keywordAiRouter,
   adStructure: adStructureRouter,
@@ -132,6 +135,7 @@ export const appRouter = router({
   kbSkills: kbSkillsRouter,
   kbVideos: kbVideosRouter,
   kbSearch: kbSearchRouter,
+  kbTags: kbTagsRouter,
   kbBot: kbBotRouter,
   kbIntel: kbIntelRouter,
   kbFeedback: kbFeedbackRouter,

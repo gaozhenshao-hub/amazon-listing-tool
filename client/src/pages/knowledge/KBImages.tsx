@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, PlusCircle, Link2, Upload, Image as ImageIcon, CheckCircle, Edit3, Trash2, Sparkles, Search, Grid3X3, LayoutGrid, Package, Eye, Tag, Send, RefreshCw, UploadCloud, X, RotateCcw } from "lucide-react";
+import { Loader2, PlusCircle, Link2, Upload, Image as ImageIcon, CheckCircle, Edit3, Trash2, Sparkles, Search, Grid3X3, LayoutGrid, Package, Eye, Tag, Send, RefreshCw, UploadCloud, X, RotateCcw, Palette } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
@@ -20,10 +20,63 @@ import { TagEditor } from "@/components/TagEditor";
 import { ScoreSlider } from "@/components/ScoreSlider";
 import { usePermissions } from "@/hooks/usePermissions";
 import { KBScopeToggle, type KBScope } from "@/components/KBScopeToggle";
+import { KBTagManagement } from "./KBTagManagement";
+import { AmazonStyleGallery } from "./AmazonStyleGallery";
+import { useKBTagOptions } from "@/hooks/useKBTagOptions";
+import { Settings2 } from "lucide-react";
 
 type ViewMode = "asin" | "waterfall" | "grid";
 
-const CATEGORY_OPTIONS = ["3C数码","家居生活","户外运动","美妆个护","母婴玩具","宠物用品","服装鞋包","厨房用品","汽车配件","办公用品","健康保健","食品饮料","工具五金","其他"];
+// V2 Tag Constants (from server/constants/imageTagConstants.ts)
+const CATEGORY_OPTIONS_V2 = ["家居","餐厨","庭院花园","房车户外","泳池","玩具","个护","大小家电","3C数码","五金工具","家电配件","母婴（儿童）","老人","运动健身","宠物","工业品","农业品","实验室品"];
+const COLOR_TAG_OPTIONS = ["红色","绿色","蓝色","黄色","橙色","紫色","金色","浅灰","深灰","浅棕","深棕","白色","黑色"];
+const IMAGE_BELONG_OPTIONS = ["主图", "套图", "A+", "品牌故事"];
+const IMAGE_BELONG_HIERARCHY: Record<string, string[]> = {
+  "主图": [],
+  "套图": [],
+  "A+": ["图片轮播", "对比表格", "全宽图", "图文叠加", "四图文", "三图文", "热点交互", "视频模块", "导航轮播", "单图侧文", "技术参数表", "品牌故事卡"],
+  "品牌故事": [],
+};
+const IMAGE_TYPE_HIERARCHY: Record<string, string[]> = {
+  "对比": ["综合对比", "细节对比", "尺寸对比", "参数对比"],
+  "细节": ["单一特写", "多细节", "场景加细节"],
+  "场景": ["远景", "近景", "多场景"],
+  "特效": ["透视", "局部提亮", "原理结构"],
+  "必要": ["参数", "尺寸", "适配性", "全家福", "步骤图", "使用说明", "标注（爆炸图）"],
+  "品牌": ["A+首图", "品牌故事", "买家秀", "证书-质保", "logo设计"],
+};
+const IMAGE_TYPE_MAIN_OPTIONS = Object.keys(IMAGE_TYPE_HIERARCHY);
+const SELLING_POINT_HIERARCHY: Record<string, string[]> = {
+  "质量": ["耐高温低温", "耐磨耐刮耐刺", "防水", "防锈耐腐", "防褪色防光衰", "防雨防晒", "防砸防摔", "寿命长", "质保和认证", "防其他"],
+  "功能": ["更快更强更有劲", "更大更小", "更粗更宽更承重", "更静音（环境）", "更多（功能，配件）", "更牛逼"],
+  "设计": ["可折叠收缩", "可调节", "可更换（多用途）", "可变形", "可自动（变暗变亮变频）"],
+  "操作": ["一键（启动，完成）", "两步（安装，清洁）", "三秒（收纳，充气）", "免维护（Set it, Forget it）"],
+  "安全": ["环保", "食品级/可啃咬/EPA", "保护（过载，过热）", "自动（断电，熄火）"],
+  "附加值": ["易清洗/打理/维护", "易收纳/便携/移动", "额外用途"],
+};
+const SELLING_POINT_MAIN_OPTIONS = Object.keys(SELLING_POINT_HIERARCHY);
+// COLOR_SCHEME_OPTIONS kept for backward compatibility in single-image tags
+const COLOR_SCHEME_OPTIONS = ["莫兰迪色系", "高饱和撞色", "黑金配色", "大地色系", "马卡龙色系", "渐变色系", "纯白极简", "对比撞色", "金属色系", "自然绿植色系"];
+const COMPOSITION_OPTIONS = ["居中构图", "三分法构图", "对角线构图", "模块化构图", "二分构图", "环绕构图", "层叠构图", "大面积留白"];
+const STYLE_NAME_OPTIONS = ["大厂极简风","日系小清新","美式家居温馨风","北欧原木治愈风","户外探险风","科技未来感","轻奢高端风","工业硬核风","ins网红风","母婴柔和风","国潮新中式","暗黑酷炫风","田园自然风"];
+// Style structured params map (from server/constants/imageTagConstants.ts)
+const STYLE_PARAMS_MAP: Record<string, { lightType: string; colorTemp: string; materialKeywords: string; tabooElements: string; refBrands: string; aiKeywords: string }> = {
+  "大厂极简风": { lightType: "柔光箱 + 均匀散射", colorTemp: "5500-6500K（冷白）", materialKeywords: "哑光塑料、阳极氧化铝、玻璃", tabooElements: "花哨背景、过多文字、低分辨率", refBrands: "Apple、Dyson、Bose、小米", aiKeywords: "minimalist product photography, clean white background, soft even lighting, premium feel" },
+  "日系小清新": { lightType: "自然光 + 柔和侧光", colorTemp: "5000-5500K（自然白偏暖）", materialKeywords: "原木、棉麻、陶瓷、干花", tabooElements: "高饱和色、金属质感、硬光阴影", refBrands: "MUJI、nitori、KEYUCA", aiKeywords: "japanese minimalist style, natural light, soft tones, organic textures, zen simplicity" },
+  "美式家居温馨风": { lightType: "暖色台灯 + 自然光混合", colorTemp: "3500-4500K（暖白）", materialKeywords: "皮革、深色木、铜件、绿植", tabooElements: "塑料感、荧光色、极简冷淡", refBrands: "Pottery Barn、West Elm、Crate & Barrel", aiKeywords: "american cozy home style, warm ambient lighting, leather and wood textures, lived-in comfort, earth tones" },
+  "北欧原木治愈风": { lightType: "大面积柔光 + 侧窗自然光", colorTemp: "4500-5500K（自然中性）", materialKeywords: "白橡木、羊毛、亚麻、陶土", tabooElements: "深色重色、复杂图案、金属反光", refBrands: "IKEA、HAY、Marimekko、Ferm Living", aiKeywords: "scandinavian design, light oak wood, natural materials, hygge atmosphere, muted pastels, clean lines" },
+  "户外探险风": { lightType: "强烈日光 + 硬阴影", colorTemp: "5500-6500K（日光）", materialKeywords: "岩石、泥土、帐篷面料、登山绳", tabooElements: "室内场景、精致摆拍、柔美元素", refBrands: "The North Face、Patagonia、YETI", aiKeywords: "outdoor adventure, rugged terrain, harsh natural light, action shot, durable equipment, wilderness backdrop" },
+  "科技未来感": { lightType: "RGB灯带 + 点光源 + 硬光", colorTemp: "7000-9000K（冷蓝）+ 彩色点缀", materialKeywords: "碳纤维、钢化玻璃、LED、金属网格", tabooElements: "自然材质、暖色调、田园元素", refBrands: "Razer、ROG、Tesla Cybertruck", aiKeywords: "cyberpunk tech aesthetic, neon glow, dark background with RGB accents, futuristic, metallic surfaces" },
+  "轻奢高端风": { lightType: "聚光灯 + 反射面营造光泽", colorTemp: "4000-5000K + 金色反射", materialKeywords: "大理石、黄铜、丝绒、水晶", tabooElements: "塑料、粗糙纹理、过于鲜艳", refBrands: "Jo Malone、Diptyque、Aesop", aiKeywords: "luxury premium aesthetic, marble and brass, velvet textures, golden accents, sophisticated composition" },
+  "工业硬核风": { lightType: "硬光侧光 + 强对比", colorTemp: "5500-7000K（冷白偏蓝）", materialKeywords: "水泥、铁件、裸砖、黑色哑光", tabooElements: "花卉、柔美曲线、马卡龙色", refBrands: "Milwaukee、DeWalt、Makita", aiKeywords: "industrial minimalist, concrete and steel, harsh directional light, high contrast, raw materials, utilitarian" },
+  "ins网红风": { lightType: "golden hour自然光 + 柔焦", colorTemp: "4500-5500K（自然偏暖）", materialKeywords: "绿植、咖啡、书籍、针织毯", tabooElements: "过于商业化、硬光、纯白背景", refBrands: "Glossier、Anthropologie、Urban Outfitters", aiKeywords: "instagram lifestyle, golden hour light, flat lay composition, aesthetic arrangement, natural props, bokeh" },
+  "母婴柔和风": { lightType: "超柔散射光 + 无阴影", colorTemp: "4000-5000K（柔和暖白）", materialKeywords: "纯棉、硅胶、圆角、马卡龙色", tabooElements: "尖锐物、深暗色调、复杂背景", refBrands: "Babycare、Hegen、Stokke", aiKeywords: "baby safe aesthetic, pastel colors, soft rounded shapes, gentle lighting, cotton textures, nurturing mood" },
+  "国潮新中式": { lightType: "侧光 + 局部聚光", colorTemp: "4000-5000K（暖中性）", materialKeywords: "宣纸、竹、漆器、祥云纹、水墨", tabooElements: "西式花纹、极简工业、荧光色", refBrands: "花西子、观夏、茶颜悦色", aiKeywords: "chinese modern style, ink wash painting elements, bamboo and lacquer, traditional patterns, cultural fusion" },
+  "暗黑酷炫风": { lightType: "单点硬光 + 大面积暗部", colorTemp: "6000-8000K（冷调）", materialKeywords: "黑色哑光、金属、烟雾、激光", tabooElements: "明亮色彩、可爱元素、自然场景", refBrands: "GoPro、DJI、Alienware", aiKeywords: "dark moody aesthetic, dramatic single light source, smoke effects, metallic highlights, mysterious atmosphere" },
+  "田园自然风": { lightType: "自然散射光 + 绿色反射", colorTemp: "5000-5500K（自然白）", materialKeywords: "牛皮纸、干花、棉布、木托盘", tabooElements: "塑料、金属、荧光色、人工感", refBrands: "Aesop、The Body Shop、悦木之源", aiKeywords: "organic natural style, botanical elements, kraft paper, dried flowers, earth tones, sustainable aesthetic" },
+};
+// Legacy options kept for backward compatibility in display
+const CATEGORY_OPTIONS = CATEGORY_OPTIONS_V2;
 const COLOR_OPTIONS = ["暖色系","冷色系","中性色系","撞色/对比色","品牌色","渐变色"];
 const IMAGE_TYPE_OPTIONS = ["场景图","功能图","卖点图","尺寸图","参数图","对比图","细节图","包装图","使用步骤图","成分图","认证图","生活方式图"];
 const DESIGN_STYLE_OPTIONS = ["简约现代","科技感","自然清新","温馨家居","运动活力","奢华高端","可爱卡通","工业硬朗","日系极简","北欧风","美式复古","扁平化"];
@@ -39,6 +92,8 @@ export default function KBImages() {
   const utils = trpc.useUtils();
   const { canEdit, canDelete } = usePermissions();
   const allowEdit = canEdit('knowledge', 'kb_images');
+  // Dynamic tag options from database (with fallback to hardcoded constants)
+  const dbTags = useKBTagOptions();
   const allowDelete = canDelete('knowledge', 'kb_images');
   const [showImport, setShowImport] = useState(false);
   const [asinInput, setAsinInput] = useState("");
@@ -46,28 +101,50 @@ export default function KBImages() {
   const [batchInput, setBatchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("asin");
+  const [activeMainTab, setActiveMainTab] = useState<"browse" | "tags">("browse");
   const [detailSetId, setDetailSetId] = useState<number | null>(null);
   const [editingAnalysis, setEditingAnalysis] = useState("");
 
-  // Filters (four dimensions + position)
+  // Filters - V2 (7 dimensions + image belong)
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterColorScheme, setFilterColorScheme] = useState("all");
   const [filterImageType, setFilterImageType] = useState("all");
   const [filterStyle, setFilterStyle] = useState("all");
   const [filterPosition, setFilterPosition] = useState("all");
+  // New V2 filters
+  const [filterBelong, setFilterBelong] = useState("all");
+  const [filterTypeMain, setFilterTypeMain] = useState("all");
+  const [filterTypeSub, setFilterTypeSub] = useState("all");
+  const [filterSellingPoint, setFilterSellingPoint] = useState("all");
+  const [filterSellingPointDetail, setFilterSellingPointDetail] = useState("all");
+  const [filterComposition, setFilterComposition] = useState("all");
+  const [filterColorV2, setFilterColorV2] = useState("all");
+  const [filterAccentColor, setFilterAccentColor] = useState("all");
+  const [filterStyleV2, setFilterStyleV2] = useState("all");
+  const [useV2Filters, setUseV2Filters] = useState(true);
   const [selectedImageId, setSelectedImageId] = useState<number | null>(null);
   const [scope, setScope] = useState<KBScope>("mine");
 
   // Use listSets for the ASIN-grouped view (default)
   const { data: sets, isLoading } = trpc.kbImages.listSets.useQuery({ scope });
-  // Use listAllImages for image-level browsing (waterfall/grid)
+  // Use listAllImages for image-level browsing (waterfall/grid) - supports both v1 and v2 filters
   const { data: allImages, isLoading: imagesLoading } = trpc.kbImages.listAllImages.useQuery({
     scope,
+    // Legacy filters (still functional)
     tagCategory: filterCategory !== "all" ? filterCategory : undefined,
-    tagColorScheme: filterColorScheme !== "all" ? filterColorScheme : undefined,
-    tagImageType: filterImageType !== "all" ? filterImageType : undefined,
-    tagDesignStyle: filterStyle !== "all" ? filterStyle : undefined,
+    tagColorScheme: (!useV2Filters && filterColorScheme !== "all") ? filterColorScheme : undefined,
+    tagImageType: (!useV2Filters && filterImageType !== "all") ? filterImageType : undefined,
+    tagDesignStyle: (!useV2Filters && filterStyle !== "all") ? filterStyle : undefined,
     imagePosition: filterPosition !== "all" ? filterPosition : undefined,
+    // V2 filters
+    tagImageBelong: (useV2Filters && filterBelong !== "all") ? filterBelong : undefined,
+    tagImageTypeMain: (useV2Filters && filterTypeMain !== "all") ? filterTypeMain : undefined,
+    tagImageTypeSub: (useV2Filters && filterTypeSub !== "all") ? filterTypeSub : undefined,
+    tagSellingPointCategory: (useV2Filters && filterSellingPoint !== "all") ? filterSellingPoint : undefined,
+    tagSellingPointDetail: (useV2Filters && filterSellingPointDetail !== "all") ? filterSellingPointDetail : undefined,
+    tagComposition: (useV2Filters && filterComposition !== "all") ? filterComposition : undefined,
+    tagColorSchemeV2: (useV2Filters && filterColorV2 !== "all") ? filterColorV2 : undefined,
+    tagDesignStyleV2: (useV2Filters && filterStyleV2 !== "all") ? filterStyleV2 : undefined,
   }, { enabled: viewMode !== "asin" });
   const { data: detailSet } = trpc.kbImages.getSet.useQuery({ id: detailSetId! }, { enabled: !!detailSetId });
 
@@ -83,6 +160,29 @@ export default function KBImages() {
     onSuccess: (r: any) => { toast.success(`已开始导入 ${r.imported} 个ASIN的图片`); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setShowImport(false); setBatchInput(""); },
     onError: (e: any) => toast.error(e.message),
   });
+  // Manual upload state
+  const [manualAsin, setManualAsin] = useState("");
+  const [manualTitle, setManualTitle] = useState("");
+  const [manualFiles, setManualFiles] = useState<File[]>([]);
+  const [manualPosition, setManualPosition] = useState<string>("secondary");
+  const [manualAutoAnalyze, setManualAutoAnalyze] = useState(true);
+  const createFromUpload = trpc.kbImages.createSetFromUpload.useMutation({
+    onSuccess: (r: any) => { toast.success(`已创建图片集 ${r.asin}，共${r.imageCount}张图片`); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setShowImport(false); setManualAsin(""); setManualTitle(""); setManualFiles([]); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const handleManualUpload = async () => {
+    if (!manualAsin || !manualTitle || manualFiles.length === 0) return;
+    const images: { base64: string; filename: string; position: "main" | "secondary" | "aplus" | "brand_story" }[] = [];
+    for (const file of manualFiles) {
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve) => {
+        reader.onload = () => resolve((reader.result as string).split(",")[1]);
+        reader.readAsDataURL(file);
+      });
+      images.push({ base64, filename: file.name, position: manualPosition as any });
+    }
+    createFromUpload.mutate({ asin: manualAsin, title: manualTitle, images, autoAnalyze: manualAutoAnalyze });
+  };
   const submitReviewMutation = trpc.kbReview.submitForReview.useMutation({
     onSuccess: () => { toast.success("已提交审核，等待管理员审批"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listSets.invalidate(); },
     onError: (e: any) => toast.error(e.message),
@@ -131,11 +231,14 @@ export default function KBImages() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  const reorderImagesMutation = trpc.kbImages.reorderImages.useMutation({
+    const reorderImagesMutation = trpc.kbImages.reorderImages.useMutation({
     onSuccess: () => { toast.success("排序已保存"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); },
     onError: (e: any) => toast.error(e.message),
   });
-
+  const updateSetStyleMutation = trpc.kbImages.updateSetStyle.useMutation({
+    onSuccess: () => { toast.success("套图风格已更新"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); },
+    onError: (e: any) => toast.error(e.message),
+  });
   const handleUploadImages = async () => {
     if (!detailSetId || uploadFiles.length === 0) return;
     const images: { base64: string; filename: string; position: "main" | "secondary" | "aplus" | "brand_story" }[] = [];
@@ -164,11 +267,19 @@ export default function KBImages() {
   const filteredSets = useMemo(() => {
     if (!sets) return [];
     return (sets as any[]).filter((s: any) => {
+      // Filter by setCategory (set-level)
+      if (filterCategory !== "all" && s.setCategory !== filterCategory) return false;
+      // Filter by setPrimaryColor (set-level)
+      if (filterColorV2 !== "all" && s.setPrimaryColor !== filterColorV2) return false;
+      // Filter by setAccentColor (set-level)
+      if (filterAccentColor !== "all" && s.setAccentColor !== filterAccentColor) return false;
+      // Filter by setStyle (set-level)
+      if (filterStyleV2 !== "all" && s.setStyle !== filterStyleV2) return false;
       if (!searchQuery) return true;
       const q = searchQuery.toLowerCase();
       return (s.asin || "").toLowerCase().includes(q) || (s.productTitle || "").toLowerCase().includes(q) || (s.brand || "").toLowerCase().includes(q);
     });
-  }, [sets, searchQuery]);
+  }, [sets, searchQuery, filterCategory, filterColorV2, filterAccentColor, filterStyleV2]);
 
   // Filter images for waterfall/grid view
   const filteredImages = useMemo(() => {
@@ -207,10 +318,37 @@ export default function KBImages() {
             <ImageIcon className="h-6 w-6 text-purple-500" />
             智能图片知识库
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">AI四维分类（类目/图片类型/设计风格/色系），按ASIN整合浏览</p>
+          <p className="text-muted-foreground text-sm mt-1">AI七维分类（归属/类目/图片类型/卖点/构图/配色/风格），按ASIN整合浏览</p>
         </div>
-        <Button onClick={() => setShowImport(true)} className="gap-2"><PlusCircle className="h-4 w-4" /> 导入图片</Button>
+        <div className="flex items-center gap-2">
+          <div className="flex bg-muted rounded-lg p-0.5">
+            <Button
+              variant={activeMainTab === "browse" ? "default" : "ghost"}
+              size="sm"
+              className="gap-1.5 h-8"
+              onClick={() => setActiveMainTab("browse")}
+            >
+              <ImageIcon className="h-3.5 w-3.5" /> 图片浏览
+            </Button>
+            <Button
+              variant={activeMainTab === "tags" ? "default" : "ghost"}
+              size="sm"
+              className="gap-1.5 h-8"
+              onClick={() => setActiveMainTab("tags")}
+            >
+              <Settings2 className="h-3.5 w-3.5" /> 标签管理
+            </Button>
+          </div>
+          {activeMainTab === "browse" && (
+            <Button onClick={() => setShowImport(true)} className="gap-2"><PlusCircle className="h-4 w-4" /> 导入图片</Button>
+          )}
+        </div>
       </div>
+
+      {activeMainTab === "tags" ? (
+        <KBTagManagement />
+      ) : (
+        <>
 
       {/* Scope Toggle + Filters */}
       <div className="flex flex-wrap gap-3 items-center">
@@ -219,47 +357,127 @@ export default function KBImages() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="搜索ASIN、产品名、品牌..." className="pl-9" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
-        {viewMode !== "asin" && (
-          <>
+        {viewMode === "asin" && (
+          <div className="flex flex-wrap gap-2">
+            {/* 类目 */}
             <Select value={filterCategory} onValueChange={setFilterCategory}>
-              <SelectTrigger className="w-[120px]"><SelectValue placeholder="类目" /></SelectTrigger>
+              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="类目" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部类目</SelectItem>
-                {CATEGORY_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.categoryOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`category:${c}`] ? ` (${dbTags.countMap[`category:${c}`]})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select value={filterColorScheme} onValueChange={setFilterColorScheme}>
-              <SelectTrigger className="w-[120px]"><SelectValue placeholder="色系" /></SelectTrigger>
+            {/* 主颜色 */}
+            <Select value={filterColorV2} onValueChange={setFilterColorV2}>
+              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="主颜色" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">全部色系</SelectItem>
-                {COLOR_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                <SelectItem value="all">全部主色</SelectItem>
+                {dbTags.colorOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`color:${c}`] ? ` (${dbTags.countMap[`color:${c}`]})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select value={filterImageType} onValueChange={setFilterImageType}>
-              <SelectTrigger className="w-[120px]"><SelectValue placeholder="图片类型" /></SelectTrigger>
+            {/* 提亮色 */}
+            <Select value={filterAccentColor} onValueChange={setFilterAccentColor}>
+              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="提亮色" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">全部类型</SelectItem>
-                {IMAGE_TYPE_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                <SelectItem value="all">全部提亮</SelectItem>
+                {dbTags.colorOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`color:${c}`] ? ` (${dbTags.countMap[`color:${c}`]})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select value={filterStyle} onValueChange={setFilterStyle}>
-              <SelectTrigger className="w-[120px]"><SelectValue placeholder="设计风格" /></SelectTrigger>
+            {/* 风格 */}
+            <Select value={filterStyleV2} onValueChange={setFilterStyleV2}>
+              <SelectTrigger className="w-[120px] h-8 text-xs"><SelectValue placeholder="设计风格" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部风格</SelectItem>
-                {DESIGN_STYLE_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                {dbTags.styleOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`style:${c}`] ? ` (${dbTags.countMap[`style:${c}`]})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select value={filterPosition} onValueChange={setFilterPosition}>
-              <SelectTrigger className="w-[120px]"><SelectValue placeholder="图片位置" /></SelectTrigger>
+          </div>
+        )}
+        {viewMode !== "asin" && (
+          <div className="flex flex-wrap gap-2 w-full">
+            {/* 图片归属 */}
+            <Select value={filterBelong} onValueChange={setFilterBelong}>
+              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="归属" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">全部位置</SelectItem>
-                <SelectItem value="main">主图</SelectItem>
-                <SelectItem value="secondary">副图</SelectItem>
-                <SelectItem value="aplus">A+图片</SelectItem>
-                <SelectItem value="brand_story">品牌故事</SelectItem>
+                <SelectItem value="all">全部归属</SelectItem>
+                {dbTags.imageBelongOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`imageBelong:${c}`] ? ` (${dbTags.countMap[`imageBelong:${c}`]})` : ""}</SelectItem>)}
               </SelectContent>
             </Select>
-          </>
+            {/* 类目 */}
+            <Select value={filterCategory} onValueChange={setFilterCategory}>
+              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="类目" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部类目</SelectItem>
+                {dbTags.categoryOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`category:${c}`] ? ` (${dbTags.countMap[`category:${c}`]})` : ""}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {/* 图片类型 - 二级联动 */}
+            <Select value={filterTypeMain} onValueChange={(v) => { setFilterTypeMain(v); setFilterTypeSub("all"); }}>
+              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="图片大类" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部大类</SelectItem>
+                {dbTags.imageTypeMainOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`imageType:${c}`] ? ` (${dbTags.countMap[`imageType:${c}`]})` : ""}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {filterTypeMain !== "all" && dbTags.imageTypeHierarchy[filterTypeMain] && (
+              <Select value={filterTypeSub} onValueChange={setFilterTypeSub}>
+                <SelectTrigger className="w-[110px] h-8 text-xs"><SelectValue placeholder="子类型" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部子类</SelectItem>
+                  {dbTags.imageTypeHierarchy[filterTypeMain].map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`imageType:${c}`] ? ` (${dbTags.countMap[`imageType:${c}`]})` : ""}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
+            {/* 卖点分类 - 二级联动 */}
+            <Select value={filterSellingPoint} onValueChange={(v) => { setFilterSellingPoint(v); setFilterSellingPointDetail("all"); }}>
+              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="卖点大类" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部卖点</SelectItem>
+                {dbTags.sellingPointMainOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`sellingPoint:${c}`] ? ` (${dbTags.countMap[`sellingPoint:${c}`]})` : ""}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {filterSellingPoint !== "all" && dbTags.sellingPointHierarchy[filterSellingPoint] && (
+              <Select value={filterSellingPointDetail} onValueChange={setFilterSellingPointDetail}>
+                <SelectTrigger className="w-[130px] h-8 text-xs"><SelectValue placeholder="卖点子类" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部子类</SelectItem>
+                  {dbTags.sellingPointHierarchy[filterSellingPoint].map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`sellingPoint:${c}`] ? ` (${dbTags.countMap[`sellingPoint:${c}`]})` : ""}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
+            {/* 构图 */}
+            <Select value={filterComposition} onValueChange={setFilterComposition}>
+              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="构图" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部构图</SelectItem>
+                {dbTags.compositionOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`composition:${c}`] ? ` (${dbTags.countMap[`composition:${c}`]})` : ""}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {/* 主颜色 */}
+            <Select value={filterColorV2} onValueChange={setFilterColorV2}>
+              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="主颜色" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部主色</SelectItem>
+                {dbTags.colorOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`color:${c}`] ? ` (${dbTags.countMap[`color:${c}`]})` : ""}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {/* 提亮色 */}
+            <Select value={filterAccentColor} onValueChange={setFilterAccentColor}>
+              <SelectTrigger className="w-[100px] h-8 text-xs"><SelectValue placeholder="提亮色" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部提亮</SelectItem>
+                {dbTags.colorOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`color:${c}`] ? ` (${dbTags.countMap[`color:${c}`]})` : ""}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {/* 风格 */}
+            <Select value={filterStyleV2} onValueChange={setFilterStyleV2}>
+              <SelectTrigger className="w-[120px] h-8 text-xs"><SelectValue placeholder="设计风格" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">全部风格</SelectItem>
+                {dbTags.styleOptions.map(c => <SelectItem key={c} value={c}>{c}{dbTags.countMap[`style:${c}`] ? ` (${dbTags.countMap[`style:${c}`]})` : ""}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
         )}
         <div className="ml-auto flex gap-1">
           <Button variant={viewMode === "asin" ? "default" : "outline"} size="sm" className="h-9 gap-1.5" onClick={() => setViewMode("asin")}>
@@ -299,7 +517,7 @@ export default function KBImages() {
                 <Card key={set.id} className="group cursor-pointer hover:shadow-lg transition-all overflow-hidden" onClick={() => { setDetailSetId(set.id); setEditingAnalysis(""); }}>
                   {/* Thumbnail strip - show first 4 images from the set */}
                   <div className="relative h-40 bg-muted overflow-hidden">
-                    <AsinThumbnailStrip setId={set.id} />
+                    <AsinThumbnailStrip thumbnailImages={(set as any).thumbnailImages} />
                     <div className="absolute top-2 right-2">
                       <Badge variant={status.variant} className="text-[10px] shadow-sm">{status.label}</Badge>
                     </div>
@@ -403,6 +621,7 @@ export default function KBImages() {
               <TabsTrigger value="asin" className="flex-1 gap-1.5"><Upload className="h-3.5 w-3.5" /> ASIN导入</TabsTrigger>
               <TabsTrigger value="link" className="flex-1 gap-1.5"><Link2 className="h-3.5 w-3.5" /> 链接导入</TabsTrigger>
               <TabsTrigger value="batch" className="flex-1 gap-1.5"><PlusCircle className="h-3.5 w-3.5" /> 批量ASIN</TabsTrigger>
+              <TabsTrigger value="manual" className="flex-1 gap-1.5"><UploadCloud className="h-3.5 w-3.5" /> 手动上传</TabsTrigger>
             </TabsList>
             <TabsContent value="asin" className="space-y-4 mt-4">
               <div className="space-y-2">
@@ -439,6 +658,42 @@ export default function KBImages() {
               }} disabled={batchImport.isPending || !batchInput} className="w-full gap-2">
                 {batchImport.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                 <Sparkles className="h-4 w-4" /> 批量采集并AI分析
+              </Button>
+            </TabsContent>
+            <TabsContent value="manual" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label>产品ASIN / 标识符</Label>
+                <Input placeholder="B0XXXXXXXXX 或自定义名称" value={manualAsin} onChange={(e) => setManualAsin(e.target.value)} className="font-mono" />
+              </div>
+              <div className="space-y-2">
+                <Label>图片集标题 <span className="text-destructive">*</span></Label>
+                <Input placeholder="例如：无线电饭盒产品图片" value={manualTitle} onChange={(e) => setManualTitle(e.target.value)} />
+                {!manualTitle && <p className="text-xs text-destructive">请输入图片集标题，用于快速识别和搜索</p>}
+              </div>
+              <div className="space-y-2">
+                <Label>图片位置</Label>
+                <Select value={manualPosition} onValueChange={setManualPosition}>
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="main">主图</SelectItem>
+                    <SelectItem value="secondary">副图</SelectItem>
+                    <SelectItem value="aplus">A+内容图</SelectItem>
+                    <SelectItem value="brand_story">品牌故事图</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>选择图片文件（最多50张）</Label>
+                <input type="file" multiple accept="image/*" className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer" onChange={(e) => setManualFiles(Array.from(e.target.files || []).slice(0, 50))} />
+                {manualFiles.length > 0 && <p className="text-xs text-muted-foreground">已选择 {manualFiles.length} 张图片</p>}
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="autoAnalyze" checked={manualAutoAnalyze} onChange={(e) => setManualAutoAnalyze(e.target.checked)} className="rounded" />
+                <label htmlFor="autoAnalyze" className="text-sm">上传后自动进AI分析</label>
+              </div>
+              <Button onClick={handleManualUpload} disabled={createFromUpload.isPending || !manualAsin || !manualTitle || manualFiles.length === 0} className="w-full gap-2">
+                {createFromUpload.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                <UploadCloud className="h-4 w-4" /> 上传并创建图片集
               </Button>
             </TabsContent>
           </Tabs>
@@ -573,89 +828,239 @@ export default function KBImages() {
                     </Card>
                   )}
 
-                  {/* ── Main Image Section ── */}
-                  {groupedImages.main.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                        <div className="w-1 h-4 bg-blue-500 rounded-full" />
-                        主图 <Badge variant="secondary" className="text-[10px]">{groupedImages.main.length}张</Badge>
-                        {allowEdit && groupedImages.main.length > 1 && <span className="text-[10px] text-muted-foreground ml-auto">拖拽排序</span>}
-                      </h4>
-                      <SortableImageGrid
-                        images={groupedImages.main}
-                        gridCols="grid-cols-2 md:grid-cols-3"
-                        onSelectImage={setSelectedImageId}
-                        selectedImageId={selectedImageId}
-                        onUpdateTags={updateImageTagsMutation}
-                        onUpdateScore={updateImageScoreMutation}
-                        onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
-                        onReorder={allowEdit ? (newOrder) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders: newOrder }) : undefined}
-                      />
-                    </div>
-                  )}
+                  {/* ── Amazon-Style Gallery (Main + Secondary + Brand Story + A+) ── */}
+                  <AmazonStyleGallery
+                    mainImages={groupedImages.main}
+                    secondaryImages={groupedImages.secondary}
+                    brandStoryImages={groupedImages.brand_story}
+                    aplusImages={groupedImages.aplus}
+                    onSelectImage={setSelectedImageId}
+                    selectedImageId={selectedImageId}
+                    onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
+                    allowEdit={allowEdit}
+                    onReorder={allowEdit ? (imageOrders) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders }) : undefined}
+                    renderTagEditor={(img) => {
+                      let dimensions: any = {};
+                      try { dimensions = JSON.parse(img.aiDimensionAnalysis || "{}"); } catch {}
+                      return (
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            <Select value={img.tagImageBelong || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagImageBelong: v, tagImageBelongSub: "" })}>
+                              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="图片归属" /></SelectTrigger>
+                              <SelectContent>
+                                {(dbTags.imageBelongOptions.length > 0 ? dbTags.imageBelongOptions : IMAGE_BELONG_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            {img.tagImageBelong === "A+" && (
+                              <Select value={(img as any).tagImageBelongSub || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagImageBelongSub: v })}>
+                                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="A+子模块" /></SelectTrigger>
+                                <SelectContent>
+                                  {IMAGE_BELONG_HIERARCHY["A+"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            )}
+                            <Select value={img.tagImageTypeMain || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagImageTypeMain: v, tagImageTypeSub: "" })}>
+                              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="图片大类" /></SelectTrigger>
+                              <SelectContent>
+                                {(dbTags.imageTypeMainOptions.length > 0 ? dbTags.imageTypeMainOptions : IMAGE_TYPE_MAIN_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <Select value={img.tagImageTypeSub || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagImageTypeSub: v })}>
+                              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="图片子类" /></SelectTrigger>
+                              <SelectContent>
+                                {(img.tagImageTypeMain && (dbTags.imageTypeHierarchy[img.tagImageTypeMain] || IMAGE_TYPE_HIERARCHY[img.tagImageTypeMain]) ? (dbTags.imageTypeHierarchy[img.tagImageTypeMain] || IMAGE_TYPE_HIERARCHY[img.tagImageTypeMain]) : Object.values(dbTags.imageTypeHierarchy).flat().length > 0 ? Object.values(dbTags.imageTypeHierarchy).flat() : Object.values(IMAGE_TYPE_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <Select value={img.tagSellingPointCategory || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagSellingPointCategory: v })}>
+                              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="卖点大类" /></SelectTrigger>
+                              <SelectContent>
+                                {(dbTags.sellingPointMainOptions.length > 0 ? dbTags.sellingPointMainOptions : SELLING_POINT_MAIN_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <Select value={img.tagSellingPointDetail || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagSellingPointDetail: v })}>
+                              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="卖点明细" /></SelectTrigger>
+                              <SelectContent>
+                                {(img.tagSellingPointCategory && (dbTags.sellingPointHierarchy[img.tagSellingPointCategory] || SELLING_POINT_HIERARCHY[img.tagSellingPointCategory]) ? (dbTags.sellingPointHierarchy[img.tagSellingPointCategory] || SELLING_POINT_HIERARCHY[img.tagSellingPointCategory]) : Object.values(dbTags.sellingPointHierarchy).flat().length > 0 ? Object.values(dbTags.sellingPointHierarchy).flat() : Object.values(SELLING_POINT_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <Select value={img.tagComposition || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagComposition: v })}>
+                              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="构图类型" /></SelectTrigger>
+                              <SelectContent>
+                                {(dbTags.compositionOptions.length > 0 ? dbTags.compositionOptions : COMPOSITION_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <ScoreSlider
+                            value={img.singleImageScore || 5}
+                            onChange={() => {}}
+                            onSave={(val) => updateImageScoreMutation.mutate({ imageId: img.id, score: val })}
+                            min={1}
+                            max={10}
+                            label="单图评分"
+                            disabled={updateImageScoreMutation.isPending}
+                          />
+                          {img.aiDimensionAnalysis && (
+                            <div className="space-y-2">
+                              <h5 className="text-xs font-semibold flex items-center gap-1.5">
+                                <Sparkles className="h-3.5 w-3.5 text-purple-500" />
+                                12维度分析
+                              </h5>
+                              <div className="grid grid-cols-2 gap-2">
+                                {Object.entries(DIMENSION_LABELS).map(([key, label]) => {
+                                  const dim = dimensions[key];
+                                  if (!dim) return null;
+                                  const analysis = typeof dim === "string" ? dim : dim?.analysis || dim?.content || JSON.stringify(dim);
+                                  return (
+                                    <div key={key} className="bg-muted/50 rounded-md p-2">
+                                      <span className="text-[10px] font-medium text-muted-foreground">{label}</span>
+                                      <p className="text-xs mt-0.5 line-clamp-2">{analysis}</p>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }}
+                  />
 
-                  {/* ── Secondary Images Section ── */}
-                  {groupedImages.secondary.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                        <div className="w-1 h-4 bg-emerald-500 rounded-full" />
-                        副图 <Badge variant="secondary" className="text-[10px]">{groupedImages.secondary.length}张</Badge>
-                        {allowEdit && groupedImages.secondary.length > 1 && <span className="text-[10px] text-muted-foreground ml-auto">拖拽排序</span>}
-                      </h4>
-                      <SortableImageGrid
-                        images={groupedImages.secondary}
-                        gridCols="grid-cols-3 md:grid-cols-4"
-                        onSelectImage={setSelectedImageId}
-                        selectedImageId={selectedImageId}
-                        onUpdateTags={updateImageTagsMutation}
-                        onUpdateScore={updateImageScoreMutation}
-                        onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
-                        onReorder={allowEdit ? (newOrder) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders: newOrder }) : undefined}
-                      />
-                    </div>
-                  )}
 
-                  {/* ── A+ Images Section ── */}
-                  {groupedImages.aplus.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                        <div className="w-1 h-4 bg-purple-500 rounded-full" />
-                        A+ 图片 <Badge variant="secondary" className="text-[10px]">{groupedImages.aplus.length}张</Badge>
-                        {allowEdit && groupedImages.aplus.length > 1 && <span className="text-[10px] text-muted-foreground ml-auto">拖拽排序</span>}
-                      </h4>
-                      <SortableImageGrid
-                        images={groupedImages.aplus}
-                        gridCols="grid-cols-3 md:grid-cols-4"
-                        onSelectImage={setSelectedImageId}
-                        selectedImageId={selectedImageId}
-                        onUpdateTags={updateImageTagsMutation}
-                        onUpdateScore={updateImageScoreMutation}
-                        onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
-                        onReorder={allowEdit ? (newOrder) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders: newOrder }) : undefined}
-                      />
-                    </div>
-                  )}
 
-                  {/* ── Brand Story Images Section ── */}
-                  {groupedImages.brand_story.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                        <div className="w-1 h-4 bg-amber-500 rounded-full" />
-                        品牌故事 <Badge variant="secondary" className="text-[10px]">{groupedImages.brand_story.length}张</Badge>
-                        {allowEdit && groupedImages.brand_story.length > 1 && <span className="text-[10px] text-muted-foreground ml-auto">拖拽排序</span>}
-                      </h4>
-                      <SortableImageGrid
-                        images={groupedImages.brand_story}
-                        gridCols="grid-cols-3 md:grid-cols-4"
-                        onSelectImage={setSelectedImageId}
-                        selectedImageId={selectedImageId}
-                        onUpdateTags={updateImageTagsMutation}
-                        onUpdateScore={updateImageScoreMutation}
-                        onDeleteImage={allowEdit ? (imageId) => deleteImageMutation.mutate({ imageId, setId: detailSetId! }) : undefined}
-                        onReorder={allowEdit ? (newOrder) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders: newOrder }) : undefined}
-                      />
-                    </div>
-                  )}
+                  {/* ── Set Style Configuration (Phase 6) ── */}
+                  <Card className="border-indigo-200/50 bg-gradient-to-br from-indigo-50/30 to-purple-50/20">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Palette className="h-4 w-4 text-indigo-500" /> 套图风格配置
+                        {d.setStyle && <Badge variant="secondary" className="text-[10px] bg-indigo-100 text-indigo-700">{d.setStyle}</Badge>}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-xs font-medium">推荐风格</Label>
+                          <Select
+                            value={d.setStyle || ""}
+                            onValueChange={(val) => {
+                              const params = STYLE_PARAMS_MAP[val];
+                              updateSetStyleMutation.mutate({
+                                id: detailSetId!,
+                                setStyle: val,
+                                setStyleParams: params ? JSON.stringify(params) : null,
+                              });
+                            }}
+                          >
+                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择风格" /></SelectTrigger>
+                            <SelectContent>
+                              {STYLE_NAME_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs font-medium">主颜色</Label>
+                          <Select
+                            value={d.setPrimaryColor || ""}
+                            onValueChange={(val) => updateSetStyleMutation.mutate({ id: detailSetId!, setPrimaryColor: val })}
+                          >
+                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择主色" /></SelectTrigger>
+                            <SelectContent>
+                              {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-xs font-medium">提亮色</Label>
+                          <Select
+                            value={d.setAccentColor || ""}
+                            onValueChange={(val) => updateSetStyleMutation.mutate({ id: detailSetId!, setAccentColor: val })}
+                          >
+                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择提亮色" /></SelectTrigger>
+                            <SelectContent>
+                              {COLOR_TAG_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs font-medium">套图类目</Label>
+                          <Select
+                            value={d.setCategory || ""}
+                            onValueChange={(val) => updateSetStyleMutation.mutate({ id: detailSetId!, setCategory: val })}
+                          >
+                            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择类目" /></SelectTrigger>
+                            <SelectContent>
+                              {CATEGORY_OPTIONS_V2.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      {/* Structured style params display */}
+                      {(() => {
+                        let styleParams: any = null;
+                        try { styleParams = JSON.parse(d.setStyleParams || ""); } catch {}
+                        if (!styleParams && d.setStyle) styleParams = STYLE_PARAMS_MAP[d.setStyle];
+                        if (!styleParams) return null;
+                        return (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 p-3 bg-white/60 rounded-lg border border-indigo-100">
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">光线类型</span>
+                              <p className="text-xs">{styleParams.lightType}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">色温范围</span>
+                              <p className="text-xs">{styleParams.colorTemp}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">材质关键词</span>
+                              <p className="text-xs">{styleParams.materialKeywords}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">禁忌元素</span>
+                              <p className="text-xs text-destructive/80">{styleParams.tabooElements}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">参考品牌</span>
+                              <p className="text-xs">{styleParams.refBrands}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">AI生图关键词</span>
+                              <p className="text-xs font-mono text-indigo-600/80 break-all">{styleParams.aiKeywords}</p>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                      {/* Target audience & category scene */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label className="text-xs font-medium">目标人群</Label>
+                          <Input
+                            className="h-8 text-xs"
+                            placeholder="如：25-35岁女性、注重生活品质"
+                            defaultValue={d.setTargetAudience || ""}
+                            onBlur={(e) => {
+                              if (e.target.value !== (d.setTargetAudience || "")) {
+                                updateSetStyleMutation.mutate({ id: detailSetId!, setTargetAudience: e.target.value || null });
+                              }
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label className="text-xs font-medium">类目场景</Label>
+                          <Input
+                            className="h-8 text-xs"
+                            placeholder="如：室内家居、厨房场景"
+                            defaultValue={d.setCategoryScene || ""}
+                            onBlur={(e) => {
+                              if (e.target.value !== (d.setCategoryScene || "")) {
+                                updateSetStyleMutation.mutate({ id: detailSetId!, setCategoryScene: e.target.value || null });
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
 
                   {/* AI Overall Analysis */}
                   {(d.overallAnalysis || d.userEditedOverallAnalysis) && (
@@ -731,15 +1136,15 @@ export default function KBImages() {
           )}
         </DialogContent>
       </Dialog>
+      </>
+      )}
     </div>
   );
 }
 
-/** Thumbnail strip for ASIN card - loads images for the set */
-function AsinThumbnailStrip({ setId }: { setId: number }) {
-  const { data } = trpc.kbImages.getSet.useQuery({ id: setId });
-  const images = (data as any)?.images || [];
-  const displayImages = images.slice(0, 5);
+/** Thumbnail strip for ASIN card - uses pre-fetched thumbnailImages from listSets */
+function AsinThumbnailStrip({ thumbnailImages }: { thumbnailImages?: { id: number; imageUrl: string; imagePosition: string; positionIndex?: number | null }[] }) {
+  const displayImages = (thumbnailImages || []).slice(0, 5);
 
   if (displayImages.length === 0) {
     return (
@@ -771,13 +1176,14 @@ function AsinThumbnailStrip({ setId }: { setId: number }) {
 }
 
 /** Enhanced single image card with expandable tag editing, score slider, and 12-dimension analysis */
-function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, onUpdateScore, onDeleteImage }: {
+function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, onUpdateScore, onDeleteImage, tagOptions }: {
   img: any;
   onSelectImage: (id: number | null) => void;
   selectedImageId: number | null;
   onUpdateTags: any;
   onUpdateScore: any;
   onDeleteImage?: (imageId: number) => void;
+  tagOptions?: ReturnType<typeof import('@/hooks/useKBTagOptions').useKBTagOptions>;
 }) {
   const isExpanded = selectedImageId === img.id;
   let dimensions: any = {};
@@ -798,10 +1204,13 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
         )}
         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
           <div className="flex flex-wrap gap-1">
-            {img.tagCategory && <Badge variant="secondary" className="text-[9px] bg-white/20 text-white border-0">{img.tagCategory}</Badge>}
-            {img.tagColorScheme && <Badge variant="secondary" className="text-[9px] bg-white/20 text-white border-0">{img.tagColorScheme}</Badge>}
-            {img.tagImageType && <Badge variant="secondary" className="text-[9px] bg-white/20 text-white border-0">{img.tagImageType}</Badge>}
-            {img.tagDesignStyle && <Badge variant="secondary" className="text-[9px] bg-white/20 text-white border-0">{img.tagDesignStyle}</Badge>}
+            {img.tagImageBelong && <Badge variant="secondary" className="text-[9px] bg-blue-500/70 text-white border-0">{img.tagImageBelong}{(img as any).tagImageBelongSub ? `·${(img as any).tagImageBelongSub}` : ''}</Badge>}
+            {img.tagImageTypeMain && <Badge variant="secondary" className="text-[9px] bg-purple-500/70 text-white border-0">{img.tagImageTypeMain}{img.tagImageTypeSub ? `·${img.tagImageTypeSub}` : ''}</Badge>}
+            {img.tagSellingPointCategory && <Badge variant="secondary" className="text-[9px] bg-green-500/70 text-white border-0">{img.tagSellingPointCategory}</Badge>}
+            {img.tagComposition && <Badge variant="secondary" className="text-[9px] bg-orange-500/70 text-white border-0">{img.tagComposition}</Badge>}
+            {img.tagDesignStyleV2 && <Badge variant="secondary" className="text-[9px] bg-pink-500/70 text-white border-0">{img.tagDesignStyleV2}</Badge>}
+            {!img.tagImageBelong && img.tagCategory && <Badge variant="secondary" className="text-[9px] bg-white/20 text-white border-0">{img.tagCategory}</Badge>}
+            {!img.tagImageBelong && img.tagImageType && <Badge variant="secondary" className="text-[9px] bg-white/20 text-white border-0">{img.tagImageType}</Badge>}
             {img.singleImageScore && <Badge className="text-[9px] bg-primary/80 border-0">{img.singleImageScore}/10</Badge>}
           </div>
         </div>
@@ -848,48 +1257,54 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
       </div>
 
       {isExpanded && (
-        <div className="p-4 space-y-4 bg-card">
-          {/* Four-dimension tag selectors */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">类目</Label>
-              <Select value={img.tagCategory || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagCategory: v, tagColorScheme: img.tagColorScheme, tagImageType: img.tagImageType, tagDesignStyle: img.tagDesignStyle })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择类目" /></SelectTrigger>
+        <div className="p-4 bg-card border-t space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <Select value={img.tagImageBelong || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageBelong: v, tagImageBelongSub: "" })}>
+              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="图片归属" /></SelectTrigger>
+              <SelectContent>
+                {(tagOptions?.imageBelongOptions || IMAGE_BELONG_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            {img.tagImageBelong === "A+" && (
+              <Select value={(img as any).tagImageBelongSub || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageBelongSub: v })}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="A+子模块" /></SelectTrigger>
                 <SelectContent>
-                  {CATEGORY_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  {IMAGE_BELONG_HIERARCHY["A+"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">色系</Label>
-              <Select value={img.tagColorScheme || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagCategory: img.tagCategory, tagColorScheme: v, tagImageType: img.tagImageType, tagDesignStyle: img.tagDesignStyle })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择色系" /></SelectTrigger>
-                <SelectContent>
-                  {COLOR_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">图片类型</Label>
-              <Select value={img.tagImageType || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagCategory: img.tagCategory, tagColorScheme: img.tagColorScheme, tagImageType: v, tagDesignStyle: img.tagDesignStyle })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择类型" /></SelectTrigger>
-                <SelectContent>
-                  {IMAGE_TYPE_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">设计风格</Label>
-              <Select value={img.tagDesignStyle || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagCategory: img.tagCategory, tagColorScheme: img.tagColorScheme, tagImageType: img.tagImageType, tagDesignStyle: v })}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择风格" /></SelectTrigger>
-                <SelectContent>
-                  {DESIGN_STYLE_OPTIONS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+            )}
+            <Select value={img.tagImageTypeMain || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageTypeMain: v, tagImageTypeSub: "" })}>
+              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="图片大类" /></SelectTrigger>
+              <SelectContent>
+                {(tagOptions?.imageTypeMainOptions || IMAGE_TYPE_MAIN_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={img.tagImageTypeSub || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageTypeSub: v })}>
+              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="图片子类" /></SelectTrigger>
+              <SelectContent>
+                {(img.tagImageTypeMain && (tagOptions?.imageTypeHierarchy || IMAGE_TYPE_HIERARCHY)[img.tagImageTypeMain] ? (tagOptions?.imageTypeHierarchy || IMAGE_TYPE_HIERARCHY)[img.tagImageTypeMain] : Object.values(tagOptions?.imageTypeHierarchy || IMAGE_TYPE_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={img.tagSellingPointCategory || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagSellingPointCategory: v })}>
+              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="卖点大类" /></SelectTrigger>
+              <SelectContent>
+                {(tagOptions?.sellingPointMainOptions || SELLING_POINT_MAIN_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={img.tagSellingPointDetail || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagSellingPointDetail: v })}>
+              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="卖点明细" /></SelectTrigger>
+              <SelectContent>
+                {(img.tagSellingPointCategory && (tagOptions?.sellingPointHierarchy || SELLING_POINT_HIERARCHY)[img.tagSellingPointCategory] ? (tagOptions?.sellingPointHierarchy || SELLING_POINT_HIERARCHY)[img.tagSellingPointCategory] : Object.values(tagOptions?.sellingPointHierarchy || SELLING_POINT_HIERARCHY).flat()).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={img.tagComposition || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagComposition: v })}>
+              <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="构图类型" /></SelectTrigger>
+              <SelectContent>
+                {(tagOptions?.compositionOptions || COMPOSITION_OPTIONS).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+              </SelectContent>
+            </Select>
 
-          {/* Score Slider */}
+          </div>
           <ScoreSlider
             value={img.singleImageScore || 5}
             onChange={() => {}}
@@ -899,8 +1314,6 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
             label="单图评分"
             disabled={onUpdateScore.isPending}
           />
-
-          {/* 12-Dimension Analysis Display */}
           {img.aiDimensionAnalysis && (
             <div className="space-y-2">
               <h5 className="text-xs font-semibold flex items-center gap-1.5">
@@ -915,7 +1328,7 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
                   return (
                     <div key={key} className="bg-muted/50 rounded-md p-2">
                       <span className="text-[10px] font-medium text-muted-foreground">{label}</span>
-                      <p className="text-xs mt-0.5 line-clamp-3">{analysis}</p>
+                      <p className="text-xs mt-0.5 line-clamp-2">{analysis}</p>
                     </div>
                   );
                 })}
@@ -929,13 +1342,14 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
 }
 
 /** Sortable wrapper for ImageCardEnhanced using @dnd-kit */
-function SortableImageCard({ img, onSelectImage, selectedImageId, onUpdateTags, onUpdateScore, onDeleteImage }: {
+function SortableImageCard({ img, onSelectImage, selectedImageId, onUpdateTags, onUpdateScore, onDeleteImage, tagOptions }: {
   img: any;
   onSelectImage: (id: number | null) => void;
   selectedImageId: number | null;
   onUpdateTags: any;
   onUpdateScore: any;
   onDeleteImage?: (imageId: number) => void;
+  tagOptions?: ReturnType<typeof import('@/hooks/useKBTagOptions').useKBTagOptions>;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: img.id });
   const style = {
@@ -944,15 +1358,16 @@ function SortableImageCard({ img, onSelectImage, selectedImageId, onUpdateTags, 
     opacity: isDragging ? 0.4 : 1,
     zIndex: isDragging ? 50 : undefined,
   };
+  const isExpanded = selectedImageId === img.id;
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <ImageCardEnhanced img={img} onSelectImage={onSelectImage} selectedImageId={selectedImageId} onUpdateTags={onUpdateTags} onUpdateScore={onUpdateScore} onDeleteImage={onDeleteImage} />
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className={isExpanded ? "col-span-full" : ""}>
+      <ImageCardEnhanced img={img} onSelectImage={onSelectImage} selectedImageId={selectedImageId} onUpdateTags={onUpdateTags} onUpdateScore={onUpdateScore} onDeleteImage={onDeleteImage} tagOptions={tagOptions} />
     </div>
   );
 }
 
 /** Sortable grid for a group of images */
-function SortableImageGrid({ images, gridCols, onSelectImage, selectedImageId, onUpdateTags, onUpdateScore, onDeleteImage, onReorder }: {
+function SortableImageGrid({ images, gridCols, onSelectImage, selectedImageId, onUpdateTags, onUpdateScore, onDeleteImage, onReorder, tagOptions }: {
   images: any[];
   gridCols: string;
   onSelectImage: (id: number | null) => void;
@@ -961,6 +1376,7 @@ function SortableImageGrid({ images, gridCols, onSelectImage, selectedImageId, o
   onUpdateScore: any;
   onDeleteImage?: (imageId: number) => void;
   onReorder?: (newOrder: { id: number; positionIndex: number }[]) => void;
+  tagOptions?: ReturnType<typeof import('@/hooks/useKBTagOptions').useKBTagOptions>;
 }) {
   const [items, setItems] = useState<any[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
@@ -996,7 +1412,7 @@ function SortableImageGrid({ images, gridCols, onSelectImage, selectedImageId, o
     return (
       <div className={`grid ${gridCols} gap-3`}>
         {items.map((img) => (
-          <ImageCardEnhanced key={img.id} img={img} onSelectImage={onSelectImage} selectedImageId={selectedImageId} onUpdateTags={onUpdateTags} onUpdateScore={onUpdateScore} onDeleteImage={onDeleteImage} />
+          <ImageCardEnhanced key={img.id} img={img} onSelectImage={onSelectImage} selectedImageId={selectedImageId} onUpdateTags={onUpdateTags} onUpdateScore={onUpdateScore} onDeleteImage={onDeleteImage} tagOptions={tagOptions} />
         ))}
       </div>
     );
@@ -1007,7 +1423,7 @@ function SortableImageGrid({ images, gridCols, onSelectImage, selectedImageId, o
       <SortableContext items={items.map((i) => i.id)} strategy={rectSortingStrategy}>
         <div className={`grid ${gridCols} gap-3`}>
           {items.map((img) => (
-            <SortableImageCard key={img.id} img={img} onSelectImage={onSelectImage} selectedImageId={selectedImageId} onUpdateTags={onUpdateTags} onUpdateScore={onUpdateScore} onDeleteImage={onDeleteImage} />
+            <SortableImageCard key={img.id} img={img} onSelectImage={onSelectImage} selectedImageId={selectedImageId} onUpdateTags={onUpdateTags} onUpdateScore={onUpdateScore} onDeleteImage={onDeleteImage} tagOptions={tagOptions} />
           ))}
         </div>
       </SortableContext>
