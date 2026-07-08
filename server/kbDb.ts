@@ -175,6 +175,18 @@ export async function reorderImages(imageOrders: { id: number; positionIndex: nu
     await _d.update(kbImages).set({ positionIndex: item.positionIndex }).where(eq(kbImages.id, item.id));
   }
 }
+export async function getMaxPositionIndexByPosition(imageSetId: number, position: string): Promise<number> {
+  const _d = await db();
+  const rows = await _d.select({ maxIdx: sql<number>`COALESCE(MAX(${kbImages.positionIndex}), -1)` })
+    .from(kbImages)
+    .where(and(eq(kbImages.imageSetId, imageSetId), eq(kbImages.imagePosition, position as any)));
+  return (rows[0]?.maxIdx ?? -1);
+}
+export async function getImageById(id: number) {
+  const _d = await db();
+  const rows = await _d.select().from(kbImages).where(eq(kbImages.id, id));
+  return rows[0] ?? null;
+}
 export async function listAllImages(userId: number, scope: Scope = "mine", filters?: { tagCategory?: string; tagColorScheme?: string; tagImageType?: string; tagDesignStyle?: string; imagePosition?: string; tagImageBelong?: string; tagImageBelongSub?: string; tagImageTypeMain?: string; tagImageTypeSub?: string; tagSellingPointCategory?: string; tagSellingPointDetail?: string; tagComposition?: string; tagColorSchemeV2?: string; tagDesignStyleV2?: string }) {
   const _d = await db();
   const conditions: any[] = [];

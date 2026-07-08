@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight, X, GripVertical } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, X, GripVertical } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -34,6 +34,7 @@ interface AmazonStyleGalleryProps {
   renderTagEditor?: (img: GalleryImage) => ReactNode;
   onReorder?: (imageOrders: { id: number; positionIndex: number }[]) => void;
   allowEdit?: boolean;
+  onSwapAplus?: (fromIndex: number, toIndex: number) => void;
 }
 
 const APLUS_MODULE_LABELS: Record<string, string> = {
@@ -98,13 +99,16 @@ function SortableThumbnail({ img, index, isActive, mainCount, onClick }: {
 }
 
 /** Sortable A+ / Brand Story image item */
-function SortableVerticalImage({ img, selectedImageId, onSelectImage, onDeleteImage, renderTagEditor, sectionType }: {
+function SortableVerticalImage({ img, selectedImageId, onSelectImage, onDeleteImage, renderTagEditor, sectionType, index, total, onSwap }: {
   img: GalleryImage;
   selectedImageId: number | null;
   onSelectImage: (id: number | null) => void;
   onDeleteImage?: (imageId: number) => void;
   renderTagEditor?: (img: GalleryImage) => ReactNode;
   sectionType: "aplus" | "brand_story";
+  index?: number;
+  total?: number;
+  onSwap?: (fromIndex: number, toIndex: number) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: img.id });
   const style = {
@@ -131,6 +135,27 @@ function SortableVerticalImage({ img, selectedImageId, onSelectImage, onDeleteIm
         >
           <GripVertical className="h-4 w-4 text-muted-foreground" />
         </div>
+        {/* Swap up/down buttons */}
+        {onSwap && index !== undefined && total !== undefined && (
+          <div className="absolute top-2 left-10 z-10 opacity-0 group-hover/ap:opacity-100 group-hover/vs:opacity-100 transition-opacity flex flex-col gap-0.5" onClick={(e) => e.stopPropagation()}>
+            <button
+              disabled={index === 0}
+              onClick={(e) => { e.stopPropagation(); onSwap(index, index - 1); }}
+              className="bg-white/90 hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed rounded p-0.5 shadow-sm transition-colors"
+              title="上移"
+            >
+              <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+            <button
+              disabled={index === total - 1}
+              onClick={(e) => { e.stopPropagation(); onSwap(index, index + 1); }}
+              className="bg-white/90 hover:bg-primary/20 disabled:opacity-30 disabled:cursor-not-allowed rounded p-0.5 shadow-sm transition-colors"
+              title="下移"
+            >
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          </div>
+        )}
         {onDeleteImage && (
           <button
             className="absolute top-2 right-2 z-10 bg-destructive/90 hover:bg-destructive text-white rounded-full p-1 opacity-0 group-hover/ap:opacity-100 group-hover/vs:opacity-100 transition-opacity shadow-sm"
@@ -140,7 +165,7 @@ function SortableVerticalImage({ img, selectedImageId, onSelectImage, onDeleteIm
           </button>
         )}
         {img.aplusModuleType && img.aplusModuleType !== "unknown" && (
-          <Badge className={`absolute top-2 left-10 text-[9px] border-0 ${
+          <Badge className={`absolute top-2 left-20 text-[9px] border-0 ${
             img.aplusModuleType === "comparison_table" ? "bg-blue-500/80 text-white" :
             img.aplusModuleType === "image_carousel" ? "bg-green-500/80 text-white" :
             img.aplusModuleType === "full_width_image" ? "bg-purple-500/80 text-white" :
@@ -179,6 +204,7 @@ export function AmazonStyleGallery({
   renderTagEditor,
   onReorder,
   allowEdit = false,
+  onSwapAplus,
 }: AmazonStyleGalleryProps) {
   // Combine main + secondary for the gallery carousel
   const [galleryItems, setGalleryItems] = useState<GalleryImage[]>([]);
@@ -253,6 +279,19 @@ export function AmazonStyleGallery({
       onReorder(newItems.map((item, idx) => ({ id: item.id, positionIndex: idx + 100 })));
     }
   }, [aplusItems, onReorder]);
+
+  // Handle A+ swap via up/down buttons
+  const handleAplusSwap = useCallback((fromIndex: number, toIndex: number) => {
+    if (toIndex < 0 || toIndex >= aplusItems.length) return;
+    const newItems = arrayMove(aplusItems, fromIndex, toIndex);
+    setAplusItems(newItems);
+    if (onReorder) {
+      onReorder(newItems.map((item, idx) => ({ id: item.id, positionIndex: idx + 100 })));
+    }
+    if (onSwapAplus) {
+      onSwapAplus(fromIndex, toIndex);
+    }
+  }, [aplusItems, onReorder, onSwapAplus]);
 
   // Handle drag end for brand story images
   const handleBrandStoryDragEnd = useCallback((event: DragEndEvent) => {
@@ -510,7 +549,7 @@ export function AmazonStyleGallery({
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleAplusDragEnd}>
               <SortableContext items={aplusItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
                 <div className="flex flex-col gap-0 rounded-lg overflow-hidden border">
-                  {aplusItems.map((img) => (
+                  {aplusItems.map((img, idx) => (
                     <SortableVerticalImage
                       key={img.id}
                       img={img}
@@ -519,6 +558,9 @@ export function AmazonStyleGallery({
                       onDeleteImage={onDeleteImage}
                       renderTagEditor={renderTagEditor}
                       sectionType="aplus"
+                      index={idx}
+                      total={aplusItems.length}
+                      onSwap={handleAplusSwap}
                     />
                   ))}
                 </div>

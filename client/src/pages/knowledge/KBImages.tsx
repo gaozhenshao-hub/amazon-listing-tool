@@ -196,7 +196,15 @@ export default function KBImages() {
     onError: (e: any) => toast.error(e.message),
   });
   const updateImageTagsMutation = trpc.kbImages.confirmImageTags.useMutation({
-    onSuccess: () => { toast.success("标签已更新"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listAllImages.invalidate(); },
+    onSuccess: (result: any) => {
+      if (result?.moved) {
+        toast.success("图片已移动到对应区域");
+      } else {
+        toast.success("标签已更新");
+      }
+      utils.kbImages.getSet.invalidate({ id: detailSetId! });
+      utils.kbImages.listAllImages.invalidate();
+    },
     onError: (e: any) => toast.error(e.message),
   });
   const updateImageScoreMutation = trpc.kbImages.updateImageScore.useMutation({
