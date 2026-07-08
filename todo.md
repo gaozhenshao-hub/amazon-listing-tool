@@ -20,3 +20,13 @@
 
 - [ ] 前端 bundle 体积过大（index.js 9.8MB），建议拆分动态导入
 - [ ] 部分 offsite 表仍有冗余旧字段，可在后续版本清理
+
+## 独立账号密码登录（2026-07-08）
+
+- [x] users 表新增 password_hash、must_change_password 字段
+- [x] 后端：账号密码登录接口（bcrypt 验证）
+- [x] 后端：修改密码接口
+- [x] 前端：密码登录页面（与 Manus OAuth 并存）
+- [x] 前端：首次登录强制修改密码弹窗
+- [x] 预设管理员账号 kangboning（首次登录需改密码）
+- [x] 测试通过，保存 Checkpoint 并发布
