@@ -424,9 +424,11 @@ export const kbTagsRouter = router({
           lightType: style.lightType,
           colorTemp: style.colorTemp,
           materialKeywords: style.materialKeywords,
+          colorTone: style.colorTone,
           tabooElements: style.tabooElements,
           refBrands: style.refBrands,
           aiKeywords: style.aiKeywords,
+          styleFeature: style.styleFeature,
         }));
       }
       // Image Type (hierarchical)

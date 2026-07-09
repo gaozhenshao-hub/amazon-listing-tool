@@ -29,9 +29,11 @@ interface StyleParams {
   lightType?: string;
   colorTemp?: string;
   materialKeywords?: string;
+  colorTone?: string;
   tabooElements?: string;
   refBrands?: string;
   aiKeywords?: string;
+  styleFeature?: string;
 }
 
 export function KBTagManagement() {
@@ -420,9 +422,11 @@ export function KBTagManagement() {
                                 {params.lightType && <div><span className="font-medium">光源:</span> {params.lightType}</div>}
                                 {params.colorTemp && <div><span className="font-medium">色温:</span> {params.colorTemp}</div>}
                                 {params.materialKeywords && <div><span className="font-medium">材质:</span> {params.materialKeywords}</div>}
+                                {params.colorTone && <div><span className="font-medium">色调:</span> {params.colorTone}</div>}
                                 {params.tabooElements && <div><span className="font-medium">禁忌:</span> {params.tabooElements}</div>}
                                 {params.refBrands && <div><span className="font-medium">参考品牌:</span> {params.refBrands}</div>}
                                 {params.aiKeywords && <div className="truncate"><span className="font-medium">AI关键词:</span> {params.aiKeywords}</div>}
+                                {params.styleFeature && <div><span className="font-medium">风格特点:</span> {params.styleFeature}</div>}
                               </div>
                             </Card>
                           );
@@ -488,6 +492,15 @@ export function KBTagManagement() {
                     />
                   </div>
                   <div>
+                    <Label className="text-xs text-muted-foreground">色调</Label>
+                    <Input
+                      value={styleParams.colorTone || ""}
+                      onChange={(e) => setStyleParams(p => ({ ...p, colorTone: e.target.value }))}
+                      placeholder="如：白、灰、黑、科技蓝"
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div>
                     <Label className="text-xs text-muted-foreground">禁忌元素</Label>
                     <Input
                       value={styleParams.tabooElements || ""}
@@ -511,6 +524,15 @@ export function KBTagManagement() {
                       value={styleParams.aiKeywords || ""}
                       onChange={(e) => setStyleParams(p => ({ ...p, aiKeywords: e.target.value }))}
                       placeholder="如：minimalist product photography, clean white background"
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">风格特点</Label>
+                    <Input
+                      value={styleParams.styleFeature || ""}
+                      onChange={(e) => setStyleParams(p => ({ ...p, styleFeature: e.target.value }))}
+                      placeholder="如：线条简洁、大面积留白、高级感质感"
                       className="h-8 text-xs"
                     />
                   </div>
@@ -590,6 +612,14 @@ export function KBTagManagement() {
                     />
                   </div>
                   <div>
+                    <Label className="text-xs text-muted-foreground">色调</Label>
+                    <Input
+                      value={styleParams.colorTone || ""}
+                      onChange={(e) => setStyleParams(p => ({ ...p, colorTone: e.target.value }))}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div>
                     <Label className="text-xs text-muted-foreground">禁忌元素</Label>
                     <Input
                       value={styleParams.tabooElements || ""}
@@ -610,6 +640,14 @@ export function KBTagManagement() {
                     <Input
                       value={styleParams.aiKeywords || ""}
                       onChange={(e) => setStyleParams(p => ({ ...p, aiKeywords: e.target.value }))}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">风格特点</Label>
+                    <Input
+                      value={styleParams.styleFeature || ""}
+                      onChange={(e) => setStyleParams(p => ({ ...p, styleFeature: e.target.value }))}
                       className="h-8 text-xs"
                     />
                   </div>

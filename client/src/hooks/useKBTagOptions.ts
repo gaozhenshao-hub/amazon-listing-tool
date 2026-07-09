@@ -12,8 +12,14 @@ import { trpc } from "@/lib/trpc";
 const FALLBACK_CATEGORY = ["家居","餐厨","庭院花园","房车户外","泳池","玩具","个护","大小家电","3C数码","五金工具","家电配件","母婴（儿童）","老人","运动健身","宠物","工业品","农业品","实验室品"];
 const FALLBACK_COLOR = ["红色","绿色","蓝色","黄色","橙色","紫色","金色","浅灰","深灰","浅棕","深棕","白色","黑色"];
 const FALLBACK_IMAGE_BELONG = ["主图", "套图", "A+", "品牌故事"];
+const FALLBACK_IMAGE_BELONG_HIERARCHY: Record<string, string[]> = {
+  "主图": [],
+  "套图": [],
+  "A+": ["图片轮播", "对比表格", "全宽图", "图文叠加", "四图文", "三图文", "热点交互", "视频模块", "导航轮播", "单图侧文", "技术参数表", "品牌故事卡"],
+  "品牌故事": [],
+};
 const FALLBACK_COMPOSITION = ["居中构图", "三分法构图", "对角线构图", "模块化构图", "二分构图", "环绕构图", "层叠构图", "大面积留白"];
-const FALLBACK_STYLE = ["大厂极简风","日系小清新","美式家居温馨风","北欧原木治愈风","户外探险风","科技未来感","轻奢高端风","工业硬核风","ins网红风","母婴柔和风","国潮新中式","暗黑酷炫风","田园自然风"];
+const FALLBACK_STYLE = ["大厂工业极简风","现代都市风","大胆图形风","美式复古风","北欧原木风","温馨家居风","INS生活风","轻奢高级风","运动活力风","健康生活风","户外探险风","庭院休闲风","亲和童趣风","工业硬核风","赛博科技风","田园自然风"];
 const FALLBACK_IMAGE_TYPE_HIERARCHY: Record<string, string[]> = {
   "对比": ["综合对比", "细节对比", "尺寸对比", "参数对比"],
   "细节": ["单一特写", "多细节", "场景加细节"],
@@ -36,8 +42,10 @@ export interface TagOptions {
   categoryOptions: string[];
   colorOptions: string[];
   imageBelongOptions: string[];
+  imageBelongHierarchy: Record<string, string[]>; // top-level → sub-tags
   compositionOptions: string[];
   styleOptions: string[];
+  styleParamsMap: Record<string, any>; // style name → parsed metadata object
   imageTypeHierarchy: Record<string, string[]>;
   imageTypeMainOptions: string[];
   sellingPointHierarchy: Record<string, string[]>;
@@ -50,39 +58,38 @@ export interface TagOptions {
 
 export function useKBTagOptions(): TagOptions {
   // Fetch all dimensions in parallel
-  // staleTime: 0 ensures that invalidate() in KBTagManagement triggers an immediate refetch
   const { data: categoryTags, isLoading: catLoading } = trpc.kbTags.listAllForDimension.useQuery(
     { dimension: "category" },
-    { staleTime: 0 }
+    { staleTime: 0 } // Always fresh so tag management changes sync immediately
   );
   const { data: colorTags, isLoading: colorLoading } = trpc.kbTags.listAllForDimension.useQuery(
     { dimension: "color" },
-    { staleTime: 0 }
+    { staleTime: 0 } // Always fresh so tag management changes sync immediately
   );
   const { data: imageBelongTags, isLoading: belongLoading } = trpc.kbTags.listAllForDimension.useQuery(
     { dimension: "imageBelong" },
-    { staleTime: 0 }
+    { staleTime: 0 } // Always fresh so tag management changes sync immediately
   );
   const { data: compositionTags, isLoading: compLoading } = trpc.kbTags.listAllForDimension.useQuery(
     { dimension: "composition" },
-    { staleTime: 0 }
+    { staleTime: 0 } // Always fresh so tag management changes sync immediately
   );
   const { data: styleTags, isLoading: styleLoading } = trpc.kbTags.listAllForDimension.useQuery(
     { dimension: "style" },
-    { staleTime: 0 }
+    { staleTime: 0 } // Always fresh so tag management changes sync immediately
   );
   const { data: imageTypeTags, isLoading: typeLoading } = trpc.kbTags.listAllForDimension.useQuery(
     { dimension: "imageType" },
-    { staleTime: 0 }
+    { staleTime: 0 } // Always fresh so tag management changes sync immediately
   );
   const { data: sellingPointTags, isLoading: spLoading } = trpc.kbTags.listAllForDimension.useQuery(
     { dimension: "sellingPoint" },
-    { staleTime: 0 }
+    { staleTime: 0 } // Always fresh so tag management changes sync immediately
   );
 
   // Fetch LIVE tag counts from actual image/set data (not cached usageCount)
   const { data: liveCounts } = trpc.kbTags.getTagCountsLive.useQuery(undefined, {
-    staleTime: 0, // Always refetch on invalidate
+    staleTime: 2 * 60 * 1000, // Refresh every 2 minutes
   });
 
   const isLoading = catLoading || colorLoading || belongLoading || compLoading || styleLoading || typeLoading || spLoading;
@@ -100,7 +107,20 @@ export function useKBTagOptions(): TagOptions {
 
   const imageBelongOptions = useMemo(() => {
     if (!imageBelongTags || imageBelongTags.length === 0) return FALLBACK_IMAGE_BELONG;
-    return imageBelongTags.map(t => t.value);
+    // Only return top-level tags (no parentValue) — sub-tags like A+ modules should not appear in the dropdown
+    return imageBelongTags.filter(t => !t.parentValue).map(t => t.value);
+  }, [imageBelongTags]);
+
+  const imageBelongHierarchy = useMemo(() => {
+    if (!imageBelongTags || imageBelongTags.length === 0) return FALLBACK_IMAGE_BELONG_HIERARCHY;
+    const parents = imageBelongTags.filter(t => !t.parentValue);
+    const hierarchy: Record<string, string[]> = {};
+    parents.forEach(p => {
+      hierarchy[p.value] = imageBelongTags
+        .filter(t => t.parentValue === p.value)
+        .map(t => t.value);
+    });
+    return hierarchy;
   }, [imageBelongTags]);
 
   const compositionOptions = useMemo(() => {
@@ -111,6 +131,17 @@ export function useKBTagOptions(): TagOptions {
   const styleOptions = useMemo(() => {
     if (!styleTags || styleTags.length === 0) return FALLBACK_STYLE;
     return styleTags.map(t => t.value);
+  }, [styleTags]);
+
+  const styleParamsMap = useMemo(() => {
+    if (!styleTags || styleTags.length === 0) return {};
+    const map: Record<string, any> = {};
+    for (const tag of styleTags) {
+      if (tag.metadata) {
+        try { map[tag.value] = JSON.parse(tag.metadata); } catch {}
+      }
+    }
+    return map;
   }, [styleTags]);
 
   // Build hierarchical options for imageType
@@ -171,8 +202,10 @@ export function useKBTagOptions(): TagOptions {
     categoryOptions,
     colorOptions,
     imageBelongOptions,
+    imageBelongHierarchy,
     compositionOptions,
     styleOptions,
+    styleParamsMap,
     imageTypeHierarchy,
     imageTypeMainOptions,
     sellingPointHierarchy,

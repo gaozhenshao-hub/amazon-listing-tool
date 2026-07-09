@@ -6,11 +6,11 @@ import { describe, it, expect } from "vitest";
 
 // ─── Test 1: imageTagConstants exports ───
 describe("imageTagConstants exports", () => {
-  it("should export IMAGE_STYLES array with 13 styles", async () => {
+  it("should export IMAGE_STYLES array with 16 styles", async () => {
     const mod = await import("./constants/imageTagConstants");
     expect(mod.IMAGE_STYLES).toBeDefined();
     expect(Array.isArray(mod.IMAGE_STYLES)).toBe(true);
-    expect(mod.IMAGE_STYLES.length).toBe(13);
+    expect(mod.IMAGE_STYLES.length).toBe(16);
   });
 
   it("should export IMAGE_TYPE_MAIN_OPTIONS with 6 main types", async () => {
@@ -96,7 +96,7 @@ describe("imageTagConstants exports", () => {
     const mod = await import("./constants/imageTagConstants");
     expect(typeof mod.getStyleParams).toBe("function");
     // Test with a known style
-    const params = mod.getStyleParams("大厂极简风");
+    const params = mod.getStyleParams("大厂工业极简风");
     expect(params).toBeDefined();
     expect(params?.lightType).toBeDefined();
   });

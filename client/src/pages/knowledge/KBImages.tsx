@@ -58,23 +58,10 @@ const SELLING_POINT_MAIN_OPTIONS = Object.keys(SELLING_POINT_HIERARCHY);
 // COLOR_SCHEME_OPTIONS kept for backward compatibility in single-image tags
 const COLOR_SCHEME_OPTIONS = ["莫兰迪色系", "高饱和撞色", "黑金配色", "大地色系", "马卡龙色系", "渐变色系", "纯白极简", "对比撞色", "金属色系", "自然绿植色系"];
 const COMPOSITION_OPTIONS = ["居中构图", "三分法构图", "对角线构图", "模块化构图", "二分构图", "环绕构图", "层叠构图", "大面积留白"];
-const STYLE_NAME_OPTIONS = ["大厂极简风","日系小清新","美式家居温馨风","北欧原木治愈风","户外探险风","科技未来感","轻奢高端风","工业硬核风","ins网红风","母婴柔和风","国潮新中式","暗黑酷炫风","田园自然风"];
-// Style structured params map (from server/constants/imageTagConstants.ts)
-const STYLE_PARAMS_MAP: Record<string, { lightType: string; colorTemp: string; materialKeywords: string; tabooElements: string; refBrands: string; aiKeywords: string }> = {
-  "大厂极简风": { lightType: "柔光箱 + 均匀散射", colorTemp: "5500-6500K（冷白）", materialKeywords: "哑光塑料、阳极氧化铝、玻璃", tabooElements: "花哨背景、过多文字、低分辨率", refBrands: "Apple、Dyson、Bose、小米", aiKeywords: "minimalist product photography, clean white background, soft even lighting, premium feel" },
-  "日系小清新": { lightType: "自然光 + 柔和侧光", colorTemp: "5000-5500K（自然白偏暖）", materialKeywords: "原木、棉麻、陶瓷、干花", tabooElements: "高饱和色、金属质感、硬光阴影", refBrands: "MUJI、nitori、KEYUCA", aiKeywords: "japanese minimalist style, natural light, soft tones, organic textures, zen simplicity" },
-  "美式家居温馨风": { lightType: "暖色台灯 + 自然光混合", colorTemp: "3500-4500K（暖白）", materialKeywords: "皮革、深色木、铜件、绿植", tabooElements: "塑料感、荧光色、极简冷淡", refBrands: "Pottery Barn、West Elm、Crate & Barrel", aiKeywords: "american cozy home style, warm ambient lighting, leather and wood textures, lived-in comfort, earth tones" },
-  "北欧原木治愈风": { lightType: "大面积柔光 + 侧窗自然光", colorTemp: "4500-5500K（自然中性）", materialKeywords: "白橡木、羊毛、亚麻、陶土", tabooElements: "深色重色、复杂图案、金属反光", refBrands: "IKEA、HAY、Marimekko、Ferm Living", aiKeywords: "scandinavian design, light oak wood, natural materials, hygge atmosphere, muted pastels, clean lines" },
-  "户外探险风": { lightType: "强烈日光 + 硬阴影", colorTemp: "5500-6500K（日光）", materialKeywords: "岩石、泥土、帐篷面料、登山绳", tabooElements: "室内场景、精致摆拍、柔美元素", refBrands: "The North Face、Patagonia、YETI", aiKeywords: "outdoor adventure, rugged terrain, harsh natural light, action shot, durable equipment, wilderness backdrop" },
-  "科技未来感": { lightType: "RGB灯带 + 点光源 + 硬光", colorTemp: "7000-9000K（冷蓝）+ 彩色点缀", materialKeywords: "碳纤维、钢化玻璃、LED、金属网格", tabooElements: "自然材质、暖色调、田园元素", refBrands: "Razer、ROG、Tesla Cybertruck", aiKeywords: "cyberpunk tech aesthetic, neon glow, dark background with RGB accents, futuristic, metallic surfaces" },
-  "轻奢高端风": { lightType: "聚光灯 + 反射面营造光泽", colorTemp: "4000-5000K + 金色反射", materialKeywords: "大理石、黄铜、丝绒、水晶", tabooElements: "塑料、粗糙纹理、过于鲜艳", refBrands: "Jo Malone、Diptyque、Aesop", aiKeywords: "luxury premium aesthetic, marble and brass, velvet textures, golden accents, sophisticated composition" },
-  "工业硬核风": { lightType: "硬光侧光 + 强对比", colorTemp: "5500-7000K（冷白偏蓝）", materialKeywords: "水泥、铁件、裸砖、黑色哑光", tabooElements: "花卉、柔美曲线、马卡龙色", refBrands: "Milwaukee、DeWalt、Makita", aiKeywords: "industrial minimalist, concrete and steel, harsh directional light, high contrast, raw materials, utilitarian" },
-  "ins网红风": { lightType: "golden hour自然光 + 柔焦", colorTemp: "4500-5500K（自然偏暖）", materialKeywords: "绿植、咖啡、书籍、针织毯", tabooElements: "过于商业化、硬光、纯白背景", refBrands: "Glossier、Anthropologie、Urban Outfitters", aiKeywords: "instagram lifestyle, golden hour light, flat lay composition, aesthetic arrangement, natural props, bokeh" },
-  "母婴柔和风": { lightType: "超柔散射光 + 无阴影", colorTemp: "4000-5000K（柔和暖白）", materialKeywords: "纯棉、硅胶、圆角、马卡龙色", tabooElements: "尖锐物、深暗色调、复杂背景", refBrands: "Babycare、Hegen、Stokke", aiKeywords: "baby safe aesthetic, pastel colors, soft rounded shapes, gentle lighting, cotton textures, nurturing mood" },
-  "国潮新中式": { lightType: "侧光 + 局部聚光", colorTemp: "4000-5000K（暖中性）", materialKeywords: "宣纸、竹、漆器、祥云纹、水墨", tabooElements: "西式花纹、极简工业、荧光色", refBrands: "花西子、观夏、茶颜悦色", aiKeywords: "chinese modern style, ink wash painting elements, bamboo and lacquer, traditional patterns, cultural fusion" },
-  "暗黑酷炫风": { lightType: "单点硬光 + 大面积暗部", colorTemp: "6000-8000K（冷调）", materialKeywords: "黑色哑光、金属、烟雾、激光", tabooElements: "明亮色彩、可爱元素、自然场景", refBrands: "GoPro、DJI、Alienware", aiKeywords: "dark moody aesthetic, dramatic single light source, smoke effects, metallic highlights, mysterious atmosphere" },
-  "田园自然风": { lightType: "自然散射光 + 绿色反射", colorTemp: "5000-5500K（自然白）", materialKeywords: "牛皮纸、干花、棉布、木托盘", tabooElements: "塑料、金属、荧光色、人工感", refBrands: "Aesop、The Body Shop、悦木之源", aiKeywords: "organic natural style, botanical elements, kraft paper, dried flowers, earth tones, sustainable aesthetic" },
-};
+// STYLE_NAME_OPTIONS and STYLE_PARAMS_MAP are now driven by dbTags.styleOptions from useKBTagOptions
+// Kept as empty fallback for legacy references
+const STYLE_NAME_OPTIONS: string[] = [];
+const STYLE_PARAMS_MAP: Record<string, { lightType: string; colorTemp: string; materialKeywords: string; tabooElements: string; refBrands: string; aiKeywords: string }> = {};
 // Legacy options kept for backward compatibility in display
 const CATEGORY_OPTIONS = CATEGORY_OPTIONS_V2;
 const COLOR_OPTIONS = ["暖色系","冷色系","中性色系","撞色/对比色","品牌色","渐变色"];
@@ -196,15 +183,7 @@ export default function KBImages() {
     onError: (e: any) => toast.error(e.message),
   });
   const updateImageTagsMutation = trpc.kbImages.confirmImageTags.useMutation({
-    onSuccess: (result: any) => {
-      if (result?.moved) {
-        toast.success("图片已移动到对应区域");
-      } else {
-        toast.success("标签已更新");
-      }
-      utils.kbImages.getSet.invalidate({ id: detailSetId! });
-      utils.kbImages.listAllImages.invalidate();
-    },
+    onSuccess: () => { toast.success("标签已更新"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listAllImages.invalidate(); },
     onError: (e: any) => toast.error(e.message),
   });
   const updateImageScoreMutation = trpc.kbImages.updateImageScore.useMutation({
@@ -306,15 +285,23 @@ export default function KBImages() {
     return cols;
   }, [filteredImages]);
 
-  // Group detail set images by position
+  // Group detail set images — tagImageBelong takes priority; fall back to imagePosition
   const groupedImages = useMemo(() => {
     if (!detailSet) return { main: [], secondary: [], aplus: [], brand_story: [] };
     const imgs = (detailSet as any).images || [];
+    const getGroup = (i: any): string => {
+      const belong = (i.tagImageBelong || "").trim();
+      if (belong === "主图" || belong === "套图") return belong === "套图" ? "secondary" : "main";
+      if (belong === "A+") return "aplus";
+      if (belong === "品牌故事") return "brand_story";
+      // No tag yet — fall back to crawled imagePosition
+      return i.imagePosition || "secondary";
+    };
     return {
-      main: imgs.filter((i: any) => i.imagePosition === "main"),
-      secondary: imgs.filter((i: any) => i.imagePosition === "secondary"),
-      aplus: imgs.filter((i: any) => i.imagePosition === "aplus"),
-      brand_story: imgs.filter((i: any) => i.imagePosition === "brand_story"),
+      main: imgs.filter((i: any) => getGroup(i) === "main"),
+      secondary: imgs.filter((i: any) => getGroup(i) === "secondary"),
+      aplus: imgs.filter((i: any) => getGroup(i) === "aplus"),
+      brand_story: imgs.filter((i: any) => getGroup(i) === "brand_story"),
     };
   }, [detailSet]);
 
@@ -710,7 +697,7 @@ export default function KBImages() {
 
       {/* ═══ ASIN Set Detail Dialog — Images Grouped by Position ═══ */}
       <Dialog open={!!detailSetId} onOpenChange={(open) => !open && setDetailSetId(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[60vw] max-w-[60vw] max-h-[90vh] overflow-y-auto">
           {detailSet ? (() => {
             const d = detailSet as any;
             const status = statusMap[d.status] || { label: d.status, variant: "secondary" as const };
@@ -837,6 +824,7 @@ export default function KBImages() {
                   )}
 
                   {/* ── Amazon-Style Gallery (Main + Secondary + Brand Story + A+) ── */}
+                  <div className="-mx-6">
                   <AmazonStyleGallery
                     mainImages={groupedImages.main}
                     secondaryImages={groupedImages.secondary}
@@ -863,7 +851,7 @@ export default function KBImages() {
                               <Select value={(img as any).tagImageBelongSub || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagImageBelongSub: v })}>
                                 <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="A+子模块" /></SelectTrigger>
                                 <SelectContent>
-                                  {IMAGE_BELONG_HIERARCHY["A+"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                                  {(dbTags.imageBelongHierarchy?.["A+"] || IMAGE_BELONG_HIERARCHY["A+"]).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                                 </SelectContent>
                               </Select>
                             )}
@@ -932,6 +920,7 @@ export default function KBImages() {
                       );
                     }}
                   />
+                  </div>
 
 
 
@@ -950,7 +939,7 @@ export default function KBImages() {
                           <Select
                             value={d.setStyle || ""}
                             onValueChange={(val) => {
-                              const params = STYLE_PARAMS_MAP[val];
+                              const params = dbTags.styleParamsMap[val];
                               updateSetStyleMutation.mutate({
                                 id: detailSetId!,
                                 setStyle: val,
@@ -960,7 +949,7 @@ export default function KBImages() {
                           >
                             <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择风格" /></SelectTrigger>
                             <SelectContent>
-                              {STYLE_NAME_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                              {dbTags.styleOptions.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                             </SelectContent>
                           </Select>
                         </div>
@@ -1007,7 +996,7 @@ export default function KBImages() {
                       {(() => {
                         let styleParams: any = null;
                         try { styleParams = JSON.parse(d.setStyleParams || ""); } catch {}
-                        if (!styleParams && d.setStyle) styleParams = STYLE_PARAMS_MAP[d.setStyle];
+                        if (!styleParams && d.setStyle) styleParams = dbTags.styleParamsMap[d.setStyle];
                         if (!styleParams) return null;
                         return (
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 p-3 bg-white/60 rounded-lg border border-indigo-100">
@@ -1277,7 +1266,7 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
               <Select value={(img as any).tagImageBelongSub || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageBelongSub: v })}>
                 <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="A+子模块" /></SelectTrigger>
                 <SelectContent>
-                  {IMAGE_BELONG_HIERARCHY["A+"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  {(tagOptions?.imageBelongHierarchy?.["A+"] || IMAGE_BELONG_HIERARCHY["A+"]).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             )}

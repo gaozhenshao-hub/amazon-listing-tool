@@ -879,3 +879,58 @@ export async function getProjectByIdAdmin(id: number) {
   const rows = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
   return rows[0] ?? null;
 }
+
+// --- Delete User Helpers ---
+import { devProjects } from "../drizzle/schema";
+import { kbImageSets, kbListingCopywriting, kbProductInnovations, kbOperationSkills, kbVideos } from "../drizzle/schema";
+import { productProfiles } from "../drizzle/schema";
+
+export async function getUserDataCounts(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const [projectCount] = await db.select({ count: sql<number>`count(*)` }).from(projects).where(eq(projects.userId, userId));
+  const [devProjectCount] = await db.select({ count: sql<number>`count(*)` }).from(devProjects).where(eq(devProjects.userId, userId));
+  const [kbImageSetCount] = await db.select({ count: sql<number>`count(*)` }).from(kbImageSets).where(eq(kbImageSets.userId, userId));
+  const [kbCopywritingCount] = await db.select({ count: sql<number>`count(*)` }).from(kbListingCopywriting).where(eq(kbListingCopywriting.userId, userId));
+  const [kbInnovationCount] = await db.select({ count: sql<number>`count(*)` }).from(kbProductInnovations).where(eq(kbProductInnovations.userId, userId));
+  const [kbSkillCount] = await db.select({ count: sql<number>`count(*)` }).from(kbOperationSkills).where(eq(kbOperationSkills.userId, userId));
+  const [kbVideoCount] = await db.select({ count: sql<number>`count(*)` }).from(kbVideos).where(eq(kbVideos.userId, userId));
+  const [productCount] = await db.select({ count: sql<number>`count(*)` }).from(productProfiles).where(eq(productProfiles.userId, userId));
+
+  return {
+    projects: Number(projectCount.count),
+    devProjects: Number(devProjectCount.count),
+    kbImageSets: Number(kbImageSetCount.count),
+    kbCopywriting: Number(kbCopywritingCount.count),
+    kbInnovations: Number(kbInnovationCount.count),
+    kbSkills: Number(kbSkillCount.count),
+    kbVideos: Number(kbVideoCount.count),
+    products: Number(productCount.count),
+  };
+}
+
+export async function transferUserData(fromUserId: number, toUserId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db.update(projects).set({ userId: toUserId }).where(eq(projects.userId, fromUserId));
+  await db.update(devProjects).set({ userId: toUserId }).where(eq(devProjects.userId, fromUserId));
+  await db.update(kbImageSets).set({ userId: toUserId }).where(eq(kbImageSets.userId, fromUserId));
+  await db.update(kbListingCopywriting).set({ userId: toUserId }).where(eq(kbListingCopywriting.userId, fromUserId));
+  await db.update(kbProductInnovations).set({ userId: toUserId }).where(eq(kbProductInnovations.userId, fromUserId));
+  await db.update(kbOperationSkills).set({ userId: toUserId }).where(eq(kbOperationSkills.userId, fromUserId));
+  await db.update(kbVideos).set({ userId: toUserId }).where(eq(kbVideos.userId, fromUserId));
+  await db.update(productProfiles).set({ userId: toUserId }).where(eq(productProfiles.userId, fromUserId));
+}
+
+export async function deleteUserById(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Delete login logs
+  await db.delete(loginLogs).where(eq(loginLogs.userId, userId));
+  // Delete notifications
+  await db.delete(notifications).where(eq(notifications.userId, userId));
+  // Delete user
+  await db.delete(users).where(eq(users.id, userId));
+}

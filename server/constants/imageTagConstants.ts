@@ -3,135 +3,196 @@
  * 基于优化后的标签体系：套图风格结构化参数 + 单图7维标签 + 图片归属分类
  */
 
-// ============ 套图风格（13种 + 结构化参数） ============
+// ============ 套图风格（16种 + 结构化参数） ============
 
 export interface StyleParams {
   name: string;
   lightType: string;
   colorTemp: string;
   materialKeywords: string;
+  colorTone: string;        // 色调
   tabooElements: string;
   refBrands: string;
   aiKeywords: string;
+  styleFeature?: string;    // 风格特点
 }
 
 export const IMAGE_STYLES: readonly StyleParams[] = [
   {
-    name: "大厂极简风",
+    name: "大厂工业极简风",
     lightType: "柔光箱 + 均匀散射光",
     colorTemp: "5500-6500K（中性偏冷）",
     materialKeywords: "亚克力、磨砂玻璃、铝合金、纯色纸",
-    tabooElements: "复杂纹理、花卉、暖木纹",
-    refBrands: "Apple、Dyson、Bose、小米",
-    aiKeywords: "minimalist product photography, clean white background, soft diffused lighting, premium tech aesthetic, no shadows"
+    colorTone: "白、灰、黑、科技蓝",
+    tabooElements: "复杂纹理、花卉、暖木纹、杂乱生活元素",
+    refBrands: "Apple、Dyson、Bose、Xiaomi",
+    aiKeywords: "minimalist product photography, clean white background, soft diffused lighting, premium tech aesthetic, acrylic display, industrial minimalism",
+    styleFeature: "极简、专业、高级、科技感、产品至上"
   },
   {
-    name: "日系小清新",
-    lightType: "自然窗光 + 反光板补光",
-    colorTemp: "5000-5500K（自然白）",
-    materialKeywords: "棉麻、原木、陶瓷、干花",
-    tabooElements: "金属工业感、深色背景、霓虹色",
-    refBrands: "MUJI、niko and...、KEYUCA",
-    aiKeywords: "japanese minimalist style, natural window light, cotton linen texture, warm neutral tones, airy composition"
+    name: "现代都市风",
+    lightType: "大面积自然光 + 落地窗漫射光",
+    colorTemp: "5200-6000K",
+    materialKeywords: "大理石、岩板、不锈钢、玻璃、黑钛金属",
+    colorTone: "黑、白、灰、石材色",
+    tabooElements: "原木乡村风、复古家具、碎花、过多暖色",
+    refBrands: "Joseph Joseph、simplehuman、Miele、Bosch Home Appliances",
+    aiKeywords: "modern contemporary home, luxury apartment, marble countertop, stainless steel kitchen, floor-to-ceiling window, premium lifestyle",
+    styleFeature: "都市、高级住宅、现代厨房、品质生活"
   },
   {
-    name: "美式家居温馨风",
-    lightType: "暖色台灯 + 自然光混合",
-    colorTemp: "3500-4500K（暖白）",
-    materialKeywords: "皮革、深色木、铜件、绿植",
-    tabooElements: "塑料感、荧光色、极简冷淡",
-    refBrands: "Pottery Barn、West Elm、Crate & Barrel",
-    aiKeywords: "american cozy home style, warm ambient lighting, leather and wood textures, lived-in comfort, earth tones"
+    name: "大胆图形风",
+    lightType: "均匀棚拍光",
+    colorTemp: "5500K",
+    materialKeywords: "纯色色块、几何图形、平面背景",
+    colorTone: "高饱和撞色（黄、蓝、红、橙、绿）",
+    tabooElements: "复杂场景、纹理过多、低对比度",
+    refBrands: "Liquid I.V.、Native、Method",
+    aiKeywords: "bold graphic design, colorful blocks, oversized typography, modern commercial layout, geometric shapes, vibrant branding",
+    styleFeature: "强营销、信息优先、视觉冲击、品牌设计感"
   },
   {
-    name: "北欧原木治愈风",
-    lightType: "大面积柔光 + 侧窗自然光",
-    colorTemp: "4500-5500K（自然中性）",
-    materialKeywords: "白橡木、羊毛、亚麻、陶土",
-    tabooElements: "深色重色、复杂图案、金属反光",
-    refBrands: "IKEA、HAY、Marimekko、Ferm Living",
-    aiKeywords: "scandinavian design, light oak wood, natural materials, hygge atmosphere, muted pastels, clean lines"
+    name: "美式复古风",
+    lightType: "暖色侧光 + 环境光",
+    colorTemp: "2800-3500K",
+    materialKeywords: "深色木材、皮革、黄铜、铸铁",
+    colorTone: "深棕、焦糖、酒红、墨绿",
+    tabooElements: "RGB灯、科技蓝、大面积纯白",
+    refBrands: "Le Creuset、Fellow",
+    aiKeywords: "vintage kitchen, rustic wood table, warm lighting, leather texture, heritage aesthetic, premium cookware",
+    styleFeature: "经典、质感、怀旧、手工感"
   },
   {
-    name: "科技未来感",
-    lightType: "RGB灯带 + 点光源 + 硬光",
-    colorTemp: "7000-9000K（冷蓝）+ 彩色点缀",
-    materialKeywords: "碳纤维、钢化玻璃、LED、金属网格",
-    tabooElements: "自然材质、暖色调、田园元素",
-    refBrands: "Razer、ROG、Tesla Cybertruck",
-    aiKeywords: "cyberpunk tech aesthetic, neon glow, dark background with RGB accents, futuristic, metallic surfaces"
+    name: "北欧原木风",
+    lightType: "柔和自然光",
+    colorTemp: "5000-5600K",
+    materialKeywords: "原木、棉麻、陶瓷、绿植",
+    colorTone: "米白、浅木色、浅灰、鼠尾草绿",
+    tabooElements: "黑金轻奢、高饱和撞色、工业风",
+    refBrands: "IKEA、ferm LIVING",
+    aiKeywords: "scandinavian home, oak wood, linen fabric, soft daylight, minimalist nordic interior",
+    styleFeature: "自然、治愈、简洁、舒适"
+  },
+  {
+    name: "温馨家居风",
+    lightType: "暖色自然光 + 室内灯光",
+    colorTemp: "3500-4500K",
+    materialKeywords: "布艺、木材、棉织物、陶瓷",
+    colorTone: "奶油色、暖木色、米白",
+    tabooElements: "冷灰空间、工业感、科技感",
+    refBrands: "Pottery Barn",
+    aiKeywords: "cozy family home, warm kitchen, natural lifestyle, soft lighting, comfortable living",
+    styleFeature: "家庭感、真实生活、温暖陪伴"
+  },
+  {
+    name: "INS生活风",
+    lightType: "明亮自然光",
+    colorTemp: "5200-5800K",
+    materialKeywords: "奶油背景、玻璃、陶瓷、亚克力",
+    colorTone: "奶油白、浅粉、浅灰、莫兰迪色",
+    tabooElements: "深色木纹、重工业风",
+    refBrands: "Our Place",
+    aiKeywords: "instagram aesthetic, cream palette, soft lifestyle, clean composition, cozy minimal",
+    styleFeature: "年轻、精致、轻生活、社交媒体感"
+  },
+  {
+    name: "轻奢高级风",
+    lightType: "柔和聚光 + 环境补光",
+    colorTemp: "4000-5000K",
+    materialKeywords: "大理石、黄铜、水晶、丝绒",
+    colorTone: "香槟金、象牙白、墨绿、酒红",
+    tabooElements: "卡通元素、高饱和撞色",
+    refBrands: "Jo Malone London、Tom Dixon",
+    aiKeywords: "luxury interior, marble texture, brass accents, elegant styling, premium aesthetic",
+    styleFeature: "精致、优雅、高端、品质感"
+  },
+  {
+    name: "运动活力风",
+    lightType: "户外阳光 + 高反差光影",
+    colorTemp: "5500-6500K",
+    materialKeywords: "草坪、塑胶跑道、运动场地",
+    colorTone: "蓝、白、绿",
+    tabooElements: "昏暗灯光、静态摆拍",
+    refBrands: "Nike、Wilson Sporting Goods",
+    aiKeywords: "sports lifestyle, sunny outdoor court, dynamic action, energetic atmosphere, fitness branding",
+    styleFeature: "阳光、活力、速度、激情"
+  },
+  {
+    name: "健康生活风",
+    lightType: "晨光自然光",
+    colorTemp: "4800-5600K",
+    materialKeywords: "原木、瑜伽垫、绿植、亚麻",
+    colorTone: "白、浅绿、米色",
+    tabooElements: "暗黑灯光、工业空间",
+    refBrands: "Lululemon、Therabody",
+    aiKeywords: "wellness lifestyle, yoga home, morning sunlight, healthy living, calm aesthetic",
+    styleFeature: "放松、自律、健康、治愈"
   },
   {
     name: "户外探险风",
-    lightType: "强烈日光 + 硬阴影",
-    colorTemp: "5500-6500K（日光）",
-    materialKeywords: "岩石、泥土、帐篷面料、登山绳",
-    tabooElements: "室内场景、精致摆拍、柔美元素",
-    refBrands: "The North Face、Patagonia、YETI",
-    aiKeywords: "outdoor adventure, rugged terrain, harsh natural light, action shot, durable equipment, wilderness backdrop"
+    lightType: "自然阳光、日落光",
+    colorTemp: "5000-6500K",
+    materialKeywords: "木材、岩石、帐篷布、金属",
+    colorTone: "军绿、卡其、棕色",
+    tabooElements: "城市室内、高级公寓",
+    refBrands: "Snow Peak、Coleman",
+    aiKeywords: "camping lifestyle, mountain landscape, outdoor adventure, forest, sunset, exploration",
+    styleFeature: "自由、探索、自然、户外精神"
   },
   {
-    name: "母婴柔和风",
-    lightType: "超柔散射光 + 无阴影",
-    colorTemp: "4000-5000K（柔和暖白）",
-    materialKeywords: "纯棉、硅胶、圆角、马卡龙色",
-    tabooElements: "尖锐物、深暗色调、复杂背景",
-    refBrands: "Babycare、Hegen、Stokke",
-    aiKeywords: "baby safe aesthetic, pastel colors, soft rounded shapes, gentle lighting, cotton textures, nurturing mood"
+    name: "庭院休闲风",
+    lightType: "下午自然光 + 黄金时刻",
+    colorTemp: "4500-5500K",
+    materialKeywords: "木平台、藤编、草坪、户外织物",
+    colorTone: "木色、绿色、米白",
+    tabooElements: "商业办公空间、工业风",
+    refBrands: "POLYWOOD",
+    aiKeywords: "backyard patio, outdoor furniture, family gathering, garden lifestyle, wooden deck",
+    styleFeature: "后院生活、聚会、休闲、家庭娱乐"
   },
   {
-    name: "轻奢高端风",
-    lightType: "聚光灯 + 反射面营造光泽",
-    colorTemp: "4000-5000K + 金色反射",
-    materialKeywords: "大理石、黄铜、丝绒、水晶",
-    tabooElements: "塑料、粗糙纹理、过于鲜艳",
-    refBrands: "Jo Malone、Diptyque、Aesop",
-    aiKeywords: "luxury premium aesthetic, marble and brass, velvet textures, golden accents, sophisticated composition"
-  },
-  {
-    name: "国潮新中式",
-    lightType: "侧光 + 局部聚光",
-    colorTemp: "4000-5000K（暖中性）",
-    materialKeywords: "宣纸、竹、漆器、祥云纹、水墨",
-    tabooElements: "西式花纹、极简工业、荧光色",
-    refBrands: "花西子、观夏、茶颜悦色",
-    aiKeywords: "chinese modern style, ink wash painting elements, bamboo and lacquer, traditional patterns, cultural fusion"
-  },
-  {
-    name: "ins网红风",
-    lightType: "golden hour自然光 + 柔焦",
-    colorTemp: "4500-5500K（自然偏暖）",
-    materialKeywords: "绿植、咖啡、书籍、针织毯",
-    tabooElements: "过于商业化、硬光、纯白背景",
-    refBrands: "Glossier、Anthropologie、Urban Outfitters",
-    aiKeywords: "instagram lifestyle, golden hour light, flat lay composition, aesthetic arrangement, natural props, bokeh"
+    name: "亲和童趣风",
+    lightType: "柔和自然光",
+    colorTemp: "5000-5600K",
+    materialKeywords: "硅胶、木材、布艺、插画元素",
+    colorTone: "奶油白、浅黄、浅蓝、牛油果绿、珊瑚色",
+    tabooElements: "暗黑风、重金属风、复杂纹理",
+    refBrands: "Mushie、Wild One、Munchkin",
+    aiKeywords: "cute lifestyle, pastel colors, friendly illustration, rounded design, playful branding, soft lighting",
+    styleFeature: "温馨、可爱、治愈、亲和、安全"
   },
   {
     name: "工业硬核风",
-    lightType: "硬光侧光 + 强对比",
-    colorTemp: "5500-7000K（冷白偏蓝）",
-    materialKeywords: "水泥、铁件、裸砖、黑色哑光",
-    tabooElements: "花卉、柔美曲线、马卡龙色",
-    refBrands: "Milwaukee、DeWalt、Makita",
-    aiKeywords: "industrial minimalist, concrete and steel, harsh directional light, high contrast, raw materials, utilitarian"
+    lightType: "定向硬光 + 侧逆光",
+    colorTemp: "4500-5500K",
+    materialKeywords: "钢材、水泥、机械、铁锈、金属",
+    colorTone: "黑、深灰、工业黄",
+    tabooElements: "花卉、奶油色、治愈风",
+    refBrands: "Milwaukee Tool、DEWALT",
+    aiKeywords: "industrial workshop, concrete wall, heavy duty tools, dramatic lighting, rugged metal texture",
+    styleFeature: "力量、耐用、专业、机械感"
+  },
+  {
+    name: "赛博科技风",
+    lightType: "RGB霓虹灯 + 背光 + 边缘轮廓光",
+    colorTemp: "7000-10000K（冷色调）",
+    materialKeywords: "碳纤维、钢化玻璃、RGB灯带、金属网格",
+    colorTone: "黑、霓虹紫、电光蓝、青色、荧光绿",
+    tabooElements: "原木、暖黄灯、乡村元素、复古家具",
+    refBrands: "Razer、ASUS Republic of Gamers、Corsair、SteelSeries",
+    aiKeywords: "cyber gaming setup, RGB lighting, neon glow, futuristic gaming room, black aesthetic, cyberpunk atmosphere",
+    styleFeature: "暗黑、霓虹、电竞、沉浸、未来感"
   },
   {
     name: "田园自然风",
-    lightType: "自然散射光 + 绿色反射",
-    colorTemp: "5000-5500K（自然白）",
-    materialKeywords: "牛皮纸、干花、棉布、木托盘",
-    tabooElements: "塑料、金属、荧光色、人工感",
-    refBrands: "Aesop、The Body Shop、悦木之源",
-    aiKeywords: "organic natural style, botanical elements, kraft paper, dried flowers, earth tones, sustainable aesthetic"
-  },
-  {
-    name: "暗黑酷炫风",
-    lightType: "单点硬光 + 大面积暗部",
-    colorTemp: "6000-8000K（冷调）",
-    materialKeywords: "黑色哑光、金属、烟雾、激光",
-    tabooElements: "明亮色彩、可爱元素、自然场景",
-    refBrands: "GoPro、DJI、Alienware",
-    aiKeywords: "dark moody aesthetic, dramatic single light source, smoke effects, metallic highlights, mysterious atmosphere"
+    lightType: "清晨或傍晚自然光 + 柔和阳光",
+    colorTemp: "4500-5500K（自然暖光）",
+    materialKeywords: "原木、藤编、亚麻、陶土、石材、绿植、鲜花、天然纤维",
+    colorTone: "土黄、草绿、陶土色、米白",
+    tabooElements: "高科技灯光、镜面金属、大面积黑灰、霓虹色、工业空间",
+    refBrands: "Gardena、Burgon & Ball、Garden Trading、Terrain",
+    aiKeywords: "country cottage, farmhouse lifestyle, natural garden, rustic outdoor setting, organic living, wicker baskets, wildflowers, golden sunlight",
+    styleFeature: "自然、有机、乡村、慢生活、亲近自然"
   }
 ] as const;
 

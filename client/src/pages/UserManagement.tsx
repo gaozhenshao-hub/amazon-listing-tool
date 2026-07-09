@@ -21,7 +21,7 @@ import { ROLE_LABELS, ALL_ROLES } from "@shared/const";
 import { useAuth } from "@/_core/hooks/useAuth";
 import {
   UserPlus, Upload, Search, RotateCcw, Shield, ShieldAlert,
-  Loader2, Users, UserCheck, UserX, Clock, Pencil,
+  Loader2, Users, UserCheck, UserX, Clock, Pencil, Trash2, AlertTriangle,
 } from "lucide-react";
 
 // ─── Status badge ────────────────────────────────────────────
@@ -40,14 +40,14 @@ function CreateUserDialog({ onSuccess }: { onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     name: "", email: "", phone: "", role: "ops_specialist",
-    department: "", jobTitle: "", initialPassword: "",
+    department: "", jobTitle: "", initialPassword: "Abc12345",
   });
 
   const createMutation = trpc.userManagement.create.useMutation({
     onSuccess: (data) => {
       toast.success(`用户创建成功，初始密码: ${data.defaultPassword}`);
       setOpen(false);
-      setForm({ name: "", email: "", phone: "", role: "ops_specialist", department: "", jobTitle: "", initialPassword: "" });
+      setForm({ name: "", email: "", phone: "", role: "ops_specialist", department: "", jobTitle: "", initialPassword: "Abc12345" });
       onSuccess();
     },
     onError: (err) => toast.error(err.message),
@@ -140,13 +140,20 @@ function BulkImportDialog({ onSuccess }: { onSuccess: () => void }) {
     const lines = csvText.trim().split("\n").filter(l => l.trim());
     if (lines.length === 0) { toast.error("请输入用户数据"); return; }
 
+    // Build reverse lookup: Chinese label -> role code
+    const labelToRole: Record<string, string> = {};
+    Object.entries(ROLE_LABELS).forEach(([code, label]) => { labelToRole[label] = code; });
+
     const users = lines.map(line => {
-      const parts = line.split(/[,\t]/).map(s => s.trim());
+      const parts = line.split(/[,，\t]/).map(s => s.trim());
+      const rawRole = parts[3] || "";
+      // Support both Chinese label and English code
+      const role = labelToRole[rawRole] || (ALL_ROLES.includes(rawRole as any) ? rawRole : "ops_specialist");
       return {
         name: parts[0] || "",
         email: parts[1] || undefined,
         phone: parts[2] || undefined,
-        role: parts[3] || "ops_specialist",
+        role,
         department: parts[4] || undefined,
         jobTitle: parts[5] || undefined,
       };
@@ -169,13 +176,18 @@ function BulkImportDialog({ onSuccess }: { onSuccess: () => void }) {
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3 font-mono">
-            <p>格式示例：</p>
-            <p>张三, zhangsan@example.com, 13800001111, ops_specialist, 运营部, 运营专员</p>
-            <p>李四, lisi@example.com, , ops_manager, 运营部, 运营主管</p>
+          <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3 font-mono space-y-0.5">
+            <p className="font-semibold mb-1">格式示例（姓名，邮箱，手机号，角色，部门，职位）：</p>
+            <p>张三，zhangsan@example.com，13800001111，公司管理员，管理层，总经理</p>
+            <p>李四，lisi@example.com，13800002222，运营主管，运营部，运营主管</p>
+            <p>王五，wangwu@example.com，13800003333，运营专员，运营部，运营专员</p>
+            <p>赵六，zhaoliu@example.com，13800004444，产品开发，产品部，产品经理</p>
+            <p>孙七，sunqi@example.com，13800005555，财务，财务部，会计</p>
+            <p>周八，zhouba@example.com，13800006666，采购，供应链部，采购专员</p>
+            <p>吴九，wujiu@example.com，13800007777，美工，设计部，平面设计师</p>
           </div>
           <div className="text-xs text-muted-foreground">
-            角色可选值: {ALL_ROLES.filter(r => r !== "super_admin").map(r => `${r}(${ROLE_LABELS[r]})`).join(", ")}
+            角色可选值: {ALL_ROLES.filter(r => r !== "super_admin").map(r => ROLE_LABELS[r]).join("、")}
           </div>
           <textarea
             className="w-full h-40 p-3 text-sm border rounded-lg font-mono resize-none focus:outline-none focus:ring-2 focus:ring-ring"
@@ -306,6 +318,177 @@ function EditUserDialog({ user, currentUserId, onSuccess }: { user: any; current
             </Button>
           </div>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
+// ─── Delete User Dialog ────────────────────────────────────────────────
+function DeleteUserDialog({ user, allUsers, onSuccess }: { user: any; allUsers: any[]; onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<"confirm" | "transfer" | "deleting">("confirm");
+  const [targetUserId, setTargetUserId] = useState<string>("");
+
+  const checkDataQuery = trpc.userManagement.checkUserData.useQuery(
+    { userId: user.id },
+    { enabled: open }
+  );
+
+  const transferMutation = trpc.userManagement.transferUserData.useMutation({
+    onSuccess: () => {
+      toast.success("数据转移成功");
+      deleteMutation.mutate({ userId: user.id });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const deleteMutation = trpc.userManagement.deleteUser.useMutation({
+    onSuccess: () => {
+      toast.success(`用户 ${user.name} 已删除`);
+      setOpen(false);
+      setStep("confirm");
+      onSuccess();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const hasData = checkDataQuery.data && checkDataQuery.data.total > 0;
+  const otherUsers = allUsers.filter(u => u.id !== user.id && u.status === "active");
+
+  const DATA_LABELS: Record<string, string> = {
+    projects: "Listing项目",
+    devProjects: "产品开发项目",
+    kbImageSets: "图片知识库",
+    kbCopywriting: "文案知识库",
+    kbInnovations: "产品创新知识库",
+    kbSkills: "运营技能知识库",
+    kbVideos: "视频知识库",
+    products: "产品档案",
+  };
+
+  const handleDelete = () => {
+    if (hasData) {
+      setStep("transfer");
+    } else {
+      deleteMutation.mutate({ userId: user.id });
+    }
+  };
+
+  const handleTransferAndDelete = () => {
+    if (!targetUserId) {
+      toast.error("请选择目标用户");
+      return;
+    }
+    setStep("deleting");
+    transferMutation.mutate({ fromUserId: user.id, toUserId: Number(targetUserId) });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setStep("confirm"); }}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm" className="gap-1.5 text-destructive hover:text-destructive hover:bg-destructive/10">
+          <Trash2 className="h-3.5 w-3.5" />
+          删除
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+            删除用户: {user.name}
+          </DialogTitle>
+        </DialogHeader>
+
+        {step === "confirm" && (
+          <div className="space-y-4">
+            {checkDataQuery.isLoading ? (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                正在检查关联数据...
+              </div>
+            ) : hasData ? (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  该用户关联以下数据，删除前需要先转移给其他用户：
+                </p>
+                <div className="bg-muted/50 rounded-lg p-3 space-y-1">
+                  {Object.entries(checkDataQuery.data!.counts).map(([key, count]) => (
+                    count > 0 && (
+                      <div key={key} className="flex justify-between text-sm">
+                        <span>{DATA_LABELS[key] || key}</span>
+                        <span className="font-medium">{count} 条</span>
+                      </div>
+                    )
+                  ))}
+                  <div className="border-t pt-1 mt-1 flex justify-between text-sm font-semibold">
+                    <span>合计</span>
+                    <span>{checkDataQuery.data!.total} 条</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                该用户没有关联数据，可以直接删除。此操作不可撤销！
+              </p>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setOpen(false)}>取消</Button>
+              <Button
+                variant="destructive"
+                onClick={handleDelete}
+                disabled={checkDataQuery.isLoading || deleteMutation.isPending}
+              >
+                {deleteMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {hasData ? "下一步：转移数据" : "确认删除"}
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+
+        {step === "transfer" && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              请选择一个目标用户，将 <span className="font-medium">{user.name}</span> 的所有数据转移给该用户：
+            </p>
+            {otherUsers.length === 0 ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+                没有可用的目标用户，请先创建或启用其他用户后再进行转移。
+              </div>
+            ) : (
+              <Select value={targetUserId} onValueChange={setTargetUserId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="选择目标用户" />
+                </SelectTrigger>
+                <SelectContent>
+                  {otherUsers.map(u => (
+                    <SelectItem key={u.id} value={String(u.id)}>
+                      {u.name} ({ROLE_LABELS[u.role] || u.role}{u.department ? ` - ${u.department}` : ""})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setStep("confirm")}>返回</Button>
+              <Button
+                variant="destructive"
+                onClick={handleTransferAndDelete}
+                disabled={!targetUserId || otherUsers.length === 0 || transferMutation.isPending || deleteMutation.isPending}
+              >
+                {(transferMutation.isPending || deleteMutation.isPending) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                转移并删除
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+
+        {step === "deleting" && (
+          <div className="flex flex-col items-center gap-3 py-4">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">正在转移数据并删除用户...</p>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -498,7 +681,12 @@ export default function UserManagement() {
                           {user.lastSignedIn ? new Date(user.lastSignedIn).toLocaleString("zh-CN") : "-"}
                         </TableCell>
                         <TableCell className="text-right">
-                          <EditUserDialog user={user} currentUserId={currentUser?.id?.toString()} onSuccess={handleRefresh} />
+                          <div className="flex items-center justify-end gap-1">
+                            <EditUserDialog user={user} currentUserId={currentUser?.id?.toString()} onSuccess={handleRefresh} />
+                            {String(user.id) !== currentUser?.id?.toString() && user.role !== "super_admin" && (
+                              <DeleteUserDialog user={user} allUsers={users} onSuccess={handleRefresh} />
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))

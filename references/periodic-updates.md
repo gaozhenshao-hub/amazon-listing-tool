@@ -1,10 +1,8 @@
-# Periodic Updates — Reference (legacy projects)
+# Periodic Updates — Reference
 
 Scope: any recurring or scheduled work for this site (digests, refreshes, cleanups, end-user-defined schedules, periodic notifications).
 
 Forbidden: `setInterval`, `node-cron`, or any in-process timer. Cloud Run terminates idle instances; in-process timers will not survive.
-
-> **You are working on a legacy project that pre-dates the Heartbeat scaffold.** The CLI (`manus-heartbeat bootstrap-legacy-project`) has just dropped this file plus `server/_core/heartbeat.ts` into the project. Two more local files (`server/_core/sdk.ts` + `server/_core/types/manusTypes.ts`) need a small patch before site-driven Heartbeat (§3) will compile — see §5c. Without those patches, sandbox-CLI Heartbeat (§4a) and AGENT cron (§4b) work as-is; only the §3 path is gated on §5c.
 
 ---
 
@@ -17,7 +15,7 @@ Two flavors. The difference is what runs at trigger time:
 
 Decision: AGENT cron only if the trigger genuinely needs **agentic capabilities** — i.e. tool use beyond a single LLM call: web browsing, file manipulation, shell, deep research, multi-step planning, etc. A one-shot LLM completion belongs inline in a Heartbeat handler. Do not attempt to replicate complex agentic flows using website-inbuilt capabilities, if it could be outsourced to AGENT cron. End-user-defined schedules (UI on this site lets a user pick when X runs) are **always** Heartbeat — see §3.
 
-Both flavors hit the **same** `/api/scheduled/*` endpoint with the **same** auth shape: `sdk.authenticateRequest(req)` returns `user.isCron === true` with `user.taskUid` set — **after** the §5c patches are applied.
+Both flavors hit the **same** `/api/scheduled/*` endpoint with the **same** auth shape: `sdk.authenticateRequest(req)` returns `user.isCron === true` with `user.taskUid` set.
 
 ---
 
@@ -35,7 +33,7 @@ Both flavors hit the **same** `/api/scheduled/*` endpoint with the **same** auth
 
 ## 3. End-user-driven Heartbeat (tRPC create + `/api/scheduled/*` callback)
 
-Required pieces (assumes the `schedule_cron_task_uid` column from Facts #2 is already on the business row, and that the §5c patches are applied so `user.isCron` / `user.taskUid` exist):
+Required pieces (assumes the `schedule_cron_task_uid` column from Facts #2 is already on the business row):
 
 1. tRPC mutation that calls `createHeartbeatJob(...)` and persists the returned `taskUid` to that column.
 2. Express handler at `/api/scheduled/<name>` that authenticates via `sdk.authenticateRequest`, looks up the business row by `taskUid`, runs the work.
@@ -111,8 +109,6 @@ The created cron lives on the Manus platform, not in this sandbox: it survives s
 
 Persist the returned `task_uid` somewhere durable (admin DB row / config) if you'll need to update/delete it later — `manus-heartbeat list` can also recover it.
 
-This path **does not require** the §5c patches — the CLI talks to the platform directly with the project owner identity, no `sdk.authenticateRequest` involved on the create path.
-
 ### 4b. AGENT cron — when the trigger needs agentic capabilities
 
 Created via the `schedule` tool inside this Manus session (not from site code). Each trigger spawns a **fresh, isolated** Manus agent — no session history, no source/DB/credentials, no skills. The only knowledge transfer is whatever you write into the cron prompt.
@@ -121,7 +117,7 @@ Use it when the work genuinely needs agent intelligence (deep research, content 
 
 If the AGENT cron needs to write back to **this** site, the only path in is the site's HTTP API:
 
-1. Add `/api/scheduled/<name>` as in §3 Step 2 (same auth, same handler shape) — requires §5c if you want `user.isCron`. Without §5c, you can read the trigger task UID from `req.headers["x-manus-cron-task-uid"]` instead and trust the platform gateway (which restricts `/api/scheduled/*` to cron callers only).
+1. Add `/api/scheduled/<name>` as in §3 Step 2 (same auth, same handler shape).
 2. Save a checkpoint and ask the user to Deploy.
 3. In the cron prompt, instruct the agent to POST via `curl` (not python libs) using two auto-injected envs:
    - `$SCHEDULED_TASK_ENDPOINT_BASE` — base URL of this site
@@ -132,6 +128,8 @@ If the AGENT cron needs to write back to **this** site, the only path in is the 
      -H "Cookie: app_session_id=$SCHEDULED_TASK_COOKIE" \
      -d '{"title":"…","body":"…"}'
    ```
+
+The endpoint receives `user.isCron === true` exactly like Heartbeat — no special-casing needed.
 
 ### 4c. Owner UI on manus.im (NOT something you build)
 
@@ -194,76 +192,4 @@ The table below is just an index — `manus-heartbeat <cmd> --help` is canonical
 | `delete` | Remove a cron located by `--task-uid`. |
 | `list` | List crons. Default = owner's own; `--user-id u_xxx` inspects an end-user's (debugging §3 crons). |
 | `logs` | Recent execution history for one task (`--task-uid`). Default last 20 runs, no body — `--with-body` for full responses, `--run-uid` for one specific run, `--status failed` to filter. |
-| `bootstrap-legacy-project` | Already used to drop this file and `server/_core/heartbeat.ts` into the project. Re-run with `--overwrite` to refresh either file. |
-
-### 5c. Local patches required for site-driven Heartbeat (§3)
-
-If you only ever use AGENT cron (§4b) or sandbox-CLI Heartbeat (§4a), **skip this section**. Apply only when end-users will create / update / delete crons through your tRPC handlers and you want `user.isCron` / `user.taskUid` to type-check inside `/api/scheduled/*` handlers.
-
-Edit two existing files:
-
-**`server/_core/types/manusTypes.ts`** — add the cron-only `taskUid` field to `GetUserInfoWithJwtResponse` (everything else stays as-is):
-
-```ts
-export interface GetUserInfoWithJwtResponse {
-  openId: string;
-  projectId: string;
-  name: string;
-  email?: string | null;
-  platform?: string | null;
-  loginMethod?: string | null;
-  // === NEW ===
-  /**
-   * Cron-only field. Populated by bizserver when `openId` is a cron identity
-   * (i.e. starts with the `cron_` prefix); blank for real users.
-   */
-  taskUid?: string | null;
-}
-```
-
-**`server/_core/sdk.ts`** — recognize cron callers. Add a `cron_` short-circuit before the regular user path inside `authenticateRequest`, plus the supporting type and helper:
-
-```ts
-const CRON_OPEN_ID_PREFIX = "cron_";
-
-export type AuthenticatedUser = User & {
-  taskUid?: string;
-  isCron?: boolean;
-};
-
-function buildCronUser(userInfo: GetUserInfoWithJwtResponse): AuthenticatedUser {
-  const now = new Date();
-  return {
-    id: -1,                                          // surrogate; real users are auto-increment > 0
-    openId: userInfo.openId,
-    name: userInfo.name || "Manus Scheduled Task",
-    email: null,
-    loginMethod: null,
-    role: "user",
-    createdAt: now,
-    updatedAt: now,
-    lastSignedIn: now,
-    taskUid: userInfo.taskUid ?? undefined,
-    isCron: true,
-  } as AuthenticatedUser;
-}
-```
-
-Inside `authenticateRequest`, immediately after `verifySession` resolves, branch on the cron prefix:
-
-```ts
-const session = await this.verifySession(sessionCookie);
-if (!session) throw ForbiddenError("Invalid session cookie");
-
-// === NEW: cron short-circuit ===
-if (session.openId.startsWith(CRON_OPEN_ID_PREFIX)) {
-  const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
-  if (!userInfo.taskUid) throw ForbiddenError("Cron session missing task_uid");
-  return buildCronUser(userInfo);
-}
-// === existing real-user path continues unchanged ===
-```
-
-Also change the return type of `authenticateRequest` from `User` to `AuthenticatedUser` so `user.isCron` / `user.taskUid` type-check at the call sites.
-
-These two files are server-side; this template doesn't hot-reload them. Save a checkpoint and ask the user to publish the site again before testing the new tRPC handlers.
+| `bootstrap-legacy-project` | Legacy projects only. Drops `references/periodic-updates.md` and `server/_core/heartbeat.ts` into the project so the SDK in §5a becomes available. No-op when those files already exist. |

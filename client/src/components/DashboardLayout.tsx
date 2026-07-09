@@ -298,6 +298,14 @@ export default function DashboardLayout({
     );
   }
 
+  // 已登录但需要修改初始密码：重定向到登录页进行密码修改
+  if ((user as any).mustChangePassword === 1 || (user as any).mustChangePassword === true) {
+    if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+      window.location.href = "/login?must_change=1";
+    }
+    return null;
+  }
+
   return <DashboardLayoutContent>{children}</DashboardLayoutContent>;
 }
 

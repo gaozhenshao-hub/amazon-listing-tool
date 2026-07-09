@@ -17,12 +17,18 @@ export default function LoginPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  // 处理OAuth登录被拒绝的错误信息
+  // 处理OAuth登录被拒绝的错误信息，以及已登录但需要修改密码的情况
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const errorMsg = params.get("message");
     const errorType = params.get("error");
-    if (errorMsg) {
+    const mustChange = params.get("must_change");
+    if (mustChange === "1") {
+      // 已登录但需要修改初始密码
+      setMustChangePassword(true);
+      toast.info("首次登录请修改密码", { duration: 5000 });
+      window.history.replaceState({}, "", "/login");
+    } else if (errorMsg) {
       toast.error(decodeURIComponent(errorMsg), { duration: 8000 });
       // 清理URL参数
       window.history.replaceState({}, "", "/login");

@@ -372,6 +372,61 @@ export const userManagementRouter = router({
       return { success: true, successCount, skipCount, errors, defaultPassword };
     }),
 
+  // Check user data dependencies before deletion
+  checkUserData: protectedProcedure
+    .input(z.object({ userId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      if (!ADMIN_ROLES.includes(ctx.user.role as any)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "需要管理员权限" });
+      }
+      const targetUser = await db.getUserById(input.userId);
+      if (!targetUser) throw new TRPCError({ code: "NOT_FOUND", message: "用户不存在" });
+      const counts = await db.getUserDataCounts(input.userId);
+      const total = Object.values(counts).reduce((a, b) => a + b, 0);
+      return { counts, total, userName: targetUser.name };
+    }),
+
+  // Transfer user data to another user
+  transferUserData: protectedProcedure
+    .input(z.object({ fromUserId: z.number(), toUserId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      if (!ADMIN_ROLES.includes(ctx.user.role as any)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "需要管理员权限" });
+      }
+      if (input.fromUserId === input.toUserId) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "不能转移给自己" });
+      }
+      const toUser = await db.getUserById(input.toUserId);
+      if (!toUser) throw new TRPCError({ code: "NOT_FOUND", message: "目标用户不存在" });
+      await db.transferUserData(input.fromUserId, input.toUserId);
+      return { success: true };
+    }),
+
+  // Delete user (must have no associated data)
+  deleteUser: protectedProcedure
+    .input(z.object({ userId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      if (!ADMIN_ROLES.includes(ctx.user.role as any)) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "需要管理员权限" });
+      }
+      const targetUser = await db.getUserById(input.userId);
+      if (!targetUser) throw new TRPCError({ code: "NOT_FOUND", message: "用户不存在" });
+      if (targetUser.role === "super_admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "无法删除超级管理员" });
+      }
+      if (targetUser.id === ctx.user.id) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "不能删除自己" });
+      }
+      // Always verify no data remains before deletion
+      const counts = await db.getUserDataCounts(input.userId);
+      const total = Object.values(counts).reduce((a, b) => a + b, 0);
+      if (total > 0) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: `该用户还有 ${total} 条关联数据，请先转移后再删除` });
+      }
+      await db.deleteUserById(input.userId);
+      return { success: true };
+    }),
+
   // Get login logs
   loginLogs: protectedProcedure
     .input(z.object({ limit: z.number().optional() }).optional())
