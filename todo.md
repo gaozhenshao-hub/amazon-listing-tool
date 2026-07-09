@@ -30,3 +30,11 @@
 - [x] 前端：首次登录强制修改密码弹窗
 - [x] 预设管理员账号 kangboning（首次登录需改密码）
 - [x] 测试通过，保存 Checkpoint 并发布
+
+## GitHub 代码同步（2026-07-09）
+
+- [x] 拉取 GitHub 最新代码（9 个新提交）
+- [x] 同步图片知识库相关文件（imageTagConstants.ts、kbDb.ts、kbImages.ts、kbTags.ts、AmazonStyleGallery.tsx、KBImages.tsx、KBTagManagement.tsx、useKBTagOptions.ts）
+- [x] 数据库和环境配置保持不变
+- [x] 全量测试通过（160 文件 / 3565 用例）
+- [x] 保存 Checkpoint 并发布

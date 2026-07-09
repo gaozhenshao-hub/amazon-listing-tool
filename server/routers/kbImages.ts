@@ -519,11 +519,37 @@ export const kbImagesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { imageId, ...tags } = input;
       // Filter out undefined values
-      const cleanTags = Object.fromEntries(
+      const cleanTags: Record<string, any> = Object.fromEntries(
         Object.entries(tags).filter(([_, v]) => v !== undefined)
       );
+
+      // ═══ Feature: Auto-position on belong change ═══
+      // When tagImageBelong changes, also update imagePosition so the image
+      // moves to the correct visual section in the gallery
+      if (cleanTags.tagImageBelong) {
+        const BELONG_TO_POSITION: Record<string, string> = {
+          "主图": "main",
+          "套图": "secondary",
+          "A+": "aplus",
+          "品牌故事": "brand_story",
+        };
+        const newPosition = BELONG_TO_POSITION[cleanTags.tagImageBelong];
+        if (newPosition) {
+          // Get the current image to check if position actually changed
+          const currentImage = await kbDb.getImageById(imageId);
+          if (currentImage && currentImage.imagePosition !== newPosition) {
+            // Calculate new positionIndex at the end of the target section
+            const maxIdx = await kbDb.getMaxPositionIndexByPosition(
+              currentImage.imageSetId, newPosition
+            );
+            cleanTags.imagePosition = newPosition;
+            cleanTags.positionIndex = maxIdx + 1;
+          }
+        }
+      }
+
       await kbDb.updateImage(imageId, { ...cleanTags, tagsConfirmed: 1 } as any);
-      return { success: true };
+      return { success: true, moved: !!cleanTags.imagePosition };
     }),
 
   // Confirm set overall analysis
