@@ -3,7 +3,7 @@
  * 基于优化后的标签体系：套图风格结构化参数 + 单图7维标签 + 图片归属分类
  */
 
-// ============ 套图风格（15种 + 结构化参数） ============
+// ============ 套图风格（16种 + 结构化参数） ============
 
 export interface StyleParams {
   name: string;
@@ -182,6 +182,17 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     refBrands: "Razer、ASUS Republic of Gamers、Corsair、SteelSeries",
     aiKeywords: "cyber gaming setup, RGB lighting, neon glow, futuristic gaming room, black aesthetic, cyberpunk atmosphere",
     styleFeature: "暗黑、霓虹、电竞、沉浸、未来感"
+  },
+  {
+    name: "田园自然风",
+    lightType: "清晨或傍晚自然光 + 柔和阳光",
+    colorTemp: "4500-5500K（自然暖光）",
+    materialKeywords: "原木、藤编、亚麻、陶土、石材、绿植、鲜花、天然纤维",
+    colorTone: "土黄、草绿、陶土色、米白",
+    tabooElements: "高科技灯光、镜面金属、大面积黑灰、霓虹色、工业空间",
+    refBrands: "Gardena、Burgon & Ball、Garden Trading、Terrain",
+    aiKeywords: "country cottage, farmhouse lifestyle, natural garden, rustic outdoor setting, organic living, wicker baskets, wildflowers, golden sunlight",
+    styleFeature: "自然、有机、乡村、慢生活、亲近自然"
   }
 ] as const;
 
