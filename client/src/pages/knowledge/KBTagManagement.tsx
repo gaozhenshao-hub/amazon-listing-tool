@@ -29,6 +29,7 @@ interface StyleParams {
   lightType?: string;
   colorTemp?: string;
   materialKeywords?: string;
+  colorTone?: string;
   tabooElements?: string;
   refBrands?: string;
   aiKeywords?: string;
@@ -421,6 +422,7 @@ export function KBTagManagement() {
                                 {params.lightType && <div><span className="font-medium">光源:</span> {params.lightType}</div>}
                                 {params.colorTemp && <div><span className="font-medium">色温:</span> {params.colorTemp}</div>}
                                 {params.materialKeywords && <div><span className="font-medium">材质:</span> {params.materialKeywords}</div>}
+                                {params.colorTone && <div><span className="font-medium">色调:</span> {params.colorTone}</div>}
                                 {params.tabooElements && <div><span className="font-medium">禁忌:</span> {params.tabooElements}</div>}
                                 {params.refBrands && <div><span className="font-medium">参考品牌:</span> {params.refBrands}</div>}
                                 {params.aiKeywords && <div className="truncate"><span className="font-medium">AI关键词:</span> {params.aiKeywords}</div>}
@@ -486,6 +488,15 @@ export function KBTagManagement() {
                       value={styleParams.materialKeywords || ""}
                       onChange={(e) => setStyleParams(p => ({ ...p, materialKeywords: e.target.value }))}
                       placeholder="如：哑光塑料、阳极氧化铝、玻璃"
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">色调</Label>
+                    <Input
+                      value={styleParams.colorTone || ""}
+                      onChange={(e) => setStyleParams(p => ({ ...p, colorTone: e.target.value }))}
+                      placeholder="如：白、灰、黑、科技蓝"
                       className="h-8 text-xs"
                     />
                   </div>
@@ -597,6 +608,14 @@ export function KBTagManagement() {
                     <Input
                       value={styleParams.materialKeywords || ""}
                       onChange={(e) => setStyleParams(p => ({ ...p, materialKeywords: e.target.value }))}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">色调</Label>
+                    <Input
+                      value={styleParams.colorTone || ""}
+                      onChange={(e) => setStyleParams(p => ({ ...p, colorTone: e.target.value }))}
                       className="h-8 text-xs"
                     />
                   </div>
