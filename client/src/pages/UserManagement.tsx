@@ -140,13 +140,20 @@ function BulkImportDialog({ onSuccess }: { onSuccess: () => void }) {
     const lines = csvText.trim().split("\n").filter(l => l.trim());
     if (lines.length === 0) { toast.error("请输入用户数据"); return; }
 
+    // Build reverse lookup: Chinese label -> role code
+    const labelToRole: Record<string, string> = {};
+    Object.entries(ROLE_LABELS).forEach(([code, label]) => { labelToRole[label] = code; });
+
     const users = lines.map(line => {
       const parts = line.split(/[,，\t]/).map(s => s.trim());
+      const rawRole = parts[3] || "";
+      // Support both Chinese label and English code
+      const role = labelToRole[rawRole] || (ALL_ROLES.includes(rawRole as any) ? rawRole : "ops_specialist");
       return {
         name: parts[0] || "",
         email: parts[1] || undefined,
         phone: parts[2] || undefined,
-        role: parts[3] || "ops_specialist",
+        role,
         department: parts[4] || undefined,
         jobTitle: parts[5] || undefined,
       };
@@ -171,11 +178,11 @@ function BulkImportDialog({ onSuccess }: { onSuccess: () => void }) {
         <div className="space-y-3">
           <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3 font-mono">
             <p>格式示例：</p>
-            <p>张三, zhangsan@example.com, 13800001111, ops_specialist, 运营部, 运营专员</p>
-            <p>李四, lisi@example.com, , ops_manager, 运营部, 运营主管</p>
+            <p>张三，zhangsan@example.com，13800001111，运营专员，运营部，运营专员</p>
+            <p>李四，lisi@example.com，，运营主管，运营部，运营主管</p>
           </div>
           <div className="text-xs text-muted-foreground">
-            角色可选值: {ALL_ROLES.filter(r => r !== "super_admin").map(r => `${r}(${ROLE_LABELS[r]})`).join(", ")}
+            角色可选值: {ALL_ROLES.filter(r => r !== "super_admin").map(r => ROLE_LABELS[r]).join("、")}
           </div>
           <textarea
             className="w-full h-40 p-3 text-sm border rounded-lg font-mono resize-none focus:outline-none focus:ring-2 focus:ring-ring"
