@@ -824,6 +824,7 @@ export default function KBImages() {
                   )}
 
                   {/* ── Amazon-Style Gallery (Main + Secondary + Brand Story + A+) ── */}
+                  <div className="-mx-6">
                   <AmazonStyleGallery
                     mainImages={groupedImages.main}
                     secondaryImages={groupedImages.secondary}
@@ -919,6 +920,7 @@ export default function KBImages() {
                       );
                     }}
                   />
+                  </div>
 
 
 

@@ -144,7 +144,7 @@ function AplusRow({ img, onDeleteImage, renderTagEditor, onReorder }: {
       </div>
 
       {/* Right: tag panel — always visible */}
-      <div className="w-[200px] flex-shrink-0 border-l bg-muted/20 p-3 flex flex-col gap-2">
+      <div className="w-[260px] flex-shrink-0 border-l bg-muted/20 p-3 flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
             <Tag className="h-3 w-3" /> 标签
