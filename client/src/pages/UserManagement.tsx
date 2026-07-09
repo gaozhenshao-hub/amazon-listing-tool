@@ -40,14 +40,14 @@ function CreateUserDialog({ onSuccess }: { onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     name: "", email: "", phone: "", role: "ops_specialist",
-    department: "", jobTitle: "", initialPassword: "",
+    department: "", jobTitle: "", initialPassword: "Abc12345",
   });
 
   const createMutation = trpc.userManagement.create.useMutation({
     onSuccess: (data) => {
       toast.success(`用户创建成功，初始密码: ${data.defaultPassword}`);
       setOpen(false);
-      setForm({ name: "", email: "", phone: "", role: "ops_specialist", department: "", jobTitle: "", initialPassword: "" });
+      setForm({ name: "", email: "", phone: "", role: "ops_specialist", department: "", jobTitle: "", initialPassword: "Abc12345" });
       onSuccess();
     },
     onError: (err) => toast.error(err.message),
