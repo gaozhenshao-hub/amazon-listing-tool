@@ -176,10 +176,15 @@ function BulkImportDialog({ onSuccess }: { onSuccess: () => void }) {
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
-          <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3 font-mono">
-            <p>格式示例：</p>
-            <p>张三，zhangsan@example.com，13800001111，运营专员，运营部，运营专员</p>
-            <p>李四，lisi@example.com，，运营主管，运营部，运营主管</p>
+          <div className="text-xs text-muted-foreground bg-muted/50 rounded-lg p-3 font-mono space-y-0.5">
+            <p className="font-semibold mb-1">格式示例（姓名，邮箱，手机号，角色，部门，职位）：</p>
+            <p>张三，zhangsan@example.com，13800001111，公司管理员，管理层，总经理</p>
+            <p>李四，lisi@example.com，13800002222，运营主管，运营部，运营主管</p>
+            <p>王五，wangwu@example.com，13800003333，运营专员，运营部，运营专员</p>
+            <p>赵六，zhaoliu@example.com，13800004444，产品开发，产品部，产品经理</p>
+            <p>孙七，sunqi@example.com，13800005555，财务，财务部，会计</p>
+            <p>周八，zhouba@example.com，13800006666，采购，供应链部，采购专员</p>
+            <p>吴九，wujiu@example.com，13800007777，美工，设计部，平面设计师</p>
           </div>
           <div className="text-xs text-muted-foreground">
             角色可选值: {ALL_ROLES.filter(r => r !== "super_admin").map(r => ROLE_LABELS[r]).join("、")}
