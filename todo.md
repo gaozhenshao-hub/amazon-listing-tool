@@ -36,3 +36,9 @@
 - [x] imageTagConstants.ts：StyleParams 接口新增 styleFeature 字段，13 个预设风格补充默认值
 - [x] KBTagManagement.tsx：预览卡片、新增表单、编辑表单三处同步添加「风格特点」输入项
 - [x] 测试通过（kbTags + kbImageOptimization，57 个用例）
+
+## 图片集详情页新布局（2026-07-09）
+
+- [x] 副图缩略图条只保留主图和套图（过滤掉 A+ 和品牌故事图片）
+- [x] A+ 内容区：主图下方逐张竖向展开，左侧大图，右侧实时标签+编辑
+- [x] 品牌故事区：A+ 下方，横向滚动展示图片，标签在下方显示

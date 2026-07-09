@@ -285,15 +285,23 @@ export default function KBImages() {
     return cols;
   }, [filteredImages]);
 
-  // Group detail set images by position
+  // Group detail set images — tagImageBelong takes priority; fall back to imagePosition
   const groupedImages = useMemo(() => {
     if (!detailSet) return { main: [], secondary: [], aplus: [], brand_story: [] };
     const imgs = (detailSet as any).images || [];
+    const getGroup = (i: any): string => {
+      const belong = (i.tagImageBelong || "").trim();
+      if (belong === "主图" || belong === "套图") return belong === "套图" ? "secondary" : "main";
+      if (belong === "A+") return "aplus";
+      if (belong === "品牌故事") return "brand_story";
+      // No tag yet — fall back to crawled imagePosition
+      return i.imagePosition || "secondary";
+    };
     return {
-      main: imgs.filter((i: any) => i.imagePosition === "main"),
-      secondary: imgs.filter((i: any) => i.imagePosition === "secondary"),
-      aplus: imgs.filter((i: any) => i.imagePosition === "aplus"),
-      brand_story: imgs.filter((i: any) => i.imagePosition === "brand_story"),
+      main: imgs.filter((i: any) => getGroup(i) === "main"),
+      secondary: imgs.filter((i: any) => getGroup(i) === "secondary"),
+      aplus: imgs.filter((i: any) => getGroup(i) === "aplus"),
+      brand_story: imgs.filter((i: any) => getGroup(i) === "brand_story"),
     };
   }, [detailSet]);
 
