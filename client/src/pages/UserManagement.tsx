@@ -141,7 +141,7 @@ function BulkImportDialog({ onSuccess }: { onSuccess: () => void }) {
     if (lines.length === 0) { toast.error("请输入用户数据"); return; }
 
     const users = lines.map(line => {
-      const parts = line.split(/[,\t]/).map(s => s.trim());
+      const parts = line.split(/[,，\t]/).map(s => s.trim());
       return {
         name: parts[0] || "",
         email: parts[1] || undefined,
