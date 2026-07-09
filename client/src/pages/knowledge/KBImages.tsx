@@ -842,7 +842,7 @@ export default function KBImages() {
                               <Select value={(img as any).tagImageBelongSub || ""} onValueChange={(v) => updateImageTagsMutation.mutate({ imageId: img.id, tagImageBelongSub: v })}>
                                 <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="A+子模块" /></SelectTrigger>
                                 <SelectContent>
-                                  {IMAGE_BELONG_HIERARCHY["A+"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                                  {(dbTags.imageBelongHierarchy?.["A+"] || IMAGE_BELONG_HIERARCHY["A+"]).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                                 </SelectContent>
                               </Select>
                             )}
@@ -1256,7 +1256,7 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
               <Select value={(img as any).tagImageBelongSub || ""} onValueChange={(v) => onUpdateTags.mutate({ imageId: img.id, tagImageBelongSub: v })}>
                 <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="A+子模块" /></SelectTrigger>
                 <SelectContent>
-                  {IMAGE_BELONG_HIERARCHY["A+"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  {(tagOptions?.imageBelongHierarchy?.["A+"] || IMAGE_BELONG_HIERARCHY["A+"]).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             )}
