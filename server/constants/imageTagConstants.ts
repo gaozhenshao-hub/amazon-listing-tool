@@ -13,6 +13,7 @@ export interface StyleParams {
   tabooElements: string;
   refBrands: string;
   aiKeywords: string;
+  styleFeature?: string; // 风格特点
 }
 
 export const IMAGE_STYLES: readonly StyleParams[] = [
@@ -23,7 +24,8 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     materialKeywords: "亚克力、磨砂玻璃、铝合金、纯色纸",
     tabooElements: "复杂纹理、花卉、暖木纹",
     refBrands: "Apple、Dyson、Bose、小米",
-    aiKeywords: "minimalist product photography, clean white background, soft diffused lighting, premium tech aesthetic, no shadows"
+    aiKeywords: "minimalist product photography, clean white background, soft diffused lighting, premium tech aesthetic, no shadows",
+    styleFeature: "线条简洁、色彩克制、大面积留白、高级感质感"
   },
   {
     name: "日系小清新",
@@ -32,7 +34,8 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     materialKeywords: "棉麻、原木、陶瓷、干花",
     tabooElements: "金属工业感、深色背景、霓虹色",
     refBrands: "MUJI、niko and...、KEYUCA",
-    aiKeywords: "japanese minimalist style, natural window light, cotton linen texture, warm neutral tones, airy composition"
+    aiKeywords: "japanese minimalist style, natural window light, cotton linen texture, warm neutral tones, airy composition",
+    styleFeature: "空气感十足、自然清淡、温柔中性色、極简且有生活温度"
   },
   {
     name: "美式家居温馨风",
@@ -41,7 +44,8 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     materialKeywords: "皮革、深色木、铜件、绿植",
     tabooElements: "塑料感、荧光色、极简冷淡",
     refBrands: "Pottery Barn、West Elm、Crate & Barrel",
-    aiKeywords: "american cozy home style, warm ambient lighting, leather and wood textures, lived-in comfort, earth tones"
+    aiKeywords: "american cozy home style, warm ambient lighting, leather and wood textures, lived-in comfort, earth tones",
+    styleFeature: "暖色调居家气息、层次丰富、居住感强"
   },
   {
     name: "北欧原木治愈风",
@@ -50,7 +54,8 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     materialKeywords: "白橡木、羊毛、亚麻、陶土",
     tabooElements: "深色重色、复杂图案、金属反光",
     refBrands: "IKEA、HAY、Marimekko、Ferm Living",
-    aiKeywords: "scandinavian design, light oak wood, natural materials, hygge atmosphere, muted pastels, clean lines"
+    aiKeywords: "scandinavian design, light oak wood, natural materials, hygge atmosphere, muted pastels, clean lines",
+    styleFeature: "自然材质、温和中性色、功能与美感平衡、治愈氛围"
   },
   {
     name: "科技未来感",
@@ -59,7 +64,8 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     materialKeywords: "碳纤维、钢化玻璃、LED、金属网格",
     tabooElements: "自然材质、暖色调、田园元素",
     refBrands: "Razer、ROG、Tesla Cybertruck",
-    aiKeywords: "cyberpunk tech aesthetic, neon glow, dark background with RGB accents, futuristic, metallic surfaces"
+    aiKeywords: "cyberpunk tech aesthetic, neon glow, dark background with RGB accents, futuristic, metallic surfaces",
+    styleFeature: "高对比、冷色调、RGB点缀、未来科技感、强烈视觉冲击"
   },
   {
     name: "户外探险风",
@@ -68,7 +74,8 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     materialKeywords: "岩石、泥土、帐篷面料、登山绳",
     tabooElements: "室内场景、精致摆拍、柔美元素",
     refBrands: "The North Face、Patagonia、YETI",
-    aiKeywords: "outdoor adventure, rugged terrain, harsh natural light, action shot, durable equipment, wilderness backdrop"
+    aiKeywords: "outdoor adventure, rugged terrain, harsh natural light, action shot, durable equipment, wilderness backdrop",
+    styleFeature: "硬朗光影、真实场景、动态感强、粗狂耐用气质"
   },
   {
     name: "母婴柔和风",
@@ -77,7 +84,8 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     materialKeywords: "纯棉、硅胶、圆角、马卡龙色",
     tabooElements: "尖锐物、深暗色调、复杂背景",
     refBrands: "Babycare、Hegen、Stokke",
-    aiKeywords: "baby safe aesthetic, pastel colors, soft rounded shapes, gentle lighting, cotton textures, nurturing mood"
+    aiKeywords: "baby safe aesthetic, pastel colors, soft rounded shapes, gentle lighting, cotton textures, nurturing mood",
+    styleFeature: "马卡龙色、软圆形、无阴影柔光、安全温柔氛围"
   },
   {
     name: "轻奢高端风",
@@ -86,7 +94,8 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     materialKeywords: "大理石、黄铜、丝绒、水晶",
     tabooElements: "塑料、粗糙纹理、过于鲜艳",
     refBrands: "Jo Malone、Diptyque、Aesop",
-    aiKeywords: "luxury premium aesthetic, marble and brass, velvet textures, golden accents, sophisticated composition"
+    aiKeywords: "luxury premium aesthetic, marble and brass, velvet textures, golden accents, sophisticated composition",
+    styleFeature: "光泽质感、金属点缀、高级材质层叠、精致构图"
   },
   {
     name: "国潮新中式",
@@ -95,7 +104,8 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     materialKeywords: "宣纸、竹、漆器、祥云纹、水墨",
     tabooElements: "西式花纹、极简工业、荧光色",
     refBrands: "花西子、观夏、茶颜悦色",
-    aiKeywords: "chinese modern style, ink wash painting elements, bamboo and lacquer, traditional patterns, cultural fusion"
+    aiKeywords: "chinese modern style, ink wash painting elements, bamboo and lacquer, traditional patterns, cultural fusion",
+    styleFeature: "水墨元素、传统纹样、现代中式融合、文化内涵感"
   },
   {
     name: "ins网红风",
@@ -104,7 +114,8 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     materialKeywords: "绿植、咖啡、书籍、针织毯",
     tabooElements: "过于商业化、硬光、纯白背景",
     refBrands: "Glossier、Anthropologie、Urban Outfitters",
-    aiKeywords: "instagram lifestyle, golden hour light, flat lay composition, aesthetic arrangement, natural props, bokeh"
+    aiKeywords: "instagram lifestyle, golden hour light, flat lay composition, aesthetic arrangement, natural props, bokeh",
+    styleFeature: "黄金时刻光效、平铺构图、生活方式展示、自然道具点缀"
   },
   {
     name: "工业硬核风",
@@ -113,7 +124,8 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     materialKeywords: "水泥、铁件、裸砖、黑色哑光",
     tabooElements: "花卉、柔美曲线、马卡龙色",
     refBrands: "Milwaukee、DeWalt、Makita",
-    aiKeywords: "industrial minimalist, concrete and steel, harsh directional light, high contrast, raw materials, utilitarian"
+    aiKeywords: "industrial minimalist, concrete and steel, harsh directional light, high contrast, raw materials, utilitarian",
+    styleFeature: "硬光侧光、高对比、裸露材质、实用主义气质"
   },
   {
     name: "田园自然风",
@@ -122,7 +134,8 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     materialKeywords: "牛皮纸、干花、棉布、木托盘",
     tabooElements: "塑料、金属、荧光色、人工感",
     refBrands: "Aesop、The Body Shop、悦木之源",
-    aiKeywords: "organic natural style, botanical elements, kraft paper, dried flowers, earth tones, sustainable aesthetic"
+    aiKeywords: "organic natural style, botanical elements, kraft paper, dried flowers, earth tones, sustainable aesthetic",
+    styleFeature: "自然散射光、植物元素、大地色系、环保有机氛围"
   },
   {
     name: "暗黑酷炫风",
@@ -131,7 +144,8 @@ export const IMAGE_STYLES: readonly StyleParams[] = [
     materialKeywords: "黑色哑光、金属、烟雾、激光",
     tabooElements: "明亮色彩、可爱元素、自然场景",
     refBrands: "GoPro、DJI、Alienware",
-    aiKeywords: "dark moody aesthetic, dramatic single light source, smoke effects, metallic highlights, mysterious atmosphere"
+    aiKeywords: "dark moody aesthetic, dramatic single light source, smoke effects, metallic highlights, mysterious atmosphere",
+    styleFeature: "大面积暗部、单点光源戳亮、烟雾效果、神秘氛围"
   }
 ] as const;
 

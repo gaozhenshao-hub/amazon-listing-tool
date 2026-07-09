@@ -31,10 +31,8 @@
 - [x] 预设管理员账号 kangboning（首次登录需改密码）
 - [x] 测试通过，保存 Checkpoint 并发布
 
-## GitHub 代码同步（2026-07-09）
+## 风格结构化参数新增「风格特点」字段（2026-07-09）
 
-- [x] 拉取 GitHub 最新代码（9 个新提交）
-- [x] 同步图片知识库相关文件（imageTagConstants.ts、kbDb.ts、kbImages.ts、kbTags.ts、AmazonStyleGallery.tsx、KBImages.tsx、KBTagManagement.tsx、useKBTagOptions.ts）
-- [x] 数据库和环境配置保持不变
-- [x] 全量测试通过（160 文件 / 3565 用例）
-- [x] 保存 Checkpoint 并发布
+- [x] imageTagConstants.ts：StyleParams 接口新增 styleFeature 字段，13 个预设风格补充默认值
+- [x] KBTagManagement.tsx：预览卡片、新增表单、编辑表单三处同步添加「风格特点」输入项
+- [x] 测试通过（kbTags + kbImageOptimization，57 个用例）

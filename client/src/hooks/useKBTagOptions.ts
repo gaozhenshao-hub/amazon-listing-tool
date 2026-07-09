@@ -50,39 +50,38 @@ export interface TagOptions {
 
 export function useKBTagOptions(): TagOptions {
   // Fetch all dimensions in parallel
-  // staleTime: 0 ensures that invalidate() in KBTagManagement triggers an immediate refetch
   const { data: categoryTags, isLoading: catLoading } = trpc.kbTags.listAllForDimension.useQuery(
     { dimension: "category" },
-    { staleTime: 0 }
+    { staleTime: 5 * 60 * 1000 }
   );
   const { data: colorTags, isLoading: colorLoading } = trpc.kbTags.listAllForDimension.useQuery(
     { dimension: "color" },
-    { staleTime: 0 }
+    { staleTime: 5 * 60 * 1000 }
   );
   const { data: imageBelongTags, isLoading: belongLoading } = trpc.kbTags.listAllForDimension.useQuery(
     { dimension: "imageBelong" },
-    { staleTime: 0 }
+    { staleTime: 5 * 60 * 1000 }
   );
   const { data: compositionTags, isLoading: compLoading } = trpc.kbTags.listAllForDimension.useQuery(
     { dimension: "composition" },
-    { staleTime: 0 }
+    { staleTime: 5 * 60 * 1000 }
   );
   const { data: styleTags, isLoading: styleLoading } = trpc.kbTags.listAllForDimension.useQuery(
     { dimension: "style" },
-    { staleTime: 0 }
+    { staleTime: 5 * 60 * 1000 }
   );
   const { data: imageTypeTags, isLoading: typeLoading } = trpc.kbTags.listAllForDimension.useQuery(
     { dimension: "imageType" },
-    { staleTime: 0 }
+    { staleTime: 5 * 60 * 1000 }
   );
   const { data: sellingPointTags, isLoading: spLoading } = trpc.kbTags.listAllForDimension.useQuery(
     { dimension: "sellingPoint" },
-    { staleTime: 0 }
+    { staleTime: 5 * 60 * 1000 }
   );
 
   // Fetch LIVE tag counts from actual image/set data (not cached usageCount)
   const { data: liveCounts } = trpc.kbTags.getTagCountsLive.useQuery(undefined, {
-    staleTime: 0, // Always refetch on invalidate
+    staleTime: 2 * 60 * 1000, // Refresh every 2 minutes
   });
 
   const isLoading = catLoading || colorLoading || belongLoading || compLoading || styleLoading || typeLoading || spLoading;
