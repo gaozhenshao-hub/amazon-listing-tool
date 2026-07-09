@@ -697,7 +697,7 @@ export default function KBImages() {
 
       {/* ═══ ASIN Set Detail Dialog — Images Grouped by Position ═══ */}
       <Dialog open={!!detailSetId} onOpenChange={(open) => !open && setDetailSetId(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[80vw] max-w-[80vw] max-h-[90vh] overflow-y-auto">
           {detailSet ? (() => {
             const d = detailSet as any;
             const status = statusMap[d.status] || { label: d.status, variant: "secondary" as const };
