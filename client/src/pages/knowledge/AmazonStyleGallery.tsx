@@ -436,7 +436,7 @@ export function AmazonStyleGallery({
           {onReorder ? (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleAplusDragEnd}>
               <SortableContext items={aplusItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-0">
                   {aplusItems.map((img) => (
                     <AplusRow
                       key={img.id}
@@ -450,7 +450,7 @@ export function AmazonStyleGallery({
               </SortableContext>
             </DndContext>
           ) : (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-0">
               {aplusItems.map((img) => (
                 <AplusRow
                   key={img.id}
