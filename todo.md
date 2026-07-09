@@ -45,3 +45,8 @@
 - [x] 弹窗宽度扩展至 80vw（w-[80vw] max-w-[80vw]）
 - [x] AmazonStyleGallery 区域用 -mx-6 负 margin 突破弹窗内边距，关闭 div 标签已补全
 - [x] TypeScript 编译无错误，全量 3565 个测试用例通过
+
+## 图片知识库弹窗宽度再次扩大（2026-07-09）
+
+- [x] 弹窗宽度从 80vw 改为 95vw（用户要求宽度*2，95vw 接近全屏）
+- [x] 移除 dialog.tsx 基础组件的 sm:max-w-lg 默认限制，确保外部 className 能完全覆盖宽度
