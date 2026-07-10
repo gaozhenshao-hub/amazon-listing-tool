@@ -278,10 +278,10 @@ export default function DashboardLayout({
               <Sparkles className="h-8 w-8 text-primary" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight text-center text-card-foreground">
-              亚马逊全链路智能工具
+              AMZ 全链路
             </h1>
             <p className="text-sm text-muted-foreground text-center max-w-sm leading-relaxed">
-              基于AI的亚马逊全链路运营工具，覆盖产品开发、Listing优化、运营提效、售后管理和知识库五大模块。
+              基于AI的AMZ全链路运营工具，覆盖产品开发、Listing优化、运营提效、售后管理和知识库五大模块。
             </p>
           </div>
           <Button
@@ -390,7 +390,7 @@ function DashboardLayoutContent({
               <Menu className="h-5 w-5" />
             </button>
             <span className="font-semibold text-sm truncate">
-              {isHomePage ? "亚马逊全链路智能工具" : activeModule?.label || ""}
+              {isHomePage ? "AMZ 全链路" : activeModule?.label || ""}
             </span>
           </div>
           <div className="flex items-center gap-1">
@@ -482,7 +482,7 @@ function DashboardLayoutContent({
               <div className="flex-1 flex flex-col">
                 <div className="h-12 flex items-center px-4 border-b">
                   <span className="font-semibold text-sm">
-                    {isHomePage ? "亚马逊全链路智能工具" : activeModule?.label || ""}
+                    {isHomePage ? "AMZ 全链路" : activeModule?.label || ""}
                   </span>
                 </div>
                 <nav className="flex-1 overflow-y-auto py-2 px-2">

@@ -150,7 +150,7 @@ export default function PlatformHome() {
           {user?.name || "用户"}，欢迎回来
         </h1>
         <p className="text-muted-foreground mt-1">
-          亚马逊全链路智能工具 — 从选品到售后的一站式智能运营解决方案
+          AMZ 全链路 — 从选品到售后的一站式智能运营解决方案
         </p>
       </div>
 

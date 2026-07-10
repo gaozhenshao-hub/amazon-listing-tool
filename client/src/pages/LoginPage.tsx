@@ -167,7 +167,7 @@ export default function LoginPage() {
           <div className="mx-auto h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center">
             <Sparkles className="h-7 w-7 text-primary" />
           </div>
-          <CardTitle className="text-xl">亚马逊全链路智能工具</CardTitle>
+          <CardTitle className="text-xl">AMZ 全链路</CardTitle>
           <CardDescription>
             登录以使用全部功能
           </CardDescription>
