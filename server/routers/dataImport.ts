@@ -55,9 +55,19 @@ export async function resolveDataUserId(db: any, currentUser: { id: number; role
 }
 
 /**
+ * Split operator field into individual names.
+ * Supports separators: / 、 , ，  (slash, Chinese enumeration comma, comma, Chinese comma, space)
+ */
+function splitOperatorNames(operator: string | null): string[] {
+  if (!operator) return [];
+  return operator.split(/[\/、,，]+/).map(s => s.trim()).filter(Boolean);
+}
+
+/**
  * Helper: Filter products by operator permission for non-admin users.
  * After operator name mapping is applied, filter to only show products
  * where the operator matches the current user's name.
+ * Supports multi-operator fields (e.g. "张三/李四").
  */
 function filterByOperatorPermission(
   items: { operator: string | null }[],
@@ -67,10 +77,11 @@ function filterByOperatorPermission(
   if (isManagerOrAbove || !currentUser.name) {
     return items;
   }
-  // Non-admin users only see products assigned to them
+  // Non-admin users only see products assigned to them (any of the operators matches)
   return items.filter(item => {
     if (!item.operator) return false;
-    return item.operator === currentUser.name;
+    const names = splitOperatorNames(item.operator);
+    return names.includes(currentUser.name!);
   });
 }
 
@@ -84,8 +95,9 @@ async function applyOperatorMappings(
   items: { operator: string | null }[],
   sourceType: "lingxing" | "saihu"
 ): Promise<void> {
-  // Collect all unique operator names
-  const uniqueNames = [...new Set(items.map(i => i.operator).filter(Boolean))] as string[];
+  // Collect all unique individual operator names (split multi-name fields)
+  const allRawNames = items.flatMap(i => splitOperatorNames(i.operator));
+  const uniqueNames = [...new Set(allRawNames)];
   if (uniqueNames.length === 0) return;
 
   // Load all confirmed mappings for this user
@@ -107,15 +119,12 @@ async function applyOperatorMappings(
     }
   }
 
-  // Replace operator names in-place
-  let replaced = 0, notFound = 0;
+  // Replace operator names in-place, handling multi-name fields
   for (const item of items) {
-    if (item.operator && mappingLookup.has(item.operator)) {
-      item.operator = mappingLookup.get(item.operator)!;
-      replaced++;
-    } else if (item.operator) {
-      notFound++;
-    }
+    if (!item.operator) continue;
+    const parts = splitOperatorNames(item.operator);
+    const mapped = parts.map(p => mappingLookup.get(p) ?? p);
+    item.operator = mapped.join("/");
   }
 }
 
