@@ -3446,7 +3446,7 @@ export const lingxingProductWeekly = mysqlTable("lingxing_product_weekly", {
   weekStartDate: varchar("week_start_date", { length: 10 }).notNull(),
   weekEndDate: varchar("week_end_date", { length: 10 }).notNull(),
   // Basic info
-  asin: varchar("asin", { length: 500 }),
+  asin: varchar("asin", { length: 2000 }), // expanded: stores comma-joined child ASINs under a parent ASIN
   parentAsin: varchar("parent_asin", { length: 500 }),
   msku: varchar("msku", { length: 200 }),
   storeName: varchar("store_name", { length: 200 }),
@@ -3588,7 +3588,7 @@ export type LingxingProductWeekly = typeof lingxingProductWeekly.$inferSelect;
 export type InsertLingxingProductWeekly = typeof lingxingProductWeekly.$inferInsert;
 
 // Saihu product weekly data (赛狐产品分析 - ASIN维度)
-export const saihuProductWeekly = mysqlTable("saihu_product_weekly", {
+export const saihuProductWeekly = mysqlTable("saihu_product_weekly", { // asin expanded to 2000 for multi-child ASIN support
   id: int("id").autoincrement().primaryKey(),
   importId: int("import_id").notNull(),
   userId: int("user_id").notNull(),
@@ -3597,7 +3597,7 @@ export const saihuProductWeekly = mysqlTable("saihu_product_weekly", {
   // Basic info
   currency: varchar("currency", { length: 10 }),
   imageUrl: text("image_url"),
-  asin: varchar("asin", { length: 500 }),
+  asin: varchar("asin", { length: 2000 }), // expanded: stores comma-joined child ASINs under a parent ASIN
   title: varchar("title", { length: 1000 }),
   parentAsin: varchar("parent_asin", { length: 500 }),
   msku: varchar("msku", { length: 500 }),

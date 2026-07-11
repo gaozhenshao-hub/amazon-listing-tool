@@ -76,3 +76,7 @@
 ## 运营人员映射拆分修复（2026-07-11）
 
 - [x] 修复运营人员名称映射对话框：多人名字符串（如"裴艺翔,康凡静"）应拆分成单个名称后分别映射，而不是整体作为一个外部名称
+
+## asin 字段扩容修复（2026-07-11）
+
+- [x] 将 saihu_product_weekly 和 lingxing_product_weekly 表中 asin 字段从 varchar(500) 改为 varchar(2000)，修复父ASIN汇总表导入时 ER_DATA_TOO_LONG 错误
