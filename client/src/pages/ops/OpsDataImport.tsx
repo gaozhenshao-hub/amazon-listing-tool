@@ -91,19 +91,23 @@ export default function OpsDataImport() {
       toast.success("数据导入成功", {
         description: `成功导入 ${data.importedRows} 行数据${data.skippedRows > 0 ? `，跳过 ${data.skippedRows} 行` : ""}`,
       });
-      // Extract unique operator names from preview data for mapping
-      if (previewData?.previewRows?.length > 0) {
-        const operatorField = previewData.sourceType === "lingxing" ? "operator" : "operator";
-        const names = [...new Set(
-          previewData.previewRows
-            .map((r: any) => r[operatorField] || r.负责人 || r.业务员)
-            .filter(Boolean)
-        )] as string[];
-        if (names.length > 0) {
-          setMappingOperatorNames(names);
-          setMappingSourceType(previewData.sourceType as "lingxing" | "saihu");
-          setMappingDialogOpen(true);
-        }
+      // Use allOperatorNames from previewData (already split and deduped on server side)
+      // Falls back to extracting from previewRows if allOperatorNames is not available
+      const operatorNamesToMap: string[] = previewData?.allOperatorNames?.length > 0
+        ? previewData.allOperatorNames
+        : previewData?.previewRows?.length > 0
+          ? [...new Set(
+              previewData.previewRows
+                .flatMap((r: any) => {
+                  const raw = r.operator || r["负责人"] || r["业务员"] || "";
+                  return raw.split(/[\/、,，]+/).map((s: string) => s.trim()).filter(Boolean);
+                })
+            )]
+          : [];
+      if (operatorNamesToMap.length > 0) {
+        setMappingOperatorNames(operatorNamesToMap);
+        setMappingSourceType((previewData?.sourceType || "saihu") as "lingxing" | "saihu");
+        setMappingDialogOpen(true);
       }
       setPreviewOpen(false);
       setPreviewData(null);

@@ -252,7 +252,11 @@ export const operatorMappingRouter = router({
         suggestions: { userId: number; userName: string; score: number; matchType: string }[];
       }[] = [];
 
-      const uniqueNames = [...new Set(input.externalNames.filter(Boolean))];
+      // Split composite names (e.g. "裴艺翔,康凡静" → ["裴艺翔", "康凡静"]) before dedup
+      const splitNames = input.externalNames
+        .filter(Boolean)
+        .flatMap(n => n.split(/[\/、,，]+/).map((s: string) => s.trim()).filter(Boolean));
+      const uniqueNames = [...new Set(splitNames)];
 
       for (const extName of uniqueNames) {
         // Check existing confirmed mapping

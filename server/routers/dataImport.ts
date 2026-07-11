@@ -159,6 +159,13 @@ export const dataImportRouter = router({
         status: "previewing",
       });
 
+      // Extract all unique individual operator names from the full dataset (split multi-name fields)
+      const allOperatorNames = [...new Set(
+        result.allRows
+          .flatMap((r: Record<string, any>) => splitOperatorNames(r.operator || null))
+          .filter(Boolean)
+      )];
+
       return {
         importId: importRecord.insertId,
         sourceType: result.sourceType,
@@ -167,6 +174,7 @@ export const dataImportRouter = router({
         previewRows: result.previewRows,
         unmappedColumns: result.unmappedColumns,
         mappedColumnCount: result.headers.length - result.unmappedColumns.length,
+        allOperatorNames,
       };
     }),
 
