@@ -902,7 +902,11 @@ export default function OpsProducts() {
     if (operatorFilter === "__UNASSIGNED__") {
       list = list.filter(p => !p.operator);
     } else if (operatorFilter !== "ALL") {
-      list = list.filter(p => (p.operator || "") === operatorFilter);
+      // Split multi-person operator field and check if the selected name is included
+      list = list.filter(p => {
+        const names = (p.operator || "").split(/[\/、,，]+/).map((s: string) => s.trim()).filter(Boolean);
+        return names.includes(operatorFilter);
+      });
     }
     if (storeFilter !== "ALL") list = list.filter(p => (p.storeName || "") === storeFilter);
     if (searchTerm) {
@@ -935,7 +939,12 @@ export default function OpsProducts() {
   }, [products, operatorFilter, storeFilter, searchTerm, weekFilter, sortKey, sortDir]);
 
   const availableOperators = useMemo(() => {
-    const set = new Set((products || []).map(p => p.operator || "").filter(Boolean));
+    const set = new Set<string>();
+    (products || []).forEach(p => {
+      if (!p.operator) return;
+      // Split multi-person operator strings like "裴艺翔,康凡静" into individual names
+      p.operator.split(/[\/、,，]+/).map((s: string) => s.trim()).filter(Boolean).forEach((name: string) => set.add(name));
+    });
     return Array.from(set).sort();
   }, [products]);
 

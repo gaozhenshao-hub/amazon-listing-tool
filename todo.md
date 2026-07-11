@@ -80,3 +80,7 @@
 ## asin 字段扩容修复（2026-07-11）
 
 - [x] 将 saihu_product_weekly 和 lingxing_product_weekly 表中 asin 字段从 varchar(500) 改为 varchar(2000)，修复父ASIN汇总表导入时 ER_DATA_TOO_LONG 错误
+
+## 运营人员下拉框多人拆分修复（2026-07-11）
+
+- [x] OpsProducts.tsx：availableOperators 计算时拆分多人字符串；operatorFilter 筛选时改为“包含”匹配而非“等于”匹配
