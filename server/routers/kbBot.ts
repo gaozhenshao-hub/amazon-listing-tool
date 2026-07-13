@@ -218,7 +218,7 @@ async function performKbSearch(
 
     try {
 
-      const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify(input).slice(0, 3000) });
+      const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify({}).slice(0, 3000) });
 
       if (_emperorRes.success && _emperorRes.output) {
 
@@ -322,7 +322,7 @@ ${l1Prompt}`,
 
     try {
 
-      const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify(input).slice(0, 3000) });
+      const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify({}).slice(0, 3000) });
 
       if (_emperorRes.success && _emperorRes.output) {
 
@@ -412,7 +412,7 @@ ${l2Prompt}`,
 
   try {
 
-    const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify(input).slice(0, 3000) });
+    const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify({}).slice(0, 3000) });
 
     if (_emperorRes.success && _emperorRes.output) {
 

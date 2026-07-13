@@ -161,7 +161,7 @@ ${input.searchTerms.slice(0, 200).join("\n")}
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("analysis.rufus.attribute", { context: JSON.stringify(input).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("analysis.rufus.attribute", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -256,7 +256,7 @@ ${activeQuestions.map((q, i) => `${i + 1}. ${q.question}`).join("\n")}
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("analysis.rufus.attribute", { context: JSON.stringify(input).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("analysis.rufus.attribute", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 

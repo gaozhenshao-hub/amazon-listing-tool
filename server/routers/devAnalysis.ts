@@ -265,7 +265,7 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(productData ?? {}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -407,7 +407,7 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(productData ?? {}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -563,7 +563,7 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(productData ?? {}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -710,7 +710,7 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(productData ?? {}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -849,7 +849,7 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -1025,7 +1025,7 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(data ?? {}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -1245,7 +1245,7 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -1369,7 +1369,7 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -1472,7 +1472,7 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(content ?? {}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -1632,7 +1632,7 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -1835,7 +1835,7 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(productData ?? {}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -2014,7 +2014,7 @@ async function generateExternalSummary(rawData: unknown, prompt: string): Promis
 
   try {
 
-    const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+    const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify({}).slice(0, 3000) });
 
     if (_emperorRes.success && _emperorRes.output) {
 

@@ -1815,7 +1815,7 @@ export const productOpsRouter = router({
 
         try {
 
-          const _emperorRes = await runSkillViaEmperor("ops.searchterm.advice", { context: JSON.stringify(input).slice(0, 3000) });
+          const _emperorRes = await runSkillViaEmperor("ops.searchterm.advice", { context: JSON.stringify(data ?? {}).slice(0, 3000) });
 
           if (_emperorRes.success && _emperorRes.output) {
 
@@ -3427,7 +3427,7 @@ export const productOpsRouter = router({
 
         try {
 
-          const _emperorRes = await runSkillViaEmperor("ops.searchterm.advice", { context: JSON.stringify(input).slice(0, 3000) });
+          const _emperorRes = await runSkillViaEmperor("ops.searchterm.advice", { context: JSON.stringify({}).slice(0, 3000) });
 
           if (_emperorRes.success && _emperorRes.output) {
 

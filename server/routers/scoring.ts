@@ -330,7 +330,7 @@ export const scoringRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("listing.scoring.overall", { context: JSON.stringify(input).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("listing.scoring.overall", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 

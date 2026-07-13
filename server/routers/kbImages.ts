@@ -147,7 +147,7 @@ async function processImport(setId: number, asin: string, userId: number, runAna
 
           try {
 
-            const _emperorRes = await runSkillViaEmperor("analysis.image.recognition", { context: JSON.stringify(input).slice(0, 3000) });
+            const _emperorRes = await runSkillViaEmperor("analysis.image.recognition", { context: JSON.stringify({}).slice(0, 3000) });
 
             if (_emperorRes.success && _emperorRes.output) {
 
@@ -326,7 +326,7 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
 
         try {
 
-          const _emperorRes = await runSkillViaEmperor("analysis.image.recognition", { context: JSON.stringify(input).slice(0, 3000) });
+          const _emperorRes = await runSkillViaEmperor("analysis.image.recognition", { context: JSON.stringify({}).slice(0, 3000) });
 
           if (_emperorRes.success && _emperorRes.output) {
 

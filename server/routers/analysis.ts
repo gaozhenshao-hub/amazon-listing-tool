@@ -396,7 +396,7 @@ export const analysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: JSON.stringify(input).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 

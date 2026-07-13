@@ -506,7 +506,7 @@ export const devProjectTagsRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -721,7 +721,7 @@ ${JSON.stringify(productContext, null, 2)}
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 

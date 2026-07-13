@@ -191,7 +191,7 @@ ${dimensionText}
 
           try {
 
-            const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+            const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(productData ?? {}).slice(0, 3000) });
 
             if (_emperorRes.success && _emperorRes.output) {
 
