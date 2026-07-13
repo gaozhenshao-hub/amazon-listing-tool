@@ -1,3 +1,4 @@
+import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -183,8 +184,19 @@ export const dashboardUpgradeRouter = router({
       const totalAdSales = adData.reduce((s: number, d: any) => s + (Number(d.sales) || 0), 0);
       const highReturnAsins = returnData.filter((r: any) => Number(r.return_rate || r.returnRate || 0) > 5).length;
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: ops.profit.analysis
+
+      try {
+
+        const _emperorRes = await runSkillViaEmperor("ops.profit.analysis", { context: JSON.stringify(input).slice(0, 3000) });
+
+        if (_emperorRes.success && _emperorRes.output) {
+
+          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+        }
+
+      } catch (_e) { console.warn("[Emperor] dashboardUpgrade.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [

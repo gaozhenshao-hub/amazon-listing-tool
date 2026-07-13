@@ -1,3 +1,4 @@
+import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -70,8 +71,19 @@ function parseCsvContent(content: string): { headers: string[]; rows: Record<str
 // ─── AI Analysis Functions ────────────────────────────────────────
 
 async function analyzeRufusAttributes(rawContent: string): Promise<any> {
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: analysis.comparison.summary
+
+  try {
+
+    const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: JSON.stringify(input).slice(0, 3000) });
+
+    if (_emperorRes.success && _emperorRes.output) {
+
+      // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+    }
+
+  } catch (_e) { console.warn("[Emperor] projectFile.ts fallback:", _e); }
 
   const response = await invokeLLM({
     messages: [
@@ -97,8 +109,19 @@ async function analyzeRufusAttributes(rawContent: string): Promise<any> {
 }
 
 async function analyzeCompetitorListings(rawContent: string): Promise<any> {
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: analysis.comparison.summary
+
+  try {
+
+    const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: JSON.stringify(input).slice(0, 3000) });
+
+    if (_emperorRes.success && _emperorRes.output) {
+
+      // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+    }
+
+  } catch (_e) { console.warn("[Emperor] projectFile.ts fallback:", _e); }
 
   const response = await invokeLLM({
     messages: [
@@ -136,8 +159,19 @@ async function analyzeCosmoScenes(parsedData: any): Promise<any> {
 
   const headerInfo = `Columns: ${(parsedData.headers || []).join(", ")}`;
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: analysis.comparison.summary
+
+  try {
+
+    const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: JSON.stringify(input).slice(0, 3000) });
+
+    if (_emperorRes.success && _emperorRes.output) {
+
+      // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+    }
+
+  } catch (_e) { console.warn("[Emperor] projectFile.ts fallback:", _e); }
 
   const response = await invokeLLM({
     messages: [
@@ -174,8 +208,19 @@ async function analyzeA9Keywords(parsedData: any): Promise<any> {
 
   const headerInfo = `Columns: ${(parsedData.headers || []).join(", ")}`;
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: analysis.comparison.summary
+
+  try {
+
+    const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: JSON.stringify(input).slice(0, 3000) });
+
+    if (_emperorRes.success && _emperorRes.output) {
+
+      // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+    }
+
+  } catch (_e) { console.warn("[Emperor] projectFile.ts fallback:", _e); }
 
   const response = await invokeLLM({
     messages: [

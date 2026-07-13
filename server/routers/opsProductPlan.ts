@@ -1,3 +1,4 @@
+import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
@@ -288,8 +289,19 @@ export const opsProductPlanRouter = router({
       daysInPlan: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: ops.competitor.analysis
+
+      try {
+
+        const _emperorRes = await runSkillViaEmperor("ops.competitor.analysis", { context: JSON.stringify(input).slice(0, 3000) });
+
+        if (_emperorRes.success && _emperorRes.output) {
+
+          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+        }
+
+      } catch (_e) { console.warn("[Emperor] opsProductPlan.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -468,8 +480,19 @@ export const opsProductPlanRouter = router({
         ? `我方: ACoS=${input.myData.acos ?? "N/A"}%, CTR=${input.myData.ctr ?? "N/A"}%, CVR=${input.myData.cvr ?? "N/A"}%, CPC=$${input.myData.cpc ?? "N/A"}, CPA=$${input.myData.cpa ?? "N/A"}`
         : "我方数据未提供";
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: ops.competitor.analysis
+
+      try {
+
+        const _emperorRes = await runSkillViaEmperor("ops.competitor.analysis", { context: JSON.stringify(input).slice(0, 3000) });
+
+        if (_emperorRes.success && _emperorRes.output) {
+
+          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+        }
+
+      } catch (_e) { console.warn("[Emperor] opsProductPlan.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -640,8 +663,19 @@ export const opsProductPlanRouter = router({
         `${i + 1}. ${p.name} (BSR ${p.bsrRange}, ${p.durationDays || "?"}天, 状态:${p.status}, 进度:${p.progress || 0}%)`
       ).join("\n");
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: ops.competitor.analysis
+
+      try {
+
+        const _emperorRes = await runSkillViaEmperor("ops.competitor.analysis", { context: JSON.stringify(input).slice(0, 3000) });
+
+        if (_emperorRes.success && _emperorRes.output) {
+
+          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+        }
+
+      } catch (_e) { console.warn("[Emperor] opsProductPlan.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [

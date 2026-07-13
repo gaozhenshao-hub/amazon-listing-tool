@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { adviseOpsSearchTermsViaEmperor, diagnoseInventoryViaEmperor, analyzeProfitViaEmperor } from "../emperorClient";
+import { adviseOpsSearchTermsViaEmperor, analyzeInventoryViaEmperor, analyzeProfitViaEmperor } from "../emperorClient";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";

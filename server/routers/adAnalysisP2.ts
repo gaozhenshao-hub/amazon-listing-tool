@@ -314,7 +314,7 @@ ${AD_KNOWLEDGE_BASE}
 
       // Emperor Skill 优先 - 广告助手
       try {
-        const emperorRes = await diagnoseAdViaEmperor(input.message || "");
+        const emperorRes = await diagnoseAdViaEmperor(input.question || "");
         if (emperorRes.success && emperorRes.output) return { reply: JSON.stringify(emperorRes.output) };
       } catch (e) { console.warn("[Emperor] adChatBot fallback:", e); }
 

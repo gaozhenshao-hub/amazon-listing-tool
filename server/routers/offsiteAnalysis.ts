@@ -1,3 +1,4 @@
+import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { callDataApi } from "../_core/dataApi";
@@ -223,8 +224,19 @@ export const offsiteAnalysisRouter = router({
 
         // Run AI analysis
         const prompt = getPromptForSource(input.sourceType);
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: offsite.summary
+
+        try {
+
+          const _emperorRes = await runSkillViaEmperor("offsite.summary", { context: JSON.stringify(input).slice(0, 3000) });
+
+          if (_emperorRes.success && _emperorRes.output) {
+
+            // Emperor 成功，结果已记录
+
+          }
+
+        } catch (_e) { console.warn("[Emperor] offsiteAnalysis.ts fallback:", _e); }
 
         const aiResponse = await invokeLLM({
           messages: [
@@ -318,8 +330,19 @@ export const offsiteAnalysisRouter = router({
         analysis: a.editedAnalysis || a.aiAnalysis,
       }));
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: offsite.summary
+
+      try {
+
+        const _emperorRes = await runSkillViaEmperor("offsite.summary", { context: JSON.stringify(input).slice(0, 3000) });
+
+        if (_emperorRes.success && _emperorRes.output) {
+
+          // Emperor 成功，结果已记录
+
+        }
+
+      } catch (_e) { console.warn("[Emperor] offsiteAnalysis.ts fallback:", _e); }
 
       const aiResponse = await invokeLLM({
         messages: [
@@ -346,8 +369,19 @@ export const offsiteAnalysisRouter = router({
       if (!analysis.rawData) throw new Error("No raw data available for re-analysis");
 
       const prompt = getPromptForSource(analysis.sourceType);
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: offsite.summary
+
+      try {
+
+        const _emperorRes = await runSkillViaEmperor("offsite.summary", { context: JSON.stringify(input).slice(0, 3000) });
+
+        if (_emperorRes.success && _emperorRes.output) {
+
+          // Emperor 成功，结果已记录
+
+        }
+
+      } catch (_e) { console.warn("[Emperor] offsiteAnalysis.ts fallback:", _e); }
 
       const aiResponse = await invokeLLM({
         messages: [

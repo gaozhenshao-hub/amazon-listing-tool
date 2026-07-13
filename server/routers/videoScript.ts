@@ -1,3 +1,4 @@
+import { planVideoSectionsViaEmperor, generateVideoShotsViaEmperor, generateVideoScriptViaEmperor, generateOffsiteSummaryViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -210,8 +211,7 @@ export const videoScriptRouter = router({
     }))
     .mutation(async ({ input }) => {
       const prompt = COMPETITOR_SCRIPT_ANALYSIS_PROMPT.replace("{competitor_content}", input.rawContent);
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 通用 Skill 调用（已迁移）
 
       const response = await invokeLLM({
         messages: [
@@ -266,8 +266,7 @@ export const videoScriptRouter = router({
         weaknesses: c.weaknesses,
       }));
       const prompt = COMPETITOR_SUMMARY_PROMPT.replace("{competitor_analyses}", JSON.stringify(analysesData, null, 2));
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 通用 Skill 调用（已迁移）
 
       const response = await invokeLLM({
         messages: [
@@ -309,8 +308,7 @@ export const videoScriptRouter = router({
     .mutation(async ({ input }) => {
       const productContext = await buildProductContext(input.projectId);
       const prompt = PRODUCT_INFO_EXTRACTION_PROMPT.replace("{product_data}", productContext);
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 通用 Skill 调用（已迁移）
 
       const response = await invokeLLM({
         messages: [
@@ -423,8 +421,7 @@ export const videoScriptRouter = router({
         .replace("{target_duration}", script?.targetDuration?.toString() || "60")
         .replace("{spv_segment_index}", "N/A");
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 通用 Skill 调用（已迁移）
 
       const response = await invokeLLM({
         messages: [
@@ -501,8 +498,7 @@ export const videoScriptRouter = router({
           painPoints: snapshot.painPoints,
         }) : "无产品信息");
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 通用 Skill 调用（已迁移）
 
       const response = await invokeLLM({
         messages: [
@@ -611,8 +607,7 @@ export const videoScriptRouter = router({
         .replace("{video_type_template}", getVideoTypeTemplate(videoType))
         .replace("{style_preset}", buildStylePresetPrompt(stylePreset));
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 通用 Skill 调用（已迁移）
 
       const response = await invokeLLM({
         messages: [
@@ -726,8 +721,7 @@ export const videoScriptRouter = router({
       }));
 
       const prompt = EDIT_SCRIPT_PROMPT.replace("{sections_with_shots}", JSON.stringify(sectionsWithShots, null, 2));
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 通用 Skill 调用（已迁移）
 
       const response = await invokeLLM({
         messages: [

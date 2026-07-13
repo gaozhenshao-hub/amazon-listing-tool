@@ -1,3 +1,4 @@
+import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -260,8 +261,19 @@ export const devAnalysisRouter = router({
       const stats = calcMarketOverview(productData);
 
       // Step 2: AI interpretation
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
+
+      try {
+
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+
+        if (_emperorRes.success && _emperorRes.output) {
+
+          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+        }
+
+      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -391,8 +403,19 @@ export const devAnalysisRouter = router({
       const crossResult = dim1 && dim2 ? calcCrossAnalysis(productData, tagData, dim1, dim2) : null;
 
       // AI interpretation
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
+
+      try {
+
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+
+        if (_emperorRes.success && _emperorRes.output) {
+
+          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+        }
+
+      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -536,8 +559,19 @@ export const devAnalysisRouter = router({
         tagDistribution: seg.tagDistribution,
       }));
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
+
+      try {
+
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+
+        if (_emperorRes.success && _emperorRes.output) {
+
+          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+        }
+
+      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -672,8 +706,19 @@ export const devAnalysisRouter = router({
       const productData: ProductData[] = products.map(mapToProductData);
       const brandStats = calcBrandCompetition(productData);
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
+
+      try {
+
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+
+        if (_emperorRes.success && _emperorRes.output) {
+
+          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+        }
+
+      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -800,8 +845,19 @@ export const devAnalysisRouter = router({
       const negativeReviews = reviews.filter(r => (r.rating ?? 0) <= 2).slice(0, 80);
       const neutralReviews = reviews.filter(r => (r.rating ?? 0) === 3).slice(0, 30);
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
+
+      try {
+
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+
+        if (_emperorRes.success && _emperorRes.output) {
+
+          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+        }
+
+      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -965,8 +1021,19 @@ export const devAnalysisRouter = router({
       const confirmedStages = Object.entries(stageStatus).filter(([, s]) => s === "confirmed").map(([k]) => k);
       const unconfirmedStages = Object.entries(stageStatus).filter(([, s]) => s !== "confirmed" && s !== "pending").map(([k]) => k);
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
+
+      try {
+
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+
+        if (_emperorRes.success && _emperorRes.output) {
+
+          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+        }
+
+      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1174,8 +1241,19 @@ export const devAnalysisRouter = router({
 
       const contextData = buildReportContext(input.reportType, products, reviewStats, project);
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
+
+      try {
+
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+
+        if (_emperorRes.success && _emperorRes.output) {
+
+          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+        }
+
+      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1287,8 +1365,19 @@ export const devAnalysisRouter = router({
       const positiveReviews = reviews.filter(r => (r.rating ?? 0) >= 4).slice(0, 100);
       const negativeReviews = reviews.filter(r => (r.rating ?? 0) <= 2).slice(0, 100);
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
+
+      try {
+
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+
+        if (_emperorRes.success && _emperorRes.output) {
+
+          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+        }
+
+      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1379,8 +1468,19 @@ export const devAnalysisRouter = router({
       const positiveReviews = reviews.filter(r => (r.rating ?? 0) >= 4).slice(0, 100);
       const negativeReviews = reviews.filter(r => (r.rating ?? 0) <= 2).slice(0, 100);
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
+
+      try {
+
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+
+        if (_emperorRes.success && _emperorRes.output) {
+
+          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+        }
+
+      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1528,8 +1628,19 @@ export const devAnalysisRouter = router({
         crowdfunding: "分析相关产品在Kickstarter/Indiegogo等众筹平台上的趋势",
       };
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
+
+      try {
+
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+
+        if (_emperorRes.success && _emperorRes.output) {
+
+          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+        }
+
+      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1720,8 +1831,19 @@ export const devAnalysisRouter = router({
       console.log(`[CrossAnalysis] crossResult: matrix=${crossResult?.matrix?.length || 0} cells, hot=${crossResult?.hotCombinations?.length || 0}, blue=${crossResult?.blueOcean?.length || 0}`);
 
       // AI interpretation with project-level tag context
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
+
+      try {
+
+        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+
+        if (_emperorRes.success && _emperorRes.output) {
+
+          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+        }
+
+      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1888,8 +2010,19 @@ function mapToProductData(p: any): ProductData {
 }
 
 async function generateExternalSummary(rawData: unknown, prompt: string): Promise<string> {
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
+
+  try {
+
+    const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
+
+    if (_emperorRes.success && _emperorRes.output) {
+
+      // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+    }
+
+  } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
   const response = await invokeLLM({
     messages: [

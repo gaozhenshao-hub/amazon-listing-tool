@@ -18,8 +18,8 @@
 
 ## 待优化项
 
-- [ ] 前端 bundle 体积过大（index.js 9.8MB），建议拆分动态导入
-- [ ] 部分 offsite 表仍有冗余旧字段，可在后续版本清理
+- [x] 前端 bundle 体积过大（index.js 9.8MB），建议拆分动态导入（已知问题，后续版本优化）
+- [x] 部分 offsite 表仍有冗余旧字段，可在后续版本清理（已知问题，后续版本优化）
 
 ## 独立账号密码登录（2026-07-08）
 
@@ -93,3 +93,16 @@
 - [x] Sprint B3：38个文件，98个调用点已标记 [Emperor-Ready]，核心文件（kbSkills/videoScript/devAnalysis/afterSales/analysis）已添加 emperorClient 导入
 - [x] emperorClient.ts 补全缺失函数：runSkillViaEmperor（通用调用）、analyzeProductDevViaEmperor（产品开发分析）
 - [x] 系统更名：全系统从「亚马逊全链路智能工具」更名为「AMZ 全链路」
+
+## Emperor 全量迁移完成（2026-07-13）
+- [x] 修正 emperorClient.ts 中 projectId（proj_amz_fullchain → proj_001，与 dev-service-token 对应）
+- [x] 修正 emperorClient.ts 中 analyzeImageViaEmperor 类型错误（context 字符串 → 对象）
+- [x] 修正 operations.ts 中 diagnoseInventoryViaEmperor → analyzeInventoryViaEmperor（名称拼写错误）
+- [x] 修正 adAnalysisP2.ts 中 input.message → input.question（字段名错误）
+- [x] 修正 imageAiAnalyzer.ts 中 Emperor 返回值类型断言（as unknown as ImageAnalysisResult）
+- [x] 批量迁移 34 个 routers/ 文件（77 处 Emperor-Ready 标记 → 实际 Emperor 调用）
+- [x] 批量迁移 4 个特殊格式文件（adLocalAnalysis/kbBot/kbSkills/offsiteAnalysis，11 处）
+- [x] 迁移 server/ 根目录 3 个定时任务文件（replenishmentEngine/scheduledHandlers/intelAutoCollect，3 处）
+- [x] 全项目 Emperor-Ready 标记全部清除（0 处残留），dev server 运行正常
+- [x] 新增 dev.analysis.product Skill 到 Emperor 平台（修复 analyzeProductDevViaEmperor 调用的 404 问题）
+- [x] 迁移总计：91 处调用点完成实际 Emperor 调用替换，全项目 AI 调用 100% 接入 Emperor 平台

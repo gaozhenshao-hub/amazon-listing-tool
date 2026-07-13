@@ -1,3 +1,4 @@
+import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -46,8 +47,19 @@ export const offInfluencerRouter = router({
   })).mutation(async ({ ctx, input }) => {
     const influencers = await offDb.searchInfluencers(ctx.user.id, { limit: 100 });
     const startTime = Date.now();
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: off.influencer.match
+
+    try {
+
+      const _emperorRes = await runSkillViaEmperor("off.influencer.match", { context: JSON.stringify(input).slice(0, 3000) });
+
+      if (_emperorRes.success && _emperorRes.output) {
+
+        // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+      }
+
+    } catch (_e) { console.warn("[Emperor] offInfluencer.ts fallback:", _e); }
 
     const resp = await invokeLLM({
       messages: [

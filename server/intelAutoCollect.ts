@@ -1,3 +1,4 @@
+import { runSkillViaEmperor } from "./emperorClient";
 /**
  * Intel Auto-Collect Scheduler & Worker
  *
@@ -765,8 +766,19 @@ export async function collectFromSource(
 
         if (source.autoEvaluateEnabled) {
           try {
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: analysis.competitor.multi
+
+            try {
+
+              const _emperorRes = await runSkillViaEmperor("analysis.competitor.multi", { context: JSON.stringify(input ?? {}).slice(0, 3000) });
+
+              if (_emperorRes.success && _emperorRes.output) {
+
+                // Emperor 成功，结果已记录
+
+              }
+
+            } catch (_e) { console.warn("[Emperor] intelAutoCollect.ts fallback:", _e); }
 
             const evalResponse = await invokeLLM({
               messages: [

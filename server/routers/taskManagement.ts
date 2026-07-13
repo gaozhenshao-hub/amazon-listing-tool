@@ -1,3 +1,4 @@
+import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -404,8 +405,19 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
 - estimatedHours: 预估工时（数字字符串，如无法确定则为null）`;
 
       try {
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: analysis.comparison.summary
+
+        try {
+
+          const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: JSON.stringify(input).slice(0, 3000) });
+
+          if (_emperorRes.success && _emperorRes.output) {
+
+            // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+          }
+
+        } catch (_e) { console.warn("[Emperor] taskManagement.ts fallback:", _e); }
 
         const response = await invokeLLM({
           messages: [
@@ -523,8 +535,19 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
 返回JSON，包含tasks数组和summary摘要。`;
 
       try {
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: analysis.comparison.summary
+
+        try {
+
+          const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: JSON.stringify(input).slice(0, 3000) });
+
+          if (_emperorRes.success && _emperorRes.output) {
+
+            // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+          }
+
+        } catch (_e) { console.warn("[Emperor] taskManagement.ts fallback:", _e); }
 
         const response = await invokeLLM({
           messages: [

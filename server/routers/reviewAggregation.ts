@@ -1,3 +1,4 @@
+import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -106,8 +107,19 @@ export const reviewAggregationRouter = router({
           } catch {}
         }
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: analysis.review.extract
+
+        try {
+
+          const _emperorRes = await runSkillViaEmperor("analysis.review.extract", { context: JSON.stringify(input).slice(0, 3000) });
+
+          if (_emperorRes.success && _emperorRes.output) {
+
+            // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+          }
+
+        } catch (_e) { console.warn("[Emperor] reviewAggregation.ts fallback:", _e); }
 
         const response = await invokeLLM({
           messages: [

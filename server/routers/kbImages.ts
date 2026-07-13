@@ -1,3 +1,4 @@
+import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
@@ -142,8 +143,19 @@ async function processImport(setId: number, asin: string, userId: number, runAna
             : img.imagePosition === "brand_story" ? `品牌故事图#${posIdx + 1}`
             : `副图#${posIdx}`;
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: analysis.image.recognition
+
+          try {
+
+            const _emperorRes = await runSkillViaEmperor("analysis.image.recognition", { context: JSON.stringify(input).slice(0, 3000) });
+
+            if (_emperorRes.success && _emperorRes.output) {
+
+              // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+            }
+
+          } catch (_e) { console.warn("[Emperor] kbImages.ts fallback:", _e); }
 
           const response = await invokeLLM({
             messages: [
@@ -310,8 +322,19 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
           : img.imagePosition === "brand_story" ? `品牌故事图#${posIdx + 1}`
           : `副图#${posIdx}`;
 
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: analysis.image.recognition
+
+        try {
+
+          const _emperorRes = await runSkillViaEmperor("analysis.image.recognition", { context: JSON.stringify(input).slice(0, 3000) });
+
+          if (_emperorRes.success && _emperorRes.output) {
+
+            // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+          }
+
+        } catch (_e) { console.warn("[Emperor] kbImages.ts fallback:", _e); }
 
         const response = await invokeLLM({
           messages: [

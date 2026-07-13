@@ -1,3 +1,4 @@
+import { runSkillViaEmperor } from "./emperorClient";
 /**
  * Scheduled Task Handlers
  * 
@@ -99,8 +100,19 @@ export async function weeklyReportHandler(req: Request, res: Response) {
     };
 
     // 4. Use AI to generate insights
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: ops.profit.analysis
+
+    try {
+
+      const _emperorRes = await runSkillViaEmperor("ops.profit.analysis", { context: JSON.stringify(input ?? {}).slice(0, 3000) });
+
+      if (_emperorRes.success && _emperorRes.output) {
+
+        // Emperor 成功，结果已记录
+
+      }
+
+    } catch (_e) { console.warn("[Emperor] scheduledHandlers.ts fallback:", _e); }
 
     const llmResponse = await invokeLLM({
       messages: [

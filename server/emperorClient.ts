@@ -8,7 +8,7 @@
 
 const EMPEROR_BASE_URL = process.env.EMPEROR_BASE_URL ?? "http://104.196.50.157:4800";
 const EMPEROR_API_KEY = process.env.EMPEROR_API_KEY ?? "dev-service-token";
-const EMPEROR_PROJECT_ID = process.env.EMPEROR_PROJECT_ID ?? "proj_amz_fullchain";
+const EMPEROR_PROJECT_ID = process.env.EMPEROR_PROJECT_ID ?? "proj_001";
 const EMPEROR_TIMEOUT_MS = 150_000; // 150 秒（Emperor 内部 120s + 30s 缓冲）
 
 export interface SkillRunResult<T = unknown> {
@@ -859,7 +859,7 @@ export async function summarizeComparisonViaEmperor(
 
 // ─── 图片识别分析 ──────────────────────────────────────────────────────────────
 export async function analyzeImageViaEmperor(context: string): Promise<SkillRunResult> {
-  return runSkill("analysis.image.recognition", context);
+  return runSkill("analysis.image.recognition", { context });
 }
 
 // ─── 通用 Skill 调用（供 kbSkills.ts 等使用）──────────────────────────────────

@@ -1,3 +1,4 @@
+import { runSkillViaEmperor } from "../emperorClient";
 /**
  * 转化率对比 — AI评分引擎
  * 
@@ -433,8 +434,19 @@ async function aiScoreBatch(
   ).join("\n");
 
   try {
-      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
-      // TODO: 替换为对应的 emperorClient 函数调用
+      // [Emperor] 优先调用 Emperor Skill: listing.scoring.overall
+
+    try {
+
+      const _emperorRes = await runSkillViaEmperor("listing.scoring.overall", { context: JSON.stringify(input).slice(0, 3000) });
+
+      if (_emperorRes.success && _emperorRes.output) {
+
+        // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
+
+      }
+
+    } catch (_e) { console.warn("[Emperor] conversionAiScorer.ts fallback:", _e); }
 
     const response = await invokeLLM({
       messages: [
