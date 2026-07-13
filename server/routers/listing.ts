@@ -1,6 +1,21 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
+import {
+  generateTitleViaEmperor,
+  generateBulletsViaEmperor,
+  generateDescriptionViaEmperor,
+  generateSearchTermsViaEmperor,
+  generateImageAdviceViaEmperor,
+  generateQAViaEmperor,
+  checkTitleViaEmperor,
+  checkBulletsViaEmperor,
+  checkDescriptionViaEmperor,
+  checkSearchTermsViaEmperor,
+  checkQAViaEmperor,
+  generateSellingPointsViaEmperor,
+  refineSingleBulletViaEmperor,
+} from "../emperorClient";
 import * as db from "../db";
 import {
   TITLE_GENERATION_PROMPT,
@@ -883,6 +898,20 @@ export const listingRouter = router({
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
 
+      // 优先调用 Emperor Skill，失败时降级到内置 LLM
+      const emperorResult = await generateTitleViaEmperor(context, input.emphasis);
+      if (emperorResult.success && emperorResult.output) {
+        let parsed = emperorResult.output as any;
+        let validation = validateTitles(parsed);
+        if (!validation.valid) {
+          for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
+            parsed = await refineTitles(parsed, validation.issues);
+            validation = validateTitles(parsed);
+          }
+        }
+        return parsed;
+      }
+      console.warn("[generateTitle] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
       const response = await invokeLLM({
         messages: [
           { role: "system", content: TITLE_GENERATION_PROMPT },
@@ -890,19 +919,15 @@ export const listingRouter = router({
         ],
         response_format: { type: "json_object" },
       });
-
       const content = typeof response.choices[0].message.content === "string"
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
-
       let parsed;
       try {
         parsed = JSON.parse(content);
       } catch {
         return { raw: content };
       }
-
-      // Validate and retry if needed
       let validation = validateTitles(parsed);
       if (!validation.valid) {
         for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
@@ -910,7 +935,6 @@ export const listingRouter = router({
           validation = validateTitles(parsed);
         }
       }
-
       return parsed;
     }),
 
@@ -929,6 +953,20 @@ export const listingRouter = router({
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
 
+      // 优先调用 Emperor Skill，失败时降级到内置 LLM
+      const emperorResult = await generateBulletsViaEmperor(context, undefined, input.emphasis);
+      if (emperorResult.success && emperorResult.output) {
+        let parsed = emperorResult.output as any;
+        let validation = validateBullets(parsed);
+        if (!validation.valid) {
+          for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
+            parsed = await refineBullets(parsed, validation.issues);
+            validation = validateBullets(parsed);
+          }
+        }
+        return parsed;
+      }
+      console.warn("[generateBulletPoints] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
       const response = await invokeLLM({
         messages: [
           { role: "system", content: BULLET_POINTS_PROMPT },
@@ -936,19 +974,15 @@ export const listingRouter = router({
         ],
         response_format: { type: "json_object" },
       });
-
       const content = typeof response.choices[0].message.content === "string"
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
-
       let parsed;
       try {
         parsed = JSON.parse(content);
       } catch {
         return { raw: content };
       }
-
-      // Validate and retry if needed
       let validation = validateBullets(parsed);
       if (!validation.valid) {
         for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
@@ -956,7 +990,6 @@ export const listingRouter = router({
           validation = validateBullets(parsed);
         }
       }
-
       return parsed;
     }),
 
@@ -975,6 +1008,12 @@ export const listingRouter = router({
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
 
+      // 优先调用 Emperor Skill，失败时降级到内置 LLM
+      const emperorResult = await generateDescriptionViaEmperor(context, input.emphasis);
+      if (emperorResult.success && emperorResult.output) {
+        return emperorResult.output as any;
+      }
+      console.warn("[generateDescription] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
       const response = await invokeLLM({
         messages: [
           { role: "system", content: DESCRIPTION_PROMPT },
@@ -982,11 +1021,9 @@ export const listingRouter = router({
         ],
         response_format: { type: "json_object" },
       });
-
       const content = typeof response.choices[0].message.content === "string"
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
-
       try {
         return JSON.parse(content);
       } catch {
@@ -1018,6 +1055,13 @@ export const listingRouter = router({
         extraContext = `\n\nCurrent Title (do NOT repeat these words): ${input.existingTitle}`;
       }
 
+      // 优先调用 Emperor Skill，失败时降级到内置 LLM
+      const fullContext = context + extraContext;
+      const emperorResult = await generateSearchTermsViaEmperor(fullContext, input.emphasis);
+      if (emperorResult.success && emperorResult.output) {
+        return emperorResult.output as any;
+      }
+      console.warn("[generateSearchTerms] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
       const response = await invokeLLM({
         messages: [
           { role: "system", content: SEARCH_TERMS_PROMPT },
@@ -1025,11 +1069,9 @@ export const listingRouter = router({
         ],
         response_format: { type: "json_object" },
       });
-
       const content = typeof response.choices[0].message.content === "string"
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
-
       try {
         return JSON.parse(content);
       } catch {
@@ -1052,23 +1094,28 @@ export const listingRouter = router({
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
 
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: IMAGE_ADVICE_PROMPT },
-          { role: "user", content: `Provide image recommendations for this product:\n\n${context}` },
-        ],
-        response_format: { type: "json_object" },
-      });
-
-      const content = typeof response.choices[0].message.content === "string"
-        ? response.choices[0].message.content
-        : JSON.stringify(response.choices[0].message.content);
-
+      // 优先调用 Emperor Skill，失败时降级到内置 LLM
       let imageData: any;
-      try {
-        imageData = JSON.parse(content);
-      } catch {
-        imageData = { raw: content };
+      const emperorResult = await generateImageAdviceViaEmperor(context);
+      if (emperorResult.success && emperorResult.output) {
+        imageData = emperorResult.output as any;
+      } else {
+        console.warn("[generateImageAdvice] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
+        const response = await invokeLLM({
+          messages: [
+            { role: "system", content: IMAGE_ADVICE_PROMPT },
+            { role: "user", content: `Provide image recommendations for this product:\n\n${context}` },
+          ],
+          response_format: { type: "json_object" },
+        });
+        const content = typeof response.choices[0].message.content === "string"
+          ? response.choices[0].message.content
+          : JSON.stringify(response.choices[0].message.content);
+        try {
+          imageData = JSON.parse(content);
+        } catch {
+          imageData = { raw: content };
+        }
       }
 
       // Save image advice to the active listing (or create one if none exists)
@@ -2084,23 +2131,28 @@ Please expand this keyword/theme into a complete selling point core with FABE di
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
 
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: QA_GENERATION_PROMPT },
-          { role: "user", content: `Generate Q&A pairs for this Amazon product listing:\n\n${context}` },
-        ],
-        response_format: { type: "json_object" },
-      });
-
-      const content = typeof response.choices[0].message.content === "string"
-        ? response.choices[0].message.content
-        : JSON.stringify(response.choices[0].message.content);
-
-      let parsed;
-      try {
-        parsed = JSON.parse(content);
-      } catch {
-        return { raw: content };
+      // 优先调用 Emperor Skill，失败时降级到内置 LLM
+      let parsed: any;
+      const emperorResult = await generateQAViaEmperor(context, input.emphasis);
+      if (emperorResult.success && emperorResult.output) {
+        parsed = emperorResult.output as any;
+      } else {
+        console.warn("[generateQA] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
+        const response = await invokeLLM({
+          messages: [
+            { role: "system", content: QA_GENERATION_PROMPT },
+            { role: "user", content: `Generate Q&A pairs for this Amazon product listing:\n\n${context}` },
+          ],
+          response_format: { type: "json_object" },
+        });
+        const content = typeof response.choices[0].message.content === "string"
+          ? response.choices[0].message.content
+          : JSON.stringify(response.choices[0].message.content);
+        try {
+          parsed = JSON.parse(content);
+        } catch {
+          return { raw: content };
+        }
       }
 
       // Auto-save QA to listing if active listing exists
@@ -2123,6 +2175,12 @@ Please expand this keyword/theme into a complete selling point core with FABE di
       title: z.string(),
     }))
     .mutation(async ({ input }) => {
+      const emperorResult = await checkTitleViaEmperor(input.title);
+      if (emperorResult.success && emperorResult.output) {
+        const out = emperorResult.output as any;
+        return { checkListScores: out.checkListScores || out };
+      }
+      console.warn("[evaluateTitleChecklist] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
       const response = await invokeLLM({
         messages: [
           { role: "system", content: EVALUATE_TITLE_CHECKLIST_PROMPT },
@@ -2130,11 +2188,9 @@ Please expand this keyword/theme into a complete selling point core with FABE di
         ],
         response_format: { type: "json_object" },
       });
-
       const content = typeof response.choices[0].message.content === "string"
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
-
       try {
         const parsed = JSON.parse(content);
         return { checkListScores: parsed.checkListScores || {} };
@@ -2149,6 +2205,12 @@ Please expand this keyword/theme into a complete selling point core with FABE di
       description: z.string(),
     }))
     .mutation(async ({ input }) => {
+      const emperorResult = await checkDescriptionViaEmperor(input.description);
+      if (emperorResult.success && emperorResult.output) {
+        const out = emperorResult.output as any;
+        return { checkListScores: out.checkListScores || out };
+      }
+      console.warn("[evaluateDescriptionChecklist] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
       const response = await invokeLLM({
         messages: [
           { role: "system", content: EVALUATE_DESCRIPTION_CHECKLIST_PROMPT },
@@ -2156,11 +2218,9 @@ Please expand this keyword/theme into a complete selling point core with FABE di
         ],
         response_format: { type: "json_object" },
       });
-
       const content = typeof response.choices[0].message.content === "string"
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
-
       try {
         const parsed = JSON.parse(content);
         return { checkListScores: parsed.checkListScores || {} };
@@ -2177,11 +2237,20 @@ Please expand this keyword/theme into a complete selling point core with FABE di
       bulletPoints: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
+      // 构建完整上下文传给 Emperor Skill
+      let stContext = `Search Terms:\n${input.searchTerms}`;
+      if (input.title) stContext += `\n\nProduct Title (for duplication check):\n${input.title}`;
+      if (input.bulletPoints) stContext += `\n\nBullet Points (for long-tail coverage check):\n${input.bulletPoints}`;
+      const emperorResult = await checkSearchTermsViaEmperor(stContext);
+      if (emperorResult.success && emperorResult.output) {
+        const out = emperorResult.output as any;
+        return { checkListScores: out.checkListScores || out };
+      }
+      console.warn("[evaluateSearchTermsChecklist] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
       let userMsg = `Evaluate these Amazon backend search terms:\n\n${input.searchTerms}`;
       userMsg += `\n\nByte count: ${new TextEncoder().encode(input.searchTerms).length}`;
       if (input.title) userMsg += `\n\nProduct Title (for duplication check):\n${input.title}`;
       if (input.bulletPoints) userMsg += `\n\nBullet Points (for long-tail coverage check):\n${input.bulletPoints}`;
-
       const response = await invokeLLM({
         messages: [
           { role: "system", content: EVALUATE_SEARCH_TERMS_CHECKLIST_PROMPT },
@@ -2189,11 +2258,9 @@ Please expand this keyword/theme into a complete selling point core with FABE di
         ],
         response_format: { type: "json_object" },
       });
-
       const content = typeof response.choices[0].message.content === "string"
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
-
       try {
         const parsed = JSON.parse(content);
         return { checkListScores: parsed.checkListScores || {} };
@@ -2221,7 +2288,12 @@ Please expand this keyword/theme into a complete selling point core with FABE di
           ).join("\n\n");
         }
       } catch {}
-
+      const emperorResult = await checkQAViaEmperor(qaText);
+      if (emperorResult.success && emperorResult.output) {
+        const out = emperorResult.output as any;
+        return { checkListScores: out.checkListScores || out };
+      }
+      console.warn("[evaluateQAChecklist] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
       const response = await invokeLLM({
         messages: [
           { role: "system", content: EVALUATE_QA_CHECKLIST_PROMPT },
@@ -2229,11 +2301,9 @@ Please expand this keyword/theme into a complete selling point core with FABE di
         ],
         response_format: { type: "json_object" },
       });
-
       const content = typeof response.choices[0].message.content === "string"
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
-
       try {
         const parsed = JSON.parse(content);
         return { checkListScores: parsed.checkListScores || {} };
