@@ -617,7 +617,7 @@ export const kbSkillsRouter = router({
 
           try {
 
-            const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify(summary ?? {}).slice(0, 3000) });
+            const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify(input.content ?? {}).slice(0, 3000) });
 
             if (_emperorRes.success && _emperorRes.output) {
 
