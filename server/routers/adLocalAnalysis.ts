@@ -1148,6 +1148,9 @@ export const adLocalAnalysisRouter = router({
         totalCost: Math.round(totalCost * 100) / 100, totalSales: Math.round(totalSales * 100) / 100,
         totalOrders, totalImpressions, totalClicks,
       };
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: `你是亚马逊广告诊断专家。基于广告整体数据，从6个维度评估广告健康度并给出诊断建议。\n6个维度：花费效率(ACoS/ROAS)、流量质量(CTR)、转化能力(CVR)、出价合理性(CPC)、预算利用率、广告结构合理性。\n每个维度评分0-100分，并给出具体问题和改进建议。输出严格JSON格式。` },
@@ -1213,6 +1216,9 @@ export const adLocalAnalysisRouter = router({
       const dateStart = allStarts[0] || ''; const dateEnd = allEnds[allEnds.length-1] || '';
       const uniqueWeeks = new Set(rows.map(r => `${r.weekStartDate}_${r.weekEndDate}`));
       try {
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
         const llmRes = await invokeLLM({
           messages: [
             { role: 'system', content: '你是亚马逊广告预算优化AI助手。请严格按JSON格式输出分析结果。' },
@@ -1268,6 +1274,9 @@ export const adLocalAnalysisRouter = router({
       const roasChange = baseRoas > 0 ? Math.round((followupRoas - baseRoas) / baseRoas * 100) : 0;
       let effectSummary = ''; let effectScore = 50;
       try {
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
         const llmRes = await invokeLLM({
           messages: [
             { role: 'system', content: '你是亚马逊广告效果评估专家。请严格按JSON格式输出。' },
@@ -1391,6 +1400,9 @@ export const adLocalAnalysisRouter = router({
         for (const msg of input.conversationHistory.slice(-6)) messages.push({ role: msg.role, content: msg.content });
       }
       messages.push({ role: "user", content: input.question });
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages,
         response_format: {
@@ -1499,6 +1511,9 @@ export const adLocalAnalysisRouter = router({
 
       const summary = `DSP总览: 花费$${totalSpends.toFixed(0)} 销售$${totalSales.toFixed(0)} 订单${totalOrders} 曝光${totalImpressions} 点击${totalClicks} ROAS:${totalSpends>0?(totalSales/totalSpends).toFixed(2):'N/A'}\nTop订单:\n${topOrders.join('\n')}`;
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: 'system', content: '你是亚马逊DSP广告策略专家。基于DSP数据给出优化建议。输出严格JSON格式。' },
@@ -1549,6 +1564,9 @@ export const adLocalAnalysisRouter = router({
         channelMap[ch].cost += n(r.spend); channelMap[ch].sales += n(r.sales); channelMap[ch].orders += n(r.orders);
       }
       const summary = Object.entries(channelMap).map(([ch,d]) => `${ch}: 花费$${d.cost.toFixed(0)} 销售$${d.sales.toFixed(0)} ACoS:${d.sales>0?((d.cost/d.sales)*100).toFixed(1):'N/A'}%`).join('\n');
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: 'system', content: '你是亚马逊跨渠道广告策略专家。基于SP/SB/SD各渠道数据给出预算分配和策略建议。输出严格JSON格式。' },

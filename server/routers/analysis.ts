@@ -391,6 +391,9 @@ export const analysisRouter = router({
 
       const userMessage = `Please analyze and compare the following ${selectedAnalyses.length} competitor products and generate a comprehensive comparison report with optimization suggestions:\n\n${competitorSummaries.join("\n\n---\n\n")}`;
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: COMPARISON_SUMMARY_PROMPT },

@@ -223,6 +223,9 @@ export const offsiteAnalysisRouter = router({
 
         // Run AI analysis
         const prompt = getPromptForSource(input.sourceType);
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
         const aiResponse = await invokeLLM({
           messages: [
             { role: "system", content: prompt },
@@ -315,6 +318,9 @@ export const offsiteAnalysisRouter = router({
         analysis: a.editedAnalysis || a.aiAnalysis,
       }));
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const aiResponse = await invokeLLM({
         messages: [
           { role: "system", content: OFFSITE_SUMMARY_PROMPT },
@@ -340,6 +346,9 @@ export const offsiteAnalysisRouter = router({
       if (!analysis.rawData) throw new Error("No raw data available for re-analysis");
 
       const prompt = getPromptForSource(analysis.sourceType);
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const aiResponse = await invokeLLM({
         messages: [
           { role: "system", content: prompt },

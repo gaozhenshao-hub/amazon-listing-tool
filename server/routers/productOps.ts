@@ -1810,6 +1810,9 @@ export const productOpsRouter = router({
       let expectedEffect = "";
 
       try {
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
         const response = await invokeLLM({
           messages: [
             { role: "system", content: `你是一位资深亚马逊运营专家和转化率优化顾问（游戏策划师角色）。请根据己品和竞品在"${cat}"维度的评分数据，给出专业的优化建议。
@@ -3408,6 +3411,9 @@ export const productOpsRouter = router({
 }`;
 
       try {
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
         const response = await invokeLLM({
           messages: [
             { role: 'system', content: '你是一位资深亚马逊运营分析师，擅长数据分析和运营策略。请始终输出有效的JSON格式。' },

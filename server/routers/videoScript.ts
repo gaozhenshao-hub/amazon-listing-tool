@@ -210,6 +210,9 @@ export const videoScriptRouter = router({
     }))
     .mutation(async ({ input }) => {
       const prompt = COMPETITOR_SCRIPT_ANALYSIS_PROMPT.replace("{competitor_content}", input.rawContent);
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: "你是一位资深的亚马逊产品视频分析师。请严格输出JSON格式。" },
@@ -263,6 +266,9 @@ export const videoScriptRouter = router({
         weaknesses: c.weaknesses,
       }));
       const prompt = COMPETITOR_SUMMARY_PROMPT.replace("{competitor_analyses}", JSON.stringify(analysesData, null, 2));
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: "你是一位资深的亚马逊视频策略分析师。请严格输出JSON格式。" },
@@ -303,6 +309,9 @@ export const videoScriptRouter = router({
     .mutation(async ({ input }) => {
       const productContext = await buildProductContext(input.projectId);
       const prompt = PRODUCT_INFO_EXTRACTION_PROMPT.replace("{product_data}", productContext);
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: "你是一位亚马逊产品视频策划专家。请严格输出JSON格式。" },
@@ -414,6 +423,9 @@ export const videoScriptRouter = router({
         .replace("{target_duration}", script?.targetDuration?.toString() || "60")
         .replace("{spv_segment_index}", "N/A");
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: "你是一位资深的亚马逊产品视频编导。请严格输出JSON格式。" },
@@ -488,6 +500,9 @@ export const videoScriptRouter = router({
           sellingPoints: snapshot.sellingPointsHierarchy,
           painPoints: snapshot.painPoints,
         }) : "无产品信息");
+
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
 
       const response = await invokeLLM({
         messages: [
@@ -595,6 +610,9 @@ export const videoScriptRouter = router({
         .replace("{video_type}", videoType)
         .replace("{video_type_template}", getVideoTypeTemplate(videoType))
         .replace("{style_preset}", buildStylePresetPrompt(stylePreset));
+
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
 
       const response = await invokeLLM({
         messages: [
@@ -708,6 +726,9 @@ export const videoScriptRouter = router({
       }));
 
       const prompt = EDIT_SCRIPT_PROMPT.replace("{sections_with_shots}", JSON.stringify(sectionsWithShots, null, 2));
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: "你是一位资深的亚马逊视频剪辑策划师。请严格输出JSON格式。" },

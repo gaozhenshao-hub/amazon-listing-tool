@@ -2,6 +2,13 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import {
+  filterKeywordsViaEmperor,
+  tagKeywordScenesViaEmperor,
+  classifyKeywordRootsViaEmperor,
+  classifyKeywordTrafficViaEmperor,
+  runSkill,
+} from "../emperorClient";
+import {
   getKeywordsByProject,
   updateKeyword,
   createNegativeKeyword,
@@ -56,16 +63,36 @@ export const keywordAiRouter = router({
           .replace("{keywords}", kwList);
 
         try {
-          const response = await invokeLLM({
-            messages: [
-              { role: "system", content: "You are an Amazon keyword specialist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." },
-              { role: "user", content: prompt },
-            ],
-            response_format: { type: "json_object" },
-          });
-
-          const content = String(response.choices?.[0]?.message?.content || "{}");
-          const parsed = JSON.parse(content);
+          // Emperor Skill 优先，降级到内置 LLM
+          let parsed: any = {};
+          try {
+            const emperorRes = await filterKeywordsViaEmperor(
+              `${productContext}\n\nKeywords to filter:\n${kwList}`
+            );
+            if (emperorRes.success && emperorRes.output) {
+              const filtered = emperorRes.output.filtered || [];
+              const removed_kws = emperorRes.output.removed || [];
+              parsed = {
+                results: [
+                  ...filtered.map((f: any) => ({ keyword: f.keyword, action: "keep", relevance: f.relevance })),
+                  ...removed_kws.map((r: any) => ({ keyword: r.keyword, action: "remove", reason: r.reason })),
+                ]
+              };
+            }
+          } catch (emperorErr) {
+            console.warn("[Emperor] filterKeywords failed, falling back to invokeLLM:", emperorErr);
+          }
+          if (!parsed.results) {
+            const response = await invokeLLM({
+              messages: [
+                { role: "system", content: "You are an Amazon keyword specialist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." },
+                { role: "user", content: prompt },
+              ],
+              response_format: { type: "json_object" },
+            });
+            const content = String(response.choices?.[0]?.message?.content || "{}");
+            parsed = JSON.parse(content);
+          }
           const results = parsed.results || [];
 
           for (const result of results) {
@@ -135,16 +162,33 @@ export const keywordAiRouter = router({
           .replace("{keywords}", kwList);
 
         try {
-          const response = await invokeLLM({
-            messages: [
-              { role: "system", content: "You are an Amazon COSMO algorithm specialist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." },
-              { role: "user", content: prompt },
-            ],
-            response_format: { type: "json_object" },
-          });
-
-          const content = String(response.choices?.[0]?.message?.content || "{}");
-          const parsed = JSON.parse(content);
+          // Emperor Skill 优先，降级到内置 LLM
+          let parsed: any = {};
+          try {
+            const emperorRes = await tagKeywordScenesViaEmperor(
+              `${productContext}\n\nKeywords:\n${kwList}`
+            );
+            if (emperorRes.success && emperorRes.output?.keywords) {
+              parsed = { results: emperorRes.output.keywords.map((k: any) => ({
+                keyword: k.keyword,
+                sceneTags: k.sceneTags || [],
+                intentTag: k.intentTag || null,
+              })) };
+            }
+          } catch (emperorErr) {
+            console.warn("[Emperor] tagKeywordScenes failed, falling back:", emperorErr);
+          }
+          if (!parsed.results) {
+            const response = await invokeLLM({
+              messages: [
+                { role: "system", content: "You are an Amazon COSMO algorithm specialist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." },
+                { role: "user", content: prompt },
+              ],
+              response_format: { type: "json_object" },
+            });
+            const content = String(response.choices?.[0]?.message?.content || "{}");
+            parsed = JSON.parse(content);
+          }
           const results = parsed.results || [];
 
           for (const result of results) {
@@ -196,16 +240,35 @@ export const keywordAiRouter = router({
           .replace("{keywords}", kwList);
 
         try {
-          const response = await invokeLLM({
-            messages: [
-              { role: "system", content: "You are an Amazon SEO expert. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." },
-              { role: "user", content: prompt },
-            ],
-            response_format: { type: "json_object" },
-          });
-
-          const content = String(response.choices?.[0]?.message?.content || "{}");
-          const parsed = JSON.parse(content);
+          // Emperor Skill 优先，降级到内置 LLM
+          let parsed: any = {};
+          try {
+            const emperorRes = await classifyKeywordRootsViaEmperor(
+              `${productContext}\n\nKeywords:\n${kwList}`
+            );
+            if (emperorRes.success && emperorRes.output?.roots) {
+              const results: any[] = [];
+              for (const root of emperorRes.output.roots) {
+                for (const kw of (root.keywords || [])) {
+                  results.push({ keyword: kw, rootCategory: root.root, rootWord: root.root, rootImpact: root.priority || "medium" });
+                }
+              }
+              parsed = { results };
+            }
+          } catch (emperorErr) {
+            console.warn("[Emperor] classifyKeywordRoots failed, falling back:", emperorErr);
+          }
+          if (!parsed.results) {
+            const response = await invokeLLM({
+              messages: [
+                { role: "system", content: "You are an Amazon SEO expert. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." },
+                { role: "user", content: prompt },
+              ],
+              response_format: { type: "json_object" },
+            });
+            const content = String(response.choices?.[0]?.message?.content || "{}");
+            parsed = JSON.parse(content);
+          }
           const results = parsed.results || [];
 
           for (const result of results) {
@@ -349,6 +412,15 @@ export const keywordAiRouter = router({
         .replace("{rootClassification}", rootClassification || "No root classification data")
         .replace("{strategyMatrix}", strategyMatrix || "No strategy matrix data");
 
+      // Emperor Skill 优先，降级到内置 LLM
+      try {
+        const emperorRes = await runSkill("keyword.listing.layout", {
+          context: `${productContext}\n\nRoot Classification:\n${rootClassification}\n\nStrategy Matrix:\n${strategyMatrix}`
+        });
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (emperorErr) {
+        console.warn("[Emperor] keyword.listing.layout failed, falling back:", emperorErr);
+      }
       const response = await invokeLLM({
         messages: [
           { role: "system", content: "You are an Amazon Listing optimization expert. Respond only in valid JSON. CRITICAL: All keyword fields must contain the exact original English keywords from the input. Never translate keywords." },

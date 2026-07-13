@@ -349,6 +349,9 @@ ${historicalLeadTimesStr}
 输出格式为JSON，所有数值保留整数，日期格式YYYY-MM-DD。`;
 
   try {
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
     const response = await invokeLLM({
       messages: [
         { role: "system", content: "你是一位资深的亚马逊FBA库存管理专家。请以JSON格式输出补货建议。" },

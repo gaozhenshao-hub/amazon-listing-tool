@@ -33,6 +33,9 @@ export const offOutreachRouter = router({
   })).mutation(async ({ ctx, input }) => {
     const influencer = await offDb.getInfluencer(input.influencerId);
     const startTime = Date.now();
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
     const resp = await invokeLLM({
       messages: [
         { role: "system", content: OUTREACH_EMAIL_PROMPT },

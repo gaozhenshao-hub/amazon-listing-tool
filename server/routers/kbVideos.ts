@@ -55,6 +55,9 @@ export const kbVideosRouter = router({
             transcriptText, status: "analyzing",
           });
           // AI analysis
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
           const response = await invokeLLM({
             messages: [
               { role: "system", content: `你是一位资深的亚马逊视频营销分析专家。请分析以下视频内容，返回JSON格式：
@@ -127,6 +130,9 @@ export const kbVideosRouter = router({
               transcriptText = transcription.text || "";
             } catch { transcriptText = "[转写失败]"; }
             await kbDb.updateVideo(Number(id), ctx.user.id, { transcriptText, status: "analyzing" });
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
             const response = await invokeLLM({
               messages: [
                 { role: "system", content: `你是亚马逊视频营销分析专家。分析视频内容，返回JSON: { contentSummary, videoType, targetAudience, sellingPoints, emotionalAppeal, scriptStructure, visualTechniques, audioStrategy, callToAction, competitiveAdvantage, improvementSuggestions, applicableScenarios, tags, overallScore(1-100), summary }` },
@@ -177,6 +183,9 @@ export const kbVideosRouter = router({
               transcriptText = transcription.text || "";
             } catch { transcriptText = "[转写失败]"; }
             await kbDb.updateVideo(Number(id), ctx.user.id, { transcriptText, status: "analyzing" });
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
             const response = await invokeLLM({
               messages: [
                 { role: "system", content: `你是亚马逊视频营销分析专家。分析产品视频，返回JSON: { contentSummary, videoType, sellingPoints, tags, overallScore(1-100), summary }` },
@@ -217,6 +226,9 @@ export const kbVideosRouter = router({
             transcriptText = transcription.text || "";
           } catch { transcriptText = "[转写失败]"; }
           await kbDb.updateVideo(Number(id), ctx.user.id, { transcriptText, status: "analyzing" });
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
           const response = await invokeLLM({
             messages: [
               { role: "system", content: `你是亚马逊视频营销分析专家。分析产品视频，返回JSON: { contentSummary, videoType, sellingPoints, tags, overallScore(1-100), summary }` },

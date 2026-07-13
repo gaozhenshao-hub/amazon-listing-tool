@@ -260,6 +260,9 @@ export const devAnalysisRouter = router({
       const stats = calcMarketOverview(productData);
 
       // Step 2: AI interpretation
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: MARKET_OVERVIEW_PROMPT },
@@ -388,6 +391,9 @@ export const devAnalysisRouter = router({
       const crossResult = dim1 && dim2 ? calcCrossAnalysis(productData, tagData, dim1, dim2) : null;
 
       // AI interpretation
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: ATTRIBUTE_ANALYSIS_PROMPT },
@@ -530,6 +536,9 @@ export const devAnalysisRouter = router({
         tagDistribution: seg.tagDistribution,
       }));
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: PRICE_ANALYSIS_PROMPT },
@@ -663,6 +672,9 @@ export const devAnalysisRouter = router({
       const productData: ProductData[] = products.map(mapToProductData);
       const brandStats = calcBrandCompetition(productData);
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: BRAND_COMPETITION_PROMPT },
@@ -787,6 +799,9 @@ export const devAnalysisRouter = router({
       const positiveReviews = reviews.filter(r => (r.rating ?? 0) >= 4).slice(0, 80);
       const negativeReviews = reviews.filter(r => (r.rating ?? 0) <= 2).slice(0, 80);
       const neutralReviews = reviews.filter(r => (r.rating ?? 0) === 3).slice(0, 30);
+
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
 
       const response = await invokeLLM({
         messages: [
@@ -949,6 +964,9 @@ export const devAnalysisRouter = router({
       }
       const confirmedStages = Object.entries(stageStatus).filter(([, s]) => s === "confirmed").map(([k]) => k);
       const unconfirmedStages = Object.entries(stageStatus).filter(([, s]) => s !== "confirmed" && s !== "pending").map(([k]) => k);
+
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
 
       const response = await invokeLLM({
         messages: [
@@ -1156,6 +1174,9 @@ export const devAnalysisRouter = router({
 
       const contextData = buildReportContext(input.reportType, products, reviewStats, project);
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           {
@@ -1266,6 +1287,9 @@ export const devAnalysisRouter = router({
       const positiveReviews = reviews.filter(r => (r.rating ?? 0) >= 4).slice(0, 100);
       const negativeReviews = reviews.filter(r => (r.rating ?? 0) <= 2).slice(0, 100);
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           {
@@ -1354,6 +1378,9 @@ export const devAnalysisRouter = router({
 
       const positiveReviews = reviews.filter(r => (r.rating ?? 0) >= 4).slice(0, 100);
       const negativeReviews = reviews.filter(r => (r.rating ?? 0) <= 2).slice(0, 100);
+
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
 
       const response = await invokeLLM({
         messages: [
@@ -1500,6 +1527,9 @@ export const devAnalysisRouter = router({
         facebook_ads: "分析相关产品在Facebook上的广告推广情况，包括广告形式、受众画像、投放策略",
         crowdfunding: "分析相关产品在Kickstarter/Indiegogo等众筹平台上的趋势",
       };
+
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
 
       const response = await invokeLLM({
         messages: [
@@ -1690,6 +1720,9 @@ export const devAnalysisRouter = router({
       console.log(`[CrossAnalysis] crossResult: matrix=${crossResult?.matrix?.length || 0} cells, hot=${crossResult?.hotCombinations?.length || 0}, blue=${crossResult?.blueOcean?.length || 0}`);
 
       // AI interpretation with project-level tag context
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: ATTRIBUTE_ANALYSIS_PROMPT },
@@ -1855,6 +1888,9 @@ function mapToProductData(p: any): ProductData {
 }
 
 async function generateExternalSummary(rawData: unknown, prompt: string): Promise<string> {
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
   const response = await invokeLLM({
     messages: [
       { role: "system", content: "你是一个跨境电商市场分析专家。请根据提供的数据进行分析总结。" },

@@ -325,6 +325,9 @@ export const scoringRouter = router({
       const prompt = promptBuilder(currentContent, input.issues, coreKeywords);
 
       // Call LLM
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: "You are an expert Amazon listing optimizer. Return only the optimized content as requested, no explanations." },

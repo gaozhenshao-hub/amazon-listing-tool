@@ -47,6 +47,9 @@ export const kbProductsRouter = router({
             status: "analyzing",
           });
           // AI analysis
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
           const response = await invokeLLM({
             messages: [
               {
@@ -121,6 +124,9 @@ export const kbProductsRouter = router({
               crawledData: JSON.stringify(data), productUrl: `https://www.amazon.com/dp/${asin}`,
               status: "analyzing",
             });
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
             const response = await invokeLLM({
               messages: [
                 { role: "system", content: `你是亚马逊产品创意分析专家。分析产品创意的优秀之处，返回JSON格式包含: marketPositioning, functionalHighlights, designDifferentiation, painPointSolutions, pricingStrategy, competitiveAdvantages, inspiringElements, overallScore(1-10), summary` },
@@ -164,6 +170,9 @@ export const kbProductsRouter = router({
             bulletPoints: JSON.stringify(data.bulletPoints), imageUrls: JSON.stringify(data.imageUrls),
             crawledData: JSON.stringify(data), status: "analyzing",
           });
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
           const response = await invokeLLM({
             messages: [
               { role: "system", content: `你是亚马逊产品创意分析专家。分析产品创意的优秀之处，返回JSON: { marketPositioning, functionalHighlights, designDifferentiation, painPointSolutions, pricingStrategy, competitiveAdvantages, inspiringElements, overallScore(1-10), summary }` },

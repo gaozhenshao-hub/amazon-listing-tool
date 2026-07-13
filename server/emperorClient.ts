@@ -856,3 +856,35 @@ export async function summarizeComparisonViaEmperor(
 ): Promise<SkillRunResult<ComparisonSummaryOutput>> {
   return runSkill<ComparisonSummaryOutput>("analysis.comparison.summary", { context });
 }
+
+// ─── 图片识别分析 ──────────────────────────────────────────────────────────────
+export async function analyzeImageViaEmperor(context: string): Promise<SkillRunResult> {
+  return runSkill("analysis.image.recognition", context);
+}
+
+// ─── 通用 Skill 调用（供 kbSkills.ts 等使用）──────────────────────────────────
+/**
+ * 通用 Emperor Skill 调用，供需要动态指定 slug 的模块使用
+ */
+export async function runSkillViaEmperor<T = unknown>(
+  slug: string,
+  input: Record<string, unknown>
+): Promise<SkillRunResult<T>> {
+  return runSkill<T>(slug, input);
+}
+
+// ─── 产品开发分析（devAnalysis.ts）──────────────────────────────────────────
+export interface ProductDevAnalysisOutput {
+  summary?: string;
+  insights?: string[];
+  recommendations?: string[];
+  riskFactors?: string[];
+  marketOpportunity?: string;
+  competitiveAdvantage?: string;
+}
+
+export async function analyzeProductDevViaEmperor(
+  context: string
+): Promise<SkillRunResult<ProductDevAnalysisOutput>> {
+  return runSkill<ProductDevAnalysisOutput>("dev.analysis.product", { context });
+}

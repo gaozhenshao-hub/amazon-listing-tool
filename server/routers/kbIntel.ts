@@ -397,6 +397,9 @@ export const kbIntelRouter = router({
         item.item.rawContent,
       );
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: "你是亚马逊运营SOP编写专家。请严格输出JSON格式。" },

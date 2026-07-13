@@ -501,6 +501,9 @@ export const devProjectTagsRouter = router({
 
       const categoryList = categories.map((c: any) => `- ${c.categoryKey}: ${c.categoryName} (${c.description || ""})`).join("\n");
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           {
@@ -701,6 +704,9 @@ ${JSON.stringify(productContext, null, 2)}
         }
         return ctx;
       });
+
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
 
       const response = await invokeLLM({
         messages: [

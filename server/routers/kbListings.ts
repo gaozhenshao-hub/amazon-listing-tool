@@ -35,6 +35,9 @@ export const kbListingsRouter = router({
             crawledData: JSON.stringify(data),
             status: "analyzing",
           });
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
           const response = await invokeLLM({
             messages: [
               { role: "system", content: `你是一位资深的亚马逊Listing文案分析专家。请从以下维度分析这个Listing文案的优劣：
@@ -93,6 +96,9 @@ export const kbListingsRouter = router({
               titleText: data.title, bulletPoints: JSON.stringify(data.bulletPoints),
               longDescription: data.description, crawledData: JSON.stringify(data), status: "analyzing",
             });
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
             const response = await invokeLLM({
               messages: [
                 { role: "system", content: `你是亚马逊Listing文案分析专家。分析文案优劣，返回JSON: { titleAnalysis: {structure,keywords,score}, bulletPointsAnalysis: {highlights,keywordDensity,structure,score}, descriptionAnalysis: {storytelling,seoOptimization,score}, keywordCoverage: {primaryKeywords,missingKeywords,score}, conversionTips, competitiveHighlights, copywritingTechniques, overallScore(1-100), summary }` },
@@ -130,6 +136,9 @@ export const kbListingsRouter = router({
             titleText: data.title, bulletPoints: JSON.stringify(data.bulletPoints),
             longDescription: data.description, crawledData: JSON.stringify(data), status: "analyzing",
           });
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
           const response = await invokeLLM({
             messages: [
               { role: "system", content: `你是亚马逊Listing文案分析专家。分析文案优劣，返回JSON: { titleAnalysis, bulletPointsAnalysis, descriptionAnalysis, keywordCoverage, conversionTips, competitiveHighlights, copywritingTechniques, overallScore(1-100), summary }` },

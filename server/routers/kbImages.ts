@@ -142,6 +142,9 @@ async function processImport(setId: number, asin: string, userId: number, runAna
             : img.imagePosition === "brand_story" ? `品牌故事图#${posIdx + 1}`
             : `副图#${posIdx}`;
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
           const response = await invokeLLM({
             messages: [
               { role: "system", content: buildSingleImageAnalysisPrompt() },
@@ -306,6 +309,9 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
           : img.imagePosition === "aplus" ? `A+内容图#${posIdx + 1}`
           : img.imagePosition === "brand_story" ? `品牌故事图#${posIdx + 1}`
           : `副图#${posIdx}`;
+
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
 
         const response = await invokeLLM({
           messages: [

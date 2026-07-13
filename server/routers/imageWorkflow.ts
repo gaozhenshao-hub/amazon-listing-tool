@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { analyzeImageViaEmperor, generateImageAdviceViaEmperor } from "../emperorClient";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import * as db from "../db";
@@ -341,6 +342,12 @@ export const imageWorkflowRouter = router({
       }
 
       const context = await buildImageWorkflowContext(input.projectId);
+      // Emperor Skill 优先 - 图片工作流
+      try {
+        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: STEP1_SELLING_POINTS_PROMPT },
@@ -392,6 +399,12 @@ export const imageWorkflowRouter = router({
 
       const sellingPoints = session.step1UserEdit || session.step1AiResult;
       const context = await buildImageWorkflowContext(input.projectId);
+
+      // Emperor Skill 优先 - 图片工作流
+      try {
+        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -452,6 +465,12 @@ export const imageWorkflowRouter = router({
       }
       // Phase 7: Get KB reference for style recommendations
       const kbReference = await getKBReference(project.category || '', ctx.user.id);
+      // Emperor Skill 优先 - 图片工作流
+      try {
+        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: STEP3_STYLE_PROMPT },
@@ -513,6 +532,12 @@ export const imageWorkflowRouter = router({
         }
       } catch {}
 
+      // Emperor Skill 优先 - 图片工作流
+      try {
+        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: STEP4_REFERENCE_PROMPT },
@@ -572,6 +597,12 @@ export const imageWorkflowRouter = router({
       // Phase 7: Get KB reference for same-category high-score images
       const kbReference = await getKBReference(project.category || '', ctx.user.id);
 
+      // Emperor Skill 优先 - 图片工作流
+      try {
+        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: STEP5_FINAL_SUGGESTION_PROMPT },
@@ -605,6 +636,12 @@ export const imageWorkflowRouter = router({
       // Fire-and-forget: generate Chinese translation asynchronously
       (async () => {
         try {
+      // Emperor Skill 优先 - 图片工作流
+      try {
+        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
+
           const cnResponse = await invokeLLM({
             messages: [
               { role: "system", content: STEP5_TRANSLATION_PROMPT },
@@ -732,6 +769,12 @@ export const imageWorkflowRouter = router({
 
       messages.push({ role: "user", content: userContent });
 
+      // Emperor Skill 优先 - 图片工作流
+      try {
+        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
+
       const response = await invokeLLM({
         messages,
         response_format: { type: "json_object" },
@@ -759,6 +802,12 @@ export const imageWorkflowRouter = router({
       if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
 
       const currentSuggestions = session.step5UserEdit || session.step5AiResult;
+
+      // Emperor Skill 优先 - 图片工作流
+      try {
+        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -805,6 +854,12 @@ export const imageWorkflowRouter = router({
       const currentSection = currentData?.aPlusContent?.sections?.[input.sectionIndex];
       if (!currentSection) throw new Error(`A+ section at index ${input.sectionIndex} not found`);
 
+      // Emperor Skill 优先 - 图片工作流
+      try {
+        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: STEP5_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT },
@@ -839,6 +894,12 @@ export const imageWorkflowRouter = router({
         const spData = JSON.parse(sellingPoints);
         spCount = (spData.coreSellingPoints?.length || 0) + (spData.secondarySellingPoints?.length || 0);
       } catch { spCount = 5; }
+
+      // Emperor Skill 优先 - 图片工作流
+      try {
+        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -875,6 +936,12 @@ export const imageWorkflowRouter = router({
       const step4Short = truncate(session.step4UserEdit || session.step4AiResult, 2000);
       const step5Short = truncate(step5Data, 6000);
 
+      // Emperor Skill 优先 - 图片工作流
+      try {
+        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: STEP6_AI_PROMPT_GENERATION },
@@ -899,6 +966,12 @@ export const imageWorkflowRouter = router({
       // Fire-and-forget: generate Chinese translation asynchronously
       (async () => {
         try {
+      // Emperor Skill 优先 - 图片工作流
+      try {
+        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
+
           const cnResponse = await invokeLLM({
             messages: [
               { role: "system", content: STEP6_TRANSLATION_PROMPT },
@@ -963,6 +1036,12 @@ export const imageWorkflowRouter = router({
       const step5Short = truncate(step5Data, 6000);
 
       // Generate Lovart-optimized prompts (Chinese primary)
+      // Emperor Skill 优先 - 图片工作流
+      try {
+        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: STEP6_LOVART_PROMPT_GENERATION },
@@ -1204,6 +1283,12 @@ export const imageWorkflowRouter = router({
       const lockedFieldsInstruction = input.lockedFields && input.lockedFields.length > 0
         ? `\n\n🔒 锁定字段（以下字段必须与原内容完全一致，严禁修改）：\n${input.lockedFields.map(f => `- ${f}`).join("\n")}\n\n即使用户的修改指令涉及这些字段，也必须保持原值不变。只能修改未锁定的字段。`
         : "";
+
+      // Emperor Skill 优先 - 图片工作流
+      try {
+        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
         messages: [

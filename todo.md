@@ -84,3 +84,12 @@
 ## 运营人员下拉框多人拆分修复（2026-07-11）
 
 - [x] OpsProducts.tsx：availableOperators 计算时拆分多人字符串；operatorFilter 筛选时改为“包含”匹配而非“等于”匹配
+
+## Emperor 平台对接改造（2026-07-13）
+- [x] 创建 emperorClient.ts：封装 Emperor 平台 109 个 Skill 的统一调用客户端（runSkill + 各模块便捷函数，共 880+ 行）
+- [x] Sprint A：listing.ts 核心迁移（13个 procedure，25个 invokeLLM 调用点 → Emperor Skill 优先 + 降级策略）
+- [x] Sprint B1：keywordAi.ts（12个调用点）、adAnalysis.ts（7个）、adAnalysisP2.ts（3个）、adStructure.ts（1个）、adDeepAnalysis.ts（10个）迁移完成
+- [x] Sprint B2：operations.ts（6个调用点）、imageAiAnalyzer.ts（1个）、imageWorkflow.ts（14个）迁移完成
+- [x] Sprint B3：38个文件，98个调用点已标记 [Emperor-Ready]，核心文件（kbSkills/videoScript/devAnalysis/afterSales/analysis）已添加 emperorClient 导入
+- [x] emperorClient.ts 补全缺失函数：runSkillViaEmperor（通用调用）、analyzeProductDevViaEmperor（产品开发分析）
+- [x] 系统更名：全系统从「亚马逊全链路智能工具」更名为「AMZ 全链路」

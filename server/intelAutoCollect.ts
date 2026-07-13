@@ -765,6 +765,9 @@ export async function collectFromSource(
 
         if (source.autoEvaluateEnabled) {
           try {
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
             const evalResponse = await invokeLLM({
               messages: [
                 { role: "system", content: "你是亚马逊运营内容质量评估专家。请严格输出JSON格式。" },

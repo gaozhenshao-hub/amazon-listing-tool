@@ -70,6 +70,9 @@ function parseCsvContent(content: string): { headers: string[]; rows: Record<str
 // ─── AI Analysis Functions ────────────────────────────────────────
 
 async function analyzeRufusAttributes(rawContent: string): Promise<any> {
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
   const response = await invokeLLM({
     messages: [
       { role: "system", content: RUFUS_ATTRIBUTE_PROMPT },
@@ -94,6 +97,9 @@ async function analyzeRufusAttributes(rawContent: string): Promise<any> {
 }
 
 async function analyzeCompetitorListings(rawContent: string): Promise<any> {
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
   const response = await invokeLLM({
     messages: [
       { role: "system", content: MULTI_COMPETITOR_ANALYSIS_PROMPT },
@@ -130,6 +136,9 @@ async function analyzeCosmoScenes(parsedData: any): Promise<any> {
 
   const headerInfo = `Columns: ${(parsedData.headers || []).join(", ")}`;
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
   const response = await invokeLLM({
     messages: [
       { role: "system", content: COSMO_SCENE_MAPPING_PROMPT },
@@ -164,6 +173,9 @@ async function analyzeA9Keywords(parsedData: any): Promise<any> {
     .join("\n");
 
   const headerInfo = `Columns: ${(parsedData.headers || []).join(", ")}`;
+
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
 
   const response = await invokeLLM({
     messages: [

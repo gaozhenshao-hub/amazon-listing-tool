@@ -107,6 +107,9 @@ export const kbSkillsRouter = router({
           if (sourceType === "upload_image") {
             extractedContent = "[图片文件]";
             // Use vision AI for image
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
             const response = await invokeLLM({
               messages: [
                 { role: "system", content: `你是一位亚马逊运营SOP专家。请分析这张图片中的运营知识内容，提取关键信息和操作步骤。` },
@@ -123,6 +126,9 @@ export const kbSkillsRouter = router({
           });
 
           // AI summarize
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
           const response = await invokeLLM({
             messages: [
               { role: "system", content: `你是一位资深的亚马逊运营专家。请对以下运营知识内容进行智能摘要分析，返回JSON格式：
@@ -192,6 +198,9 @@ export const kbSkillsRouter = router({
               ? "[图片文件]"
               : await parseFileContent(buffer, file.mimeType, file.fileName);
             await kbDb.updateOperationSkill(Number(id), ctx.user.id, { extractedContent, status: "analyzing" });
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
             const response = await invokeLLM({
               messages: [
                 { role: "system", content: `你是亚马逊运营专家。对运营知识内容进行智能摘要，返回JSON: { title, summary, keyPoints, actionSteps, applicableScenarios, difficultyLevel, categories, tags, practicalityScore(1-10), briefSummary }` },
@@ -301,6 +310,9 @@ export const kbSkillsRouter = router({
             status: "analyzing",
           });
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
           const aiResponse = await invokeLLM({
             messages: [
               { role: "system", content: `你是亚马逊运营专家。对运营知识内容进行智能摘要，返回JSON: { title, summary, keyPoints, actionSteps, applicableScenarios, difficultyLevel, categories, tags, practicalityScore(1-10), briefSummary }` },
@@ -401,6 +413,9 @@ export const kbSkillsRouter = router({
       // Re-run AI analysis with enriched content
       (async () => {
         try {
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
           const aiResponse = await invokeLLM({
             messages: [
               { role: "system", content: `你是亚马逊运营专家。对运营知识内容进行智能摘要（包含图片识别内容），返回JSON: { title, summary, keyPoints, actionSteps, applicableScenarios, difficultyLevel, categories, tags, practicalityScore(1-10), briefSummary }` },
@@ -488,6 +503,9 @@ export const kbSkillsRouter = router({
       // Re-run AI analysis with enriched content
       (async () => {
         try {
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
           const aiResponse = await invokeLLM({
             messages: [
               { role: "system", content: `你是亚马逊运营专家。对运营知识内容进行智能摘要（包含图片识别内容），返回JSON: { title, summary, keyPoints, actionSteps, applicableScenarios, difficultyLevel, categories, tags, practicalityScore(1-10), briefSummary }` },
@@ -528,6 +546,9 @@ export const kbSkillsRouter = router({
       });
       (async () => {
         try {
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
           const response = await invokeLLM({
             messages: [
               { role: "system", content: `你是亚马逊运营专家。对运营知识内容进行智能摘要，返回JSON: { title, summary, keyPoints, actionSteps, applicableScenarios, difficultyLevel, categories, tags, practicalityScore(1-10), briefSummary }` },
@@ -643,6 +664,9 @@ export const kbSkillsRouter = router({
             failed++;
             continue;
           }
+
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
 
           const response = await invokeLLM({
             messages: [

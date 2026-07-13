@@ -40,6 +40,9 @@ export const devScoringRouter = router({
 TOP产品:
 ${products.slice(0, 10).map(p => `${p.asin} | ${p.title} | $${p.price} | ${p.rating}★ | BSR:${p.bsr}`).join("\n")}`;
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           {

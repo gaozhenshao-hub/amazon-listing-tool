@@ -7,6 +7,7 @@ import {
   getKeywordsByProject, getCompetitorAnalysesByProject,
 } from "../db";
 import { AD_STRUCTURE_PROMPT } from "../adStructurePrompt";
+import { diagnoseAdViaEmperor, adviseAdSearchTermsViaEmperor, generateAdNegativeViaEmperor, allocateAdBudgetViaEmperor, generateAdStructureViaEmperor, suggestAdDaypartingViaEmperor } from "../emperorClient";
 
 // Helper: build product context string for AI prompts
 function buildProductContext(project: any): string {
@@ -151,6 +152,12 @@ export const adStructureRouter = router({
           .replace("{productContext}", productContext)
           .replace("{keywordData}", keywordData)
           .replace("{competitorSummary}", competitorSummary);
+
+        // Emperor Skill 优先 - 广告结构生成
+        try {
+          const emperorRes = await generateAdStructureViaEmperor(JSON.stringify(input).slice(0, 2000));
+          if (emperorRes.success && emperorRes.output) return emperorRes.output;
+        } catch (e) { console.warn("[Emperor] generateAdStructure fallback:", e); }
 
         const response = await invokeLLM({
           messages: [

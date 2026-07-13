@@ -156,6 +156,9 @@ ${input.searchTerms.slice(0, 200).join("\n")}
 
 只返回JSON数组，不要其他内容。`;
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: "You are an Amazon advertising data analyst. Extract buyer questions from search terms. Return only valid JSON array." },
@@ -236,6 +239,9 @@ ${activeQuestions.map((q, i) => `${i + 1}. ${q.question}`).join("\n")}
 - notes: 简短说明
 
 只返回JSON数组。`;
+
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
 
       const response = await invokeLLM({
         messages: [

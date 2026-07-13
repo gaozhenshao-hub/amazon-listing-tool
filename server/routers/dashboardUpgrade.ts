@@ -183,6 +183,9 @@ export const dashboardUpgradeRouter = router({
       const totalAdSales = adData.reduce((s: number, d: any) => s + (Number(d.sales) || 0), 0);
       const highReturnAsins = returnData.filter((r: any) => Number(r.return_rate || r.returnRate || 0) > 5).length;
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           {

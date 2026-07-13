@@ -46,6 +46,9 @@ export const offInfluencerRouter = router({
   })).mutation(async ({ ctx, input }) => {
     const influencers = await offDb.searchInfluencers(ctx.user.id, { limit: 100 });
     const startTime = Date.now();
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
     const resp = await invokeLLM({
       messages: [
         { role: "system", content: INFLUENCER_MATCHING_PROMPT },

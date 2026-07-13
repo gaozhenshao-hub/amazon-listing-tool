@@ -133,6 +133,9 @@ ${existingBom.length > 0 ? `已有BOM: ${existingBom.map(b => `${b.partName}(${b
 
       console.log("[AI BOM] Using comprehensive profile context for project:", project.name);
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           {
@@ -242,6 +245,9 @@ BOM物料清单:
 ${bomItems.map(b => `${b.partName} | 材质:${b.material || "未知"} | 工艺:${b.process || "未知"} | 规格:${b.specification || ""}`).join("\n")}
 模具需求:
 ${moldCosts.map(m => `${m.partName} | ${m.moldType || ""} | ${m.moldMaterial || ""}`).join("\n")}`;
+
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
 
       const response = await invokeLLM({
         messages: [

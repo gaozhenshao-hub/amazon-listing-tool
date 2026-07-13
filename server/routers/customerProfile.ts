@@ -216,6 +216,9 @@ ${JSON.stringify(data, null, 2)}
   "customerType": "忠实客户/新客户/流失风险/高价值/普通"
 }`;
 
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: "你是亚马逊客户分析专家，输出严格JSON。" },

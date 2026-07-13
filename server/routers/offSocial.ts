@@ -53,6 +53,9 @@ export const offSocialRouter = router({
     startDate: z.string(), endDate: z.string(), frequency: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     const startTime = Date.now();
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
     const resp = await invokeLLM({
       messages: [
         { role: "system", content: CONTENT_CALENDAR_PROMPT },
@@ -71,6 +74,9 @@ export const offSocialRouter = router({
     tone: z.string().optional(), targetAudience: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     const startTime = Date.now();
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
     const resp = await invokeLLM({
       messages: [
         { role: "system", content: SOCIAL_CONTENT_GENERATION_PROMPT },
@@ -109,6 +115,9 @@ export const offSocialRouter = router({
     productName: z.string().optional(), targetAsin: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     const startTime = Date.now();
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
     const resp = await invokeLLM({
       messages: [
         { role: "system", content: MATRIX_CONTENT_VARIATION_PROMPT },

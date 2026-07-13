@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { adviseOpsSearchTermsViaEmperor, diagnoseInventoryViaEmperor, analyzeProfitViaEmperor } from "../emperorClient";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
@@ -518,6 +519,12 @@ ${JSON.stringify(input.skuData, null, 2)}
 
 请以JSON数组格式返回，每个元素对应一个SKU。`;
 
+      // Emperor Skill 优先 - 运营分析
+      try {
+        const emperorRes = await analyzeProfitViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] operations fallback:", e); }
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: "你是亚马逊FBA库存管理AI助手，输出严格的JSON格式。" },
@@ -737,6 +744,12 @@ ${activeSkus.map((s, i) => `
 - estimated_stockout_date: "预计断货日期"
 - reasoning: "分析说明（100字以内）"
 - priority_score: 1-10优先级评分`;
+
+      // Emperor Skill 优先 - 运营分析
+      try {
+        const emperorRes = await analyzeProfitViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] operations fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1006,6 +1019,12 @@ ${activeSkus.map((s, i) => `
 2. 各费用项目的变化趋势？
 3. 预测未来30天的利润走势（保守/正常/乐观三个场景）。`,
       };
+
+      // Emperor Skill 优先 - 运营分析
+      try {
+        const emperorRes = await analyzeProfitViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] operations fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1665,6 +1684,12 @@ ${activeSkus.map((s, i) => `
       searchTerms: z.array(z.record(z.string(), z.unknown())).max(100),
     }))
     .mutation(async ({ input }) => {
+      // Emperor Skill 优先 - 运营分析
+      try {
+        const emperorRes = await analyzeProfitViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] operations fallback:", e); }
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: "你是亚马逊PPC广告优化AI专家。分析搜索词数据并给出操作建议。输出严格JSON格式。" },
@@ -1957,6 +1982,12 @@ ${JSON.stringify(input.searchTerms.map(t => ({
         threat: "识别竞品的威胁行为（如降价、新品上架、评论增长异常等）。",
       };
 
+      // Emperor Skill 优先 - 运营分析
+      try {
+        const emperorRes = await analyzeProfitViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] operations fallback:", e); }
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: "你是亚马逊竞品分析AI专家。请输出结构化JSON分析报告。" },
@@ -2145,6 +2176,12 @@ ${JSON.stringify(input.searchTerms.map(t => ({
     .input(z.object({ terms: z.array(z.string()).max(50) }))
     .mutation(async ({ input }) => {
       try {
+      // Emperor Skill 优先 - 运营分析
+      try {
+        const emperorRes = await analyzeProfitViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] operations fallback:", e); }
+
         const response = await invokeLLM({
           messages: [
             {

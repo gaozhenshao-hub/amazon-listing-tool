@@ -213,6 +213,9 @@ async function performKbSearch(
   } else {
     // Use AI to select most relevant from L1
     const l1Prompt = formatForPrompt(l1Items, "L1");
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
     const selectionResponse = await invokeLLM({
       messages: [
         {
@@ -303,6 +306,9 @@ ${l1Prompt}`,
   } else {
     // Use AI to pick top 5 from L2 summaries
     const l2Prompt = formatForPrompt(l2Items, "L2");
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
     const l2SelectionResponse = await invokeLLM({
       messages: [
         {
@@ -378,6 +384,9 @@ ${l2Prompt}`,
     role: m.role as "user" | "assistant",
     content: m.content,
   }));
+
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
 
   const answerResponse = await invokeLLM({
     messages: [

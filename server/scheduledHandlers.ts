@@ -99,6 +99,9 @@ export async function weeklyReportHandler(req: Request, res: Response) {
     };
 
     // 4. Use AI to generate insights
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
     const llmResponse = await invokeLLM({
       messages: [
         {

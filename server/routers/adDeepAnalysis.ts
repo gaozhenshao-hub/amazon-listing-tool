@@ -25,6 +25,7 @@ import {
   adClinicRecords,
 } from "../../drizzle/schema";
 import { eq, and, inArray, gte, lte, desc, sql } from "drizzle-orm";
+import { diagnoseAdViaEmperor, adviseAdSearchTermsViaEmperor, generateAdNegativeViaEmperor, allocateAdBudgetViaEmperor, generateAdStructureViaEmperor, suggestAdDaypartingViaEmperor } from "../emperorClient";
 
 async function getDbInstance() {
   const d = await getDb();
@@ -541,6 +542,12 @@ export const adDeepAnalysisRouter = router({
 
       const dataSummary = `## 广告位数据\n${summarizePlacementData(placementData)}\n\n## 搜索词数据\n${summarizeSearchTermData(searchTermData)}`;
 
+      // Emperor Skill 优先 - 广告深度分析
+      try {
+        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: STAGE_DIAGNOSIS_PROMPT },
@@ -584,6 +591,12 @@ export const adDeepAnalysisRouter = router({
       );
 
       const dataSummary = summarizeSearchTermData(searchTermData);
+
+      // Emperor Skill 优先 - 广告深度分析
+      try {
+        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -645,6 +658,12 @@ export const adDeepAnalysisRouter = router({
 
       const dataSummary = `## 广告位数据\n${summarizePlacementData(placementData)}\n\n## 搜索词数据\n${summarizeSearchTermData(searchTermData)}\n\n## 展示量份额数据\n${summarizeImpressionShareData(impressionData)}\n\n## SB Benchmark数据\n${summarizeSbBenchmarkData(sbData)}\n\n## 业务×广告交叉数据\n${summarizeBusinessCrossData(businessData, searchTermData)}`;
 
+      // Emperor Skill 优先 - 广告深度分析
+      try {
+        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: CROSS_DIAGNOSIS_PROMPT },
@@ -683,6 +702,12 @@ export const adDeepAnalysisRouter = router({
         and(eq(adDailyPlacementReports.userId, ctx.user.id), inArray(adDailyPlacementReports.portfolioName, input.portfolioNames), gte(adDailyPlacementReports.reportDate, input.dateStart), lte(adDailyPlacementReports.reportDate, input.dateEnd))
       );
       const dataSummary = summarizePlacementData(data);
+      // Emperor Skill 优先 - 广告深度分析
+      try {
+        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
+
       const response = await invokeLLM({
         messages: [{ role: "system", content: PLACEMENT_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下广告位数据:\n\n${dataSummary}` }],
         response_format: { type: "json_object" },
@@ -708,6 +733,12 @@ export const adDeepAnalysisRouter = router({
         and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart), lte(adDailySearchTermReports.reportDate, input.dateEnd))
       );
       const dataSummary = summarizeSearchTermData(data);
+      // Emperor Skill 优先 - 广告深度分析
+      try {
+        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
+
       const response = await invokeLLM({
         messages: [{ role: "system", content: SEARCH_TERM_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下搜索词数据:\n\n${dataSummary}` }],
         response_format: { type: "json_object" },
@@ -733,6 +764,12 @@ export const adDeepAnalysisRouter = router({
         and(eq(adDailyImpressionShareReports.userId, ctx.user.id), inArray(adDailyImpressionShareReports.portfolioName, input.portfolioNames), gte(adDailyImpressionShareReports.reportDate, input.dateStart), lte(adDailyImpressionShareReports.reportDate, input.dateEnd))
       );
       const dataSummary = summarizeImpressionShareData(data);
+      // Emperor Skill 优先 - 广告深度分析
+      try {
+        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
+
       const response = await invokeLLM({
         messages: [{ role: "system", content: IMPRESSION_SHARE_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下展示量份额数据:\n\n${dataSummary}` }],
         response_format: { type: "json_object" },
@@ -758,6 +795,12 @@ export const adDeepAnalysisRouter = router({
         and(eq(adDailySbBenchmarkReports.userId, ctx.user.id), gte(adDailySbBenchmarkReports.reportDate, input.dateStart), lte(adDailySbBenchmarkReports.reportDate, input.dateEnd))
       );
       const dataSummary = summarizeSbBenchmarkData(data);
+      // Emperor Skill 优先 - 广告深度分析
+      try {
+        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
+
       const response = await invokeLLM({
         messages: [{ role: "system", content: SB_BENCHMARK_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下SB Benchmark数据:\n\n${dataSummary}` }],
         response_format: { type: "json_object" },
@@ -784,6 +827,12 @@ export const adDeepAnalysisRouter = router({
         d.select().from(adDailySearchTermReports).where(and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart), lte(adDailySearchTermReports.reportDate, input.dateEnd))),
       ]);
       const dataSummary = summarizeBusinessCrossData(businessData, adData);
+      // Emperor Skill 优先 - 广告深度分析
+      try {
+        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
+
       const response = await invokeLLM({
         messages: [{ role: "system", content: BUSINESS_CROSS_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下业务×广告交叉数据:\n\n${dataSummary}` }],
         response_format: { type: "json_object" },
@@ -851,6 +900,12 @@ export const adDeepAnalysisRouter = router({
       recentDiagnoses.forEach(d => {
         context += `- [串联诊断] ${d.dateRangeStart}~${d.dateRangeEnd}: ${(d.overallVerdict || "").substring(0, 200)}\n`;
       });
+
+      // Emperor Skill 优先 - 广告深度分析
+      try {
+        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -937,6 +992,12 @@ export const adDeepAnalysisRouter = router({
         ]);
         dataContext = `\n\n## 相关数据\n### 广告位数据\n${summarizePlacementData(placementData)}\n\n### 搜索词数据\n${summarizeSearchTermData(searchTermData)}`;
       }
+
+      // Emperor Skill 优先 - 广告深度分析
+      try {
+        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
 
       const response = await invokeLLM({
         messages: [

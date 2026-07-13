@@ -404,6 +404,9 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
 - estimatedHours: 预估工时（数字字符串，如无法确定则为null）`;
 
       try {
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
         const response = await invokeLLM({
           messages: [
             { role: "system", content: systemPrompt },
@@ -520,6 +523,9 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
 返回JSON，包含tasks数组和summary摘要。`;
 
       try {
+      // [Emperor-Ready] 此调用已标记为 Emperor Skill 迁移候选
+      // TODO: 替换为对应的 emperorClient 函数调用
+
         const response = await invokeLLM({
           messages: [
             { role: "system", content: systemPrompt },
