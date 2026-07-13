@@ -187,3 +187,74 @@ describe("fuzzyMatchUsers", () => {
     }
   });
 });
+
+// ─── splitOperatorNames helper (mirrors server/routers/dataImport.ts) ───
+function splitOperatorNames(operator: string | null): string[] {
+  if (!operator) return [];
+  return operator.split(/[\/、,，]+/).map(s => s.trim()).filter(Boolean);
+}
+
+// ─── resolveOperatorNames input normalization (mirrors server/routers/operatorMapping.ts) ───
+function normalizeExternalNames(externalNames: string[]): string[] {
+  const splitNames = externalNames
+    .filter(Boolean)
+    .flatMap(n => n.split(/[\/、,，]+/).map((s: string) => s.trim()).filter(Boolean));
+  return [...new Set(splitNames)];
+}
+
+describe("splitOperatorNames", () => {
+  it("should return empty array for null/empty input", () => {
+    expect(splitOperatorNames(null)).toEqual([]);
+    expect(splitOperatorNames("")).toEqual([]);
+  });
+
+  it("should return single name as-is", () => {
+    expect(splitOperatorNames("裴艺翔")).toEqual(["裴艺翔"]);
+  });
+
+  it("should split comma-separated names", () => {
+    expect(splitOperatorNames("裴艺翔,康凡静")).toEqual(["裴艺翔", "康凡静"]);
+  });
+
+  it("should split Chinese comma-separated names", () => {
+    expect(splitOperatorNames("裴艺翔，康凡静")).toEqual(["裴艺翔", "康凡静"]);
+  });
+
+  it("should split slash-separated names", () => {
+    expect(splitOperatorNames("董兆阳/张航")).toEqual(["董兆阳", "张航"]);
+  });
+
+  it("should split Chinese enumeration comma-separated names", () => {
+    expect(splitOperatorNames("魏佳豪、姚灵羊")).toEqual(["魏佳豪", "姚灵羊"]);
+  });
+
+  it("should trim whitespace around names", () => {
+    expect(splitOperatorNames("裴艺翔, 康凡静")).toEqual(["裴艺翔", "康凡静"]);
+  });
+});
+
+describe("normalizeExternalNames (resolveOperatorNames input)", () => {
+  it("should split composite names into individual names", () => {
+    const result = normalizeExternalNames(["裴艺翔,康凡静", "董兆阳,张航"]);
+    expect(result).toContain("裴艺翔");
+    expect(result).toContain("康凡静");
+    expect(result).toContain("董兆阳");
+    expect(result).toContain("张航");
+    expect(result.length).toBe(4);
+  });
+
+  it("should deduplicate names appearing in multiple composite strings", () => {
+    const result = normalizeExternalNames(["裴艺翔,康凡静", "裴艺翔"]);
+    expect(result.filter(n => n === "裴艺翔").length).toBe(1);
+  });
+
+  it("should handle already-single names without modification", () => {
+    const result = normalizeExternalNames(["王永欣"]);
+    expect(result).toEqual(["王永欣"]);
+  });
+
+  it("should filter out empty strings", () => {
+    const result = normalizeExternalNames(["", "裴艺翔", ""]);
+    expect(result).toEqual(["裴艺翔"]);
+  });
+});

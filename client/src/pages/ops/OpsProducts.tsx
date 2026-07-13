@@ -468,46 +468,60 @@ function ProductBlock({ product, onNavigate, onNavigateImport, onDelete, onSync,
           )}
 
           {/* Operator (运营负责人) */}
-          <Popover open={assignOpen} onOpenChange={setAssignOpen}>
-            <PopoverTrigger asChild>
-              <button className={`text-xs rounded px-2 py-1 transition-colors border ${
-                product.operator
-                  ? "text-foreground bg-blue-50 border-blue-200 hover:bg-blue-100"
-                  : "text-muted-foreground/60 bg-orange-50 border-orange-200 hover:bg-orange-100 italic"
-              }`}>
-                <User className="h-3 w-3 inline mr-1" />
-                {product.operator || "分配运营"}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-48 p-2" align="end">
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground">分配运营</p>
-                <div className="max-h-32 overflow-y-auto space-y-0.5">
-                  {operatorList.map(name => (
-                    <button key={name}
-                      className={`w-full text-left text-xs px-2 py-1.5 rounded flex items-center gap-1.5 ${
-                        product.operator === name ? "bg-blue-100 text-blue-700 font-medium" : "hover:bg-muted"
-                      }`}
-                      onClick={() => { onAssign(product.id, name); setAssignOpen(false); }}
-                    >
-                      {product.operator === name ? <UserCheck className="h-3 w-3" /> : <User className="h-3 w-3 text-muted-foreground" />}
-                      {name}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex gap-1 pt-1 border-t">
-                  <Input placeholder="新名称..." value={newOp} onChange={e => setNewOp(e.target.value)}
-                    className="h-7 text-xs"
-                    onKeyDown={e => { if (e.key === "Enter" && newOp.trim()) { onAssign(product.id, newOp.trim()); setAssignOpen(false); setNewOp(""); } }}
-                  />
-                  <Button size="sm" className="h-7 px-2" disabled={!newOp.trim()}
-                    onClick={() => { onAssign(product.id, newOp.trim()); setAssignOpen(false); setNewOp(""); }}>
-                    <UserPlus className="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-            </PopoverContent>
-          </Popover>
+          {/* Operator display & assign popover */}
+          {(() => {
+            const assignedNames = (product.operator || "").split(/[\/、,，]+/).map((s: string) => s.trim()).filter(Boolean);
+            return (
+              <Popover open={assignOpen} onOpenChange={setAssignOpen}>
+                <PopoverTrigger asChild>
+                  <button className={`text-xs rounded px-2 py-1 transition-colors border ${
+                    assignedNames.length > 0
+                      ? "text-foreground bg-blue-50 border-blue-200 hover:bg-blue-100"
+                      : "text-muted-foreground/60 bg-orange-50 border-orange-200 hover:bg-orange-100 italic"
+                  }`}>
+                    <User className="h-3 w-3 inline mr-1" />
+                    {assignedNames.length > 0 ? assignedNames.join("/") : "分配运营"}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-52 p-2" align="end">
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">分配运营（可多选）</p>
+                    <div className="max-h-40 overflow-y-auto space-y-0.5">
+                      {operatorList.map((name: string) => {
+                        const isAssigned = assignedNames.includes(name);
+                        return (
+                          <button key={name}
+                            className={`w-full text-left text-xs px-2 py-1.5 rounded flex items-center gap-1.5 ${
+                              isAssigned ? "bg-blue-100 text-blue-700 font-medium" : "hover:bg-muted"
+                            }`}
+                            onClick={() => {
+                              onAssign(product.id, name);
+                              // don't close — allow multi-select
+                            }}
+                          >
+                            {isAssigned ? <UserCheck className="h-3 w-3" /> : <User className="h-3 w-3 text-muted-foreground" />}
+                            {name}
+                            {isAssigned && <span className="ml-auto text-[10px] text-blue-400">点击移除</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex gap-1 pt-1 border-t">
+                      <Input placeholder="新名称..." value={newOp} onChange={e => setNewOp(e.target.value)}
+                        className="h-7 text-xs"
+                        onKeyDown={e => { if (e.key === "Enter" && newOp.trim()) { onAssign(product.id, newOp.trim()); setNewOp(""); } }}
+                      />
+                      <Button size="sm" className="h-7 px-2" disabled={!newOp.trim()}
+                        onClick={() => { onAssign(product.id, newOp.trim()); setNewOp(""); }}>
+                        <UserPlus className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    <Button size="sm" variant="outline" className="w-full h-7 text-xs" onClick={() => setAssignOpen(false)}>完成</Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            );
+          })()}
 
           {/* Actions */}
           <div className="flex items-center gap-1">
@@ -888,7 +902,11 @@ export default function OpsProducts() {
     if (operatorFilter === "__UNASSIGNED__") {
       list = list.filter(p => !p.operator);
     } else if (operatorFilter !== "ALL") {
-      list = list.filter(p => (p.operator || "") === operatorFilter);
+      // Split multi-person operator field and check if the selected name is included
+      list = list.filter(p => {
+        const names = (p.operator || "").split(/[\/、,，]+/).map((s: string) => s.trim()).filter(Boolean);
+        return names.includes(operatorFilter);
+      });
     }
     if (storeFilter !== "ALL") list = list.filter(p => (p.storeName || "") === storeFilter);
     if (searchTerm) {
@@ -921,7 +939,12 @@ export default function OpsProducts() {
   }, [products, operatorFilter, storeFilter, searchTerm, weekFilter, sortKey, sortDir]);
 
   const availableOperators = useMemo(() => {
-    const set = new Set((products || []).map(p => p.operator || "").filter(Boolean));
+    const set = new Set<string>();
+    (products || []).forEach(p => {
+      if (!p.operator) return;
+      // Split multi-person operator strings like "裴艺翔,康凡静" into individual names
+      p.operator.split(/[\/、,，]+/).map((s: string) => s.trim()).filter(Boolean).forEach((name: string) => set.add(name));
+    });
     return Array.from(set).sort();
   }, [products]);
 
@@ -1271,7 +1294,13 @@ export default function OpsProducts() {
               onSync={(id) => { setSyncingProductId(id); syncSingleProductMut.mutate({ productId: id }); }}
               isSyncing={syncingProductId === product.id && syncSingleProductMut.isPending}
               operatorList={[...(operatorList || [])]}
-              onAssign={(pid, op) => singleAssignMut.mutate({ productIds: [pid], operator: op })}
+              onAssign={(pid, op) => {
+                // Find current product to determine if operator is already assigned
+                const prod = products?.find((p: any) => p.id === pid);
+                const currentOps = (prod?.operator || "").split(/[\/、,，]+/).map((s: string) => s.trim()).filter(Boolean);
+                const mode = currentOps.includes(op) ? "remove" : "add";
+                singleAssignMut.mutate({ productIds: [pid], operator: op, mode });
+              }}
               sortKey={sortKey}
               sortDir={sortDir}
               onSort={(key) => {

@@ -47,8 +47,13 @@ export const productOpsRouter = router({
     const statusFilter = input?.statusFilter || "active";
     const db = await getDb();
 
-    // Build where conditions: always filter by user, optionally by marketplace and status
-    const conditions = [eq(productProfiles.userId, ctx.user.id)];
+    // Resolve effective userId and role-based filtering
+    const { MANAGER_ROLES } = await import("../../shared/const");
+    const isManagerOrAbove = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
+    const effectiveUserId = await resolveDataUserId(db!, ctx.user);
+
+    // Build where conditions
+    const conditions: any[] = [eq(productProfiles.userId, effectiveUserId)];
     if (marketplace !== "all") {
       conditions.push(eq(productProfiles.marketplace, marketplace));
     }
@@ -56,9 +61,19 @@ export const productOpsRouter = router({
       conditions.push(eq(productProfiles.status, statusFilter as any));
     }
 
-    const products = await db!.select().from(productProfiles)
+    let products = await db!.select().from(productProfiles)
       .where(and(...conditions))
       .orderBy(desc(productProfiles.updatedAt));
+
+    // Non-manager users: filter by operator field (supports multi-operator like "张三/李四")
+    if (!isManagerOrAbove && ctx.user.name) {
+      const userName = ctx.user.name;
+      products = products.filter(p => {
+        if (!p.operator) return false;
+        const names = p.operator.split(/[\/、,，]+/).map((s: string) => s.trim()).filter(Boolean);
+        return names.includes(userName);
+      });
+    }
 
     // For each product, get variant count, pending todo count, and first child ASIN
     const enriched = await Promise.all(products.map(async (p) => {
@@ -2616,18 +2631,39 @@ export const productOpsRouter = router({
     .input(z.object({
       productIds: z.array(z.number()).min(1),
       operator: z.string().min(1),
+      mode: z.enum(["replace", "add", "remove"]).default("replace"),
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
+      const { MANAGER_ROLES } = await import("../../shared/const");
+      const isManagerOrAbove = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
+      const effectiveUserId = isManagerOrAbove ? await resolveDataUserId(db!, ctx.user) : ctx.user.id;
       const now = new Date();
       let updated = 0;
       for (const pid of input.productIds) {
-        await db!.update(productProfiles)
-          .set({ operator: input.operator, updatedAt: now })
-          .where(and(
-            eq(productProfiles.id, pid),
-            eq(productProfiles.userId, ctx.user.id)
-          ));
+        if (input.mode === "replace") {
+          await db!.update(productProfiles)
+            .set({ operator: input.operator, updatedAt: now })
+            .where(and(eq(productProfiles.id, pid), eq(productProfiles.userId, effectiveUserId)));
+        } else {
+          // add or remove: read current value first
+          const [current] = await db!.select({ operator: productProfiles.operator })
+            .from(productProfiles)
+            .where(and(eq(productProfiles.id, pid), eq(productProfiles.userId, effectiveUserId)));
+          if (!current) continue;
+          const existing = (current.operator || "").split(/[\/、,，]+/).map((s: string) => s.trim()).filter(Boolean);
+          let newNames: string[];
+          if (input.mode === "add") {
+            newNames = existing.includes(input.operator) ? existing : [...existing, input.operator];
+          } else {
+            // remove
+            newNames = existing.filter((n: string) => n !== input.operator);
+          }
+          const newOperator = newNames.join("/") || null;
+          await db!.update(productProfiles)
+            .set({ operator: newOperator, updatedAt: now })
+            .where(and(eq(productProfiles.id, pid), eq(productProfiles.userId, effectiveUserId)));
+        }
         updated++;
       }
       return { updated, operator: input.operator };
