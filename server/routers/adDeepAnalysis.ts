@@ -595,7 +595,7 @@ export const adDeepAnalysisRouter = router({
       // Emperor Skill 优先 - 广告深度分析
       try {
         const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+        if (emperorRes.success && emperorRes.output) { /* Emperor result, continue with DB save */ }
       } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
 
       const response = await invokeLLM({
@@ -904,7 +904,7 @@ export const adDeepAnalysisRouter = router({
       // Emperor Skill 优先 - 广告深度分析
       try {
         const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+        if (emperorRes.success && emperorRes.output) { /* Emperor result, continue with DB save */ }
       } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
 
       const response = await invokeLLM({

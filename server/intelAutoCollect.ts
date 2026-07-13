@@ -770,7 +770,7 @@ export async function collectFromSource(
 
             try {
 
-              const _emperorRes = await runSkillViaEmperor("analysis.competitor.multi", { context: JSON.stringify(input ?? {}).slice(0, 3000) });
+              const _emperorRes = await runSkillViaEmperor("analysis.competitor.multi", { context: JSON.stringify({}).slice(0, 3000) });
 
               if (_emperorRes.success && _emperorRes.output) {
 

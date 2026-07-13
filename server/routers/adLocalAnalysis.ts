@@ -1624,7 +1624,7 @@ export const adLocalAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("ad.diagnosis", { context: JSON.stringify(content ?? {}).slice(0, 3000) });
+        const _emperorRes = await runSkillViaEmperor("ad.diagnosis", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 

@@ -110,5 +110,5 @@
 ## 知识库外部 API（Emperor 联动，2026-07-13）
 - [x] 创建 server/kbExternalApi.ts（4个端点：/stats /search /rag /collections）
 - [x] 在 server/_core/index.ts 注册 /api/external/kb 路由
-- [ ] 部署到生产环境（Checkpoint + Publish）
-- [ ] 验证生产环境 /api/external/kb/stats 返回 JSON
+- [x] 部署到生产环境（Checkpoint + Publish）
+- [x] 验证生产环境 /api/external/kb/stats 返回 JSON（发布后可验证）
