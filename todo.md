@@ -106,3 +106,9 @@
 - [x] 全项目 Emperor-Ready 标记全部清除（0 处残留），dev server 运行正常
 - [x] 新增 dev.analysis.product Skill 到 Emperor 平台（修复 analyzeProductDevViaEmperor 调用的 404 问题）
 - [x] 迁移总计：91 处调用点完成实际 Emperor 调用替换，全项目 AI 调用 100% 接入 Emperor 平台
+
+## 知识库外部 API（Emperor 联动，2026-07-13）
+- [x] 创建 server/kbExternalApi.ts（4个端点：/stats /search /rag /collections）
+- [x] 在 server/_core/index.ts 注册 /api/external/kb 路由
+- [ ] 部署到生产环境（Checkpoint + Publish）
+- [ ] 验证生产环境 /api/external/kb/stats 返回 JSON
