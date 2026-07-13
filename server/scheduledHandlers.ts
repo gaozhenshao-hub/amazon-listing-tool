@@ -104,7 +104,7 @@ export async function weeklyReportHandler(req: Request, res: Response) {
 
     try {
 
-      const _emperorRes = await runSkillViaEmperor("ops.profit.analysis", { context: JSON.stringify(input ?? {}).slice(0, 3000) });
+      const _emperorRes = await runSkillViaEmperor("ops.profit.analysis", { context: JSON.stringify(dataSummary).slice(0, 3000) });
 
       if (_emperorRes.success && _emperorRes.output) {
 

@@ -75,7 +75,7 @@ async function analyzeRufusAttributes(rawContent: string): Promise<any> {
 
   try {
 
-    const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: JSON.stringify(input).slice(0, 3000) });
+    const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: rawContent.slice(0, 3000) });
 
     if (_emperorRes.success && _emperorRes.output) {
 
@@ -113,7 +113,7 @@ async function analyzeCompetitorListings(rawContent: string): Promise<any> {
 
   try {
 
-    const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: JSON.stringify(input).slice(0, 3000) });
+    const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: rawContent.slice(0, 3000) });
 
     if (_emperorRes.success && _emperorRes.output) {
 
@@ -163,7 +163,7 @@ async function analyzeCosmoScenes(parsedData: any): Promise<any> {
 
   try {
 
-    const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: JSON.stringify(input).slice(0, 3000) });
+    const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: (headerInfo + "\n" + summary).slice(0, 3000) });
 
     if (_emperorRes.success && _emperorRes.output) {
 
@@ -212,7 +212,7 @@ async function analyzeA9Keywords(parsedData: any): Promise<any> {
 
   try {
 
-    const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: JSON.stringify(input).slice(0, 3000) });
+    const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: (headerInfo + "\n" + summary).slice(0, 3000) });
 
     if (_emperorRes.success && _emperorRes.output) {
 
