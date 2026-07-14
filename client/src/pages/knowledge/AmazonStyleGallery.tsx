@@ -242,6 +242,26 @@ export function AmazonStyleGallery({
   const currentImage = galleryItems[currentIndex];
   const activeBrandStoryImg = brandStoryItems.find((i) => i.id === activeBrandStoryId) || brandStoryItems[0];
 
+  // Optimization 5/7: Preload adjacent images when currentIndex changes
+  useEffect(() => {
+    if (galleryItems.length === 0) return;
+    // Preload current + next 2 + prev 1
+    const indices = [
+      currentIndex,
+      (currentIndex + 1) % galleryItems.length,
+      (currentIndex + 2) % galleryItems.length,
+      (currentIndex - 1 + galleryItems.length) % galleryItems.length,
+    ];
+    const unique = [...new Set(indices)];
+    unique.forEach((idx) => {
+      const url = galleryItems[idx]?.imageUrl;
+      if (url) {
+        const img = new Image();
+        img.src = url;
+      }
+    });
+  }, [currentIndex, galleryItems]);
+
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   const goToPrev = useCallback(() => {
@@ -362,6 +382,8 @@ export function AmazonStyleGallery({
                       alt=""
                       className="w-full h-full object-contain"
                       style={{ maxHeight: "480px" }}
+                      loading="eager"
+                      fetchPriority="high"
                     />
                     <Badge variant="outline" className="absolute top-2 left-2 text-[10px] bg-white/90 backdrop-blur-sm">
                       {currentIndex === 0 ? "主图" : `#${currentIndex}`}

@@ -25,6 +25,7 @@ import { KBTagManagement } from "./KBTagManagement";
 import { AmazonStyleGallery } from "./AmazonStyleGallery";
 import { useKBTagOptions } from "@/hooks/useKBTagOptions";
 import { Settings2 } from "lucide-react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 type ViewMode = "asin" | "waterfall" | "grid";
 
@@ -114,7 +115,7 @@ export default function KBImages() {
   const [scope, setScope] = useState<KBScope>("mine");
 
   // Use listSets for the ASIN-grouped view (default)
-  const { data: sets, isLoading } = trpc.kbImages.listSets.useQuery({ scope });
+  const { data: sets, isLoading } = trpc.kbImages.listSets.useQuery({ scope }, { staleTime: 30_000 });
   // Use listAllImages for image-level browsing (waterfall/grid) - supports both v1 and v2 filters
   const { data: allImages, isLoading: imagesLoading } = trpc.kbImages.listAllImages.useQuery({
     scope,
@@ -193,12 +194,41 @@ export default function KBImages() {
     onError: (e: any) => toast.error(e.message),
   });
   const updateImageTagsMutation = trpc.kbImages.confirmImageTags.useMutation({
-    onSuccess: () => { toast.success("标签已更新"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listAllImages.invalidate(); },
-    onError: (e: any) => toast.error(e.message),
+    onMutate: async (vars) => {
+      // Optimistic update: patch the image in getSet cache immediately
+      await utils.kbImages.getSet.cancel({ id: detailSetId! });
+      const prev = utils.kbImages.getSet.getData({ id: detailSetId! });
+      utils.kbImages.getSet.setData({ id: detailSetId! }, (old: any) => {
+        if (!old) return old;
+        return { ...old, images: old.images.map((img: any) => img.id === vars.imageId ? { ...img, ...vars, tagsConfirmed: true } : img) };
+      });
+      return { prev };
+    },
+    onError: (e: any, _vars, ctx: any) => {
+      toast.error(e.message);
+      if (ctx?.prev) utils.kbImages.getSet.setData({ id: detailSetId! }, ctx.prev);
+    },
+    onSuccess: () => {
+      toast.success("标签已更新");
+      // Invalidate listAllImages in background (non-blocking)
+      utils.kbImages.listAllImages.invalidate();
+    },
   });
   const updateImageScoreMutation = trpc.kbImages.updateImageScore.useMutation({
-    onSuccess: () => { toast.success("评分已更新"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); },
-    onError: (e: any) => toast.error(e.message),
+    onMutate: async (vars) => {
+      await utils.kbImages.getSet.cancel({ id: detailSetId! });
+      const prev = utils.kbImages.getSet.getData({ id: detailSetId! });
+      utils.kbImages.getSet.setData({ id: detailSetId! }, (old: any) => {
+        if (!old) return old;
+        return { ...old, images: old.images.map((img: any) => img.id === vars.imageId ? { ...img, singleImageScore: vars.score } : img) };
+      });
+      return { prev };
+    },
+    onError: (e: any, _vars, ctx: any) => {
+      toast.error(e.message);
+      if (ctx?.prev) utils.kbImages.getSet.setData({ id: detailSetId! }, ctx.prev);
+    },
+    onSuccess: () => toast.success("评分已更新"),
   });
 
   // ── New: Re-crawl, upload, re-analyze, delete image ──
@@ -288,12 +318,41 @@ export default function KBImages() {
     });
   }, [allImages, searchQuery]);
 
-  // Waterfall columns
-  const columns = useMemo(() => {
-    const cols: any[][] = [[], [], [], []];
-    filteredImages.forEach((item: any, i: number) => cols[i % 4].push(item));
-    return cols;
+  // Waterfall columns (for virtual row rendering: each row = 4 items)
+  const waterfallRows = useMemo(() => {
+    const rows: any[][] = [];
+    for (let i = 0; i < filteredImages.length; i += 4) {
+      rows.push(filteredImages.slice(i, i + 4));
+    }
+    return rows;
   }, [filteredImages]);
+
+  // Grid rows (each row = 6 items)
+  const gridRows = useMemo(() => {
+    const rows: any[][] = [];
+    for (let i = 0; i < filteredImages.length; i += 6) {
+      rows.push(filteredImages.slice(i, i + 6));
+    }
+    return rows;
+  }, [filteredImages]);
+
+  // Virtual scroll refs
+  const waterfallParentRef = useRef<HTMLDivElement>(null);
+  const gridParentRef = useRef<HTMLDivElement>(null);
+
+  const waterfallVirtualizer = useVirtualizer({
+    count: waterfallRows.length,
+    getScrollElement: () => waterfallParentRef.current,
+    estimateSize: () => 280, // estimated row height (image card ~240px + gap)
+    overscan: 3,
+  });
+
+  const gridVirtualizer = useVirtualizer({
+    count: gridRows.length,
+    getScrollElement: () => gridParentRef.current,
+    estimateSize: () => 180, // estimated row height for compact grid
+    overscan: 4,
+  });
 
   // Group detail set images — tagImageBelong takes priority; fall back to imagePosition
   const groupedImages = useMemo(() => {
@@ -550,7 +609,7 @@ export default function KBImages() {
         )
       )}
 
-      {/* ═══ Waterfall View ═══ */}
+      {/* ═══ Waterfall View (Virtualized) ═══ */}
       {viewMode === "waterfall" && (
         (isLoading || imagesLoading) ? (
           <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div>
@@ -563,36 +622,64 @@ export default function KBImages() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {columns.map((col, ci) => (
-              <div key={ci} className="space-y-4">
-                {col.map((item: any) => (
-                  <Card key={item.id} className="cursor-pointer hover:shadow-lg transition-all overflow-hidden group" onClick={() => { setDetailSetId(item.imageSetId); setEditingAnalysis(""); }}>
-                    {item.imageUrl && (
-                      <div className="relative">
-                        <img src={item.imageUrl} alt="" className="w-full object-cover" loading="lazy" />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all" />
-                      </div>
-                    )}
-                    <CardContent className="p-3">
-                      <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                        <Badge variant="outline" className="text-[10px]">{item.asin || "N/A"}</Badge>
-                        <Badge variant="secondary" className="text-[10px]">{item.imagePosition === "main" ? "主图" : item.imagePosition === "aplus" ? "A+" : `副图#${item.positionIndex}`}</Badge>
-                      </div>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {item.tagImageType && <Badge variant="secondary" className="text-[10px]">{item.tagImageType}</Badge>}
-                        {item.tagDesignStyle && <Badge variant="secondary" className="text-[10px]">{item.tagDesignStyle}</Badge>}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            ))}
+          <div
+            ref={waterfallParentRef}
+            className="overflow-auto"
+            style={{ height: "70vh" }}
+          >
+            <div
+              style={{
+                height: `${waterfallVirtualizer.getTotalSize()}px`,
+                width: "100%",
+                position: "relative",
+              }}
+            >
+              {waterfallVirtualizer.getVirtualItems().map((virtualRow) => {
+                const rowItems = waterfallRows[virtualRow.index];
+                return (
+                  <div
+                    key={virtualRow.key}
+                    data-index={virtualRow.index}
+                    ref={waterfallVirtualizer.measureElement}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pb-4">
+                      {rowItems.map((item: any) => (
+                        <Card key={item.id} className="cursor-pointer hover:shadow-lg transition-all overflow-hidden group" onClick={() => { setDetailSetId(item.imageSetId); setEditingAnalysis(""); }}>
+                          {item.imageUrl && (
+                            <div className="relative">
+                              <img src={item.imageUrl} alt="" className="w-full object-cover" loading="lazy" />
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all" />
+                            </div>
+                          )}
+                          <CardContent className="p-3">
+                            <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                              <Badge variant="outline" className="text-[10px]">{item.asin || "N/A"}</Badge>
+                              <Badge variant="secondary" className="text-[10px]">{item.imagePosition === "main" ? "主图" : item.imagePosition === "aplus" ? "A+" : `副图#${item.positionIndex}`}</Badge>
+                            </div>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {item.tagImageType && <Badge variant="secondary" className="text-[10px]">{item.tagImageType}</Badge>}
+                              {item.tagDesignStyle && <Badge variant="secondary" className="text-[10px]">{item.tagDesignStyle}</Badge>}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )
       )}
 
-      {/* ═══ Grid View ═══ */}
+      {/* ═══ Grid View (Virtualized) ═══ */}
       {viewMode === "grid" && (
         (isLoading || imagesLoading) ? (
           <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin" /></div>
@@ -604,15 +691,47 @@ export default function KBImages() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-            {filteredImages.map((item: any) => (
-              <Card key={item.id} className="cursor-pointer hover:shadow-md transition-all overflow-hidden" onClick={() => { setDetailSetId(item.imageSetId); setEditingAnalysis(""); }}>
-                {item.imageUrl && <img src={item.imageUrl} alt="" className="w-full aspect-square object-cover" loading="lazy" />}
-                <CardContent className="p-2">
-                  <Badge variant="outline" className="text-[10px]">{item.asin || "N/A"}</Badge>
-                </CardContent>
-              </Card>
-            ))}
+          <div
+            ref={gridParentRef}
+            className="overflow-auto"
+            style={{ height: "70vh" }}
+          >
+            <div
+              style={{
+                height: `${gridVirtualizer.getTotalSize()}px`,
+                width: "100%",
+                position: "relative",
+              }}
+            >
+              {gridVirtualizer.getVirtualItems().map((virtualRow) => {
+                const rowItems = gridRows[virtualRow.index];
+                return (
+                  <div
+                    key={virtualRow.key}
+                    data-index={virtualRow.index}
+                    ref={gridVirtualizer.measureElement}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 pb-3">
+                      {rowItems.map((item: any) => (
+                        <Card key={item.id} className="cursor-pointer hover:shadow-md transition-all overflow-hidden" onClick={() => { setDetailSetId(item.imageSetId); setEditingAnalysis(""); }}>
+                          {item.imageUrl && <img src={item.imageUrl} alt="" className="w-full aspect-square object-cover" loading="lazy" />}
+                          <CardContent className="p-2">
+                            <Badge variant="outline" className="text-[10px]">{item.asin || "N/A"}</Badge>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )
       )}

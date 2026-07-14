@@ -112,9 +112,45 @@ export async function listImageSets(userId: number, scope: Scope = "mine") {
   const _d = await db();
   return _d.select().from(kbImageSets).where(scopeCondition(kbImageSets, userId, scope)).orderBy(desc(kbImageSets.updatedAt));
 }
+
+/** Lightweight set fields for list views — excludes large text blobs */
+const SET_LIST_FIELDS = {
+  id: kbImageSets.id,
+  userId: kbImageSets.userId,
+  asin: kbImageSets.asin,
+  productTitle: kbImageSets.productTitle,
+  category: kbImageSets.category,
+  brand: kbImageSets.brand,
+  overallScore: kbImageSets.overallScore,
+  setStyle: kbImageSets.setStyle,
+  setPrimaryColor: kbImageSets.setPrimaryColor,
+  setAccentColor: kbImageSets.setAccentColor,
+  setCategory: kbImageSets.setCategory,
+  setTargetAudience: kbImageSets.setTargetAudience,
+  setCategoryScene: kbImageSets.setCategoryScene,
+  status: kbImageSets.status,
+  reviewStatus: kbImageSets.reviewStatus,
+  reviewedBy: kbImageSets.reviewedBy,
+  reviewedAt: kbImageSets.reviewedAt,
+  submittedAt: kbImageSets.submittedAt,
+  visibility: kbImageSets.visibility,
+  confirmedAt: kbImageSets.confirmedAt,
+  originInstanceId: kbImageSets.originInstanceId,
+  remoteId: kbImageSets.remoteId,
+  syncVersion: kbImageSets.syncVersion,
+  lastSyncedAt: kbImageSets.lastSyncedAt,
+  createdAt: kbImageSets.createdAt,
+  updatedAt: kbImageSets.updatedAt,
+  // Excluded for list performance: overallAnalysis, userEditedOverallAnalysis, setStyleParams, reviewNote
+  overallAnalysis: sql<string | null>`NULL`.as('overallAnalysis'),
+  userEditedOverallAnalysis: sql<string | null>`NULL`.as('userEditedOverallAnalysis'),
+  setStyleParams: sql<string | null>`NULL`.as('setStyleParams'),
+  reviewNote: sql<string | null>`NULL`.as('reviewNote'),
+} as const;
+
 export async function listImageSetsWithThumbnails(userId: number, scope: Scope = "mine") {
   const _d = await db();
-  const sets = await _d.select().from(kbImageSets).where(scopeCondition(kbImageSets, userId, scope)).orderBy(desc(kbImageSets.updatedAt));
+  const sets = await _d.select(SET_LIST_FIELDS).from(kbImageSets).where(scopeCondition(kbImageSets, userId, scope)).orderBy(desc(kbImageSets.updatedAt));
   if (sets.length === 0) return [];
   const setIds = sets.map(s => s.id);
   // Fetch first 5 images per set in a single query (ordered by positionIndex)
@@ -278,7 +314,38 @@ export async function listAllImages(userId: number, scope: Scope = "mine", filte
   }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
-  return _d.select().from(kbImages).where(where).orderBy(desc(kbImages.createdAt));
+  // Exclude large analysis fields for waterfall view performance
+  return _d.select({
+    id: kbImages.id,
+    imageSetId: kbImages.imageSetId,
+    imageUrl: kbImages.imageUrl,
+    imagePosition: kbImages.imagePosition,
+    positionIndex: kbImages.positionIndex,
+    tagCategory: kbImages.tagCategory,
+    tagColorScheme: kbImages.tagColorScheme,
+    tagImageType: kbImages.tagImageType,
+    tagDesignStyle: kbImages.tagDesignStyle,
+    tagImageBelong: kbImages.tagImageBelong,
+    tagImageBelongSub: kbImages.tagImageBelongSub,
+    tagImageTypeMain: kbImages.tagImageTypeMain,
+    tagImageTypeSub: kbImages.tagImageTypeSub,
+    tagSellingPointCategory: kbImages.tagSellingPointCategory,
+    tagSellingPointDetail: kbImages.tagSellingPointDetail,
+    tagComposition: kbImages.tagComposition,
+    tagColorSchemeV2: kbImages.tagColorSchemeV2,
+    tagDesignStyleV2: kbImages.tagDesignStyleV2,
+    aplusModuleType: kbImages.aplusModuleType,
+    aplusModuleClass: kbImages.aplusModuleClass,
+    singleImageScore: kbImages.singleImageScore,
+    tagsConfirmed: kbImages.tagsConfirmed,
+    analysisConfirmed: kbImages.analysisConfirmed,
+    createdAt: kbImages.createdAt,
+    updatedAt: kbImages.updatedAt,
+    // Excluded for waterfall performance: aiDimensionAnalysis, userEditedDimensionAnalysis, highlights
+    aiDimensionAnalysis: sql<string | null>`NULL`.as('aiDimensionAnalysis'),
+    userEditedDimensionAnalysis: sql<string | null>`NULL`.as('userEditedDimensionAnalysis'),
+    highlights: sql<string | null>`NULL`.as('highlights'),
+  }).from(kbImages).where(where).orderBy(desc(kbImages.createdAt));
 }
 
 // ═══════════════════════════════════════════════════
