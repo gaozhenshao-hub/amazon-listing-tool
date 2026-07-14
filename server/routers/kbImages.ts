@@ -453,14 +453,21 @@ export const kbImagesRouter = router({
     return kbDb.listImageSetsWithThumbnails(ctx.user.id, input?.scope ?? "mine");
   }),
 
-  // Get image set with all images
+  // Get image set with all images (lightweight: excludes large analysis fields for fast load)
   getSet: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
       const set = await kbDb.getImageSet(input.id, ctx.user.id);
       if (!set) return null;
-      const images = await kbDb.listImagesBySet(set.id);
+      const images = await kbDb.listImagesBySetLight(set.id);
       return { ...set, images };
+    }),
+
+  // Get single image's full analysis data on-demand (lazy load when user expands tag panel)
+  getImageAnalysis: protectedProcedure
+    .input(z.object({ imageId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      return kbDb.getImageWithAnalysis(input.imageId);
     }),
 
   // List all images with 7-dimension filters (waterfall view)

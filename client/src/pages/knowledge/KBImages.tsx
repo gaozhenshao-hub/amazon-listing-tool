@@ -134,7 +134,16 @@ export default function KBImages() {
     tagColorSchemeV2: (useV2Filters && filterColorV2 !== "all") ? filterColorV2 : undefined,
     tagDesignStyleV2: (useV2Filters && filterStyleV2 !== "all") ? filterStyleV2 : undefined,
   }, { enabled: viewMode !== "asin" });
-  const { data: detailSet } = trpc.kbImages.getSet.useQuery({ id: detailSetId! }, { enabled: !!detailSetId });
+  // Use listSets data as placeholder while getSet loads — shows ASIN/status/images immediately
+  const detailSetPlaceholder = sets?.find((s: any) => s.id === detailSetId);
+  const { data: detailSet, isLoading: detailSetLoading } = trpc.kbImages.getSet.useQuery(
+    { id: detailSetId! },
+    {
+      enabled: !!detailSetId,
+      staleTime: 60_000, // 60s cache — avoids redundant refetch when reopening same set
+      placeholderData: detailSetPlaceholder ? { ...detailSetPlaceholder, images: [] } : undefined,
+    }
+  );
 
   const importAsin = trpc.kbImages.importByAsin.useMutation({
     onSuccess: () => { toast.success("已开始导入图片，AI正在分析..."); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setShowImport(false); setAsinInput(""); },
@@ -699,8 +708,9 @@ export default function KBImages() {
       {/* ═══ ASIN Set Detail Dialog — Images Grouped by Position ═══ */}
       <Dialog open={!!detailSetId} onOpenChange={(open) => !open && setDetailSetId(null)}>
         <DialogContent className="w-[60vw] max-w-[60vw] max-h-[90vh] overflow-y-auto">
-          {detailSet ? (() => {
-            const d = detailSet as any;
+          {(detailSet || detailSetPlaceholder) ? (() => {
+            const d = (detailSet || detailSetPlaceholder) as any;
+            const isPlaceholder = !detailSet && !!detailSetPlaceholder; // still loading full data
             const status = statusMap[d.status] || { label: d.status, variant: "secondary" as const };
             let analysis: any = {};
             try { analysis = JSON.parse(d.userEditedOverallAnalysis || d.overallAnalysis || "{}"); } catch {}
@@ -711,8 +721,9 @@ export default function KBImages() {
                   <DialogTitle className="flex items-center gap-2 flex-wrap">
                     <Badge variant="outline" className="font-mono">{d.asin}</Badge>
                     <Badge variant={status.variant}>{status.label}</Badge>
-                    <span className="text-sm text-muted-foreground">{totalImages} 张图片</span>
-                    {d.overallScore && <Badge className="bg-primary/10 text-primary border-primary/20">{d.overallScore}分</Badge>}
+                    {!isPlaceholder && <span className="text-sm text-muted-foreground">{totalImages} 张图片</span>}
+                    {d.overallScore && !isPlaceholder && <Badge className="bg-primary/10 text-primary border-primary/20">{d.overallScore}分</Badge>}
+                    {isPlaceholder && <span className="flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />加载中...</span>}
                   </DialogTitle>
                 </DialogHeader>
                 <div className="space-y-6">
@@ -837,8 +848,6 @@ export default function KBImages() {
                     allowEdit={allowEdit}
                     onReorder={allowEdit ? (imageOrders) => reorderImagesMutation.mutate({ setId: detailSetId!, imageOrders }) : undefined}
                     renderTagEditor={(img) => {
-                      let dimensions: any = {};
-                      try { dimensions = JSON.parse(img.aiDimensionAnalysis || "{}"); } catch {}
                       return (
                         <div className="space-y-3">
                           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -896,27 +905,7 @@ export default function KBImages() {
                             label="单图评分"
                             disabled={updateImageScoreMutation.isPending}
                           />
-                          {img.aiDimensionAnalysis && (
-                            <div className="space-y-2">
-                              <h5 className="text-xs font-semibold flex items-center gap-1.5">
-                                <Sparkles className="h-3.5 w-3.5 text-purple-500" />
-                                12维度分析
-                              </h5>
-                              <div className="grid grid-cols-2 gap-2">
-                                {Object.entries(DIMENSION_LABELS).map(([key, label]) => {
-                                  const dim = dimensions[key];
-                                  if (!dim) return null;
-                                  const analysis = typeof dim === "string" ? dim : dim?.analysis || dim?.content || JSON.stringify(dim);
-                                  return (
-                                    <div key={key} className="bg-muted/50 rounded-md p-2">
-                                      <span className="text-[10px] font-medium text-muted-foreground">{label}</span>
-                                      <p className="text-xs mt-0.5 line-clamp-2">{analysis}</p>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
+                          <ImageDimensionAnalysisPanel imageId={img.id} />
                         </div>
                       );
                     }}
@@ -1184,8 +1173,17 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
   tagOptions?: ReturnType<typeof import('@/hooks/useKBTagOptions').useKBTagOptions>;
 }) {
   const isExpanded = selectedImageId === img.id;
+  // Lazy-load heavy analysis data only when card is expanded
+  const { data: analysisData } = trpc.kbImages.getImageAnalysis.useQuery(
+    { imageId: img.id },
+    { enabled: isExpanded, staleTime: 300_000 } // 5min cache per image
+  );
+  // Merge lazy-loaded analysis into img (lightweight img has null aiDimensionAnalysis)
+  const imgWithAnalysis = isExpanded && analysisData
+    ? { ...img, aiDimensionAnalysis: (analysisData as any).aiDimensionAnalysis, userEditedDimensionAnalysis: (analysisData as any).userEditedDimensionAnalysis }
+    : img;
   let dimensions: any = {};
-  try { dimensions = JSON.parse(img.aiDimensionAnalysis || "{}"); } catch {}
+  try { dimensions = JSON.parse(imgWithAnalysis.aiDimensionAnalysis || "{}"); } catch {}
 
   return (
     <div className={`rounded-lg overflow-hidden bg-muted border transition-all ${isExpanded ? "ring-2 ring-primary col-span-full" : ""}`}>
@@ -1312,25 +1310,31 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
             label="单图评分"
             disabled={onUpdateScore.isPending}
           />
-          {img.aiDimensionAnalysis && (
+          {/* 12-dimension analysis: lazy-loaded when card is expanded */}
+          {isExpanded && (
             <div className="space-y-2">
               <h5 className="text-xs font-semibold flex items-center gap-1.5">
                 <Sparkles className="h-3.5 w-3.5 text-purple-500" />
                 12维度分析
+                {!analysisData && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
               </h5>
-              <div className="grid grid-cols-2 gap-2">
-                {Object.entries(DIMENSION_LABELS).map(([key, label]) => {
-                  const dim = dimensions[key];
-                  if (!dim) return null;
-                  const analysis = typeof dim === "string" ? dim : dim?.analysis || dim?.content || JSON.stringify(dim);
-                  return (
-                    <div key={key} className="bg-muted/50 rounded-md p-2">
-                      <span className="text-[10px] font-medium text-muted-foreground">{label}</span>
-                      <p className="text-xs mt-0.5 line-clamp-2">{analysis}</p>
-                    </div>
-                  );
-                })}
-              </div>
+              {analysisData && Object.keys(dimensions).length > 0 ? (
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.entries(DIMENSION_LABELS).map(([key, label]) => {
+                    const dim = dimensions[key];
+                    if (!dim) return null;
+                    const analysis = typeof dim === "string" ? dim : dim?.analysis || dim?.content || JSON.stringify(dim);
+                    return (
+                      <div key={key} className="bg-muted/50 rounded-md p-2">
+                        <span className="text-[10px] font-medium text-muted-foreground">{label}</span>
+                        <p className="text-xs mt-0.5 line-clamp-2">{analysis}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : analysisData ? (
+                <p className="text-xs text-muted-foreground">暂无12维度分析数据</p>
+              ) : null}
             </div>
           )}
         </div>
@@ -1433,5 +1437,42 @@ function SortableImageGrid({ images, gridCols, onSelectImage, selectedImageId, o
         ) : null}
       </DragOverlay>
     </DndContext>
+  );
+}
+
+/** Lazy-loaded 12-dimension analysis panel — only fetches data when rendered (i.e., when user opens tag editor) */
+function ImageDimensionAnalysisPanel({ imageId }: { imageId: number }) {
+  const { data: analysisData, isLoading } = trpc.kbImages.getImageAnalysis.useQuery(
+    { imageId },
+    { staleTime: 300_000 } // 5min cache per image
+  );
+  let dimensions: any = {};
+  try { dimensions = JSON.parse((analysisData as any)?.aiDimensionAnalysis || "{}"); } catch {}
+
+  return (
+    <div className="space-y-2">
+      <h5 className="text-xs font-semibold flex items-center gap-1.5">
+        <Sparkles className="h-3.5 w-3.5 text-purple-500" />
+        12维度分析
+        {isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+      </h5>
+      {!isLoading && Object.keys(dimensions).length > 0 ? (
+        <div className="grid grid-cols-2 gap-2">
+          {Object.entries(DIMENSION_LABELS).map(([key, label]) => {
+            const dim = dimensions[key];
+            if (!dim) return null;
+            const analysis = typeof dim === "string" ? dim : dim?.analysis || dim?.content || JSON.stringify(dim);
+            return (
+              <div key={key} className="bg-muted/50 rounded-md p-2">
+                <span className="text-[10px] font-medium text-muted-foreground">{label}</span>
+                <p className="text-xs mt-0.5 line-clamp-2">{analysis}</p>
+              </div>
+            );
+          })}
+        </div>
+      ) : !isLoading ? (
+        <p className="text-xs text-muted-foreground">暂无12维度分析数据</p>
+      ) : null}
+    </div>
   );
 }

@@ -170,6 +170,51 @@ export async function listImagesBySet(imageSetId: number) {
   const _d = await db();
   return _d.select().from(kbImages).where(eq(kbImages.imageSetId, imageSetId)).orderBy(kbImages.positionIndex);
 }
+/** Lightweight version: excludes large analysis text fields for fast initial dialog load */
+export async function listImagesBySetLight(imageSetId: number) {
+  const _d = await db();
+  return _d.select({
+    id: kbImages.id,
+    imageSetId: kbImages.imageSetId,
+    imageUrl: kbImages.imageUrl,
+    imagePosition: kbImages.imagePosition,
+    positionIndex: kbImages.positionIndex,
+    tagCategory: kbImages.tagCategory,
+    tagColorScheme: kbImages.tagColorScheme,
+    tagImageType: kbImages.tagImageType,
+    tagDesignStyle: kbImages.tagDesignStyle,
+    tagImageBelong: kbImages.tagImageBelong,
+    tagImageBelongSub: kbImages.tagImageBelongSub,
+    tagImageTypeMain: kbImages.tagImageTypeMain,
+    tagImageTypeSub: kbImages.tagImageTypeSub,
+    tagSellingPointCategory: kbImages.tagSellingPointCategory,
+    tagSellingPointDetail: kbImages.tagSellingPointDetail,
+    tagComposition: kbImages.tagComposition,
+    tagColorSchemeV2: kbImages.tagColorSchemeV2,
+    tagDesignStyleV2: kbImages.tagDesignStyleV2,
+    aplusModuleType: kbImages.aplusModuleType,
+    aplusModuleClass: kbImages.aplusModuleClass,
+    singleImageScore: kbImages.singleImageScore,
+    highlights: kbImages.highlights,
+    tagsConfirmed: kbImages.tagsConfirmed,
+    analysisConfirmed: kbImages.analysisConfirmed,
+    createdAt: kbImages.createdAt,
+    updatedAt: kbImages.updatedAt,
+    // Excluded for performance: aiDimensionAnalysis, userEditedDimensionAnalysis
+    aiDimensionAnalysis: sql<string | null>`NULL`.as('aiDimensionAnalysis'),
+    userEditedDimensionAnalysis: sql<string | null>`NULL`.as('userEditedDimensionAnalysis'),
+  }).from(kbImages).where(eq(kbImages.imageSetId, imageSetId)).orderBy(kbImages.positionIndex);
+}
+/** Get a single image's analysis data on-demand (lazy load) */
+export async function getImageWithAnalysis(imageId: number) {
+  const _d = await db();
+  const rows = await _d.select({
+    id: kbImages.id,
+    aiDimensionAnalysis: kbImages.aiDimensionAnalysis,
+    userEditedDimensionAnalysis: kbImages.userEditedDimensionAnalysis,
+  }).from(kbImages).where(eq(kbImages.id, imageId));
+  return rows[0] ?? null;
+}
 export async function createImage(data: InsertKbImage) {
   const _d = await db();
   const [result] = await _d.insert(kbImages).values(data);
