@@ -1,5 +1,6 @@
 import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
 import { invokeLLM } from "../_core/llm";
@@ -27,6 +28,14 @@ export const kbVideosRouter = router({
       category: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // ASIN dedup: only if ASIN is provided
+      if (input.asin) {
+        const asin = input.asin.trim().toUpperCase();
+        const dupVideo = await kbDb.findVideoByAsin(asin);
+        if (dupVideo) {
+          throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于视频知识库中，请勿重复录入` });
+        }
+      }
       const id = await kbDb.createVideo({
         userId: ctx.user.id,
         videoUrl: input.videoUrl,
@@ -188,6 +197,12 @@ export const kbVideosRouter = router({
       for (const rawAsin of input.asins) {
         const asin = rawAsin.trim().toUpperCase();
         if (!asin) continue;
+        // ASIN dedup: skip if already exists
+        const dupVideo = await kbDb.findVideoByAsin(asin);
+        if (dupVideo) {
+          results.push({ id: dupVideo.id, asin });
+          continue;
+        }
         const id = await kbDb.createVideo({
           userId: ctx.user.id,
           asin,
@@ -247,6 +262,11 @@ export const kbVideosRouter = router({
     .input(z.object({ asin: z.string().min(1), videoUrl: z.string().url() }))
     .mutation(async ({ ctx, input }) => {
       const asin = input.asin.trim().toUpperCase();
+      // ASIN dedup: prevent duplicate entries
+      const dupVideo = await kbDb.findVideoByAsin(asin);
+      if (dupVideo) {
+        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于视频知识库中，请勿重复录入` });
+      }
       const id = await kbDb.createVideo({
         userId: ctx.user.id, asin, videoUrl: input.videoUrl,
         videoTitle: `${asin} 产品视频`, status: "downloading",

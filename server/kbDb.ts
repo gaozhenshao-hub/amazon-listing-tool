@@ -44,6 +44,14 @@ export async function getProductInnovationById(id: number) {
   const rows = await _d.select().from(kbProductInnovations).where(eq(kbProductInnovations.id, id));
   return rows[0] ?? null;
 }
+export async function findProductInnovationByAsin(asin: string) {
+  const _d = await db();
+  const rows = await _d.select({ id: kbProductInnovations.id })
+    .from(kbProductInnovations)
+    .where(eq(kbProductInnovations.asin, asin))
+    .limit(1);
+  return rows[0] ?? null;
+}
 export async function createProductInnovation(data: InsertKbProductInnovation) {
   const _d = await db();
   const [result] = await _d.insert(kbProductInnovations).values(data);
@@ -73,6 +81,14 @@ export async function getListingCopywriting(id: number, userId: number) {
 export async function getListingCopywritingById(id: number) {
   const _d = await db();
   const rows = await _d.select().from(kbListingCopywriting).where(eq(kbListingCopywriting.id, id));
+  return rows[0] ?? null;
+}
+export async function findListingCopywritingByAsin(asin: string) {
+  const _d = await db();
+  const rows = await _d.select({ id: kbListingCopywriting.id })
+    .from(kbListingCopywriting)
+    .where(eq(kbListingCopywriting.asin, asin))
+    .limit(1);
   return rows[0] ?? null;
 }
 export async function createListingCopywriting(data: InsertKbListingCopywriting) {
@@ -125,6 +141,14 @@ export async function getImageSet(id: number, userId: number) {
 export async function getImageSetById(id: number) {
   const _d = await db();
   const rows = await _d.select().from(kbImageSets).where(eq(kbImageSets.id, id));
+  return rows[0] ?? null;
+}
+export async function findImageSetByAsin(asin: string) {
+  const _d = await db();
+  const rows = await _d.select({ id: kbImageSets.id })
+    .from(kbImageSets)
+    .where(eq(kbImageSets.asin, asin))
+    .limit(1);
   return rows[0] ?? null;
 }
 export async function createImageSet(data: InsertKbImageSet) {
@@ -258,6 +282,14 @@ export async function getVideo(id: number, userId: number) {
 export async function getVideoById(id: number) {
   const _d = await db();
   const rows = await _d.select().from(kbVideos).where(eq(kbVideos.id, id));
+  return rows[0] ?? null;
+}
+export async function findVideoByAsin(asin: string) {
+  const _d = await db();
+  const rows = await _d.select({ id: kbVideos.id })
+    .from(kbVideos)
+    .where(eq(kbVideos.asin, asin))
+    .limit(1);
   return rows[0] ?? null;
 }
 export async function createVideo(data: InsertKbVideo) {

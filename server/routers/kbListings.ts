@@ -1,5 +1,6 @@
 import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
 import { scrapeAmazonProduct } from "../scraper";
@@ -23,6 +24,11 @@ export const kbListingsRouter = router({
     .input(z.object({ asin: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const asin = input.asin.trim().toUpperCase();
+      // ASIN dedup: prevent duplicate entries
+      const dupListing = await kbDb.findListingCopywritingByAsin(asin);
+      if (dupListing) {
+        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于 Listing 知识库中，请勿重复录入` });
+      }
       const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, asin, status: "crawling" });
       (async () => {
         try {
@@ -97,6 +103,12 @@ export const kbListingsRouter = router({
       for (const raw of input.asins) {
         const asin = raw.trim().toUpperCase();
         if (!asin) continue;
+        // ASIN dedup: skip if already exists
+        const dupListing = await kbDb.findListingCopywritingByAsin(asin);
+        if (dupListing) {
+          results.push({ asin, id: dupListing.id });
+          continue;
+        }
         const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, asin, status: "crawling" });
         results.push({ asin, id: Number(id) });
         (async () => {
@@ -149,6 +161,11 @@ export const kbListingsRouter = router({
       const asinMatch = input.url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
       const asin = asinMatch?.[1]?.toUpperCase() || "";
       if (!asin) throw new Error("无法从链接中提取ASIN");
+      // ASIN dedup: prevent duplicate entries
+      const dupListing = await kbDb.findListingCopywritingByAsin(asin);
+      if (dupListing) {
+        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于 Listing 知识库中，请勿重复录入` });
+      }
       const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, asin, status: "crawling" });
       (async () => {
         try {

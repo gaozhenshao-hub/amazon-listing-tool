@@ -80,6 +80,9 @@ const TABLE_MAP: Record<ResourceType, any> = {
   kb_skill: kbOperationSkills,
 };
 
+// Resource types that have an ASIN field and need dedup
+const ASIN_DEDUP_TYPES: ResourceType[] = ["kb_product", "kb_listing", "kb_image_set", "kb_video"];
+
 // Peer API key authentication middleware
 function authenticatePeer(req: Request, res: Response, next: Function) {
   const apiKey = req.headers["x-sync-api-key"] as string || req.body?.apiKey;
@@ -99,6 +102,26 @@ function getSyncableData(row: Record<string, unknown>, resourceType: ResourceTyp
     }
   }
   return result;
+}
+
+/**
+ * Check if a record with the same ASIN already exists locally.
+ * Returns the existing record's id if found, null otherwise.
+ */
+async function checkAsinDuplicate(
+  db: ReturnType<typeof getDb>,
+  table: any,
+  resourceType: ResourceType,
+  asin: unknown
+): Promise<number | null> {
+  if (!ASIN_DEDUP_TYPES.includes(resourceType) || !asin || typeof asin !== "string") {
+    return null;
+  }
+  const existing = await db.select({ id: table.id })
+    .from(table)
+    .where(eq(table.asin, asin))
+    .limit(1);
+  return existing.length > 0 ? existing[0].id : null;
 }
 
 // ─── POST /api/sync/push — Receive changes from peer ────────────────
@@ -187,6 +210,27 @@ syncRouter.post("/push", authenticatePeer, async (req: Request, res: Response) =
             results.conflicts++;
           }
         } else {
+          // ASIN dedup: skip if same ASIN already exists locally (any origin)
+          const dupId = await checkAsinDuplicate(db, table, change.resourceType, change.data?.asin);
+          if (dupId !== null) {
+            await db.insert(kbSyncLogs).values({
+              syncDirection: "push",
+              resourceType: change.resourceType,
+              resourceId: dupId,
+              remoteResourceId: change.originId,
+              syncStatus: "conflict",
+              conflictDetail: JSON.stringify({
+                reason: "asin_duplicate",
+                asin: change.data.asin,
+                message: `ASIN ${change.data.asin} already exists locally, skipped to prevent duplicate`,
+              }),
+              peerInstanceId: instanceId,
+              itemCount: 1,
+            });
+            results.skipped++;
+            continue;
+          }
+
           // Create: insert new record
           const insertData = { ...change.data };
           delete insertData.id;
@@ -356,6 +400,13 @@ syncRouter.post("/pull", authenticatePeer, async (req: Request, res: Response) =
             results.skipped++;
           }
         } else {
+          // ASIN dedup: skip if same ASIN already exists locally (any origin)
+          const dupId = await checkAsinDuplicate(db, table, change.resourceType, change.data?.asin);
+          if (dupId !== null) {
+            results.skipped++;
+            continue;
+          }
+
           const insertData = { ...change.data };
           delete insertData.id;
           delete insertData.createdAt;
@@ -451,6 +502,13 @@ syncRouter.post("/trigger", authenticatePeer, async (req: Request, res: Response
                 pullResults.skipped++;
               }
             } else {
+              // ASIN dedup: skip if same ASIN already exists locally (any origin)
+              const dupId = await checkAsinDuplicate(db, table, change.resourceType, change.data?.asin);
+              if (dupId !== null) {
+                pullResults.skipped++;
+                continue;
+              }
+
               const insertData = { ...change.data };
               delete insertData.id;
               delete insertData.createdAt;

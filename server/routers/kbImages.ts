@@ -1,5 +1,6 @@
 import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
 import { scrapeAmazonProduct, type ProductImage } from "../scraper";
@@ -492,6 +493,11 @@ export const kbImagesRouter = router({
     .input(z.object({ asin: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const asin = input.asin.trim().toUpperCase();
+      // ASIN dedup: prevent duplicate entries
+      const dupSet = await kbDb.findImageSetByAsin(asin);
+      if (dupSet) {
+        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于图片知识库中，请勿重复录入` });
+      }
       const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "crawling" });
       // Fire-and-forget with full analysis
       processImport(Number(setId), asin, Number(ctx.user.id), true);
@@ -505,6 +511,12 @@ export const kbImagesRouter = router({
       for (const raw of input.asins) {
         const asin = raw.trim().toUpperCase();
         if (!asin) continue;
+        // ASIN dedup: skip if already exists
+        const dupSet = await kbDb.findImageSetByAsin(asin);
+        if (dupSet) {
+          results.push({ asin, id: dupSet.id });
+          continue;
+        }
         const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "crawling" });
         results.push({ asin, id: Number(setId) });
         // Fire-and-forget without per-image analysis for batch (faster)
@@ -519,6 +531,11 @@ export const kbImagesRouter = router({
       const asinMatch = input.url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
       const asin = asinMatch?.[1]?.toUpperCase() || "";
       if (!asin) throw new Error("无法从链接中提取ASIN");
+      // ASIN dedup: prevent duplicate entries
+      const dupSet = await kbDb.findImageSetByAsin(asin);
+      if (dupSet) {
+        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于图片知识库中，请勿重复录入` });
+      }
       const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "crawling" });
       // Fire-and-forget with full analysis
       processImport(Number(setId), asin, Number(ctx.user.id), true);
@@ -712,6 +729,11 @@ export const kbImagesRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const asin = input.asin.trim().toUpperCase();
+      // ASIN dedup: prevent duplicate entries
+      const dupSet = await kbDb.findImageSetByAsin(asin);
+      if (dupSet) {
+        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于图片知识库中，请勿重复录入` });
+      }
       const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, productTitle: input.title || undefined, status: "pending_review" });
       const numericSetId = Number(setId);
       // Upload images to S3

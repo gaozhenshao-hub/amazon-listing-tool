@@ -1,5 +1,6 @@
 import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
 import { scrapeAmazonProduct } from "../scraper";
@@ -24,6 +25,11 @@ export const kbProductsRouter = router({
     .input(z.object({ asin: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const asin = input.asin.trim().toUpperCase();
+      // ASIN dedup: prevent duplicate entries
+      const dupProduct = await kbDb.findProductInnovationByAsin(asin);
+      if (dupProduct) {
+        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于产品知识库中，请勿重复录入` });
+      }
       const id = await kbDb.createProductInnovation({
         userId: ctx.user.id,
         asin,
@@ -118,6 +124,12 @@ export const kbProductsRouter = router({
       for (const raw of input.asins) {
         const asin = raw.trim().toUpperCase();
         if (!asin) continue;
+        // ASIN dedup: skip if already exists
+        const dupProduct = await kbDb.findProductInnovationByAsin(asin);
+        if (dupProduct) {
+          results.push({ asin, id: dupProduct.id });
+          continue;
+        }
         const id = await kbDb.createProductInnovation({
           userId: ctx.user.id,
           asin,
@@ -179,6 +191,11 @@ export const kbProductsRouter = router({
       const asinMatch = input.url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
       const asin = asinMatch?.[1]?.toUpperCase() || "";
       if (!asin) throw new Error("无法从链接中提取ASIN，请检查链接格式");
+      // ASIN dedup: prevent duplicate entries
+      const dupProduct = await kbDb.findProductInnovationByAsin(asin);
+      if (dupProduct) {
+        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于产品知识库中，请勿重复录入` });
+      }
       const id = await kbDb.createProductInnovation({
         userId: ctx.user.id, asin, productUrl: input.url, status: "crawling",
       });
