@@ -26,6 +26,7 @@ import { AmazonStyleGallery } from "./AmazonStyleGallery";
 import { useKBTagOptions } from "@/hooks/useKBTagOptions";
 import { Settings2 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useQueryClient } from "@tanstack/react-query";
 
 type ViewMode = "asin" | "waterfall" | "grid";
 
@@ -79,6 +80,7 @@ const DIMENSION_LABELS: Record<string, string> = {
 
 export default function KBImages() {
   const utils = trpc.useUtils();
+  const queryClient = useQueryClient();
   const { canEdit, canDelete } = usePermissions();
   const allowEdit = canEdit('knowledge', 'kb_images');
   // Dynamic tag options from database (with fallback to hardcoded constants)
@@ -202,16 +204,30 @@ export default function KBImages() {
         if (!old) return old;
         return { ...old, images: old.images.map((img: any) => img.id === vars.imageId ? { ...img, ...vars, tagsConfirmed: true } : img) };
       });
+      // Also patch ALL listAllImages cache entries (waterfall/grid views)
+      queryClient.setQueriesData(
+        { queryKey: ["trpc", "kbImages", "listAllImages"] },
+        (old: any) => {
+          if (!old) return old;
+          // Handle tRPC superjson wrapper: { json: [...] } or plain array
+          const list = Array.isArray(old) ? old : old?.json ?? old;
+          if (!Array.isArray(list)) return old;
+          const updated = list.map((img: any) =>
+            img.id === vars.imageId ? { ...img, ...vars, tagsConfirmed: true } : img
+          );
+          return Array.isArray(old) ? updated : { ...old, json: updated };
+        }
+      );
       return { prev };
     },
     onError: (e: any, _vars, ctx: any) => {
       toast.error(e.message);
       if (ctx?.prev) utils.kbImages.getSet.setData({ id: detailSetId! }, ctx.prev);
+      // Rollback listAllImages by invalidating (re-fetch from server)
+      utils.kbImages.listAllImages.invalidate();
     },
     onSuccess: () => {
       toast.success("标签已更新");
-      // Invalidate listAllImages in background (non-blocking)
-      utils.kbImages.listAllImages.invalidate();
     },
   });
   const updateImageScoreMutation = trpc.kbImages.updateImageScore.useMutation({
@@ -222,11 +238,25 @@ export default function KBImages() {
         if (!old) return old;
         return { ...old, images: old.images.map((img: any) => img.id === vars.imageId ? { ...img, singleImageScore: vars.score } : img) };
       });
+      // Also patch ALL listAllImages cache entries (waterfall/grid views)
+      queryClient.setQueriesData(
+        { queryKey: ["trpc", "kbImages", "listAllImages"] },
+        (old: any) => {
+          if (!old) return old;
+          const list = Array.isArray(old) ? old : old?.json ?? old;
+          if (!Array.isArray(list)) return old;
+          const updated = list.map((img: any) =>
+            img.id === vars.imageId ? { ...img, singleImageScore: vars.score } : img
+          );
+          return Array.isArray(old) ? updated : { ...old, json: updated };
+        }
+      );
       return { prev };
     },
     onError: (e: any, _vars, ctx: any) => {
       toast.error(e.message);
       if (ctx?.prev) utils.kbImages.getSet.setData({ id: detailSetId! }, ctx.prev);
+      utils.kbImages.listAllImages.invalidate();
     },
     onSuccess: () => toast.success("评分已更新"),
   });
