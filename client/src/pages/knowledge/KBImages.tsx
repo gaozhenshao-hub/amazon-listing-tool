@@ -20,6 +20,7 @@ import { TagEditor } from "@/components/TagEditor";
 import { ScoreSlider } from "@/components/ScoreSlider";
 import { usePermissions } from "@/hooks/usePermissions";
 import { KBScopeToggle, type KBScope } from "@/components/KBScopeToggle";
+import { createImportOnError } from "@/lib/conflictToast";
 import { KBTagManagement } from "./KBTagManagement";
 import { AmazonStyleGallery } from "./AmazonStyleGallery";
 import { useKBTagOptions } from "@/hooks/useKBTagOptions";
@@ -137,11 +138,11 @@ export default function KBImages() {
 
   const importAsin = trpc.kbImages.importByAsin.useMutation({
     onSuccess: () => { toast.success("已开始导入图片，AI正在分析..."); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setShowImport(false); setAsinInput(""); },
-    onError: (e: any) => toast.error(e.message),
+    onError: createImportOnError((id) => { setShowImport(false); setDetailSetId(id); }),
   });
   const importLink = trpc.kbImages.importByLink.useMutation({
     onSuccess: () => { toast.success("已开始导入"); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setShowImport(false); setLinkInput(""); },
-    onError: (e: any) => toast.error(e.message),
+    onError: createImportOnError((id) => { setShowImport(false); setDetailSetId(id); }),
   });
   const batchImport = trpc.kbImages.batchImportAsins.useMutation({
     onSuccess: (r: any) => { toast.success(`已开始导入 ${r.imported} 个ASIN的图片`); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setShowImport(false); setBatchInput(""); },
@@ -155,7 +156,7 @@ export default function KBImages() {
   const [manualAutoAnalyze, setManualAutoAnalyze] = useState(true);
   const createFromUpload = trpc.kbImages.createSetFromUpload.useMutation({
     onSuccess: (r: any) => { toast.success(`已创建图片集 ${r.asin}，共${r.imageCount}张图片`); utils.kbImages.listSets.invalidate(); utils.kbImages.listAllImages.invalidate(); setShowImport(false); setManualAsin(""); setManualTitle(""); setManualFiles([]); },
-    onError: (e: any) => toast.error(e.message),
+    onError: createImportOnError((id) => { setShowImport(false); setDetailSetId(id); }),
   });
   const handleManualUpload = async () => {
     if (!manualAsin || !manualTitle || manualFiles.length === 0) return;

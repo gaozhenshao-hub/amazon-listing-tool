@@ -496,7 +496,7 @@ export const kbImagesRouter = router({
       // ASIN dedup: prevent duplicate entries
       const dupSet = await kbDb.findImageSetByAsin(asin);
       if (dupSet) {
-        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于图片知识库中，请勿重复录入` });
+        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于图片知识库中 [id:${dupSet.id}]` });
       }
       const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "crawling" });
       // Fire-and-forget with full analysis
@@ -534,7 +534,7 @@ export const kbImagesRouter = router({
       // ASIN dedup: prevent duplicate entries
       const dupSet = await kbDb.findImageSetByAsin(asin);
       if (dupSet) {
-        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于图片知识库中，请勿重复录入` });
+        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于图片知识库中 [id:${dupSet.id}]` });
       }
       const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "crawling" });
       // Fire-and-forget with full analysis
@@ -732,7 +732,7 @@ export const kbImagesRouter = router({
       // ASIN dedup: prevent duplicate entries
       const dupSet = await kbDb.findImageSetByAsin(asin);
       if (dupSet) {
-        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于图片知识库中，请勿重复录入` });
+        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于图片知识库中 [id:${dupSet.id}]` });
       }
       const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, productTitle: input.title || undefined, status: "pending_review" });
       const numericSetId = Number(setId);

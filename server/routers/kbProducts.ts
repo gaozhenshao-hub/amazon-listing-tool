@@ -28,7 +28,7 @@ export const kbProductsRouter = router({
       // ASIN dedup: prevent duplicate entries
       const dupProduct = await kbDb.findProductInnovationByAsin(asin);
       if (dupProduct) {
-        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于产品知识库中，请勿重复录入` });
+        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于产品知识库中 [id:${dupProduct.id}]` });
       }
       const id = await kbDb.createProductInnovation({
         userId: ctx.user.id,
@@ -194,7 +194,7 @@ export const kbProductsRouter = router({
       // ASIN dedup: prevent duplicate entries
       const dupProduct = await kbDb.findProductInnovationByAsin(asin);
       if (dupProduct) {
-        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于产品知识库中，请勿重复录入` });
+        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于产品知识库中 [id:${dupProduct.id}]` });
       }
       const id = await kbDb.createProductInnovation({
         userId: ctx.user.id, asin, productUrl: input.url, status: "crawling",

@@ -15,6 +15,7 @@ import { TagEditor } from "@/components/TagEditor";
 import { ScoreSlider } from "@/components/ScoreSlider";
 import { usePermissions } from "@/hooks/usePermissions";
 import { KBScopeToggle, type KBScope } from "@/components/KBScopeToggle";
+import { createImportOnError } from "@/lib/conflictToast";
 
 const LISTING_TAG_SUGGESTIONS = [
   "A9优化", "FABE结构", "COSMO场景", "痛点转化", "情感化文案",
@@ -43,11 +44,11 @@ export default function KBListings() {
 
   const importAsin = trpc.kbListings.importByAsin.useMutation({
     onSuccess: () => { toast.success("已开始导入，AI正在分析文案..."); utils.kbListings.list.invalidate(); setShowImport(false); setAsinInput(""); },
-    onError: (e: any) => toast.error(e.message),
+    onError: createImportOnError((id) => { setShowImport(false); setDetailId(id); }),
   });
   const importLink = trpc.kbListings.importByLink.useMutation({
     onSuccess: () => { toast.success("已开始导入"); utils.kbListings.list.invalidate(); setShowImport(false); setLinkInput(""); },
-    onError: (e: any) => toast.error(e.message),
+    onError: createImportOnError((id) => { setShowImport(false); setDetailId(id); }),
   });
   const batchImport = trpc.kbListings.batchImportAsins.useMutation({
     onSuccess: (r: any) => { toast.success(`已开始导入 ${r.imported} 个ASIN`); utils.kbListings.list.invalidate(); setShowImport(false); setBatchInput(""); },

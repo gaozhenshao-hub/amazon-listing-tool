@@ -27,7 +27,7 @@ export const kbListingsRouter = router({
       // ASIN dedup: prevent duplicate entries
       const dupListing = await kbDb.findListingCopywritingByAsin(asin);
       if (dupListing) {
-        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于 Listing 知识库中，请勿重复录入` });
+        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于 Listing 知识库中 [id:${dupListing.id}]` });
       }
       const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, asin, status: "crawling" });
       (async () => {
@@ -164,7 +164,7 @@ export const kbListingsRouter = router({
       // ASIN dedup: prevent duplicate entries
       const dupListing = await kbDb.findListingCopywritingByAsin(asin);
       if (dupListing) {
-        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于 Listing 知识库中，请勿重复录入` });
+        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于 Listing 知识库中 [id:${dupListing.id}]` });
       }
       const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, asin, status: "crawling" });
       (async () => {

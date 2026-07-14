@@ -15,6 +15,7 @@ import { TagEditor } from "@/components/TagEditor";
 import { ScoreSlider } from "@/components/ScoreSlider";
 import { usePermissions } from "@/hooks/usePermissions";
 import { KBScopeToggle, type KBScope } from "@/components/KBScopeToggle";
+import { createImportOnError } from "@/lib/conflictToast";
 
 const VIDEO_TAG_SUGGESTIONS = [
   "产品展示", "使用教程", "开箱视频", "对比测评", "场景演示",
@@ -43,11 +44,11 @@ export default function KBVideos() {
 
   const importUrl = trpc.kbVideos.importByUrl.useMutation({
     onSuccess: () => { toast.success("已导入视频，AI正在分析..."); utils.kbVideos.list.invalidate(); setShowImport(false); setUrlInput(""); },
-    onError: (e: any) => toast.error(e.message),
+    onError: createImportOnError((id) => { setShowImport(false); setDetailId(id); }),
   });
   const importAsin = trpc.kbVideos.importByAsin.useMutation({
     onSuccess: () => { toast.success("已导入ASIN视频，AI正在分析..."); utils.kbVideos.list.invalidate(); setShowImport(false); setAsinInput(""); },
-    onError: (e: any) => toast.error(e.message),
+    onError: createImportOnError((id) => { setShowImport(false); setDetailId(id); }),
   });
   const batchImport = trpc.kbVideos.batchImportUrls.useMutation({
     onSuccess: (r: any) => { toast.success(`已导入 ${r.imported} 个视频`); utils.kbVideos.list.invalidate(); setShowImport(false); setBatchInput(""); },

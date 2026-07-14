@@ -33,7 +33,7 @@ export const kbVideosRouter = router({
         const asin = input.asin.trim().toUpperCase();
         const dupVideo = await kbDb.findVideoByAsin(asin);
         if (dupVideo) {
-          throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于视频知识库中，请勿重复录入` });
+          throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于视频知识库中 [id:${dupVideo.id}]` });
         }
       }
       const id = await kbDb.createVideo({
@@ -265,7 +265,7 @@ export const kbVideosRouter = router({
       // ASIN dedup: prevent duplicate entries
       const dupVideo = await kbDb.findVideoByAsin(asin);
       if (dupVideo) {
-        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于视频知识库中，请勿重复录入` });
+        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于视频知识库中 [id:${dupVideo.id}]` });
       }
       const id = await kbDb.createVideo({
         userId: ctx.user.id, asin, videoUrl: input.videoUrl,

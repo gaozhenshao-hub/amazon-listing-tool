@@ -600,7 +600,7 @@ export const imageWorkflowRouter = router({
       // Emperor Skill 优先 - 图片工作流
       try {
         const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+        if (emperorRes.success && emperorRes.output) return { en: emperorRes.output, cn: null };
       } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
@@ -636,12 +636,6 @@ export const imageWorkflowRouter = router({
       // Fire-and-forget: generate Chinese translation asynchronously
       (async () => {
         try {
-      // Emperor Skill 优先 - 图片工作流
-      try {
-        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
-
           const cnResponse = await invokeLLM({
             messages: [
               { role: "system", content: STEP5_TRANSLATION_PROMPT },
@@ -806,7 +800,7 @@ export const imageWorkflowRouter = router({
       // Emperor Skill 优先 - 图片工作流
       try {
         const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+        if (emperorRes.success && emperorRes.output) return { en: emperorRes.output, cn: null };
       } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
@@ -857,7 +851,7 @@ export const imageWorkflowRouter = router({
       // Emperor Skill 优先 - 图片工作流
       try {
         const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+        if (emperorRes.success && emperorRes.output) return { en: emperorRes.output, cn: null };
       } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
@@ -939,7 +933,7 @@ export const imageWorkflowRouter = router({
       // Emperor Skill 优先 - 图片工作流
       try {
         const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+        if (emperorRes.success && emperorRes.output) return { en: emperorRes.output, cn: null };
       } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
@@ -966,12 +960,6 @@ export const imageWorkflowRouter = router({
       // Fire-and-forget: generate Chinese translation asynchronously
       (async () => {
         try {
-      // Emperor Skill 优先 - 图片工作流
-      try {
-        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
-
           const cnResponse = await invokeLLM({
             messages: [
               { role: "system", content: STEP6_TRANSLATION_PROMPT },
@@ -1039,7 +1027,7 @@ export const imageWorkflowRouter = router({
       // Emperor Skill 优先 - 图片工作流
       try {
         const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+        if (emperorRes.success && emperorRes.output) return { cn: emperorRes.output, en: null };
       } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
@@ -1287,7 +1275,7 @@ export const imageWorkflowRouter = router({
       // Emperor Skill 优先 - 图片工作流
       try {
         const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+        if (emperorRes.success && emperorRes.output) return { en: emperorRes.output, cn: null };
       } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({

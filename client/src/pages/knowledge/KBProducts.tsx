@@ -15,6 +15,7 @@ import { TagEditor } from "@/components/TagEditor";
 import { ScoreSlider } from "@/components/ScoreSlider";
 import { usePermissions } from "@/hooks/usePermissions";
 import { KBScopeToggle, type KBScope } from "@/components/KBScopeToggle";
+import { createImportOnError } from "@/lib/conflictToast";
 
 const PRODUCT_TAG_SUGGESTIONS = [
   "创新设计", "差异化", "高评分", "爆款", "新品", "高转化",
@@ -43,11 +44,11 @@ export default function KBProducts() {
 
   const importAsin = trpc.kbProducts.importByAsin.useMutation({
     onSuccess: () => { toast.success("已开始导入，AI正在分析中..."); utils.kbProducts.list.invalidate(); setShowImport(false); setAsinInput(""); },
-    onError: (e: any) => toast.error(e.message),
+    onError: createImportOnError((id) => { setShowImport(false); setDetailId(id); }),
   });
   const importLink = trpc.kbProducts.importByLink.useMutation({
     onSuccess: () => { toast.success("已开始导入"); utils.kbProducts.list.invalidate(); setShowImport(false); setLinkInput(""); },
-    onError: (e: any) => toast.error(e.message),
+    onError: createImportOnError((id) => { setShowImport(false); setDetailId(id); }),
   });
   const batchImport = trpc.kbProducts.batchImportAsins.useMutation({
     onSuccess: (r: any) => { toast.success(`已开始导入 ${r.imported} 个ASIN`); utils.kbProducts.list.invalidate(); setShowImport(false); setBatchInput(""); },
