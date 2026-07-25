@@ -116,3 +116,11 @@
 ## 知识库图片跨用户查看修复（2026-07-25）
 
 - [x] 修复浏览他人上传图片集时一直加载中的问题：getSet 改用 getImageSetById（不过滤 userId），允许团队所有成员查看任意图片集
+
+## 智能 Listing 生成 2.0 框架（2026-07-25）
+
+- [x] 数据库：新增 listing2_products 表（id, userId, asin, title, status, currentStep, createdAt, updatedAt）
+- [x] 后端：listing2 路由骨架（listProducts, createProduct, getProduct, updateStep）
+- [x] 前端：产品列表页（/listing2）
+- [x] 前端：产品工作流页（/listing2/:id），10 个阶段 Tab 留白
+- [x] 导航：在侧边栏"智能 Listing 生成"下添加"智能 Listing 生成 2.0"入口
