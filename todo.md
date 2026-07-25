@@ -112,3 +112,7 @@
 - [x] 在 server/_core/index.ts 注册 /api/external/kb 路由
 - [x] 部署到生产环境（Checkpoint + Publish）
 - [x] 验证生产环境 /api/external/kb/stats 返回 JSON（发布后可验证）
+
+## 知识库图片跨用户查看修复（2026-07-25）
+
+- [x] 修复浏览他人上传图片集时一直加载中的问题：getSet 改用 getImageSetById（不过滤 userId），允许团队所有成员查看任意图片集

@@ -457,7 +457,7 @@ export const kbImagesRouter = router({
   getSet: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
-      const set = await kbDb.getImageSet(input.id, ctx.user.id);
+      const set = await kbDb.getImageSetById(input.id);
       if (!set) return null;
       const images = await kbDb.listImagesBySetLight(set.id);
       return { ...set, images };
