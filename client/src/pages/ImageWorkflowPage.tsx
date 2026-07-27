@@ -145,6 +145,30 @@ function StepProgressBar({
 // ═══════════════════════════════════════════════════════════════════
 // ─── Step 0: Competitor Image Analysis ───────────────────────────
 // ═══════════════════════════════════════════════════════════════════
+
+// 亮点标签预设类型
+const HIGHLIGHT_CATEGORIES = [
+  { key: "scene", label: "场景", color: "bg-blue-100 text-blue-700 border-blue-200" },
+  { key: "color", label: "配色", color: "bg-pink-100 text-pink-700 border-pink-200" },
+  { key: "composition", label: "构图", color: "bg-purple-100 text-purple-700 border-purple-200" },
+  { key: "expression", label: "表达方式", color: "bg-amber-100 text-amber-700 border-amber-200" },
+  { key: "typography", label: "字体文案", color: "bg-teal-100 text-teal-700 border-teal-200" },
+  { key: "other", label: "其他", color: "bg-gray-100 text-gray-700 border-gray-200" },
+];
+
+function HighlightTag({ text, category, removable, onRemove }: { text: string; category: string; removable?: boolean; onRemove?: () => void }) {
+  const cat = HIGHLIGHT_CATEGORIES.find(c => c.key === category) || HIGHLIGHT_CATEGORIES[5];
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border font-medium ${cat.color}`}>
+      <span className="text-[10px] opacity-60">{cat.label}</span>
+      {text}
+      {removable && onRemove && (
+        <button onClick={onRemove} className="ml-0.5 hover:opacity-70"><X className="w-2.5 h-2.5" /></button>
+      )}
+    </span>
+  );
+}
+
 function Step0CompetitorAnalysis({
   projectId,
   session,
@@ -165,10 +189,12 @@ function Step0CompetitorAnalysis({
   const [competitorName, setCompetitorName] = useState("");
   const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
   const [analyzingId, setAnalyzingId] = useState<number | null>(null);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editText, setEditText] = useState("");
   const [isLocked, setIsLocked] = useState(!!session?.step0Confirmed);
   const [summaryData, setSummaryData] = useState<any>(null);
+  // Per-image local state for editing fields
+  const [imageEdits, setImageEdits] = useState<Record<number, any>>({});
+  const [newHighlightText, setNewHighlightText] = useState<Record<number, string>>({});
+  const [newHighlightCat, setNewHighlightCat] = useState<Record<number, string>>({});
 
   useEffect(() => {
     setIsLocked(!!session?.step0Confirmed);
@@ -177,34 +203,42 @@ function Step0CompetitorAnalysis({
     }
   }, [session?.step0Confirmed, session?.step0AiResult]);
 
+  // Sync imageEdits from fetched data
+  useEffect(() => {
+    if (step0Query.data?.images) {
+      const edits: Record<number, any> = {};
+      step0Query.data.images.forEach((img: any) => {
+        try {
+          edits[img.id] = JSON.parse(img.userEdit || img.aiAnalysis || "{}");
+        } catch {
+          edits[img.id] = {};
+        }
+      });
+      setImageEdits(edits);
+    }
+  }, [step0Query.data]);
+
   const images = step0Query.data?.images || [];
 
+  const getEdit = (id: number) => imageEdits[id] || {};
+  const setEdit = (id: number, patch: any) => {
+    setImageEdits(prev => ({ ...prev, [id]: { ...(prev[id] || {}), ...patch } }));
+  };
+
   const handleImageUpload = async (file: File) => {
-    if (!competitorName.trim()) {
-      toast.error("请先填写竞品名称");
-      return;
-    }
+    if (!competitorName.trim()) { toast.error("请先填写竞品名称"); return; }
     setUploadingIdx(images.length);
     try {
       const reader = new FileReader();
       reader.onload = async () => {
         const base64 = (reader.result as string).split(',')[1];
-        await uploadMutation.mutateAsync({
-          projectId,
-          competitorName: competitorName.trim(),
-          imageData: base64,
-          fileName: file.name,
-          sortOrder: images.length,
-        });
+        await uploadMutation.mutateAsync({ projectId, competitorName: competitorName.trim(), imageData: base64, fileName: file.name, sortOrder: images.length });
         step0Query.refetch();
-        toast.success(`竞品图片已上传`);
+        toast.success("竞品图片已上传");
         setUploadingIdx(null);
       };
       reader.readAsDataURL(file);
-    } catch (err: any) {
-      toast.error(err.message || "上传失败");
-      setUploadingIdx(null);
-    }
+    } catch (err: any) { toast.error(err.message || "上传失败"); setUploadingIdx(null); }
   };
 
   const handleAnalyze = async (imageId: number) => {
@@ -213,38 +247,45 @@ function Step0CompetitorAnalysis({
       await analyzeMutation.mutateAsync({ projectId, imageId });
       step0Query.refetch();
       toast.success("分析完成");
-    } catch (err: any) {
-      toast.error(err.message || "分析失败");
-    } finally {
-      setAnalyzingId(null);
-    }
+    } catch (err: any) { toast.error(err.message || "分析失败"); }
+    finally { setAnalyzingId(null); }
   };
 
   const handleDelete = async (imageId: number) => {
-    try {
-      await deleteMutation.mutateAsync({ projectId, imageId });
-      step0Query.refetch();
-      toast.success("已删除");
-    } catch (err: any) {
-      toast.error(err.message || "删除失败");
-    }
+    try { await deleteMutation.mutateAsync({ projectId, imageId }); step0Query.refetch(); toast.success("已删除"); }
+    catch (err: any) { toast.error(err.message || "删除失败"); }
   };
 
-  const handleSaveEdit = async (imageId: number) => {
+  const handleSaveImageEdit = async (imageId: number) => {
     try {
-      await updateMutation.mutateAsync({ projectId, imageId, userEdit: editText });
-      step0Query.refetch();
-      setEditingId(null);
+      await updateMutation.mutateAsync({ projectId, imageId, userEdit: JSON.stringify(getEdit(imageId)) });
       toast.success("已保存");
-    } catch (err: any) {
-      toast.error(err.message || "保存失败");
-    }
+    } catch (err: any) { toast.error(err.message || "保存失败"); }
+  };
+
+  const addHighlight = (imageId: number) => {
+    const text = (newHighlightText[imageId] || "").trim();
+    if (!text) return;
+    const cat = newHighlightCat[imageId] || "other";
+    const edit = getEdit(imageId);
+    const highlights = [...(edit.highlights || []), { text, category: cat }];
+    setEdit(imageId, { highlights });
+    setNewHighlightText(prev => ({ ...prev, [imageId]: "" }));
+  };
+
+  const removeHighlight = (imageId: number, idx: number) => {
+    const edit = getEdit(imageId);
+    const highlights = (edit.highlights || []).filter((_: any, i: number) => i !== idx);
+    setEdit(imageId, { highlights });
   };
 
   const handleConfirm = async () => {
-    if (images.length === 0) {
-      toast.error("请先上传至少一张竞品图片");
-      return;
+    if (images.length === 0) { toast.error("请先上传至少一张竞品图片"); return; }
+    // Save all pending edits first
+    for (const img of images) {
+      if (imageEdits[img.id]) {
+        try { await updateMutation.mutateAsync({ projectId, imageId: img.id, userEdit: JSON.stringify(imageEdits[img.id]) }); } catch {}
+      }
     }
     try {
       const result = await confirmMutation.mutateAsync({ projectId });
@@ -252,27 +293,17 @@ function Step0CompetitorAnalysis({
       setIsLocked(true);
       toast.success("竞品分析已确认，进入卖点梳理");
       onConfirm();
-    } catch (err: any) {
-      toast.error(err.message || "确认失败");
-    }
+    } catch (err: any) { toast.error(err.message || "确认失败"); }
   };
 
   const handleUnlock = async () => {
-    try {
-      await resetMutation.mutateAsync({ projectId, step: 0 });
-      setIsLocked(false);
-      toast.success("已解锁，可重新编辑竞品分析");
-    } catch (err: any) {
-      toast.error(err.message || "解锁失败");
-    }
-  };
-
-  const handleSkip = () => {
-    onConfirm();
+    try { await resetMutation.mutateAsync({ projectId, step: 0 }); setIsLocked(false); toast.success("已解锁"); }
+    catch (err: any) { toast.error(err.message || "解锁失败"); }
   };
 
   return (
     <div className="space-y-4">
+      {/* Header Card */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -281,14 +312,12 @@ function Step0CompetitorAnalysis({
                 <Search className="w-5 h-5 text-primary" />
                 Step 0: 竞品图片分析
               </CardTitle>
-              <CardDescription>上传竞品图片，AI逐张分析构图、配色、卖点表达方式，为后续步骤提供参考</CardDescription>
+              <CardDescription>三列展示：左列图片预览、中列图片类型+卖点处理、右列亮点标签提取，底部汇总总结</CardDescription>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
               {!isLocked && (
                 <>
-                  <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={handleSkip}>
-                    跳过此步骤
-                  </Button>
+                  <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={onConfirm}>跳过</Button>
                   <Button onClick={handleConfirm} disabled={confirmMutation.isPending || images.length === 0}>
                     {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
                     确认并生成总结
@@ -297,11 +326,9 @@ function Step0CompetitorAnalysis({
               )}
               {isLocked && (
                 <div className="flex gap-2 items-center">
-                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                    <Lock className="w-3 h-3 mr-1" /> 已确认
-                  </Badge>
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200"><Lock className="w-3 h-3 mr-1" />已确认</Badge>
                   <Button variant="ghost" size="sm" className="text-xs text-amber-600" onClick={handleUnlock} disabled={resetMutation.isPending}>
-                    <Unlock className="w-3 h-3 mr-1" /> 解锁编辑
+                    <Unlock className="w-3 h-3 mr-1" />解锁编辑
                   </Button>
                 </div>
               )}
@@ -310,187 +337,239 @@ function Step0CompetitorAnalysis({
         </CardHeader>
 
         {!isLocked && (
-          <CardContent>
-            {/* Upload area */}
-            <div className="flex gap-3 mb-4">
-              <Input
-                placeholder="竞品名称（如：Brand A）"
-                value={competitorName}
-                onChange={(e) => setCompetitorName(e.target.value)}
-                className="max-w-xs"
-              />
+          <CardContent className="pt-0">
+            <div className="flex gap-3">
+              <Input placeholder="竞品名称（如：Brand A）" value={competitorName} onChange={(e) => setCompetitorName(e.target.value)} className="max-w-xs h-9" />
               <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-dashed border-primary/40 cursor-pointer hover:bg-primary/5 transition-colors text-sm text-primary ${uploadingIdx !== null ? 'opacity-50 pointer-events-none' : ''}`}>
                 {uploadingIdx !== null ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                 上传竞品图片
-                <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => {
-                  const files = Array.from(e.target.files || []);
-                  files.forEach(f => handleImageUpload(f));
-                }} disabled={uploadingIdx !== null} />
+                <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { Array.from(e.target.files || []).forEach(f => handleImageUpload(f)); }} disabled={uploadingIdx !== null} />
               </label>
             </div>
-
-            {images.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground border-2 border-dashed rounded-xl">
-                <ImageIcon className="w-12 h-12 mb-3 opacity-30" />
-                <p className="text-sm">暂无竞品图片</p>
-                <p className="text-xs mt-1">填写竞品名称后上传图片，AI将自动分析</p>
-              </div>
-            )}
           </CardContent>
         )}
       </Card>
 
-      {/* Competitor images grid */}
-      {images.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {images.map((img: any) => (
-            <Card key={img.id} className="overflow-hidden">
-              <div className="relative">
-                <img src={img.imageUrl} alt={img.competitorName} className="w-full h-48 object-cover" />
-                <div className="absolute top-2 left-2">
-                  <Badge className="bg-black/70 text-white text-xs">{img.competitorName}</Badge>
-                </div>
-                {!isLocked && (
-                  <div className="absolute top-2 right-2 flex gap-1">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="h-7 text-xs bg-white/90 hover:bg-white"
-                      onClick={() => handleAnalyze(img.id)}
-                      disabled={analyzingId === img.id}
-                    >
-                      {analyzingId === img.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                      AI分析
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      className="h-7 w-7 p-0 bg-red-500/80 hover:bg-red-500"
-                      onClick={() => handleDelete(img.id)}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                  </div>
-                )}
-              </div>
-              <CardContent className="pt-3 pb-3">
-                {img.imageType && (
-                  <Badge variant="outline" className="text-xs mb-2">{img.imageType}</Badge>
-                )}
-                {editingId === img.id ? (
-                  <div className="space-y-2">
-                    <Textarea
-                      value={editText}
-                      onChange={(e) => setEditText(e.target.value)}
-                      className="min-h-[80px] text-xs"
-                      placeholder="编辑分析内容..."
-                    />
-                    <div className="flex gap-2">
-                      <Button size="sm" className="h-7 text-xs" onClick={() => handleSaveEdit(img.id)} disabled={updateMutation.isPending}>
-                        {updateMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} 保存
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setEditingId(null)}>取消</Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-xs text-muted-foreground">
-                    {img.userEdit || img.aiAnalysis ? (
-                      <div className="space-y-1">
-                        {(() => {
-                          try {
-                            const parsed = JSON.parse(img.userEdit || img.aiAnalysis);
-                            return (
-                              <div className="space-y-1">
-                                {parsed.imageType && <p><strong>图片类型:</strong> {parsed.imageType}</p>}
-                                {parsed.composition && <p><strong>构图:</strong> {parsed.composition}</p>}
-                                {parsed.colorScheme && <p><strong>配色:</strong> {parsed.colorScheme}</p>}
-                                {parsed.sellingPointExpression && <p><strong>卖点表达:</strong> {parsed.sellingPointExpression}</p>}
-                                {parsed.strengths?.length > 0 && (
-                                  <p><strong>亮点:</strong> {parsed.strengths.join('、')}</p>
-                                )}
-                                {parsed.userNote && (
-                                  <p className="text-amber-600"><strong>备注:</strong> {parsed.userNote}</p>
-                                )}
-                              </div>
-                            );
-                          } catch {
-                            return <p>{img.userEdit || img.aiAnalysis}</p>;
-                          }
-                        })()}
-                        {!isLocked && (
-                          <Button size="sm" variant="ghost" className="h-6 text-xs mt-1 p-1" onClick={() => {
-                            setEditingId(img.id);
-                            setEditText(img.userEdit || img.aiAnalysis || "");
-                          }}>
-                            <Pencil className="w-3 h-3 mr-1" /> 编辑
-                          </Button>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center py-3 gap-2">
-                        <p className="text-center">暂无分析结果</p>
-                        {!isLocked && (
-                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleAnalyze(img.id)} disabled={analyzingId === img.id}>
-                            {analyzingId === img.id ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
-                            点击AI分析
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+      {/* Empty state */}
+      {images.length === 0 && !isLocked && (
+        <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground border-2 border-dashed rounded-xl">
+          <ImageIcon className="w-12 h-12 mb-3 opacity-30" />
+          <p className="text-sm">暂无竞品图片</p>
+          <p className="text-xs mt-1">填写竞品名称后上传图片，AI将自动分析</p>
         </div>
       )}
 
-      {/* Summary after confirmation */}
+      {/* ─── Three-column waterfall for each image ─── */}
+      {images.map((img: any) => {
+        const edit = getEdit(img.id);
+        const highlights: Array<{ text: string; category: string }> = edit.highlights || [];
+        return (
+          <div key={img.id} className="grid grid-cols-1 lg:grid-cols-3 gap-0 border rounded-xl overflow-hidden shadow-sm bg-card">
+
+            {/* ── Column 1: Image Preview ── */}
+            <div className="relative bg-gray-50 border-r">
+              <img src={img.imageUrl} alt={img.competitorName} className="w-full h-full object-cover min-h-[200px] max-h-[320px]" />
+              <div className="absolute top-2 left-2 flex gap-1">
+                <Badge className="bg-black/70 text-white text-xs">{img.competitorName}</Badge>
+                {edit.imageType && <Badge variant="secondary" className="text-xs bg-white/90 text-gray-700">{edit.imageType}</Badge>}
+              </div>
+              {!isLocked && (
+                <div className="absolute top-2 right-2 flex gap-1">
+                  <Button size="sm" variant="secondary" className="h-7 text-xs bg-white/90 hover:bg-white" onClick={() => handleAnalyze(img.id)} disabled={analyzingId === img.id}>
+                    {analyzingId === img.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                    AI分析
+                  </Button>
+                  <Button size="sm" variant="destructive" className="h-7 w-7 p-0 bg-red-500/80 hover:bg-red-500" onClick={() => handleDelete(img.id)}>
+                    <Trash2 className="w-3 h-3" />
+                  </Button>
+                </div>
+              )}
+              {analyzingId === img.id && (
+                <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                  <div className="bg-white rounded-lg px-4 py-2 flex items-center gap-2 text-sm">
+                    <Loader2 className="w-4 h-4 animate-spin text-primary" />分析中...
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Column 2: Image Type + Selling Point Processing ── */}
+            <div className="p-4 border-r space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                  <Layout className="w-3.5 h-3.5 text-blue-500" />图片类型 & 卖点处理
+                </h4>
+                {!isLocked && (
+                  <Button size="sm" variant="ghost" className="h-6 text-xs text-primary" onClick={() => handleSaveImageEdit(img.id)} disabled={updateMutation.isPending}>
+                    <Check className="w-3 h-3 mr-0.5" />保存
+                  </Button>
+                )}
+              </div>
+
+              {/* Image Type */}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">图片类型</label>
+                {isLocked ? (
+                  <p className="text-sm">{edit.imageType || "未标注"}</p>
+                ) : (
+                  <Input value={edit.imageType || ""} onChange={(e) => setEdit(img.id, { imageType: e.target.value })} placeholder="如：主图 / 场景图 / 功能图 / 卖点图 / A+" className="h-7 text-xs" />
+                )}
+              </div>
+
+              {/* Composition */}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">构图方式</label>
+                {isLocked ? (
+                  <p className="text-sm text-muted-foreground">{edit.composition || "未分析"}</p>
+                ) : (
+                  <Input value={edit.composition || ""} onChange={(e) => setEdit(img.id, { composition: e.target.value })} placeholder="如：居中展示、对角构图、三分法" className="h-7 text-xs" />
+                )}
+              </div>
+
+              {/* Color Scheme */}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">配色方案</label>
+                {isLocked ? (
+                  <p className="text-sm text-muted-foreground">{edit.colorScheme || "未分析"}</p>
+                ) : (
+                  <Input value={edit.colorScheme || ""} onChange={(e) => setEdit(img.id, { colorScheme: e.target.value })} placeholder="如：白底清洁风、深色高级感" className="h-7 text-xs" />
+                )}
+              </div>
+
+              {/* Selling Point Expression */}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">卖点表达方式</label>
+                {isLocked ? (
+                  <p className="text-sm text-muted-foreground">{edit.sellingPointExpression || "未分析"}</p>
+                ) : (
+                  <Textarea value={edit.sellingPointExpression || ""} onChange={(e) => setEdit(img.id, { sellingPointExpression: e.target.value })} placeholder="如：数据对比、场景使用、功能图标展示" className="min-h-[56px] text-xs resize-none" />
+                )}
+              </div>
+            </div>
+
+            {/* ── Column 3: Highlight Tags ── */}
+            <div className="p-4 space-y-3">
+              <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />亮点标签
+              </h4>
+
+              {/* Existing highlights */}
+              <div className="flex flex-wrap gap-1.5 min-h-[40px]">
+                {highlights.length === 0 && (
+                  <p className="text-xs text-muted-foreground italic">{isLocked ? "未添加亮点" : "AI分析后自动填充，也可手动添加"}</p>
+                )}
+                {highlights.map((h, i) => (
+                  <HighlightTag key={i} text={h.text} category={h.category} removable={!isLocked} onRemove={() => removeHighlight(img.id, i)} />
+                ))}
+              </div>
+
+              {/* Add new highlight */}
+              {!isLocked && (
+                <div className="space-y-2 border-t pt-3">
+                  <p className="text-xs font-medium text-muted-foreground">手动添加亮点</p>
+                  <div className="flex gap-1.5">
+                    <select
+                      value={newHighlightCat[img.id] || "other"}
+                      onChange={(e) => setNewHighlightCat(prev => ({ ...prev, [img.id]: e.target.value }))}
+                      className="h-7 text-xs border rounded-md px-1.5 bg-background text-foreground shrink-0"
+                    >
+                      {HIGHLIGHT_CATEGORIES.map(c => (
+                        <option key={c.key} value={c.key}>{c.label}</option>
+                      ))}
+                    </select>
+                    <Input
+                      value={newHighlightText[img.id] || ""}
+                      onChange={(e) => setNewHighlightText(prev => ({ ...prev, [img.id]: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === "Enter") addHighlight(img.id); }}
+                      placeholder="输入亮点描述后回车"
+                      className="h-7 text-xs flex-1"
+                    />
+                    <Button size="sm" variant="outline" className="h-7 w-7 p-0 shrink-0" onClick={() => addHighlight(img.id)}>
+                      <Plus className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1">
+                    {[
+                      { text: "白底清洁", cat: "color" }, { text: "场景化展示", cat: "scene" },
+                      { text: "对角构图", cat: "composition" }, { text: "数据对比", cat: "expression" },
+                      { text: "图标展示", cat: "expression" }, { text: "大字标题", cat: "typography" },
+                    ].map((preset) => (
+                      <button
+                        key={preset.text}
+                        onClick={() => {
+                          const edit2 = getEdit(img.id);
+                          const exists = (edit2.highlights || []).some((h: any) => h.text === preset.text);
+                          if (!exists) setEdit(img.id, { highlights: [...(edit2.highlights || []), { text: preset.text, category: preset.cat }] });
+                        }}
+                        className="text-[10px] px-1.5 py-1 rounded border border-dashed border-gray-300 hover:border-primary hover:text-primary text-muted-foreground transition-colors truncate"
+                      >
+                        + {preset.text}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Save button for this image */}
+              {!isLocked && highlights.length > 0 && (
+                <Button size="sm" variant="outline" className="w-full h-7 text-xs" onClick={() => handleSaveImageEdit(img.id)} disabled={updateMutation.isPending}>
+                  {updateMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Check className="w-3 h-3 mr-1" />}
+                  保存此图分析
+                </Button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* ─── Bottom Summary ─── */}
       {summaryData && (
-        <Card>
-          <CardHeader>
+        <Card className="border-primary/20 bg-primary/5">
+          <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-primary" />
               竞品分析总结
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {summaryData.overallTrends && (
-              <div>
-                <p className="text-sm font-medium mb-1">整体趋势</p>
-                <p className="text-sm text-muted-foreground">{summaryData.overallTrends}</p>
-              </div>
-            )}
-            {summaryData.commonCompositions?.length > 0 && (
-              <div>
-                <p className="text-sm font-medium mb-1">常见构图方式</p>
-                <div className="flex flex-wrap gap-1">
-                  {summaryData.commonCompositions.map((c: string, i: number) => (
-                    <Badge key={i} variant="secondary" className="text-xs">{c}</Badge>
-                  ))}
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {summaryData.overallTrends && (
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">整体趋势</p>
+                  <p className="text-sm">{summaryData.overallTrends}</p>
                 </div>
-              </div>
-            )}
-            {summaryData.colorTrends?.length > 0 && (
-              <div>
-                <p className="text-sm font-medium mb-1">配色趋势</p>
-                <div className="flex flex-wrap gap-1">
-                  {summaryData.colorTrends.map((c: string, i: number) => (
-                    <Badge key={i} variant="outline" className="text-xs">{c}</Badge>
-                  ))}
+              )}
+              {summaryData.commonCompositions?.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">常见构图</p>
+                  <div className="flex flex-wrap gap-1">
+                    {summaryData.commonCompositions.map((c: string, i: number) => (
+                      <Badge key={i} variant="secondary" className="text-xs">{c}</Badge>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-            {summaryData.differentiationOpportunities?.length > 0 && (
-              <div>
-                <p className="text-sm font-medium mb-1 text-amber-600">差异化机会</p>
-                <ul className="text-sm text-muted-foreground space-y-1">
-                  {summaryData.differentiationOpportunities.map((o: string, i: number) => (
-                    <li key={i} className="flex gap-1"><span className="text-amber-500">•</span>{o}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
+              )}
+              {summaryData.colorTrends?.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">配色趋势</p>
+                  <div className="flex flex-wrap gap-1">
+                    {summaryData.colorTrends.map((c: string, i: number) => (
+                      <Badge key={i} className="text-xs bg-pink-100 text-pink-700 border-pink-200">{c}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {summaryData.differentiationOpportunities?.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide">差异化机会</p>
+                  <ul className="space-y-0.5">
+                    {summaryData.differentiationOpportunities.map((o: string, i: number) => (
+                      <li key={i} className="text-xs text-muted-foreground flex gap-1"><span className="text-amber-500 shrink-0">•</span>{o}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       )}
