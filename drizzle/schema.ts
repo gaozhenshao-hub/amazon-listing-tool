@@ -1337,6 +1337,10 @@ export const imageWorkflowSessions = mysqlTable("image_workflow_sessions", {
   userId: int("userId").notNull(),
   currentStep: int("currentStep").default(1).notNull(), // 1-6
 
+  // Step 0: 竞品图片分析汇总
+  step0AiResult: text("step0AiResult"),       // AI summary of competitor image analyses JSON
+  step0UserEdit: text("step0UserEdit"),        // User edited summary JSON
+  step0Confirmed: int("step0Confirmed").default(0).notNull(),
   // Step 1: 卖点梳理
   step1AiResult: text("step1AiResult"),       // AI generated selling points JSON
   step1UserEdit: text("step1UserEdit"),        // User edited/confirmed selling points JSON
@@ -1370,6 +1374,8 @@ export const imageWorkflowSessions = mysqlTable("image_workflow_sessions", {
   step5SelectedModule: text("step5SelectedModule"),    // JSON: selected A+ module type for re-optimization
   step5OptimizedResult: text("step5OptimizedResult"),  // JSON: re-optimized result after module selection
   step5OptimizedResultCn: text("step5OptimizedResultCn"), // JSON: Chinese version of re-optimized result
+  // Step 5: Designer uploads
+  step5DesignerUploads: text("step5DesignerUploads"),  // JSON array: [{id, imageUrl, imageNumber, notes, uploadedAt}]
   // Step 6: AI提示词生成
   step6AiResult: text("step6AiResult"),        // AI generated prompts JSON (English)
   step6AiResultCn: text("step6AiResultCn"),    // AI generated prompts JSON (Chinese)
@@ -1391,6 +1397,23 @@ export const imageWorkflowSessions = mysqlTable("image_workflow_sessions", {
 export type ImageWorkflowSession = typeof imageWorkflowSessions.$inferSelect;
 export type InsertImageWorkflowSession = typeof imageWorkflowSessions.$inferInsert;
 
+// Competitor image analyses for Step 0 of image workflow
+export const competitorImageAnalyses = mysqlTable("competitor_image_analyses", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  competitorName: varchar("competitorName", { length: 255 }).default("").notNull(),
+  imageUrl: text("imageUrl").notNull(),
+  imageType: varchar("imageType", { length: 100 }),
+  aiAnalysis: text("aiAnalysis"),
+  userEdit: text("userEdit"),
+  confirmed: int("confirmed").default(0).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type CompetitorImageAnalysis = typeof competitorImageAnalyses.$inferSelect;
+export type InsertCompetitorImageAnalysis = typeof competitorImageAnalyses.$inferInsert;
 
 // Off-site analysis table - stores analysis tasks for external platforms
 export const devOffsiteAnalyses = mysqlTable("dev_offsite_analyses", {

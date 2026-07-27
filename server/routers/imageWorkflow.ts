@@ -6,20 +6,17 @@ import * as db from "../db";
 import * as devDb from "../devDb";
 import * as kbDb from "../kbDb";
 import {
+  STEP0_COMPETITOR_IMAGE_ANALYSIS_PROMPT,
+  STEP0_COMPETITOR_SUMMARY_PROMPT,
   STEP1_SELLING_POINTS_PROMPT,
   STEP2_IMAGE_OUTLINE_PROMPT,
   STEP3_STYLE_PROMPT,
   STEP4_REFERENCE_PROMPT,
   STEP5_FINAL_SUGGESTION_PROMPT,
-  STEP5_TRANSLATION_PROMPT,
   STEP4_REOPTIMIZE_WITH_REFS_PROMPT,
   STEP5_APLUS_MODULE_OPTIMIZE_PROMPT,
   STEP5_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT,
   STEP5_APLUS_COMBO_RECOMMEND_PROMPT,
-  STEP6_AI_PROMPT_GENERATION,
-  STEP6_TRANSLATION_PROMPT,
-  STEP6_LOVART_PROMPT_GENERATION,
-  STEP6_LOVART_TRANSLATION_PROMPT,
 } from "../imageWorkflowPrompts";
 import { IMAGE_ADVICE_TRANSLATION_PROMPT } from "../prompts";
 import { storagePut } from "../storage";
@@ -324,6 +321,173 @@ export const imageWorkflowRouter = router({
       });
     }),
 
+
+  // ─── Step 0: Get competitor images ─────────────────────────────
+  getStep0Data: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      await resolveProjectAccess(input.projectId, ctx.user);
+      const images = await db.getCompetitorImagesByProject(input.projectId);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      return {
+        images,
+        step0AiResult: session?.step0AiResult || null,
+        step0UserEdit: session?.step0UserEdit || null,
+        step0Confirmed: session?.step0Confirmed || 0,
+      };
+    }),
+
+  // ─── Step 0: Upload competitor image ───────────────────────────
+  uploadCompetitorImage: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      competitorName: z.string(),
+      imageData: z.string(), // base64 encoded
+      fileName: z.string(),
+      sortOrder: z.number().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
+
+      // Upload to S3
+      const buffer = Buffer.from(input.imageData, "base64");
+      const ext = input.fileName.split(".").pop() || "png";
+      const key = `image-workflow/${input.projectId}/step0-competitor/${input.competitorName}-${Date.now()}.${ext}`;
+      const { url } = await storagePut(key, buffer, `image/${ext}`);
+
+      const record = await db.insertCompetitorImage({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        competitorName: input.competitorName,
+        imageUrl: url,
+        sortOrder: input.sortOrder || 0,
+      });
+
+      return { id: record.insertId, url, competitorName: input.competitorName };
+    }),
+
+  // ─── Step 0: Analyze single competitor image ───────────────────
+  analyzeCompetitorImage: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      imageId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await resolveProjectAccess(input.projectId, ctx.user);
+      const images = await db.getCompetitorImagesByProject(input.projectId);
+      const image = images.find((img) => img.id === input.imageId);
+      if (!image) throw new Error("Image not found");
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: STEP0_COMPETITOR_IMAGE_ANALYSIS_PROMPT },
+          {
+            role: "user",
+            content: [
+              {
+                type: "image_url",
+                image_url: { url: image.imageUrl, detail: "high" },
+              },
+              {
+                type: "text",
+                text: `请分析这张竞品图片（竞争对手: ${image.competitorName}），输出JSON格式的分析结果。`,
+              },
+            ],
+          },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const result = parseLLMJson(response);
+      const resultStr = JSON.stringify(result);
+
+      await db.updateCompetitorImage(input.imageId, {
+        aiAnalysis: resultStr,
+        imageType: result.imageType || null,
+      });
+
+      return result;
+    }),
+
+  // ─── Step 0: Update competitor image analysis (user edit) ──────
+  updateCompetitorImageAnalysis: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      imageId: z.number(),
+      userEdit: z.string(),
+      imageType: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await resolveProjectAccess(input.projectId, ctx.user);
+      await db.updateCompetitorImage(input.imageId, {
+        userEdit: input.userEdit,
+        imageType: input.imageType || null,
+      });
+      return { success: true };
+    }),
+
+  // ─── Step 0: Delete competitor image ───────────────────────────
+  deleteCompetitorImage: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      imageId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await resolveProjectAccess(input.projectId, ctx.user);
+      await db.deleteCompetitorImage(input.imageId);
+      return { success: true };
+    }),
+
+  // ─── Step 0: Confirm Step 0 (generate summary) ─────────────────
+  confirmStep0: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      userEdit: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+
+      const images = await db.getCompetitorImagesByProject(input.projectId);
+      if (images.length === 0) throw new Error("No competitor images uploaded");
+
+      // Build summary from all analyzed images
+      const analyzedImages = images.filter((img) => img.aiAnalysis || img.userEdit);
+      const imagesSummary = analyzedImages.map((img) => {
+        const analysis = img.userEdit || img.aiAnalysis || "{}";
+        return `竞品: ${img.competitorName}, 图片类型: ${img.imageType || "未标注"}, 分析: ${analysis}`;
+      }).join("\n\n");
+
+      // Generate overall summary via LLM
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: STEP0_COMPETITOR_SUMMARY_PROMPT },
+          {
+            role: "user",
+            content: `以下是对多个竞品图片的逐张分析结果，请生成整体总结报告：\n\n${imagesSummary}`,
+          },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const summaryResult = parseLLMJson(response);
+      const summaryStr = input.userEdit || JSON.stringify(summaryResult);
+
+      await db.updateImageWorkflowSession(session.id, {
+        step0AiResult: JSON.stringify(summaryResult),
+        step0UserEdit: input.userEdit || null,
+        step0Confirmed: 1,
+        currentStep: 1,
+      });
+
+      return { success: true, summary: summaryResult };
+    }),
+
   // ─── Step 1: Generate selling points ───────────────────────────
   generateStep1: protectedProcedure
     .input(z.object({ projectId: z.number() }))
@@ -406,10 +570,15 @@ export const imageWorkflowRouter = router({
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
       } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
+      // Load Step0 competitor summary if available
+      const step0Summary = session.step0AiResult
+        ? `\n\n--- 竞品图片分析总结 ---\n${session.step0AiResult.substring(0, 2000)}`
+        : "";
+
       const response = await invokeLLM({
         messages: [
           { role: "system", content: STEP2_IMAGE_OUTLINE_PROMPT },
-          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${sellingPoints}\n\n--- 产品背景信息 ---\n${context}\n\n请根据以上卖点体系，规划每张图片的内容大纲。` },
+          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${sellingPoints}\n\n--- 产品背景信息 ---\n${context}${step0Summary}\n\n请根据以上卖点体系和竞品分析，规划每张图片的内容大纲，并在辅图的referenceHighlights字段中引用竞品亮点。` },
         ],
         response_format: { type: "json_object" },
       });
@@ -632,38 +801,6 @@ export const imageWorkflowRouter = router({
           });
         }
       } catch {}
-
-      // Fire-and-forget: generate Chinese translation asynchronously
-      (async () => {
-        try {
-          const cnResponse = await invokeLLM({
-            messages: [
-              { role: "system", content: STEP5_TRANSLATION_PROMPT },
-              { role: "user", content: `请将以下图片建议翻译为简体中文：\n\n${resultStr}` },
-            ],
-            response_format: { type: "json_object" },
-          });
-          const cnContent = typeof cnResponse.choices[0].message.content === "string"
-            ? cnResponse.choices[0].message.content
-            : JSON.stringify(cnResponse.choices[0].message.content);
-          JSON.parse(cnContent); // validate
-          await db.updateImageWorkflowSession(session.id, {
-            step5AiResultCn: cnContent,
-          });
-          // Update listing too
-          try {
-            const existingListings = await db.getListingsByProject(input.projectId);
-            const activeListing = existingListings.find((l) => l.isActive === 1);
-            if (activeListing) {
-              await db.updateListing(activeListing.id, {
-                imageAdviceCn: cnContent,
-              });
-            }
-          } catch {}
-        } catch (err) {
-          console.error("Step 5 CN translation failed (async):", err);
-        }
-      })();
 
       return { en: result, cn: null };
     }),
@@ -909,232 +1046,11 @@ export const imageWorkflowRouter = router({
       return parseLLMJson(response);
     }),
 
-  // ─── Step 6: Generate AI prompts ──────────────────────────────
-  generateStep6: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
-      if (!project) throw new Error("Project not found");
-      ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
-      if (!session) throw new Error("No workflow session found");
-      if (!session.step5Confirmed) throw new Error("Step 5 not confirmed yet");
-
-      const step5Data = session.step5OptimizedResult || session.step5UserEdit || session.step5AiResult;
-
-      // Truncate inputs to avoid timeout
-      const truncate = (s: string | null, maxLen = 3000) => s ? s.substring(0, maxLen) : '';
-      const step1Short = truncate(session.step1UserEdit || session.step1AiResult, 3000);
-      const step2Short = truncate(session.step2UserEdit || session.step2AiResult, 3000);
-      const step3Short = truncate(session.step3UserEdit || session.step3AiResult, 2000);
-      const step4Short = truncate(session.step4UserEdit || session.step4AiResult, 2000);
-      const step5Short = truncate(step5Data, 6000);
-
-      // Emperor Skill 优先 - 图片工作流
-      try {
-        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return { en: emperorRes.output, cn: null };
-      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
-
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: STEP6_AI_PROMPT_GENERATION },
-          {
-            role: "user",
-            content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Short}\n\n--- 已确认的图片大纲 ---\n${step2Short}\n\n--- 已确认的风格方案 ---\n${step3Short}\n\n--- 已确认的参考图 ---\n${step4Short}\n\n--- 已确认的图片建议 ---\n${step5Short}\n\n请为每张图生成可直接使用的AI图片生成提示词（prompt），包含正面提示词、负面提示词和推荐参数。`,
-          },
-        ],
-        response_format: { type: "json_object" },
-      });
-
-      const result = parseLLMJson(response);
-      const resultStr = JSON.stringify(result);
-
-      // Save English result immediately
-      await db.updateImageWorkflowSession(session.id, {
-        step6AiResult: resultStr,
-        step6AiResultCn: null,
-        currentStep: 6,
-      });
-
-      // Fire-and-forget: generate Chinese translation asynchronously
-      (async () => {
-        try {
-          const cnResponse = await invokeLLM({
-            messages: [
-              { role: "system", content: STEP6_TRANSLATION_PROMPT },
-              { role: "user", content: `请将以下AI提示词建议翻译为简体中文：\n\n${resultStr}` },
-            ],
-            response_format: { type: "json_object" },
-          });
-          const cnContent = typeof cnResponse.choices[0].message.content === "string"
-            ? cnResponse.choices[0].message.content
-            : JSON.stringify(cnResponse.choices[0].message.content);
-          JSON.parse(cnContent); // validate
-          await db.updateImageWorkflowSession(session.id, {
-            step6AiResultCn: cnContent,
-          });
-        } catch (err) {
-          console.error("Step 6 CN translation failed (async):", err);
-        }
-      })();
-
-      return { en: result, cn: null };
-    }),
-
-  // ─── Step 6: Confirm ──────────────────────────────────────────────
-  confirmStep6: protectedProcedure
-    .input(z.object({
-      projectId: z.number(),
-      userEdit: z.string(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
-      if (!session) throw new Error("No workflow session found");
-      ensureWriteAccess({ userId: session.userId }, ctx.user);
-
-      await db.updateImageWorkflowSession(session.id, {
-        step6UserEdit: input.userEdit,
-        step6Confirmed: 1,
-        status: "completed",
-      });
-
-      return { success: true };
-    }),
-
-  // ─── Step 6 Lovart: Generate Lovart ChatCanvas prompts ────────
-  generateStep6Lovart: protectedProcedure
-    .input(z.object({ projectId: z.number() }))
-    .mutation(async ({ ctx, input }) => {
-      const project = await resolveProjectAccess(input.projectId, ctx.user);
-      if (!project) throw new Error("Project not found");
-      ensureWriteAccess(project, ctx.user);
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
-      if (!session) throw new Error("No workflow session found");
-      if (!session.step5Confirmed) throw new Error("Step 5 not confirmed yet");
-
-      const step5Data = session.step5OptimizedResult || session.step5UserEdit || session.step5AiResult;
-
-      // Truncate inputs to avoid timeout
-      const truncate = (s: string | null, maxLen = 3000) => s ? s.substring(0, maxLen) : '';
-      const step1Short = truncate(session.step1UserEdit || session.step1AiResult, 3000);
-      const step2Short = truncate(session.step2UserEdit || session.step2AiResult, 3000);
-      const step3Short = truncate(session.step3UserEdit || session.step3AiResult, 2000);
-      const step4Short = truncate(session.step4UserEdit || session.step4AiResult, 2000);
-      const step5Short = truncate(step5Data, 6000);
-
-      // Generate Lovart-optimized prompts (Chinese primary)
-      // Emperor Skill 优先 - 图片工作流
-      try {
-        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return { cn: emperorRes.output, en: null };
-      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
-
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: STEP6_LOVART_PROMPT_GENERATION },
-          {
-            role: "user",
-            content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Short}\n\n--- 已确认的图片大纲 ---\n${step2Short}\n\n--- 已确认的风格方案 ---\n${step3Short}\n\n--- 已确认的参考图 ---\n${step4Short}\n\n--- 已确认的图片建议 ---\n${step5Short}\n\n请为每张图生成专门适配Lovart ChatCanvas的提示词，包含品牌DNA定义、一致性策略、每张图的详细提示词和迭代指南。`,
-          },
-        ],
-        response_format: { type: "json_object" },
-      });
-
-      const result = parseLLMJson(response);
-      const resultStr = JSON.stringify(result);
-
-      // Save Chinese result immediately
-      await db.updateImageWorkflowSession(session.id, {
-        step6LovartResult: resultStr,
-        step6LovartResultEn: null,
-        currentStep: 6,
-      });
-
-      // Fire-and-forget: generate English translation asynchronously
-      (async () => {
-        try {
-          const enResponse = await invokeLLM({
-            messages: [
-              { role: "system", content: STEP6_LOVART_TRANSLATION_PROMPT },
-              { role: "user", content: `请将以下Lovart提示词方案翻译为英文：\n\n${resultStr}` },
-            ],
-            response_format: { type: "json_object" },
-          });
-          const enContent = typeof enResponse.choices[0].message.content === "string"
-            ? enResponse.choices[0].message.content
-            : JSON.stringify(enResponse.choices[0].message.content);
-          JSON.parse(enContent); // validate
-          await db.updateImageWorkflowSession(session.id, {
-            step6LovartResultEn: enContent,
-          });
-        } catch (err) {
-          console.error("Step 6 Lovart EN translation failed (async):", err);
-        }
-      })();
-
-      return { cn: result, en: null };
-    }),
-
-  // ─── Step 6 Lovart: Save user edits ───────────────────────────
-  saveStep6LovartEdit: protectedProcedure
-    .input(z.object({
-      projectId: z.number(),
-      userEdit: z.string(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
-      if (!session) throw new Error("No workflow session found");
-      ensureWriteAccess({ userId: session.userId }, ctx.user);
-
-      await db.updateImageWorkflowSession(session.id, {
-        step6LovartUserEdit: input.userEdit,
-      });
-
-      return { success: true };
-    }),
-
-  // ─── Confirm Step 6 Lovart ─────────────────────────────────
-  confirmStep6Lovart: protectedProcedure
-    .input(z.object({
-      projectId: z.number(),
-      userEdit: z.string().optional(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
-      if (!session) throw new Error("No workflow session found");
-      ensureWriteAccess({ userId: session.userId }, ctx.user);
-
-      const updateData: any = { step6LovartConfirmed: 1 };
-      if (input.userEdit) {
-        updateData.step6LovartUserEdit = input.userEdit;
-      }
-
-      await db.updateImageWorkflowSession(session.id, updateData);
-      return { success: true };
-    }),
-
-  // ─── Unlock Step 6 Lovart ─────────────────────────────────
-  unlockStep6Lovart: protectedProcedure
-    .input(z.object({
-      projectId: z.number(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const session = await resolveSessionAccess(input.projectId, ctx.user);
-      if (!session) throw new Error("No workflow session found");
-      ensureWriteAccess({ userId: session.userId }, ctx.user);
-
-      await db.updateImageWorkflowSession(session.id, {
-        step6LovartConfirmed: 0,
-      });
-      return { success: true };
-    }),
-
   // ─── Reset to a specific step ─────────────────────────────────
   resetToStep: protectedProcedure
     .input(z.object({
       projectId: z.number(),
-      step: z.number().min(1).max(6),
+      step: z.number().min(0).max(5),
     }))
     .mutation(async ({ ctx, input }) => {
       const session = await resolveSessionAccess(input.projectId, ctx.user);
@@ -1143,6 +1059,11 @@ export const imageWorkflowRouter = router({
 
       // Clear data for steps >= target step
       const clearData: any = { currentStep: input.step };
+      if (input.step <= 0) {
+        clearData.step0AiResult = null;
+        clearData.step0UserEdit = null;
+        clearData.step0Confirmed = 0;
+      }
       if (input.step <= 1) {
         clearData.step1AiResult = null;
         clearData.step1UserEdit = null;
@@ -1174,16 +1095,7 @@ export const imageWorkflowRouter = router({
         clearData.step5OptimizedResult = null;
         clearData.step5OptimizedResultCn = null;
       }
-      if (input.step <= 6) {
-        clearData.step6AiResult = null;
-        clearData.step6AiResultCn = null;
-        clearData.step6UserEdit = null;
-        clearData.step6Confirmed = 0;
-        clearData.step6LovartResult = null;
-        clearData.step6LovartResultEn = null;
-        clearData.step6LovartUserEdit = null;
-        clearData.step6LovartConfirmed = 0;
-      }
+
       clearData.status = "in_progress";
 
       await db.updateImageWorkflowSession(session.id, clearData);

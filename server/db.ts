@@ -16,7 +16,8 @@ import {
   InsertReviewAggregation, reviewAggregations,
   InsertLoginLog, loginLogs,
   rolePermissions,
-  notifications, InsertNotification,
+  notifications,   InsertNotification,
+  competitorImageAnalyses, InsertCompetitorImageAnalysis,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -933,4 +934,39 @@ export async function deleteUserById(userId: number) {
   await db.delete(notifications).where(eq(notifications.userId, userId));
   // Delete user
   await db.delete(users).where(eq(users.id, userId));
+}
+
+// ─── Competitor Image Analyses (Step 0 of Image Workflow) ─────────────────────
+
+export async function getCompetitorImagesByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(competitorImageAnalyses)
+    .where(eq(competitorImageAnalyses.projectId, projectId))
+    .orderBy(competitorImageAnalyses.competitorName, competitorImageAnalyses.sortOrder);
+}
+
+export async function insertCompetitorImage(data: InsertCompetitorImageAnalysis) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(competitorImageAnalyses).values(data);
+  return result;
+}
+
+export async function updateCompetitorImage(id: number, data: Partial<InsertCompetitorImageAnalysis>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(competitorImageAnalyses).set(data).where(eq(competitorImageAnalyses.id, id));
+}
+
+export async function deleteCompetitorImage(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(competitorImageAnalyses).where(eq(competitorImageAnalyses.id, id));
+}
+
+export async function deleteCompetitorImagesByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(competitorImageAnalyses).where(eq(competitorImageAnalyses.projectId, projectId));
 }
