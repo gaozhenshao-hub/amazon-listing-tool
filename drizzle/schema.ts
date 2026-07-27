@@ -4659,3 +4659,36 @@ export const listing2Products = mysqlTable("listing2_products", {
 });
 export type Listing2Product = typeof listing2Products.$inferSelect;
 export type InsertListing2Product = typeof listing2Products.$inferInsert;
+
+// ─── Step 0: Expression Direction Groups ─────────────────────────────────────
+// Each group represents one "卖点表达方向" (e.g. 场景使用图, 功能对比图).
+// A group holds 1-5 images from DIFFERENT competitors showing the same expression style.
+export const expressionGroups = mysqlTable("expression_groups", {
+  id: int("id").autoincrement().primaryKey(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  expressionName: varchar("expressionName", { length: 255 }).notNull(), // e.g. "场景使用图"
+  // AI + user analysis for the whole group (JSON string)
+  aiAnalysis: text("aiAnalysis"),
+  userEdit: text("userEdit"),
+  confirmed: int("confirmed").default(0).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type ExpressionGroup = typeof expressionGroups.$inferSelect;
+export type InsertExpressionGroup = typeof expressionGroups.$inferInsert;
+
+// Each row = one competitor image belonging to an expression group (max 5 per group)
+export const expressionGroupImages = mysqlTable("expression_group_images", {
+  id: int("id").autoincrement().primaryKey(),
+  groupId: int("groupId").notNull(),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  competitorName: varchar("competitorName", { length: 255 }).default("").notNull(),
+  imageUrl: text("imageUrl").notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type ExpressionGroupImage = typeof expressionGroupImages.$inferSelect;
+export type InsertExpressionGroupImage = typeof expressionGroupImages.$inferInsert;

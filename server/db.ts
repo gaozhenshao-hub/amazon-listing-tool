@@ -18,6 +18,8 @@ import {
   rolePermissions,
   notifications,   InsertNotification,
   competitorImageAnalyses, InsertCompetitorImageAnalysis,
+  expressionGroups, InsertExpressionGroup,
+  expressionGroupImages, InsertExpressionGroupImage,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -969,4 +971,63 @@ export async function deleteCompetitorImagesByProject(projectId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(competitorImageAnalyses).where(eq(competitorImageAnalyses.projectId, projectId));
+}
+
+// ─── Expression Group (Step 0 by expression direction) ────────────────────────
+export async function getExpressionGroupsByProject(projectId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const groups = await db.select().from(expressionGroups)
+    .where(eq(expressionGroups.projectId, projectId))
+    .orderBy(expressionGroups.sortOrder);
+  const images = await db.select().from(expressionGroupImages)
+    .where(eq(expressionGroupImages.projectId, projectId))
+    .orderBy(expressionGroupImages.sortOrder);
+  return groups.map(g => ({
+    ...g,
+    images: images.filter(img => img.groupId === g.id),
+  }));
+}
+
+export async function insertExpressionGroup(data: InsertExpressionGroup) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(expressionGroups).values(data);
+  return result;
+}
+
+export async function updateExpressionGroup(id: number, data: Partial<InsertExpressionGroup>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(expressionGroups).set(data).where(eq(expressionGroups.id, id));
+}
+
+export async function deleteExpressionGroup(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Delete images first
+  await db.delete(expressionGroupImages).where(eq(expressionGroupImages.groupId, id));
+  await db.delete(expressionGroups).where(eq(expressionGroups.id, id));
+}
+
+export async function insertExpressionGroupImage(data: InsertExpressionGroupImage) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(expressionGroupImages).values(data);
+  return result;
+}
+
+export async function deleteExpressionGroupImage(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(expressionGroupImages).where(eq(expressionGroupImages.id, id));
+}
+
+export async function countExpressionGroupImages(groupId: number): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const rows = await db.select({ count: sql<number>`count(*)` })
+    .from(expressionGroupImages)
+    .where(eq(expressionGroupImages.groupId, groupId));
+  return Number(rows[0]?.count ?? 0);
 }

@@ -7,7 +7,7 @@ import { Router, Request, Response } from "express";
 import multer from "multer";
 import { parse as parseCookieHeader } from "cookie";
 import { storagePut } from "./storage";
-import { getUserById, getProjectById, getProjectByIdAdmin, insertCompetitorImage } from "./db";
+import { getUserById, getProjectById, getProjectByIdAdmin, insertCompetitorImage, countExpressionGroupImages } from "./db";
 import { sdk } from "./_core/sdk";
 
 // Store file in memory (max 20MB per file)
@@ -166,6 +166,75 @@ imageUploadRouter.post(
       res.json({ url });
     } catch (err: any) {
       console.error("[imageUpload] ref-image error:", err);
+      res.status(500).json({ error: err.message || "上传失败" });
+    }
+  }
+);
+
+/**
+ * POST /api/upload/expression-group-image
+ * Body: multipart/form-data
+ *   - file: image file (required)
+ *   - projectId: number (required)
+ *   - groupId: number (required)
+ *   - competitorName: string (optional)
+ * Returns: { url } — caller then calls trpc.imageWorkflow.addImageToGroup to persist
+ */
+imageUploadRouter.post(
+  "/expression-group-image",
+  upload.single("file"),
+  async (req: Request, res: Response) => {
+    const user = await getAuthUser(req);
+    if (!user) {
+      res.status(401).json({ error: "请先登录" });
+      return;
+    }
+
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ error: "未收到文件" });
+      return;
+    }
+
+    const projectId = parseInt(req.body.projectId);
+    const groupId = parseInt(req.body.groupId);
+    const competitorName = (req.body.competitorName || "").trim();
+
+    if (!projectId || !groupId) {
+      res.status(400).json({ error: "缺少必要参数 projectId / groupId" });
+      return;
+    }
+
+    try {
+      // Verify project access
+      let project: any = null;
+      if ((user as any).role === "admin") {
+        project = await getProjectByIdAdmin(projectId);
+      } else {
+        project = await getProjectById(projectId, user.id);
+      }
+      if (!project) {
+        res.status(404).json({ error: "项目不存在或无权限" });
+        return;
+      }
+
+      // Enforce max 5 images per group
+      const count = await countExpressionGroupImages(groupId);
+      if (count >= 5) {
+        res.status(400).json({ error: "每个表达方向最多上传5张参考图" });
+        return;
+      }
+
+      // Upload to S3
+      const ext = (file.originalname.split(".").pop() || "jpg").toLowerCase();
+      const safeName = (competitorName || "img").replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, "-");
+      const key = `image-workflow/${projectId}/step0-expression/${groupId}-${safeName}-${Date.now()}.${ext}`;
+      const contentType = file.mimetype || `image/${ext}`;
+      const { url } = await storagePut(key, file.buffer, contentType);
+
+      res.json({ url, competitorName });
+    } catch (err: any) {
+      console.error("[imageUpload] expression-group-image error:", err);
       res.status(500).json({ error: err.message || "上传失败" });
     }
   }

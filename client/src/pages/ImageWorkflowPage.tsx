@@ -178,23 +178,29 @@ function Step0CompetitorAnalysis({
   session: any;
   onConfirm: () => void;
 }) {
-  const step0Query = trpc.imageWorkflow.getStep0Data.useQuery({ projectId });
-  const uploadMutation = trpc.imageWorkflow.uploadCompetitorImage.useMutation();
-  const analyzeMutation = trpc.imageWorkflow.analyzeCompetitorImage.useMutation();
-  const updateMutation = trpc.imageWorkflow.updateCompetitorImageAnalysis.useMutation();
-  const deleteMutation = trpc.imageWorkflow.deleteCompetitorImage.useMutation();
+  // ── tRPC hooks ──────────────────────────────────────────────────
+  const groupsQuery = trpc.imageWorkflow.getExpressionGroups.useQuery({ projectId });
+  const createGroupMutation = trpc.imageWorkflow.createExpressionGroup.useMutation();
+  const updateGroupMutation = trpc.imageWorkflow.updateExpressionGroup.useMutation();
+  const deleteGroupMutation = trpc.imageWorkflow.deleteExpressionGroup.useMutation();
+  const addImageMutation = trpc.imageWorkflow.addImageToGroup.useMutation();
+  const removeImageMutation = trpc.imageWorkflow.removeImageFromGroup.useMutation();
+  const analyzeMutation = trpc.imageWorkflow.analyzeExpressionGroup.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep0.useMutation();
   const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
 
-  const [competitorName, setCompetitorName] = useState("");
-  const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
-  const [analyzingId, setAnalyzingId] = useState<number | null>(null);
+  // ── Local state ─────────────────────────────────────────────────
+  const [newGroupName, setNewGroupName] = useState("");
+  const [uploadingGroupId, setUploadingGroupId] = useState<number | null>(null);
+  const [analyzingGroupId, setAnalyzingGroupId] = useState<number | null>(null);
   const [isLocked, setIsLocked] = useState(!!session?.step0Confirmed);
   const [summaryData, setSummaryData] = useState<any>(null);
-  // Per-image local state for editing fields
-  const [imageEdits, setImageEdits] = useState<Record<number, any>>({});
+  // Per-group local edit state (for middle + right columns)
+  const [groupEdits, setGroupEdits] = useState<Record<number, any>>({});
   const [newHighlightText, setNewHighlightText] = useState<Record<number, string>>({});
   const [newHighlightCat, setNewHighlightCat] = useState<Record<number, string>>({});
+  // Competitor name input per group (for image upload)
+  const [competitorInputs, setCompetitorInputs] = useState<Record<number, string>>({});
 
   useEffect(() => {
     setIsLocked(!!session?.step0Confirmed);
@@ -203,39 +209,58 @@ function Step0CompetitorAnalysis({
     }
   }, [session?.step0Confirmed, session?.step0AiResult]);
 
-  // Sync imageEdits from fetched data
+  // Sync groupEdits from fetched data
   useEffect(() => {
-    if (step0Query.data?.images) {
+    if (groupsQuery.data) {
       const edits: Record<number, any> = {};
-      step0Query.data.images.forEach((img: any) => {
+      groupsQuery.data.forEach((g: any) => {
         try {
-          edits[img.id] = JSON.parse(img.userEdit || img.aiAnalysis || "{}");
+          edits[g.id] = JSON.parse(g.userEdit || g.aiAnalysis || "{}");
         } catch {
-          edits[img.id] = {};
+          edits[g.id] = {};
         }
       });
-      setImageEdits(edits);
+      setGroupEdits(edits);
     }
-  }, [step0Query.data]);
+  }, [groupsQuery.data]);
 
-  const images = step0Query.data?.images || [];
-
-  const getEdit = (id: number) => imageEdits[id] || {};
+  const groups = groupsQuery.data || [];
+  const getEdit = (id: number) => groupEdits[id] || {};
   const setEdit = (id: number, patch: any) => {
-    setImageEdits(prev => ({ ...prev, [id]: { ...(prev[id] || {}), ...patch } }));
+    setGroupEdits(prev => ({ ...prev, [id]: { ...(prev[id] || {}), ...patch } }));
   };
 
-  const handleImageUpload = async (file: File) => {
-    if (!competitorName.trim()) { toast.error("请先填写竞品名称"); return; }
-    setUploadingIdx(images.length);
+  // ── Handlers ────────────────────────────────────────────────────
+  const handleCreateGroup = async () => {
+    if (!newGroupName.trim()) { toast.error("请输入表达方向名称"); return; }
     try {
-      // Use multipart upload directly to avoid base64 overhead
+      await createGroupMutation.mutateAsync({ projectId, expressionName: newGroupName.trim() });
+      setNewGroupName("");
+      groupsQuery.refetch();
+      toast.success("表达方向已创建");
+    } catch (err: any) { toast.error(err.message || "创建失败"); }
+  };
+
+  const handleDeleteGroup = async (groupId: number) => {
+    try {
+      await deleteGroupMutation.mutateAsync({ projectId, groupId });
+      groupsQuery.refetch();
+      toast.success("已删除");
+    } catch (err: any) { toast.error(err.message || "删除失败"); }
+  };
+
+  const handleImageUpload = async (groupId: number, file: File) => {
+    const group = groups.find((g: any) => g.id === groupId);
+    if (!group) return;
+    if ((group.images || []).length >= 5) { toast.error("每个表达方向最多上传5张图片"); return; }
+    setUploadingGroupId(groupId);
+    try {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("projectId", String(projectId));
-      formData.append("competitorName", competitorName.trim());
-      formData.append("sortOrder", String(images.length));
-      const resp = await fetch("/api/upload/competitor-image", {
+      formData.append("groupId", String(groupId));
+      formData.append("competitorName", (competitorInputs[groupId] || "").trim());
+      const resp = await fetch("/api/upload/expression-group-image", {
         method: "POST",
         body: formData,
         credentials: "include",
@@ -244,56 +269,73 @@ function Step0CompetitorAnalysis({
         const errData = await resp.json().catch(() => ({}));
         throw new Error(errData.error || "上传失败");
       }
-      step0Query.refetch();
-      toast.success("竞品图片已上传");
+      const { url, competitorName } = await resp.json();
+      // Persist to DB via tRPC
+      await addImageMutation.mutateAsync({
+        projectId,
+        groupId,
+        competitorName: competitorName || (competitorInputs[groupId] || "").trim(),
+        imageUrl: url,
+      });
+      groupsQuery.refetch();
+      toast.success("图片已上传");
     } catch (err: any) { toast.error(err.message || "上传失败"); }
-    finally { setUploadingIdx(null); }
+    finally { setUploadingGroupId(null); }
   };
 
-  const handleAnalyze = async (imageId: number) => {
-    setAnalyzingId(imageId);
+  const handleRemoveImage = async (imageId: number) => {
     try {
-      await analyzeMutation.mutateAsync({ projectId, imageId });
-      step0Query.refetch();
-      toast.success("分析完成");
+      await removeImageMutation.mutateAsync({ projectId, imageId });
+      groupsQuery.refetch();
+      toast.success("已删除");
+    } catch (err: any) { toast.error(err.message || "删除失败"); }
+  };
+
+  const handleAnalyzeGroup = async (groupId: number) => {
+    setAnalyzingGroupId(groupId);
+    try {
+      const result = await analyzeMutation.mutateAsync({ projectId, groupId });
+      // Merge AI result into local edit state
+      setEdit(groupId, result);
+      groupsQuery.refetch();
+      toast.success("AI分析完成");
     } catch (err: any) { toast.error(err.message || "分析失败"); }
-    finally { setAnalyzingId(null); }
+    finally { setAnalyzingGroupId(null); }
   };
 
-  const handleDelete = async (imageId: number) => {
-    try { await deleteMutation.mutateAsync({ projectId, imageId }); step0Query.refetch(); toast.success("已删除"); }
-    catch (err: any) { toast.error(err.message || "删除失败"); }
-  };
-
-  const handleSaveImageEdit = async (imageId: number) => {
+  const handleSaveGroupEdit = async (groupId: number) => {
     try {
-      await updateMutation.mutateAsync({ projectId, imageId, userEdit: JSON.stringify(getEdit(imageId)) });
+      await updateGroupMutation.mutateAsync({
+        projectId,
+        groupId,
+        userEdit: JSON.stringify(getEdit(groupId)),
+      });
       toast.success("已保存");
     } catch (err: any) { toast.error(err.message || "保存失败"); }
   };
 
-  const addHighlight = (imageId: number) => {
-    const text = (newHighlightText[imageId] || "").trim();
+  const addHighlight = (groupId: number) => {
+    const text = (newHighlightText[groupId] || "").trim();
     if (!text) return;
-    const cat = newHighlightCat[imageId] || "other";
-    const edit = getEdit(imageId);
+    const cat = newHighlightCat[groupId] || "other";
+    const edit = getEdit(groupId);
     const highlights = [...(edit.highlights || []), { text, category: cat }];
-    setEdit(imageId, { highlights });
-    setNewHighlightText(prev => ({ ...prev, [imageId]: "" }));
+    setEdit(groupId, { highlights });
+    setNewHighlightText(prev => ({ ...prev, [groupId]: "" }));
   };
 
-  const removeHighlight = (imageId: number, idx: number) => {
-    const edit = getEdit(imageId);
+  const removeHighlight = (groupId: number, idx: number) => {
+    const edit = getEdit(groupId);
     const highlights = (edit.highlights || []).filter((_: any, i: number) => i !== idx);
-    setEdit(imageId, { highlights });
+    setEdit(groupId, { highlights });
   };
 
   const handleConfirm = async () => {
-    if (images.length === 0) { toast.error("请先上传至少一张竞品图片"); return; }
+    if (groups.length === 0) { toast.error("请先创建至少一个表达方向并上传图片"); return; }
     // Save all pending edits first
-    for (const img of images) {
-      if (imageEdits[img.id]) {
-        try { await updateMutation.mutateAsync({ projectId, imageId: img.id, userEdit: JSON.stringify(imageEdits[img.id]) }); } catch {}
+    for (const g of groups) {
+      if (groupEdits[g.id]) {
+        try { await updateGroupMutation.mutateAsync({ projectId, groupId: g.id, userEdit: JSON.stringify(groupEdits[g.id]) }); } catch {}
       }
     }
     try {
@@ -310,6 +352,7 @@ function Step0CompetitorAnalysis({
     catch (err: any) { toast.error(err.message || "解锁失败"); }
   };
 
+  // ── Render ───────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
       {/* Header Card */}
@@ -321,13 +364,15 @@ function Step0CompetitorAnalysis({
                 <Search className="w-5 h-5 text-primary" />
                 Step 0: 竞品图片分析
               </CardTitle>
-              <CardDescription>三列展示：左列图片预览、中列图片类型+卖点处理、右列亮点标签提取，底部汇总总结</CardDescription>
+              <CardDescription>
+                按卖点表达方向分组 — 每组上传 1-5 张不同竞品的同类表达图片，AI 提取共性亮点
+              </CardDescription>
             </div>
             <div className="flex gap-2 items-center">
               {!isLocked && (
                 <>
                   <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={onConfirm}>跳过</Button>
-                  <Button onClick={handleConfirm} disabled={confirmMutation.isPending || images.length === 0}>
+                  <Button onClick={handleConfirm} disabled={confirmMutation.isPending || groups.length === 0}>
                     {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
                     确认并生成总结
                   </Button>
@@ -345,187 +390,257 @@ function Step0CompetitorAnalysis({
           </div>
         </CardHeader>
 
+        {/* Add new expression group */}
         {!isLocked && (
           <CardContent className="pt-0">
-            <div className="flex gap-3">
-              <Input placeholder="竞品名称（如：Brand A）" value={competitorName} onChange={(e) => setCompetitorName(e.target.value)} className="max-w-xs h-9" />
-              <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-dashed border-primary/40 cursor-pointer hover:bg-primary/5 transition-colors text-sm text-primary ${uploadingIdx !== null ? 'opacity-50 pointer-events-none' : ''}`}>
-                {uploadingIdx !== null ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                上传竞品图片
-                <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { Array.from(e.target.files || []).forEach(f => handleImageUpload(f)); }} disabled={uploadingIdx !== null} />
-              </label>
+            <div className="flex gap-2">
+              <Input
+                placeholder="新建表达方向（如：场景使用图、功能对比图、数据展示图）"
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleCreateGroup(); }}
+                className="h-9"
+              />
+              <Button size="sm" onClick={handleCreateGroup} disabled={createGroupMutation.isPending} className="shrink-0">
+                {createGroupMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />}
+                新建方向
+              </Button>
             </div>
           </CardContent>
         )}
       </Card>
 
       {/* Empty state */}
-      {images.length === 0 && !isLocked && (
+      {groups.length === 0 && !isLocked && (
         <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground border-2 border-dashed rounded-xl">
           <ImageIcon className="w-12 h-12 mb-3 opacity-30" />
-          <p className="text-sm">暂无竞品图片</p>
-          <p className="text-xs mt-1">填写竞品名称后上传图片，AI将自动分析</p>
+          <p className="text-sm font-medium">暂无表达方向</p>
+          <p className="text-xs mt-1 max-w-xs">
+            输入一种卖点表达方向（如"场景使用图"），新建后上传 1-5 张不同竞品的同类图片
+          </p>
         </div>
       )}
 
-      {/* ─── Three-column waterfall for each image ─── */}
-      {images.map((img: any) => {
-        const edit = getEdit(img.id);
+      {/* ─── Expression Group Cards (Three-column waterfall) ─── */}
+      {groups.map((group: any) => {
+        const edit = getEdit(group.id);
         const highlights: Array<{ text: string; category: string }> = edit.highlights || [];
+        const images = group.images || [];
+        const isAnalyzing = analyzingGroupId === group.id;
+        const isUploading = uploadingGroupId === group.id;
+
         return (
-          <div key={img.id} className="grid grid-cols-1 lg:grid-cols-3 gap-0 border rounded-xl overflow-hidden shadow-sm bg-card">
-
-            {/* ── Column 1: Image Preview ── */}
-            <div className="relative bg-gray-50 border-r">
-              <img src={img.imageUrl} alt={img.competitorName} className="w-full h-full object-cover min-h-[200px] max-h-[320px]" />
-              <div className="absolute top-2 left-2 flex gap-1">
-                <Badge className="bg-black/70 text-white text-xs">{img.competitorName}</Badge>
-                {edit.imageType && <Badge variant="secondary" className="text-xs bg-white/90 text-gray-700">{edit.imageType}</Badge>}
+          <div key={group.id} className="border rounded-xl overflow-hidden shadow-sm bg-card">
+            {/* Group header */}
+            <div className="flex items-center justify-between px-4 py-2.5 bg-muted/40 border-b">
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="text-xs font-semibold">{group.expressionName}</Badge>
+                <span className="text-xs text-muted-foreground">{images.length}/5 张图片</span>
               </div>
               {!isLocked && (
-                <div className="absolute top-2 right-2 flex gap-1">
-                  <Button size="sm" variant="secondary" className="h-7 text-xs bg-white/90 hover:bg-white" onClick={() => handleAnalyze(img.id)} disabled={analyzingId === img.id}>
-                    {analyzingId === img.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                    AI分析
+                <div className="flex gap-1.5">
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleAnalyzeGroup(group.id)} disabled={isAnalyzing || images.length === 0}>
+                    {isAnalyzing ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
+                    AI 分析此组
                   </Button>
-                  <Button size="sm" variant="destructive" className="h-7 w-7 p-0 bg-red-500/80 hover:bg-red-500" onClick={() => handleDelete(img.id)}>
-                    <Trash2 className="w-3 h-3" />
+                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => handleDeleteGroup(group.id)}>
+                    <Trash2 className="w-3.5 h-3.5" />
                   </Button>
-                </div>
-              )}
-              {analyzingId === img.id && (
-                <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                  <div className="bg-white rounded-lg px-4 py-2 flex items-center gap-2 text-sm">
-                    <Loader2 className="w-4 h-4 animate-spin text-primary" />分析中...
-                  </div>
                 </div>
               )}
             </div>
 
-            {/* ── Column 2: Image Type + Selling Point Processing ── */}
-            <div className="p-4 border-r space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-                  <Layout className="w-3.5 h-3.5 text-blue-500" />图片类型 & 卖点处理
-                </h4>
-                {!isLocked && (
-                  <Button size="sm" variant="ghost" className="h-6 text-xs text-primary" onClick={() => handleSaveImageEdit(img.id)} disabled={updateMutation.isPending}>
-                    <Check className="w-3 h-3 mr-0.5" />保存
-                  </Button>
-                )}
-              </div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-0">
+              {/* ── Column 1: Image Grid (1-5 competitor images) ── */}
+              <div className="p-3 border-r bg-gray-50/50">
+                <p className="text-xs font-medium text-muted-foreground mb-2 flex items-center gap-1">
+                  <ImageIcon className="w-3 h-3" />不同竞品参考图（最多5张）
+                </p>
 
-              {/* Image Type */}
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">图片类型</label>
-                {isLocked ? (
-                  <p className="text-sm">{edit.imageType || "未标注"}</p>
-                ) : (
-                  <Input value={edit.imageType || ""} onChange={(e) => setEdit(img.id, { imageType: e.target.value })} placeholder="如：主图 / 场景图 / 功能图 / 卖点图 / A+" className="h-7 text-xs" />
-                )}
-              </div>
-
-              {/* Composition */}
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">构图方式</label>
-                {isLocked ? (
-                  <p className="text-sm text-muted-foreground">{edit.composition || "未分析"}</p>
-                ) : (
-                  <Input value={edit.composition || ""} onChange={(e) => setEdit(img.id, { composition: e.target.value })} placeholder="如：居中展示、对角构图、三分法" className="h-7 text-xs" />
-                )}
-              </div>
-
-              {/* Color Scheme */}
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">配色方案</label>
-                {isLocked ? (
-                  <p className="text-sm text-muted-foreground">{edit.colorScheme || "未分析"}</p>
-                ) : (
-                  <Input value={edit.colorScheme || ""} onChange={(e) => setEdit(img.id, { colorScheme: e.target.value })} placeholder="如：白底清洁风、深色高级感" className="h-7 text-xs" />
-                )}
-              </div>
-
-              {/* Selling Point Expression */}
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">卖点表达方式</label>
-                {isLocked ? (
-                  <p className="text-sm text-muted-foreground">{edit.sellingPointExpression || "未分析"}</p>
-                ) : (
-                  <Textarea value={edit.sellingPointExpression || ""} onChange={(e) => setEdit(img.id, { sellingPointExpression: e.target.value })} placeholder="如：数据对比、场景使用、功能图标展示" className="min-h-[56px] text-xs resize-none" />
-                )}
-              </div>
-            </div>
-
-            {/* ── Column 3: Highlight Tags ── */}
-            <div className="p-4 space-y-3">
-              <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-amber-500" />亮点标签
-              </h4>
-
-              {/* Existing highlights */}
-              <div className="flex flex-wrap gap-1.5 min-h-[40px]">
-                {highlights.length === 0 && (
-                  <p className="text-xs text-muted-foreground italic">{isLocked ? "未添加亮点" : "AI分析后自动填充，也可手动添加"}</p>
-                )}
-                {highlights.map((h, i) => (
-                  <HighlightTag key={i} text={h.text} category={h.category} removable={!isLocked} onRemove={() => removeHighlight(img.id, i)} />
-                ))}
-              </div>
-
-              {/* Add new highlight */}
-              {!isLocked && (
-                <div className="space-y-2 border-t pt-3">
-                  <p className="text-xs font-medium text-muted-foreground">手动添加亮点</p>
-                  <div className="flex gap-1.5">
-                    <select
-                      value={newHighlightCat[img.id] || "other"}
-                      onChange={(e) => setNewHighlightCat(prev => ({ ...prev, [img.id]: e.target.value }))}
-                      className="h-7 text-xs border rounded-md px-1.5 bg-background text-foreground shrink-0"
-                    >
-                      {HIGHLIGHT_CATEGORIES.map(c => (
-                        <option key={c.key} value={c.key}>{c.label}</option>
-                      ))}
-                    </select>
-                    <Input
-                      value={newHighlightText[img.id] || ""}
-                      onChange={(e) => setNewHighlightText(prev => ({ ...prev, [img.id]: e.target.value }))}
-                      onKeyDown={(e) => { if (e.key === "Enter") addHighlight(img.id); }}
-                      placeholder="输入亮点描述后回车"
-                      className="h-7 text-xs flex-1"
-                    />
-                    <Button size="sm" variant="outline" className="h-7 w-7 p-0 shrink-0" onClick={() => addHighlight(img.id)}>
-                      <Plus className="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1">
-                    {[
-                      { text: "白底清洁", cat: "color" }, { text: "场景化展示", cat: "scene" },
-                      { text: "对角构图", cat: "composition" }, { text: "数据对比", cat: "expression" },
-                      { text: "图标展示", cat: "expression" }, { text: "大字标题", cat: "typography" },
-                    ].map((preset) => (
-                      <button
-                        key={preset.text}
-                        onClick={() => {
-                          const edit2 = getEdit(img.id);
-                          const exists = (edit2.highlights || []).some((h: any) => h.text === preset.text);
-                          if (!exists) setEdit(img.id, { highlights: [...(edit2.highlights || []), { text: preset.text, category: preset.cat }] });
-                        }}
-                        className="text-[10px] px-1.5 py-1 rounded border border-dashed border-gray-300 hover:border-primary hover:text-primary text-muted-foreground transition-colors truncate"
-                      >
-                        + {preset.text}
-                      </button>
+                {/* Image grid */}
+                {images.length > 0 && (
+                  <div className={`grid gap-1.5 mb-2 ${images.length === 1 ? 'grid-cols-1' : images.length <= 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                    {images.map((img: any) => (
+                      <div key={img.id} className="relative group aspect-square rounded-lg overflow-hidden bg-gray-100 border">
+                        <img src={img.imageUrl} alt={img.competitorName} className="w-full h-full object-cover" />
+                        {img.competitorName && (
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1 py-0.5">
+                            <p className="text-[9px] text-white truncate">{img.competitorName}</p>
+                          </div>
+                        )}
+                        {!isLocked && (
+                          <button
+                            onClick={() => handleRemoveImage(img.id)}
+                            className="absolute top-1 right-1 w-5 h-5 bg-red-500/80 hover:bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X className="w-2.5 h-2.5" />
+                          </button>
+                        )}
+                      </div>
                     ))}
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Save button for this image */}
-              {!isLocked && highlights.length > 0 && (
-                <Button size="sm" variant="outline" className="w-full h-7 text-xs" onClick={() => handleSaveImageEdit(img.id)} disabled={updateMutation.isPending}>
-                  {updateMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Check className="w-3 h-3 mr-1" />}
-                  保存此图分析
-                </Button>
-              )}
+                {/* Upload area */}
+                {!isLocked && images.length < 5 && (
+                  <div className="space-y-1.5">
+                    <Input
+                      value={competitorInputs[group.id] || ""}
+                      onChange={(e) => setCompetitorInputs(prev => ({ ...prev, [group.id]: e.target.value }))}
+                      placeholder="竞品名称（可选）"
+                      className="h-7 text-xs"
+                    />
+                    <label className={`flex items-center justify-center gap-1.5 w-full py-2 rounded-lg border-2 border-dashed border-primary/40 cursor-pointer hover:bg-primary/5 transition-colors text-xs text-primary ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                      {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                      上传竞品图片
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        className="hidden"
+                        disabled={isUploading}
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          const remaining = 5 - images.length;
+                          files.slice(0, remaining).forEach(f => handleImageUpload(group.id, f));
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                    {images.length === 0 && (
+                      <p className="text-[10px] text-muted-foreground text-center">上传不同竞品的「{group.expressionName}」图片</p>
+                    )}
+                  </div>
+                )}
+                {!isLocked && images.length >= 5 && (
+                  <p className="text-xs text-amber-600 text-center py-1">已达上限（5张）</p>
+                )}
+              </div>
+
+              {/* ── Column 2: Image Type + Selling Point Processing ── */}
+              <div className="p-4 border-r space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                    <Layout className="w-3.5 h-3.5 text-blue-500" />图片类型 & 卖点处理
+                  </h4>
+                  {!isLocked && (
+                    <Button size="sm" variant="ghost" className="h-6 text-xs text-primary" onClick={() => handleSaveGroupEdit(group.id)} disabled={updateGroupMutation.isPending}>
+                      <Check className="w-3 h-3 mr-0.5" />保存
+                    </Button>
+                  )}
+                </div>
+
+                {isAnalyzing && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />正在分析此组图片...
+                  </div>
+                )}
+
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">图片类型</label>
+                  {isLocked ? (
+                    <p className="text-sm">{edit.imageType || "未标注"}</p>
+                  ) : (
+                    <Input value={edit.imageType || ""} onChange={(e) => setEdit(group.id, { imageType: e.target.value })} placeholder="如：场景图 / 功能图 / 卖点图 / A+" className="h-7 text-xs" />
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">构图方式</label>
+                  {isLocked ? (
+                    <p className="text-sm text-muted-foreground">{edit.composition || "未分析"}</p>
+                  ) : (
+                    <Input value={edit.composition || ""} onChange={(e) => setEdit(group.id, { composition: e.target.value })} placeholder="如：居中展示、对角构图、三分法" className="h-7 text-xs" />
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">配色方案</label>
+                  {isLocked ? (
+                    <p className="text-sm text-muted-foreground">{edit.colorScheme || "未分析"}</p>
+                  ) : (
+                    <Input value={edit.colorScheme || ""} onChange={(e) => setEdit(group.id, { colorScheme: e.target.value })} placeholder="如：白底清洁风、深色高级感" className="h-7 text-xs" />
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">卖点表达方式</label>
+                  {isLocked ? (
+                    <p className="text-sm text-muted-foreground">{edit.sellingPointExpression || "未分析"}</p>
+                  ) : (
+                    <Textarea value={edit.sellingPointExpression || ""} onChange={(e) => setEdit(group.id, { sellingPointExpression: e.target.value })} placeholder="如：数据对比、场景使用、功能图标展示" className="min-h-[56px] text-xs resize-none" />
+                  )}
+                </div>
+              </div>
+
+              {/* ── Column 3: Highlight Tags ── */}
+              <div className="p-4 space-y-3">
+                <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />亮点标签
+                </h4>
+
+                <div className="flex flex-wrap gap-1.5 min-h-[40px]">
+                  {highlights.length === 0 && (
+                    <p className="text-xs text-muted-foreground italic">{isLocked ? "未添加亮点" : "AI分析后自动填充，也可手动添加"}</p>
+                  )}
+                  {highlights.map((h, i) => (
+                    <HighlightTag key={i} text={h.text} category={h.category} removable={!isLocked} onRemove={() => removeHighlight(group.id, i)} />
+                  ))}
+                </div>
+
+                {!isLocked && (
+                  <div className="space-y-2 border-t pt-3">
+                    <p className="text-xs font-medium text-muted-foreground">手动添加亮点</p>
+                    <div className="flex gap-1.5">
+                      <select
+                        value={newHighlightCat[group.id] || "other"}
+                        onChange={(e) => setNewHighlightCat(prev => ({ ...prev, [group.id]: e.target.value }))}
+                        className="h-7 text-xs border rounded-md px-1.5 bg-background text-foreground shrink-0"
+                      >
+                        {HIGHLIGHT_CATEGORIES.map(c => (
+                          <option key={c.key} value={c.key}>{c.label}</option>
+                        ))}
+                      </select>
+                      <Input
+                        value={newHighlightText[group.id] || ""}
+                        onChange={(e) => setNewHighlightText(prev => ({ ...prev, [group.id]: e.target.value }))}
+                        onKeyDown={(e) => { if (e.key === "Enter") addHighlight(group.id); }}
+                        placeholder="输入亮点描述后回车"
+                        className="h-7 text-xs flex-1"
+                      />
+                      <Button size="sm" variant="outline" className="h-7 w-7 p-0 shrink-0" onClick={() => addHighlight(group.id)}>
+                        <Plus className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1">
+                      {[
+                        { text: "白底清洁", cat: "color" }, { text: "场景化展示", cat: "scene" },
+                        { text: "对角构图", cat: "composition" }, { text: "数据对比", cat: "expression" },
+                        { text: "图标展示", cat: "expression" }, { text: "大字标题", cat: "typography" },
+                      ].map((preset) => (
+                        <button
+                          key={preset.text}
+                          onClick={() => {
+                            const e2 = getEdit(group.id);
+                            const exists = (e2.highlights || []).some((h: any) => h.text === preset.text);
+                            if (!exists) setEdit(group.id, { highlights: [...(e2.highlights || []), { text: preset.text, category: preset.cat }] });
+                          }}
+                          className="text-[10px] px-1.5 py-1 rounded border border-dashed border-gray-300 hover:border-primary hover:text-primary text-muted-foreground transition-colors truncate"
+                        >
+                          + {preset.text}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!isLocked && highlights.length > 0 && (
+                  <Button size="sm" variant="outline" className="w-full h-7 text-xs" onClick={() => handleSaveGroupEdit(group.id)} disabled={updateGroupMutation.isPending}>
+                    {updateGroupMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Check className="w-3 h-3 mr-1" />}
+                    保存此方向分析
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         );
