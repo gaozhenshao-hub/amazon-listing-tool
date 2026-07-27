@@ -314,6 +314,60 @@ ${activeQuestions.map((q, i) => `${i + 1}. ${q.question}`).join("\n")}
       };
     }),
 
+  // Import buyer questions from xlsx (N3 data files upload)
+  importFromXlsx: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      questions: z.array(z.object({
+        question: z.string(),
+        questionCn: z.string().optional(),
+        category: z.string().optional(),
+        priority: z.enum(["high", "medium", "low"]).optional(),
+      })),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      let inserted = 0;
+      let skipped = 0;
+      for (const q of input.questions) {
+        if (!q.question.trim()) { skipped++; continue; }
+        // Check for duplicate
+        const existing = await db!.select({ id: buyerQuestions.id })
+          .from(buyerQuestions)
+          .where(and(
+            eq(buyerQuestions.projectId, input.projectId),
+            eq(buyerQuestions.question, q.question.trim())
+          ))
+          .limit(1);
+        if (existing.length > 0) { skipped++; continue; }
+        await db!.insert(buyerQuestions).values({
+          projectId: input.projectId,
+          userId: ctx.user.id,
+          question: q.question.trim(),
+          questionCn: q.questionCn || null,
+          category: q.category || null,
+          priority: q.priority || "medium",
+          source: "manual",
+          status: "active",
+        });
+        inserted++;
+      }
+      return { inserted, skipped, total: input.questions.length };
+    }),
+
+  // Check if buyer questions have been uploaded for a project (readiness check)
+  getReadiness: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      const count = await db!
+        .select({ total: sql<number>`COUNT(*)` })
+        .from(buyerQuestions)
+        .where(eq(buyerQuestions.projectId, input.projectId));
+      const total = Number(count[0]?.total || 0);
+      return { hasQuestions: total > 0, count: total };
+    }),
+
   // Get coverage summary stats for a project
   getCoverageStats: protectedProcedure
     .input(z.object({ projectId: z.number() }))

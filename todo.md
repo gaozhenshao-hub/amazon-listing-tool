@@ -112,3 +112,28 @@
 - [x] 在 server/_core/index.ts 注册 /api/external/kb 路由
 - [x] 部署到生产环境（Checkpoint + Publish）
 - [x] 验证生产环境 /api/external/kb/stats 返回 JSON（发布后可验证）
+
+## 无限画布架构改造（v2 确认版，2026-07-27）
+
+### Phase 1: Schema & Backend
+- [x] projectFile router: getAnalysisSummary 改为只检查 product_attributes（N3就绪 = 产品属性表已上传）
+- [x] buyerQuestions router: 新增 importFromXlsx procedure（解析xlsx并批量入库）
+- [x] projectFile router: 新增 getDataFilesReadiness procedure（返回产品属性表+买家问题库就绪状态）
+
+### Phase 2: N3 数据文件页面改造
+- [ ] DataFilesPage: 移除竞品Listing/场景词/A9关键词上传入口（这些归入N1/N4）
+- [ ] DataFilesPage: 保留产品属性表上传入口（已有）
+- [ ] DataFilesPage: 新增买家问题库上传入口（xlsx上传+解析+批量入库）
+- [ ] DataFilesPage: 买家问题库上传后展示问题列表（可编辑分类/优先级）
+
+### Phase 3: GeneratePage 强制检查
+- [x] GeneratePage: G1入口增加产品属性表强制检查（未上传则显示拦截弹窗，不可跳过）
+- [x] GeneratePage: 拦截弹窗提供"立即上传"按鈕，跳转到 /listing/data-files
+
+### Phase 4: 无限画布主页面
+- [x] 新建 WorkflowCanvasPage.tsx：展示所有节点卡片（N0-N5, G1-G5, O1-O3, E1-E2）
+- [x] 节点卡片：显示状态（未开始/进行中/已完成/已锁定/有警告）、关键数字摘要
+- [x] 节点卡片颜色：灰/蓝/绿/绿填充/黄/红
+- [x] 节点点击：全屏跳转到对应页面
+- [x] 注册路由 /listing/canvas
+- [x] 侧边栏新增"工作流画布"菜单项

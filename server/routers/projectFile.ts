@@ -658,12 +658,10 @@ export const projectFileRouter = router({
         } catch {}
       }
 
-      summary.hasAllFiles = !!(
-        summary.productAttributes &&
-        summary.competitorListings &&
-        summary.cosmoScenes &&
-        summary.a9Keywords
-      );
+      // N3 readiness: only product_attributes is required (v2 architecture)
+      summary.n3Ready = !!summary.productAttributes;
+      // Legacy compat: hasAllFiles now equals n3Ready
+      summary.hasAllFiles = summary.n3Ready;
 
       return summary;
     }),

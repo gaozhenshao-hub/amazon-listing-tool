@@ -2312,4 +2312,21 @@ Please expand this keyword/theme into a complete selling point core with FABE di
       }
     }),
 
+  // AI Chat assistant for workflow canvas
+  aiChat: protectedProcedure
+    .input(z.object({
+      messages: z.array(z.object({
+        role: z.enum(["system", "user", "assistant"]),
+        content: z.string(),
+      })),
+    }))
+    .mutation(async ({ input }) => {
+      const response = await invokeLLM({
+        messages: input.messages,
+      });
+      const content = response.choices[0].message.content;
+      return {
+        content: typeof content === "string" ? content : JSON.stringify(content),
+      };
+    }),
 });

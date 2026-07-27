@@ -259,6 +259,17 @@ export default function GeneratePage() {
 
   const handleGenerateCores = () => {
     if (!selectedProjectId) return;
+    // 强制前置检查：产品属性表必须已上传
+    if (!fileSummary?.productAttributes) {
+      toast.error("请先在『数据文件』上传『产品属性表』，才能开始生成卖点", {
+        action: {
+          label: "前往上传",
+          onClick: () => window.location.href = "/listing/data-files",
+        },
+        duration: 6000,
+      });
+      return;
+    }
     setStepBulletPhase("idle");
     generateCores.mutate({ projectId: selectedProjectId, emphasis: emphasis.trim() || undefined });
   };

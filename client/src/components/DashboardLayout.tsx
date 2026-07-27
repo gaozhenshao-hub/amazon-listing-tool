@@ -65,6 +65,7 @@ import {
   ClipboardList,
   Upload,
   HelpCircle,
+  LayoutGrid,
   type LucideIcon,
 } from "lucide-react";
 import { ROLE_LABELS, ROLE_MODULE_ACCESS, ADMIN_ROLES } from "@shared/const";
@@ -123,6 +124,7 @@ const modules: ModuleDef[] = [
     prefix: "/listing",
     enabled: true,
     items: [
+      { icon: LayoutGrid, label: "工作流画布", path: "/listing/canvas" },
       { icon: LayoutDashboard, label: "项目管理", path: "/listing" },
       { icon: Search, label: "竞品分析", path: "/listing/analysis" },
       { icon: GitCompareArrows, label: "竞品对比", path: "/listing/comparison" },
