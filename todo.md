@@ -147,3 +147,13 @@
 - [x] 节点点击：全屏跳转到对应页面
 - [x] 注册路由 /listing/canvas
 - [x] 侧边栏新增"工作流画布"菜单项
+
+## SVG 连线可视化（2026-07-27）
+- [x] WorkflowCanvasPage: 添加 SVG 叠加层（CanvasSVGOverlay 组件）
+- [x] 使用 ResizeObserver + data-node-id 动态计算节点位置
+- [x] N3→G1 红色实线（强依赖，strokeWidth=2.5）
+- [x] N1/N4/N5→G1、N4→G4 橙色虚线（强烈建议）
+- [x] N3→G5、G1→E1/E2/E3、N4→E4 灰色虚线（可选）
+- [x] G1→G2→G3、G1→G4、G1→G5 生成层顺序依赖连线
+- [x] 新增图例区域（红色实线/橙色虚线/灰色虚线说明）
+- [x] 层间增加 h-8 间距，让跨层连线有足够空间显示

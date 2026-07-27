@@ -1,6 +1,6 @@
 /**
  * WorkflowCanvasPage — 无限画布工作流总览页
- * 
+ *
  * 架构 v2（用户确认版）：
  * - N1 竞品分析：输入ASIN + 竞品Listing文本上传
  * - N2 竞品对比：多竞品横向对比
@@ -12,8 +12,9 @@
  * - E2 Listing评分
  * - E3 视频脚本
  * - E4 广告架构
- * 
+ *
  * 交互：点击节点 → 全屏跳转到对应页面
+ * SVG连线：N3→G1 红色实线（强依赖），其他数据流 灰色虚线
  */
 
 import { trpc } from "@/lib/trpc";
@@ -23,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import ProjectSelector from "@/components/ProjectSelector";
+import { useRef, useEffect, useState, useCallback } from "react";
 import {
   Search,
   GitCompareArrows,
@@ -247,6 +249,207 @@ const NODES: CanvasNode[] = [
   },
 ];
 
+// ─── 数据流边定义 ──────────────────────────────────────────────────────────────
+// type: "required" = 红色实线（强依赖）, "recommended" = 灰色虚线（强烈建议）, "optional" = 浅灰虚线（可选）
+
+interface FlowEdge {
+  from: string;
+  to: string;
+  type: "required" | "recommended" | "optional";
+  label?: string;
+}
+
+const FLOW_EDGES: FlowEdge[] = [
+  // 强依赖（红色实线）
+  { from: "N3", to: "G1", type: "required", label: "必须" },
+  // 强烈建议（橙色虚线）
+  { from: "N1", to: "G1", type: "recommended", label: "竞品格局" },
+  { from: "N4", to: "G1", type: "recommended", label: "关键词策略" },
+  { from: "N4", to: "G4", type: "recommended", label: "关键词矩阵" },
+  { from: "N5", to: "G1", type: "recommended", label: "评论洞察" },
+  // 可选（灰色虚线）
+  { from: "N3", to: "G5", type: "optional", label: "买家问题库" },
+  // 生成层顺序依赖
+  { from: "G1", to: "G2", type: "recommended" },
+  { from: "G2", to: "G3", type: "recommended" },
+  { from: "G1", to: "G4", type: "recommended" },
+  { from: "G1", to: "G5", type: "recommended" },
+  // 输出层依赖
+  { from: "G1", to: "E1", type: "optional" },
+  { from: "G1", to: "E2", type: "optional" },
+  { from: "G1", to: "E3", type: "optional" },
+  { from: "N4", to: "E4", type: "optional" },
+];
+
+// ─── SVG 连线组件 ─────────────────────────────────────────────────────────────
+
+interface NodeRect {
+  id: string;
+  cx: number; // center x relative to canvas container
+  cy: number; // center y relative to canvas container
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+  width: number;
+  height: number;
+}
+
+function getEdgeStyle(type: FlowEdge["type"]) {
+  switch (type) {
+    case "required":
+      return { stroke: "#ef4444", strokeWidth: 2.5, strokeDasharray: "none", opacity: 0.9 };
+    case "recommended":
+      return { stroke: "#f97316", strokeWidth: 1.5, strokeDasharray: "6,4", opacity: 0.7 };
+    case "optional":
+      return { stroke: "#9ca3af", strokeWidth: 1.2, strokeDasharray: "4,5", opacity: 0.5 };
+  }
+}
+
+function getLabelStyle(type: FlowEdge["type"]) {
+  switch (type) {
+    case "required":
+      return { fill: "#ef4444", fontSize: 10, fontWeight: "bold" };
+    case "recommended":
+      return { fill: "#f97316", fontSize: 9, fontWeight: "500" };
+    case "optional":
+      return { fill: "#9ca3af", fontSize: 9, fontWeight: "normal" };
+  }
+}
+
+/**
+ * 计算贝塞尔曲线路径：从源节点底部中心 → 目标节点顶部中心
+ * 若同层（如 G1→G2），则从右侧中心 → 左侧中心
+ */
+function buildPath(from: NodeRect, to: NodeRect): string {
+  // 判断是否同层（y坐标接近）
+  const sameLevelThreshold = 60;
+  const sameLevel = Math.abs(from.cy - to.cy) < sameLevelThreshold;
+
+  if (sameLevel) {
+    // 水平连线：从右侧中心 → 左侧中心
+    const x1 = from.right;
+    const y1 = from.cy;
+    const x2 = to.left;
+    const y2 = to.cy;
+    const cpOffset = Math.max(20, (x2 - x1) * 0.4);
+    return `M ${x1} ${y1} C ${x1 + cpOffset} ${y1}, ${x2 - cpOffset} ${y2}, ${x2} ${y2}`;
+  } else {
+    // 跨层连线：从底部中心 → 顶部中心
+    const x1 = from.cx;
+    const y1 = from.bottom;
+    const x2 = to.cx;
+    const y2 = to.top;
+    const cpOffset = Math.max(30, (y2 - y1) * 0.5);
+    return `M ${x1} ${y1} C ${x1} ${y1 + cpOffset}, ${x2} ${y2 - cpOffset}, ${x2} ${y2}`;
+  }
+}
+
+function CanvasSVGOverlay({
+  nodeRects,
+  edges,
+  width,
+  height,
+}: {
+  nodeRects: Map<string, NodeRect>;
+  edges: FlowEdge[];
+  width: number;
+  height: number;
+}) {
+  if (nodeRects.size === 0 || width === 0 || height === 0) return null;
+
+  return (
+    <svg
+      className="absolute inset-0 pointer-events-none"
+      width={width}
+      height={height}
+      style={{ zIndex: 0 }}
+    >
+      <defs>
+        {/* 箭头标记 - 红色（required） */}
+        <marker
+          id="arrow-required"
+          markerWidth="8"
+          markerHeight="8"
+          refX="6"
+          refY="3"
+          orient="auto"
+          markerUnits="strokeWidth"
+        >
+          <path d="M0,0 L0,6 L8,3 z" fill="#ef4444" />
+        </marker>
+        {/* 箭头标记 - 橙色（recommended） */}
+        <marker
+          id="arrow-recommended"
+          markerWidth="8"
+          markerHeight="8"
+          refX="6"
+          refY="3"
+          orient="auto"
+          markerUnits="strokeWidth"
+        >
+          <path d="M0,0 L0,6 L8,3 z" fill="#f97316" />
+        </marker>
+        {/* 箭头标记 - 灰色（optional） */}
+        <marker
+          id="arrow-optional"
+          markerWidth="8"
+          markerHeight="8"
+          refX="6"
+          refY="3"
+          orient="auto"
+          markerUnits="strokeWidth"
+        >
+          <path d="M0,0 L0,6 L8,3 z" fill="#9ca3af" />
+        </marker>
+      </defs>
+
+      {edges.map((edge, i) => {
+        const fromRect = nodeRects.get(edge.from);
+        const toRect = nodeRects.get(edge.to);
+        if (!fromRect || !toRect) return null;
+
+        const style = getEdgeStyle(edge.type);
+        const labelStyle = getLabelStyle(edge.type);
+        const pathD = buildPath(fromRect, toRect);
+        const markerId = `arrow-${edge.type}`;
+
+        // 计算标签位置（路径中点附近）
+        const midX = (fromRect.cx + toRect.cx) / 2;
+        const midY = (fromRect.cy + toRect.cy) / 2;
+
+        return (
+          <g key={`${edge.from}-${edge.to}-${i}`}>
+            <path
+              d={pathD}
+              fill="none"
+              stroke={style.stroke}
+              strokeWidth={style.strokeWidth}
+              strokeDasharray={style.strokeDasharray === "none" ? undefined : style.strokeDasharray}
+              opacity={style.opacity}
+              markerEnd={`url(#${markerId})`}
+            />
+            {edge.label && (
+              <text
+                x={midX}
+                y={midY - 4}
+                textAnchor="middle"
+                fontSize={labelStyle.fontSize}
+                fontWeight={labelStyle.fontWeight}
+                fill={labelStyle.fill}
+                opacity={0.85}
+                style={{ userSelect: "none" }}
+              >
+                {edge.label}
+              </text>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 // ─── 状态计算 ─────────────────────────────────────────────────────────────────
 
 function useNodeStatuses(projectId: number | null) {
@@ -383,6 +586,7 @@ function NodeCard({
 
   return (
     <button
+      data-node-id={node.id}
       onClick={isClickable ? onClick : undefined}
       disabled={!isClickable}
       className={`
@@ -394,6 +598,7 @@ function NodeCard({
           : "cursor-not-allowed opacity-60"
         }
       `}
+      style={{ zIndex: 1 }}
     >
       {/* Status dot */}
       <span className={`absolute top-3 right-3 h-2 w-2 rounded-full ${style.dot}`} />
@@ -493,6 +698,62 @@ export default function WorkflowCanvasPage() {
 
   const n3Ready = statusMap["N3"]?.status === "done";
 
+  // ── SVG 连线逻辑 ──────────────────────────────────────────────────────────
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [nodeRects, setNodeRects] = useState<Map<string, NodeRect>>(new Map());
+  const [svgSize, setSvgSize] = useState({ width: 0, height: 0 });
+
+  const recalcRects = useCallback(() => {
+    const container = canvasRef.current;
+    if (!container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const newMap = new Map<string, NodeRect>();
+
+    NODES.forEach((node) => {
+      const el = container.querySelector(`[data-node-id="${node.id}"]`) as HTMLElement | null;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      newMap.set(node.id, {
+        id: node.id,
+        cx: r.left - containerRect.left + r.width / 2,
+        cy: r.top - containerRect.top + r.height / 2,
+        top: r.top - containerRect.top,
+        bottom: r.top - containerRect.top + r.height,
+        left: r.left - containerRect.left,
+        right: r.left - containerRect.left + r.width,
+        width: r.width,
+        height: r.height,
+      });
+    });
+
+    setNodeRects(newMap);
+    setSvgSize({ width: container.offsetWidth, height: container.offsetHeight });
+  }, []);
+
+  useEffect(() => {
+    // Initial calculation after mount
+    const timer = setTimeout(recalcRects, 100);
+    return () => clearTimeout(timer);
+  }, [recalcRects, selectedProjectId]);
+
+  useEffect(() => {
+    const container = canvasRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver(() => {
+      recalcRects();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [recalcRects]);
+
+  // Recalc when statusMap changes (nodes might re-render)
+  useEffect(() => {
+    const timer = setTimeout(recalcRects, 200);
+    return () => clearTimeout(timer);
+  }, [statusMap, recalcRects]);
+
   return (
     <div className="space-y-6">
       {/* ── Header ── */}
@@ -572,100 +833,123 @@ export default function WorkflowCanvasPage() {
             </Card>
           )}
 
-          {/* ── 前置准备层 ── */}
-          <div>
-            <LayerHeader
-              title="前置准备层"
-              subtitle="上传数据资产，为AI生成提供高质量上下文"
-              icon={Database}
-              color="border-gray-200"
+          {/* ── 图例 ── */}
+          <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 px-1">
+            <span className="font-medium text-gray-600">连线图例：</span>
+            <span className="flex items-center gap-1.5">
+              <svg width="32" height="10" className="inline-block">
+                <line x1="0" y1="5" x2="32" y2="5" stroke="#ef4444" strokeWidth="2.5" />
+                <polygon points="26,2 32,5 26,8" fill="#ef4444" />
+              </svg>
+              <span className="text-red-600 font-medium">强依赖（必须完成）</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <svg width="32" height="10" className="inline-block">
+                <line x1="0" y1="5" x2="32" y2="5" stroke="#f97316" strokeWidth="1.5" strokeDasharray="5,3" />
+                <polygon points="26,2 32,5 26,8" fill="#f97316" />
+              </svg>
+              <span className="text-orange-600">强烈建议</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <svg width="32" height="10" className="inline-block">
+                <line x1="0" y1="5" x2="32" y2="5" stroke="#9ca3af" strokeWidth="1.2" strokeDasharray="4,4" />
+                <polygon points="26,2 32,5 26,8" fill="#9ca3af" />
+              </svg>
+              <span className="text-gray-500">可选数据流</span>
+            </span>
+          </div>
+
+          {/* ── 画布主体（含 SVG 叠加层） ── */}
+          <div ref={canvasRef} className="relative" style={{ isolation: "isolate" }}>
+            {/* SVG 连线叠加层 */}
+            <CanvasSVGOverlay
+              nodeRects={nodeRects}
+              edges={FLOW_EDGES}
+              width={svgSize.width}
+              height={svgSize.height}
             />
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-              {prepNodes.map((node) => {
-                const s = statusMap[node.id] || { status: "ready" as NodeStatus, summary: "" };
-                return (
-                  <NodeCard
-                    key={node.id}
-                    node={node}
-                    status={s.status}
-                    summary={s.summary}
-                    onClick={() => setLocation(node.path)}
-                  />
-                );
-              })}
-            </div>
-          </div>
 
-          {/* ── 箭头 ── */}
-          <div className="flex items-center justify-center gap-2 text-gray-400">
-            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
-            <div className="flex items-center gap-1 text-xs font-medium text-gray-500 px-3 py-1 rounded-full bg-gray-100">
-              <ChevronRight className="h-3.5 w-3.5" />
-              数据注入 Listing 生成
-              <ChevronRight className="h-3.5 w-3.5" />
-            </div>
-            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
-          </div>
+            <div className="space-y-8">
+              {/* ── 前置准备层 ── */}
+              <div>
+                <LayerHeader
+                  title="前置准备层"
+                  subtitle="上传数据资产，为AI生成提供高质量上下文"
+                  icon={Database}
+                  color="border-gray-200"
+                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+                  {prepNodes.map((node) => {
+                    const s = statusMap[node.id] || { status: "ready" as NodeStatus, summary: "" };
+                    return (
+                      <NodeCard
+                        key={node.id}
+                        node={node}
+                        status={s.status}
+                        summary={s.summary}
+                        onClick={() => setLocation(node.path)}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
 
-          {/* ── 生成层 ── */}
-          <div>
-            <LayerHeader
-              title="Listing 生成层"
-              subtitle="5步顺序流程，AI生成 → 人工审核 → 确认锁定"
-              icon={Sparkles}
-              color="border-amber-200"
-            />
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
-              {generateNodes.map((node) => {
-                const s = statusMap[node.id] || { status: "locked" as NodeStatus, summary: "" };
-                return (
-                  <NodeCard
-                    key={node.id}
-                    node={node}
-                    status={s.status}
-                    summary={s.summary}
-                    onClick={() => setLocation(node.path)}
-                  />
-                );
-              })}
-            </div>
-            <p className="mt-3 text-xs text-center text-gray-400">
-              G1-G5 均在同一工作台（Listing生成）中完成，点击任意节点进入工作台
-            </p>
-          </div>
+              {/* ── 层间间距（SVG连线穿过此区域） ── */}
+              <div className="h-8" />
 
-          {/* ── 箭头 ── */}
-          <div className="flex items-center justify-center gap-2 text-gray-400">
-            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
-            <div className="flex items-center gap-1 text-xs font-medium text-gray-500 px-3 py-1 rounded-full bg-gray-100">
-              <ChevronRight className="h-3.5 w-3.5" />
-              Listing 内容输出
-              <ChevronRight className="h-3.5 w-3.5" />
-            </div>
-            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gray-300 to-transparent" />
-          </div>
+              {/* ── 生成层 ── */}
+              <div>
+                <LayerHeader
+                  title="Listing 生成层"
+                  subtitle="5步顺序流程，AI生成 → 人工审核 → 确认锁定"
+                  icon={Sparkles}
+                  color="border-amber-200"
+                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+                  {generateNodes.map((node) => {
+                    const s = statusMap[node.id] || { status: "locked" as NodeStatus, summary: "" };
+                    return (
+                      <NodeCard
+                        key={node.id}
+                        node={node}
+                        status={s.status}
+                        summary={s.summary}
+                        onClick={() => setLocation(node.path)}
+                      />
+                    );
+                  })}
+                </div>
+                <p className="mt-3 text-xs text-center text-gray-400">
+                  G1-G5 均在同一工作台（Listing生成）中完成，点击任意节点进入工作台
+                </p>
+              </div>
 
-          {/* ── 输出层 ── */}
-          <div>
-            <LayerHeader
-              title="输出与优化层"
-              subtitle="基于Listing内容，生成图片建议、评分、视频脚本、广告架构"
-              icon={Layers}
-              color="border-teal-200"
-            />
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {outputNodes.map((node) => {
-                const s = statusMap[node.id] || { status: "locked" as NodeStatus, summary: "" };
-                return (
-                  <NodeCard
-                    key={node.id}
-                    node={node}
-                    status={s.status}
-                    summary={s.summary}
-                    onClick={() => setLocation(node.path)}
-                  />
-                );
-              })}
+              {/* ── 层间间距 ── */}
+              <div className="h-8" />
+
+              {/* ── 输出层 ── */}
+              <div>
+                <LayerHeader
+                  title="输出与优化层"
+                  subtitle="基于Listing内容，生成图片建议、评分、视频脚本、广告架构"
+                  icon={Layers}
+                  color="border-teal-200"
+                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {outputNodes.map((node) => {
+                    const s = statusMap[node.id] || { status: "locked" as NodeStatus, summary: "" };
+                    return (
+                      <NodeCard
+                        key={node.id}
+                        node={node}
+                        status={s.status}
+                        summary={s.summary}
+                        onClick={() => setLocation(node.path)}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -678,16 +962,16 @@ export default function WorkflowCanvasPage() {
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-gray-600">
                 <div>
-                  <p className="font-medium text-gray-700 mb-1">必须上传（强制）</p>
+                  <p className="font-medium text-red-600 mb-1">🔴 必须上传（强制，红色实线）</p>
                   <p>N3 产品属性表 → G1 卖点精雕（Rufus属性提取）</p>
                 </div>
                 <div>
-                  <p className="font-medium text-gray-700 mb-1">强烈建议上传</p>
+                  <p className="font-medium text-orange-600 mb-1">🟠 强烈建议上传（橙色虚线）</p>
                   <p>N1 竞品Listing文本 → G1 多竞品格局分析</p>
                   <p className="mt-1">N4 场景词/A9关键词 → G1/G4 关键词策略</p>
                 </div>
                 <div>
-                  <p className="font-medium text-gray-700 mb-1">可选上传</p>
+                  <p className="font-medium text-gray-500 mb-1">⚪ 可选上传（灰色虚线）</p>
                   <p>N3 买家问题库 → G5 QA问答</p>
                   <p className="mt-1">N5 评论聚合 → G1 卖点差异化</p>
                 </div>
