@@ -229,16 +229,25 @@ function Step0CompetitorAnalysis({
     if (!competitorName.trim()) { toast.error("请先填写竞品名称"); return; }
     setUploadingIdx(images.length);
     try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64 = (reader.result as string).split(',')[1];
-        await uploadMutation.mutateAsync({ projectId, competitorName: competitorName.trim(), imageData: base64, fileName: file.name, sortOrder: images.length });
-        step0Query.refetch();
-        toast.success("竞品图片已上传");
-        setUploadingIdx(null);
-      };
-      reader.readAsDataURL(file);
-    } catch (err: any) { toast.error(err.message || "上传失败"); setUploadingIdx(null); }
+      // Use multipart upload directly to avoid base64 overhead
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("projectId", String(projectId));
+      formData.append("competitorName", competitorName.trim());
+      formData.append("sortOrder", String(images.length));
+      const resp = await fetch("/api/upload/competitor-image", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData.error || "上传失败");
+      }
+      step0Query.refetch();
+      toast.success("竞品图片已上传");
+    } catch (err: any) { toast.error(err.message || "上传失败"); }
+    finally { setUploadingIdx(null); }
   };
 
   const handleAnalyze = async (imageId: number) => {

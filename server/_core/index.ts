@@ -12,6 +12,7 @@ import { startUsageTracking } from "../usageTracking";
 import { intelScheduler } from "../intelAutoCollect";
 import { weeklyReportHandler, dataCleanupHandler } from "../scheduledHandlers";
 import { kbExternalApiRouter } from "../kbExternalApi";
+import { imageUploadRouter } from "../imageUploadRouter";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -44,6 +45,8 @@ async function startServer() {
   app.use("/api/sync", syncRouter);
   // Knowledge base external API for Emperor platform (no OAuth, uses EMPEROR_KB_API_KEY)
   app.use("/api/external/kb", kbExternalApiRouter);
+  // Fast image upload endpoint (multipart/form-data, avoids base64 overhead)
+  app.use("/api/upload", imageUploadRouter);
   // Scheduled task handlers (Heartbeat HTTP cron)
   app.post("/api/scheduled/weekly-report", weeklyReportHandler);
   app.post("/api/scheduled/data-cleanup", dataCleanupHandler);
