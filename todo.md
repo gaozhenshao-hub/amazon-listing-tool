@@ -131,10 +131,10 @@
 - [x] projectFile router: 新增 getDataFilesReadiness procedure（返回产品属性表+买家问题库就绪状态）
 
 ### Phase 2: N3 数据文件页面改造
-- [ ] DataFilesPage: 移除竞品Listing/场景词/A9关键词上传入口（这些归入N1/N4）
-- [ ] DataFilesPage: 保留产品属性表上传入口（已有）
-- [ ] DataFilesPage: 新增买家问题库上传入口（xlsx上传+解析+批量入库）
-- [ ] DataFilesPage: 买家问题库上传后展示问题列表（可编辑分类/优先级）
+- [x] DataFilesPage: 移除竞品Listing/场景词/A9关键词上传入口（这些归入N1/N4）
+- [x] DataFilesPage: 保留产品属性表上传入口（已有）
+- [x] DataFilesPage: 新增买家问题库上传入口（xlsx上传+解析+批量入库）
+- [x] DataFilesPage: 买家问题库上传后展示问题列表（可编辑分类/优先级）
 
 ### Phase 3: GeneratePage 强制检查
 - [x] GeneratePage: G1入口增加产品属性表强制检查（未上传则显示拦截弹窗，不可跳过）
