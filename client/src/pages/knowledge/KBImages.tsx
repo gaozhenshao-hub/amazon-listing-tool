@@ -94,6 +94,7 @@ export default function KBImages() {
   const [viewMode, setViewMode] = useState<ViewMode>("asin");
   const [activeMainTab, setActiveMainTab] = useState<"browse" | "tags">("browse");
   const [detailSetId, setDetailSetId] = useState<number | null>(null);
+  const [analyzingPoll, setAnalyzingPoll] = useState(false);
   const [editingAnalysis, setEditingAnalysis] = useState("");
 
   // Filters - V2 (7 dimensions + image belong)
@@ -144,7 +145,9 @@ export default function KBImages() {
     {
       enabled: !!detailSetId,
       staleTime: 60_000, // 60s cache — avoids redundant refetch when reopening same set
-      placeholderData: detailSetPlaceholder ? { ...detailSetPlaceholder, images: [] } : undefined,
+      // keepPreviousData: true keeps old images visible while re-fetching (prevents flash of empty state)
+      // placeholderData only used for initial load (before first fetch completes)
+      placeholderData: detailSetPlaceholder ? { ...detailSetPlaceholder, images: [] } as any : undefined,
     }
   );
 
@@ -282,12 +285,22 @@ export default function KBImages() {
   });
 
   const reAnalyzeMutation = trpc.kbImages.reAnalyze.useMutation({
-    onSuccess: () => { toast.success("已开始重新AI分析，请稍后刷新"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listSets.invalidate(); },
+    onSuccess: () => {
+      toast.success("已开始重新AI分析，请稍后刷新查看结果");
+      // Don't immediately invalidate — the status just changed to "analyzing" and images would flash empty
+      // Instead start polling: check every 5s until status is no longer "analyzing"
+      setAnalyzingPoll(true);
+      utils.kbImages.listSets.invalidate();
+    },
     onError: (e: any) => toast.error(e.message),
   });
 
   const reAnalyzeSummaryOnlyMutation = trpc.kbImages.reAnalyzeSummaryOnly.useMutation({
-    onSuccess: () => { toast.success("已开始重新生成总结（不重新打标签），请稍后刷新"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listSets.invalidate(); },
+    onSuccess: () => {
+      toast.success("已开始重新生成总结，请稍后查看结果");
+      setAnalyzingPoll(true);
+      utils.kbImages.listSets.invalidate();
+    },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -295,6 +308,23 @@ export default function KBImages() {
     onSuccess: () => { toast.success("图片已删除"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); },
     onError: (e: any) => toast.error(e.message),
   });
+
+  // Poll for analysis completion — avoids flash of empty images when re-analyzing
+  useEffect(() => {
+    if (!analyzingPoll || !detailSetId) return;
+    const interval = setInterval(async () => {
+      const cached = utils.kbImages.getSet.getData({ id: detailSetId });
+      // If current cached status is still "analyzing", refetch
+      if (!cached || (cached as any).status === "analyzing") {
+        utils.kbImages.getSet.invalidate({ id: detailSetId });
+      } else {
+        // Analysis done — stop polling
+        setAnalyzingPoll(false);
+        toast.success("AI分析已完成");
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [analyzingPoll, detailSetId]);
 
     const reorderImagesMutation = trpc.kbImages.reorderImages.useMutation({
     onSuccess: () => { toast.success("排序已保存"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); },
