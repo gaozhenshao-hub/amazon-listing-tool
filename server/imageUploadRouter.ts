@@ -258,7 +258,7 @@ imageUploadRouter.post(
       if (!projectId) { res.status(400).json({ error: "projectId required" }); return; }
 
       // Verify project access
-      const project = await getProjectById(projectId);
+      const project = await getProjectByIdAdmin(projectId);
       if (!project) { res.status(404).json({ error: "Project not found" }); return; }
 
       // Upload to S3
