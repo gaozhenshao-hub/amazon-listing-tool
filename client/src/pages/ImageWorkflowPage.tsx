@@ -1779,11 +1779,12 @@ function KbImagePickerDialog({
   onSelect: (images: Array<{ id: number; imageUrl: string; imagePosition: string; tagCategory: string; tagImageType: string; tagDesignStyle: string; tagColorScheme: string }>) => void;
   targetImageType?: string; // e.g. "主图", "辅图", "A+"
 }) {
+  const [scope, setScope] = useState<"mine" | "all">("all");
   const [filters, setFilters] = useState<{
     tagCategory?: string;
-    tagColorScheme?: string;
-    tagImageType?: string;
-    tagDesignStyle?: string;
+    tagColorSchemeV2?: string;
+    tagImageTypeMain?: string;
+    tagDesignStyleV2?: string;
     imagePosition?: string;
   }>({});
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -1804,9 +1805,9 @@ function KbImagePickerDialog({
     }
   }, [open, targetImageType]);
 
-  const filterOptions = trpc.imageWorkflow.getKbImageFilterOptions.useQuery(undefined, { enabled: open });
+  const filterOptions = trpc.imageWorkflow.getKbImageFilterOptions.useQuery({ scope }, { enabled: open });
   const kbImages = trpc.imageWorkflow.listKbImages.useQuery(
-    Object.keys(filters).length > 0 ? filters : undefined,
+    { scope, ...filters },
     { enabled: open }
   );
 
@@ -1853,8 +1854,20 @@ function KbImagePickerDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Filter Bar */}
+        {/* Scope + Filter Bar */}
         <div className="flex flex-wrap gap-2 py-2 border-b">
+          {/* Scope toggle */}
+          <div className="flex rounded-md border overflow-hidden text-xs mr-1">
+            <button
+              className={`px-2.5 py-1 transition-colors ${scope === "all" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+              onClick={() => setScope("all")}
+            >全部</button>
+            <button
+              className={`px-2.5 py-1 transition-colors ${scope === "mine" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+              onClick={() => setScope("mine")}
+            >我的</button>
+          </div>
+
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <Filter className="w-3.5 h-3.5" /> 筛选:
           </div>
@@ -1883,7 +1896,7 @@ function KbImagePickerDialog({
             </SelectContent>
           </Select>
 
-          <Select value={filters.tagColorScheme || "__all__"} onValueChange={v => v === "__all__" ? clearFilter("tagColorScheme") : setFilters(prev => ({ ...prev, tagColorScheme: v }))}>
+          <Select value={filters.tagColorSchemeV2 || "__all__"} onValueChange={v => v === "__all__" ? clearFilter("tagColorSchemeV2") : setFilters(prev => ({ ...prev, tagColorSchemeV2: v }))}>
             <SelectTrigger className="h-7 text-xs w-[100px]">
               <SelectValue placeholder="色系" />
             </SelectTrigger>
@@ -1895,7 +1908,7 @@ function KbImagePickerDialog({
             </SelectContent>
           </Select>
 
-          <Select value={filters.tagImageType || "__all__"} onValueChange={v => v === "__all__" ? clearFilter("tagImageType") : setFilters(prev => ({ ...prev, tagImageType: v }))}>
+          <Select value={filters.tagImageTypeMain || "__all__"} onValueChange={v => v === "__all__" ? clearFilter("tagImageTypeMain") : setFilters(prev => ({ ...prev, tagImageTypeMain: v }))}>
             <SelectTrigger className="h-7 text-xs w-[110px]">
               <SelectValue placeholder="图片类型" />
             </SelectTrigger>
@@ -1907,7 +1920,7 @@ function KbImagePickerDialog({
             </SelectContent>
           </Select>
 
-          <Select value={filters.tagDesignStyle || "__all__"} onValueChange={v => v === "__all__" ? clearFilter("tagDesignStyle") : setFilters(prev => ({ ...prev, tagDesignStyle: v }))}>
+          <Select value={filters.tagDesignStyleV2 || "__all__"} onValueChange={v => v === "__all__" ? clearFilter("tagDesignStyleV2") : setFilters(prev => ({ ...prev, tagDesignStyleV2: v }))}>
             <SelectTrigger className="h-7 text-xs w-[110px]">
               <SelectValue placeholder="设计风格" />
             </SelectTrigger>

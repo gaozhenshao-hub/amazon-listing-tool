@@ -1275,29 +1275,37 @@ export const imageWorkflowRouter = router({
   // ─── Knowledge Base Image Browser for Step 4 ─────────────────
   listKbImages: protectedProcedure
     .input(z.object({
+      scope: z.enum(["mine", "shared", "all"]).optional().default("all"),
       tagCategory: z.string().optional(),
-      tagColorScheme: z.string().optional(),
-      tagImageType: z.string().optional(),
-      tagDesignStyle: z.string().optional(),
+      tagColorSchemeV2: z.string().optional(),
+      tagImageTypeMain: z.string().optional(),
+      tagDesignStyleV2: z.string().optional(),
       imagePosition: z.string().optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
-      return kbDb.listAllImages(ctx.user.id, "mine", input);
+      const { scope = "all", ...filters } = input || {};
+      return kbDb.listAllImages(ctx.user.id, scope, filters);
     }),
 
-  // Get distinct tag values for filter dropdowns
+  // Get distinct tag values for filter dropdowns (V2 fields only, scope-aware)
   getKbImageFilterOptions: protectedProcedure
-    .query(async ({ ctx }) => {
-      const allImages = await kbDb.listAllImages(ctx.user.id, "mine");
+    .input(z.object({ scope: z.enum(["mine", "shared", "all"]).optional().default("all") }).optional())
+    .query(async ({ ctx, input }) => {
+      const scope = input?.scope ?? "all";
+      const allImages = await kbDb.listAllImages(ctx.user.id, scope);
       const categories = new Set<string>();
       const colorSchemes = new Set<string>();
       const imageTypes = new Set<string>();
       const designStyles = new Set<string>();
       for (const img of allImages) {
         if (img.tagCategory) categories.add(img.tagCategory);
-        if (img.tagColorScheme) colorSchemes.add(img.tagColorScheme);
-        if (img.tagImageType) imageTypes.add(img.tagImageType);
-        if (img.tagDesignStyle) designStyles.add(img.tagDesignStyle);
+        // V2 fields take priority; fall back to legacy only if V2 is absent
+        const cs = (img as any).tagColorSchemeV2 || img.tagColorScheme;
+        const it = (img as any).tagImageTypeMain || img.tagImageType;
+        const ds = (img as any).tagDesignStyleV2 || img.tagDesignStyle;
+        if (cs) colorSchemes.add(cs);
+        if (it) imageTypes.add(it);
+        if (ds) designStyles.add(ds);
       }
       return {
         categories: Array.from(categories).sort(),
