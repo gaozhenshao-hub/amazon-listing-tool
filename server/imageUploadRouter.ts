@@ -239,3 +239,38 @@ imageUploadRouter.post(
     }
   }
 );
+
+// ─── POST /api/upload/designer-image ────────────────────────────────────────
+// Upload designer artwork image for Step 5 right panel
+imageUploadRouter.post(
+  "/designer-image",
+  upload.single("file"),
+  async (req: Request, res: Response) => {
+    try {
+      const user = await getAuthUser(req);
+      if (!user) { res.status(401).json({ error: "Unauthorized" }); return; }
+
+      const file = req.file;
+      if (!file) { res.status(400).json({ error: "No file provided" }); return; }
+
+      const projectId = parseInt(req.body.projectId || "0");
+      const imageNumber = (req.body.imageNumber || "unknown").trim();
+      if (!projectId) { res.status(400).json({ error: "projectId required" }); return; }
+
+      // Verify project access
+      const project = await getProjectById(projectId);
+      if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+
+      // Upload to S3
+      const ext = (file.originalname.split(".").pop() || "jpg").toLowerCase();
+      const safeNum = imageNumber.replace(/[^a-zA-Z0-9_-]/g, "-");
+      const key = `image-workflow/${projectId}/step5-designer/${safeNum}-${Date.now()}.${ext}`;
+      const contentType = file.mimetype || `image/${ext}`;
+      const { url } = await storagePut(key, file.buffer, contentType);
+      res.json({ url, imageNumber });
+    } catch (err: any) {
+      console.error("[imageUpload] designer-image error:", err);
+      res.status(500).json({ error: err.message || "上传失败" });
+    }
+  }
+);

@@ -2764,6 +2764,77 @@ function RefinePopover({
   );
 }
 
+// ─── DesignerUploadPanel: right-side artwork upload panel ────────────────────
+function DesignerUploadPanel({
+  imageNumber,
+  label,
+  uploadedUrl,
+  isUploading,
+  onUpload,
+  onRemove,
+}: {
+  imageNumber: string;
+  label: string;
+  uploadedUrl?: string;
+  isUploading: boolean;
+  onUpload: (file: File) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 min-h-[120px]">
+      <div className="flex items-center gap-2 mb-1">
+        <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
+          <Upload className="w-3 h-3 mr-1" /> 美工成品
+        </Badge>
+        <span className="text-xs text-muted-foreground">{label}</span>
+      </div>
+      {uploadedUrl ? (
+        <div className="relative group rounded-lg overflow-hidden border border-emerald-200 bg-emerald-50/30">
+          <img
+            src={uploadedUrl}
+            alt={label}
+            className="w-full object-contain max-h-64 rounded-lg"
+          />
+          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+            <a href={uploadedUrl} target="_blank" rel="noopener noreferrer">
+              <Button size="sm" variant="secondary" className="h-7 text-xs">
+                <Eye className="w-3 h-3 mr-1" /> 查看
+              </Button>
+            </a>
+            <Button
+              size="sm"
+              variant="destructive"
+              className="h-7 text-xs"
+              onClick={onRemove}
+            >
+              <Trash2 className="w-3 h-3 mr-1" /> 删除
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <label className={`flex flex-col items-center justify-center min-h-[120px] rounded-lg border-2 border-dashed border-emerald-300 cursor-pointer hover:bg-emerald-50/50 transition-colors ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+          {isUploading ? (
+            <Loader2 className="w-6 h-6 text-emerald-500 animate-spin" />
+          ) : (
+            <>
+              <Upload className="w-6 h-6 text-emerald-400 mb-1" />
+              <span className="text-xs text-emerald-600 font-medium">上传成品图片</span>
+              <span className="text-xs text-muted-foreground mt-0.5">JPG / PNG / WEBP</span>
+            </>
+          )}
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) onUpload(f); }}
+            disabled={isUploading}
+          />
+        </label>
+      )}
+    </div>
+  );
+}
+
 function Step5FinalSuggestions({
   projectId,
   session,
@@ -3050,6 +3121,49 @@ function Step5FinalSuggestions({
 
   const isConfirmed = !!session?.step5Confirmed;
 
+  // Designer upload state
+  const [designerUploads, setDesignerUploads] = useState<Record<string, string>>(() => {
+    try { 
+      const arr = JSON.parse(session?.step5DesignerUploads || '[]');
+      const map: Record<string, string> = {};
+      arr.forEach((u: any) => { map[u.imageNumber] = u.imageUrl; });
+      return map;
+    } catch { return {}; }
+  });
+  const [uploadingDesigner, setUploadingDesigner] = useState<string | null>(null);
+  const addDesignerMutation = trpc.imageWorkflow.addDesignerUpload.useMutation();
+  const removeDesignerMutation = trpc.imageWorkflow.removeDesignerUpload.useMutation();
+
+  const handleDesignerUpload = async (imageNumber: string, file: File) => {
+    setUploadingDesigner(imageNumber);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('projectId', String(projectId));
+      formData.append('imageNumber', imageNumber);
+      const res = await fetch('/api/upload/designer-image', { method: 'POST', body: formData });
+      if (!res.ok) throw new Error('上传失败');
+      const { url } = await res.json();
+      await addDesignerMutation.mutateAsync({ projectId, imageUrl: url, imageNumber });
+      setDesignerUploads(prev => ({ ...prev, [imageNumber]: url }));
+      toast.success('成品图片已上传');
+    } catch (err: any) {
+      toast.error(err.message || '上传失败');
+    } finally {
+      setUploadingDesigner(null);
+    }
+  };
+
+  const handleDesignerRemove = async (imageNumber: string) => {
+    try {
+      await removeDesignerMutation.mutateAsync({ projectId, imageNumber });
+      setDesignerUploads(prev => { const n = { ...prev }; delete n[imageNumber]; return n; });
+      toast.success('已删除成品图片');
+    } catch (err: any) {
+      toast.error(err.message || '删除失败');
+    }
+  };
+
   return (
     <div className="space-y-4">
       <Card>
@@ -3325,19 +3439,14 @@ function Step5FinalSuggestions({
                     <p className="text-xs"><strong>Brand Tone:</strong> {typeof enData.designGuidelines.brandTone === 'object' ? JSON.stringify(enData.designGuidelines.brandTone) : enData.designGuidelines.brandTone}</p>
                     <p className="text-xs"><strong>Mobile:</strong> {typeof enData.designGuidelines.mobileOptimization === 'object' ? JSON.stringify(enData.designGuidelines.mobileOptimization) : enData.designGuidelines.mobileOptimization}</p>
                   </div>
-                  <div className="space-y-2">
-                    <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700">中文</Badge>
-                    {cnData?.designGuidelines ? (
-                      <>
-                        <p className="text-xs"><strong>字体:</strong> {typeof cnData.designGuidelines.fontRecommendation === 'object' ? JSON.stringify(cnData.designGuidelines.fontRecommendation) : cnData.designGuidelines.fontRecommendation}</p>
-                        <p className="text-xs"><strong>配色:</strong> {typeof cnData.designGuidelines.overallColorPalette === 'object' ? JSON.stringify(cnData.designGuidelines.overallColorPalette) : cnData.designGuidelines.overallColorPalette}</p>
-                        <p className="text-xs"><strong>品牌调性:</strong> {typeof cnData.designGuidelines.brandTone === 'object' ? JSON.stringify(cnData.designGuidelines.brandTone) : cnData.designGuidelines.brandTone}</p>
-                        <p className="text-xs"><strong>手机端:</strong> {typeof cnData.designGuidelines.mobileOptimization === 'object' ? JSON.stringify(cnData.designGuidelines.mobileOptimization) : cnData.designGuidelines.mobileOptimization}</p>
-                      </>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">中文翻译未生成</p>
-                    )}
-                  </div>
+                  <DesignerUploadPanel
+                    imageNumber="design_guidelines"
+                    label="设计指南参考图"
+                    uploadedUrl={designerUploads["design_guidelines"]}
+                    isUploading={uploadingDesigner === "design_guidelines"}
+                    onUpload={(f) => handleDesignerUpload("design_guidelines", f)}
+                    onRemove={() => handleDesignerRemove("design_guidelines")}
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -3378,19 +3487,14 @@ function Step5FinalSuggestions({
                     )}
                     <p className="text-xs"><strong>Shooting:</strong> {enData.mainImage.shootingNotes}</p>
                   </div>
-                  <div className="space-y-2">
-                    <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700">中文</Badge>
-                    {cnData?.mainImage ? (
-                      <>
-                        <p className="text-sm font-medium text-orange-700">{cnData.mainImage.title}</p>
-                        <p className="text-xs"><strong>概念:</strong> {cnData.mainImage.concept}</p>
-                        <p className="text-xs"><strong>构图:</strong> {cnData.mainImage.composition}</p>
-                        <p className="text-xs"><strong>拍摄:</strong> {cnData.mainImage.shootingNotes}</p>
-                      </>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">中文翻译未生成</p>
-                    )}
-                  </div>
+                  <DesignerUploadPanel
+                    imageNumber="main_image"
+                    label="主图成品"
+                    uploadedUrl={designerUploads["main_image"]}
+                    isUploading={uploadingDesigner === "main_image"}
+                    onUpload={(f) => handleDesignerUpload("main_image", f)}
+                    onRemove={() => handleDesignerRemove("main_image")}
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -3442,22 +3546,14 @@ function Step5FinalSuggestions({
                         </div>
                       )}
                     </div>
-                    <div className="space-y-2">
-                      <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700">中文</Badge>
-                      {cnImg ? (
-                        <>
-                          <p className="text-sm font-medium text-orange-700">{cnImg.title}</p>
-                          <p className="text-xs"><strong>聚焦:</strong> {cnImg.focus}</p>
-                          <FABEDisplay fabe={cnImg.fabe} variant="cn" />
-                          <p className="text-xs"><strong>表达方式:</strong> {cnImg.expressionMethod}</p>
-                          <p className="text-xs"><strong>构图:</strong> {cnImg.composition}</p>
-                          <p className="text-xs"><strong>文案:</strong> {cnImg.textOverlay}</p>
-                          {cnImg.dataVisualization && <p className="text-xs"><strong>数据可视化:</strong> {cnImg.dataVisualization}</p>}
-                        </>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">中文翻译未生成</p>
-                      )}
-                    </div>
+                    <DesignerUploadPanel
+                      imageNumber={`secondary_${idx + 1}`}
+                      label={`辅图 ${img.imageNumber || idx + 2} 成品`}
+                      uploadedUrl={designerUploads[`secondary_${idx + 1}`]}
+                      isUploading={uploadingDesigner === `secondary_${idx + 1}`}
+                      onUpload={(f) => handleDesignerUpload(`secondary_${idx + 1}`, f)}
+                      onRemove={() => handleDesignerRemove(`secondary_${idx + 1}`)}
+                    />
                   </div>
                 </CardContent>
               </Card>
@@ -3487,19 +3583,14 @@ function Step5FinalSuggestions({
                       <p className="text-xs"><strong>Consistency:</strong> {enData.aPlusContent.consistency}</p>
                       <p className="text-xs"><strong>Modular Design:</strong> {enData.aPlusContent.modularDesign}</p>
                     </div>
-                    <div className="space-y-1">
-                      <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700">中文</Badge>
-                      {cnData?.aPlusContent ? (
-                        <>
-                          <p className="text-xs"><strong>策略:</strong> {cnData.aPlusContent.overallStrategy}</p>
-                          <p className="text-xs"><strong>故事线:</strong> {cnData.aPlusContent.overallStory}</p>
-                          <p className="text-xs"><strong>一致性:</strong> {cnData.aPlusContent.consistency}</p>
-                          <p className="text-xs"><strong>模块化:</strong> {cnData.aPlusContent.modularDesign}</p>
-                        </>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">中文翻译未生成</p>
-                      )}
-                    </div>
+                    <DesignerUploadPanel
+                      imageNumber="aplus_overview"
+                      label="A+ 整体设计稿"
+                      uploadedUrl={designerUploads["aplus_overview"]}
+                      isUploading={uploadingDesigner === "aplus_overview"}
+                      onUpload={(f) => handleDesignerUpload("aplus_overview", f)}
+                      onRemove={() => handleDesignerRemove("aplus_overview")}
+                    />
                   </div>
                 </CardContent>
               </Card>
@@ -3663,31 +3754,14 @@ function Step5FinalSuggestions({
                               </div>
                             )}
                           </div>
-                          <div className="space-y-2">
-                            <Badge variant="outline" className="text-xs bg-orange-50 text-orange-700">中文</Badge>
-                            {cnSection ? (
-                              <>
-                                <p className="text-sm font-medium text-orange-700">{cnSection.title}</p>
-                                <p className="text-xs"><strong>目的:</strong> {cnSection.purpose}</p>
-                                <p className="text-xs"><strong>内容:</strong> {cnSection.content}</p>
-                                {cnSection.imageDescription && <p className="text-xs"><strong>图片:</strong> {cnSection.imageDescription}</p>}
-                                <FABEDisplay fabe={cnSection.fabe} variant="cn" />
-                                {cnSection.expressionMethod && <p className="text-xs"><strong>表达方式:</strong> {cnSection.expressionMethod}</p>}
-                                {cnSection.composition && <p className="text-xs"><strong>构图:</strong> {cnSection.composition}</p>}
-                                {cnSection.dataVisualization && <p className="text-xs"><strong>数据可视化:</strong> {cnSection.dataVisualization}</p>}
-                                {cnSection.designTips?.length > 0 && (
-                                  <div className="mt-2 p-2 bg-amber-50 rounded text-xs">
-                                    <strong className="text-amber-700">设计提示:</strong>
-                                    <ul className="list-disc list-inside mt-1 text-amber-600">
-                                      {cnSection.designTips.map((tip: string, i: number) => <li key={i}>{tip}</li>)}
-                                    </ul>
-                                  </div>
-                                )}
-                              </>
-                            ) : (
-                              <p className="text-xs text-muted-foreground">中文翻译未生成</p>
-                            )}
-                          </div>
+                          <DesignerUploadPanel
+                            imageNumber={`aplus_section_${idx + 1}`}
+                            label={`A+ 模块 ${idx + 1} 成品`}
+                            uploadedUrl={designerUploads[`aplus_section_${idx + 1}`]}
+                            isUploading={uploadingDesigner === `aplus_section_${idx + 1}`}
+                            onUpload={(f) => handleDesignerUpload(`aplus_section_${idx + 1}`, f)}
+                            onRemove={() => handleDesignerRemove(`aplus_section_${idx + 1}`)}
+                          />
                         </div>
                       </CardContent>
                     )}

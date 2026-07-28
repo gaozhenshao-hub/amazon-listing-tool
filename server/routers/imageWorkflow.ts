@@ -1174,6 +1174,46 @@ export const imageWorkflowRouter = router({
       return parseLLMJson(response);
     }),
 
+  // ─── Step 5: Designer Upload (artwork images) ───────────────────
+  addDesignerUpload: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      imageUrl: z.string(),
+      imageNumber: z.string(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      if (!project) throw new Error('Project not found');
+      ensureWriteAccess(project, ctx.user);
+      const session = await getOrCreateSession(input.projectId, ctx.user.id);
+      let uploads: any[] = [];
+      try { uploads = JSON.parse(session.step5DesignerUploads || '[]'); } catch {}
+      const idx = uploads.findIndex((u: any) => u.imageNumber === input.imageNumber);
+      const entry = { id: Date.now(), imageUrl: input.imageUrl, imageNumber: input.imageNumber, notes: input.notes || '', uploadedAt: new Date().toISOString() };
+      if (idx >= 0) uploads[idx] = entry;
+      else uploads.push(entry);
+      await db.updateSession(session.id, { step5DesignerUploads: JSON.stringify(uploads) });
+      return { success: true, uploads };
+    }),
+
+  removeDesignerUpload: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      imageNumber: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      if (!project) throw new Error('Project not found');
+      ensureWriteAccess(project, ctx.user);
+      const session = await getOrCreateSession(input.projectId, ctx.user.id);
+      let uploads: any[] = [];
+      try { uploads = JSON.parse(session.step5DesignerUploads || '[]'); } catch {}
+      uploads = uploads.filter((u: any) => u.imageNumber !== input.imageNumber);
+      await db.updateSession(session.id, { step5DesignerUploads: JSON.stringify(uploads) });
+      return { success: true, uploads };
+    }),
+
   // ─── Reset to a specific step ─────────────────────────────────
   resetToStep: protectedProcedure
     .input(z.object({
