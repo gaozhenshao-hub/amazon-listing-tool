@@ -148,6 +148,8 @@ export const kbReviewRouter = router({
       };
       if (input.reviewNote) updateData.reviewNote = input.reviewNote;
       if (input.visibility) updateData.visibility = input.visibility;
+      // For image sets, also update status to "confirmed" so they appear in the KB browser
+      if (input.type === "image") updateData.status = "confirmed";
 
       await db.update(table).set(updateData).where(eq((table as any).id, input.id));
       // Notify submitter of approval
@@ -217,12 +219,15 @@ export const kbReviewRouter = router({
       for (const item of input.items) {
         try {
           const table = getTable(item.type);
-          await db.update(table).set({
+          const batchUpdateData: any = {
             reviewStatus: "approved",
             reviewedBy: ctx.user.id,
             reviewedAt: new Date(),
             reviewNote: input.reviewNote || null,
-          } as any).where(
+          };
+          // For image sets, also update status to "confirmed" so they appear in the KB browser
+          if (item.type === "image") batchUpdateData.status = "confirmed";
+          await db.update(table).set(batchUpdateData).where(
             and(
               eq((table as any).id, item.id),
               eq((table as any).reviewStatus, "pending_review")
