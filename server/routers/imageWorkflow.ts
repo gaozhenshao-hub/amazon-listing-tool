@@ -762,6 +762,19 @@ export const imageWorkflowRouter = router({
       }
       // Phase 7: Get KB reference for style recommendations
       const kbReference = await getKBReference(project.category || '', ctx.user.id);
+
+      // 从知识库获取现有设计风格列表，用于约束 AI 只推荐已有风格
+      let kbStylesText = "";
+      try {
+        const allKbImages = await kbDb.listAllImages(ctx.user.id, "all", {});
+        const kbStyles = [...new Set(
+          (allKbImages as any[]).map((i: any) => i.tagDesignStyleV2 || i.tagDesignStyle).filter(Boolean)
+        )];
+        if (kbStyles.length > 0) {
+          kbStylesText = `\n\n--- 知识库现有设计风格（请优先从这些风格中推荐）---\n${kbStyles.join("、")}`;
+        }
+      } catch (e) { console.warn("[Step3] Failed to load KB styles:", e); }
+
       // Emperor Skill 优先 - 图片工作流
       try {
         const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
@@ -771,7 +784,7 @@ export const imageWorkflowRouter = router({
       const response = await invokeLLM({
         messages: [
           { role: "system", content: STEP3_STYLE_PROMPT },
-          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n${colorInfo}\n\n--- 已确认的卖点 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}${kbReference}\n\n请参考知识库中同类目高分图片的风格分布，推荐3-4个适合的视觉风格方案。` },
+          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n${colorInfo}\n\n--- 已确认的卖点 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}${kbReference}${kbStylesText}\n\n请参考知识库中同类目高分图片的风格分布，推荐3-4个适合的视觉风格方案。` },
         ],
         response_format: { type: "json_object" },
       });
@@ -1041,6 +1054,102 @@ export const imageWorkflowRouter = router({
 
       return parseLLMJson(response);
     }),
+
+  // ─── Step 4: Regenerate ALL image references from KB refs + notes ─
+  regenerateAllFromReferences: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      kbImages: z.array(z.object({
+        url: z.string(),
+        note: z.string().optional(),
+        position: z.string().optional(),
+      })),
+      compositionRefUrl: z.string().optional(),
+      effectRefUrl: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+
+      // Build multimodal messages with all reference images + notes
+      const userContent: any[] = [];
+
+      // Text context
+      userContent.push({
+        type: "text",
+        text: `产品名称: ${project.productName || project.name}
+品牌: ${project.brand || '未指定'}
+
+--- 已确认的图片大纲 ---
+${session.step2UserEdit || session.step2AiResult}
+
+--- 已确认的风格方案 ---
+${session.step3UserEdit || session.step3AiResult}
+
+请根据以下参考图和备注，重新生成完整的图片参考方案（imageReferences数组）。`,
+      });
+
+      // Add KB reference images with notes
+      let kbImageIndex = 1;
+      for (const kbImg of input.kbImages) {
+        userContent.push({
+          type: "image_url",
+          image_url: { url: kbImg.url, detail: "high" },
+        });
+        const noteText = kbImg.note
+          ? `[知识库参考图${kbImageIndex}，备注: ${kbImg.note}${kbImg.position ? '，图片位置: ' + kbImg.position : ''}]`
+          : `[知识库参考图${kbImageIndex}${kbImg.position ? '，图片位置: ' + kbImg.position : ''}]`;
+        userContent.push({ type: "text", text: noteText });
+        kbImageIndex++;
+      }
+
+      // Add composition ref if provided
+      if (input.compositionRefUrl) {
+        userContent.push({
+          type: "image_url",
+          image_url: { url: input.compositionRefUrl, detail: "high" },
+        });
+        userContent.push({ type: "text", text: "[构图参考图：请参考此图的构图布局]" });
+      }
+
+      // Add effect ref if provided
+      if (input.effectRefUrl) {
+        userContent.push({
+          type: "image_url",
+          image_url: { url: input.effectRefUrl, detail: "high" },
+        });
+        userContent.push({ type: "text", text: "[效果参考图：请参考此图的视觉效果和风格]" });
+      }
+
+      const messages: any[] = [
+        { role: "system", content: STEP4_REFERENCE_PROMPT },
+        { role: "user", content: userContent },
+      ];
+
+      // Emperor Skill 优先 - 图片工作流
+      try {
+        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
+        if (emperorRes.success && emperorRes.output) return emperorRes.output;
+      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
+
+      const response = await invokeLLM({
+        messages,
+        response_format: { type: "json_object" },
+      });
+
+      const result = parseLLMJson(response);
+
+      // Save the regenerated result back to session
+      await db.updateImageWorkflowSession(session.id, {
+        step4AiResult: JSON.stringify(result),
+      });
+
+      return result;
+    }),
+
 
   // ─── Step 5: Optimize with A+ module selection ────────────────────
   optimizeWithAplusModule: protectedProcedure

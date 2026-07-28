@@ -1843,7 +1843,7 @@ function KbImagePickerDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <BookOpen className="w-5 h-5 text-primary" />
@@ -1940,7 +1940,7 @@ function KbImagePickerDialog({
         </div>
 
         {/* Image Grid */}
-        <ScrollArea className="flex-1 min-h-0" style={{ maxHeight: "50vh" }}>
+        <ScrollArea className="flex-1 min-h-0">
           {kbImages.isLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-6 h-6 animate-spin text-primary mr-2" />
@@ -2037,6 +2037,7 @@ function Step4References({
   const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
   const uploadRefMutation = trpc.imageWorkflow.uploadStep4RefImage.useMutation();
   const reoptimizeMutation = trpc.imageWorkflow.reoptimizeStep4WithRefs.useMutation();
+  const regenerateAllMutation = trpc.imageWorkflow.regenerateAllFromReferences.useMutation();
   const [editData, setEditData] = useState<any>(null);
   const [isLocked, setIsLocked] = useState(!!session?.step4Confirmed);
   const [kbPickerOpen, setKbPickerOpen] = useState(false);
@@ -2183,6 +2184,45 @@ function Step4References({
     toast.success(`已添加 ${images.length} 张知识库参考图`);
   };
 
+  // Regenerate ALL image references from all KB images + notes
+  const handleRegenerateAll = async () => {
+    if (!editData) return;
+    // Collect all KB reference images with notes across all refs
+    const allKbImages: Array<{ url: string; note?: string; position?: string }> = [];
+    (editData.imageReferences || []).forEach((ref: any) => {
+      (ref.kbReferenceImages || []).forEach((kbImg: any) => {
+        allKbImages.push({
+          url: kbImg.imageUrl,
+          note: kbImg.note || undefined,
+          position: kbImg.position || undefined,
+        });
+      });
+    });
+    if (allKbImages.length === 0) {
+      toast.error("请先为至少一张图添加知识库参考图");
+      return;
+    }
+    // Collect composition/effect ref URLs (from first ref that has them)
+    let compositionRefUrl: string | undefined;
+    let effectRefUrl: string | undefined;
+    for (const ref of (editData.imageReferences || [])) {
+      if (!compositionRefUrl && ref.compositionRefImageUrl) compositionRefUrl = ref.compositionRefImageUrl;
+      if (!effectRefUrl && ref.effectRefImageUrl) effectRefUrl = ref.effectRefImageUrl;
+    }
+    try {
+      const result = await regenerateAllMutation.mutateAsync({
+        projectId,
+        kbImages: allKbImages,
+        compositionRefUrl,
+        effectRefUrl,
+      });
+      setEditData(result);
+      toast.success("已根据参考图和备注重新生成方案");
+    } catch (err: any) {
+      toast.error(err.message || "重新生成失败");
+    }
+  };
+
   // Remove a KB reference image
   const removeKbImage = (refIdx: number, imgIdx: number) => {
     if (!editData) return;
@@ -2218,6 +2258,16 @@ function Step4References({
                 <>
                   <Button variant="outline" onClick={handleGenerate} disabled={generateMutation.isPending}>
                     <RotateCcw className="w-4 h-4 mr-2" /> 重新推荐
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleRegenerateAll}
+                    disabled={regenerateAllMutation.isPending}
+                    className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    title="根据已选参考图和备注，重新生成所有图片的构图和效果方案"
+                  >
+                    {regenerateAllMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+                    根据参考图重新生成
                   </Button>
                   <Button onClick={handleConfirm} disabled={confirmMutation.isPending}>
                     {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
