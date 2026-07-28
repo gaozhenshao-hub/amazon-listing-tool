@@ -445,6 +445,50 @@ ${JSON.stringify(tagCoverage, null, 1)}` }
   }
 }
 
+/**
+ * Run ONLY the overall set-level analysis (no per-image tag re-scoring).
+ * Uses existing image tags to build the summary, much faster than full re-analysis.
+ */
+async function runSummaryOnly(setId: number, asin: string, userId: number) {
+  try {
+    const allDbImages = await kbDb.listImagesBySet(setId);
+    const productImgs = allDbImages.filter(i => i.imagePosition === "main" || i.imagePosition === "secondary");
+    const aplusImgs = allDbImages.filter(i => i.imagePosition === "aplus");
+    const brandImgs = allDbImages.filter(i => i.imagePosition === "brand_story");
+
+    const tagCoverage = allDbImages.map(i => ({
+      pos: `${i.imagePosition}#${i.positionIndex}`,
+      score: i.singleImageScore,
+      belong: (i as any).tagImageBelong || "unknown",
+      typeMain: (i as any).tagImageTypeMain || "unknown",
+      typeSub: (i as any).tagImageTypeSub || "",
+      sellingPoint: (i as any).tagSellingPointCategory || "",
+      composition: (i as any).tagComposition || "",
+      style: (i as any).tagDesignStyleV2 || (i as any).tagDesignStyle || "",
+    }));
+
+    const overallResponse = await invokeLLM({
+      messages: [
+        { role: "system", content: `你是亚马逊产品图片策略分析专家。请对这组产品图片进行整体评估。\n\n评估维度：\n1. 图片类型覆盖率：是否涵盖了对比/细节/场景/特效/必要信息等关键类型\n2. 卖点覆盖率：图片是否充分展示了产品的各类卖点（质量/功能/设计/操作/安全/附加值）\n3. 构图多样性：是否使用了多种构图方式避免单调\n4. 风格一致性：套图整体风格是否统一\n5. 叙事流逻辑：副图排序是否有清晰的叙事逻辑\n\n返回JSON：\n{\n  "overallStrategy": "整体图片策略评价",\n  "mainImageAssessment": "主图评估",\n  "secondaryImageFlow": "副图叙事流评估",\n  "aplusAssessment": "A+内容图片评估（如有）",\n  "brandStoryAssessment": "品牌故事图片评估（如有）",\n  "tagCoverageAnalysis": {\n    "imageTypeCoverage": "图片类型覆盖分析",\n    "sellingPointCoverage": "卖点覆盖分析",\n    "compositionDiversity": "构图多样性分析",\n    "styleConsistency": "风格一致性分析"\n  },\n  "recommendedStyle": "建议的套图风格名称",\n  "setCategory": "产品类目",\n  "setPrimaryColor": "主颜色",\n  "setAccentColor": "提亮色",\n  "missingImageTypes": ["缺少的图片类型"],\n  "improvementSuggestions": ["改进建议"],\n  "overallScore": 75,\n  "summary": ""\n}` },
+        { role: "user", content: `ASIN: ${asin}\n产品图: ${productImgs.length}张 (${productImgs.map(i => `${i.imagePosition}#${i.positionIndex}: ${i.singleImageScore}/10`).join(", ")})\nA+图: ${aplusImgs.length}张\n品牌故事图: ${brandImgs.length}张\n\n各图标签详情:\n${JSON.stringify(tagCoverage, null, 1)}` }
+      ],
+      response_format: { type: "json_object" as const },
+    });
+    const overallAnalysis = String(overallResponse.choices?.[0]?.message?.content || "{}");
+    const overallParsed = JSON.parse(overallAnalysis);
+    await kbDb.updateImageSet(setId, userId, {
+      overallAnalysis, overallScore: overallParsed.overallScore ?? 70, status: "pending_review",
+      setStyle: overallParsed.recommendedStyle || null,
+      ...(overallParsed.setCategory && { setCategory: overallParsed.setCategory }),
+      ...(overallParsed.setPrimaryColor && { setPrimaryColor: overallParsed.setPrimaryColor }),
+      ...(overallParsed.setAccentColor && { setAccentColor: overallParsed.setAccentColor }),
+    });
+  } catch (err: any) {
+    console.error(`[KB Images] Summary-only re-analysis failed for set ${setId}:`, err.message);
+    await kbDb.updateImageSet(setId, userId, { status: "pending_review" });
+  }
+}
+
 export const kbImagesRouter = router({
   // List all image sets
   listSets: protectedProcedure
@@ -688,6 +732,20 @@ export const kbImagesRouter = router({
       await kbDb.updateImageSet(set.id, set.userId, { status: "analyzing" });
       // Fire-and-forget: run full AI analysis
       runAnalysisOnly(set.id, set.asin, Number(set.userId));
+      return { success: true };
+    }),
+
+  // Re-run ONLY the overall set-level summary (no per-image tag re-scoring, much faster)
+  reAnalyzeSummaryOnly: protectedProcedure
+    .input(z.object({ setId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const set = await kbDb.getImageSetById(input.setId);
+      if (!set) throw new Error("图片集不存在");
+      const images = await kbDb.listImagesBySet(set.id);
+      if (images.length === 0) throw new Error("没有图片可供分析");
+      await kbDb.updateImageSet(set.id, set.userId, { status: "analyzing" });
+      // Fire-and-forget: run summary-only analysis
+      runSummaryOnly(set.id, set.asin, Number(set.userId));
       return { success: true };
     }),
 

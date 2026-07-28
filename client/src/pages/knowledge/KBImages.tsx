@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, PlusCircle, Link2, Upload, Image as ImageIcon, CheckCircle, Edit3, Trash2, Sparkles, Search, Grid3X3, LayoutGrid, Package, Eye, Tag, Send, RefreshCw, UploadCloud, X, RotateCcw, Palette } from "lucide-react";
+import { Loader2, PlusCircle, Link2, Upload, Image as ImageIcon, CheckCircle, Edit3, Trash2, Sparkles, Search, Grid3X3, LayoutGrid, Package, Eye, Tag, Send, RefreshCw, UploadCloud, X, RotateCcw, Palette, FileText } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
@@ -283,6 +283,11 @@ export default function KBImages() {
 
   const reAnalyzeMutation = trpc.kbImages.reAnalyze.useMutation({
     onSuccess: () => { toast.success("已开始重新AI分析，请稍后刷新"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listSets.invalidate(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const reAnalyzeSummaryOnlyMutation = trpc.kbImages.reAnalyzeSummaryOnly.useMutation({
+    onSuccess: () => { toast.success("已开始重新生成总结（不重新打标签），请稍后刷新"); utils.kbImages.getSet.invalidate({ id: detailSetId! }); utils.kbImages.listSets.invalidate(); },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -890,9 +895,13 @@ export default function KBImages() {
                       <Button variant="outline" size="sm" className="gap-1.5" onClick={() => { setShowUpload(!showUpload); setShowReCrawl(false); }}>
                         <UploadCloud className="h-3.5 w-3.5" /> 上传图片
                       </Button>
-                      <Button variant="outline" size="sm" className="gap-1.5 border-purple-200 text-purple-600 hover:bg-purple-50" onClick={() => reAnalyzeMutation.mutate({ setId: detailSetId! })} disabled={reAnalyzeMutation.isPending}>
+                      <Button variant="outline" size="sm" className="gap-1.5 border-purple-200 text-purple-600 hover:bg-purple-50" onClick={() => reAnalyzeMutation.mutate({ setId: detailSetId! })} disabled={reAnalyzeMutation.isPending || reAnalyzeSummaryOnlyMutation.isPending}>
                         {reAnalyzeMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
                         重新AI分析
+                      </Button>
+                      <Button variant="outline" size="sm" className="gap-1.5 border-amber-200 text-amber-600 hover:bg-amber-50" onClick={() => reAnalyzeSummaryOnlyMutation.mutate({ setId: detailSetId! })} disabled={reAnalyzeMutation.isPending || reAnalyzeSummaryOnlyMutation.isPending} title="仅重新生成整体总结，不重新对每张图片打标签，速度更快">
+                        {reAnalyzeSummaryOnlyMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+                        仅重新生成总结
                       </Button>
                     </div>
                   )}
