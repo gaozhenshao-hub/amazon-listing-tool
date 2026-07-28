@@ -1186,14 +1186,15 @@ export const imageWorkflowRouter = router({
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error('Project not found');
       ensureWriteAccess(project, ctx.user);
-      const session = await getOrCreateSession(input.projectId, ctx.user.id);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error('No workflow session found');
       let uploads: any[] = [];
       try { uploads = JSON.parse(session.step5DesignerUploads || '[]'); } catch {}
       const idx = uploads.findIndex((u: any) => u.imageNumber === input.imageNumber);
       const entry = { id: Date.now(), imageUrl: input.imageUrl, imageNumber: input.imageNumber, notes: input.notes || '', uploadedAt: new Date().toISOString() };
       if (idx >= 0) uploads[idx] = entry;
       else uploads.push(entry);
-      await db.updateSession(session.id, { step5DesignerUploads: JSON.stringify(uploads) });
+      await db.updateImageWorkflowSession(session.id, { step5DesignerUploads: JSON.stringify(uploads) });
       return { success: true, uploads };
     }),
 
@@ -1206,11 +1207,12 @@ export const imageWorkflowRouter = router({
       const project = await resolveProjectAccess(input.projectId, ctx.user);
       if (!project) throw new Error('Project not found');
       ensureWriteAccess(project, ctx.user);
-      const session = await getOrCreateSession(input.projectId, ctx.user.id);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error('No workflow session found');
       let uploads: any[] = [];
       try { uploads = JSON.parse(session.step5DesignerUploads || '[]'); } catch {}
       uploads = uploads.filter((u: any) => u.imageNumber !== input.imageNumber);
-      await db.updateSession(session.id, { step5DesignerUploads: JSON.stringify(uploads) });
+      await db.updateImageWorkflowSession(session.id, { step5DesignerUploads: JSON.stringify(uploads) });
       return { success: true, uploads };
     }),
 
