@@ -571,7 +571,7 @@ export const kbImageSets = mysqlTable("kb_image_sets", {
   reviewNote: text("reviewNote"),
   reviewedAt: timestamp("reviewedAt"),
   submittedAt: timestamp("submittedAt"),
-  visibility: mysqlEnum("visibility", ["private", "team", "public"]).default("private").notNull(),
+  visibility: mysqlEnum("visibility", ["private", "team", "public"]).default("team").notNull(),
   confirmedAt: timestamp("confirmedAt"),
   // Sync metadata
   originInstanceId: varchar("origin_instance_id", { length: 100 }),

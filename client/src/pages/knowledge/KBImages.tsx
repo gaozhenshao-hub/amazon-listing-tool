@@ -115,7 +115,7 @@ export default function KBImages() {
   const [filterStyleV2, setFilterStyleV2] = useState("all");
   const [useV2Filters, setUseV2Filters] = useState(true);
   const [selectedImageId, setSelectedImageId] = useState<number | null>(null);
-  const [scope, setScope] = useState<KBScope>("mine");
+  const [scope, setScope] = useState<KBScope>("shared");
 
   // Use listSets for the ASIN-grouped view (default)
   const { data: sets, isLoading } = trpc.kbImages.listSets.useQuery({ scope }, { staleTime: 30_000 });
@@ -1283,17 +1283,12 @@ export default function KBImages() {
                   <Separator />
 
                   <div className="flex gap-2 justify-end">
-                    {d.status === "pending_review" && (
-                      <>
-                        <Button variant="outline" size="sm" onClick={() => setEditingAnalysis(editingAnalysis ? "" : JSON.stringify(analysis, null, 2))} className="gap-1.5">
-                          <Edit3 className="h-3.5 w-3.5" /> {editingAnalysis ? "取消编辑" : "编辑分析"}
-                        </Button>
-                        <Button size="sm" onClick={() => confirmMutation.mutate({ id: detailSetId!, editedAnalysis: editingAnalysis || undefined })} disabled={confirmMutation.isPending} className="gap-1.5">
-                          {confirmMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
-                          确认入库
-                        </Button>
-                      </>
-                    )}
+                    {/* 已移除"确认入库"按钮 — 上传后自动入库为全员共享状态 */}
+                  {allowEdit && (
+                    <Button variant="outline" size="sm" onClick={() => setEditingAnalysis(editingAnalysis ? "" : JSON.stringify(analysis, null, 2))} className="gap-1.5">
+                      <Edit3 className="h-3.5 w-3.5" /> {editingAnalysis ? "取消编辑" : "编辑分析"}
+                    </Button>
+                  )}
 
                     {allowDelete && (
                       <Button variant="destructive" size="sm" onClick={() => { if (confirm("确定删除整个图片集？")) deleteMutation.mutate({ id: detailSetId! }); }} className="gap-1.5">

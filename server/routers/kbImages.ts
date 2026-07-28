@@ -229,13 +229,13 @@ A+图: ${aplusImgs.length}张
       const overallAnalysis = String(overallResponse.choices?.[0]?.message?.content || "{}");
       const overallParsed = JSON.parse(overallAnalysis);
       await kbDb.updateImageSet(setId, userId, {
-        overallAnalysis, overallScore: overallParsed.overallScore ?? 70, status: "pending_review",
+        overallAnalysis, overallScore: overallParsed.overallScore ?? 70, status: "confirmed",
         ...(overallParsed.setCategory && { setCategory: overallParsed.setCategory }),
         ...(overallParsed.setPrimaryColor && { setPrimaryColor: overallParsed.setPrimaryColor }),
         ...(overallParsed.setAccentColor && { setAccentColor: overallParsed.setAccentColor }),
       });
     } else {
-      await kbDb.updateImageSet(setId, userId, { status: "pending_review" });
+      await kbDb.updateImageSet(setId, userId, { status: "confirmed" });
     }
   } catch (err: any) {
     console.error(`[KB Images] Import failed for ${asin}:`, err.message);
@@ -300,10 +300,10 @@ async function processPartialReCrawl(
     }
 
     // Set status to pending_review (user can then trigger re-analysis)
-    await kbDb.updateImageSet(setId, userId, { status: "pending_review" });
+    await kbDb.updateImageSet(setId, userId, { status: "confirmed" });
   } catch (err: any) {
     console.error(`[KB Images] Re-crawl failed for ${asin}:`, err.message);
-    await kbDb.updateImageSet(setId, userId, { status: "pending_review" });
+    await kbDb.updateImageSet(setId, userId, { status: "confirmed" });
   }
 }
 
@@ -433,7 +433,7 @@ ${JSON.stringify(tagCoverage, null, 1)}` }
     const overallAnalysis = String(overallResponse.choices?.[0]?.message?.content || "{}");
     const overallParsed = JSON.parse(overallAnalysis);
     await kbDb.updateImageSet(setId, userId, {
-      overallAnalysis, overallScore: overallParsed.overallScore ?? 70, status: "pending_review",
+      overallAnalysis, overallScore: overallParsed.overallScore ?? 70, status: "confirmed",
       setStyle: overallParsed.recommendedStyle || null,
       ...(overallParsed.setCategory && { setCategory: overallParsed.setCategory }),
       ...(overallParsed.setPrimaryColor && { setPrimaryColor: overallParsed.setPrimaryColor }),
@@ -441,7 +441,7 @@ ${JSON.stringify(tagCoverage, null, 1)}` }
     });
   } catch (err: any) {
     console.error(`[KB Images] Re-analysis failed for set ${setId}:`, err.message);
-    await kbDb.updateImageSet(setId, userId, { status: "pending_review" });
+    await kbDb.updateImageSet(setId, userId, { status: "confirmed" });
   }
 }
 
@@ -477,7 +477,7 @@ async function runSummaryOnly(setId: number, asin: string, userId: number) {
     const overallAnalysis = String(overallResponse.choices?.[0]?.message?.content || "{}");
     const overallParsed = JSON.parse(overallAnalysis);
     await kbDb.updateImageSet(setId, userId, {
-      overallAnalysis, overallScore: overallParsed.overallScore ?? 70, status: "pending_review",
+      overallAnalysis, overallScore: overallParsed.overallScore ?? 70, status: "confirmed",
       setStyle: overallParsed.recommendedStyle || null,
       ...(overallParsed.setCategory && { setCategory: overallParsed.setCategory }),
       ...(overallParsed.setPrimaryColor && { setPrimaryColor: overallParsed.setPrimaryColor }),
@@ -485,7 +485,7 @@ async function runSummaryOnly(setId: number, asin: string, userId: number) {
     });
   } catch (err: any) {
     console.error(`[KB Images] Summary-only re-analysis failed for set ${setId}:`, err.message);
-    await kbDb.updateImageSet(setId, userId, { status: "pending_review" });
+    await kbDb.updateImageSet(setId, userId, { status: "confirmed" });
   }
 }
 
@@ -549,7 +549,7 @@ export const kbImagesRouter = router({
       if (dupSet) {
         throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于图片知识库中 [id:${dupSet.id}]` });
       }
-      const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "crawling" });
+      const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "crawling", visibility: "team" });
       // Fire-and-forget with full analysis
       processImport(Number(setId), asin, Number(ctx.user.id), true);
       return { id: Number(setId), asin };
@@ -568,7 +568,7 @@ export const kbImagesRouter = router({
           results.push({ asin, id: dupSet.id });
           continue;
         }
-        const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "crawling" });
+        const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "crawling", visibility: "team" });
         results.push({ asin, id: Number(setId) });
         // Fire-and-forget without per-image analysis for batch (faster)
         processImport(Number(setId), asin, Number(ctx.user.id), false);
@@ -587,7 +587,7 @@ export const kbImagesRouter = router({
       if (dupSet) {
         throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于图片知识库中 [id:${dupSet.id}]` });
       }
-      const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "crawling" });
+      const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "crawling", visibility: "team" });
       // Fire-and-forget with full analysis
       processImport(Number(setId), asin, Number(ctx.user.id), true);
       return { id: Number(setId), asin };
@@ -693,7 +693,7 @@ export const kbImagesRouter = router({
         results.push({ imageUrl: url, position: img.position });
       }
       // Reset status to pending_review so user can re-analyze
-      await kbDb.updateImageSet(set.id, ctx.user.id, { status: "pending_review" });
+      await kbDb.updateImageSet(set.id, ctx.user.id, { status: "confirmed" });
       return { success: true, uploaded: results.length };
     }),
 
@@ -800,7 +800,7 @@ export const kbImagesRouter = router({
       if (dupSet) {
         throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于图片知识库中 [id:${dupSet.id}]` });
       }
-      const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, productTitle: input.title || undefined, status: "pending_review" });
+      const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, productTitle: input.title || undefined, status: "confirmed", visibility: "team" });
       const numericSetId = Number(setId);
       // Upload images to S3
       for (let i = 0; i < input.images.length; i++) {
