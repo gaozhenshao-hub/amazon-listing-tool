@@ -228,6 +228,9 @@ export default function KBImages() {
     },
     onSuccess: () => {
       toast.success("标签已更新");
+      // Ensure server state is synced (handles new uploads where optimistic cache may miss)
+      if (detailSetId) utils.kbImages.getSet.invalidate({ id: detailSetId });
+      utils.kbImages.listAllImages.invalidate();
     },
   });
   const updateImageScoreMutation = trpc.kbImages.updateImageScore.useMutation({
@@ -1252,12 +1255,7 @@ export default function KBImages() {
                         </Button>
                       </>
                     )}
-                    {allowEdit && (d.status === "confirmed" || d.reviewStatus === "draft" || d.reviewStatus === "rejected") && (
-                      <Button variant="outline" size="sm" onClick={() => submitReviewMutation.mutate({ type: "image", id: detailSetId!, visibility: "team" })} disabled={submitReviewMutation.isPending} className="gap-1.5 border-blue-200 text-blue-600 hover:bg-blue-50">
-                        {submitReviewMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                        提交审核
-                      </Button>
-                    )}
+
                     {allowDelete && (
                       <Button variant="destructive" size="sm" onClick={() => { if (confirm("确定删除整个图片集？")) deleteMutation.mutate({ id: detailSetId! }); }} className="gap-1.5">
                         <Trash2 className="h-3.5 w-3.5" /> 删除
@@ -1354,8 +1352,7 @@ function ImageCardEnhanced({ img, onSelectImage, selectedImageId, onUpdateTags, 
             {img.tagSellingPointCategory && <Badge variant="secondary" className="text-[9px] bg-green-500/70 text-white border-0">{img.tagSellingPointCategory}</Badge>}
             {img.tagComposition && <Badge variant="secondary" className="text-[9px] bg-orange-500/70 text-white border-0">{img.tagComposition}</Badge>}
             {img.tagDesignStyleV2 && <Badge variant="secondary" className="text-[9px] bg-pink-500/70 text-white border-0">{img.tagDesignStyleV2}</Badge>}
-            {!img.tagImageBelong && img.tagCategory && <Badge variant="secondary" className="text-[9px] bg-white/20 text-white border-0">{img.tagCategory}</Badge>}
-            {!img.tagImageBelong && img.tagImageType && <Badge variant="secondary" className="text-[9px] bg-white/20 text-white border-0">{img.tagImageType}</Badge>}
+
             {img.singleImageScore && <Badge className="text-[9px] bg-primary/80 border-0">{img.singleImageScore}/10</Badge>}
           </div>
         </div>

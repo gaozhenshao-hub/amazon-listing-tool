@@ -680,13 +680,14 @@ export const kbImagesRouter = router({
   reAnalyze: protectedProcedure
     .input(z.object({ setId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const set = await kbDb.getImageSet(input.setId, ctx.user.id);
+      // Use getImageSetById (no userId filter) to allow team members to re-analyze shared sets
+      const set = await kbDb.getImageSetById(input.setId);
       if (!set) throw new Error("图片集不存在");
       const images = await kbDb.listImagesBySet(set.id);
       if (images.length === 0) throw new Error("没有图片可供分析");
-      await kbDb.updateImageSet(set.id, ctx.user.id, { status: "analyzing" });
+      await kbDb.updateImageSet(set.id, set.userId, { status: "analyzing" });
       // Fire-and-forget: run full AI analysis
-      runAnalysisOnly(set.id, set.asin, Number(ctx.user.id));
+      runAnalysisOnly(set.id, set.asin, Number(set.userId));
       return { success: true };
     }),
 
