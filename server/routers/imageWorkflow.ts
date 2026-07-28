@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { analyzeImageViaEmperor, generateImageAdviceViaEmperor } from "../emperorClient";
+import { analyzeImageViaEmperor } from "../emperorClient";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import * as db from "../db";
@@ -634,11 +634,6 @@ export const imageWorkflowRouter = router({
       }
 
       const context = await buildImageWorkflowContext(input.projectId);
-      // Emperor Skill 优先 - 图片工作流
-      try {
-        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return { en: emperorRes.output, cn: null };
-      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -692,11 +687,6 @@ export const imageWorkflowRouter = router({
       const sellingPoints = session.step1UserEdit || session.step1AiResult;
       const context = await buildImageWorkflowContext(input.projectId);
 
-      // Emperor Skill 优先 - 图片工作流
-      try {
-        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       // Load Step0 competitor summary if available
       const step0Summary = session.step0AiResult
@@ -775,11 +765,6 @@ export const imageWorkflowRouter = router({
         }
       } catch (e) { console.warn("[Step3] Failed to load KB styles:", e); }
 
-      // Emperor Skill 优先 - 图片工作流
-      try {
-        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return { en: emperorRes.output, cn: null };
-      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -842,11 +827,6 @@ export const imageWorkflowRouter = router({
         }
       } catch {}
 
-      // Emperor Skill 优先 - 图片工作流
-      try {
-        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -907,11 +887,6 @@ export const imageWorkflowRouter = router({
       // Phase 7: Get KB reference for same-category high-score images
       const kbReference = await getKBReference(project.category || '', ctx.user.id);
 
-      // Emperor Skill 优先 - 图片工作流
-      try {
-        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return { en: emperorRes.output, cn: null };
-      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1041,11 +1016,6 @@ export const imageWorkflowRouter = router({
 
       messages.push({ role: "user", content: userContent });
 
-      // Emperor Skill 优先 - 图片工作流
-      try {
-        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
         messages,
@@ -1129,11 +1099,6 @@ ${session.step3UserEdit || session.step3AiResult}
         { role: "user", content: userContent },
       ];
 
-      // Emperor Skill 优先 - 图片工作流
-      try {
-        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
         messages,
@@ -1149,6 +1114,94 @@ ${session.step3UserEdit || session.step3AiResult}
 
       return result;
     }),
+
+  // ─── Step 4: Regenerate single image from references ──────────────
+  regenerateSingleImageFromRef: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      imageIndex: z.number(),
+      kbImages: z.array(z.object({
+        url: z.string(),
+        note: z.string().optional(),
+        position: z.string().optional(),
+      })),
+      compositionRefUrl: z.string().optional(),
+      effectRefUrl: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+
+      // Parse current step4 result to get the specific image info
+      let currentStep4: any = {};
+      try {
+        const raw = session.step4UserEdit || session.step4AiResult;
+        if (raw) currentStep4 = JSON.parse(raw);
+      } catch {}
+      const imageRefs = currentStep4.imageReferences || [];
+      const targetImage = imageRefs[input.imageIndex];
+      if (!targetImage) throw new Error(`Image at index ${input.imageIndex} not found`);
+
+      // Build multimodal messages for single image regeneration
+      const userContent: any[] = [];
+      userContent.push({
+        type: "text",
+        text: `产品名称: ${project.productName || project.name}
+品牌: ${project.brand || "未指定"}
+--- 已确认的图片大纲 ---
+${session.step2UserEdit || session.step2AiResult}
+--- 已确认的风格方案 ---
+${session.step3UserEdit || session.step3AiResult}
+
+**任务：仅重新生成第${input.imageIndex + 1}张图（${targetImage.imageType || ""}，目的：${targetImage.purpose || ""}）的参考方案。**
+请根据以下参考图和备注，重新生成该张图的构图参考和效果图参考。
+返回格式与原来相同，直接返回一个 imageReference 对象（JSON），不要包裹在数组中。`,
+      });
+
+      let kbImageIndex = 1;
+      for (const kbImg of input.kbImages) {
+        userContent.push({ type: "image_url", image_url: { url: kbImg.url, detail: "high" } });
+        const noteText = kbImg.note
+          ? `[知识库参考图${kbImageIndex}，备注: ${kbImg.note}${kbImg.position ? "，图片位置: " + kbImg.position : ""}]`
+          : `[知识库参考图${kbImageIndex}${kbImg.position ? "，图片位置: " + kbImg.position : ""}]`;
+        userContent.push({ type: "text", text: noteText });
+        kbImageIndex++;
+      }
+      if (input.compositionRefUrl) {
+        userContent.push({ type: "image_url", image_url: { url: input.compositionRefUrl, detail: "high" } });
+        userContent.push({ type: "text", text: "[构图参考图：请参考此图的构图布局]" });
+      }
+      if (input.effectRefUrl) {
+        userContent.push({ type: "image_url", image_url: { url: input.effectRefUrl, detail: "high" } });
+        userContent.push({ type: "text", text: "[效果参考图：请参考此图的视觉效果和风格]" });
+      }
+
+      const singleImagePrompt = STEP4_REFERENCE_PROMPT + "\n\n注意：本次只需输出单张图的方案，直接返回一个 imageReference 对象（JSON），不要包裹在数组中。";
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: singleImagePrompt },
+          { role: "user", content: userContent },
+        ],
+        response_format: { type: "json_object" },
+      });
+      const newImageRef = parseLLMJson(response);
+
+      // Merge back into the full step4 result
+      const updatedRefs = [...imageRefs];
+      const mergedRef = newImageRef.imageReferences?.[0] || newImageRef;
+      mergedRef.imageNumber = targetImage.imageNumber ?? (input.imageIndex + 1);
+      updatedRefs[input.imageIndex] = mergedRef;
+
+      const updatedResult = { ...currentStep4, imageReferences: updatedRefs };
+      await db.updateImageWorkflowSession(session.id, {
+        step4AiResult: JSON.stringify(updatedResult),
+      });
+      return { updatedResult, regeneratedIndex: input.imageIndex, newImageRef: mergedRef };
+    }),
+
 
 
   // ─── Step 5: Optimize with A+ module selection ────────────────────
@@ -1171,11 +1224,6 @@ ${session.step3UserEdit || session.step3AiResult}
 
       const currentSuggestions = session.step5UserEdit || session.step5AiResult;
 
-      // Emperor Skill 优先 - 图片工作流
-      try {
-        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return { en: emperorRes.output, cn: null };
-      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1222,11 +1270,6 @@ ${session.step3UserEdit || session.step3AiResult}
       const currentSection = currentData?.aPlusContent?.sections?.[input.sectionIndex];
       if (!currentSection) throw new Error(`A+ section at index ${input.sectionIndex} not found`);
 
-      // Emperor Skill 优先 - 图片工作流
-      try {
-        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return { en: emperorRes.output, cn: null };
-      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1263,11 +1306,6 @@ ${session.step3UserEdit || session.step3AiResult}
         spCount = (spData.coreSellingPoints?.length || 0) + (spData.secondarySellingPoints?.length || 0);
       } catch { spCount = 5; }
 
-      // Emperor Skill 优先 - 图片工作流
-      try {
-        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1471,11 +1509,6 @@ ${session.step3UserEdit || session.step3AiResult}
         ? `\n\n🔒 锁定字段（以下字段必须与原内容完全一致，严禁修改）：\n${input.lockedFields.map(f => `- ${f}`).join("\n")}\n\n即使用户的修改指令涉及这些字段，也必须保持原值不变。只能修改未锁定的字段。`
         : "";
 
-      // Emperor Skill 优先 - 图片工作流
-      try {
-        const emperorRes = await generateImageAdviceViaEmperor(JSON.stringify(input).slice(0, 2000));
-        if (emperorRes.success && emperorRes.output) return { en: emperorRes.output, cn: null };
-      } catch (e) { console.warn("[Emperor] imageWorkflow fallback:", e); }
 
       const response = await invokeLLM({
         messages: [

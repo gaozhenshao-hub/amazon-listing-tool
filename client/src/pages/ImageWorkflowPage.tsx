@@ -2038,6 +2038,8 @@ function Step4References({
   const uploadRefMutation = trpc.imageWorkflow.uploadStep4RefImage.useMutation();
   const reoptimizeMutation = trpc.imageWorkflow.reoptimizeStep4WithRefs.useMutation();
   const regenerateAllMutation = trpc.imageWorkflow.regenerateAllFromReferences.useMutation();
+  const regenerateSingleMutation = trpc.imageWorkflow.regenerateSingleImageFromRef.useMutation();
+  const [regeneratingSingleIdx, setRegeneratingSingleIdx] = useState<number | null>(null);
   const [editData, setEditData] = useState<any>(null);
   const [isLocked, setIsLocked] = useState(!!session?.step4Confirmed);
   const [kbPickerOpen, setKbPickerOpen] = useState(false);
@@ -2223,6 +2225,38 @@ function Step4References({
     }
   };
 
+  // Regenerate a single image from its reference images
+  const handleRegenerateSingle = async (idx: number) => {
+    if (!editData) return;
+    const ref = editData.imageReferences?.[idx];
+    if (!ref) return;
+    const kbImages: Array<{ url: string; note?: string; position?: string }> = (ref.kbReferenceImages || []).map((kbImg: any) => ({
+      url: kbImg.imageUrl,
+      note: kbImg.note || undefined,
+      position: kbImg.position || undefined,
+    }));
+    if (kbImages.length === 0) {
+      toast.error("请先为这张图添加知识库参考图");
+      return;
+    }
+    setRegeneratingSingleIdx(idx);
+    try {
+      const result = await regenerateSingleMutation.mutateAsync({
+        projectId,
+        imageIndex: idx,
+        kbImages,
+        compositionRefUrl: ref.compositionRefImageUrl || undefined,
+        effectRefUrl: ref.effectRefImageUrl || undefined,
+      });
+      setEditData(result.updatedResult);
+      toast.success(`第${idx + 1}张图已根据参考图重新生成`);
+    } catch (err: any) {
+      toast.error(err.message || "重新生成失败");
+    } finally {
+      setRegeneratingSingleIdx(null);
+    }
+  };
+
   // Remove a KB reference image
   const removeKbImage = (refIdx: number, imgIdx: number) => {
     if (!editData) return;
@@ -2309,9 +2343,24 @@ function Step4References({
                 <span className="text-xs text-muted-foreground font-normal">— {ref.purpose}</span>
               </CardTitle>
               {!isConfirmed && (
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openKbPicker(idx, ref.imageType)}>
-                  <BookOpen className="w-3.5 h-3.5 mr-1" /> 从知识库选图
-                </Button>
+                <div className="flex gap-1.5">
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openKbPicker(idx, ref.imageType)}>
+                    <BookOpen className="w-3.5 h-3.5 mr-1" /> 从知识库选图
+                  </Button>
+                  {(ref.kbReferenceImages?.length > 0 || ref.compositionRefImageUrl || ref.effectRefImageUrl) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                      onClick={() => handleRegenerateSingle(idx)}
+                      disabled={regeneratingSingleIdx === idx}
+                      title="根据此图的参考图单独重新生成方案"
+                    >
+                      {regeneratingSingleIdx === idx ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
+                      单独重新生成
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
           </CardHeader>
