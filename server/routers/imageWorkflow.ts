@@ -275,6 +275,38 @@ function parseLLMJson(response: any): any {
 }
 
 
+// ─── Helper: Call LLM with automatic retry on empty/invalid response ─────
+async function callLLMWithRetry(systemPrompt: string, userMessage: string, maxRetries = 2): Promise<any> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const response = await invokeLLM({
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage },
+      ],
+      response_format: { type: "json_object" },
+    });
+    const result = parseLLMJson(response);
+    // If result has 'raw' field, it means LLM returned invalid/empty JSON - retry
+    if (result && !result.raw) {
+      return result;
+    }
+    console.warn(`[LLM Retry] Attempt ${attempt + 1} returned invalid JSON (raw field present). Retrying...`);
+    // Small delay before retry
+    if (attempt < maxRetries - 1) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+  // Last attempt without json_object mode as fallback
+  console.warn('[LLM Retry] All json_object attempts failed, trying without response_format...');
+  const fallbackResponse = await invokeLLM({
+    messages: [
+      { role: "system", content: systemPrompt + "\n\n重要：你必须只输出纯JSON格式，不要有任何其他文字，不要使用markdown代码块。" },
+      { role: "user", content: userMessage },
+    ],
+  });
+  return parseLLMJson(fallbackResponse);
+}
+
 // Helper: resolve project access for imageWorkflow based on user role
 async function resolveProjectAccess(projectId: number, user: { id: number; role: string }) {
   if (user.role === 'super_admin' || user.role === 'admin' || user.role === 'designer') {
@@ -648,19 +680,14 @@ export const imageWorkflowRouter = router({
       }
 
       const context = await buildImageWorkflowContext(input.projectId);
+      // If context is empty, add a fallback hint so LLM can still generate content
+      const contextHint = context.trim()
+        ? context
+        : "暂无竞品分析数据、评论数据或关键词数据。请根据产品名称、品牌和类目，结合你的亚马逊运营经验，自行推断并生成完整的卖点体系。";
 
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: STEP1_SELLING_POINTS_PROMPT },
-          { role: "user", content: `请为以下产品梳理卖点体系：\n\n产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n${context}` },
-        ],
-        response_format: { type: "json_object" },
-      });
+      const userMsg = `请为以下产品梳理卖点体系：\n\n产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n${contextHint}`;
 
-            const rawContent = response?.choices?.[0]?.message?.content;
-      console.log('[Step1 DIAG] raw content type:', typeof rawContent, 'starts with:', String(rawContent).slice(0, 80));
-      const result = parseLLMJson(response);
-      console.log('[Step1 DIAG] parsed result keys:', result ? Object.keys(result) : 'null', 'has raw?', !!result?.raw);
+      let result = await callLLMWithRetry(STEP1_SELLING_POINTS_PROMPT, userMsg);
       await db.updateImageWorkflowSession(session.id, {
         step1AiResult: JSON.stringify(result),
         currentStep: 1,
@@ -708,15 +735,13 @@ export const imageWorkflowRouter = router({
         ? `\n\n--- 竞品图片分析总结 ---\n${session.step0AiResult.substring(0, 2000)}`
         : "";
 
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: STEP2_IMAGE_OUTLINE_PROMPT },
-          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${sellingPoints}\n\n--- 产品背景信息 ---\n${context}${step0Summary}\n\n请根据以上卖点体系和竞品分析，规划每张图片的内容大纲，并在辅图的referenceHighlights字段中引用竞品亮点。` },
-        ],
-        response_format: { type: "json_object" },
-      });
+      const contextHint2 = context.trim()
+        ? context
+        : "暂无竞品分析数据。请根据产品名称、品牌和类目，结合亚马逊运营经验，自行推断并生成完整的图片大纲。";
 
-      const result = parseLLMJson(response);
+      const userMsg2 = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${sellingPoints}\n\n--- 产品背景信息 ---\n${contextHint2}${step0Summary}\n\n请根据以上卖点体系和竞品分析，规划每张图片的内容大纲，并在辅图的referenceHighlights字段中引用竞品亮点。`;
+
+      const result = await callLLMWithRetry(STEP2_IMAGE_OUTLINE_PROMPT, userMsg2);
       await db.updateImageWorkflowSession(session.id, {
         step2AiResult: JSON.stringify(result),
         currentStep: 2,
@@ -781,16 +806,9 @@ export const imageWorkflowRouter = router({
       } catch (e) { console.warn("[Step3] Failed to load KB styles:", e); }
 
 
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: STEP3_STYLE_PROMPT },
-          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n${colorInfo}\n\n--- 已确认的卖点 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}${kbReference}${kbStylesText}\n\n请参考知识库中同类目高分图片的风格分布，推荐3-4个适合的视觉风格方案。` },
-        ],
-        response_format: { type: "json_object" },
-      });
+      const userMsg3 = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n${colorInfo}\n\n--- 已确认的卖点 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}${kbReference}${kbStylesText}\n\n请参考知识库中同类目高分图片的风格分布，推荐3-4个适合的视觉风格方案。`;
 
-      const result = parseLLMJson(response);
-      console.log("[Step3 DEBUG] result keys:", Object.keys(result || {}), "styleOptions count:", result?.styleOptions?.length);
+      const result = await callLLMWithRetry(STEP3_STYLE_PROMPT, userMsg3);
       await db.updateImageWorkflowSession(session.id, {
         step3AiResult: JSON.stringify(result),
         currentStep: 3,

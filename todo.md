@@ -165,3 +165,13 @@
 - [x] Step5 删除中文翻译自动生成（仅保留英文建议）
 - [x] Step5 删除"提示词"功能（Step6 整体删除）
 - [x] 图片建议删除中文翻译显示
+
+## 图片工作流 Step1/2/3 重新生成内容为空修复（2026-07-29）
+- [x] 根因确认：Project 90001（空气套件）没有竞品分析/关键词/评论数据，buildImageWorkflowContext 返回空字符串，LLM 在 json_object 模式下返回了空内容（只有 ``` ）
+- [x] 修复1：buildImageWorkflowContext 为空时加入 fallback 提示（告知 LLM 暂无数据，请基于产品名称自行推断）
+- [x] 修复2：新增 callLLMWithRetry 函数，检测到 {raw:...} 坏数据时自动重试，最多重试2次，最后一次去掉 json_object 模式作为兜底
+- [x] 修复3：generateStep1/2/3 均改用 callLLMWithRetry，替换原来的直接 invokeLLM 调用
+- [x] 清理：移除 generateStep1 中的 [Step1 DIAG] console.log 诊断日志
+- [x] 清理：移除 generateStep3 中的 [Step3 DEBUG] console.log
+- [x] 数据清理：清除数据库中所有未确认的 step1/2/3 坏数据（step1AiResult LIKE '%"raw":"%'）
+- [x] 保存 Checkpoint 并发布
