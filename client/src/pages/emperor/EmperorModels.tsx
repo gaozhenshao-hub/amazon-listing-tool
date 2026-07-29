@@ -225,7 +225,7 @@ function ModelFormDialog({
 
 export default function EmperorModels() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
   const utils = trpc.useUtils();
   const [showForm, setShowForm] = useState(false);
   const [editingModel, setEditingModel] = useState<ModelProvider | null>(null);

@@ -293,7 +293,7 @@ function AgentFormDialog({ open, onOpenChange, initialData, skills, onSaved }: {
 
 export default function EmperorAgents() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
   const utils = trpc.useUtils();
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);

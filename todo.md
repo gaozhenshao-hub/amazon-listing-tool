@@ -208,3 +208,11 @@
 - [x] 修复 EmperorTrace 运行历史详情（input/output/元数据三 Tab）
 - [x] 修复定时任务路由路径（/emperor/schedules → /emperor/scheduled）
 - [x] 修复卖点精雕"生成结果格式异常"（后端 JSON 解析容错 + 前端字段兼容）
+
+## 皇帝模块 isAdmin 全面修复（2026-07-29）
+
+- [x] 修复 EmperorModels.tsx：isAdmin 兼容 super_admin（line 228）
+- [x] 修复 EmperorAgents.tsx：isAdmin 兼容 super_admin（line 296）
+- [x] 确认 EmperorSkillLibrary.tsx：isAdmin 已兼容 super_admin（line 397）
+- [x] 确认 EmperorMCP.tsx：isAdmin 已兼容 super_admin（line 275）
+- [x] TypeScript 编译：0 错误
