@@ -657,15 +657,16 @@ export const imageWorkflowRouter = router({
         response_format: { type: "json_object" },
       });
 
+            const rawContent = response?.choices?.[0]?.message?.content;
+      console.log('[Step1 DIAG] raw content type:', typeof rawContent, 'starts with:', String(rawContent).slice(0, 80));
       const result = parseLLMJson(response);
+      console.log('[Step1 DIAG] parsed result keys:', result ? Object.keys(result) : 'null', 'has raw?', !!result?.raw);
       await db.updateImageWorkflowSession(session.id, {
         step1AiResult: JSON.stringify(result),
         currentStep: 1,
       });
-
       return result;
     }),
-
   // ─── Step 1: Save user edits and confirm ───────────────────────
   confirmStep1: protectedProcedure
     .input(z.object({
