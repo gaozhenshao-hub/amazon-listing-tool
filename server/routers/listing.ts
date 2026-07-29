@@ -47,7 +47,16 @@ const MAX_RETRIES = 2;
  * 3. JSON 前后有多余文本（提取首个完整 JSON 对象）
  */
 function safeParseJSON<T = any>(raw: unknown, fallback?: T): T | { raw: string } {
-  const str = typeof raw === "string" ? raw : JSON.stringify(raw);
+  // Guard: handle undefined/null gracefully
+  if (raw === undefined || raw === null) {
+    if (fallback !== undefined) return fallback;
+    return { raw: String(raw) };
+  }
+  const str = typeof raw === "string" ? raw : (JSON.stringify(raw) ?? "");
+  if (!str) {
+    if (fallback !== undefined) return fallback;
+    return { raw: "" };
+  }
   // Step 1: strip thinking tags
   let cleaned = str.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "");
   // Step 2: strip markdown code fences
@@ -241,9 +250,7 @@ Return the CORRECTED bullet points in the same JSON format:
     response_format: { type: "json_object" },
   });
 
-  const content = typeof response.choices[0].message.content === "string"
-    ? response.choices[0].message.content
-    : JSON.stringify(response.choices[0].message.content);
+  const content = (response.choices?.[0]?.message?.content ?? "") as string;
 
   const result = safeParseJSON(content, bulletData);
   return (result as any).raw ? bulletData : result;
@@ -295,9 +302,7 @@ Return the CORRECTED titles in the same JSON format:
     response_format: { type: "json_object" },
   });
 
-    const content = typeof response.choices[0].message.content === "string"
-    ? response.choices[0].message.content
-    : JSON.stringify(response.choices[0].message.content);
+    const content = (response.choices?.[0]?.message?.content ?? "") as string;
   const result = safeParseJSON(content, titleData);
   return (result as any).raw ? titleData : result;
 }
@@ -343,9 +348,7 @@ async function generateChineseTranslation(
     response_format: { type: "json_object" },
   });
 
-    const content = typeof response.choices[0].message.content === "string"
-    ? response.choices[0].message.content
-    : JSON.stringify(response.choices[0].message.content);
+    const content = (response.choices?.[0]?.message?.content ?? "") as string;
   const parsed = safeParseJSON<any>(content, {});
   if ((parsed as any).raw) return { titleCn: "", itemHighlightsCn: "", bulletPointsCn: [], descriptionCn: "", searchTermsCn: "" };
   return {
@@ -369,9 +372,7 @@ async function translateImageAdviceToChinese(imageAdviceJson: string): Promise<s
       response_format: { type: "json_object" },
     });
 
-        const content = typeof response.choices[0].message.content === "string"
-      ? response.choices[0].message.content
-      : JSON.stringify(response.choices[0].message.content);
+        const content = (response.choices?.[0]?.message?.content ?? "") as string;
     // Validate and clean via safeParseJSON
     const parsed = safeParseJSON(content);
     if ((parsed as any).raw) return null;
@@ -940,9 +941,7 @@ export const listingRouter = router({
         ],
         response_format: { type: "json_object" },
       });
-            const content = typeof response.choices[0].message.content === "string"
-        ? response.choices[0].message.content
-        : JSON.stringify(response.choices[0].message.content);
+            const content = (response.choices?.[0]?.message?.content ?? "") as string;
       let parsed = safeParseJSON<any>(content);
       if ((parsed as any).raw) return { raw: content };
       let validation = validateTitles(parsed);
@@ -990,9 +989,7 @@ export const listingRouter = router({
         ],
         response_format: { type: "json_object" },
       });
-            const content = typeof response.choices[0].message.content === "string"
-        ? response.choices[0].message.content
-        : JSON.stringify(response.choices[0].message.content);
+            const content = (response.choices?.[0]?.message?.content ?? "") as string;
       let parsed = safeParseJSON<any>(content);
       if ((parsed as any).raw) return { raw: content };
       let validation = validateBullets(parsed);
@@ -1032,9 +1029,7 @@ export const listingRouter = router({
         ],
         response_format: { type: "json_object" },
       });
-            const content = typeof response.choices[0].message.content === "string"
-        ? response.choices[0].message.content
-        : JSON.stringify(response.choices[0].message.content);
+            const content = (response.choices?.[0]?.message?.content ?? "") as string;
       return safeParseJSON(content);
     }),
   // Generate search terms
@@ -1075,9 +1070,7 @@ export const listingRouter = router({
         ],
         response_format: { type: "json_object" },
       });
-            const content = typeof response.choices[0].message.content === "string"
-        ? response.choices[0].message.content
-        : JSON.stringify(response.choices[0].message.content);
+            const content = (response.choices?.[0]?.message?.content ?? "") as string;
       return safeParseJSON(content);
     }),
   // Generate image advice
@@ -1109,9 +1102,7 @@ export const listingRouter = router({
           ],
           response_format: { type: "json_object" },
         });
-        const content = typeof response.choices[0].message.content === "string"
-          ? response.choices[0].message.content
-          : JSON.stringify(response.choices[0].message.content);
+        const content = (response.choices?.[0]?.message?.content ?? "") as string;
         imageData = safeParseJSON(content);
       }
 
@@ -1688,9 +1679,15 @@ export const listingRouter = router({
         max_tokens: 4096,
       });
 
-      const rawContent = typeof response.choices[0].message.content === "string"
-        ? response.choices[0].message.content
-        : JSON.stringify(response.choices[0].message.content);
+      const rawMsg = response.choices?.[0]?.message?.content;
+      const rawContent: string = typeof rawMsg === "string"
+        ? rawMsg
+        : rawMsg != null ? (JSON.stringify(rawMsg) ?? "") : "";
+
+      if (!rawContent) {
+        console.error("[generateSellingPointsCores] LLM returned empty/undefined content");
+        return { raw: "", parseError: "LLM returned empty content" };
+      }
 
       // Strip thinking tags (Gemini may include <thinking>...</thinking> blocks)
       // Strip markdown code fences if LLM wraps JSON in ```json ... ```
@@ -1821,9 +1818,7 @@ export const listingRouter = router({
         response_format: { type: "json_object" },
       });
 
-      const content = typeof response.choices[0].message.content === "string"
-        ? response.choices[0].message.content
-        : JSON.stringify(response.choices[0].message.content);
+      const content = (response.choices?.[0]?.message?.content ?? "") as string;
 
       let parsed = safeParseJSON<any>(content);
       if ((parsed as any).raw) return { raw: content };
@@ -1877,9 +1872,7 @@ export const listingRouter = router({
         response_format: { type: "json_object" },
       });
 
-      const content = typeof response.choices[0].message.content === "string"
-        ? response.choices[0].message.content
-        : JSON.stringify(response.choices[0].message.content);
+      const content = (response.choices?.[0]?.message?.content ?? "") as string;
 
       const parsedBullet = safeParseJSON<any>(content, {});
       return {
@@ -2163,9 +2156,7 @@ Please expand this keyword/theme into a complete selling point core with FABE di
           ],
           response_format: { type: "json_object" },
         });
-        const content = typeof response.choices[0].message.content === "string"
-          ? response.choices[0].message.content
-          : JSON.stringify(response.choices[0].message.content);
+        const content = (response.choices?.[0]?.message?.content ?? "") as string;
         const qaParsed = safeParseJSON<any>(content);
         if ((qaParsed as any).raw) return { raw: content };
         parsed = qaParsed;
@@ -2204,11 +2195,9 @@ Please expand this keyword/theme into a complete selling point core with FABE di
         ],
         response_format: { type: "json_object" },
       });
-      const content = typeof response.choices[0].message.content === "string"
-        ? response.choices[0].message.content
-        : JSON.stringify(response.choices[0].message.content);
-      const parsed = safeParseJSON<any>(content, {});
-      return { checkListScores: parsed.checkListScores || {} };
+      const rawTitleMsg = response.choices?.[0]?.message?.content;
+      const parsed = safeParseJSON<any>(rawTitleMsg, {});
+      return { checkListScores: (parsed as any).checkListScores || {} };
     }),
 
   // ─── Description 8-Dimension Checklist Evaluation ───
@@ -2230,11 +2219,9 @@ Please expand this keyword/theme into a complete selling point core with FABE di
         ],
         response_format: { type: "json_object" },
       });
-      const content = typeof response.choices[0].message.content === "string"
-        ? response.choices[0].message.content
-        : JSON.stringify(response.choices[0].message.content);
-      const parsedDesc = safeParseJSON<any>(content, {});
-      return { checkListScores: parsedDesc.checkListScores || {} };
+      const rawDescMsg = response.choices?.[0]?.message?.content;
+      const parsedDesc = safeParseJSON<any>(rawDescMsg, {});
+      return { checkListScores: (parsedDesc as any).checkListScores || {} };
     }),
 
   // ─── Search Terms 5-Dimension Checklist Evaluation ───
@@ -2266,9 +2253,7 @@ Please expand this keyword/theme into a complete selling point core with FABE di
         ],
         response_format: { type: "json_object" },
       });
-      const content = typeof response.choices[0].message.content === "string"
-        ? response.choices[0].message.content
-        : JSON.stringify(response.choices[0].message.content);
+      const content = (response.choices?.[0]?.message?.content ?? "") as string;
       const parsedST = safeParseJSON<any>(content, {});
       return { checkListScores: parsedST.checkListScores || {} };
     }),
@@ -2305,9 +2290,7 @@ Please expand this keyword/theme into a complete selling point core with FABE di
         ],
         response_format: { type: "json_object" },
       });
-      const content = typeof response.choices[0].message.content === "string"
-        ? response.choices[0].message.content
-        : JSON.stringify(response.choices[0].message.content);
+      const content = (response.choices?.[0]?.message?.content ?? "") as string;
       const parsedQA = safeParseJSON<any>(content, {});
       return { checkListScores: parsedQA.checkListScores || {} };
     }),
