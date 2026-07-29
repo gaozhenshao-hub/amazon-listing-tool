@@ -1690,14 +1690,36 @@ export const listingRouter = router({
         response_format: { type: "json_object" },
       });
 
-      const content = typeof response.choices[0].message.content === "string"
+      const rawContent = typeof response.choices[0].message.content === "string"
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
 
+      // Strip markdown code fences if LLM wraps JSON in ```json ... ```
+      const content = rawContent
+        .replace(/^```(?:json)?\s*/i, "")
+        .replace(/\s*```\s*$/i, "")
+        .trim();
+
       try {
-        return JSON.parse(content);
-      } catch {
-        return { raw: content };
+        const parsed = JSON.parse(content);
+        // Normalize field name variants to sellingPoints
+        if (!Array.isArray(parsed.sellingPoints)) {
+          if (Array.isArray(parsed.selling_points)) parsed.sellingPoints = parsed.selling_points;
+          else if (Array.isArray(parsed.points)) parsed.sellingPoints = parsed.points;
+          else if (Array.isArray(parsed.bulletCores)) parsed.sellingPoints = parsed.bulletCores;
+          else if (Array.isArray(parsed.cores)) parsed.sellingPoints = parsed.cores;
+          else if (Array.isArray(parsed.themes)) parsed.sellingPoints = parsed.themes;
+        }
+        // Normalize overallStrategy field name variants
+        if (!parsed.overallStrategy) {
+          if (parsed.overall_strategy) parsed.overallStrategy = parsed.overall_strategy;
+          else if (parsed.strategy) parsed.overallStrategy = parsed.strategy;
+          else if (parsed.summary) parsed.overallStrategy = parsed.summary;
+        }
+        return parsed;
+      } catch (e) {
+        console.error("[generateSellingPointsCores] JSON.parse failed:", String(e), "\nRaw (first 500 chars):", rawContent.slice(0, 500));
+        return { raw: rawContent, parseError: String(e) };
       }
     }),
 

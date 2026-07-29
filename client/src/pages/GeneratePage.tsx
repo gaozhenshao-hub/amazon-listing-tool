@@ -237,17 +237,24 @@ export default function GeneratePage() {
 
   // Step-by-step bullet mutations
   const generateCores = trpc.listing.generateSellingPointsCores.useMutation({
-    onSuccess: (data) => {
-      if (data.sellingPoints) {
-        setSellingPointCores(data.sellingPoints);
-        setOverallStrategy(data.overallStrategy || "");
-        setConfirmedCores(new Array(data.sellingPoints.length).fill(false));
+    onSuccess: (data: any) => {
+      // Normalize field name variants (backend may return selling_points / points / cores / themes)
+      const points = data.sellingPoints ?? data.selling_points ?? data.points ?? data.bulletCores ?? data.cores ?? data.themes;
+      if (Array.isArray(points) && points.length > 0) {
+        setSellingPointCores(points);
+        setOverallStrategy(data.overallStrategy ?? data.overall_strategy ?? data.strategy ?? data.summary ?? "");
+        setConfirmedCores(new Array(points.length).fill(false));
         setGeneratedBullets({});
         setConfirmedBullets({});
         setStepBulletPhase("cores");
-        toast.success("卖点核心已生成（7条），请确认或编辑后逐条生成");
+        toast.success(`卖点核心已生成（${points.length}条），请确认或编辑后逐条生成`);
+      } else if ((data as any).raw || (data as any).parseError) {
+        // Backend returned raw text (JSON parse failed)
+        console.error("[generateCores] Backend JSON parse error:", (data as any).parseError, "\nRaw:", String((data as any).raw ?? "").slice(0, 200));
+        toast.error("AI 返回格式异常，请重试。若持续失败请联系管理员。");
       } else {
-        toast.error("生成结果格式异常");
+        console.error("[generateCores] Unexpected response structure:", JSON.stringify(data).slice(0, 300));
+        toast.error("生成结果格式异常，请重试");
       }
     },
     onError: (err) => toast.error("卖点核心生成失败: " + err.message),
