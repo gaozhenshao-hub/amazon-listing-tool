@@ -4716,6 +4716,12 @@ export const emperorSkills = mysqlTable("emperor_skills", {
   manifest: json("manifest").notNull(),
   // 模型路由覆盖（null = 使用 manifest.implementation.modelPolicy）
   modelOverride: varchar("modelOverride", { length: 128 }),
+  // cc-haha 元数据字段
+  whenToUse: text("when_to_use"),
+  timeoutSeconds: int("timeout_seconds").default(120).notNull(),
+  executionMode: mysqlEnum("execution_mode", ["inline", "fork", "background"]).default("inline").notNull(),
+  allowedTools: json("allowed_tools"),
+  disallowedTools: json("disallowed_tools"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -4760,12 +4766,33 @@ export const emperorAgents = mysqlTable("emperor_agents", {
   status: mysqlEnum("status", ["Draft", "Validated", "Released", "Deprecated"]).default("Released").notNull(),
   // DAG 定义 JSON: { nodes: [...], edges: [...] }
   dagDefinition: json("dagDefinition").notNull(),
+  // cc-haha 执行模式
+  executionMode: mysqlEnum("execution_mode", ["inline", "fork", "background"]).default("inline").notNull(),
   callCount: int("callCount").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 export type EmperorAgent = typeof emperorAgents.$inferSelect;
 export type InsertEmperorAgent = typeof emperorAgents.$inferInsert;
+
+// Emperor 知识库（cc-haha 四分类记忆体系）
+export const emperorKnowledge = mysqlTable("emperor_knowledge", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  projectId: varchar("project_id", { length: 128 }),
+  title: varchar("title", { length: 512 }).notNull(),
+  content: text("content").notNull(),
+  // 记忆类型：feedback=用户反馈 fact=事实知识 project=项目记忆 reference=参考资料
+  memoryType: mysqlEnum("memory_type", ["feedback", "fact", "project", "reference"]).default("fact").notNull(),
+  source: varchar("source", { length: 1024 }),
+  tags: json("tags"),
+  isActive: int("is_active").default(1).notNull(),
+  confidence: decimal("confidence", { precision: 4, scale: 3 }).default("1.000"),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+});
+export type EmperorKnowledgeItem = typeof emperorKnowledge.$inferSelect;
+export type InsertEmperorKnowledgeItem = typeof emperorKnowledge.$inferInsert;
 
 // MCP 连接器配置表
 export const emperorMcpConnectors = mysqlTable("emperor_mcp_connectors", {

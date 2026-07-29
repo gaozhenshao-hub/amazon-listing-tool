@@ -230,14 +230,14 @@
 
 ## cc-haha 设计理念移植（2026-07-29）
 
-- [ ] 数据库 Schema 扩展：emperor_skills 表增加 whenToUse/timeout/executionMode/allowedTools/version 字段
-- [ ] 数据库 Schema 扩展：emperor_knowledge 表增加 memoryType 字段（Feedback/Fact/Project/Reference）
-- [ ] 数据库 Schema 扩展：emperor_agents 表增加 executionMode 字段（inline/fork/background）
-- [ ] 后端接口扩展：Skill CRUD 支持新字段（whenToUse/timeout/executionMode/allowedTools/version）
-- [ ] 后端接口扩展：知识库分类接口（按 memoryType 筛选）
-- [ ] 前端 EmperorSkillLibrary：Skill 编辑弹窗增加 when_to_use/timeout/model/allowed_tools/version 字段
-- [ ] 前端知识库模块：增加四分类标签（Feedback/Fact/Project/Reference）+ 记忆条目管理
-- [ ] 前端 AgentCanvas：节点属性面板增加执行模式（Inline/Fork/Background）+ 并行 Fork 节点
+- [x] 数据库 Schema 扩展：emperor_skills 表增加 whenToUse/timeout/executionMode/allowedTools/version 字段
+- [x] 数据库 Schema 扩展：emperor_knowledge 表增加 memoryType 字段（Feedback/Fact/Project/Reference）
+- [x] 数据库 Schema 扩展：emperor_agents 表增加 executionMode 字段（inline/fork/background）
+- [x] 后端接口扩展：Skill CRUD 支持新字段（whenToUse/timeout/executionMode/allowedTools/version）
+- [x] 后端接口扩展：知识库分类接口（按 memoryType 筛选）
+- [x] 前端 EmperorSkillLibrary：Skill 编辑弹窗增加 when_to_use/timeout/model/allowed_tools/version 字段
+- [x] 前端知识库模块：增加四分类标签（Feedback/Fact/Project/Reference）+ 记忆条目管理
+- [x] 前端 AgentCanvas：节点属性面板增加执行模式（Inline/Fork/Background）+ 并行 Fork 节点
 
 ## Emperor cc-haha 能力移植（2026-07-29）
 

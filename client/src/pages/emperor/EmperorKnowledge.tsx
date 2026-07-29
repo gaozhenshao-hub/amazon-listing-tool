@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
@@ -142,7 +142,7 @@ function KnowledgeFormDialog({
   const [form, setForm] = useState<KnowledgeFormData>(EMPTY_FORM);
 
   // Reset form when dialog opens
-  useState(() => {
+  useEffect(() => {
     if (open) {
       if (initialData) {
         setForm({
@@ -157,7 +157,7 @@ function KnowledgeFormDialog({
         setForm(EMPTY_FORM);
       }
     }
-  });
+  }, [open, initialData]);
 
   const upsertMutation = trpc.emperor.knowledge.upsert.useMutation({
     onSuccess: () => {
