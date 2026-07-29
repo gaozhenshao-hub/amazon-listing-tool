@@ -112,6 +112,7 @@ import EmperorDiagnostics from "./pages/emperor/EmperorDiagnostics";
 import EmperorSettings from "./pages/emperor/EmperorSettings";
 import EmperorScheduled from "./pages/emperor/EmperorScheduled";
 import AgentCanvas from "./pages/emperor/AgentCanvas";
+import EmperorKnowledge from "./pages/emperor/EmperorKnowledge";
 
 function Router() {
   return (
@@ -220,6 +221,7 @@ function Router() {
         <Route path="/emperor/diagnostics">{() => <PermissionGuard><EmperorDiagnostics /></PermissionGuard>}</Route>
         <Route path="/emperor/settings">{() => <PermissionGuard><EmperorSettings /></PermissionGuard>}</Route>
         <Route path="/emperor/scheduled">{() => <PermissionGuard><EmperorScheduled /></PermissionGuard>}</Route>
+        <Route path="/emperor/knowledge">{() => <PermissionGuard><EmperorKnowledge /></PermissionGuard>}</Route>
 
         {/* ─── System Settings ─── */}
         <Route path="/settings" component={SystemSettings} />

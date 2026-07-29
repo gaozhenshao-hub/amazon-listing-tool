@@ -227,3 +227,26 @@
 - [x] 数据库新增 emperor_agent_runs 表
 - [x] App.tsx 注册 /emperor/agents/:slug/canvas 全屏路由
 - [x] TypeScript 编译：0 错误
+
+## cc-haha 设计理念移植（2026-07-29）
+
+- [ ] 数据库 Schema 扩展：emperor_skills 表增加 whenToUse/timeout/executionMode/allowedTools/version 字段
+- [ ] 数据库 Schema 扩展：emperor_knowledge 表增加 memoryType 字段（Feedback/Fact/Project/Reference）
+- [ ] 数据库 Schema 扩展：emperor_agents 表增加 executionMode 字段（inline/fork/background）
+- [ ] 后端接口扩展：Skill CRUD 支持新字段（whenToUse/timeout/executionMode/allowedTools/version）
+- [ ] 后端接口扩展：知识库分类接口（按 memoryType 筛选）
+- [ ] 前端 EmperorSkillLibrary：Skill 编辑弹窗增加 when_to_use/timeout/model/allowed_tools/version 字段
+- [ ] 前端知识库模块：增加四分类标签（Feedback/Fact/Project/Reference）+ 记忆条目管理
+- [ ] 前端 AgentCanvas：节点属性面板增加执行模式（Inline/Fork/Background）+ 并行 Fork 节点
+
+## Emperor cc-haha 能力移植（2026-07-29）
+
+- [x] 数据库 Schema 扩展：emperor_skills 表新增 when_to_use/timeout_seconds/execution_mode/allowed_tools/disallowed_tools/version 字段
+- [x] 数据库 Schema 扩展：新建 emperor_knowledge 表（四分类记忆体系：feedback/fact/project/reference）
+- [x] 后端 emperor.ts：skills.create/update 接口支持 cc-haha 元数据字段
+- [x] 后端 emperor.ts：新增 emperorKnowledgeRouter（upsert/list/delete/stats 接口）
+- [x] 前端 EmperorSkillLibrary：Skill 编辑弹窗新增「cc-haha 元数据」Tab（whenToUse/executionMode/timeoutSeconds/allowedTools/disallowedTools/version）
+- [x] 前端 EmperorKnowledge 新页面：cc-haha 四分类记忆管理（列表/详情/新建/编辑/删除）
+- [x] 前端 AgentCanvas：skill_node 属性面板新增执行模式选择（Inline/Fork/Background）和超时配置
+- [x] App.tsx 路由注册：/emperor/knowledge 路由
+- [x] TypeScript 编译 0 错误

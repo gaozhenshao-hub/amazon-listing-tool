@@ -151,24 +151,58 @@ function NodePropertyPanel({
         </div>
 
         {node.type === "skill_node" && (
-          <div>
-            <Label className="text-slate-400 text-xs">选择 Skill</Label>
-            <Select value={d.skillSlug || ""} onValueChange={(v) => {
-              const s = skills.find((sk: any) => sk.slug === v);
-              onUpdate(node.id, { skillSlug: v, subtitle: s?.name || v });
-            }}>
-              <SelectTrigger className="mt-1.5 bg-white/5 border-white/10 text-white h-8 text-sm">
-                <SelectValue placeholder="选择 Skill..." />
-              </SelectTrigger>
-              <SelectContent className="bg-[#0d1117] border-white/10">
-                {skills.map((s: any) => (
-                  <SelectItem key={s.slug} value={s.slug} className="text-slate-300 focus:bg-white/10 text-xs">
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <>
+            <div>
+              <Label className="text-slate-400 text-xs">选择 Skill</Label>
+              <Select value={d.skillSlug || ""} onValueChange={(v) => {
+                const s = skills.find((sk: any) => sk.slug === v);
+                onUpdate(node.id, { skillSlug: v, subtitle: s?.name || v });
+              }}>
+                <SelectTrigger className="mt-1.5 bg-white/5 border-white/10 text-white h-8 text-sm">
+                  <SelectValue placeholder="选择 Skill..." />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0d1117] border-white/10">
+                  {skills.map((s: any) => (
+                    <SelectItem key={s.slug} value={s.slug} className="text-slate-300 focus:bg-white/10 text-xs">
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-slate-400 text-xs">执行模式（cc-haha）</Label>
+              <Select
+                value={d.executionMode || "inline"}
+                onValueChange={(v) => onUpdate(node.id, { executionMode: v })}
+              >
+                <SelectTrigger className="mt-1.5 bg-white/5 border-white/10 text-white h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0d1117] border-white/10">
+                  <SelectItem value="inline" className="text-slate-300 focus:bg-white/10 text-xs">• Inline（同步内联）</SelectItem>
+                  <SelectItem value="fork" className="text-slate-300 focus:bg-white/10 text-xs">• Fork（并行分支）</SelectItem>
+                  <SelectItem value="background" className="text-slate-300 focus:bg-white/10 text-xs">• Background（后台异步）</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-slate-500 mt-1">
+                {d.executionMode === "fork" && "并行分支：多个 Skill 同时执行，结果合并"}
+                {d.executionMode === "background" && "后台异步：不阻塞主流程，完成后回调"}
+                {(!d.executionMode || d.executionMode === "inline") && "同步内联：当前节点完成后继续"}
+              </p>
+            </div>
+            <div>
+              <Label className="text-slate-400 text-xs">超时（秒）</Label>
+              <Input
+                type="number"
+                min={10}
+                max={3600}
+                value={d.timeoutSeconds ?? 120}
+                onChange={(e) => onUpdate(node.id, { timeoutSeconds: Number(e.target.value) })}
+                className="mt-1.5 bg-white/5 border-white/10 text-white text-xs h-8"
+              />
+            </div>
+          </>
         )}
 
         {node.type === "llm_node" && (

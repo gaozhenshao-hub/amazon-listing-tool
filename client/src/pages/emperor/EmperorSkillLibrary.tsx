@@ -90,6 +90,13 @@ interface SkillFormData {
   userPromptTemplate: string;
   modelOverride: string;
   status: "Draft" | "Validated" | "Approved" | "Released" | "Deprecated";
+  // cc-haha 元数据字段
+  whenToUse: string;
+  timeoutSeconds: number;
+  executionMode: "inline" | "fork" | "background";
+  allowedTools: string;
+  disallowedTools: string;
+  version: string;
 }
 
 const EMPTY_FORM: SkillFormData = {
@@ -101,6 +108,12 @@ const EMPTY_FORM: SkillFormData = {
   userPromptTemplate: "{{context}}",
   modelOverride: "",
   status: "Draft",
+  whenToUse: "",
+  timeoutSeconds: 120,
+  executionMode: "inline",
+  allowedTools: "",
+  disallowedTools: "",
+  version: "1.0.0",
 };
 
 // ─── Category color map ───────────────────────────────────────────────────────
@@ -157,12 +170,13 @@ function SkillFormDialog({
 }) {
   const isEdit = !!initialData;
   const [form, setForm] = useState<SkillFormData>(EMPTY_FORM);
-  const [activeTab, setActiveTab] = useState<"basic" | "prompt" | "model">("basic");
+  const [activeTab, setActiveTab] = useState<"basic" | "prompt" | "model" | "cchaha">("basic");
 
   useEffect(() => {
     if (open) {
       if (initialData) {
         const manifest = initialData.manifest || {};
+        const d = initialData as any;
         setForm({
           slug: initialData.slug,
           name: initialData.name,
@@ -172,6 +186,16 @@ function SkillFormDialog({
           userPromptTemplate: manifest?.implementation?.userPromptTemplate || "{{context}}",
           modelOverride: initialData.modelOverride || "",
           status: (initialData.status as SkillFormData["status"]) || "Draft",
+          whenToUse: d.when_to_use || "",
+          timeoutSeconds: d.timeout_seconds || 120,
+          executionMode: (d.execution_mode as SkillFormData["executionMode"]) || "inline",
+          allowedTools: Array.isArray(d.allowed_tools)
+            ? d.allowed_tools.join(", ")
+            : (typeof d.allowed_tools === "string" ? d.allowed_tools : ""),
+          disallowedTools: Array.isArray(d.disallowed_tools)
+            ? d.disallowed_tools.join(", ")
+            : (typeof d.disallowed_tools === "string" ? d.disallowed_tools : ""),
+          version: d.version || "1.0.0",
         });
       } else {
         setForm(EMPTY_FORM);
@@ -189,31 +213,31 @@ function SkillFormDialog({
     onError: (e) => toast.error("更新失败: " + e.message),
   });
 
+  const parseToolList = (s: string) =>
+    s.split(/[,\n]+/).map((t) => t.trim()).filter(Boolean);
+
   const handleSave = () => {
     if (!form.name.trim()) { toast.error("请填写 Skill 名称"); return; }
     const slug = isEdit ? form.slug : (form.slug || slugify(form.name));
+    const commonFields = {
+      name: form.name,
+      description: form.description,
+      category: form.category,
+      systemPrompt: form.systemPrompt,
+      userPromptTemplate: form.userPromptTemplate,
+      modelOverride: form.modelOverride || null,
+      status: form.status,
+      whenToUse: form.whenToUse || undefined,
+      timeoutSeconds: form.timeoutSeconds,
+      executionMode: form.executionMode,
+      allowedTools: form.allowedTools ? parseToolList(form.allowedTools) : [],
+      disallowedTools: form.disallowedTools ? parseToolList(form.disallowedTools) : [],
+      version: form.version || "1.0.0",
+    };
     if (isEdit) {
-      updateMutation.mutate({
-        slug,
-        name: form.name,
-        description: form.description,
-        category: form.category,
-        systemPrompt: form.systemPrompt,
-        userPromptTemplate: form.userPromptTemplate,
-        modelOverride: form.modelOverride || null,
-        status: form.status,
-      });
+      updateMutation.mutate({ slug, ...commonFields });
     } else {
-      createMutation.mutate({
-        slug,
-        name: form.name,
-        description: form.description,
-        category: form.category,
-        systemPrompt: form.systemPrompt,
-        userPromptTemplate: form.userPromptTemplate,
-        modelOverride: form.modelOverride || null,
-        status: form.status,
-      });
+      createMutation.mutate({ slug, ...commonFields });
     }
   };
 
@@ -223,6 +247,7 @@ function SkillFormDialog({
     { id: "basic", label: "基本信息" },
     { id: "prompt", label: "Prompt 配置" },
     { id: "model", label: "模型配置" },
+    { id: "cchaha", label: "cc-haha 元数据" },
   ] as const;
 
   return (
@@ -375,6 +400,94 @@ function SkillFormDialog({
                 <li>Manifest 中定义的 modelPolicy</li>
                 <li>系统默认模型（最低优先级）</li>
               </ol>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "cchaha" && (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 text-xs text-amber-700 mb-2">
+              <span className="font-semibold">cc-haha 元数据标准</span>——定义 Skill 的执行行为、触发条件和工具权限，实现智能自动激活和多代理协作。
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                何时使用（when_to_use）
+                <span className="ml-2 text-muted-foreground/60">描述自动激活条件</span>
+              </label>
+              <Textarea
+                value={form.whenToUse}
+                onChange={(e) => setForm((f) => ({ ...f, whenToUse: e.target.value }))}
+                placeholder="例如：当用户请求分析竞品标题时自动激活..."
+                className="resize-none min-h-[80px] text-sm"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">执行模式</label>
+                <Select
+                  value={form.executionMode}
+                  onValueChange={(v) => setForm((f) => ({ ...f, executionMode: v as SkillFormData["executionMode"] }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inline">• Inline（同步内联）</SelectItem>
+                    <SelectItem value="fork">• Fork（并行分支）</SelectItem>
+                    <SelectItem value="background">• Background（后台异步）</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">超时时间（秒）</label>
+                <Input
+                  type="number"
+                  min={10}
+                  max={3600}
+                  value={form.timeoutSeconds}
+                  onChange={(e) => setForm((f) => ({ ...f, timeoutSeconds: Number(e.target.value) }))}
+                  placeholder="120"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                  允许工具（allowed_tools）
+                  <span className="ml-1 text-muted-foreground/60">逗号分隔</span>
+                </label>
+                <Textarea
+                  value={form.allowedTools}
+                  onChange={(e) => setForm((f) => ({ ...f, allowedTools: e.target.value }))}
+                  placeholder="web_search, code_exec, file_read"
+                  className="resize-none min-h-[70px] font-mono text-xs"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                  禁止工具（disallowed_tools）
+                  <span className="ml-1 text-muted-foreground/60">逗号分隔</span>
+                </label>
+                <Textarea
+                  value={form.disallowedTools}
+                  onChange={(e) => setForm((f) => ({ ...f, disallowedTools: e.target.value }))}
+                  placeholder="browser_navigate, shell_exec"
+                  className="resize-none min-h-[70px] font-mono text-xs"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">版本号</label>
+              <Input
+                value={form.version}
+                onChange={(e) => setForm((f) => ({ ...f, version: e.target.value }))}
+                placeholder="1.0.0"
+                className="w-40"
+              />
             </div>
           </div>
         )}

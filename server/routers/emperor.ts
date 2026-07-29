@@ -54,7 +54,7 @@ export const emperorSkillsRouter = router({
       pageSize: z.number().default(50),
     }))
     .query(async ({ input }) => {
-      let sql = "SELECT id,slug,name,description,category,owner,riskTier,status,scope,version,isSystem,callCount,modelOverride,createdAt,updatedAt FROM emperor_skills WHERE 1=1";
+      let sql = "SELECT id,slug,name,description,category,owner,riskTier,status,scope,version,isSystem,callCount,modelOverride,when_to_use,timeout_seconds,execution_mode,allowed_tools,disallowed_tools,model_override,createdAt,updatedAt FROM emperor_skills WHERE 1=1";
       const params: any[] = [];
       if (input.category) { sql += " AND category = ?"; params.push(input.category); }
       if (input.status) { sql += " AND status = ?"; params.push(input.status); }
@@ -102,6 +102,13 @@ export const emperorSkillsRouter = router({
       userPromptTemplate: z.string().optional(),
       modelOverride: z.string().nullable().optional(),
       status: z.enum(["Draft","Validated","Approved","Released","Deprecated"]).optional().default("Draft"),
+      // cc-haha 新字段
+      whenToUse: z.string().optional(),
+      timeoutSeconds: z.number().optional().default(120),
+      executionMode: z.enum(["inline","fork","background"]).optional().default("inline"),
+      allowedTools: z.array(z.string()).optional(),
+      disallowedTools: z.array(z.string()).optional(),
+      version: z.string().optional().default("1.0.0"),
     }))
     .mutation(async ({ input }) => {
       const manifest = {
@@ -111,8 +118,17 @@ export const emperorSkillsRouter = router({
         }
       };
       await rawExecute(
-        `INSERT INTO emperor_skills (slug,name,description,category,modelOverride,status,manifest,isSystem,callCount,version) VALUES (?,?,?,?,?,?,?,0,0,'1.0.0')`,
-        [input.slug, input.name, input.description||null, input.category||"通用", input.modelOverride||null, input.status||"Draft", JSON.stringify(manifest)]
+        `INSERT INTO emperor_skills (slug,name,description,category,modelOverride,status,manifest,isSystem,callCount,version,when_to_use,timeout_seconds,execution_mode,allowed_tools,disallowed_tools) VALUES (?,?,?,?,?,?,?,0,0,?,?,?,?,?,?)`,
+        [
+          input.slug, input.name, input.description||null, input.category||"通用",
+          input.modelOverride||null, input.status||"Draft", JSON.stringify(manifest),
+          input.version||"1.0.0",
+          input.whenToUse||null,
+          input.timeoutSeconds||120,
+          input.executionMode||"inline",
+          input.allowedTools ? JSON.stringify(input.allowedTools) : null,
+          input.disallowedTools ? JSON.stringify(input.disallowedTools) : null,
+        ]
       );
       return { success: true };
     }),
@@ -128,9 +144,16 @@ export const emperorSkillsRouter = router({
       systemPrompt: z.string().optional(),
       userPromptTemplate: z.string().optional(),
       manifest: z.any().optional(),
+      // cc-haha 新字段
+      whenToUse: z.string().nullable().optional(),
+      timeoutSeconds: z.number().nullable().optional(),
+      executionMode: z.enum(["inline","fork","background"]).optional(),
+      allowedTools: z.array(z.string()).nullable().optional(),
+      disallowedTools: z.array(z.string()).nullable().optional(),
+      version: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const { slug, systemPrompt, userPromptTemplate, ...updates } = input;
+      const { slug, systemPrompt, userPromptTemplate, whenToUse, timeoutSeconds, executionMode, allowedTools, disallowedTools, version, ...updates } = input;
       const sets: string[] = [];
       const params: any[] = [];
       if (updates.name !== undefined) { sets.push("name = ?"); params.push(updates.name); }
@@ -140,13 +163,19 @@ export const emperorSkillsRouter = router({
       if (updates.modelOverride !== undefined) { sets.push("modelOverride = ?"); params.push(updates.modelOverride); }
       if (updates.manifest !== undefined) { sets.push("manifest = ?"); params.push(JSON.stringify(updates.manifest)); }
       else if (systemPrompt !== undefined || userPromptTemplate !== undefined) {
-        // Merge into manifest
         const existing = await rawExecute("SELECT manifest FROM emperor_skills WHERE slug = ? LIMIT 1", [slug]);
         const existingManifest = existing[0]?.manifest ? (typeof existing[0].manifest === "string" ? JSON.parse(existing[0].manifest) : existing[0].manifest) : {};
         if (systemPrompt !== undefined) { existingManifest.implementation = existingManifest.implementation || {}; existingManifest.implementation.systemPrompt = systemPrompt; }
         if (userPromptTemplate !== undefined) { existingManifest.implementation = existingManifest.implementation || {}; existingManifest.implementation.userPromptTemplate = userPromptTemplate; }
         sets.push("manifest = ?"); params.push(JSON.stringify(existingManifest));
       }
+      // cc-haha 新字段
+      if (whenToUse !== undefined) { sets.push("when_to_use = ?"); params.push(whenToUse); }
+      if (timeoutSeconds !== undefined) { sets.push("timeout_seconds = ?"); params.push(timeoutSeconds); }
+      if (executionMode !== undefined) { sets.push("execution_mode = ?"); params.push(executionMode); }
+      if (allowedTools !== undefined) { sets.push("allowed_tools = ?"); params.push(allowedTools ? JSON.stringify(allowedTools) : null); }
+      if (disallowedTools !== undefined) { sets.push("disallowed_tools = ?"); params.push(disallowedTools ? JSON.stringify(disallowedTools) : null); }
+      if (version !== undefined) { sets.push("version = ?"); params.push(version); }
       if (sets.length === 0) return { success: true };
       params.push(slug);
       await rawExecute(`UPDATE emperor_skills SET ${sets.join(", ")} WHERE slug = ?`, params);
@@ -857,6 +886,103 @@ export const emperorDiagnosticsRouter = router({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Knowledge / Memory Router (cc-haha 四分类记忆体系)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const emperorKnowledgeRouter = router({
+  list: protectedProcedure
+    .input(z.object({
+      memoryType: z.enum(["feedback","fact","project","reference"]).optional(),
+      search: z.string().optional(),
+      projectId: z.string().optional(),
+      page: z.number().default(1),
+      pageSize: z.number().default(20),
+    }))
+    .query(async ({ input, ctx }) => {
+      let sql = "SELECT id,user_id,project_id,title,content,memory_type,source,tags,is_active,confidence,created_at,updated_at FROM emperor_knowledge WHERE is_active=1";
+      const params: any[] = [];
+      if (input.memoryType) { sql += " AND memory_type=?"; params.push(input.memoryType); }
+      if (input.projectId) { sql += " AND project_id=?"; params.push(input.projectId); }
+      if (input.search) { sql += " AND (title LIKE ? OR content LIKE ?)"; params.push(`%${input.search}%`, `%${input.search}%`); }
+      sql += " ORDER BY updated_at DESC";
+      const offset = (input.page - 1) * input.pageSize;
+      sql += ` LIMIT ${input.pageSize} OFFSET ${offset}`;
+      const rows = await rawExecute(sql, params);
+      const items = rows.map((r: any) => ({
+        ...r,
+        tags: typeof r.tags === "string" ? JSON.parse(r.tags) : (r.tags ?? []),
+        is_active: !!r.is_active,
+      }));
+
+      let countSql = "SELECT COUNT(*) as cnt FROM emperor_knowledge WHERE is_active=1";
+      const countParams: any[] = [];
+      if (input.memoryType) { countSql += " AND memory_type=?"; countParams.push(input.memoryType); }
+      if (input.projectId) { countSql += " AND project_id=?"; countParams.push(input.projectId); }
+      if (input.search) { countSql += " AND (title LIKE ? OR content LIKE ?)"; countParams.push(`%${input.search}%`, `%${input.search}%`); }
+      const countRows = await rawExecute(countSql, countParams);
+      return { items, total: countRows[0]?.cnt || 0, page: input.page, pageSize: input.pageSize };
+    }),
+
+  get: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const rows = await rawExecute("SELECT * FROM emperor_knowledge WHERE id=? LIMIT 1", [input.id]);
+      if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
+      const r = rows[0];
+      return { ...r, tags: typeof r.tags === "string" ? JSON.parse(r.tags) : (r.tags ?? []), is_active: !!r.is_active };
+    }),
+
+  upsert: protectedProcedure
+    .input(z.object({
+      id: z.number().optional(),
+      title: z.string().min(1).max(500),
+      content: z.string().min(1),
+      memoryType: z.enum(["feedback","fact","project","reference"]).default("fact"),
+      source: z.string().optional(),
+      tags: z.array(z.string()).optional().default([]),
+      projectId: z.string().optional(),
+      confidence: z.number().min(0).max(1).optional().default(1.0),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const now = Date.now();
+      if (input.id) {
+        await rawExecute(
+          "UPDATE emperor_knowledge SET title=?,content=?,memory_type=?,source=?,tags=?,project_id=?,confidence=?,updated_at=? WHERE id=? AND user_id=?",
+          [input.title, input.content, input.memoryType, input.source||null, JSON.stringify(input.tags), input.projectId||null, input.confidence, now, input.id, ctx.user.id]
+        );
+        return { success: true, id: input.id };
+      } else {
+        const result = await rawExecute(
+          "INSERT INTO emperor_knowledge (user_id,project_id,title,content,memory_type,source,tags,is_active,confidence,created_at,updated_at) VALUES (?,?,?,?,?,?,?,1,?,?,?)",
+          [ctx.user.id, input.projectId||null, input.title, input.content, input.memoryType, input.source||null, JSON.stringify(input.tags), input.confidence, now, now]
+        );
+        return { success: true, id: (result as any).insertId };
+      }
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
+      if (isAdmin) {
+        await rawExecute("UPDATE emperor_knowledge SET is_active=0 WHERE id=?", [input.id]);
+      } else {
+        await rawExecute("UPDATE emperor_knowledge SET is_active=0 WHERE id=? AND user_id=?", [input.id, ctx.user.id]);
+      }
+      return { success: true };
+    }),
+
+  stats: protectedProcedure.query(async () => {
+    const rows = await rawExecute(
+      "SELECT memory_type, COUNT(*) as cnt FROM emperor_knowledge WHERE is_active=1 GROUP BY memory_type"
+    );
+    const result: Record<string, number> = { feedback: 0, fact: 0, project: 0, reference: 0 };
+    for (const r of rows) { result[r.memory_type as string] = Number(r.cnt); }
+    return result;
+  }),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Combined Emperor Router
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -868,4 +994,5 @@ export const emperorRouter = router({
   agents: emperorAgentsRouter,
   scheduled: emperorScheduledRouter,
   diagnostics: emperorDiagnosticsRouter,
+  knowledge: emperorKnowledgeRouter,
 });
