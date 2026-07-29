@@ -101,6 +101,17 @@ import { PermissionGuard } from "./components/PermissionGuard";
 import Listing2Products from "./pages/listing2/Listing2Products";
 import Listing2Workflow from "./pages/listing2/Listing2Workflow";
 
+// ─── Module 7: Emperor AI 能力中台 ────────────────────────────────────────────────────────
+import EmperorSkillLibrary from "./pages/emperor/EmperorSkillLibrary";
+import EmperorTrace from "./pages/emperor/EmperorTrace";
+import EmperorModels from "./pages/emperor/EmperorModels";
+import EmperorMCP from "./pages/emperor/EmperorMCP";
+import EmperorAgents from "./pages/emperor/EmperorAgents";
+import EmperorUsage from "./pages/emperor/EmperorUsage";
+import EmperorDiagnostics from "./pages/emperor/EmperorDiagnostics";
+import EmperorSettings from "./pages/emperor/EmperorSettings";
+import EmperorScheduled from "./pages/emperor/EmperorScheduled";
+
 function Router() {
   return (
     <DashboardLayout>
@@ -196,6 +207,18 @@ function Router() {
         <Route path="/offsite/tiktok-matrix">{() => <PermissionGuard><OffsiteTikTokMatrix /></PermissionGuard>}</Route>
         <Route path="/offsite/attribution">{() => <PermissionGuard><OffsiteAttribution /></PermissionGuard>}</Route>
         <Route path="/offsite/analytics">{() => <PermissionGuard><OffsiteAnalytics /></PermissionGuard>}</Route>
+
+        {/* ─── Module 7: Emperor AI 能力中台 ─── */}
+        <Route path="/emperor">{() => <PermissionGuard><EmperorSkillLibrary /></PermissionGuard>}</Route>
+        <Route path="/emperor/skills">{() => <PermissionGuard><EmperorSkillLibrary /></PermissionGuard>}</Route>
+        <Route path="/emperor/trace">{() => <PermissionGuard><EmperorTrace /></PermissionGuard>}</Route>
+        <Route path="/emperor/models">{() => <PermissionGuard><EmperorModels /></PermissionGuard>}</Route>
+        <Route path="/emperor/mcp">{() => <PermissionGuard><EmperorMCP /></PermissionGuard>}</Route>
+        <Route path="/emperor/agents">{() => <PermissionGuard><EmperorAgents /></PermissionGuard>}</Route>
+        <Route path="/emperor/usage">{() => <PermissionGuard><EmperorUsage /></PermissionGuard>}</Route>
+        <Route path="/emperor/diagnostics">{() => <PermissionGuard><EmperorDiagnostics /></PermissionGuard>}</Route>
+        <Route path="/emperor/settings">{() => <PermissionGuard><EmperorSettings /></PermissionGuard>}</Route>
+        <Route path="/emperor/scheduled">{() => <PermissionGuard><EmperorScheduled /></PermissionGuard>}</Route>
 
         {/* ─── System Settings ─── */}
         <Route path="/settings" component={SystemSettings} />

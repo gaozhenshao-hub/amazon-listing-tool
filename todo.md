@@ -177,8 +177,16 @@
 - [x] 保存 Checkpoint 并发布
 
 ## Step1/Step2 联动优化（2026-07-29）
-- [ ] Step1 dataSource 编辑态：在编辑模式为 coreSellingPoints/secondarySellingPoints 的 dataSource 字段增加下拉选择（竞品差评分析/竞品好评分析/关键词场景数据/产品画像/运营经验推断）
-- [ ] Step2 表达方式与 Step0 联动：当 session.step0AiResult 存在时，解析 differentiationOpportunities 和 sellingPointDistribution，在辅图表达方式选择器旁显示"参考竞品"提示（如"竞品高频使用场景暗示，建议尝试数据对比差异化"）
+- [x] Step1 dataSource 编辑态：在编辑模式为 coreSellingPoints/secondarySellingPoints 的 dataSource 字段增加下拉选择（竞品差评分析/竞品好评分析/关键词场景数据/产品画像/运营经验推断）
+- [x] Step2 表达方式与 Step0 联动：当 session.step0AiResult 存在时，解析 differentiationOpportunities 和 sellingPointDistribution，在辅图表达方式选择器旁显示"参考竞品"提示（如"竞品高频使用场景暗示，建议尝试数据对比差异化"）
 
 - [x] Step1 dataSource 编辑态下拉选择（核心卖点+次要卖点均已实现，5个选项）
 - [x] Step2 表达方式选择器（8选项下拉）+ Step0 联动提示（辅图上方显示竞品高频表达方式和差异化机会）
+
+## 皇帝融合（Emperor Integration，2026-07-29）
+- [ ] Phase 1: 数据库 Schema（emperor_skills/runs/agents/mcp_connectors 四张表）+ 数据迁移脚本
+- [ ] Phase 2: 后端 tRPC 路由（emperor.skills.*、emperor.runs.*、emperor.agents.*、emperor.models.*）
+- [ ] Phase 3: 前端 Skill 库 UI（cc-haha Market 三栏布局 + 分类树 + 运行面板）
+- [ ] Phase 4: 前端运行历史 UI（cc-haha TraceSession 调用树 + 详情面板）
+- [ ] Phase 5: Agent 编排 + 模型路由 + MCP 设置页面
+- [ ] Phase 6: 关闭皇帝 EC2（PM2 stop + ufw 关闭 4800 端口）

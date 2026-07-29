@@ -30,8 +30,8 @@ export const MANAGER_ROLES = ['super_admin', 'admin', 'ops_manager'] as const;
 
 // Module access by role
 export const ROLE_MODULE_ACCESS: Record<string, string[]> = {
-  super_admin:    ['dev', 'listing', 'ops', 'service', 'knowledge', 'admin', 'offsite'],
-  admin:          ['dev', 'listing', 'ops', 'service', 'knowledge', 'admin', 'offsite'],
+  super_admin:    ['dev', 'listing', 'ops', 'service', 'knowledge', 'admin', 'offsite', 'emperor'],
+  admin:          ['dev', 'listing', 'ops', 'service', 'knowledge', 'admin', 'offsite', 'emperor'],
   ops_manager:    ['listing', 'knowledge', 'ops', 'offsite'],
   ops_specialist: ['listing', 'knowledge'],
   product_dev:    ['dev', 'knowledge'],
@@ -116,6 +116,17 @@ export const SUB_MODULES: Record<string, { id: string; label: string }[]> = {
     { id: 'offsite_tiktok', label: 'TikTok矩阵' },
     { id: 'offsite_attribution', label: '归因追踪' },
     { id: 'offsite_analytics', label: '全渠道分析' },
+  ],
+  emperor: [
+    { id: 'emperor_skills', label: 'Skill 库' },
+    { id: 'emperor_trace', label: '运行历史' },
+    { id: 'emperor_agents', label: 'Agent 编排' },
+    { id: 'emperor_models', label: '模型路由' },
+    { id: 'emperor_mcp', label: 'MCP 连接器' },
+    { id: 'emperor_schedules', label: '定时任务' },
+    { id: 'emperor_usage', label: 'Token 用量' },
+    { id: 'emperor_diagnostics', label: '诊断中心' },
+    { id: 'emperor_settings', label: '通用设置' },
   ],
 };
 

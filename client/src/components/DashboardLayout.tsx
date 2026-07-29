@@ -66,6 +66,14 @@ import {
   Upload,
   HelpCircle,
   LayoutGrid,
+  Cpu,
+  Zap,
+  Timer,
+  Wrench,
+  BarChart3,
+  Plug,
+  Network,
+  BrainCircuit,
   type LucideIcon,
 } from "lucide-react";
 import { ROLE_LABELS, ROLE_MODULE_ACCESS, ADMIN_ROLES } from "@shared/const";
@@ -82,7 +90,7 @@ import {
 import { toast } from "sonner";
 
 // ─── Module definitions ────────────────────────────────────────
-type ModuleId = "home" | "dev" | "listing" | "ops" | "service" | "knowledge" | "admin" | "offsite";
+type ModuleId = "home" | "dev" | "listing" | "ops" | "service" | "knowledge" | "admin" | "offsite" | "emperor";
 
 interface MenuItem {
   icon: LucideIcon;
@@ -218,6 +226,25 @@ const modules: ModuleDef[] = [
     ],
   },
   {
+    id: "emperor",
+    icon: BrainCircuit,
+    label: "皇帝·AI能力中台",
+    shortLabel: "皇帝",
+    prefix: "/emperor",
+    enabled: true,
+    items: [
+      { icon: LayoutDashboard, label: "Skill 库", path: "/emperor" },
+      { icon: Zap, label: "运行历史", path: "/emperor/trace" },
+      { icon: Network, label: "Agent 编排", path: "/emperor/agents" },
+      { icon: Cpu, label: "模型路由", path: "/emperor/models" },
+      { icon: Plug, label: "MCP 连接器", path: "/emperor/mcp" },
+      { icon: Timer, label: "定时任务", path: "/emperor/schedules" },
+      { icon: BarChart3, label: "Token 用量", path: "/emperor/usage" },
+      { icon: Wrench, label: "诊断中心", path: "/emperor/diagnostics" },
+      { icon: Settings, label: "通用设置", path: "/emperor/settings" },
+    ],
+  },
+  {
     id: "admin",
     icon: Users,
     label: "系统管理",
@@ -245,6 +272,7 @@ function detectActiveModule(location: string): ModuleId {
   if (location.startsWith("/service")) return "service";
   if (location.startsWith("/knowledge")) return "knowledge";
   if (location.startsWith("/offsite")) return "offsite";
+  if (location.startsWith("/emperor")) return "emperor";
   if (location.startsWith("/admin")) return "admin";
   // Legacy routes (before migration) - map to listing
   const legacyPaths = ["/analysis", "/comparison", "/review-history", "/review-aggregation", "/keywords", "/ad-structure", "/data-files", "/generate", "/preview", "/score"];

@@ -4692,3 +4692,113 @@ export const expressionGroupImages = mysqlTable("expression_group_images", {
 });
 export type ExpressionGroupImage = typeof expressionGroupImages.$inferSelect;
 export type InsertExpressionGroupImage = typeof expressionGroupImages.$inferInsert;
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 皇帝 · AI能力中台 融合表（Emperor Integration）
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Skill 定义表（存储 110 个 Skill 的 manifest 和元数据）
+export const emperorSkills = mysqlTable("emperor_skills", {
+  id: int("id").autoincrement().primaryKey(),
+  slug: varchar("slug", { length: 128 }).unique().notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  category: varchar("category", { length: 64 }).notNull().default("通用"),
+  owner: varchar("owner", { length: 64 }).default("system"),
+  riskTier: mysqlEnum("riskTier", ["L0", "L1", "L2", "L3"]).default("L1").notNull(),
+  status: mysqlEnum("status", ["Draft", "Validated", "Approved", "Released", "Deprecated"]).default("Released").notNull(),
+  scope: mysqlEnum("scope", ["global", "private", "shared"]).default("global").notNull(),
+  version: int("version").default(1).notNull(),
+  isSystem: int("isSystem").default(1).notNull(),
+  callCount: int("callCount").default(0).notNull(),
+  // manifest JSON: { implementation: { systemPrompt, userPromptTemplate, modelPolicy, tools, knowledge }, contract: { inputSchema, outputSchema, mode, timeoutMs } }
+  manifest: json("manifest").notNull(),
+  // 模型路由覆盖（null = 使用 manifest.implementation.modelPolicy）
+  modelOverride: varchar("modelOverride", { length: 128 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmperorSkill = typeof emperorSkills.$inferSelect;
+export type InsertEmperorSkill = typeof emperorSkills.$inferInsert;
+
+// Skill 运行记录表
+export const emperorSkillRuns = mysqlTable("emperor_skill_runs", {
+  id: int("id").autoincrement().primaryKey(),
+  runId: varchar("runId", { length: 64 }).unique().notNull(),
+  skillSlug: varchar("skillSlug", { length: 128 }).notNull(),
+  skillName: varchar("skillName", { length: 255 }),
+  userId: int("userId"),
+  // 运行输入/输出（JSON）
+  input: json("input"),
+  output: json("output"),
+  // 运行状态
+  status: mysqlEnum("status", ["queued", "running", "succeeded", "failed", "canceled"]).default("queued").notNull(),
+  errorMessage: text("errorMessage"),
+  // 用量统计
+  modelSlug: varchar("modelSlug", { length: 128 }),
+  inputTokens: int("inputTokens").default(0),
+  outputTokens: int("outputTokens").default(0),
+  durationMs: int("durationMs").default(0),
+  costCents: int("costCents").default(0),
+  // 追踪
+  traceId: varchar("traceId", { length: 64 }),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type EmperorSkillRun = typeof emperorSkillRuns.$inferSelect;
+export type InsertEmperorSkillRun = typeof emperorSkillRuns.$inferInsert;
+
+// Agent 定义表
+export const emperorAgents = mysqlTable("emperor_agents", {
+  id: int("id").autoincrement().primaryKey(),
+  slug: varchar("slug", { length: 128 }).unique().notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  category: varchar("category", { length: 64 }).default("通用"),
+  status: mysqlEnum("status", ["Draft", "Validated", "Released", "Deprecated"]).default("Released").notNull(),
+  // DAG 定义 JSON: { nodes: [...], edges: [...] }
+  dagDefinition: json("dagDefinition").notNull(),
+  callCount: int("callCount").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmperorAgent = typeof emperorAgents.$inferSelect;
+export type InsertEmperorAgent = typeof emperorAgents.$inferInsert;
+
+// MCP 连接器配置表
+export const emperorMcpConnectors = mysqlTable("emperor_mcp_connectors", {
+  id: int("id").autoincrement().primaryKey(),
+  slug: varchar("slug", { length: 128 }).unique().notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  connectionType: mysqlEnum("connectionType", ["http_api", "database", "webhook", "internal", "script"]).default("http_api").notNull(),
+  // 连接配置 JSON（含 baseUrl、apiKey 等，敏感字段加密存储）
+  config: json("config"),
+  isActive: int("isActive").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmperorMcpConnector = typeof emperorMcpConnectors.$inferSelect;
+export type InsertEmperorMcpConnector = typeof emperorMcpConnectors.$inferInsert;
+
+// 模型提供商配置表（多 LLM 路由）
+export const emperorModelProviders = mysqlTable("emperor_model_providers", {
+  id: int("id").autoincrement().primaryKey(),
+  slug: varchar("slug", { length: 64 }).unique().notNull(),
+  name: varchar("name", { length: 128 }).notNull(),
+  provider: mysqlEnum("provider", ["manus_builtin", "openai", "deepseek", "anthropic", "custom"]).default("manus_builtin").notNull(),
+  baseUrl: varchar("baseUrl", { length: 512 }),
+  // API Key 加密存储（AES 或直接存环境变量引用）
+  apiKeyRef: varchar("apiKeyRef", { length: 256 }),
+  modelId: varchar("modelId", { length: 128 }).notNull(),
+  displayName: varchar("displayName", { length: 128 }),
+  isDefault: int("isDefault").default(0).notNull(),
+  isActive: int("isActive").default(1).notNull(),
+  capabilityTags: json("capabilityTags"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmperorModelProvider = typeof emperorModelProviders.$inferSelect;
+export type InsertEmperorModelProvider = typeof emperorModelProviders.$inferInsert;

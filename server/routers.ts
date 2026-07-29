@@ -87,6 +87,8 @@ import { adLocalAnalysisRouter } from "./routers/adLocalAnalysis";
 import { adDailyReportUploadRouter } from "./routers/adDailyReportUpload";
 import { adDeepAnalysisRouter } from "./routers/adDeepAnalysis";
 import { listing2Router } from "./routers/listing2";
+// Emperor 皇帝 · AI能力中台
+import { emperorRouter } from "./routers/emperor";
 
 export const appRouter = router({
   system: systemRouter,
@@ -195,6 +197,8 @@ export const appRouter = router({
   adDeepAnalysis: adDeepAnalysisRouter,
   // 智能 Listing 生成 2.0
   listing2: listing2Router,
+  // Emperor 皇帝 · AI能力中台
+  emperor: emperorRouter,
 });
 
 export type AppRouter = typeof appRouter;
