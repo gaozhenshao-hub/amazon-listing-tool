@@ -39,6 +39,39 @@ import { buildListingContext, checkDataReadiness, contextToPromptText } from "..
 
 const MAX_RETRIES = 2;
 
+/**
+ * safeParseJSON — 公共容错 JSON 解析函数
+ * 处理以下情况：
+ * 1. Gemini thinking 标签残留 (<thinking>...</thinking>)
+ * 2. Markdown 代码围栏 (```json ... ```)
+ * 3. JSON 前后有多余文本（提取首个完整 JSON 对象）
+ */
+function safeParseJSON<T = any>(raw: unknown, fallback?: T): T | { raw: string } {
+  const str = typeof raw === "string" ? raw : JSON.stringify(raw);
+  // Step 1: strip thinking tags
+  let cleaned = str.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "");
+  // Step 2: strip markdown code fences
+  cleaned = cleaned.replace(/^```(?:json)?\s*/im, "").replace(/\s*```\s*$/im, "").trim();
+  // Step 3: try direct parse
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch { /* continue */ }
+  // Step 4: extract first JSON object or array
+  const objStart = cleaned.indexOf("{");
+  const objEnd = cleaned.lastIndexOf("}");
+  if (objStart >= 0 && objEnd > objStart) {
+    try { return JSON.parse(cleaned.slice(objStart, objEnd + 1)) as T; } catch { /* continue */ }
+  }
+  const arrStart = cleaned.indexOf("[");
+  const arrEnd = cleaned.lastIndexOf("]");
+  if (arrStart >= 0 && arrEnd > arrStart) {
+    try { return JSON.parse(cleaned.slice(arrStart, arrEnd + 1)) as T; } catch { /* continue */ }
+  }
+  // Fallback
+  if (fallback !== undefined) return fallback;
+  return { raw: str };
+}
+
 // Helper: resolve project access based on user role
 // designer, admin, super_admin can access any project (designer: read-only for image suggestions)
 // regular users can only access their own projects
@@ -212,11 +245,8 @@ Return the CORRECTED bullet points in the same JSON format:
     ? response.choices[0].message.content
     : JSON.stringify(response.choices[0].message.content);
 
-  try {
-    return JSON.parse(content);
-  } catch {
-    return bulletData; // Return original if parsing fails
-  }
+  const result = safeParseJSON(content, bulletData);
+  return (result as any).raw ? bulletData : result;
 }
 
 // Ask AI to refine titles that are out of range (two-stage format)
@@ -265,17 +295,12 @@ Return the CORRECTED titles in the same JSON format:
     response_format: { type: "json_object" },
   });
 
-  const content = typeof response.choices[0].message.content === "string"
+    const content = typeof response.choices[0].message.content === "string"
     ? response.choices[0].message.content
     : JSON.stringify(response.choices[0].message.content);
-
-  try {
-    return JSON.parse(content);
-  } catch {
-    return titleData;
-  }
+  const result = safeParseJSON(content, titleData);
+  return (result as any).raw ? titleData : result;
 }
-
 // Generate Chinese translation for listing content
 async function generateChineseTranslation(
   title: string,
@@ -318,23 +343,19 @@ async function generateChineseTranslation(
     response_format: { type: "json_object" },
   });
 
-  const content = typeof response.choices[0].message.content === "string"
+    const content = typeof response.choices[0].message.content === "string"
     ? response.choices[0].message.content
     : JSON.stringify(response.choices[0].message.content);
-
-  try {
-    const parsed = JSON.parse(content);
-    return {
-      titleCn: parsed.titleCn || "",
-      itemHighlightsCn: parsed.itemHighlightsCn || "",
-      bulletPointsCn: parsed.bulletPointsCn || [],
-      descriptionCn: parsed.descriptionCn || "",
-      searchTermsCn: parsed.searchTermsCn || "",
-      qaContentCn: parsed.qaContentCn ? JSON.stringify(parsed.qaContentCn) : undefined,
-    };
-  } catch {
-    return { titleCn: "", itemHighlightsCn: "", bulletPointsCn: [], descriptionCn: "", searchTermsCn: "" };
-  }
+  const parsed = safeParseJSON<any>(content, {});
+  if ((parsed as any).raw) return { titleCn: "", itemHighlightsCn: "", bulletPointsCn: [], descriptionCn: "", searchTermsCn: "" };
+  return {
+    titleCn: parsed.titleCn || "",
+    itemHighlightsCn: parsed.itemHighlightsCn || "",
+    bulletPointsCn: parsed.bulletPointsCn || [],
+    descriptionCn: parsed.descriptionCn || "",
+    searchTermsCn: parsed.searchTermsCn || "",
+    qaContentCn: parsed.qaContentCn ? JSON.stringify(parsed.qaContentCn) : undefined,
+  };
 }
 
 async function translateImageAdviceToChinese(imageAdviceJson: string): Promise<string | null> {
@@ -348,13 +369,13 @@ async function translateImageAdviceToChinese(imageAdviceJson: string): Promise<s
       response_format: { type: "json_object" },
     });
 
-    const content = typeof response.choices[0].message.content === "string"
+        const content = typeof response.choices[0].message.content === "string"
       ? response.choices[0].message.content
       : JSON.stringify(response.choices[0].message.content);
-
-    // Validate it's valid JSON
-    JSON.parse(content);
-    return content;
+    // Validate and clean via safeParseJSON
+    const parsed = safeParseJSON(content);
+    if ((parsed as any).raw) return null;
+    return JSON.stringify(parsed);
   } catch {
     return null;
   }
@@ -919,15 +940,11 @@ export const listingRouter = router({
         ],
         response_format: { type: "json_object" },
       });
-      const content = typeof response.choices[0].message.content === "string"
+            const content = typeof response.choices[0].message.content === "string"
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
-      let parsed;
-      try {
-        parsed = JSON.parse(content);
-      } catch {
-        return { raw: content };
-      }
+      let parsed = safeParseJSON<any>(content);
+      if ((parsed as any).raw) return { raw: content };
       let validation = validateTitles(parsed);
       if (!validation.valid) {
         for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
@@ -937,7 +954,6 @@ export const listingRouter = router({
       }
       return parsed;
     }),
-
   // Generate bullet points with AI retry
   generateBulletPoints: protectedProcedure
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
@@ -974,15 +990,11 @@ export const listingRouter = router({
         ],
         response_format: { type: "json_object" },
       });
-      const content = typeof response.choices[0].message.content === "string"
+            const content = typeof response.choices[0].message.content === "string"
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
-      let parsed;
-      try {
-        parsed = JSON.parse(content);
-      } catch {
-        return { raw: content };
-      }
+      let parsed = safeParseJSON<any>(content);
+      if ((parsed as any).raw) return { raw: content };
       let validation = validateBullets(parsed);
       if (!validation.valid) {
         for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
@@ -992,7 +1004,6 @@ export const listingRouter = router({
       }
       return parsed;
     }),
-
   // Generate description
   generateDescription: protectedProcedure
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
@@ -1021,16 +1032,11 @@ export const listingRouter = router({
         ],
         response_format: { type: "json_object" },
       });
-      const content = typeof response.choices[0].message.content === "string"
+            const content = typeof response.choices[0].message.content === "string"
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
-      try {
-        return JSON.parse(content);
-      } catch {
-        return { raw: content };
-      }
+      return safeParseJSON(content);
     }),
-
   // Generate search terms
   generateSearchTerms: protectedProcedure
     .input(z.object({
@@ -1069,16 +1075,11 @@ export const listingRouter = router({
         ],
         response_format: { type: "json_object" },
       });
-      const content = typeof response.choices[0].message.content === "string"
+            const content = typeof response.choices[0].message.content === "string"
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
-      try {
-        return JSON.parse(content);
-      } catch {
-        return { raw: content };
-      }
+      return safeParseJSON(content);
     }),
-
   // Generate image advice
   generateImageAdvice: protectedProcedure
     .input(z.object({ projectId: z.number(), emphasis: z.string().optional() }))
@@ -1111,11 +1112,7 @@ export const listingRouter = router({
         const content = typeof response.choices[0].message.content === "string"
           ? response.choices[0].message.content
           : JSON.stringify(response.choices[0].message.content);
-        try {
-          imageData = JSON.parse(content);
-        } catch {
-          imageData = { raw: content };
-        }
+        imageData = safeParseJSON(content);
       }
 
       // Save image advice to the active listing (or create one if none exists)
@@ -1215,7 +1212,7 @@ export const listingRouter = router({
         const c = typeof res.choices[0].message.content === "string"
           ? res.choices[0].message.content
           : JSON.stringify(res.choices[0].message.content);
-        try { return JSON.parse(c); } catch { return { raw: c }; }
+        return safeParseJSON(c);
       };
 
       let titleData = parse(titleRes);
@@ -1517,18 +1514,18 @@ export const listingRouter = router({
             ? titleResponse.choices[0].message.content
             : JSON.stringify(titleResponse.choices[0].message.content);
 
-          try {
-            let titleData = JSON.parse(titleContent);
-            let validation = validateTitles(titleData);
-            if (!validation.valid) {
-              for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
-                titleData = await refineTitles(titleData, validation.issues);
-                validation = validateTitles(titleData);
+          {
+            let titleData = safeParseJSON<any>(titleContent);
+            if (!(titleData as any).raw) {
+              let validation = validateTitles(titleData);
+              if (!validation.valid) {
+                for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
+                  titleData = await refineTitles(titleData, validation.issues);
+                  validation = validateTitles(titleData);
+                }
               }
             }
             variant.titleData = titleData;
-          } catch {
-            variant.titleData = { raw: titleContent };
           }
         }
 
@@ -1548,18 +1545,18 @@ export const listingRouter = router({
             ? bulletResponse.choices[0].message.content
             : JSON.stringify(bulletResponse.choices[0].message.content);
 
-          try {
-            let bulletData = JSON.parse(bulletContent);
-            let validation = validateBullets(bulletData);
-            if (!validation.valid) {
-              for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
-                bulletData = await refineBullets(bulletData, validation.issues);
-                validation = validateBullets(bulletData);
+          {
+            let bulletData = safeParseJSON<any>(bulletContent);
+            if (!(bulletData as any).raw) {
+              let validation = validateBullets(bulletData);
+              if (!validation.valid) {
+                for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
+                  bulletData = await refineBullets(bulletData, validation.issues);
+                  validation = validateBullets(bulletData);
+                }
               }
             }
             variant.bulletData = bulletData;
-          } catch {
-            variant.bulletData = { raw: bulletContent };
           }
         }
 
@@ -1827,12 +1824,8 @@ export const listingRouter = router({
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
 
-      let parsed;
-      try {
-        parsed = JSON.parse(content);
-      } catch {
-        return { raw: content };
-      }
+      let parsed = safeParseJSON<any>(content);
+      if ((parsed as any).raw) return { raw: content };
 
       // Validate character count
       if (parsed.subtitle && parsed.fullText) {
@@ -1887,15 +1880,11 @@ export const listingRouter = router({
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
 
-      try {
-        const parsed = JSON.parse(content);
-        return {
-          checkListScores: parsed.checkListScores || {},
-          aiSemanticRelations: parsed.aiSemanticRelations || null,
-        };
-      } catch {
-        return { checkListScores: {}, aiSemanticRelations: null };
-      }
+      const parsedBullet = safeParseJSON<any>(content, {});
+      return {
+        checkListScores: parsedBullet.checkListScores || {},
+        aiSemanticRelations: parsedBullet.aiSemanticRelations || null,
+      };
     }),
 
   // ─── Lock State Persistence ───
@@ -2047,11 +2036,9 @@ Please expand this keyword/theme into a complete selling point core with FABE di
         ],
       });
 
-      const content = String(response.choices?.[0]?.message?.content || "");
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("AI response format error");
-
-      const parsed = JSON.parse(jsonMatch[0]);
+            const content = String(response.choices?.[0]?.message?.content || "");
+      const parsed = safeParseJSON<any>(content);
+      if ((parsed as any).raw) throw new Error("AI response format error");
       return {
         theme: parsed.theme || input.keyword,
         themeZh: parsed.themeZh || "",
@@ -2178,11 +2165,9 @@ Please expand this keyword/theme into a complete selling point core with FABE di
         const content = typeof response.choices[0].message.content === "string"
           ? response.choices[0].message.content
           : JSON.stringify(response.choices[0].message.content);
-        try {
-          parsed = JSON.parse(content);
-        } catch {
-          return { raw: content };
-        }
+        const qaParsed = safeParseJSON<any>(content);
+        if ((qaParsed as any).raw) return { raw: content };
+        parsed = qaParsed;
       }
 
       // Auto-save QA to listing if active listing exists
@@ -2221,12 +2206,8 @@ Please expand this keyword/theme into a complete selling point core with FABE di
       const content = typeof response.choices[0].message.content === "string"
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
-      try {
-        const parsed = JSON.parse(content);
-        return { checkListScores: parsed.checkListScores || {} };
-      } catch {
-        return { checkListScores: {} };
-      }
+      const parsed = safeParseJSON<any>(content, {});
+      return { checkListScores: parsed.checkListScores || {} };
     }),
 
   // ─── Description 8-Dimension Checklist Evaluation ───
@@ -2251,12 +2232,8 @@ Please expand this keyword/theme into a complete selling point core with FABE di
       const content = typeof response.choices[0].message.content === "string"
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
-      try {
-        const parsed = JSON.parse(content);
-        return { checkListScores: parsed.checkListScores || {} };
-      } catch {
-        return { checkListScores: {} };
-      }
+      const parsedDesc = safeParseJSON<any>(content, {});
+      return { checkListScores: parsedDesc.checkListScores || {} };
     }),
 
   // ─── Search Terms 5-Dimension Checklist Evaluation ───
@@ -2291,12 +2268,8 @@ Please expand this keyword/theme into a complete selling point core with FABE di
       const content = typeof response.choices[0].message.content === "string"
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
-      try {
-        const parsed = JSON.parse(content);
-        return { checkListScores: parsed.checkListScores || {} };
-      } catch {
-        return { checkListScores: {} };
-      }
+      const parsedST = safeParseJSON<any>(content, {});
+      return { checkListScores: parsedST.checkListScores || {} };
     }),
 
   // ─── QA 8-Dimension Checklist Evaluation ───
@@ -2334,12 +2307,8 @@ Please expand this keyword/theme into a complete selling point core with FABE di
       const content = typeof response.choices[0].message.content === "string"
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
-      try {
-        const parsed = JSON.parse(content);
-        return { checkListScores: parsed.checkListScores || {} };
-      } catch {
-        return { checkListScores: {} };
-      }
+      const parsedQA = safeParseJSON<any>(content, {});
+      return { checkListScores: parsedQA.checkListScores || {} };
     }),
 
   // AI Chat assistant for workflow canvas
