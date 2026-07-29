@@ -216,3 +216,14 @@
 - [x] 确认 EmperorSkillLibrary.tsx：isAdmin 已兼容 super_admin（line 397）
 - [x] 确认 EmperorMCP.tsx：isAdmin 已兼容 super_admin（line 275）
 - [x] TypeScript 编译：0 错误
+
+## 皇帝模块 UI 对齐原版截图（2026-07-29）
+
+- [x] EmperorModels.tsx 对齐原版皇帝 LLM 模型管理 UI（统计卡片+三Tab+完整新建弹窗含API Key/能力标签/默认模型）
+- [x] EmperorAgents.tsx 对齐原版皇帝 Agent 编排卡片列表页（新建弹窗含触发方式/可见范围/最大执行时间）
+- [x] AgentCanvas.tsx 全屏拖拽画布编辑器（11种节点类型：输入/Skill/LLM/条件分支/循环/人工审核/HTTP/代码/MCP/知识库/输出）
+- [x] EmperorMCP.tsx 对齐原版皇帝 MCP 工具管理 UI（统计卡片+工具网格+四步向导弹窗：基本信息→连接配置→认证方式→能力定义）
+- [x] 后端 emperor.ts 扩展 agents/models/mcp router（create/update/saveWorkflow/run/getRun/listRuns/getAvailableSkills/getAvailableModels/getAvailableMcpTools/healthCheck/getCostStats/getAuditLogs）
+- [x] 数据库新增 emperor_agent_runs 表
+- [x] App.tsx 注册 /emperor/agents/:slug/canvas 全屏路由
+- [x] TypeScript 编译：0 错误

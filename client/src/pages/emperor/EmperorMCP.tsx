@@ -1,591 +1,587 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  Loader2, Plug, Plus, Pencil, Trash2, RefreshCw, XCircle,
-  ChevronRight, AlertCircle,
+  Wrench, Plus, RefreshCw, Trash2, CheckCircle2,
+  AlertTriangle, PauseCircle, Loader2, Globe, Database,
+  Code2, Server, ChevronRight, Activity
 } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { useAuth } from "@/_core/hooks/useAuth";
 
-interface MCPConnector {
-  id: number;
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type ToolType = "REST API" | "OpenAPI" | "数据库" | "自定义脚本";
+
+interface MCPTool {
+  id?: number;
   slug: string;
   name: string;
   description: string | null;
   connectionType: string;
   config: Record<string, unknown> | null;
-  isActive: number;
-  createdAt: string;
+  isActive: number | boolean;
+  createdAt?: string;
 }
 
-type ConnType = "http_api" | "database" | "webhook" | "internal" | "script";
+const TOOL_TYPES: { value: string; label: ToolType; icon: React.ElementType; color: string }[] = [
+  { value: "http_api", label: "REST API", icon: Globe, color: "text-blue-400" },
+  { value: "openapi", label: "OpenAPI", icon: Code2, color: "text-violet-400" },
+  { value: "database", label: "数据库", icon: Database, color: "text-emerald-400" },
+  { value: "script", label: "自定义脚本", icon: Code2, color: "text-amber-400" },
+];
 
-interface FormData {
-  slug: string; name: string; description: string; connectionType: ConnType;
-  baseUrl: string; apiKey: string; headers: Array<{ key: string; value: string }>;
-  connectionString: string; command: string; args: string[];
-  env: Array<{ key: string; value: string }>; isActive: boolean;
-}
-
-const EMPTY: FormData = {
-  slug: "", name: "", description: "", connectionType: "http_api",
-  baseUrl: "", apiKey: "", headers: [], connectionString: "",
-  command: "", args: [], env: [], isActive: true,
-};
-
-const CT_LABELS: Record<string, string> = {
-  http_api: "HTTP API", webhook: "Webhook", database: "数据库",
-  script: "脚本 (stdio)", internal: "内部服务",
-};
-
-const CT_COLORS: Record<string, string> = {
-  http_api: "bg-blue-100 text-blue-700", webhook: "bg-purple-100 text-purple-700",
-  database: "bg-green-100 text-green-700", script: "bg-orange-100 text-orange-700",
-  internal: "bg-gray-100 text-gray-700",
-};
+const AUTH_METHODS = [
+  { value: "none", label: "无认证" },
+  { value: "api_key", label: "API Key" },
+  { value: "bearer", label: "Bearer Token" },
+  { value: "basic", label: "Basic Auth" },
+  { value: "oauth2", label: "OAuth 2.0" },
+];
 
 function slugify(n: string) {
   return n.toLowerCase().replace(/[\s\u4e00-\u9fa5]+/g, "-")
     .replace(/[^a-z0-9-]/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "")
-    || `mcp-${Date.now()}`;
+    || `tool-${Date.now()}`;
 }
 
-function KVEditor({ label, rows, onChange, kp = "Key", vp = "Value" }: {
-  label: string; rows: Array<{ key: string; value: string }>;
-  onChange: (r: Array<{ key: string; value: string }>) => void;
-  kp?: string; vp?: string;
-}) {
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <label className="text-xs font-medium text-muted-foreground">{label}</label>
-        <button type="button" onClick={() => onChange([...rows, { key: "", value: "" }])}
-          className="text-xs text-primary hover:underline flex items-center gap-1">
-          <Plus className="h-3 w-3" />添加
-        </button>
-      </div>
-      {rows.length === 0
-        ? <div className="text-xs text-muted-foreground py-2 text-center border border-dashed rounded-lg">暂无配置</div>
-        : <div className="space-y-1.5">
-          {rows.map((row, i) => (
-            <div key={i} className="flex gap-2 items-center">
-              <Input value={row.key} onChange={(e) => { const n = [...rows]; n[i] = { ...n[i], key: e.target.value }; onChange(n); }}
-                placeholder={kp} className="h-8 text-xs font-mono flex-1" />
-              <Input value={row.value} onChange={(e) => { const n = [...rows]; n[i] = { ...n[i], value: e.target.value }; onChange(n); }}
-                placeholder={vp} className="h-8 text-xs font-mono flex-1" />
-              <button type="button" onClick={() => onChange(rows.filter((_, j) => j !== i))}
-                className="text-muted-foreground hover:text-red-500 flex-shrink-0">
-                <XCircle className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
-        </div>
-      }
-    </div>
-  );
-}
+// ─── Four-Step Wizard Dialog ──────────────────────────────────────────────────
 
-function MCPFormDialog({ open, onOpenChange, initialData, onSaved }: {
-  open: boolean; onOpenChange: (v: boolean) => void;
-  initialData?: MCPConnector; onSaved: () => void;
-}) {
-  const isEdit = !!initialData;
-  const [form, setForm] = useState<FormData>(EMPTY);
+const STEPS = ["基本信息", "连接配置", "认证方式", "能力定义"];
 
-  useEffect(() => {
-    if (!open) return;
-    if (initialData) {
-      const cfg = initialData.config || {};
-      setForm({
-        slug: initialData.slug, name: initialData.name,
-        description: initialData.description || "",
-        connectionType: initialData.connectionType as ConnType,
-        baseUrl: (cfg.baseUrl as string) || "",
-        apiKey: (cfg.apiKey as string) || "",
-        headers: Array.isArray(cfg.headers)
-          ? (cfg.headers as any)
-          : Object.entries((cfg.headers as any) || {}).map(([key, value]) => ({ key, value })),
-        connectionString: (cfg.connectionString as string) || "",
-        command: (cfg.command as string) || "",
-        args: Array.isArray(cfg.args) ? (cfg.args as string[]) : [],
-        env: Array.isArray(cfg.env)
-          ? (cfg.env as any)
-          : Object.entries((cfg.env as any) || {}).map(([key, value]) => ({ key, value })),
-        isActive: !!initialData.isActive,
-      });
-    } else { setForm(EMPTY); }
-  }, [open, initialData]);
+const defaultWizard = {
+  name: "", slug: "", toolType: "http_api", description: "",
+  baseUrl: "", openApiSpec: "", connectionString: "", command: "",
+  authMethod: "none", apiKey: "", apiKeyHeader: "X-API-Key",
+  bearerToken: "", basicUser: "", basicPass: "",
+  capabilities: [] as Array<{ name: string; description: string; endpoint: string }>,
+};
+
+function WizardDialog({ open, onOpenChange, onSaved }: {
+  open: boolean; onOpenChange: (v: boolean) => void; onSaved: () => void;
+}) {
+  const [step, setStep] = useState(0);
+  const [form, setForm] = useState(defaultWizard);
+
+  useEffect(() => { if (open) { setStep(0); setForm(defaultWizard); } }, [open]);
 
   const upsertMutation = trpc.emperor.mcp.upsert.useMutation({
-    onSuccess: () => { toast.success(isEdit ? "已更新" : "已创建"); onSaved(); onOpenChange(false); },
+    onSuccess: () => { toast.success("MCP 工具已接入"); onSaved(); onOpenChange(false); },
     onError: (e) => toast.error("保存失败: " + e.message),
   });
 
-  const sf = <K extends keyof FormData>(k: K, v: FormData[K]) => setForm(f => ({ ...f, [k]: v }));
+  const sf = <K extends keyof typeof defaultWizard>(k: K, v: (typeof defaultWizard)[K]) =>
+    setForm(f => ({ ...f, [k]: v }));
 
-  const buildConfig = () => {
-    const cfg: Record<string, unknown> = {};
-    if (form.connectionType === "http_api" || form.connectionType === "webhook") {
-      if (form.baseUrl) cfg.baseUrl = form.baseUrl;
-      if (form.apiKey) cfg.apiKey = form.apiKey;
-      if (form.headers.length > 0)
-        cfg.headers = form.headers.filter(h => h.key).reduce((a, h) => ({ ...a, [h.key]: h.value }), {});
-    } else if (form.connectionType === "database") {
-      if (form.connectionString) cfg.connectionString = form.connectionString;
-    } else {
-      if (form.command) cfg.command = form.command;
-      if (form.args.length > 0) cfg.args = form.args.filter(Boolean);
-      if (form.env.length > 0)
-        cfg.env = form.env.filter(e => e.key).reduce((a, e) => ({ ...a, [e.key]: e.value }), {});
+  const handleFinish = () => {
+    const config: Record<string, unknown> = {};
+    if (form.baseUrl) config.baseUrl = form.baseUrl;
+    if (form.connectionString) config.connectionString = form.connectionString;
+    if (form.command) config.command = form.command;
+    if (form.authMethod !== "none") {
+      config.auth = {
+        method: form.authMethod,
+        apiKey: form.apiKey, apiKeyHeader: form.apiKeyHeader,
+        bearerToken: form.bearerToken,
+        basicUser: form.basicUser, basicPass: form.basicPass,
+      };
     }
-    return cfg;
+    if (form.capabilities.length > 0) config.capabilities = form.capabilities;
+    upsertMutation.mutate({
+      slug: form.slug || slugify(form.name),
+      name: form.name,
+      description: form.description || undefined,
+      connectionType: form.toolType as "http_api" | "database" | "webhook" | "internal" | "script",
+      config,
+      isActive: true,
+    });
+  };
+
+  const canNext = () => {
+    if (step === 0) return form.name.trim().length > 0;
+    if (step === 1) {
+      if (form.toolType === "http_api" || form.toolType === "openapi") return form.baseUrl.trim().length > 0;
+      if (form.toolType === "database") return form.connectionString.trim().length > 0;
+      return true;
+    }
+    return true;
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="bg-[#0d1117] border-white/10 text-white max-w-lg">
         <DialogHeader>
-          <DialogTitle>{isEdit ? "编辑 MCP 连接器" : "新建 MCP 连接器"}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2 text-white">
+            <Wrench className="h-5 w-5 text-violet-400" />接入新 MCP 工具
+          </DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">名称 *</label>
-              <Input value={form.name} onChange={(e) => {
-                const name = e.target.value;
-                setForm(f => ({ ...f, name, slug: isEdit ? f.slug : slugify(name) }));
-              }} placeholder="例如：亚马逊 SP-API" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Slug</label>
-              <Input value={form.slug} onChange={(e) => sf("slug", e.target.value)}
-                disabled={isEdit} className={isEdit ? "opacity-60" : ""} />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">描述</label>
-            <Textarea value={form.description} onChange={(e) => sf("description", e.target.value)}
-              className="resize-none min-h-[60px]" placeholder="描述该连接器的用途..." />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">连接类型</label>
-            <Select value={form.connectionType} onValueChange={(v) => sf("connectionType", v as ConnType)} disabled={isEdit}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {Object.entries(CT_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
 
-          {(form.connectionType === "http_api" || form.connectionType === "webhook") && (<>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Base URL</label>
-              <Input value={form.baseUrl} onChange={(e) => sf("baseUrl", e.target.value)}
-                placeholder="https://api.example.com/v1" className="font-mono text-xs" />
+        {/* Step Indicator */}
+        <div className="flex items-center gap-1 mb-4">
+          {STEPS.map((s, i) => (
+            <div key={i} className="flex items-center gap-1 flex-1">
+              <div className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold flex-shrink-0 transition-colors ${
+                i < step ? "bg-violet-600 text-white" :
+                i === step ? "bg-violet-600 text-white ring-2 ring-violet-400/40" :
+                "bg-white/10 text-slate-500"
+              }`}>
+                {i < step ? "✓" : i + 1}
+              </div>
+              <span className={`text-xs ${i === step ? "text-white" : "text-slate-500"}`}>{s}</span>
+              {i < STEPS.length - 1 && <div className={`flex-1 h-px mx-1 ${i < step ? "bg-violet-600" : "bg-white/10"}`} />}
             </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">API Key（可选）</label>
-              <Input type="password" value={form.apiKey} onChange={(e) => sf("apiKey", e.target.value)}
-                placeholder="Bearer token 或 API Key" className="font-mono text-xs" />
-            </div>
-            <KVEditor label="自定义请求头" rows={form.headers} onChange={(r) => sf("headers", r)} kp="Header 名称" vp="Header 值" />
-          </>)}
+          ))}
+        </div>
 
-          {form.connectionType === "database" && (
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">连接字符串</label>
-              <Input type="password" value={form.connectionString} onChange={(e) => sf("connectionString", e.target.value)}
-                placeholder="mysql://user:pass@host:3306/db" className="font-mono text-xs" />
+        {/* Step Content */}
+        <div className="min-h-[280px]">
+          {step === 0 && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-slate-400 mb-1.5 block">工具名称 *</label>
+                  <Input
+                    value={form.name}
+                    onChange={(e) => { sf("name", e.target.value); sf("slug", slugify(e.target.value)); }}
+                    placeholder="如：天气查询 API"
+                    className="bg-white/5 border-white/10 text-white placeholder:text-slate-600"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 mb-1.5 block">标识符 (slug) *</label>
+                  <Input
+                    value={form.slug}
+                    onChange={(e) => sf("slug", e.target.value)}
+                    placeholder="如：weather-api"
+                    className="bg-white/5 border-white/10 text-white placeholder:text-slate-600 font-mono text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 mb-1.5 block">工具类型 *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {TOOL_TYPES.map((t) => (
+                    <button
+                      key={t.value}
+                      type="button"
+                      onClick={() => sf("toolType", t.value)}
+                      className={`flex items-center gap-2 p-3 rounded-lg border text-sm font-medium transition-colors ${
+                        form.toolType === t.value
+                          ? "bg-violet-600/20 border-violet-500/50 text-violet-300"
+                          : "bg-white/3 border-white/8 text-slate-400 hover:border-white/15"
+                      }`}
+                    >
+                      <t.icon className={`h-4 w-4 ${form.toolType === t.value ? "text-violet-400" : t.color}`} />
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-slate-400 mb-1.5 block">描述</label>
+                <Textarea
+                  value={form.description}
+                  onChange={(e) => sf("description", e.target.value)}
+                  placeholder="简要描述该工具的用途..."
+                  className="bg-white/5 border-white/10 text-white placeholder:text-slate-600 resize-none min-h-[80px]"
+                />
+              </div>
             </div>
           )}
 
-          {(form.connectionType === "script" || form.connectionType === "internal") && (<>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">命令 (command)</label>
-              <Input value={form.command} onChange={(e) => sf("command", e.target.value)}
-                placeholder="例如：python3" className="font-mono text-xs" />
+          {step === 1 && (
+            <div className="space-y-4">
+              {(form.toolType === "http_api" || form.toolType === "openapi") && (
+                <>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1.5 block">Base URL *</label>
+                    <Input
+                      value={form.baseUrl}
+                      onChange={(e) => sf("baseUrl", e.target.value)}
+                      placeholder="https://api.example.com/v1"
+                      className="bg-white/5 border-white/10 text-white placeholder:text-slate-600 font-mono text-sm"
+                    />
+                  </div>
+                  {form.toolType === "openapi" && (
+                    <div>
+                      <label className="text-xs text-slate-400 mb-1.5 block">OpenAPI Spec URL</label>
+                      <Input
+                        value={form.openApiSpec}
+                        onChange={(e) => sf("openApiSpec", e.target.value)}
+                        placeholder="https://api.example.com/openapi.json"
+                        className="bg-white/5 border-white/10 text-white placeholder:text-slate-600 font-mono text-sm"
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+              {form.toolType === "database" && (
+                <div>
+                  <label className="text-xs text-slate-400 mb-1.5 block">连接字符串 *</label>
+                  <Input
+                    type="password"
+                    value={form.connectionString}
+                    onChange={(e) => sf("connectionString", e.target.value)}
+                    placeholder="mysql://user:pass@host:3306/db"
+                    className="bg-white/5 border-white/10 text-white placeholder:text-slate-600 font-mono text-sm"
+                  />
+                </div>
+              )}
+              {form.toolType === "script" && (
+                <div>
+                  <label className="text-xs text-slate-400 mb-1.5 block">命令</label>
+                  <Input
+                    value={form.command}
+                    onChange={(e) => sf("command", e.target.value)}
+                    placeholder="python3 /path/to/script.py"
+                    className="bg-white/5 border-white/10 text-white placeholder:text-slate-600 font-mono text-sm"
+                  />
+                </div>
+              )}
             </div>
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-medium text-muted-foreground">参数 (args)</label>
-                <button type="button" onClick={() => sf("args", [...form.args, ""])}
-                  className="text-xs text-primary hover:underline flex items-center gap-1">
-                  <Plus className="h-3 w-3" />添加
+          )}
+
+          {step === 2 && (
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs text-slate-400 mb-1.5 block">认证方式</label>
+                <Select value={form.authMethod} onValueChange={(v) => sf("authMethod", v)}>
+                  <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#0d1117] border-white/10">
+                    {AUTH_METHODS.map(m => (
+                      <SelectItem key={m.value} value={m.value} className="text-slate-300 focus:bg-white/10">{m.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {form.authMethod === "api_key" && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1.5 block">API Key</label>
+                    <Input type="password" value={form.apiKey} onChange={(e) => sf("apiKey", e.target.value)}
+                      placeholder="your-api-key" className="bg-white/5 border-white/10 text-white font-mono text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1.5 block">Header 名称</label>
+                    <Input value={form.apiKeyHeader} onChange={(e) => sf("apiKeyHeader", e.target.value)}
+                      placeholder="X-API-Key" className="bg-white/5 border-white/10 text-white font-mono text-sm" />
+                  </div>
+                </div>
+              )}
+              {form.authMethod === "bearer" && (
+                <div>
+                  <label className="text-xs text-slate-400 mb-1.5 block">Bearer Token</label>
+                  <Input type="password" value={form.bearerToken} onChange={(e) => sf("bearerToken", e.target.value)}
+                    placeholder="your-bearer-token" className="bg-white/5 border-white/10 text-white font-mono text-sm" />
+                </div>
+              )}
+              {form.authMethod === "basic" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1.5 block">用户名</label>
+                    <Input value={form.basicUser} onChange={(e) => sf("basicUser", e.target.value)}
+                      className="bg-white/5 border-white/10 text-white" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1.5 block">密码</label>
+                    <Input type="password" value={form.basicPass} onChange={(e) => sf("basicPass", e.target.value)}
+                      className="bg-white/5 border-white/10 text-white" />
+                  </div>
+                </div>
+              )}
+              {form.authMethod === "none" && (
+                <div className="rounded-lg bg-white/3 border border-white/8 p-4 text-center">
+                  <p className="text-sm text-slate-400">此工具不需要认证</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-slate-400">能力定义（可选）</label>
+                <button
+                  type="button"
+                  onClick={() => sf("capabilities", [...form.capabilities, { name: "", description: "", endpoint: "" }])}
+                  className="text-xs text-violet-400 hover:text-violet-300 flex items-center gap-1"
+                >
+                  <Plus className="h-3 w-3" />添加能力
                 </button>
               </div>
-              {form.args.map((a, i) => (
-                <div key={i} className="flex gap-2 items-center mb-1.5">
-                  <Input value={a} onChange={(e) => { const n = [...form.args]; n[i] = e.target.value; sf("args", n); }}
-                    placeholder={`参数 ${i + 1}`} className="h-8 text-xs font-mono" />
-                  <button type="button" onClick={() => sf("args", form.args.filter((_, j) => j !== i))}
-                    className="text-muted-foreground hover:text-red-500"><XCircle className="h-4 w-4" /></button>
+              {form.capabilities.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-white/10 p-6 text-center">
+                  <Wrench className="h-8 w-8 text-slate-700 mx-auto mb-2" />
+                  <p className="text-xs text-slate-500">暂无能力定义，系统将自动从 OpenAPI Spec 解析</p>
                 </div>
-              ))}
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-auto">
+                  {form.capabilities.map((cap, i) => (
+                    <div key={i} className="rounded-lg bg-white/3 border border-white/8 p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={cap.name}
+                          onChange={(e) => {
+                            const caps = [...form.capabilities];
+                            caps[i] = { ...caps[i], name: e.target.value };
+                            sf("capabilities", caps);
+                          }}
+                          placeholder="能力名称"
+                          className="bg-white/5 border-white/10 text-white text-xs h-7 font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => sf("capabilities", form.capabilities.filter((_, j) => j !== i))}
+                          className="text-slate-600 hover:text-red-400 flex-shrink-0"
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <Input
+                        value={cap.description}
+                        onChange={(e) => {
+                          const caps = [...form.capabilities];
+                          caps[i] = { ...caps[i], description: e.target.value };
+                          sf("capabilities", caps);
+                        }}
+                        placeholder="能力描述"
+                        className="bg-white/5 border-white/10 text-white text-xs h-7"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <KVEditor label="环境变量 (env)" rows={form.env} onChange={(r) => sf("env", r)} kp="变量名" vp="变量值" />
-          </>)}
-
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <div>
-              <p className="text-sm font-medium">启用连接器</p>
-              <p className="text-xs text-muted-foreground">禁用后不会被 Skill 调用</p>
-            </div>
-            <Switch checked={form.isActive} onCheckedChange={(v) => sf("isActive", v)} />
-          </div>
+          )}
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
-          <Button onClick={() => {
-            if (!form.name.trim()) { toast.error("请填写连接器名称"); return; }
-            const slug = isEdit ? form.slug : (form.slug || slugify(form.name));
-            upsertMutation.mutate({
-              slug, name: form.name, description: form.description || undefined,
-              connectionType: form.connectionType, config: buildConfig(), isActive: form.isActive,
-            });
-          }} disabled={upsertMutation.isPending}>
-            {upsertMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            {isEdit ? "保存更改" : "创建连接器"}
+
+        {/* Footer */}
+        <div className="flex items-center justify-between pt-2 border-t border-white/8">
+          <Button
+            variant="ghost"
+            onClick={() => step === 0 ? onOpenChange(false) : setStep(s => s - 1)}
+            className="text-slate-400 hover:text-white"
+          >
+            {step === 0 ? "取消" : "上一步"}
           </Button>
-        </DialogFooter>
+          <Button
+            onClick={() => step < STEPS.length - 1 ? setStep(s => s + 1) : handleFinish()}
+            disabled={!canNext() || upsertMutation.isPending}
+            className="bg-violet-600 hover:bg-violet-500 text-white"
+          >
+            {upsertMutation.isPending ? (
+              <><Loader2 className="h-4 w-4 animate-spin mr-2" />保存中...</>
+            ) : step < STEPS.length - 1 ? (
+              <>下一步 <ChevronRight className="h-4 w-4 ml-1" /></>
+            ) : "完成接入"}
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );
 }
 
+// ─── Tool Card ────────────────────────────────────────────────────────────────
+
+function ToolCard({ tool, isAdmin, onDelete, onTest }: {
+  tool: MCPTool; isAdmin: boolean;
+  onDelete: () => void; onTest: () => void;
+}) {
+  const typeInfo = TOOL_TYPES.find(t => t.value === tool.connectionType) ?? TOOL_TYPES[0];
+  const isActive = !!tool.isActive;
+
+  return (
+    <div className="rounded-xl bg-white/3 border border-white/6 hover:border-white/10 transition-all p-5 flex flex-col gap-3">
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3">
+          <div className={`rounded-lg p-2 bg-white/5 border border-white/8`}>
+            <typeInfo.icon className={`h-4 w-4 ${typeInfo.color}`} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-white">{tool.name}</span>
+              <Badge className={`text-[10px] px-1.5 py-0 ${
+                isActive ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/25" :
+                "bg-red-500/15 text-red-400 border-red-500/25"
+              }`}>
+                {isActive ? "运行中" : "已停用"}
+              </Badge>
+            </div>
+            <p className="text-xs text-slate-500 font-mono mt-0.5">{tool.slug}</p>
+          </div>
+        </div>
+        <Badge className="text-[10px] bg-white/5 text-slate-400 border-white/10 px-1.5 py-0">
+          {typeInfo.label}
+        </Badge>
+      </div>
+      {tool.description && (
+        <p className="text-xs text-slate-400 line-clamp-2">{tool.description}</p>
+      )}
+      <div className="flex items-center gap-2 pt-1 border-t border-white/5">
+        <button
+          onClick={onTest}
+          className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-blue-400 transition-colors"
+        >
+          <Activity className="h-3.5 w-3.5" />测试
+        </button>
+        {isAdmin && (
+          <button
+            onClick={onDelete}
+            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-red-400 transition-colors ml-auto"
+          >
+            <Trash2 className="h-3.5 w-3.5" />删除
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
+function XCircle({ className }: { className?: string }) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>;
+}
+
 export default function EmperorMCP() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+  const isAdmin = user?.role === "admin" || (user as any)?.role === "super_admin";
   const utils = trpc.useUtils();
-  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [editingConnector, setEditingConnector] = useState<MCPConnector | null>(null);
-  const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
+  const [showWizard, setShowWizard] = useState(false);
+  const [activeTab, setActiveTab] = useState<"list" | "logs">("list");
 
-  const { data: listData, isLoading } = trpc.emperor.mcp.list.useQuery();
-  const connectors = (listData || []) as MCPConnector[];
-  const { data: detailData } = trpc.emperor.mcp.get.useQuery(
-    { slug: selectedSlug! }, { enabled: !!selectedSlug }
-  );
-  const detail = detailData as (MCPConnector & { config: Record<string, unknown> }) | undefined;
+  const { data: listData, isLoading, refetch } = trpc.emperor.mcp.list.useQuery();
+  const tools = (listData || []) as MCPTool[];
 
-  const toggleMutation = trpc.emperor.mcp.upsert.useMutation({
-    onSuccess: () => utils.emperor.mcp.list.invalidate(),
-    onError: (e) => toast.error("操作失败: " + e.message),
-  });
   const deleteMutation = trpc.emperor.mcp.delete.useMutation({
-    onSuccess: () => {
-      toast.success("已删除");
-      setDeletingSlug(null);
-      if (selectedSlug === deletingSlug) setSelectedSlug(null);
-      utils.emperor.mcp.list.invalidate();
-    },
+    onSuccess: () => { toast.success("已删除"); utils.emperor.mcp.list.invalidate(); },
     onError: (e) => toast.error("删除失败: " + e.message),
   });
 
-  const handleToggle = (c: MCPConnector) => toggleMutation.mutate({
-    slug: c.slug, name: c.name, description: c.description || undefined,
-    connectionType: c.connectionType as any, config: c.config || {}, isActive: !c.isActive,
-  });
-
-  const grouped = connectors.reduce((acc, c) => {
-    if (!acc[c.connectionType]) acc[c.connectionType] = [];
-    acc[c.connectionType].push(c);
-    return acc;
-  }, {} as Record<string, MCPConnector[]>);
-
-  const selectedConnector = connectors.find(c => c.slug === selectedSlug);
+  const stats = {
+    total: tools.length,
+    active: tools.filter(t => !!t.isActive).length,
+    error: 0,
+    disabled: tools.filter(t => !t.isActive).length,
+  };
 
   return (
-    <DashboardLayout>
-      <div className="flex h-[calc(100vh-56px)] overflow-hidden bg-background">
-        {/* Left panel */}
-        <div className="w-[280px] flex-shrink-0 border-r flex flex-col">
-          <div className="p-4 border-b">
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2">
-                <Plug className="h-4 w-4 text-primary" />
-                <span className="font-semibold text-sm">MCP 连接器</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <button onClick={() => utils.emperor.mcp.list.invalidate()}
-                  className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground">
-                  <RefreshCw className="h-3.5 w-3.5" />
-                </button>
-                {isAdmin && (
-                  <button onClick={() => { setEditingConnector(null); setShowCreate(true); }}
-                    className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground hover:text-foreground">
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {isLoading ? "加载中..." : `${connectors.length} 个连接器`}
-            </p>
+    <div className="flex flex-col h-full bg-[#080b11] overflow-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between px-8 pt-8 pb-6 border-b border-white/6 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="rounded-xl p-2 bg-violet-500/15 border border-violet-500/20">
+            <Wrench className="h-5 w-5 text-violet-400" />
           </div>
-
-          <ScrollArea className="flex-1">
-            {isLoading ? (
-              <div className="flex items-center justify-center py-10">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              </div>
-            ) : connectors.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
-                <Plug className="h-8 w-8 mb-2 opacity-30" />
-                <p className="text-xs">暂无连接器</p>
-                {isAdmin && (
-                  <Button size="sm" variant="outline" className="mt-2 h-7 text-xs"
-                    onClick={() => setShowCreate(true)}>
-                    <Plus className="h-3 w-3 mr-1" />新建
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <div className="p-2">
-                {Object.entries(grouped).map(([type, items]) => (
-                  <div key={type} className="mb-3">
-                    <div className="flex items-center gap-1.5 px-2 py-1 mb-1">
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                        {CT_LABELS[type] || type}
-                      </span>
-                      <span className="text-xs text-muted-foreground ml-auto">{items.length}</span>
-                    </div>
-                    {items.map((c) => (
-                      <button key={c.id} onClick={() => setSelectedSlug(c.slug)}
-                        className={cn(
-                          "w-full text-left px-3 py-2.5 rounded-lg transition-all group mb-0.5",
-                          selectedSlug === c.slug
-                            ? "bg-primary text-primary-foreground"
-                            : "hover:bg-accent text-foreground"
-                        )}>
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className={cn("w-2 h-2 rounded-full flex-shrink-0",
-                              c.isActive ? "bg-green-400" : "bg-gray-300")} />
-                            <span className="text-sm font-medium truncate">{c.name}</span>
-                          </div>
-                          <ChevronRight className={cn(
-                            "h-3.5 w-3.5 flex-shrink-0 opacity-0 group-hover:opacity-100",
-                            selectedSlug === c.slug && "opacity-100"
-                          )} />
-                        </div>
-                        {c.description && (
-                          <p className={cn("text-xs mt-0.5 truncate",
-                            selectedSlug === c.slug ? "text-primary-foreground/70" : "text-muted-foreground")}>
-                            {c.description}
-                          </p>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
-          </ScrollArea>
+          <div>
+            <h1 className="text-xl font-semibold text-white">MCP 工具管理</h1>
+            <p className="text-sm text-slate-500 mt-0.5">管理外部工具接入、能力定义与调用监控</p>
+          </div>
         </div>
-
-        {/* Right panel */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {selectedConnector ? (
-            <>
-              <div className="p-5 border-b">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h2 className="text-lg font-semibold">{selectedConnector.name}</h2>
-                      <Badge className={cn("text-xs border-0",
-                        selectedConnector.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600")}>
-                        {selectedConnector.isActive ? "已启用" : "已禁用"}
-                      </Badge>
-                      <Badge className={cn("text-xs border-0",
-                        CT_COLORS[selectedConnector.connectionType] || "bg-gray-100 text-gray-700")}>
-                        {CT_LABELS[selectedConnector.connectionType] || selectedConnector.connectionType}
-                      </Badge>
-                    </div>
-                    {selectedConnector.description && (
-                      <p className="text-sm text-muted-foreground">{selectedConnector.description}</p>
-                    )}
-                    <p className="text-xs text-muted-foreground/60 font-mono mt-1">{selectedConnector.slug}</p>
-                  </div>
-                  {isAdmin && (
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <div className="flex items-center gap-2 mr-2">
-                        <span className="text-xs text-muted-foreground">启用</span>
-                        <Switch checked={!!selectedConnector.isActive}
-                          onCheckedChange={() => handleToggle(selectedConnector)}
-                          disabled={toggleMutation.isPending} />
-                      </div>
-                      <Button size="sm" variant="outline" className="h-8 px-3"
-                        onClick={() => { setEditingConnector(selectedConnector); setShowCreate(true); }}>
-                        <Pencil className="h-3.5 w-3.5 mr-1.5" />编辑
-                      </Button>
-                      <Button size="sm" variant="outline"
-                        className="h-8 px-3 hover:text-red-600 hover:border-red-300"
-                        onClick={() => setDeletingSlug(selectedConnector.slug)}>
-                        <Trash2 className="h-3.5 w-3.5 mr-1.5" />删除
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <ScrollArea className="flex-1 p-5">
-                {detail ? (
-                  <div className="max-w-2xl space-y-6">
-                    <div>
-                      <h3 className="text-sm font-semibold mb-3">连接配置</h3>
-                      <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
-                        {(detail.connectionType === "http_api" || detail.connectionType === "webhook") && (<>
-                          {detail.config?.baseUrl && (
-                            <div>
-                              <p className="text-xs text-muted-foreground mb-1">Base URL</p>
-                              <p className="text-sm font-mono bg-background rounded-lg px-3 py-2 border">
-                                {detail.config.baseUrl as string}
-                              </p>
-                            </div>
-                          )}
-                          {detail.config?.apiKey && (
-                            <div>
-                              <p className="text-xs text-muted-foreground mb-1">API Key</p>
-                              <p className="text-sm font-mono bg-background rounded-lg px-3 py-2 border text-muted-foreground">
-                                {"•".repeat(20)}
-                              </p>
-                            </div>
-                          )}
-                          {detail.config?.headers && Object.keys(detail.config.headers as object).length > 0 && (
-                            <div>
-                              <p className="text-xs text-muted-foreground mb-2">自定义请求头</p>
-                              {Object.entries(detail.config.headers as Record<string, string>).map(([k, v]) => (
-                                <div key={k} className="flex items-center gap-2 text-xs font-mono mb-1">
-                                  <span className="bg-primary/10 text-primary px-2 py-1 rounded">{k}</span>
-                                  <span className="text-muted-foreground">: {v.length > 20 ? "•".repeat(20) : v}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </>)}
-                        {detail.connectionType === "database" && (
-                          <div>
-                            <p className="text-xs text-muted-foreground mb-1">连接字符串</p>
-                            <p className="text-sm font-mono bg-background rounded-lg px-3 py-2 border text-muted-foreground">
-                              {"•".repeat(30)}
-                            </p>
-                          </div>
-                        )}
-                        {(detail.connectionType === "script" || detail.connectionType === "internal") && (<>
-                          {detail.config?.command && (
-                            <div>
-                              <p className="text-xs text-muted-foreground mb-1">命令</p>
-                              <p className="text-sm font-mono bg-background rounded-lg px-3 py-2 border">
-                                {detail.config.command as string}
-                              </p>
-                            </div>
-                          )}
-                          {Array.isArray(detail.config?.args) && (detail.config.args as string[]).length > 0 && (
-                            <div>
-                              <p className="text-xs text-muted-foreground mb-2">参数</p>
-                              <div className="flex flex-wrap gap-1.5">
-                                {(detail.config.args as string[]).map((a, i) => (
-                                  <span key={i} className="text-xs font-mono bg-background border px-2 py-1 rounded">{a}</span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          {detail.config?.env && Object.keys(detail.config.env as object).length > 0 && (
-                            <div>
-                              <p className="text-xs text-muted-foreground mb-2">环境变量</p>
-                              {Object.keys(detail.config.env as object).map(k => (
-                                <div key={k} className="flex items-center gap-2 text-xs font-mono mb-1">
-                                  <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded">{k}</span>
-                                  <span className="text-muted-foreground">= {"•".repeat(10)}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </>)}
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-900 p-4">
-                      <div className="flex items-start gap-2">
-                        <AlertCircle className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                        <div className="text-xs text-blue-700 dark:text-blue-400">
-                          <p className="font-medium mb-1">在 Skill 中引用此连接器</p>
-                          <p className="font-mono bg-blue-100 dark:bg-blue-900/40 px-2 py-1 rounded mt-1 inline-block">
-                            {`{{mcp.${detail.slug}}}`}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center py-10">
-                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                  </div>
-                )}
-              </ScrollArea>
-            </>
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
-              <Plug className="h-12 w-12 mb-4 opacity-20" />
-              <p className="text-sm font-medium">选择一个 MCP 连接器查看详情</p>
-              <p className="text-xs mt-1 opacity-60">MCP 连接器用于扩展 Skill 的外部数据访问能力</p>
-              {isAdmin && (
-                <Button size="sm" variant="outline" className="mt-4" onClick={() => setShowCreate(true)}>
-                  <Plus className="h-3.5 w-3.5 mr-1.5" />新建连接器
-                </Button>
-              )}
-            </div>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => refetch()} className="text-slate-400 hover:text-white">
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+          {isAdmin && (
+            <Button onClick={() => setShowWizard(true)} className="bg-violet-600 hover:bg-violet-500 text-white gap-2">
+              <Plus className="h-4 w-4" />接入工具
+            </Button>
           )}
         </div>
       </div>
 
-      <MCPFormDialog
-        open={showCreate || !!editingConnector}
-        onOpenChange={(v) => { if (!v) { setShowCreate(false); setEditingConnector(null); } }}
-        initialData={editingConnector || undefined}
-        onSaved={() => {
-          utils.emperor.mcp.list.invalidate();
-          if (selectedSlug) utils.emperor.mcp.get.invalidate({ slug: selectedSlug });
-        }}
-      />
+      {/* Stats Cards */}
+      <div className="grid grid-cols-4 gap-4 px-8 py-5 flex-shrink-0">
+        {[
+          { label: "工具总数", value: stats.total, icon: Wrench, color: "text-slate-300", bg: "bg-white/3 border-white/8" },
+          { label: "正常运行", value: stats.active, icon: CheckCircle2, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
+          { label: "异常工具", value: stats.error, icon: AlertTriangle, color: "text-red-400", bg: "bg-red-500/10 border-red-500/20" },
+          { label: "已停用", value: stats.disabled, icon: PauseCircle, color: "text-slate-500", bg: "bg-white/3 border-white/8" },
+        ].map((s) => (
+          <div key={s.label} className={`rounded-xl border p-4 ${s.bg}`}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-slate-500">{s.label}</span>
+              <s.icon className={`h-4 w-4 ${s.color}`} />
+            </div>
+            <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
+          </div>
+        ))}
+      </div>
 
-      <AlertDialog open={!!deletingSlug} onOpenChange={(v) => !v && setDeletingSlug(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认删除连接器？</AlertDialogTitle>
-            <AlertDialogDescription>
-              此操作不可撤销。删除后，引用此连接器的 Skill 可能无法正常运行。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction className="bg-red-600 hover:bg-red-700"
-              onClick={() => deletingSlug && deleteMutation.mutate({ slug: deletingSlug })}>
-              {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-              确认删除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </DashboardLayout>
+      {/* Tabs */}
+      <div className="flex items-center gap-1 px-8 border-b border-white/6 flex-shrink-0">
+        {[
+          { key: "list", label: "工具列表" },
+          { key: "logs", label: "调用日志" },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key as any)}
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === tab.key
+                ? "border-violet-500 text-violet-400"
+                : "border-transparent text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 px-8 py-6 overflow-auto">
+        {activeTab === "list" && (
+          isLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="h-6 w-6 animate-spin text-violet-400" />
+            </div>
+          ) : !tools.length ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Wrench className="h-12 w-12 text-slate-700 mb-4" />
+              <p className="text-slate-500 mb-2">暂无 MCP 工具</p>
+              <p className="text-xs text-slate-600 mb-6">点击"接入工具"开始配置第一个外部工具</p>
+              {isAdmin && (
+                <Button onClick={() => setShowWizard(true)} className="bg-violet-600 hover:bg-violet-500 text-white gap-2">
+                  <Plus className="h-4 w-4" />接入工具
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-4">
+              {tools.map((tool) => (
+                <ToolCard
+                  key={tool.slug}
+                  tool={tool}
+                  isAdmin={isAdmin}
+                  onDelete={() => { if (confirm(`确认删除工具 "${tool.name}"？`)) deleteMutation.mutate({ slug: tool.slug }); }}
+                  onTest={() => toast.info(`正在测试 ${tool.name}...`)}
+                />
+              ))}
+            </div>
+          )
+        )}
+
+        {activeTab === "logs" && (
+          <div className="text-center py-16">
+            <Server className="h-10 w-10 text-slate-700 mx-auto mb-3" />
+            <p className="text-slate-500 text-sm">暂无调用日志</p>
+          </div>
+        )}
+      </div>
+
+      {/* Wizard Dialog */}
+      <WizardDialog
+        open={showWizard}
+        onOpenChange={setShowWizard}
+        onSaved={() => utils.emperor.mcp.list.invalidate()}
+      />
+    </div>
   );
 }

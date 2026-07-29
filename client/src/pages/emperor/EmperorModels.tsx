@@ -1,342 +1,456 @@
-import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import DashboardLayout from "@/components/DashboardLayout";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useState } from "react";
+import { toast } from "sonner";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
+  Brain, Plus, Activity, DollarSign, Zap, RefreshCw,
+  Trash2, CheckCircle, XCircle, Clock, Eye, EyeOff
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
 } from "@/components/ui/dialog";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import {
-  Cpu,
-  Plus,
-  Pencil,
-  Trash2,
-  Star,
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  Zap,
-  RefreshCw,
-  Eye,
-  EyeOff,
-} from "lucide-react";
-import { toast } from "sonner";
-import { cn } from "@/lib/utils";
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer
+} from "recharts";
 import { useAuth } from "@/_core/hooks/useAuth";
 
-interface ModelProvider {
-  id: number;
-  slug: string;
-  name: string;
-  provider: string;
-  modelId: string;
-  displayName: string;
-  isDefault: number;
-  isActive: number;
-  capabilityTags: string | null;
-  createdAt: string;
-}
+const PROVIDERS = ["OpenAI", "Anthropic", "Google", "Mistral", "DeepSeek", "Qwen", "Custom"];
+const CAPABILITY_TAGS = ["chat", "vision", "code", "reasoning", "embedding", "function-call", "long-context"];
 
-interface ModelFormData {
-  slug: string;
-  name: string;
-  provider: "manus_builtin" | "openai" | "deepseek" | "anthropic" | "custom";
-  modelId: string;
-  displayName: string;
-  baseUrl: string;
-  apiKeyRef: string;
-  isDefault: boolean;
-  isActive: boolean;
-  capabilityTags: string;
-}
-
-const EMPTY_FORM: ModelFormData = {
-  slug: "",
-  name: "",
-  provider: "manus_builtin",
-  modelId: "",
-  displayName: "",
-  baseUrl: "",
-  apiKeyRef: "",
+const defaultForm = {
+  name: "", modelId: "", provider: "OpenAI",
+  apiBaseUrl: "https://api.openai.com/v1",
+  apiKey: "",
+  capabilityTags: [] as string[],
+  costPer1kInputTokens: 0, costPer1kOutputTokens: 0,
+  maxContextTokens: 128000,
   isDefault: false,
-  isActive: true,
-  capabilityTags: "",
 };
-
-const PROVIDER_LABELS: Record<string, string> = {
-  manus_builtin: "Manus 内置",
-  openai: "OpenAI",
-  deepseek: "DeepSeek",
-  anthropic: "Anthropic",
-  custom: "自定义",
-};
-
-const PROVIDER_COLORS: Record<string, string> = {
-  manus_builtin: "bg-purple-100 text-purple-700",
-  openai: "bg-green-100 text-green-700",
-  deepseek: "bg-blue-100 text-blue-700",
-  anthropic: "bg-orange-100 text-orange-700",
-  custom: "bg-gray-100 text-gray-700",
-};
-
-function slugify(name: string): string {
-  return name.toLowerCase().replace(/[\s\u4e00-\u9fa5]+/g, "-").replace(/[^a-z0-9-]/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "") || `model-${Date.now()}`;
-}
-
-function ModelFormDialog({
-  open, onOpenChange, initialData, onSaved,
-}: {
-  open: boolean; onOpenChange: (v: boolean) => void; initialData?: ModelProvider; onSaved: () => void;
-}) {
-  const isEdit = !!initialData;
-  const [form, setForm] = useState<ModelFormData>(EMPTY_FORM);
-  const [showApiKey, setShowApiKey] = useState(false);
-
-  useEffect(() => {
-    if (open) {
-      if (initialData) {
-        setForm({
-          slug: initialData.slug,
-          name: initialData.name,
-          provider: initialData.provider as ModelFormData["provider"],
-          modelId: initialData.modelId,
-          displayName: initialData.displayName || "",
-          baseUrl: "",
-          apiKeyRef: "",
-          isDefault: !!initialData.isDefault,
-          isActive: !!initialData.isActive,
-          capabilityTags: initialData.capabilityTags ? JSON.parse(initialData.capabilityTags).join(", ") : "",
-        });
-      } else {
-        setForm(EMPTY_FORM);
-      }
-    }
-  }, [open, initialData]);
-
-  const upsertMutation = trpc.emperor.models.upsert.useMutation({
-    onSuccess: () => { toast.success(isEdit ? "模型已更新" : "模型已添加"); onSaved(); onOpenChange(false); },
-    onError: (e) => toast.error("保存失败: " + e.message),
-  });
-
-  const handleSave = () => {
-    if (!form.name.trim() || !form.modelId.trim()) { toast.error("请填写模型名称和 Model ID"); return; }
-    const slug = isEdit ? form.slug : (form.slug || slugify(form.name));
-    const tags = form.capabilityTags ? form.capabilityTags.split(",").map((t) => t.trim()).filter(Boolean) : [];
-    upsertMutation.mutate({ slug, name: form.name, provider: form.provider, modelId: form.modelId, displayName: form.displayName || undefined, baseUrl: form.baseUrl || undefined, apiKeyRef: form.apiKeyRef || undefined, isDefault: form.isDefault, isActive: form.isActive, capabilityTags: tags });
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>{isEdit ? "编辑模型提供商" : "添加模型提供商"}</DialogTitle></DialogHeader>
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">显示名称 *</label>
-              <Input value={form.name} onChange={(e) => { const name = e.target.value; setForm((f) => ({ ...f, name, slug: isEdit ? f.slug : slugify(name) })); }} placeholder="例如：GPT-4o" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Slug</label>
-              <Input value={form.slug} onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))} placeholder="自动生成" disabled={isEdit} className={isEdit ? "opacity-60" : ""} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">提供商 *</label>
-              <Select value={form.provider} onValueChange={(v) => setForm((f) => ({ ...f, provider: v as ModelFormData["provider"] }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{Object.entries(PROVIDER_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Model ID *</label>
-              <Input value={form.modelId} onChange={(e) => setForm((f) => ({ ...f, modelId: e.target.value }))} placeholder="例如：gpt-4o" />
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">别名（可选）</label>
-            <Input value={form.displayName} onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))} placeholder="例如：GPT-4o（最新）" />
-          </div>
-          {form.provider !== "manus_builtin" && (
-            <>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Base URL（可选）</label>
-                <Input value={form.baseUrl} onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))} placeholder="https://api.openai.com/v1" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">API Key（可选）</label>
-                <div className="relative">
-                  <Input type={showApiKey ? "text" : "password"} value={form.apiKeyRef} onChange={(e) => setForm((f) => ({ ...f, apiKeyRef: e.target.value }))} placeholder="sk-..." className="pr-10" />
-                  <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" onClick={() => setShowApiKey(!showApiKey)}>
-                    {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">能力标签（逗号分隔）</label>
-            <Input value={form.capabilityTags} onChange={(e) => setForm((f) => ({ ...f, capabilityTags: e.target.value }))} placeholder="vision, function_call, long_context" />
-          </div>
-          <div className="flex items-center gap-6">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={form.isDefault} onChange={(e) => setForm((f) => ({ ...f, isDefault: e.target.checked }))} className="rounded" />
-              <span className="text-sm">设为默认模型</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={form.isActive} onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))} className="rounded" />
-              <span className="text-sm">启用</span>
-            </label>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
-          <Button onClick={handleSave} disabled={upsertMutation.isPending}>
-            {upsertMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            {isEdit ? "保存更改" : "添加模型"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 export default function EmperorModels() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
-  const utils = trpc.useUtils();
-  const [showForm, setShowForm] = useState(false);
-  const [editingModel, setEditingModel] = useState<ModelProvider | null>(null);
-  const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
-  const [testingSlug, setTestingSlug] = useState<string | null>(null);
-  const [testResults, setTestResults] = useState<Record<string, { success: boolean; latencyMs?: number; error?: string }>>({});
+  const isAdmin = user?.role === "admin" || (user as any)?.role === "super_admin";
+  const { data: models, isLoading, refetch } = trpc.emperor.models.list.useQuery();
+  const { data: costStats } = trpc.emperor.models.getCostStats.useQuery({ days: 30 });
+  const { data: auditLogs } = trpc.emperor.models.getAuditLogs.useQuery({ limit: 20 });
 
-  const { data: modelsData, isLoading } = trpc.emperor.models.list.useQuery();
-  const models = (modelsData || []) as ModelProvider[];
+  const createMutation = trpc.emperor.models.create.useMutation({
+    onSuccess: () => {
+      toast.success("模型已添加");
+      setShowCreateDialog(false);
+      setForm(defaultForm);
+      refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const deleteMutation = trpc.emperor.models.delete.useMutation({
-    onSuccess: () => { toast.success("模型已删除"); setDeletingSlug(null); utils.emperor.models.list.invalidate(); },
-    onError: (e) => toast.error("删除失败: " + e.message),
+    onSuccess: () => { toast.success("已删除"); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const healthCheckMutation = trpc.emperor.models.healthCheck.useMutation({
+    onSuccess: (data) => {
+      if (data.status === "active") {
+        toast.success(`健康检查通过，延迟 ${data.latencyMs}ms`);
+      } else {
+        toast.error(`健康检查失败：${data.error}`);
+      }
+      refetch();
+    },
+    onError: (e) => toast.error(e.message),
   });
 
   const testMutation = trpc.emperor.models.test.useMutation({
-    onSuccess: (data, variables) => {
-      setTestResults((prev) => ({ ...prev, [variables.slug]: data as any }));
-      setTestingSlug(null);
-      if ((data as any).success) toast.success(`测试成功，延迟 ${(data as any).latencyMs}ms`);
-      else toast.error(`测试失败: ${(data as any).error}`);
+    onSuccess: (data: any) => {
+      if (data.success) toast.success(`测试成功，延迟 ${data.latencyMs}ms`);
+      else toast.error(`测试失败: ${data.error}`);
     },
-    onError: (e, variables) => {
-      setTestResults((prev) => ({ ...prev, [variables.slug]: { success: false, error: e.message } }));
-      setTestingSlug(null);
-    },
+    onError: (e) => toast.error(e.message),
   });
 
-  const refresh = () => utils.emperor.models.list.invalidate();
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [form, setForm] = useState(defaultForm);
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [activeTab, setActiveTab] = useState<"models" | "cost" | "logs">("models");
+
+  const handleCreate = () => {
+    if (!form.name || !form.modelId || !form.apiKey) {
+      return toast.error("请填写模型名称、Model ID 和 API Key");
+    }
+    createMutation.mutate(form);
+  };
+
+  const toggleTag = (tag: string) => {
+    const tags = form.capabilityTags;
+    setForm({
+      ...form,
+      capabilityTags: tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag]
+    });
+  };
+
+  const chartData = costStats?.daily ?? [];
+  const totalCost = costStats?.totals?.totalCostUsd ?? 0;
+  const totalCalls = costStats?.totals?.totalCalls ?? 0;
+  const activeCount = (models as any[])?.filter((m: any) => m.isActive).length ?? 0;
+  const totalCount = (models as any[])?.length ?? 0;
 
   return (
-    <DashboardLayout>
-      <div className="p-6 max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-xl font-semibold flex items-center gap-2"><Cpu className="h-5 w-5 text-primary" />模型路由配置</h1>
-            <p className="text-sm text-muted-foreground mt-1">管理 AI 模型提供商，配置路由规则和默认模型</p>
+    <div className="flex flex-col h-full bg-[#080b11] overflow-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between px-8 pt-8 pb-6 border-b border-white/6 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="rounded-xl p-2 bg-violet-500/15 border border-violet-500/20">
+            <Brain className="h-5 w-5 text-violet-400" />
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={refresh}><RefreshCw className="h-4 w-4 mr-1.5" />刷新</Button>
-            {isAdmin && <Button size="sm" onClick={() => { setEditingModel(null); setShowForm(true); }}><Plus className="h-4 w-4 mr-1.5" />添加模型</Button>}
+          <div>
+            <h1 className="text-xl font-semibold text-white">LLM 模型管理</h1>
+            <p className="text-sm text-slate-500 mt-0.5">注册和管理大语言模型，配置路由策略、成本监控和降级方案</p>
           </div>
         </div>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => refetch()} className="text-slate-400 hover:text-white">
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+          {isAdmin && (
+            <Button
+              onClick={() => setShowCreateDialog(true)}
+              className="bg-violet-600 hover:bg-violet-500 text-white gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              添加模型
+            </Button>
+          )}
+        </div>
+      </div>
 
-        {isLoading ? (
-          <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-        ) : models.length === 0 ? (
-          <div className="text-center py-20 text-muted-foreground">
-            <Cpu className="h-12 w-12 mx-auto mb-3 opacity-20" /><p className="text-sm">暂无模型配置</p>
-            {isAdmin && <Button size="sm" variant="outline" className="mt-3" onClick={() => setShowForm(true)}><Plus className="h-3.5 w-3.5 mr-1" />添加第一个模型</Button>}
+      {/* Stats Cards */}
+      <div className="grid grid-cols-4 gap-4 px-8 py-6 flex-shrink-0">
+        {[
+          { label: "已注册模型", value: totalCount, icon: Brain, color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/20" },
+          { label: "正常运行", value: activeCount, icon: CheckCircle, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
+          { label: "本月调用", value: totalCalls, icon: Zap, color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" },
+          { label: "本月成本", value: `$${totalCost.toFixed(2)}`, icon: DollarSign, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
+        ].map((stat) => (
+          <div key={stat.label} className={`rounded-xl p-5 border ${stat.bg} bg-white/3`}>
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-slate-500">{stat.label}</span>
+              <stat.icon className={`h-4 w-4 ${stat.color}`} />
+            </div>
+            <div className={`text-2xl font-bold ${stat.color}`}>{stat.value}</div>
           </div>
-        ) : (
-          <div className="space-y-3">
-            {models.map((model) => {
-              const testResult = testResults[model.slug];
-              const isTesting = testingSlug === model.slug;
-              let tags: string[] = [];
-              try { tags = model.capabilityTags ? JSON.parse(model.capabilityTags) : []; } catch {}
-              return (
-                <div key={model.id} className={cn("rounded-xl border bg-card p-4 transition-all", !model.isActive && "opacity-60")}>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-semibold text-sm">{model.displayName || model.name}</span>
-                        {!!model.isDefault && <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs"><Star className="h-3 w-3 mr-1" />默认</Badge>}
-                        {!model.isActive && <Badge variant="outline" className="text-xs text-muted-foreground">已禁用</Badge>}
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-                        <span className={cn("px-1.5 py-0.5 rounded-full text-xs font-medium", PROVIDER_COLORS[model.provider] || "bg-gray-100 text-gray-700")}>{PROVIDER_LABELS[model.provider] || model.provider}</span>
-                        <span className="font-mono">{model.modelId}</span>
-                        {tags.map((t: string) => <span key={t} className="bg-muted px-1.5 py-0.5 rounded text-xs">{t}</span>)}
-                      </div>
-                      {testResult && (
-                        <div className={cn("mt-2 text-xs flex items-center gap-1.5", testResult.success ? "text-green-600" : "text-red-500")}>
-                          {testResult.success ? <><CheckCircle2 className="h-3.5 w-3.5" />测试成功，延迟 {testResult.latencyMs}ms</> : <><XCircle className="h-3.5 w-3.5" />测试失败：{testResult.error}</>}
-                        </div>
+        ))}
+      </div>
+
+      {/* Tabs */}
+      <div className="px-8 flex-shrink-0">
+        <div className="flex gap-1 border-b border-white/6">
+          {[
+            { key: "models", label: "模型列表" },
+            { key: "cost", label: "成本统计" },
+            { key: "logs", label: "操作日志" },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key as any)}
+              className={`px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                activeTab === tab.key
+                  ? "border-violet-500 text-violet-400"
+                  : "border-transparent text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 px-8 py-6 overflow-auto">
+        {activeTab === "models" && (
+          <div className="space-y-2">
+            {isLoading ? (
+              <div className="text-center py-12 text-slate-500">加载中...</div>
+            ) : !totalCount ? (
+              <div className="text-center py-16">
+                <Brain className="h-12 w-12 text-slate-700 mx-auto mb-3" />
+                <p className="text-slate-500 mb-4">暂无模型，点击右上角添加</p>
+                {isAdmin && (
+                  <Button onClick={() => setShowCreateDialog(true)} variant="outline" className="border-white/10 text-slate-300">
+                    <Plus className="h-4 w-4 mr-2" />添加模型
+                  </Button>
+                )}
+              </div>
+            ) : (
+              (models as any[]).map((model: any) => (
+                <div key={model.slug} className="flex items-center gap-4 px-5 py-4 rounded-xl bg-white/3 border border-white/6 hover:border-white/10 transition-all group">
+                  <div className="flex items-center gap-2 min-w-[80px]">
+                    {model.isActive
+                      ? <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />
+                      : <XCircle className="h-3.5 w-3.5 text-red-400" />
+                    }
+                    <span className={`text-xs ${model.isActive ? "text-emerald-400" : "text-red-400"}`}>
+                      {model.isActive ? "正常" : "异常"}
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-white">{model.name}</span>
+                      {model.isDefault && (
+                        <Badge className="text-[10px] bg-violet-500/20 text-violet-300 border-violet-500/30 px-1.5 py-0">默认</Badge>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => { setTestingSlug(model.slug); testMutation.mutate({ slug: model.slug }); }} disabled={isTesting}>
-                        {isTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
-                        <span className="ml-1.5">测试</span>
-                      </Button>
-                      {isAdmin && (
-                        <>
-                          <Button size="sm" variant="outline" className="h-8 px-2" onClick={() => { setEditingModel(model); setShowForm(true); }}><Pencil className="h-3.5 w-3.5" /></Button>
-                          <Button size="sm" variant="outline" className="h-8 px-2 hover:text-red-600 hover:border-red-300" onClick={() => setDeletingSlug(model.slug)}><Trash2 className="h-3.5 w-3.5" /></Button>
-                        </>
-                      )}
-                    </div>
+                    <p className="text-xs text-slate-500 font-mono mt-0.5">
+                      {model.modelId} · {model.provider} {model.maxContextTokens ? `${Math.round((model.maxContextTokens||128000)/1000)}K ctx` : "128K ctx"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap justify-end min-w-[180px]">
+                    {(model.capabilityTags ?? []).slice(0, 3).map((tag: string) => (
+                      <Badge key={tag} variant="outline" className="text-[10px] border-white/10 text-slate-400 px-1.5 py-0">{tag}</Badge>
+                    ))}
+                  </div>
+                  <div className="text-right text-xs text-slate-500 min-w-[120px]">
+                    <div>输入 / 输出</div>
+                    <div className="text-slate-300 font-mono">$0.0000 / $0.0000</div>
+                    <div className="text-slate-600">per 1K tokens</div>
+                  </div>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => healthCheckMutation.mutate({ slug: model.slug })}
+                      className="p-1.5 rounded text-slate-500 hover:text-violet-400 hover:bg-violet-500/10 transition-colors"
+                      title="健康检查"
+                    >
+                      <Activity className="h-3.5 w-3.5" />
+                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => {
+                          if (confirm(`确认删除模型 "${model.name}"？`)) {
+                            deleteMutation.mutate({ slug: model.slug });
+                          }
+                        }}
+                        className="p-1.5 rounded text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
-              );
-            })}
+              ))
+            )}
+          </div>
+        )}
+
+        {activeTab === "cost" && (
+          <div className="space-y-6">
+            <div className="rounded-xl bg-white/3 border border-white/6 p-6">
+              <h3 className="text-sm font-medium text-slate-300 mb-4">近 30 天调用趋势</h3>
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={200}>
+                  <AreaChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff08" />
+                    <XAxis dataKey="date" tick={{ fill: "#64748b", fontSize: 11 }} />
+                    <YAxis tick={{ fill: "#64748b", fontSize: 11 }} />
+                    <Tooltip
+                      contentStyle={{ background: "#0d1117", border: "1px solid #ffffff15", borderRadius: 8 }}
+                      labelStyle={{ color: "#94a3b8" }}
+                    />
+                    <Area type="monotone" dataKey="calls" stroke="#8b5cf6" fill="#8b5cf620" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-[200px] flex items-center justify-center text-slate-600">暂无调用数据</div>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                { label: "总调用次数", value: costStats?.totals?.totalCalls ?? 0 },
+                { label: "输入 Token", value: (costStats?.totals?.totalInputTokens ?? 0).toLocaleString() },
+                { label: "输出 Token", value: (costStats?.totals?.totalOutputTokens ?? 0).toLocaleString() },
+              ].map((item) => (
+                <div key={item.label} className="rounded-xl bg-white/3 border border-white/6 p-5">
+                  <p className="text-xs text-slate-500 mb-2">{item.label}</p>
+                  <p className="text-xl font-bold text-white">{item.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "logs" && (
+          <div className="space-y-2">
+            {!(auditLogs as any[])?.length ? (
+              <div className="text-center py-12 text-slate-500">暂无操作日志</div>
+            ) : (
+              (auditLogs as any[]).map((log: any, i: number) => (
+                <div key={i} className="flex items-center gap-4 px-5 py-3 rounded-xl bg-white/3 border border-white/6 text-sm">
+                  <span className="text-slate-500 text-xs font-mono">{new Date(log.createdAt).toLocaleString()}</span>
+                  <Badge variant="outline" className="text-[10px] border-white/10 text-slate-400">{log.action}</Badge>
+                  <span className="text-slate-300">{log.resourceId}</span>
+                  <span className={`ml-auto text-xs ${log.status === "completed" ? "text-emerald-400" : "text-red-400"}`}>{log.status}</span>
+                </div>
+              ))
+            )}
           </div>
         )}
       </div>
 
-      <ModelFormDialog open={showForm} onOpenChange={(v) => { setShowForm(v); if (!v) setEditingModel(null); }} initialData={editingModel || undefined} onSaved={refresh} />
-
-      <AlertDialog open={!!deletingSlug} onOpenChange={(v) => !v && setDeletingSlug(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>确认删除模型？</AlertDialogTitle><AlertDialogDescription>此操作不可撤销。</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => deletingSlug && deleteMutation.mutate({ slug: deletingSlug })}>
-              {deleteMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}确认删除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </DashboardLayout>
+      {/* Create Dialog */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="bg-[#0d1117] border-white/10 text-white max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-white">
+              <Brain className="h-5 w-5 text-violet-400" />
+              添加 LLM 模型
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label className="text-slate-300 text-sm">模型名称 *</Label>
+                <Input
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="如：GPT-4o"
+                  className="mt-1.5 bg-white/5 border-white/10 text-white placeholder:text-slate-600"
+                />
+              </div>
+              <div>
+                <Label className="text-slate-300 text-sm">Model ID *</Label>
+                <Input
+                  value={form.modelId}
+                  onChange={(e) => setForm({ ...form, modelId: e.target.value })}
+                  placeholder="如：gpt-4o"
+                  className="mt-1.5 bg-white/5 border-white/10 text-white placeholder:text-slate-600 font-mono"
+                />
+              </div>
+            </div>
+            <div>
+              <Label className="text-slate-300 text-sm">提供商</Label>
+              <Select value={form.provider} onValueChange={(v) => setForm({ ...form, provider: v })}>
+                <SelectTrigger className="mt-1.5 bg-white/5 border-white/10 text-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0d1117] border-white/10">
+                  {PROVIDERS.map(p => (
+                    <SelectItem key={p} value={p} className="text-slate-300 focus:bg-white/10">{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-slate-300 text-sm">API Base URL *</Label>
+              <Input
+                value={form.apiBaseUrl}
+                onChange={(e) => setForm({ ...form, apiBaseUrl: e.target.value })}
+                className="mt-1.5 bg-white/5 border-white/10 text-white font-mono text-sm"
+              />
+            </div>
+            <div>
+              <Label className="text-slate-300 text-sm">API Key *</Label>
+              <div className="relative mt-1.5">
+                <Input
+                  type={showApiKey ? "text" : "password"}
+                  value={form.apiKey}
+                  onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
+                  placeholder="sk-..."
+                  className="bg-white/5 border-white/10 text-white placeholder:text-slate-600 pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                >
+                  {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label className="text-slate-300 text-sm">输入成本 ($/1K)</Label>
+                <Input
+                  type="number" min={0} step={0.0001}
+                  value={form.costPer1kInputTokens}
+                  onChange={(e) => setForm({ ...form, costPer1kInputTokens: Number(e.target.value) })}
+                  className="mt-1.5 bg-white/5 border-white/10 text-white"
+                />
+              </div>
+              <div>
+                <Label className="text-slate-300 text-sm">输出成本 ($/1K)</Label>
+                <Input
+                  type="number" min={0} step={0.0001}
+                  value={form.costPer1kOutputTokens}
+                  onChange={(e) => setForm({ ...form, costPer1kOutputTokens: Number(e.target.value) })}
+                  className="mt-1.5 bg-white/5 border-white/10 text-white"
+                />
+              </div>
+              <div>
+                <Label className="text-slate-300 text-sm">上下文长度</Label>
+                <Input
+                  type="number" min={1000}
+                  value={form.maxContextTokens}
+                  onChange={(e) => setForm({ ...form, maxContextTokens: Number(e.target.value) })}
+                  className="mt-1.5 bg-white/5 border-white/10 text-white"
+                />
+              </div>
+            </div>
+            <div>
+              <Label className="text-slate-300 text-sm">能力标签</Label>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {CAPABILITY_TAGS.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => toggleTag(tag)}
+                    className={`rounded-full px-3 py-1 text-xs transition-colors ${
+                      form.capabilityTags.includes(tag)
+                        ? "bg-violet-600/30 text-violet-300 ring-1 ring-violet-500/40"
+                        : "bg-white/5 text-slate-400 hover:bg-white/10"
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="isDefault"
+                checked={form.isDefault}
+                onChange={(e) => setForm({ ...form, isDefault: e.target.checked })}
+                className="rounded border-white/20"
+              />
+              <Label htmlFor="isDefault" className="text-slate-300 text-sm cursor-pointer">
+                设为默认模型（Skill 未指定模型时使用此模型）
+              </Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowCreateDialog(false)}
+              className="border-white/10 text-slate-300 hover:bg-white/5"
+            >
+              取消
+            </Button>
+            <Button
+              onClick={handleCreate}
+              disabled={createMutation.isPending}
+              className="bg-violet-600 hover:bg-violet-500 text-white"
+            >
+              {createMutation.isPending ? "添加中..." : "添加模型"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

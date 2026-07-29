@@ -1,0 +1,657 @@
+import { useState, useCallback, useRef, useEffect } from "react";
+import { trpc } from "@/lib/trpc";
+import { useLocation, useParams } from "wouter";
+import { toast } from "sonner";
+import {
+  ReactFlow, Background, Controls, MiniMap,
+  addEdge, useNodesState, useEdgesState,
+  type Node, type Edge, type Connection,
+  type NodeTypes, Handle, Position,
+  Panel, ReactFlowProvider,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import {
+  ArrowLeft, Save, Play, ChevronDown, X, Plus,
+  Zap, Code2, GitBranch, RefreshCw, Wrench,
+  BookOpen, LogOut, LogIn, Bot, RotateCcw,
+  Globe, UserCheck, Loader2
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+
+// ─── Node Type Definitions ───────────────────────────────────────────────────
+
+const NODE_PALETTE = [
+  { type: "input_node",    label: "输入节点",   desc: "工作流起始，接收外部输入",   icon: LogIn,       color: "#7c3aed", bg: "#3b0764" },
+  { type: "skill_node",    label: "Skill 节点", desc: "调用已注册的 AI Skill",     icon: Zap,         color: "#2563eb", bg: "#1e3a8a" },
+  { type: "llm_node",      label: "LLM 节点",   desc: "直接调用大语言模型",         icon: Bot,         color: "#0891b2", bg: "#164e63" },
+  { type: "condition_node",label: "条件分支",   desc: "根据条件走不同分支",         icon: GitBranch,   color: "#d97706", bg: "#78350f" },
+  { type: "loop_node",     label: "循环节点",   desc: "对列表数据循环处理",         icon: RefreshCw,   color: "#059669", bg: "#064e3b" },
+  { type: "human_review",  label: "人工审核",   desc: "暂停等待人工确认",           icon: UserCheck,   color: "#dc2626", bg: "#7f1d1d" },
+  { type: "http_node",     label: "HTTP 请求",  desc: "调用外部 API",              icon: Globe,       color: "#7c3aed", bg: "#4c1d95" },
+  { type: "code_node",     label: "代码节点",   desc: "执行自定义代码逻辑",         icon: Code2,       color: "#0284c7", bg: "#0c4a6e" },
+  { type: "mcp_node",      label: "MCP 工具",   desc: "调用外部 MCP 工具服务",      icon: Wrench,      color: "#7c3aed", bg: "#3b0764" },
+  { type: "knowledge_node",label: "知识库",     desc: "查询知识库内容",             icon: BookOpen,    color: "#16a34a", bg: "#14532d" },
+  { type: "output_node",   label: "输出节点",   desc: "工作流终止，收集输出",       icon: LogOut,      color: "#6b7280", bg: "#1f2937" },
+];
+
+const NODE_COLORS: Record<string, { color: string; bg: string }> = Object.fromEntries(
+  NODE_PALETTE.map(n => [n.type, { color: n.color, bg: n.bg }])
+);
+
+// ─── Custom Node Component ────────────────────────────────────────────────────
+
+function AgentNode({ data, selected }: { data: any; selected?: boolean }) {
+  const palette = NODE_PALETTE.find(p => p.type === data.nodeType) ?? NODE_PALETTE[1];
+  const IconComp = palette.icon;
+  const isInput = data.nodeType === "input_node";
+  const isOutput = data.nodeType === "output_node";
+
+  return (
+    <div
+      className="rounded-xl border-2 transition-all"
+      style={{
+        background: `${palette.bg}cc`,
+        borderColor: selected ? palette.color : `${palette.color}60`,
+        boxShadow: selected ? `0 0 0 2px ${palette.color}40` : "none",
+        minWidth: 180,
+        padding: "10px 14px",
+      }}
+    >
+      {!isInput && (
+        <Handle
+          type="target"
+          position={Position.Top}
+          style={{ background: palette.color, border: "2px solid #1e1e2e", width: 10, height: 10 }}
+        />
+      )}
+      <div className="flex items-center gap-2">
+        <div
+          className="rounded-lg p-1.5 flex-shrink-0"
+          style={{ background: `${palette.color}30`, border: `1px solid ${palette.color}50` }}
+        >
+          <IconComp size={14} style={{ color: palette.color }} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-semibold text-white truncate">{data.label || palette.label}</div>
+          <div className="text-[10px] text-slate-400 truncate">{data.subtitle || palette.desc}</div>
+        </div>
+      </div>
+      {!isOutput && (
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          style={{ background: palette.color, border: "2px solid #1e1e2e", width: 10, height: 10 }}
+        />
+      )}
+    </div>
+  );
+}
+
+const nodeTypes: NodeTypes = {
+  input_node: AgentNode,
+  skill_node: AgentNode,
+  llm_node: AgentNode,
+  condition_node: AgentNode,
+  loop_node: AgentNode,
+  human_review: AgentNode,
+  http_node: AgentNode,
+  code_node: AgentNode,
+  mcp_node: AgentNode,
+  knowledge_node: AgentNode,
+  output_node: AgentNode,
+};
+
+// ─── Node Property Panel ──────────────────────────────────────────────────────
+
+function NodePropertyPanel({
+  node, onUpdate, onClose, skills, models, mcpTools,
+}: {
+  node: Node;
+  onUpdate: (id: string, data: Partial<any>) => void;
+  onClose: () => void;
+  skills: any[];
+  models: any[];
+  mcpTools: any[];
+}) {
+  const palette = NODE_PALETTE.find(p => p.type === node.type) ?? NODE_PALETTE[1];
+  const d = node.data as any;
+
+  return (
+    <div
+      className="absolute right-0 top-0 bottom-0 w-72 bg-[#0d1117] border-l border-white/8 flex flex-col z-10 overflow-auto"
+      style={{ boxShadow: "-4px 0 20px rgba(0,0,0,0.4)" }}
+    >
+      <div
+        className="flex items-center justify-between px-4 py-3 border-b border-white/8"
+        style={{ background: `${palette.bg}80` }}
+      >
+        <div className="flex items-center gap-2">
+          <palette.icon size={14} style={{ color: palette.color }} />
+          <span className="text-sm font-semibold text-white">{palette.label}</span>
+        </div>
+        <button onClick={onClose} className="text-slate-500 hover:text-white">
+          <X size={14} />
+        </button>
+      </div>
+      <div className="flex-1 p-4 space-y-4 overflow-auto">
+        <div>
+          <Label className="text-slate-400 text-xs">节点名称</Label>
+          <Input
+            value={d.label || ""}
+            onChange={(e) => onUpdate(node.id, { label: e.target.value })}
+            className="mt-1.5 bg-white/5 border-white/10 text-white text-sm h-8"
+          />
+        </div>
+
+        {node.type === "skill_node" && (
+          <div>
+            <Label className="text-slate-400 text-xs">选择 Skill</Label>
+            <Select value={d.skillSlug || ""} onValueChange={(v) => {
+              const s = skills.find((sk: any) => sk.slug === v);
+              onUpdate(node.id, { skillSlug: v, subtitle: s?.name || v });
+            }}>
+              <SelectTrigger className="mt-1.5 bg-white/5 border-white/10 text-white h-8 text-sm">
+                <SelectValue placeholder="选择 Skill..." />
+              </SelectTrigger>
+              <SelectContent className="bg-[#0d1117] border-white/10">
+                {skills.map((s: any) => (
+                  <SelectItem key={s.slug} value={s.slug} className="text-slate-300 focus:bg-white/10 text-xs">
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {node.type === "llm_node" && (
+          <>
+            <div>
+              <Label className="text-slate-400 text-xs">选择模型</Label>
+              <Select value={d.modelSlug || ""} onValueChange={(v) => {
+                const m = models.find((mo: any) => mo.slug === v);
+                onUpdate(node.id, { modelSlug: v, subtitle: m?.name || v });
+              }}>
+                <SelectTrigger className="mt-1.5 bg-white/5 border-white/10 text-white h-8 text-sm">
+                  <SelectValue placeholder="选择模型..." />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0d1117] border-white/10">
+                  {models.map((m: any) => (
+                    <SelectItem key={m.slug} value={m.slug} className="text-slate-300 focus:bg-white/10 text-xs">
+                      {m.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-slate-400 text-xs">System Prompt</Label>
+              <Textarea
+                value={d.systemPrompt || ""}
+                onChange={(e) => onUpdate(node.id, { systemPrompt: e.target.value })}
+                placeholder="你是一个专业的..."
+                rows={4}
+                className="mt-1.5 bg-white/5 border-white/10 text-white text-xs resize-none"
+              />
+            </div>
+          </>
+        )}
+
+        {node.type === "condition_node" && (
+          <div>
+            <Label className="text-slate-400 text-xs">条件表达式</Label>
+            <Input
+              value={d.condition || ""}
+              onChange={(e) => onUpdate(node.id, { condition: e.target.value })}
+              placeholder="output.score > 0.8"
+              className="mt-1.5 bg-white/5 border-white/10 text-white text-xs font-mono h-8"
+            />
+          </div>
+        )}
+
+        {node.type === "loop_node" && (
+          <div>
+            <Label className="text-slate-400 text-xs">循环变量</Label>
+            <Input
+              value={d.loopVar || ""}
+              onChange={(e) => onUpdate(node.id, { loopVar: e.target.value })}
+              placeholder="items"
+              className="mt-1.5 bg-white/5 border-white/10 text-white text-xs h-8"
+            />
+          </div>
+        )}
+
+        {node.type === "http_node" && (
+          <>
+            <div>
+              <Label className="text-slate-400 text-xs">请求方法</Label>
+              <Select value={d.method || "GET"} onValueChange={(v) => onUpdate(node.id, { method: v })}>
+                <SelectTrigger className="mt-1.5 bg-white/5 border-white/10 text-white h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0d1117] border-white/10">
+                  {["GET","POST","PUT","PATCH","DELETE"].map(m => (
+                    <SelectItem key={m} value={m} className="text-slate-300 focus:bg-white/10 text-xs">{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-slate-400 text-xs">URL</Label>
+              <Input
+                value={d.url || ""}
+                onChange={(e) => onUpdate(node.id, { url: e.target.value })}
+                placeholder="https://api.example.com/..."
+                className="mt-1.5 bg-white/5 border-white/10 text-white text-xs h-8 font-mono"
+              />
+            </div>
+          </>
+        )}
+
+        {node.type === "code_node" && (
+          <div>
+            <Label className="text-slate-400 text-xs">代码（JavaScript）</Label>
+            <Textarea
+              value={d.code || ""}
+              onChange={(e) => onUpdate(node.id, { code: e.target.value })}
+              placeholder="// input: 上游输出\nreturn { result: input };"
+              rows={6}
+              className="mt-1.5 bg-white/5 border-white/10 text-white text-xs font-mono resize-none"
+            />
+          </div>
+        )}
+
+        {node.type === "mcp_node" && (
+          <div>
+            <Label className="text-slate-400 text-xs">选择 MCP 工具</Label>
+            <Select value={d.mcpSlug || ""} onValueChange={(v) => {
+              const t = mcpTools.find((mt: any) => mt.slug === v);
+              onUpdate(node.id, { mcpSlug: v, subtitle: t?.name || v });
+            }}>
+              <SelectTrigger className="mt-1.5 bg-white/5 border-white/10 text-white h-8 text-sm">
+                <SelectValue placeholder="选择 MCP 工具..." />
+              </SelectTrigger>
+              <SelectContent className="bg-[#0d1117] border-white/10">
+                {mcpTools.map((t: any) => (
+                  <SelectItem key={t.slug} value={t.slug} className="text-slate-300 focus:bg-white/10 text-xs">
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {node.type === "knowledge_node" && (
+          <div>
+            <Label className="text-slate-400 text-xs">查询内容</Label>
+            <Input
+              value={d.query || ""}
+              onChange={(e) => onUpdate(node.id, { query: e.target.value })}
+              placeholder="{{input.keyword}}"
+              className="mt-1.5 bg-white/5 border-white/10 text-white text-xs h-8 font-mono"
+            />
+          </div>
+        )}
+
+        {node.type === "human_review" && (
+          <div>
+            <Label className="text-slate-400 text-xs">审核提示</Label>
+            <Textarea
+              value={d.reviewPrompt || ""}
+              onChange={(e) => onUpdate(node.id, { reviewPrompt: e.target.value })}
+              placeholder="请审核以下内容..."
+              rows={3}
+              className="mt-1.5 bg-white/5 border-white/10 text-white text-xs resize-none"
+            />
+          </div>
+        )}
+
+        <div>
+          <Label className="text-slate-400 text-xs">备注</Label>
+          <Input
+            value={d.note || ""}
+            onChange={(e) => onUpdate(node.id, { note: e.target.value })}
+            placeholder="可选备注..."
+            className="mt-1.5 bg-white/5 border-white/10 text-white text-xs h-8"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Run Panel ────────────────────────────────────────────────────────────────
+
+function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => void }) {
+  const [runId, setRunId] = useState<string | null>(null);
+  const [inputs, setInputs] = useState("{}");
+
+  const runMutation = trpc.emperor.agents.run.useMutation({
+    onSuccess: (data: any) => { setRunId(data.runId); toast.success("已触发运行"); },
+    onError: (e) => toast.error("运行失败: " + e.message),
+  });
+
+  const { data: runData, refetch: refetchRun } = trpc.emperor.agents.getRun.useQuery(
+    { runId: runId! },
+    { enabled: !!runId, refetchInterval: runId ? 2000 : false }
+  );
+
+  const run = runData as any;
+
+  return (
+    <div className="absolute right-0 top-0 bottom-0 w-72 bg-[#0d1117] border-l border-white/8 flex flex-col z-10">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-white/8">
+        <span className="text-sm font-semibold text-white flex items-center gap-2">
+          <Play size={14} className="text-emerald-400" />运行测试
+        </span>
+        <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={14} /></button>
+      </div>
+      <div className="flex-1 p-4 space-y-4 overflow-auto">
+        <div>
+          <Label className="text-slate-400 text-xs">输入参数（JSON）</Label>
+          <Textarea
+            value={inputs}
+            onChange={(e) => setInputs(e.target.value)}
+            rows={5}
+            className="mt-1.5 bg-white/5 border-white/10 text-white text-xs font-mono resize-none"
+          />
+        </div>
+        <Button
+          onClick={() => {
+            try {
+              const parsed = JSON.parse(inputs);
+              runMutation.mutate({ slug: agentSlug, inputs: parsed });
+            } catch {
+              toast.error("输入参数不是有效 JSON");
+            }
+          }}
+          disabled={runMutation.isPending}
+          className="w-full bg-emerald-600 hover:bg-emerald-500 text-white"
+        >
+          {runMutation.isPending ? <Loader2 size={14} className="animate-spin mr-2" /> : <Play size={14} className="mr-2" />}
+          运行 Agent
+        </Button>
+        {run && (
+          <div className="rounded-lg bg-white/5 border border-white/8 p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-400">运行状态</span>
+              <Badge className={`text-[10px] ${run.status === "completed" ? "bg-emerald-500/20 text-emerald-400" : run.status === "failed" ? "bg-red-500/20 text-red-400" : "bg-amber-500/20 text-amber-400"}`}>
+                {run.status === "running" ? <><Loader2 size={10} className="animate-spin inline mr-1" />运行中</> : run.status === "completed" ? "已完成" : "失败"}
+              </Badge>
+            </div>
+            <div className="text-xs text-slate-500 font-mono break-all">{run.runId}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Canvas Component ────────────────────────────────────────────────────
+
+function AgentCanvasInner({ slug }: { slug: string }) {
+  const [, navigate] = useLocation();
+  const reactFlowWrapper = useRef<HTMLDivElement>(null);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [showRunPanel, setShowRunPanel] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+
+  const { data: agentData, isLoading } = trpc.emperor.agents.get.useQuery({ slug });
+  const agent = agentData as any;
+
+  const { data: skillsData } = trpc.emperor.agents.getAvailableSkills.useQuery();
+  const { data: modelsData } = trpc.emperor.agents.getAvailableModels.useQuery();
+  const { data: mcpToolsData } = trpc.emperor.agents.getAvailableMcpTools.useQuery();
+
+  const skills = (skillsData as any[]) ?? [];
+  const models = (modelsData as any[]) ?? [];
+  const mcpTools = (mcpToolsData as any[]) ?? [];
+
+  const saveMutation = trpc.emperor.agents.saveWorkflow.useMutation({
+    onSuccess: () => { toast.success("工作流已保存"); setIsDirty(false); },
+    onError: (e) => toast.error("保存失败: " + e.message),
+  });
+
+  // Load existing workflow
+  useEffect(() => {
+    if (!agent) return;
+    const dag = agent.dagDefinition ?? { nodes: [], edges: [] };
+    const rfNodes: Node[] = (dag.nodes ?? []).map((n: any) => ({
+      id: n.id,
+      type: n.nodeType ?? "skill_node",
+      position: { x: n.x ?? 100, y: n.y ?? 100 },
+      data: { ...n, label: n.label ?? n.nodeType },
+    }));
+    const rfEdges: Edge[] = (dag.edges ?? []).map((e: any) => ({
+      id: e.id,
+      source: e.source ?? e.from,
+      target: e.target ?? e.to,
+      label: e.label,
+      style: { stroke: "#7c3aed", strokeWidth: 2 },
+      animated: true,
+    }));
+    setNodes(rfNodes);
+    setEdges(rfEdges);
+    setIsDirty(false);
+  }, [agent]);
+
+  const onConnect = useCallback((params: Connection) => {
+    setEdges(eds => addEdge({ ...params, animated: true } as Edge, eds));
+    setIsDirty(true);
+  }, [setEdges]);
+
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }, []);
+
+  const onDrop = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    const nodeType = event.dataTransfer.getData("application/reactflow");
+    if (!nodeType) return;
+    const bounds = reactFlowWrapper.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const palette = NODE_PALETTE.find(p => p.type === nodeType);
+    const newNode: Node = {
+      id: `${nodeType}_${Date.now()}`,
+      type: nodeType,
+      position: {
+        x: event.clientX - bounds.left - 90,
+        y: event.clientY - bounds.top - 25,
+      },
+      data: { label: palette?.label ?? nodeType, nodeType },
+    };
+    setNodes(nds => [...nds, newNode]);
+    setIsDirty(true);
+  }, [setNodes]);
+
+  const handleNodeClick = useCallback((_: any, node: Node) => {
+    setSelectedNode(node);
+    setShowRunPanel(false);
+  }, []);
+
+  const handlePaneClick = useCallback(() => {
+    setSelectedNode(null);
+  }, []);
+
+  const handleNodeUpdate = useCallback((id: string, data: Partial<any>) => {
+    setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, ...data } } : n));
+    setIsDirty(true);
+  }, [setNodes]);
+
+  const handleSave = () => {
+    const workflow = {
+      nodes: nodes.map(n => ({
+        id: n.id,
+        nodeType: n.type,
+        label: (n.data as any).label,
+        x: n.position.x,
+        y: n.position.y,
+        ...n.data,
+      })),
+      edges: edges.map(e => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        from: e.source,
+        to: e.target,
+        label: e.label,
+      })),
+    };
+    saveMutation.mutate({ slug, workflow });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-[#080b11]">
+        <Loader2 className="h-8 w-8 animate-spin text-violet-400" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-screen bg-[#080b11] overflow-hidden">
+      {/* Top Bar */}
+      <div className="flex items-center justify-between px-4 py-2.5 bg-[#0d1117] border-b border-white/8 flex-shrink-0 z-20">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate("/emperor/agents")}
+            className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/5 transition-colors"
+          >
+            <ArrowLeft size={16} />
+          </button>
+          <div className="flex items-center gap-2">
+            <Bot size={16} className="text-violet-400" />
+            <span className="text-sm font-semibold text-white">{agent?.name ?? slug}</span>
+            <span className="text-xs text-slate-500 font-mono">{slug}</span>
+            {isDirty && <Badge className="text-[10px] bg-amber-500/20 text-amber-400 border-amber-500/30">未保存</Badge>}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500">{nodes.length} 节点 · {edges.length} 连线</span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => { setShowRunPanel(v => !v); setSelectedNode(null); }}
+            className="h-7 text-xs border-white/10 text-slate-300 hover:bg-white/5"
+          >
+            <Play size={12} className="mr-1.5" />运行测试
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={saveMutation.isPending}
+            className="h-7 text-xs bg-violet-600 hover:bg-violet-500 text-white"
+          >
+            {saveMutation.isPending ? <Loader2 size={12} className="animate-spin mr-1.5" /> : <Save size={12} className="mr-1.5" />}
+            保存
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Left Node Palette */}
+        <div className="w-44 flex-shrink-0 bg-[#0d1117] border-r border-white/8 overflow-auto py-3 z-10">
+          <div className="px-3 mb-2">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">节点类型</span>
+          </div>
+          {NODE_PALETTE.map((p) => {
+            const IconComp = p.icon;
+            return (
+              <div
+                key={p.type}
+                draggable
+                onDragStart={(e) => e.dataTransfer.setData("application/reactflow", p.type)}
+                className="flex items-center gap-2 mx-2 mb-1 px-2 py-2 rounded-lg cursor-grab hover:bg-white/5 transition-colors group"
+              >
+                <div
+                  className="rounded p-1 flex-shrink-0"
+                  style={{ background: `${p.color}20`, border: `1px solid ${p.color}30` }}
+                >
+                  <IconComp size={12} style={{ color: p.color }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium text-slate-300 truncate">{p.label}</div>
+                  <div className="text-[9px] text-slate-600 truncate leading-tight">{p.desc}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Canvas */}
+        <div className="flex-1 relative" ref={reactFlowWrapper}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={(changes) => { onNodesChange(changes); setIsDirty(true); }}
+            onEdgesChange={(changes) => { onEdgesChange(changes); setIsDirty(true); }}
+            onConnect={onConnect}
+            onDrop={onDrop}
+            onDragOver={onDragOver}
+            onNodeClick={handleNodeClick}
+            onPaneClick={handlePaneClick}
+            nodeTypes={nodeTypes}
+            fitView
+            style={{ background: "#080b11" }}
+            deleteKeyCode="Delete"
+          >
+            <Background color="#1e2030" gap={24} size={1} />
+            <Controls
+              style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.08)" }}
+            />
+            <MiniMap
+              style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.08)" }}
+              nodeColor={(n) => NODE_COLORS[n.type ?? ""]?.color ?? "#7c3aed"}
+            />
+            <Panel position="top-center">
+              {nodes.length === 0 && (
+                <div className="text-center py-2 px-4 rounded-lg bg-white/5 border border-white/8 text-xs text-slate-500">
+                  从左侧拖拽节点到画布开始编排
+                </div>
+              )}
+            </Panel>
+          </ReactFlow>
+        </div>
+
+        {/* Right Panel: Node Properties or Run Panel */}
+        {selectedNode && (
+          <NodePropertyPanel
+            node={selectedNode}
+            onUpdate={handleNodeUpdate}
+            onClose={() => setSelectedNode(null)}
+            skills={skills}
+            models={models}
+            mcpTools={mcpTools}
+          />
+        )}
+        {showRunPanel && !selectedNode && (
+          <RunPanel agentSlug={slug} onClose={() => setShowRunPanel(false)} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function AgentCanvas() {
+  const params = useParams<{ slug: string }>();
+  const slug = params.slug;
+
+  if (!slug) return <div className="text-white p-8">Invalid agent slug</div>;
+
+  return (
+    <ReactFlowProvider>
+      <AgentCanvasInner slug={slug} />
+    </ReactFlowProvider>
+  );
+}

@@ -111,6 +111,7 @@ import EmperorUsage from "./pages/emperor/EmperorUsage";
 import EmperorDiagnostics from "./pages/emperor/EmperorDiagnostics";
 import EmperorSettings from "./pages/emperor/EmperorSettings";
 import EmperorScheduled from "./pages/emperor/EmperorScheduled";
+import AgentCanvas from "./pages/emperor/AgentCanvas";
 
 function Router() {
   return (
@@ -252,6 +253,8 @@ function App() {
           <Toaster />
           <Switch>
             <Route path="/login" component={LoginPage} />
+            {/* AgentCanvas is full-screen, outside DashboardLayout */}
+            <Route path="/emperor/agents/:slug/canvas">{(params) => <AgentCanvas />}</Route>
             <Route>{() => <Router />}</Route>
           </Switch>
         </TooltipProvider>

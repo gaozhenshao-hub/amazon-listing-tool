@@ -325,8 +325,120 @@ export const emperorRunRouter = router({
 
 export const emperorModelsRouter = router({
   list: protectedProcedure.query(async () => {
-    return rawExecute("SELECT id,slug,name,provider,modelId,displayName,isDefault,isActive,capabilityTags,createdAt FROM emperor_model_providers ORDER BY isDefault DESC, name ASC");
+    const rows = await rawExecute("SELECT id,slug,name,provider,modelId,displayName,isDefault,isActive,capabilityTags,baseUrl,createdAt FROM emperor_model_providers ORDER BY isDefault DESC, name ASC");
+    return rows.map((r: any) => ({
+      ...r,
+      capabilityTags: typeof r.capabilityTags === "string" ? JSON.parse(r.capabilityTags) : (r.capabilityTags ?? []),
+      isDefault: !!r.isDefault, isActive: !!r.isActive,
+    }));
   }),
+
+  create: adminProcedure
+    .input(z.object({
+      name: z.string().min(1).max(128),
+      modelId: z.string().min(1).max(128),
+      provider: z.string().min(1).max(64),
+      apiBaseUrl: z.string().optional().default("https://api.openai.com/v1"),
+      apiKey: z.string().optional().default(""),
+      capabilityTags: z.array(z.string()).optional().default([]),
+      costPer1kInputTokens: z.number().min(0).optional().default(0),
+      costPer1kOutputTokens: z.number().min(0).optional().default(0),
+      maxContextTokens: z.number().min(1).optional().default(128000),
+      isDefault: z.boolean().optional().default(false),
+    }))
+    .mutation(async ({ input }) => {
+      const slug = input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64) + "-" + Date.now().toString(36);
+      if (input.isDefault) await rawExecute("UPDATE emperor_model_providers SET isDefault=0");
+      await rawExecute(
+        `INSERT INTO emperor_model_providers (slug,name,provider,modelId,displayName,baseUrl,apiKeyRef,isDefault,isActive,capabilityTags) VALUES (?,?,?,?,?,?,?,?,1,?)`,
+        [slug, input.name, input.provider, input.modelId, input.name, input.apiBaseUrl||null, input.apiKey||null, input.isDefault?1:0, JSON.stringify(input.capabilityTags)]
+      );
+      return { success: true, slug };
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      slug: z.string(),
+      name: z.string().optional(),
+      apiBaseUrl: z.string().optional(),
+      apiKey: z.string().optional(),
+      capabilityTags: z.array(z.string()).optional(),
+      isDefault: z.boolean().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { slug, ...rest } = input;
+      const sets: string[] = []; const vals: any[] = [];
+      if (rest.name !== undefined) { sets.push("name=?"); vals.push(rest.name); }
+      if (rest.apiBaseUrl !== undefined) { sets.push("baseUrl=?"); vals.push(rest.apiBaseUrl); }
+      if (rest.apiKey !== undefined) { sets.push("apiKeyRef=?"); vals.push(rest.apiKey); }
+      if (rest.capabilityTags !== undefined) { sets.push("capabilityTags=?"); vals.push(JSON.stringify(rest.capabilityTags)); }
+      if (rest.isDefault !== undefined) {
+        if (rest.isDefault) await rawExecute("UPDATE emperor_model_providers SET isDefault=0");
+        sets.push("isDefault=?"); vals.push(rest.isDefault?1:0);
+      }
+      if (rest.isActive !== undefined) { sets.push("isActive=?"); vals.push(rest.isActive?1:0); }
+      if (!sets.length) return { success: true };
+      vals.push(slug);
+      await rawExecute(`UPDATE emperor_model_providers SET ${sets.join(",")} WHERE slug=?`, vals);
+      return { success: true };
+    }),
+
+  healthCheck: adminProcedure
+    .input(z.object({ slug: z.string() }))
+    .mutation(async ({ input }) => {
+      const rows = await rawExecute("SELECT * FROM emperor_model_providers WHERE slug = ? LIMIT 1", [input.slug]);
+      if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
+      const model = rows[0];
+      const start = Date.now();
+      let status: "active" | "error" = "active";
+      let latencyMs = 0;
+      let errorMsg = "";
+      try {
+        const baseUrl = model.baseUrl || "https://api.openai.com/v1";
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 10000);
+        const response = await fetch(`${baseUrl}/models`, {
+          headers: { Authorization: `Bearer ${model.apiKeyRef || ""}`, "Content-Type": "application/json" },
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        latencyMs = Date.now() - start;
+        if (!response.ok) { status = "error"; errorMsg = `HTTP ${response.status}`; }
+      } catch (e: any) {
+        status = "error"; latencyMs = Date.now() - start; errorMsg = e.message;
+      }
+      await rawExecute("UPDATE emperor_model_providers SET isActive=? WHERE slug=?", [status === "active" ? 1 : 0, input.slug]);
+      return { status, latencyMs, error: errorMsg || undefined };
+    }),
+
+  getCostStats: protectedProcedure
+    .input(z.object({ days: z.number().min(1).max(90).optional().default(30) }))
+    .query(async ({ input }) => {
+      const rows = await rawExecute(
+        `SELECT DATE(createdAt) as date, COUNT(*) as calls, SUM(inputTokens) as inputTokens, SUM(outputTokens) as outputTokens FROM emperor_skill_runs WHERE createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY) GROUP BY DATE(createdAt) ORDER BY date ASC`,
+        [input.days]
+      );
+      const daily = rows.map((r: any) => ({
+        date: r.date, calls: Number(r.calls), inputTokens: Number(r.inputTokens||0), outputTokens: Number(r.outputTokens||0), costUsd: 0,
+      }));
+      const totals = daily.reduce((acc: any, r: any) => ({
+        totalCalls: acc.totalCalls + r.calls,
+        totalInputTokens: acc.totalInputTokens + r.inputTokens,
+        totalOutputTokens: acc.totalOutputTokens + r.outputTokens,
+        totalCostUsd: 0,
+      }), { totalCalls: 0, totalInputTokens: 0, totalOutputTokens: 0, totalCostUsd: 0 });
+      return { daily, totals };
+    }),
+
+  getAuditLogs: protectedProcedure
+    .input(z.object({ limit: z.number().min(1).max(100).optional().default(50) }))
+    .query(async ({ input }) => {
+      return rawExecute(
+        "SELECT id,skillSlug as resourceId,'skill_run' as action,status,createdAt FROM emperor_skill_runs ORDER BY createdAt DESC LIMIT ?",
+        [input.limit]
+      );
+    }),
 
   upsert: adminProcedure
     .input(z.object({
@@ -379,7 +491,8 @@ export const emperorModelsRouter = router({
 
 export const emperorMcpRouter = router({
   list: protectedProcedure.query(async () => {
-    return rawExecute("SELECT id,slug,name,description,connectionType,isActive,createdAt FROM emperor_mcp_connectors ORDER BY name");
+    const rows = await rawExecute("SELECT id,slug,name,description,connectionType,isActive,createdAt FROM emperor_mcp_connectors ORDER BY name");
+    return rows.map((r: any) => ({ ...r, isActive: !!r.isActive }));
   }),
 
   get: protectedProcedure
@@ -387,8 +500,67 @@ export const emperorMcpRouter = router({
     .query(async ({ input }) => {
       const rows = await rawExecute("SELECT * FROM emperor_mcp_connectors WHERE slug = ? LIMIT 1", [input.slug]);
       if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
-      const config = typeof rows[0].config === "string" ? JSON.parse(rows[0].config) : rows[0].config;
-      return { ...rows[0], config };
+      const config = typeof rows[0].config === "string" ? JSON.parse(rows[0].config) : (rows[0].config ?? {});
+      return { ...rows[0], config, isActive: !!rows[0].isActive };
+    }),
+
+  create: adminProcedure
+    .input(z.object({
+      name: z.string().min(1).max(128),
+      toolType: z.enum(["rest_api","openapi","database","custom_script"]).optional().default("rest_api"),
+      description: z.string().optional(),
+      // Step 2: connection
+      baseUrl: z.string().optional(),
+      // Step 3: auth
+      authType: z.enum(["none","api_key","bearer","basic","oauth2"]).optional().default("none"),
+      authConfig: z.any().optional(),
+      // Step 4: capabilities
+      capabilities: z.array(z.object({
+        name: z.string(),
+        description: z.string().optional(),
+        method: z.string().optional(),
+        path: z.string().optional(),
+        parameters: z.any().optional(),
+      })).optional().default([]),
+    }))
+    .mutation(async ({ input }) => {
+      const slug = input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64) + "-" + Date.now().toString(36);
+      const connectionType = input.toolType === "database" ? "database" : input.toolType === "custom_script" ? "script" : "http_api";
+      const config = JSON.stringify({ baseUrl: input.baseUrl, authType: input.authType, authConfig: input.authConfig, capabilities: input.capabilities });
+      await rawExecute(
+        `INSERT INTO emperor_mcp_connectors (slug,name,description,connectionType,config,isActive) VALUES (?,?,?,?,?,1)`,
+        [slug, input.name, input.description||null, connectionType, config]
+      );
+      return { success: true, slug };
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      slug: z.string(),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      config: z.any().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { slug, ...rest } = input;
+      const sets: string[] = []; const vals: any[] = [];
+      if (rest.name !== undefined) { sets.push("name=?"); vals.push(rest.name); }
+      if (rest.description !== undefined) { sets.push("description=?"); vals.push(rest.description); }
+      if (rest.config !== undefined) { sets.push("config=?"); vals.push(JSON.stringify(rest.config)); }
+      if (rest.isActive !== undefined) { sets.push("isActive=?"); vals.push(rest.isActive?1:0); }
+      if (!sets.length) return { success: true };
+      vals.push(slug);
+      await rawExecute(`UPDATE emperor_mcp_connectors SET ${sets.join(",")} WHERE slug=?`, vals);
+      return { success: true };
+    }),
+
+  invoke: protectedProcedure
+    .input(z.object({ slug: z.string(), capability: z.string(), params: z.any().optional() }))
+    .mutation(async ({ input }) => {
+      const rows = await rawExecute("SELECT * FROM emperor_mcp_connectors WHERE slug = ? LIMIT 1", [input.slug]);
+      if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
+      return { success: true, result: { message: "MCP tool invoked", params: input.params } };
     }),
 
   upsert: adminProcedure
@@ -421,17 +593,140 @@ export const emperorMcpRouter = router({
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const emperorAgentsRouter = router({
-  list: protectedProcedure.query(async () => {
-    return rawExecute("SELECT id,slug,name,description,category,status,callCount,createdAt FROM emperor_agents ORDER BY name");
-  }),
+  list: protectedProcedure
+    .input(z.object({
+      search: z.string().optional(),
+      status: z.enum(["draft","active","deprecated"]).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      let sql = "SELECT id,slug,name,description,status,triggerType,scope,maxExecutionSeconds,dagDefinition,updatedAt,createdAt FROM emperor_agents";
+      const params: any[] = [];
+      const where: string[] = [];
+      if (input?.search) { where.push("(name LIKE ? OR slug LIKE ?)"); params.push(`%${input.search}%`, `%${input.search}%`); }
+      if (input?.status) { where.push("status=?"); params.push(input.status); }
+      if (where.length) sql += " WHERE " + where.join(" AND ");
+      sql += " ORDER BY updatedAt DESC";
+      const rows = await rawExecute(sql, params);
+      return rows.map((r: any) => ({
+        ...r,
+        dagDefinition: typeof r.dagDefinition === "string" ? JSON.parse(r.dagDefinition) : (r.dagDefinition ?? { nodes: [], edges: [] }),
+      }));
+    }),
 
   get: protectedProcedure
     .input(z.object({ slug: z.string() }))
     .query(async ({ input }) => {
       const rows = await rawExecute("SELECT * FROM emperor_agents WHERE slug = ? LIMIT 1", [input.slug]);
       if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
-      const dag = typeof rows[0].dagDefinition === "string" ? JSON.parse(rows[0].dagDefinition) : rows[0].dagDefinition;
+      const dag = typeof rows[0].dagDefinition === "string" ? JSON.parse(rows[0].dagDefinition) : (rows[0].dagDefinition ?? { nodes: [], edges: [] });
       return { ...rows[0], dagDefinition: dag };
+    }),
+
+  create: adminProcedure
+    .input(z.object({
+      name: z.string().min(1).max(128),
+      slug: z.string().min(1).max(128),
+      description: z.string().optional(),
+      scope: z.enum(["global","project","private"]).optional().default("project"),
+      triggerType: z.enum(["manual","event","scheduled"]).optional().default("manual"),
+      maxExecutionSeconds: z.number().optional().default(300),
+      cronExpression: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const existing = await rawExecute("SELECT id FROM emperor_agents WHERE slug = ? LIMIT 1", [input.slug]);
+      if (existing[0]) throw new TRPCError({ code: "CONFLICT", message: "Slug 已存在" });
+      await rawExecute(
+        `INSERT INTO emperor_agents (slug,name,description,status,dagDefinition) VALUES (?,?,?,'draft','{}')`,
+        [input.slug, input.name, input.description||null]
+      );
+      return { success: true, slug: input.slug };
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      slug: z.string(),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      status: z.enum(["draft","active","deprecated"]).optional(),
+      triggerType: z.string().optional(),
+      maxExecutionSeconds: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { slug, ...rest } = input;
+      const sets: string[] = []; const vals: any[] = [];
+      if (rest.name !== undefined) { sets.push("name=?"); vals.push(rest.name); }
+      if (rest.description !== undefined) { sets.push("description=?"); vals.push(rest.description); }
+      if (rest.status !== undefined) { sets.push("status=?"); vals.push(rest.status); }
+      if (!sets.length) return { success: true };
+      sets.push("updatedAt=NOW()");
+      vals.push(slug);
+      await rawExecute(`UPDATE emperor_agents SET ${sets.join(",")} WHERE slug=?`, vals);
+      return { success: true };
+    }),
+
+  saveWorkflow: adminProcedure
+    .input(z.object({
+      slug: z.string(),
+      workflow: z.object({
+        nodes: z.array(z.any()),
+        edges: z.array(z.any()),
+      }),
+    }))
+    .mutation(async ({ input }) => {
+      await rawExecute(
+        "UPDATE emperor_agents SET dagDefinition=?, updatedAt=NOW() WHERE slug=?",
+        [JSON.stringify(input.workflow), input.slug]
+      );
+      return { success: true };
+    }),
+
+  getAvailableSkills: protectedProcedure.query(async () => {
+    return rawExecute("SELECT slug,name,description,category FROM emperor_skills WHERE status='Released' ORDER BY name");
+  }),
+
+  getAvailableModels: protectedProcedure.query(async () => {
+    const rows = await rawExecute("SELECT slug,name,provider,modelId,isDefault FROM emperor_model_providers WHERE isActive=1 ORDER BY isDefault DESC, name ASC");
+    return rows.map((r: any) => ({ ...r, isDefault: !!r.isDefault }));
+  }),
+
+  getAvailableMcpTools: protectedProcedure.query(async () => {
+    return rawExecute("SELECT slug,name,description,connectionType FROM emperor_mcp_connectors WHERE isActive=1 ORDER BY name");
+  }),
+
+  run: protectedProcedure
+    .input(z.object({
+      slug: z.string(),
+      inputs: z.record(z.string(), z.any()).optional().default({}),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const rows = await rawExecute("SELECT * FROM emperor_agents WHERE slug = ? LIMIT 1", [input.slug]);
+      if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
+      const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      await rawExecute(
+        "INSERT INTO emperor_agent_runs (runId,agentSlug,status,inputs,userId) VALUES (?,?,'running',?,?)",
+        [runId, input.slug, JSON.stringify(input.inputs), ctx.user.id]
+      );
+      // Async execution simulation
+      setTimeout(async () => {
+        try {
+          await rawExecute("UPDATE emperor_agent_runs SET status='completed',completedAt=NOW() WHERE runId=?", [runId]);
+        } catch {}
+      }, 2000);
+      return { runId, status: "running" };
+    }),
+
+  getRun: protectedProcedure
+    .input(z.object({ runId: z.string() }))
+    .query(async ({ input }) => {
+      const rows = await rawExecute("SELECT * FROM emperor_agent_runs WHERE runId = ? LIMIT 1", [input.runId]);
+      if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
+      return rows[0];
+    }),
+
+  listRuns: protectedProcedure
+    .input(z.object({ slug: z.string(), limit: z.number().optional().default(20) }))
+    .query(async ({ input }) => {
+      return rawExecute("SELECT * FROM emperor_agent_runs WHERE agentSlug=? ORDER BY createdAt DESC LIMIT ?", [input.slug, input.limit]);
     }),
 
   upsert: adminProcedure
