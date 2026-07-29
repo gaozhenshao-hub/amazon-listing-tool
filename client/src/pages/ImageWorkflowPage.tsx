@@ -1520,10 +1520,12 @@ function Step3StyleConfirm({
   const handleGenerate = async () => {
     try {
       const result = await generateMutation.mutateAsync({ projectId });
+      console.log('[Step3 FE] result:', typeof result, result ? Object.keys(result) : 'null', 'styleOptions:', result?.styleOptions?.length);
       setAiResult(result);
       setSelectedIds([]);
       toast.success("风格方案推荐完成");
     } catch (err: any) {
+      console.error('[Step3 FE] error:', err);
       toast.error(err.message || "生成失败");
     }
   };

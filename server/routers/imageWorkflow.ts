@@ -775,6 +775,7 @@ export const imageWorkflowRouter = router({
       });
 
       const result = parseLLMJson(response);
+      console.log("[Step3 DEBUG] result keys:", Object.keys(result || {}), "styleOptions count:", result?.styleOptions?.length);
       await db.updateImageWorkflowSession(session.id, {
         step3AiResult: JSON.stringify(result),
         currentStep: 3,
