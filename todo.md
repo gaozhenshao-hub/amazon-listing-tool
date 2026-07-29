@@ -184,9 +184,9 @@
 - [x] Step2 表达方式选择器（8选项下拉）+ Step0 联动提示（辅图上方显示竞品高频表达方式和差异化机会）
 
 ## 皇帝融合（Emperor Integration，2026-07-29）
-- [ ] Phase 1: 数据库 Schema（emperor_skills/runs/agents/mcp_connectors 四张表）+ 数据迁移脚本
-- [ ] Phase 2: 后端 tRPC 路由（emperor.skills.*、emperor.runs.*、emperor.agents.*、emperor.models.*）
-- [ ] Phase 3: 前端 Skill 库 UI（cc-haha Market 三栏布局 + 分类树 + 运行面板）
-- [ ] Phase 4: 前端运行历史 UI（cc-haha TraceSession 调用树 + 详情面板）
-- [ ] Phase 5: Agent 编排 + 模型路由 + MCP 设置页面
-- [ ] Phase 6: 关闭皇帝 EC2（PM2 stop + ufw 关闭 4800 端口）
+- [x] Phase 1: 数据库 Schema（emperor_skills/runs/agents/mcp_connectors 四张表）+ 数据迁移脚本
+- [x] Phase 2: 后端 tRPC 路由（emperor.skills.*、emperor.runs.*、emperor.agents.*、emperor.models.*）
+- [x] Phase 3: 前端 Skill 库 UI（cc-haha Market 三栏布局 + 分类树 + 运行面板）
+- [x] Phase 4: 前端运行历史 UI（cc-haha TraceSession 调用树 + 详情面板）
+- [x] Phase 5: Agent 编排 + 模型路由 + MCP 设置页面
+- [x] Phase 6: 关闭皇帝 EC2（PM2 stop + ufw 关闭 4800 端口）
