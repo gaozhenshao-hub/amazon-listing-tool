@@ -1,345 +1,342 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Loader2,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Cpu,
+  Plus,
+  Pencil,
+  Trash2,
+  Star,
+  Loader2,
   CheckCircle2,
   XCircle,
-  RefreshCw,
   Zap,
-  Trash2,
+  RefreshCw,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/_core/hooks/useAuth";
 
-interface Provider {
+interface ModelProvider {
   id: number;
   slug: string;
   name: string;
   provider: string;
   modelId: string;
   displayName: string;
+  isDefault: number;
+  isActive: number;
+  capabilityTags: string | null;
+  createdAt: string;
+}
+
+interface ModelFormData {
+  slug: string;
+  name: string;
+  provider: "manus_builtin" | "openai" | "deepseek" | "anthropic" | "custom";
+  modelId: string;
+  displayName: string;
   baseUrl: string;
   apiKeyRef: string;
   isDefault: boolean;
   isActive: boolean;
-  capabilityTags: string[];
+  capabilityTags: string;
 }
 
-const PROVIDER_COLORS: Record<string, string> = {
-  manus_builtin: "bg-purple-500/10 text-purple-600 border-purple-200",
-  openai: "bg-green-500/10 text-green-600 border-green-200",
-  anthropic: "bg-orange-500/10 text-orange-600 border-orange-200",
-  deepseek: "bg-blue-500/10 text-blue-600 border-blue-200",
-  custom: "bg-gray-500/10 text-gray-600 border-gray-200",
+const EMPTY_FORM: ModelFormData = {
+  slug: "",
+  name: "",
+  provider: "manus_builtin",
+  modelId: "",
+  displayName: "",
+  baseUrl: "",
+  apiKeyRef: "",
+  isDefault: false,
+  isActive: true,
+  capabilityTags: "",
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
   manus_builtin: "Manus 内置",
   openai: "OpenAI",
-  anthropic: "Anthropic",
   deepseek: "DeepSeek",
+  anthropic: "Anthropic",
   custom: "自定义",
 };
 
-export default function EmperorModels() {
-  const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
-  const [editMode, setEditMode] = useState(false);
-  const [editData, setEditData] = useState<Partial<Provider>>({});
-  const [testingSlug, setTestingSlug] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<{ slug: string; ok: boolean; msg: string } | null>(null);
+const PROVIDER_COLORS: Record<string, string> = {
+  manus_builtin: "bg-purple-100 text-purple-700",
+  openai: "bg-green-100 text-green-700",
+  deepseek: "bg-blue-100 text-blue-700",
+  anthropic: "bg-orange-100 text-orange-700",
+  custom: "bg-gray-100 text-gray-700",
+};
 
-  const { data, isLoading, refetch } = trpc.emperor.models.list.useQuery();
+function slugify(name: string): string {
+  return name.toLowerCase().replace(/[\s\u4e00-\u9fa5]+/g, "-").replace(/[^a-z0-9-]/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "") || `model-${Date.now()}`;
+}
+
+function ModelFormDialog({
+  open, onOpenChange, initialData, onSaved,
+}: {
+  open: boolean; onOpenChange: (v: boolean) => void; initialData?: ModelProvider; onSaved: () => void;
+}) {
+  const isEdit = !!initialData;
+  const [form, setForm] = useState<ModelFormData>(EMPTY_FORM);
+  const [showApiKey, setShowApiKey] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      if (initialData) {
+        setForm({
+          slug: initialData.slug,
+          name: initialData.name,
+          provider: initialData.provider as ModelFormData["provider"],
+          modelId: initialData.modelId,
+          displayName: initialData.displayName || "",
+          baseUrl: "",
+          apiKeyRef: "",
+          isDefault: !!initialData.isDefault,
+          isActive: !!initialData.isActive,
+          capabilityTags: initialData.capabilityTags ? JSON.parse(initialData.capabilityTags).join(", ") : "",
+        });
+      } else {
+        setForm(EMPTY_FORM);
+      }
+    }
+  }, [open, initialData]);
+
   const upsertMutation = trpc.emperor.models.upsert.useMutation({
-    onSuccess: () => {
-      toast.success("保存成功");
-      setEditMode(false);
-      refetch();
-    },
-    onError: (err: any) => toast.error("保存失败: " + err.message),
+    onSuccess: () => { toast.success(isEdit ? "模型已更新" : "模型已添加"); onSaved(); onOpenChange(false); },
+    onError: (e) => toast.error("保存失败: " + e.message),
   });
-  const deleteMutation = trpc.emperor.models.delete.useMutation({
-    onSuccess: () => {
-      toast.success("已删除");
-      setSelectedProvider(null);
-      refetch();
-    },
-    onError: (err: any) => toast.error("删除失败: " + err.message),
-  });
-  const testMutation = trpc.emperor.models.test.useMutation({
-    onSuccess: (res, vars) => {
-      setTestResult({ slug: vars.slug, ok: res.success, msg: res.success ? `响应正常 (${res.latencyMs}ms): ${res.response}` : (res as any).error || "测试失败" });
-      setTestingSlug(null);
-      toast[res.success ? "success" : "error"](res.success ? "连通性正常" : "连通性异常");
-    },
-    onError: (err: any, vars) => {
-      setTestResult({ slug: vars.slug, ok: false, msg: err.message });
-      setTestingSlug(null);
-    },
-  });
-
-  const providers: Provider[] = (data || []) as Provider[];
-
-  const handleEdit = (p: Provider) => {
-    setSelectedProvider(p);
-    setEditData({ ...p });
-    setEditMode(true);
-  };
 
   const handleSave = () => {
-    if (!selectedProvider) return;
-    upsertMutation.mutate({
-      slug: selectedProvider.slug,
-      name: editData.name || selectedProvider.name,
-      provider: (editData.provider as any) || selectedProvider.provider as any,
-      modelId: editData.modelId || selectedProvider.modelId,
-      displayName: editData.displayName,
-      baseUrl: editData.baseUrl,
-      apiKeyRef: editData.apiKeyRef,
-      isDefault: editData.isDefault ?? selectedProvider.isDefault,
-      isActive: editData.isActive ?? selectedProvider.isActive,
-    });
-  };
-
-  const handleTest = (p: Provider) => {
-    setTestingSlug(p.slug);
-    setTestResult(null);
-    testMutation.mutate({ slug: p.slug });
+    if (!form.name.trim() || !form.modelId.trim()) { toast.error("请填写模型名称和 Model ID"); return; }
+    const slug = isEdit ? form.slug : (form.slug || slugify(form.name));
+    const tags = form.capabilityTags ? form.capabilityTags.split(",").map((t) => t.trim()).filter(Boolean) : [];
+    upsertMutation.mutate({ slug, name: form.name, provider: form.provider, modelId: form.modelId, displayName: form.displayName || undefined, baseUrl: form.baseUrl || undefined, apiKeyRef: form.apiKeyRef || undefined, isDefault: form.isDefault, isActive: form.isActive, capabilityTags: tags });
   };
 
   return (
-    <DashboardLayout>
-      <div className="flex h-[calc(100vh-56px)] overflow-hidden bg-background">
-        {/* Left: Provider list */}
-        <div className="w-[300px] flex-shrink-0 border-r flex flex-col">
-          <div className="p-3 border-b flex items-center justify-between">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>{isEdit ? "编辑模型提供商" : "添加模型提供商"}</DialogTitle></DialogHeader>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <h2 className="font-semibold text-sm">模型提供商</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">{providers.length} 个模型</p>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">显示名称 *</label>
+              <Input value={form.name} onChange={(e) => { const name = e.target.value; setForm((f) => ({ ...f, name, slug: isEdit ? f.slug : slugify(name) })); }} placeholder="例如：GPT-4o" />
             </div>
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => refetch()}>
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Slug</label>
+              <Input value={form.slug} onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))} placeholder="自动生成" disabled={isEdit} className={isEdit ? "opacity-60" : ""} />
+            </div>
           </div>
-          <ScrollArea className="flex-1">
-            {isLoading ? (
-              <div className="flex items-center justify-center py-20">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">提供商 *</label>
+              <Select value={form.provider} onValueChange={(v) => setForm((f) => ({ ...f, provider: v as ModelFormData["provider"] }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{Object.entries(PROVIDER_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Model ID *</label>
+              <Input value={form.modelId} onChange={(e) => setForm((f) => ({ ...f, modelId: e.target.value }))} placeholder="例如：gpt-4o" />
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">别名（可选）</label>
+            <Input value={form.displayName} onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))} placeholder="例如：GPT-4o（最新）" />
+          </div>
+          {form.provider !== "manus_builtin" && (
+            <>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Base URL（可选）</label>
+                <Input value={form.baseUrl} onChange={(e) => setForm((f) => ({ ...f, baseUrl: e.target.value }))} placeholder="https://api.openai.com/v1" />
               </div>
-            ) : providers.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-                <Cpu className="h-8 w-8 mb-3 opacity-30" />
-                <p className="text-sm">暂无模型配置</p>
-              </div>
-            ) : (
-              <div className="p-2 space-y-1">
-                {providers.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => { setSelectedProvider(p); setEditMode(false); }}
-                    className={cn(
-                      "w-full text-left p-3 rounded-lg border transition-all",
-                      selectedProvider?.id === p.id
-                        ? "border-primary bg-primary/5"
-                        : "border-transparent hover:border-border hover:bg-accent/50"
-                    )}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-medium text-sm">{p.displayName || p.name}</span>
-                      <div className="flex items-center gap-1">
-                        {p.isDefault && <Badge className="text-xs px-1 py-0 h-4 bg-amber-500/10 text-amber-600 border-amber-200">默认</Badge>}
-                        {p.isActive ? (
-                          <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
-                        ) : (
-                          <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
-                        )}
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground line-clamp-1">{p.modelId}</p>
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <Badge variant="outline" className={cn("text-xs px-1.5 py-0", PROVIDER_COLORS[p.provider])}>
-                        {PROVIDER_LABELS[p.provider] || p.provider}
-                      </Badge>
-                    </div>
-                    {testResult?.slug === p.slug && (
-                      <div className={cn(
-                        "mt-2 text-xs px-2 py-1 rounded",
-                        testResult.ok ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600"
-                      )}>
-                        {testResult.msg}
-                      </div>
-                    )}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">API Key（可选）</label>
+                <div className="relative">
+                  <Input type={showApiKey ? "text" : "password"} value={form.apiKeyRef} onChange={(e) => setForm((f) => ({ ...f, apiKeyRef: e.target.value }))} placeholder="sk-..." className="pr-10" />
+                  <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" onClick={() => setShowApiKey(!showApiKey)}>
+                    {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
-                ))}
+                </div>
               </div>
-            )}
-          </ScrollArea>
+            </>
+          )}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">能力标签（逗号分隔）</label>
+            <Input value={form.capabilityTags} onChange={(e) => setForm((f) => ({ ...f, capabilityTags: e.target.value }))} placeholder="vision, function_call, long_context" />
+          </div>
+          <div className="flex items-center gap-6">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={form.isDefault} onChange={(e) => setForm((f) => ({ ...f, isDefault: e.target.checked }))} className="rounded" />
+              <span className="text-sm">设为默认模型</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={form.isActive} onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))} className="rounded" />
+              <span className="text-sm">启用</span>
+            </label>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+          <Button onClick={handleSave} disabled={upsertMutation.isPending}>
+            {upsertMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {isEdit ? "保存更改" : "添加模型"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export default function EmperorModels() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const utils = trpc.useUtils();
+  const [showForm, setShowForm] = useState(false);
+  const [editingModel, setEditingModel] = useState<ModelProvider | null>(null);
+  const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
+  const [testingSlug, setTestingSlug] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, { success: boolean; latencyMs?: number; error?: string }>>({});
+
+  const { data: modelsData, isLoading } = trpc.emperor.models.list.useQuery();
+  const models = (modelsData || []) as ModelProvider[];
+
+  const deleteMutation = trpc.emperor.models.delete.useMutation({
+    onSuccess: () => { toast.success("模型已删除"); setDeletingSlug(null); utils.emperor.models.list.invalidate(); },
+    onError: (e) => toast.error("删除失败: " + e.message),
+  });
+
+  const testMutation = trpc.emperor.models.test.useMutation({
+    onSuccess: (data, variables) => {
+      setTestResults((prev) => ({ ...prev, [variables.slug]: data as any }));
+      setTestingSlug(null);
+      if ((data as any).success) toast.success(`测试成功，延迟 ${(data as any).latencyMs}ms`);
+      else toast.error(`测试失败: ${(data as any).error}`);
+    },
+    onError: (e, variables) => {
+      setTestResults((prev) => ({ ...prev, [variables.slug]: { success: false, error: e.message } }));
+      setTestingSlug(null);
+    },
+  });
+
+  const refresh = () => utils.emperor.models.list.invalidate();
+
+  return (
+    <DashboardLayout>
+      <div className="p-6 max-w-5xl mx-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-xl font-semibold flex items-center gap-2"><Cpu className="h-5 w-5 text-primary" />模型路由配置</h1>
+            <p className="text-sm text-muted-foreground mt-1">管理 AI 模型提供商，配置路由规则和默认模型</p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={refresh}><RefreshCw className="h-4 w-4 mr-1.5" />刷新</Button>
+            {isAdmin && <Button size="sm" onClick={() => { setEditingModel(null); setShowForm(true); }}><Plus className="h-4 w-4 mr-1.5" />添加模型</Button>}
+          </div>
         </div>
 
-        {/* Right: Provider detail */}
-        <div className="flex-1 flex flex-col min-w-0 p-6">
-          {selectedProvider ? (
-            <div className="max-w-2xl space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold">{selectedProvider.displayName || selectedProvider.name}</h2>
-                  <p className="text-sm text-muted-foreground mt-1">{selectedProvider.modelId}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleTest(selectedProvider)}
-                    disabled={testingSlug === selectedProvider.slug}
-                    className="gap-2"
-                  >
-                    {testingSlug === selectedProvider.slug ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Zap className="h-4 w-4" />
-                    )}
-                    连通性测试
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => deleteMutation.mutate({ slug: selectedProvider.slug })}
-                    disabled={deleteMutation.isPending}
-                    className="gap-2 text-destructive hover:text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    删除
-                  </Button>
-                  {!editMode && (
-                    <Button size="sm" onClick={() => handleEdit(selectedProvider)}>
-                      编辑配置
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              {editMode ? (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">编辑配置</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-sm font-medium mb-1.5 block">显示名称</label>
-                        <Input
-                          value={editData.displayName || ""}
-                          onChange={(e) => setEditData(d => ({ ...d, displayName: e.target.value }))}
-                        />
+        {isLoading ? (
+          <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : models.length === 0 ? (
+          <div className="text-center py-20 text-muted-foreground">
+            <Cpu className="h-12 w-12 mx-auto mb-3 opacity-20" /><p className="text-sm">暂无模型配置</p>
+            {isAdmin && <Button size="sm" variant="outline" className="mt-3" onClick={() => setShowForm(true)}><Plus className="h-3.5 w-3.5 mr-1" />添加第一个模型</Button>}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {models.map((model) => {
+              const testResult = testResults[model.slug];
+              const isTesting = testingSlug === model.slug;
+              let tags: string[] = [];
+              try { tags = model.capabilityTags ? JSON.parse(model.capabilityTags) : []; } catch {}
+              return (
+                <div key={model.id} className={cn("rounded-xl border bg-card p-4 transition-all", !model.isActive && "opacity-60")}>
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-semibold text-sm">{model.displayName || model.name}</span>
+                        {!!model.isDefault && <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs"><Star className="h-3 w-3 mr-1" />默认</Badge>}
+                        {!model.isActive && <Badge variant="outline" className="text-xs text-muted-foreground">已禁用</Badge>}
                       </div>
-                      <div>
-                        <label className="text-sm font-medium mb-1.5 block">Model ID</label>
-                        <Input
-                          value={editData.modelId || ""}
-                          onChange={(e) => setEditData(d => ({ ...d, modelId: e.target.value }))}
-                        />
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                        <span className={cn("px-1.5 py-0.5 rounded-full text-xs font-medium", PROVIDER_COLORS[model.provider] || "bg-gray-100 text-gray-700")}>{PROVIDER_LABELS[model.provider] || model.provider}</span>
+                        <span className="font-mono">{model.modelId}</span>
+                        {tags.map((t: string) => <span key={t} className="bg-muted px-1.5 py-0.5 rounded text-xs">{t}</span>)}
                       </div>
-                      <div className="col-span-2">
-                        <label className="text-sm font-medium mb-1.5 block">Base URL（可选）</label>
-                        <Input
-                          value={editData.baseUrl || ""}
-                          onChange={(e) => setEditData(d => ({ ...d, baseUrl: e.target.value }))}
-                          placeholder="https://api.openai.com/v1"
-                        />
-                      </div>
-                      <div className="col-span-2">
-                        <label className="text-sm font-medium mb-1.5 block">API Key 引用（可选）</label>
-                        <Input
-                          value={editData.apiKeyRef || ""}
-                          onChange={(e) => setEditData(d => ({ ...d, apiKeyRef: e.target.value }))}
-                          placeholder="env:OPENAI_API_KEY"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">设为默认</p>
-                        <p className="text-xs text-muted-foreground">未指定模型的 Skill 使用此模型</p>
-                      </div>
-                      <Switch
-                        checked={editData.isDefault ?? false}
-                        onCheckedChange={(v) => setEditData(d => ({ ...d, isDefault: v }))}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">启用</p>
-                        <p className="text-xs text-muted-foreground">禁用后 Skill 无法选择此模型</p>
-                      </div>
-                      <Switch
-                        checked={editData.isActive ?? true}
-                        onCheckedChange={(v) => setEditData(d => ({ ...d, isActive: v }))}
-                      />
-                    </div>
-                    <div className="flex gap-2 pt-2">
-                      <Button onClick={handleSave} disabled={upsertMutation.isPending} className="gap-2">
-                        {upsertMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                        保存
-                      </Button>
-                      <Button variant="outline" onClick={() => setEditMode(false)}>取消</Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card>
-                  <CardContent className="pt-6 space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-xs text-muted-foreground">提供商</p>
-                        <Badge variant="outline" className={cn("mt-1", PROVIDER_COLORS[selectedProvider.provider])}>
-                          {PROVIDER_LABELS[selectedProvider.provider] || selectedProvider.provider}
-                        </Badge>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">状态</p>
-                        <p className="font-medium mt-1 flex items-center gap-2">
-                          {selectedProvider.isActive ? (
-                            <><CheckCircle2 className="h-4 w-4 text-green-500" /> 已启用</>
-                          ) : (
-                            <><XCircle className="h-4 w-4 text-muted-foreground" /> 已禁用</>
-                          )}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Model ID</p>
-                        <p className="font-medium text-sm mt-1">{selectedProvider.modelId}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Slug</p>
-                        <p className="font-medium text-sm mt-1">{selectedProvider.slug}</p>
-                      </div>
-                      {selectedProvider.baseUrl && (
-                        <div className="col-span-2">
-                          <p className="text-xs text-muted-foreground">Base URL</p>
-                          <p className="font-medium text-sm mt-1 break-all">{selectedProvider.baseUrl}</p>
+                      {testResult && (
+                        <div className={cn("mt-2 text-xs flex items-center gap-1.5", testResult.success ? "text-green-600" : "text-red-500")}>
+                          {testResult.success ? <><CheckCircle2 className="h-3.5 w-3.5" />测试成功，延迟 {testResult.latencyMs}ms</> : <><XCircle className="h-3.5 w-3.5" />测试失败：{testResult.error}</>}
                         </div>
                       )}
                     </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
-              <Cpu className="h-12 w-12 mb-4 opacity-20" />
-              <p className="text-sm">从左侧选择一个模型提供商</p>
-              <p className="text-xs mt-2 opacity-60">支持 Manus 内置、OpenAI、DeepSeek、Anthropic 等多种模型</p>
-            </div>
-          )}
-        </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => { setTestingSlug(model.slug); testMutation.mutate({ slug: model.slug }); }} disabled={isTesting}>
+                        {isTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                        <span className="ml-1.5">测试</span>
+                      </Button>
+                      {isAdmin && (
+                        <>
+                          <Button size="sm" variant="outline" className="h-8 px-2" onClick={() => { setEditingModel(model); setShowForm(true); }}><Pencil className="h-3.5 w-3.5" /></Button>
+                          <Button size="sm" variant="outline" className="h-8 px-2 hover:text-red-600 hover:border-red-300" onClick={() => setDeletingSlug(model.slug)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
+
+      <ModelFormDialog open={showForm} onOpenChange={(v) => { setShowForm(v); if (!v) setEditingModel(null); }} initialData={editingModel || undefined} onSaved={refresh} />
+
+      <AlertDialog open={!!deletingSlug} onOpenChange={(v) => !v && setDeletingSlug(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader><AlertDialogTitle>确认删除模型？</AlertDialogTitle><AlertDialogDescription>此操作不可撤销。</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => deletingSlug && deleteMutation.mutate({ slug: deletingSlug })}>
+              {deleteMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}确认删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 }

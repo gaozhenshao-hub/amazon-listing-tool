@@ -190,3 +190,9 @@
 - [x] Phase 4: 前端运行历史 UI（cc-haha TraceSession 调用树 + 详情面板）
 - [x] Phase 5: Agent 编排 + 模型路由 + MCP 设置页面
 - [x] Phase 6: 关闭皇帝 EC2（PM2 stop + ufw 关闭 4800 端口）
+
+## 皇帝功能全面补全（2026-07-29）
+- [x] Phase 1: 修复 Skill 库数据加载（0个技能 bug）+ Skill CRUD（新增/编辑/删除/导入导出/模型独立配置）
+- [x] Phase 2: 模型路由完整 CRUD（新增/编辑/删除/测试连接/设置默认）+ MCP 连接器完整 CRUD（cc-haha 风格）
+- [x] Phase 3: Agent 编排完整 CRUD（新增/编辑/删除/步骤配置/运行）+ 定时任务完整 CRUD（cc-haha 风格）
+- [x] Phase 4: 记忆/知识库模块（cc-haha MemorySettings 风格）+ Token 用量图表 + Trace 运行历史详情

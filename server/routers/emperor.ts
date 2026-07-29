@@ -92,6 +92,31 @@ export const emperorSkillsRouter = router({
       return parseManifest(skill);
     }),
 
+  create: adminProcedure
+    .input(z.object({
+      slug: z.string(),
+      name: z.string(),
+      description: z.string().optional(),
+      category: z.string().optional(),
+      systemPrompt: z.string().optional(),
+      userPromptTemplate: z.string().optional(),
+      modelOverride: z.string().nullable().optional(),
+      status: z.enum(["Draft","Validated","Approved","Released","Deprecated"]).optional().default("Draft"),
+    }))
+    .mutation(async ({ input }) => {
+      const manifest = {
+        implementation: {
+          systemPrompt: input.systemPrompt || "",
+          userPromptTemplate: input.userPromptTemplate || "{{context}}",
+        }
+      };
+      await rawExecute(
+        `INSERT INTO emperor_skills (slug,name,description,category,modelOverride,status,manifest,isSystem,callCount,version) VALUES (?,?,?,?,?,?,?,0,0,'1.0.0')`,
+        [input.slug, input.name, input.description||null, input.category||"通用", input.modelOverride||null, input.status||"Draft", JSON.stringify(manifest)]
+      );
+      return { success: true };
+    }),
+
   update: adminProcedure
     .input(z.object({
       slug: z.string(),
@@ -100,10 +125,12 @@ export const emperorSkillsRouter = router({
       category: z.string().optional(),
       status: z.enum(["Draft","Validated","Approved","Released","Deprecated"]).optional(),
       modelOverride: z.string().nullable().optional(),
+      systemPrompt: z.string().optional(),
+      userPromptTemplate: z.string().optional(),
       manifest: z.any().optional(),
     }))
     .mutation(async ({ input }) => {
-      const { slug, ...updates } = input;
+      const { slug, systemPrompt, userPromptTemplate, ...updates } = input;
       const sets: string[] = [];
       const params: any[] = [];
       if (updates.name !== undefined) { sets.push("name = ?"); params.push(updates.name); }
@@ -112,9 +139,24 @@ export const emperorSkillsRouter = router({
       if (updates.status !== undefined) { sets.push("status = ?"); params.push(updates.status); }
       if (updates.modelOverride !== undefined) { sets.push("modelOverride = ?"); params.push(updates.modelOverride); }
       if (updates.manifest !== undefined) { sets.push("manifest = ?"); params.push(JSON.stringify(updates.manifest)); }
+      else if (systemPrompt !== undefined || userPromptTemplate !== undefined) {
+        // Merge into manifest
+        const existing = await rawExecute("SELECT manifest FROM emperor_skills WHERE slug = ? LIMIT 1", [slug]);
+        const existingManifest = existing[0]?.manifest ? (typeof existing[0].manifest === "string" ? JSON.parse(existing[0].manifest) : existing[0].manifest) : {};
+        if (systemPrompt !== undefined) { existingManifest.implementation = existingManifest.implementation || {}; existingManifest.implementation.systemPrompt = systemPrompt; }
+        if (userPromptTemplate !== undefined) { existingManifest.implementation = existingManifest.implementation || {}; existingManifest.implementation.userPromptTemplate = userPromptTemplate; }
+        sets.push("manifest = ?"); params.push(JSON.stringify(existingManifest));
+      }
       if (sets.length === 0) return { success: true };
       params.push(slug);
       await rawExecute(`UPDATE emperor_skills SET ${sets.join(", ")} WHERE slug = ?`, params);
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ slug: z.string() }))
+    .mutation(async ({ input }) => {
+      await rawExecute("DELETE FROM emperor_skills WHERE slug = ?", [input.slug]);
       return { success: true };
     }),
 });
