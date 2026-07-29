@@ -1694,14 +1694,22 @@ export const listingRouter = router({
         ? response.choices[0].message.content
         : JSON.stringify(response.choices[0].message.content);
 
+      // Strip thinking tags (Gemini may include <thinking>...</thinking> blocks)
       // Strip markdown code fences if LLM wraps JSON in ```json ... ```
       const content = rawContent
-        .replace(/^```(?:json)?\s*/i, "")
-        .replace(/\s*```\s*$/i, "")
+        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+        .replace(/^```(?:json)?\s*/im, "")
+        .replace(/\s*```\s*$/im, "")
         .trim();
+      // If content still doesn't start with '{', try to extract first JSON object
+      const jsonStart = content.indexOf("{");
+      const jsonEnd = content.lastIndexOf("}");
+      const cleanContent = jsonStart >= 0 && jsonEnd > jsonStart
+        ? content.slice(jsonStart, jsonEnd + 1)
+        : content;
 
       try {
-        const parsed = JSON.parse(content);
+        const parsed = JSON.parse(cleanContent);
         // Normalize field name variants to sellingPoints
         if (!Array.isArray(parsed.sellingPoints)) {
           if (Array.isArray(parsed.selling_points)) parsed.sellingPoints = parsed.selling_points;
