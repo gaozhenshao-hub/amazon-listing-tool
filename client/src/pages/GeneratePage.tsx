@@ -53,6 +53,35 @@ import StepQA from "./listing/StepQA";
 import BulletChecklistPanel from "@/components/BulletChecklistPanel";
 import LockedContentBar from "@/components/LockedContentBar";
 
+// Step 1 animated progress indicator
+function GeneratingProgress() {
+  const steps = [
+    "AI正在读取产品属性数据...",
+    "AI正在分析竞品Listing共性与缺口...",
+    "AI正在匹配买家高频痛点和场景...",
+    "AI正在规划A9关键词分配策略...",
+    "AI正在生成FABE卖点方向框架...",
+    "AI正在整合七条卖点核心主题...",
+  ];
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setIdx(i => (i + 1) % steps.length), 2800);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin text-teal-600 shrink-0" />
+        <span className="transition-all duration-500">{steps[idx]}</span>
+      </div>
+      <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+        <div className="h-full bg-teal-500 rounded-full animate-pulse" style={{ width: `${((idx + 1) / steps.length) * 100}%`, transition: 'width 2.8s ease' }} />
+      </div>
+      <p className="text-xs text-muted-foreground text-center">通常需要 15-30 秒，请耐心等待...</p>
+    </div>
+  );
+}
+
 function CharCountBadge({ count, min, max, label }: { count: number; min: number; max: number; label?: string }) {
   const inRange = count >= min && count <= max;
   const tooShort = count < min;
@@ -1353,10 +1382,7 @@ export default function GeneratePage() {
               )}
 
               {generateCores.isPending && (
-                <div className="mt-2">
-                  <Progress value={undefined} className="h-1" />
-                  <p className="text-xs text-muted-foreground text-center mt-2">AI正在分析产品数据、竞品信息和关键词策略，规划7条卖点方向...</p>
-                </div>
+                <GeneratingProgress />
               )}
 
               {/* Phase: Confirm/Edit Cores */}

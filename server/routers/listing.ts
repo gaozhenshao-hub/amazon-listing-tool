@@ -1685,6 +1685,7 @@ export const listingRouter = router({
           { role: "user", content: `Based on the following product data, generate 7 core selling point themes for Amazon bullet points.\n\n${context}` },
         ],
         response_format: { type: "json_object" },
+        max_tokens: 4096,
       });
 
       const rawContent = typeof response.choices[0].message.content === "string"

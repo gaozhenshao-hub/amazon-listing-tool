@@ -21,8 +21,10 @@ async function rawExecute(sql: string, params: any[] = []): Promise<any[]> {
   const drizzle = await getDb();
   if (!drizzle) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
   const pool = (drizzle as any).$client as Pool;
-  const [rows] = await pool.execute(sql, params);
-  return rows as any[];
+  const result = await pool.execute(sql, params);
+  // mysql2 returns [rows, fields]; handle both array and non-array result
+  const rows = Array.isArray(result) ? result[0] : result;
+  return Array.isArray(rows) ? rows as any[] : [];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
