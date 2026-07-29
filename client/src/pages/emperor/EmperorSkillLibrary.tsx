@@ -394,7 +394,7 @@ function SkillFormDialog({
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function EmperorSkillLibrary() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -415,8 +415,8 @@ export default function EmperorSkillLibrary() {
 
   // Fetch skills
   const { data: skillsData, isLoading: skillsLoading } = trpc.emperor.skills.list.useQuery({
-    category: selectedCategory === "all" ? "" : (selectedCategory || ""),
-    search: searchQuery || "",
+    category: selectedCategory === "all" ? undefined : (selectedCategory || undefined),
+    search: searchQuery || undefined,
     page: 1,
     pageSize: 500,
   });

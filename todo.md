@@ -196,3 +196,15 @@
 - [x] Phase 2: 模型路由完整 CRUD（新增/编辑/删除/测试连接/设置默认）+ MCP 连接器完整 CRUD（cc-haha 风格）
 - [x] Phase 3: Agent 编排完整 CRUD（新增/编辑/删除/步骤配置/运行）+ 定时任务完整 CRUD（cc-haha 风格）
 - [x] Phase 4: 记忆/知识库模块（cc-haha MemorySettings 风格）+ Token 用量图表 + Trace 运行历史详情
+
+## 皇帝 AI 能力中台全面修复（2026-07-29）
+
+- [x] 修复 EmperorSkillLibrary isAdmin 判断（兼容 super_admin）
+- [x] 修复 skills.list 空字符串过滤问题（undefined 代替 ""）
+- [x] 修复 EmperorMCP 完整 CRUD（新建/编辑/删除/启用切换）
+- [x] 修复 EmperorModels 完整 CRUD（新建/编辑/删除/测试连接）
+- [x] 修复 EmperorAgents 完整 CRUD + DAG 可视化编辑器
+- [x] 修复 EmperorUsage Token 用量图表数据结构
+- [x] 修复 EmperorTrace 运行历史详情（input/output/元数据三 Tab）
+- [x] 修复定时任务路由路径（/emperor/schedules → /emperor/scheduled）
+- [x] 修复卖点精雕"生成结果格式异常"（后端 JSON 解析容错 + 前端字段兼容）
