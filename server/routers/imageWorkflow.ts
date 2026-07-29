@@ -250,9 +250,23 @@ async function getKBReference(category: string, userId: number): Promise<string>
 
 // ─── Helper: Parse LLM JSON response ─────────────────────
 function parseLLMJson(response: any): any {
-  const content = typeof response.choices[0].message.content === "string"
+  let content = typeof response.choices[0].message.content === "string"
     ? response.choices[0].message.content
     : JSON.stringify(response.choices[0].message.content);
+  // Strip markdown code blocks (```json ... ``` or ``` ... ```)
+  const mdMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (mdMatch) content = mdMatch[1].trim();
+  // Find first { or [ and last } or ] to extract JSON
+  const firstBrace = content.indexOf('{');
+  const firstBracket = content.indexOf('[');
+  let start = -1;
+  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) start = firstBrace;
+  else if (firstBracket !== -1) start = firstBracket;
+  if (start > 0) content = content.slice(start);
+  const lastBrace = content.lastIndexOf('}');
+  const lastBracket = content.lastIndexOf(']');
+  const end = Math.max(lastBrace, lastBracket);
+  if (end !== -1 && end < content.length - 1) content = content.slice(0, end + 1);
   try {
     return JSON.parse(content);
   } catch {
