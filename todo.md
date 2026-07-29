@@ -175,3 +175,10 @@
 - [x] 清理：移除 generateStep3 中的 [Step3 DEBUG] console.log
 - [x] 数据清理：清除数据库中所有未确认的 step1/2/3 坏数据（step1AiResult LIKE '%"raw":"%'）
 - [x] 保存 Checkpoint 并发布
+
+## Step1/Step2 联动优化（2026-07-29）
+- [ ] Step1 dataSource 编辑态：在编辑模式为 coreSellingPoints/secondarySellingPoints 的 dataSource 字段增加下拉选择（竞品差评分析/竞品好评分析/关键词场景数据/产品画像/运营经验推断）
+- [ ] Step2 表达方式与 Step0 联动：当 session.step0AiResult 存在时，解析 differentiationOpportunities 和 sellingPointDistribution，在辅图表达方式选择器旁显示"参考竞品"提示（如"竞品高频使用场景暗示，建议尝试数据对比差异化"）
+
+- [x] Step1 dataSource 编辑态下拉选择（核心卖点+次要卖点均已实现，5个选项）
+- [x] Step2 表达方式选择器（8选项下拉）+ Step0 联动提示（辅图上方显示竞品高频表达方式和差异化机会）

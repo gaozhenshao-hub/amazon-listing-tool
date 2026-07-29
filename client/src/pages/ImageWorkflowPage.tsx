@@ -874,11 +874,33 @@ function Step1SellingPoints({
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 space-y-2">
                       <div>
-                        <label className="text-xs font-medium text-muted-foreground">卖点</label>
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-medium text-muted-foreground">卖点</label>
+                          {isConfirmed && sp.dataSource && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-600 border border-indigo-200">{sp.dataSource}</span>
+                          )}
+                        </div>
                         {isConfirmed ? (
                           <p className="text-sm font-medium">{sp.point}</p>
                         ) : (
                           <Input value={sp.point || ""} onChange={(e) => updateItem("coreSellingPoints", idx, "point", e.target.value)} className="h-8 text-sm" />
+                        )}
+                        {!isConfirmed && (
+                          <div className="mt-1">
+                            <label className="text-[10px] text-muted-foreground">数据来源</label>
+                            <select
+                              value={sp.dataSource || ""}
+                              onChange={(e) => updateItem("coreSellingPoints", idx, "dataSource", e.target.value)}
+                              className="w-full h-7 text-xs border rounded-md px-2 bg-background mt-0.5"
+                            >
+                              <option value="">请选择数据来源</option>
+                              <option value="来自竞品差评分析">来自竞品差评分析</option>
+                              <option value="来自竞品好评分析">来自竞品好评分析</option>
+                              <option value="来自关键词场景数据">来自关键词场景数据</option>
+                              <option value="来自产品画像">来自产品画像</option>
+                              <option value="来自运营经验推断">来自运营经验推断</option>
+                            </select>
+                          </div>
                         )}
                       </div>
                       <div>
@@ -947,15 +969,35 @@ function Step1SellingPoints({
                   <div className="flex-1 space-y-1">
                     {isConfirmed ? (
                       <>
-                        <p className="text-sm font-medium">{sp.point}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-medium">{sp.point}</p>
+                          {sp.dataSource && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-600 border border-indigo-200 shrink-0">{sp.dataSource}</span>
+                          )}
+                        </div>
                         <p className="text-xs text-muted-foreground">{sp.value}</p>
                         <p className="text-xs text-blue-600">建议表达: {sp.suggestedExpression}</p>
                       </>
                     ) : (
                       <>
                         <Input value={sp.point || ""} onChange={(e) => updateItem("secondarySellingPoints", idx, "point", e.target.value)} placeholder="卖点" className="h-7 text-sm" />
-                        <Input value={sp.value || ""} onChange={(e) => updateItem("secondarySellingPoints", idx, "value", e.target.value)} placeholder="附加价值" className="h-7 text-sm" />
+                        <Input value={sp.value || ""} onChange={(e) => updateItem("secondarySellingPoints", idx, "value", e.target.value)} placeholder="附加价値" className="h-7 text-sm" />
                         <Input value={sp.suggestedExpression || ""} onChange={(e) => updateItem("secondarySellingPoints", idx, "suggestedExpression", e.target.value)} placeholder="建议表达" className="h-7 text-sm" />
+                        <div>
+                          <label className="text-[10px] text-muted-foreground">数据来源</label>
+                          <select
+                            value={sp.dataSource || ""}
+                            onChange={(e) => updateItem("secondarySellingPoints", idx, "dataSource", e.target.value)}
+                            className="w-full h-7 text-xs border rounded-md px-2 bg-background mt-0.5"
+                          >
+                            <option value="">请选择数据来源</option>
+                            <option value="来自竞品差评分析">来自竞品差评分析</option>
+                            <option value="来自竞品好评分析">来自竞品好评分析</option>
+                            <option value="来自关键词场景数据">来自关键词场景数据</option>
+                            <option value="来自产品画像">来自产品画像</option>
+                            <option value="来自运营经验推断">来自运营经验推断</option>
+                          </select>
+                        </div>
                       </>
                     )}
                   </div>
@@ -1363,6 +1405,34 @@ function Step2ImageOutline({
             </CardContent>
           </Card>
 
+{/* Step0 竞品表达方式联动提示 */}
+          {(() => {
+            const step0Data = session?.step0AiResult ? (() => { try { return JSON.parse(session.step0AiResult); } catch { return null; } })() : null;
+            if (!step0Data) return null;
+            const highFreqMethods = step0Data.sellingPointDistribution
+              ?.filter((d: any) => d.frequency === '高')
+              ?.flatMap((d: any) => d.expressionMethods || [])
+              ?.filter((v: string, i: number, a: string[]) => a.indexOf(v) === i)
+              ?.slice(0, 3) || [];
+            const diffOpps = step0Data.differentiationOpportunities?.slice(0, 2) || [];
+            if (highFreqMethods.length === 0 && diffOpps.length === 0) return null;
+            return (
+              <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3 mb-2">
+                <p className="text-xs font-semibold text-amber-700 mb-1.5">✨ 竞品表达方式参考（来自 Step0 分析）</p>
+                {highFreqMethods.length > 0 && (
+                  <p className="text-xs text-amber-800 mb-1">
+                    竞品高频使用：{highFreqMethods.map((m: string, i: number) => (
+                      <span key={i} className="inline-block mx-1 px-1.5 py-0.5 rounded bg-amber-200 text-amber-800 text-[10px]">{m}</span>
+                    ))}
+                  </p>
+                )}
+                {diffOpps.length > 0 && (
+                  <p className="text-xs text-green-700">差异化机会：{diffOpps.join('、')}，建议尝试差异化表达方式</p>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Secondary Images */}
           {editData.secondaryImages?.map((img: any, idx: number) => (
             <Card key={idx}>
@@ -1377,7 +1447,18 @@ function Step2ImageOutline({
                   <>
                     <p className="text-sm"><strong>目的:</strong> {img.purpose}</p>
                     <p className="text-sm"><strong>内容:</strong> {img.contentBrief}</p>
-                    <p className="text-sm"><strong>表达类型:</strong> {img.expressionType}</p>
+                    <div className="flex items-center gap-2">
+                      <strong className="text-sm">表达方式:</strong>
+                      <Badge className={`text-xs ${
+                        img.expressionType === '直接展示' ? 'bg-blue-100 text-blue-700 border-blue-200' :
+                        img.expressionType === '场景暗示' ? 'bg-green-100 text-green-700 border-green-200' :
+                        img.expressionType === '数据对比' ? 'bg-purple-100 text-purple-700 border-purple-200' :
+                        img.expressionType === '原理展示' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                        img.expressionType === '用户获益' ? 'bg-teal-100 text-teal-700 border-teal-200' :
+                        img.expressionType === '解决痛点' ? 'bg-red-100 text-red-700 border-red-200' :
+                        'bg-gray-100 text-gray-700 border-gray-200'
+                      }`} variant="outline">{img.expressionType || '未设置'}</Badge>
+                    </div>
                     <p className="text-sm"><strong>呼应卖点:</strong> {img.sellingPointRefs?.join(", ")}</p>
                     <p className="text-sm text-muted-foreground"><strong>理由:</strong> {img.whyThisWay}</p>
                   </>
@@ -1385,7 +1466,40 @@ function Step2ImageOutline({
                   <>
                     <Input value={img.purpose || ""} onChange={(e) => updateSecondaryImage(idx, "purpose", e.target.value)} placeholder="图片目的" className="h-8 text-sm" />
                     <Textarea value={img.contentBrief || ""} onChange={(e) => updateSecondaryImage(idx, "contentBrief", e.target.value)} placeholder="内容简述" className="min-h-[50px] text-sm" />
-                    <Input value={img.expressionType || ""} onChange={(e) => updateSecondaryImage(idx, "expressionType", e.target.value)} placeholder="表达类型" className="h-8 text-sm" />
+                    {/* 表达方式下拉选择器 + Step0 联动提示 */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-medium text-muted-foreground">表达方式</label>
+                        {(() => {
+                          const step0Data = session?.step0AiResult ? (() => { try { return JSON.parse(session.step0AiResult); } catch { return null; } })() : null;
+                          if (!step0Data) return null;
+                          const highFreq = step0Data.sellingPointDistribution
+                            ?.filter((d: any) => d.frequency === '高')
+                            ?.flatMap((d: any) => d.expressionMethods || [])
+                            ?.filter((v: string, i: number, a: string[]) => a.indexOf(v) === i)
+                            ?.slice(0, 2) || [];
+                          if (highFreq.length === 0) return null;
+                          return (
+                            <span className="text-[10px] text-amber-600">竞品高频: {highFreq.join('/')}</span>
+                          );
+                        })()}
+                      </div>
+                      <select
+                        value={img.expressionType || ""}
+                        onChange={(e) => updateSecondaryImage(idx, "expressionType", e.target.value)}
+                        className="w-full h-8 text-sm border rounded-md px-2 bg-background"
+                      >
+                        <option value="">请选择表达方式</option>
+                        <option value="直接展示">直接展示 — 正面拍摄产品特征</option>
+                        <option value="场景暗示">场景暗示 — 通过使用场景传达价値</option>
+                        <option value="数据对比">数据对比 — 数据/图表/参数对比</option>
+                        <option value="原理展示">原理展示 — 展示产品工作原理</option>
+                        <option value="用户获益">用户获益 — 展示用户得到的好处</option>
+                        <option value="解决痛点">解决痛点 — 展示如何解决痛点</option>
+                        <option value="情感共鸣">情感共鸣 — 情感化场景建立连接</option>
+                        <option value="对比展示">对比展示 — 与竞品或使用前后对比</option>
+                      </select>
+                    </div>
                     <Input value={img.sellingPointRefs?.join(", ") || ""} onChange={(e) => updateSecondaryImage(idx, "sellingPointRefs", e.target.value.split(", "))} placeholder="呼应卖点（逗号分隔）" className="h-8 text-sm" />
                     <Textarea value={img.whyThisWay || ""} onChange={(e) => updateSecondaryImage(idx, "whyThisWay", e.target.value)} placeholder="为什么这样安排" className="min-h-[50px] text-sm" />
                   </>
