@@ -5,6 +5,7 @@ import { publicProcedure, router } from "./_core/trpc";
 import { projectRouter } from "./routers/project";
 import { analysisRouter } from "./routers/analysis";
 import { listingRouter } from "./routers/listing";
+import { listingSkillRouter } from "./routers/listingSkill";
 import { projectFileRouter } from "./routers/projectFile";
 import { reportRouter } from "./routers/report";
 import { scoringRouter } from "./routers/scoring";
@@ -107,6 +108,7 @@ export const appRouter = router({
   project: projectRouter,
   analysis: analysisRouter,
   listing: listingRouter,
+  listingSkill: listingSkillRouter,
   projectFile: projectFileRouter,
   report: reportRouter,
   scoring: scoringRouter,
