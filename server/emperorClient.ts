@@ -9,7 +9,7 @@
 const EMPEROR_BASE_URL = process.env.EMPEROR_BASE_URL ?? "http://104.196.50.157:4800";
 const EMPEROR_API_KEY = process.env.EMPEROR_API_KEY ?? "dev-service-token";
 const EMPEROR_PROJECT_ID = process.env.EMPEROR_PROJECT_ID ?? "proj_001";
-const EMPEROR_TIMEOUT_MS = 150_000; // 150 秒（Emperor 内部 120s + 30s 缓冲）
+const EMPEROR_TIMEOUT_MS = 3_000; // 3 秒快速失败（Emperor 服务已停止，立即降级到内置 LLM）
 
 export interface SkillRunResult<T = unknown> {
   success: boolean;

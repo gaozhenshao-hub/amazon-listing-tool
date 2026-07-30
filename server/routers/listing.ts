@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "../_core/llm";
 import {
   generateTitleViaEmperor,
@@ -940,10 +941,11 @@ export const listingRouter = router({
           { role: "user", content: `Generate optimized Amazon titles in TWO-STAGE format for this product. Layer 1 (title) MUST be ≤75 characters. Layer 2 (itemHighlights) MUST be ≤125 characters. Count every character precisely before outputting.\n\n${context}` },
         ],
         response_format: { type: "json_object" },
+        max_tokens: 4096,
       });
             const content = (response.choices?.[0]?.message?.content ?? "") as string;
       let parsed = safeParseJSON<any>(content);
-      if ((parsed as any).raw) return { raw: content };
+      if ((parsed as any).raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI 返回格式异常，请重试" });
       let validation = validateTitles(parsed);
       if (!validation.valid) {
         for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
@@ -991,7 +993,7 @@ export const listingRouter = router({
       });
             const content = (response.choices?.[0]?.message?.content ?? "") as string;
       let parsed = safeParseJSON<any>(content);
-      if ((parsed as any).raw) return { raw: content };
+      if ((parsed as any).raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI 返回格式异常，请重试" });
       let validation = validateBullets(parsed);
       if (!validation.valid) {
         for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
@@ -1028,9 +1030,12 @@ export const listingRouter = router({
           { role: "user", content: `Generate an optimized Amazon product description:\n\n${context}` },
         ],
         response_format: { type: "json_object" },
+        max_tokens: 4096,
       });
             const content = (response.choices?.[0]?.message?.content ?? "") as string;
-      return safeParseJSON(content);
+      const descParsed = safeParseJSON<any>(content);
+      if ((descParsed as any).raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI 返回格式异常，请重试" });
+      return descParsed;
     }),
   // Generate search terms
   generateSearchTerms: protectedProcedure
@@ -1069,9 +1074,12 @@ export const listingRouter = router({
           { role: "user", content: `Generate backend search terms for this product:\n\n${context}${extraContext}` },
         ],
         response_format: { type: "json_object" },
+        max_tokens: 2048,
       });
             const content = (response.choices?.[0]?.message?.content ?? "") as string;
-      return safeParseJSON(content);
+      const stParsed = safeParseJSON<any>(content);
+      if ((stParsed as any).raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI 返回格式异常，请重试" });
+      return stParsed;
     }),
   // Generate image advice
   generateImageAdvice: protectedProcedure
@@ -1686,7 +1694,7 @@ export const listingRouter = router({
 
       if (!rawContent) {
         console.error("[generateSellingPointsCores] LLM returned empty/undefined content");
-        return { raw: "", parseError: "LLM returned empty content" };
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI 返回内容为空，请重试" });
       }
 
       // Strip thinking tags (Gemini may include <thinking>...</thinking> blocks)
@@ -1722,7 +1730,7 @@ export const listingRouter = router({
         return parsed;
       } catch (e) {
         console.error("[generateSellingPointsCores] JSON.parse failed:", String(e), "\nRaw (first 500 chars):", rawContent.slice(0, 500));
-        return { raw: rawContent, parseError: String(e) };
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI 返回格式异常，请重试" });
       }
     }),
 
@@ -1811,6 +1819,7 @@ export const listingRouter = router({
       }
 
       const response = await invokeLLM({
+        max_tokens: 3072,
         messages: [
           { role: "system", content: SINGLE_BULLET_PROMPT },
           { role: "user", content: `Generate ONE optimized Amazon bullet point for selling point #${sp.index}.\n\nCRITICAL: The bullet (subtitle + space + fullText) MUST be 200-280 characters. Count every character precisely before outputting.\n\n${context}${spInstruction}` },
@@ -1818,11 +1827,9 @@ export const listingRouter = router({
         response_format: { type: "json_object" },
       });
 
-      const content = (response.choices?.[0]?.message?.content ?? "") as string;
-
+            const content = (response.choices?.[0]?.message?.content ?? "") as string;
       let parsed = safeParseJSON<any>(content);
-      if ((parsed as any).raw) return { raw: content };
-
+      if ((parsed as any).raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI 返回格式异常，请重试" });
       // Validate character count
       if (parsed.subtitle && parsed.fullText) {
         const combined = `${parsed.subtitle} ${parsed.fullText}`;
@@ -2155,10 +2162,11 @@ Please expand this keyword/theme into a complete selling point core with FABE di
             { role: "user", content: `Generate Q&A pairs for this Amazon product listing:\n\n${context}` },
           ],
           response_format: { type: "json_object" },
+          max_tokens: 4096,
         });
         const content = (response.choices?.[0]?.message?.content ?? "") as string;
         const qaParsed = safeParseJSON<any>(content);
-        if ((qaParsed as any).raw) return { raw: content };
+        if ((qaParsed as any).raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI 返回格式异常，请重试" });
         parsed = qaParsed;
       }
 
