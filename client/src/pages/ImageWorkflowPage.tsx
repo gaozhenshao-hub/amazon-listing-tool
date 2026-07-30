@@ -3393,7 +3393,35 @@ function Step5FinalSuggestions({
   };
 
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${enData && !isConfirmed && !generateMutation.isPending ? "pb-24" : ""}`}>
+      {enData && !isConfirmed && !generateMutation.isPending && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <div className="mx-auto flex max-w-5xl flex-col gap-3 px-6 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2 text-sm">
+              <Lock className="h-4 w-4 text-emerald-600" />
+              <div>
+                <p className="font-medium">最终图片建议待确认</p>
+                <p className="text-xs text-muted-foreground">确认后将锁定 Step 5，并完成智能图片建议工作流</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" onClick={handleGenerate} disabled={generateMutation.isPending}>
+                <RotateCcw className="w-4 h-4 mr-2" /> 重新生成
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportHtml}>
+                <Download className="w-4 h-4 mr-2" /> 导出HTML
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportPdf}>
+                <FileText className="w-4 h-4 mr-2" /> 导出PDF
+              </Button>
+              <Button size="sm" onClick={handleConfirm} disabled={confirmMutation.isPending}>
+                {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
+                确认锁定
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -3424,7 +3452,7 @@ function Step5FinalSuggestions({
                   </Button>
                   <Button onClick={handleConfirm} disabled={confirmMutation.isPending}>
                     {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
-                    确认建议
+                    确认锁定
                   </Button>
                 </>
               )}
@@ -3997,6 +4025,26 @@ function Step5FinalSuggestions({
                 );
               })}
             </>
+          )}
+
+          {!isConfirmed && (
+            <Card className="border-emerald-200 bg-emerald-50/40">
+              <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 rounded-full bg-emerald-100 p-2 text-emerald-700">
+                    <Lock className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-900">确认最终图片建议</p>
+                    <p className="text-xs text-emerald-700/80">请检查主图、辅图、A+模块和美工成品图，确认无误后锁定本步骤。</p>
+                  </div>
+                </div>
+                <Button onClick={handleConfirm} disabled={confirmMutation.isPending} className="shrink-0 bg-emerald-600 hover:bg-emerald-700">
+                  {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
+                  确认锁定
+                </Button>
+              </CardContent>
+            </Card>
           )}
         </>
       )}
