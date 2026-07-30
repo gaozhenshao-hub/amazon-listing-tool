@@ -308,13 +308,28 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     output_schema,
   });
 
+  // json_object mode is not supported by the current Forge API (returns empty content).
+  // Convert to plain text mode with JSON instruction injected into system prompt.
+  let isJsonObjectFallback = false;
   if (normalizedResponseFormat) {
-    payload.response_format = normalizedResponseFormat;
-    // Gemini thinking mode is incompatible with json_object / json_schema response_format.
-    // When structured JSON output is requested, disable thinking to avoid parse errors.
-    if (normalizedResponseFormat.type === "json_object" || normalizedResponseFormat.type === "json_schema") {
+    if (normalizedResponseFormat.type === "json_object") {
+      // Do NOT send response_format; instead inject JSON instruction into messages
+      isJsonObjectFallback = true;
+      const msgs = payload.messages as any[];
+      if (msgs.length > 0 && msgs[0].role === "system") {
+        const sysContent = typeof msgs[0].content === "string" ? msgs[0].content : "";
+        if (!sysContent.includes("valid JSON") && !sysContent.includes("JSON only")) {
+          msgs[0].content = sysContent + "\n\nIMPORTANT: You MUST respond with valid JSON only. No markdown code fences, no explanation, no extra text. Output raw JSON directly.";
+        }
+      } else {
+        msgs.unshift({ role: "system", content: "You MUST respond with valid JSON only. No markdown code fences, no explanation, no extra text. Output raw JSON directly." });
+      }
+      payload.thinking = { budget_tokens: 128 };
+    } else if (normalizedResponseFormat.type === "json_schema") {
+      payload.response_format = normalizedResponseFormat;
       payload.thinking = { budget_tokens: 0 };
     } else {
+      payload.response_format = normalizedResponseFormat;
       payload.thinking = { budget_tokens: 128 };
     }
   } else {
@@ -337,5 +352,16 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     );
   }
 
-  return (await response.json()) as InvokeResult;
+  const result = (await response.json()) as InvokeResult;
+
+  // Post-process: strip markdown code fences from json_object fallback responses
+  if (isJsonObjectFallback && result.choices?.[0]?.message?.content) {
+    let content = result.choices[0].message.content as string;
+    if (typeof content === "string") {
+      content = content.replace(/^```(?:json)?\s*/im, "").replace(/\s*```\s*$/im, "").trim();
+      (result.choices[0].message as any).content = content;
+    }
+  }
+
+  return result;
 }

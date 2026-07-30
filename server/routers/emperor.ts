@@ -7,23 +7,37 @@ import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { invokeLLM } from "../_core/llm";
 import { TRPCError } from "@trpc/server";
-import type { Pool } from "mysql2/promise";
+import { sql as drizzleSql } from "drizzle-orm";
 
 function generateRunId(): string {
   return `run_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Raw SQL helper (uses drizzle $client which is mysql2 Pool)
+// Raw SQL helper (uses drizzle db.execute with sql template)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function rawExecute(sql: string, params: any[] = []): Promise<any[]> {
-  const drizzle = await getDb();
-  if (!drizzle) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
-  const pool = (drizzle as any).$client as Pool;
-  const result = await pool.execute(sql, params);
-  // mysql2 returns [rows, fields]; handle both array and non-array result
-  const rows = Array.isArray(result) ? result[0] : result;
+async function rawExecute(sqlStr: string, params: any[] = []): Promise<any[]> {
+  const db = await getDb();
+  if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
+  let result: any;
+  if (params.length > 0) {
+    // Build parameterized query using drizzle sql template
+    const parts = sqlStr.split('?');
+    const chunks: any[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      chunks.push(drizzleSql.raw(parts[i]));
+      if (i < params.length) {
+        chunks.push(drizzleSql`${params[i]}`);
+      }
+    }
+    const combined = drizzleSql.join(chunks, drizzleSql.raw(''));
+    result = await db.execute(combined);
+  } else {
+    result = await db.execute(drizzleSql.raw(sqlStr));
+  }
+  // db.execute returns [[rows], fields] or just rows array
+  const rows = Array.isArray(result) ? (Array.isArray(result[0]) ? result[0] : result) : [];
   return Array.isArray(rows) ? rows as any[] : [];
 }
 

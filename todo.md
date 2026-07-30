@@ -260,3 +260,6 @@
 - [x] 修复 devAnalysis.ts import 语句断裂问题
 - [x] 修复 kbBot.ts performKbSearch 函数结构问题
 - [x] 服务器正常启动（Server running on http://localhost:3000/）
+- [x] 修复 invokeLLM json_object 模式返回空内容的问题（Forge API 不支持 json_object，改为纯文本模式 + JSON 指令注入 + 自动清理 markdown code fence）
+- [x] 修复 emperor.ts rawExecute 500 错误：从 $client (mysql2 Pool) 改为 drizzle db.execute(sql template)，解决 agents.list 等接口 500 错误
+- [x] 端到端验证：generateSellingPointsCores（7 个卖点，解析成功）+ generateTitle（3 个标题，解析成功）
