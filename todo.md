@@ -270,7 +270,7 @@
 - [x] 设置 DeepSeek V4 Pro 为默认模型
 - [x] 端到端测试验证（deepseek-v4-flash + claude-sonnet-5 均成功）
 - [x] 为全部 110 个 Skill 配置最适合的高性能模型（按任务类型分配）
-- [ ] 创建 server/services/emperorSkillRunner.ts 统一 Skill 调用层
+- [x] 创建 server/services/emperorSkillRunner.ts 统一 Skill 调用层（单元测试 4/4 通过 + 真实 LLM 流程测试通过）
 - [ ] 升级 renderTemplate 支持 Handlebars 条件语法
 - [ ] 迁移 generateSellingPointsCores → listing.sellingpoints.generate
 - [ ] 迁移 generateTitle → listing.title.generate
