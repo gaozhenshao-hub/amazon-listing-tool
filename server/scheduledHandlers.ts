@@ -101,14 +101,8 @@ export async function weeklyReportHandler(req: Request, res: Response) {
     // 4. Use AI to generate insights
       // [Emperor] 优先调用 Emperor Skill: ops.profit.analysis
 
-    try {
 
 
-      if (_emperorRes.success && _emperorRes.output) {
-
-        // Emperor 成功，结果已记录
-
-      }
 
 
     const llmResponse = await invokeLLM({
@@ -154,7 +148,7 @@ export async function weeklyReportHandler(req: Request, res: Response) {
       context: { url: req.url, taskUid },
       timestamp: new Date().toISOString(),
     });
-  }
+}
 }
 
 /**

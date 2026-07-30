@@ -42,14 +42,8 @@ ${products.slice(0, 10).map(p => `${p.asin} | ${p.title} | $${p.price} | ${p.rat
 
       // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const response = await invokeLLM({

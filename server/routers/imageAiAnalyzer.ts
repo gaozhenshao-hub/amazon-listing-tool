@@ -170,9 +170,6 @@ export async function analyzeImage(
 ): Promise<ImageAnalysisResult> {
   const prompt = getPromptForImageType(imageType);
 
-  // Emperor Skill 优先 - 图片分析
-  try {
-    if (emperorRes.success && emperorRes.output) return emperorRes.output as unknown as ImageAnalysisResult;
 
   const response = await invokeLLM({
     messages: [

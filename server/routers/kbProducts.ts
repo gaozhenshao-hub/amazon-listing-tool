@@ -55,14 +55,8 @@ export const kbProductsRouter = router({
           // AI analysis
       // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
 
-          try {
 
 
-            if (_emperorRes.success && _emperorRes.output) {
-
-              // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-            }
 
 
           const response = await invokeLLM({
@@ -108,7 +102,7 @@ export const kbProductsRouter = router({
         } catch (err: any) {
           console.error("[KB Products] Import failed:", err.message);
           await kbDb.updateProductInnovation(Number(id), ctx.user.id, { status: "archived" });
-        }
+              }
       })();
       return { id: Number(id), asin };
     }),
@@ -147,14 +141,8 @@ export const kbProductsRouter = router({
             });
       // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
 
-            try {
 
 
-              if (_emperorRes.success && _emperorRes.output) {
-
-                // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-              }
 
 
             const response = await invokeLLM({
@@ -172,7 +160,7 @@ export const kbProductsRouter = router({
           } catch (err: any) {
             console.error(`[KB Products] Batch import failed for ${asin}:`, err.message);
             await kbDb.updateProductInnovation(Number(id), ctx.user.id, { status: "archived" });
-          }
+                }
         })();
       }
       return { imported: results.length, items: results };
@@ -207,14 +195,8 @@ export const kbProductsRouter = router({
           });
       // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
 
-          try {
 
 
-            if (_emperorRes.success && _emperorRes.output) {
-
-              // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-            }
 
 
           const response = await invokeLLM({
@@ -232,7 +214,7 @@ export const kbProductsRouter = router({
         } catch (err: any) {
           console.error("[KB Products] Link import failed:", err.message);
           await kbDb.updateProductInnovation(Number(id), ctx.user.id, { status: "archived" });
-        }
+              }
       })();
       return { id: Number(id), asin };
     }),

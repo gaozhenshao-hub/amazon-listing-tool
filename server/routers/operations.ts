@@ -518,9 +518,6 @@ ${JSON.stringify(input.skuData, null, 2)}
 
 请以JSON数组格式返回，每个元素对应一个SKU。`;
 
-      // Emperor Skill 优先 - 运营分析
-      try {
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
 
       const response = await invokeLLM({
         messages: [
@@ -742,9 +739,6 @@ ${activeSkus.map((s, i) => `
 - reasoning: "分析说明（100字以内）"
 - priority_score: 1-10优先级评分`;
 
-      // Emperor Skill 优先 - 运营分析
-      try {
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
 
       const response = await invokeLLM({
         messages: [
@@ -1015,9 +1009,6 @@ ${activeSkus.map((s, i) => `
 3. 预测未来30天的利润走势（保守/正常/乐观三个场景）。`,
       };
 
-      // Emperor Skill 优先 - 运营分析
-      try {
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
 
       const response = await invokeLLM({
         messages: [
@@ -1677,9 +1668,6 @@ ${activeSkus.map((s, i) => `
       searchTerms: z.array(z.record(z.string(), z.unknown())).max(100),
     }))
     .mutation(async ({ input }) => {
-      // Emperor Skill 优先 - 运营分析
-      try {
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
 
       const response = await invokeLLM({
         messages: [
@@ -1973,9 +1961,6 @@ ${JSON.stringify(input.searchTerms.map(t => ({
         threat: "识别竞品的威胁行为（如降价、新品上架、评论增长异常等）。",
       };
 
-      // Emperor Skill 优先 - 运营分析
-      try {
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
 
       const response = await invokeLLM({
         messages: [
@@ -2165,9 +2150,6 @@ ${JSON.stringify(input.searchTerms.map(t => ({
     .input(z.object({ terms: z.array(z.string()).max(50) }))
     .mutation(async ({ input }) => {
       try {
-      // Emperor Skill 优先 - 运营分析
-      try {
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
 
         const response = await invokeLLM({
           messages: [
@@ -2208,7 +2190,7 @@ ${JSON.stringify(input.searchTerms.map(t => ({
       } catch (err: any) {
         console.error(`[TranslateSearchTerms] Error: ${err.message}`);
         return {};
-      }
+            }
     }),
 
   // ============== ASIN Tag Management ==============

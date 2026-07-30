@@ -66,14 +66,8 @@ export const kbVideosRouter = router({
           // AI analysis
       // [Emperor] 优先调用 Emperor Skill: video.competitor.analysis
 
-          try {
 
 
-            if (_emperorRes.success && _emperorRes.output) {
-
-              // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-            }
 
 
           const response = await invokeLLM({
@@ -111,7 +105,7 @@ export const kbVideosRouter = router({
         } catch (err: any) {
           console.error("[KB Videos] Import failed:", err.message);
           await kbDb.updateVideo(Number(id), ctx.user.id, { status: "archived" });
-        }
+              }
       })();
       return { id: Number(id) };
     }),
@@ -150,14 +144,8 @@ export const kbVideosRouter = router({
             await kbDb.updateVideo(Number(id), ctx.user.id, { transcriptText, status: "analyzing" });
       // [Emperor] 优先调用 Emperor Skill: video.competitor.analysis
 
-            try {
 
 
-              if (_emperorRes.success && _emperorRes.output) {
-
-                // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-              }
 
 
             const response = await invokeLLM({
@@ -176,7 +164,7 @@ export const kbVideosRouter = router({
           } catch (err: any) {
             console.error(`[KB Videos] Batch import failed:`, err.message);
             await kbDb.updateVideo(Number(id), ctx.user.id, { status: "archived" });
-          }
+                }
         })();
       }
       return { imported: results.length, items: results };
@@ -218,14 +206,8 @@ export const kbVideosRouter = router({
             await kbDb.updateVideo(Number(id), ctx.user.id, { transcriptText, status: "analyzing" });
       // [Emperor] 优先调用 Emperor Skill: video.competitor.analysis
 
-            try {
 
 
-              if (_emperorRes.success && _emperorRes.output) {
-
-                // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-              }
 
 
             const response = await invokeLLM({
@@ -244,7 +226,7 @@ export const kbVideosRouter = router({
           } catch (err: any) {
             console.error(`[KB Videos] Batch ASIN import failed for ${asin}:`, err.message);
             await kbDb.updateVideo(Number(id), ctx.user.id, { status: "archived" });
-          }
+                }
         })();
       }
       return { imported: results.length, items: results };
@@ -275,14 +257,8 @@ export const kbVideosRouter = router({
           await kbDb.updateVideo(Number(id), ctx.user.id, { transcriptText, status: "analyzing" });
       // [Emperor] 优先调用 Emperor Skill: video.competitor.analysis
 
-          try {
 
 
-            if (_emperorRes.success && _emperorRes.output) {
-
-              // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-            }
 
 
           const response = await invokeLLM({
@@ -301,7 +277,7 @@ export const kbVideosRouter = router({
         } catch (err: any) {
           console.error("[KB Videos] ASIN import failed:", err.message);
           await kbDb.updateVideo(Number(id), ctx.user.id, { status: "archived" });
-        }
+              }
       })();
       return { id: Number(id), asin };
     }),

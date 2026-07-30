@@ -72,14 +72,8 @@ function parseCsvContent(content: string): { headers: string[]; rows: Record<str
 async function analyzeRufusAttributes(rawContent: string): Promise<any> {
       // [Emperor] 优先调用 Emperor Skill: analysis.comparison.summary
 
-  try {
 
 
-    if (_emperorRes.success && _emperorRes.output) {
-
-      // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-    }
 
 
   const response = await invokeLLM({
@@ -108,14 +102,8 @@ async function analyzeRufusAttributes(rawContent: string): Promise<any> {
 async function analyzeCompetitorListings(rawContent: string): Promise<any> {
       // [Emperor] 优先调用 Emperor Skill: analysis.comparison.summary
 
-  try {
 
 
-    if (_emperorRes.success && _emperorRes.output) {
-
-      // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-    }
 
 
   const response = await invokeLLM({
@@ -156,14 +144,8 @@ async function analyzeCosmoScenes(parsedData: any): Promise<any> {
 
       // [Emperor] 优先调用 Emperor Skill: analysis.comparison.summary
 
-  try {
 
 
-    if (_emperorRes.success && _emperorRes.output) {
-
-      // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-    }
 
 
   const response = await invokeLLM({
@@ -203,14 +185,8 @@ async function analyzeA9Keywords(parsedData: any): Promise<any> {
 
       // [Emperor] 优先调用 Emperor Skill: analysis.comparison.summary
 
-  try {
 
 
-    if (_emperorRes.success && _emperorRes.output) {
-
-      // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-    }
 
 
   const response = await invokeLLM({
@@ -234,8 +210,8 @@ async function analyzeA9Keywords(parsedData: any): Promise<any> {
   } catch {
     return { raw: content };
   }
-}
 
+}
 // ─── Router ──────────────────────────────────────────────────────
 
 export const projectFileRouter = router({

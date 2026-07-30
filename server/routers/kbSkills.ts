@@ -109,14 +109,8 @@ export const kbSkillsRouter = router({
             // Use vision AI for image
       // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
 
-            try {
 
 
-              if (_emperorRes.success && _emperorRes.output) {
-
-                // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-              }
 
 
             const response = await invokeLLM({
@@ -137,14 +131,8 @@ export const kbSkillsRouter = router({
           // AI summarize
       // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
 
-          try {
 
 
-            if (_emperorRes.success && _emperorRes.output) {
-
-              // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-            }
 
 
           const response = await invokeLLM({
@@ -178,7 +166,7 @@ export const kbSkillsRouter = router({
         } catch (err: any) {
           console.error("[KB Skills] File processing failed:", err.message);
           await kbDb.updateOperationSkill(Number(id), ctx.user.id, { status: "archived" });
-        }
+              }
       })();
       return { id: Number(id) };
     }),
@@ -218,14 +206,8 @@ export const kbSkillsRouter = router({
             await kbDb.updateOperationSkill(Number(id), ctx.user.id, { extractedContent, status: "analyzing" });
       // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
 
-            try {
 
 
-              if (_emperorRes.success && _emperorRes.output) {
-
-                // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-              }
 
 
             const response = await invokeLLM({
@@ -245,7 +227,7 @@ export const kbSkillsRouter = router({
           } catch (err: any) {
             console.error(`[KB Skills] Batch file processing failed for ${file.fileName}:`, err.message);
             await kbDb.updateOperationSkill(Number(id), ctx.user.id, { status: "archived" });
-          }
+                }
         })();
       }
       return { imported: results.length, items: results };
@@ -339,14 +321,8 @@ export const kbSkillsRouter = router({
 
       // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
 
-          try {
 
 
-            if (_emperorRes.success && _emperorRes.output) {
-
-              // Emperor 成功，结果已记录
-
-            }
 
 
           const aiResponse = await invokeLLM({
@@ -367,7 +343,7 @@ export const kbSkillsRouter = router({
         } catch (err: any) {
           console.error("[KB Skills] URL import failed:", err.message);
           await kbDb.updateOperationSkill(Number(id), ctx.user.id, { status: "archived" });
-        }
+              }
       })();
       return { id: Number(id) };
     }),
@@ -451,14 +427,8 @@ export const kbSkillsRouter = router({
         try {
       // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
 
-          try {
 
 
-            if (_emperorRes.success && _emperorRes.output) {
-
-              // Emperor 成功，结果已记录
-
-            }
 
 
           const aiResponse = await invokeLLM({
@@ -480,7 +450,7 @@ export const kbSkillsRouter = router({
         } catch (err: any) {
           console.error("[KB Skills] Re-analysis after image merge failed:", err.message);
           await kbDb.updateOperationSkill(input.id, ctx.user.id, { status: "pending_review" });
-        }
+              }
       })();
 
       return {
@@ -550,14 +520,8 @@ export const kbSkillsRouter = router({
         try {
       // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
 
-          try {
 
 
-            if (_emperorRes.success && _emperorRes.output) {
-
-              // Emperor 成功，结果已记录
-
-            }
 
 
           const aiResponse = await invokeLLM({
@@ -579,7 +543,7 @@ export const kbSkillsRouter = router({
         } catch (err: any) {
           console.error("[KB Skills] Re-analysis after image enrichment failed:", err.message);
           await kbDb.updateOperationSkill(input.id, ctx.user.id, { status: "pending_review" });
-        }
+              }
       })();
 
       return {
@@ -602,14 +566,8 @@ export const kbSkillsRouter = router({
         try {
       // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
 
-          try {
 
 
-            if (_emperorRes.success && _emperorRes.output) {
-
-              // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-            }
 
 
           const response = await invokeLLM({
@@ -629,7 +587,7 @@ export const kbSkillsRouter = router({
         } catch (err: any) {
           console.error("[KB Skills] Manual entry analysis failed:", err.message);
           await kbDb.updateOperationSkill(Number(id), ctx.user.id, { status: "archived" });
-        }
+              }
       })();
       return { id: Number(id) };
     }),
@@ -730,14 +688,8 @@ export const kbSkillsRouter = router({
 
       // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
 
-          try {
 
 
-            if (_emperorRes.success && _emperorRes.output) {
-
-              // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-            }
 
 
           const response = await invokeLLM({

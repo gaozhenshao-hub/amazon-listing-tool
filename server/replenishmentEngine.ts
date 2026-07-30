@@ -351,14 +351,8 @@ ${historicalLeadTimesStr}
   try {
       // [Emperor] 优先调用 Emperor Skill: ops.inventory.analysis
 
-    try {
 
 
-      if (_emperorRes.success && _emperorRes.output) {
-
-        // Emperor 成功，结果已记录
-
-      }
 
 
     const response = await invokeLLM({

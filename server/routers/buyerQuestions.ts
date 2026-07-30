@@ -158,14 +158,8 @@ ${input.searchTerms.slice(0, 200).join("\n")}
 
       // [Emperor] 优先调用 Emperor Skill: analysis.rufus.attribute
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const response = await invokeLLM({
@@ -251,14 +245,8 @@ ${activeQuestions.map((q, i) => `${i + 1}. ${q.question}`).join("\n")}
 
       // [Emperor] 优先调用 Emperor Skill: analysis.rufus.attribute
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const response = await invokeLLM({

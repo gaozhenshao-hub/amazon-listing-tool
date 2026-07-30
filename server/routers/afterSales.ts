@@ -89,14 +89,8 @@ export const afterSalesRouter = router({
 
       // [Emperor] 优先调用 Emperor Skill: aftersales.service.briefing
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const resp = await invokeLLM({
@@ -184,14 +178,8 @@ export const afterSalesRouter = router({
 
       // [Emperor] 优先调用 Emperor Skill: aftersales.service.briefing
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const resp = await invokeLLM({
@@ -379,14 +367,8 @@ ${input.voiceOfBuyerData ? JSON.stringify(input.voiceOfBuyerData, null, 2) : '�
 
       // [Emperor] 优先调用 Emperor Skill: aftersales.service.briefing
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const resp = await invokeLLM({
@@ -486,14 +468,8 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
 
       // [Emperor] 优先调用 Emperor Skill: aftersales.service.briefing
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const resp = await invokeLLM({
@@ -664,14 +640,8 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
 
       // [Emperor] 优先调用 Emperor Skill: aftersales.service.briefing
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const resp = await invokeLLM({

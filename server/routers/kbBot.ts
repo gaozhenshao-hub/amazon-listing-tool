@@ -215,14 +215,8 @@ async function performKbSearch(
     const l1Prompt = formatForPrompt(l1Items, "L1");
       // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
 
-    try {
 
 
-      if (_emperorRes.success && _emperorRes.output) {
-
-        // Emperor 成功，结果已记录
-
-      }
 
 
     const selectionResponse = await invokeLLM({
@@ -284,8 +278,8 @@ ${l1Prompt}`,
     }
 
     totalTokensUsed += selectionResponse.usage?.total_tokens ?? 500;
-  }
 
+  }
   if (selectedL1Ids.length === 0) {
     return {
       content: "抱歉，知识库中暂未找到与您问题高度相关的内容。您可以尝试更具体的描述。",
@@ -317,14 +311,8 @@ ${l1Prompt}`,
     const l2Prompt = formatForPrompt(l2Items, "L2");
       // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
 
-    try {
 
 
-      if (_emperorRes.success && _emperorRes.output) {
-
-        // Emperor 成功，结果已记录
-
-      }
 
 
     const l2SelectionResponse = await invokeLLM({
@@ -380,8 +368,8 @@ ${l2Prompt}`,
     }
 
     totalTokensUsed += l2SelectionResponse.usage?.total_tokens ?? 500;
-  }
 
+  }
   // Step 6: L3 Detail load
   const l3Items = l3Ids.length > 0 ? await getL3Detail(l3Ids, l3Types) : [];
   searchPath.push({
@@ -405,14 +393,8 @@ ${l2Prompt}`,
 
       // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
 
-  try {
 
 
-    if (_emperorRes.success && _emperorRes.output) {
-
-      // Emperor 成功，结果已记录
-
-    }
 
 
   const answerResponse = await invokeLLM({

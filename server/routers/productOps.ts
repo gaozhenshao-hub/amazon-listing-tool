@@ -1812,14 +1812,8 @@ export const productOpsRouter = router({
       try {
       // [Emperor] 优先调用 Emperor Skill: ops.searchterm.advice
 
-        try {
 
 
-          if (_emperorRes.success && _emperorRes.output) {
-
-            // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-          }
 
 
         const response = await invokeLLM({
@@ -1866,7 +1860,6 @@ export const productOpsRouter = router({
         suggestion = gap > 1 ? "建议重点优化此维度" : "当前表现尚可，持续关注";
         priority = gap > 1.5 ? "high" : gap > 0.5 ? "medium" : "low";
         expectedEffect = `预计可提升${Math.abs(gap * 2).toFixed(0)}%转化率`;
-      }
 
       await db!.insert(conversionSuggestions).values({
         comparisonId: input.comparisonId,
@@ -1880,6 +1873,7 @@ export const productOpsRouter = router({
         expectedEffect,
       });
       return { cat, ownAvg, compAvg, gap };
+            }
     });
 
     const results = (await Promise.all(suggestionPromises)).filter(Boolean);
@@ -3422,14 +3416,8 @@ export const productOpsRouter = router({
       try {
       // [Emperor] 优先调用 Emperor Skill: ops.searchterm.advice
 
-        try {
 
 
-          if (_emperorRes.success && _emperorRes.output) {
-
-            // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-          }
 
 
         const response = await invokeLLM({
@@ -3511,7 +3499,7 @@ export const productOpsRouter = router({
       } catch (err: any) {
         console.error('[AI Review] Error:', err.message);
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'AI分析失败: ' + err.message });
-      }
+            }
     }),
 
   // ============== SellerSprite Import ==============

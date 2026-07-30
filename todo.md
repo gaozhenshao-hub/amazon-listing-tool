@@ -250,3 +250,13 @@
 - [x] 前端 AgentCanvas：skill_node 属性面板新增执行模式选择（Inline/Fork/Background）和超时配置
 - [x] App.tsx 路由注册：/emperor/knowledge 路由
 - [x] TypeScript 编译 0 错误
+
+## Emperor → 内置 LLM 迁移（2026-07-30）
+
+- [x] 全量扫描所有服务器文件，识别 Emperor Skill 调用模式
+- [x] 删除 Emperor try-catch 包裹块，保留内置 LLM 代码路径
+- [x] 修复孤立 catch 块、缺失 } 等语法错误（共修复 171 → 0 个语法错误）
+- [x] 修复函数嵌套问题（analyzeRufusAttributes、analyzeCosmoScenes 等函数提升到顶层）
+- [x] 修复 devAnalysis.ts import 语句断裂问题
+- [x] 修复 kbBot.ts performKbSearch 函数结构问题
+- [x] 服务器正常启动（Server running on http://localhost:3000/）

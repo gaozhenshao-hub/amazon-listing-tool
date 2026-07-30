@@ -96,14 +96,8 @@ export const devManualRouter = router({
 
       // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const response = await invokeLLM({
@@ -186,14 +180,8 @@ BOM Components: ${bom.map((b: any) => b.partName).join(", ")}${refContext}`;
 
       // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const response = await invokeLLM({
@@ -463,14 +451,8 @@ ${bom.map((b: any) => `${b.partName} | 材质:${b.material || "未知"} | 工艺
 
       // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const response = await invokeLLM({

@@ -1150,14 +1150,8 @@ export const adLocalAnalysisRouter = router({
       };
       // [Emperor] 优先调用 Emperor Skill: ad.diagnosis
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const response = await invokeLLM({
@@ -1227,14 +1221,8 @@ export const adLocalAnalysisRouter = router({
       try {
       // [Emperor] 优先调用 Emperor Skill: ad.diagnosis
 
-        try {
 
 
-          if (_emperorRes.success && _emperorRes.output) {
-
-            // Emperor 成功，结果已记录
-
-          }
 
 
         const llmRes = await invokeLLM({
@@ -1265,7 +1253,7 @@ export const adLocalAnalysisRouter = router({
       } catch (err: any) {
         console.error('[BudgetAllocLocal] AI error:', err.message);
         return { allocation: null, campaignData: campaignSummaries, totals: { totalCurrentBudget, totalCost, totalSales, overallAcos }, dateRange: { start: dateStart, end: dateEnd, days: uniqueWeeks.size * 7 }, isMock: false, isLocalData: true, error: 'AI分析暂时不可用，请稍后重试' };
-      }
+            }
     }),
 
   // ─── 15. evaluateBudgetEffectLocal ──────────────────────────────
@@ -1294,14 +1282,8 @@ export const adLocalAnalysisRouter = router({
       try {
       // [Emperor] 优先调用 Emperor Skill: ad.diagnosis
 
-        try {
 
 
-          if (_emperorRes.success && _emperorRes.output) {
-
-            // Emperor 成功，结果已记录
-
-          }
 
 
         const llmRes = await invokeLLM({
@@ -1317,7 +1299,6 @@ export const adLocalAnalysisRouter = router({
       } catch {
         effectSummary = `ACoS变化: ${acosChange>0?'+':''}${acosChange}%, ROAS变化: ${roasChange>0?'+':''}${roasChange}%`;
         effectScore = acosChange < 0 ? 70 : (acosChange > 10 ? 30 : 50);
-      }
       await db.update(budgetTracking).set({
         followupSpend: String(Math.round(totalSpend * 100) / 100),
         followupSales: String(Math.round(totalSales * 100) / 100),
@@ -1331,6 +1312,7 @@ export const adLocalAnalysisRouter = router({
         baseline: { spend: Number(record.baselineSpend)||0, sales: Number(record.baselineSales)||0, acos: baseAcos, roas: baseRoas, orders: record.baselineOrders||0 },
         changes: { acosChange, roasChange }, effectSummary, effectScore,
       };
+            }
     }),
 
   // ─── 16. getCrossChannelDataLocal ──────────────────────────────
@@ -1429,14 +1411,8 @@ export const adLocalAnalysisRouter = router({
       messages.push({ role: "user", content: input.question });
       // [Emperor] 优先调用 Emperor Skill: ad.diagnosis
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const response = await invokeLLM({
@@ -1549,14 +1525,8 @@ export const adLocalAnalysisRouter = router({
 
       // [Emperor] 优先调用 Emperor Skill: ad.diagnosis
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const response = await invokeLLM({
@@ -1611,14 +1581,8 @@ export const adLocalAnalysisRouter = router({
       const summary = Object.entries(channelMap).map(([ch,d]) => `${ch}: 花费$${d.cost.toFixed(0)} 销售$${d.sales.toFixed(0)} ACoS:${d.sales>0?((d.cost/d.sales)*100).toFixed(1):'N/A'}%`).join('\n');
       // [Emperor] 优先调用 Emperor Skill: ad.diagnosis
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const response = await invokeLLM({

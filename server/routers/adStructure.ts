@@ -152,9 +152,6 @@ export const adStructureRouter = router({
           .replace("{keywordData}", keywordData)
           .replace("{competitorSummary}", competitorSummary);
 
-        // Emperor Skill 优先 - 广告结构生成
-        try {
-          if (emperorRes.success && emperorRes.output) return emperorRes.output;
 
         const response = await invokeLLM({
           messages: [
@@ -202,7 +199,7 @@ export const adStructureRouter = router({
           errorMessage: error.message || "Unknown error",
         });
         throw error;
-      }
+            }
     }),
 
   // Update ad structure (save user edits)

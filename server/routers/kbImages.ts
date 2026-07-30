@@ -145,14 +145,8 @@ async function processImport(setId: number, asin: string, userId: number, runAna
 
       // [Emperor] 优先调用 Emperor Skill: analysis.image.recognition
 
-          try {
 
 
-            if (_emperorRes.success && _emperorRes.output) {
-
-              // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-            }
 
 
           const response = await invokeLLM({
@@ -185,7 +179,7 @@ async function processImport(setId: number, asin: string, userId: number, runAna
           });
         } catch (err: any) {
           console.error(`[KB Images] Image analysis failed for image ${img.id}:`, err.message);
-        }
+      }
       }
 
       // Overall analysis including A+ and brand story
@@ -322,14 +316,8 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
 
       // [Emperor] 优先调用 Emperor Skill: analysis.image.recognition
 
-        try {
 
 
-          if (_emperorRes.success && _emperorRes.output) {
-
-            // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-          }
 
 
         const response = await invokeLLM({

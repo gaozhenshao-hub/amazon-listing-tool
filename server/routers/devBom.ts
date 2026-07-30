@@ -135,14 +135,8 @@ ${existingBom.length > 0 ? `已有BOM: ${existingBom.map(b => `${b.partName}(${b
 
       // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const response = await invokeLLM({
@@ -257,14 +251,8 @@ ${moldCosts.map(m => `${m.partName} | ${m.moldType || ""} | ${m.moldMaterial || 
 
       // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const response = await invokeLLM({

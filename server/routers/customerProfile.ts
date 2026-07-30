@@ -218,14 +218,8 @@ ${JSON.stringify(data, null, 2)}
 
       // [Emperor] 优先调用 Emperor Skill: analysis.competitor.single
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const response = await invokeLLM({

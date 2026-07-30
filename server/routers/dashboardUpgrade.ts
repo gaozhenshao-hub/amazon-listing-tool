@@ -185,14 +185,8 @@ export const dashboardUpgradeRouter = router({
 
       // [Emperor] 优先调用 Emperor Skill: ops.profit.analysis
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const response = await invokeLLM({

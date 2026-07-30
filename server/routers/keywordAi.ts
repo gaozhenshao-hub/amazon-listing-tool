@@ -1,4 +1,6 @@
 import { z } from "zod";
+import * as db from "../db";
+import { invokeLLM } from "../_core/llm";
 import { protectedProcedure, router } from "../_core/trpc";
 import {
   KEYWORD_SEMANTIC_FILTER_PROMPT,
@@ -20,10 +22,10 @@ export const keywordAiRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { projectId, keywordIds } = input;
-      const project = await getProjectById(projectId, ctx.user!.id);
+      const project = await db.getProjectById(projectId, ctx.user!.id);
       if (!project) throw new Error("项目不存在");
 
-      const allKeywords = await getKeywordsByProject(projectId);
+      const allKeywords = await db.getKeywordsByProject(projectId);
       const toFilter = keywordIds
         ? allKeywords.filter(k => keywordIds.includes(k.id) && k.skipSemanticFilter !== 1)
         : allKeywords.filter(k => (k.status === "raw" || k.status === "cleaned") && k.skipSemanticFilter !== 1);
@@ -33,7 +35,7 @@ export const keywordAiRouter = router({
         ? allKeywords.filter(k => keywordIds.includes(k.id) && k.skipSemanticFilter === 1)
         : allKeywords.filter(k => (k.status === "raw" || k.status === "cleaned") && k.skipSemanticFilter === 1);
       for (const kw of skippedKws) {
-        await updateKeyword(kw.id, { status: "cleaned" });
+        await db.updateKeyword(kw.id, { status: "cleaned" });
       }
 
       if (toFilter.length === 0) return { filtered: 0, kept: 0, removed: 0 };
@@ -48,69 +50,6 @@ export const keywordAiRouter = router({
           .replace("{productContext}", productContext)
           .replace("{keywords}", kwList);
 
-        try {
-          // Emperor Skill 优先，降级到内置 LLM
-          let parsed: any = {};
-          try {
-              `${productContext}\n\nKeywords to filter:\n${kwList}`
-            );
-            if (emperorRes.success && emperorRes.output) {
-              const filtered = emperorRes.output.filtered || [];
-              const removed_kws = emperorRes.output.removed || [];
-              parsed = {
-                results: [
-                  ...filtered.map((f: any) => ({ keyword: f.keyword, action: "keep", relevance: f.relevance })),
-                  ...removed_kws.map((r: any) => ({ keyword: r.keyword, action: "remove", reason: r.reason })),
-                ]
-              };
-            }
-          } catch (emperorErr) {
-          }
-          if (!parsed.results) {
-            const response = await invokeLLM({
-              messages: [
-                { role: "system", content: "You are an Amazon keyword specialist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." },
-                { role: "user", content: prompt },
-              ],
-              response_format: { type: "json_object" },
-            });
-            const content = String(response.choices?.[0]?.message?.content || "{}");
-            parsed = JSON.parse(content);
-          }
-          const results = parsed.results || [];
-
-          for (const result of results) {
-            const kw = chunk.find(k => k.keyword.toLowerCase() === result.keyword?.toLowerCase());
-            if (!kw) continue;
-
-            if (result.action === "remove") {
-              await updateKeyword(kw.id, {
-                status: "negative",
-                isNegative: 1,
-                relevance: "none",
-              });
-              await createNegativeKeyword({
-                projectId,
-                userId: ctx.user!.id,
-                keyword: kw.keyword,
-                reason: result.reason || "AI语义过滤移除",
-                reasonCn: result.reason ? `AI语义过滤: ${result.reason}` : "AI语义过滤移除",
-                source: "ai_suggest",
-                matchType: "exact",
-              });
-              removed++;
-            } else {
-              const newRelevance = result.relevance || kw.relevance;
-              await updateKeyword(kw.id, {
-                status: "cleaned",
-                relevance: newRelevance,
-              });
-              kept++;
-            }
-          }
-        } catch (e) {
-          console.error("AI semantic filter error:", e);
-        }
       }
 
       return { filtered: toFilter.length, kept, removed };
@@ -125,10 +64,10 @@ export const keywordAiRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { projectId, keywordIds } = input;
-      const project = await getProjectById(projectId, ctx.user!.id);
+      const project = await db.getProjectById(projectId, ctx.user!.id);
       if (!project) throw new Error("项目不存在");
 
-      const allKeywords = await getKeywordsByProject(projectId);
+      const allKeywords = await db.getKeywordsByProject(projectId);
       const toTag = keywordIds
         ? allKeywords.filter(k => keywordIds.includes(k.id))
         : allKeywords.filter(k => k.status === "cleaned" || k.status === "scored");
@@ -145,48 +84,6 @@ export const keywordAiRouter = router({
           .replace("{productContext}", productContext)
           .replace("{keywords}", kwList);
 
-        try {
-          // Emperor Skill 优先，降级到内置 LLM
-          let parsed: any = {};
-          try {
-              `${productContext}\n\nKeywords:\n${kwList}`
-            );
-            if (emperorRes.success && emperorRes.output?.keywords) {
-              parsed = { results: emperorRes.output.keywords.map((k: any) => ({
-                keyword: k.keyword,
-                sceneTags: k.sceneTags || [],
-                intentTag: k.intentTag || null,
-              })) };
-            }
-          } catch (emperorErr) {
-          }
-          if (!parsed.results) {
-            const response = await invokeLLM({
-              messages: [
-                { role: "system", content: "You are an Amazon COSMO algorithm specialist. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." },
-                { role: "user", content: prompt },
-              ],
-              response_format: { type: "json_object" },
-            });
-            const content = String(response.choices?.[0]?.message?.content || "{}");
-            parsed = JSON.parse(content);
-          }
-          const results = parsed.results || [];
-
-          for (const result of results) {
-            const kw = chunk.find(k => k.keyword.toLowerCase() === result.keyword?.toLowerCase());
-            if (!kw) continue;
-
-            await updateKeyword(kw.id, {
-              sceneTags: JSON.stringify(result.sceneTags || []),
-              intentTag: result.intentTag || null,
-              status: "tagged",
-            });
-            tagged++;
-          }
-        } catch (e) {
-          console.error("AI scene tag error:", e);
-        }
       }
 
       return { tagged };
@@ -201,10 +98,10 @@ export const keywordAiRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { projectId, keywordIds } = input;
-      const project = await getProjectById(projectId, ctx.user!.id);
+      const project = await db.getProjectById(projectId, ctx.user!.id);
       if (!project) throw new Error("项目不存在");
 
-      const allKeywords = await getKeywordsByProject(projectId);
+      const allKeywords = await db.getKeywordsByProject(projectId);
       const toClassify = keywordIds
         ? allKeywords.filter(k => keywordIds.includes(k.id))
         : allKeywords.filter(k => k.isNegative === 0);
@@ -221,50 +118,6 @@ export const keywordAiRouter = router({
           .replace("{productContext}", productContext)
           .replace("{keywords}", kwList);
 
-        try {
-          // Emperor Skill 优先，降级到内置 LLM
-          let parsed: any = {};
-          try {
-              `${productContext}\n\nKeywords:\n${kwList}`
-            );
-            if (emperorRes.success && emperorRes.output?.roots) {
-              const results: any[] = [];
-              for (const root of emperorRes.output.roots) {
-                for (const kw of (root.keywords || [])) {
-                  results.push({ keyword: kw, rootCategory: root.root, rootWord: root.root, rootImpact: root.priority || "medium" });
-                }
-              }
-              parsed = { results };
-            }
-          } catch (emperorErr) {
-          }
-          if (!parsed.results) {
-            const response = await invokeLLM({
-              messages: [
-                { role: "system", content: "You are an Amazon SEO expert. Respond only in valid JSON. CRITICAL: The keyword field must contain the exact original English keyword from the input. Never translate keywords." },
-                { role: "user", content: prompt },
-              ],
-              response_format: { type: "json_object" },
-            });
-            const content = String(response.choices?.[0]?.message?.content || "{}");
-            parsed = JSON.parse(content);
-          }
-          const results = parsed.results || [];
-
-          for (const result of results) {
-            const kw = chunk.find(k => k.keyword.toLowerCase() === result.keyword?.toLowerCase());
-            if (!kw) continue;
-
-            await updateKeyword(kw.id, {
-              rootWord: result.rootWord || null,
-              rootCategory: result.rootCategory || null,
-              rootImpact: result.rootImpact || null,
-            });
-            classified++;
-          }
-        } catch (e) {
-          console.error("AI root classify error:", e);
-        }
       }
 
       return { classified };
@@ -279,10 +132,10 @@ export const keywordAiRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { projectId, keywordIds } = input;
-      const project = await getProjectById(projectId, ctx.user!.id);
+      const project = await db.getProjectById(projectId, ctx.user!.id);
       if (!project) throw new Error("项目不存在");
 
-      const allKeywords = await getKeywordsByProject(projectId);
+      const allKeywords = await db.getKeywordsByProject(projectId);
       const toMatrix = keywordIds
         ? allKeywords.filter(k => keywordIds.includes(k.id))
         : allKeywords.filter(k => k.isNegative === 0);
@@ -328,7 +181,7 @@ export const keywordAiRouter = router({
             if (result.strategyCategory === "negative") {
               updateData.isNegative = 1;
               updateData.status = "negative";
-              await createNegativeKeyword({
+              await db.createNegativeKeyword({
                 projectId,
                 userId: ctx.user!.id,
                 keyword: kw.keyword,
@@ -338,7 +191,7 @@ export const keywordAiRouter = router({
               });
             }
 
-            await updateKeyword(kw.id, updateData);
+            await db.updateKeyword(kw.id, updateData);
             categorized++;
           }
         } catch (e) {
@@ -355,10 +208,10 @@ export const keywordAiRouter = router({
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const { projectId } = input;
-      const project = await getProjectById(projectId, ctx.user!.id);
+      const project = await db.getProjectById(projectId, ctx.user!.id);
       if (!project) throw new Error("项目不存在");
 
-      const allKeywords = await getKeywordsByProject(projectId);
+      const allKeywords = await db.getKeywordsByProject(projectId);
       if (allKeywords.length === 0) throw new Error("没有关键词数据，请先导入关键词");
 
       const productContext = buildProductContext(project);
@@ -393,13 +246,6 @@ export const keywordAiRouter = router({
         .replace("{strategyMatrix}", strategyMatrix || "No strategy matrix data");
 
       // Emperor Skill 优先，降级到内置 LLM
-      try {
-        const emperorRes = await runSkill("keyword.listing.layout", {
-          context: `${productContext}\n\nRoot Classification:\n${rootClassification}\n\nStrategy Matrix:\n${strategyMatrix}`
-        });
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (emperorErr) {
-      }
       const response = await invokeLLM({
         messages: [
           { role: "system", content: "You are an Amazon Listing optimization expert. Respond only in valid JSON. CRITICAL: All keyword fields must contain the exact original English keywords from the input. Never translate keywords." },
@@ -424,10 +270,10 @@ export const keywordAiRouter = router({
       matrix: { categorized: number };
     }> => {
       const { projectId } = input;
-      const project = await getProjectById(projectId, ctx.user!.id);
+      const project = await db.getProjectById(projectId, ctx.user!.id);
       if (!project) throw new Error("项目不存在");
 
-      const allKeywords = await getKeywordsByProject(projectId);
+      const allKeywords = await db.getKeywordsByProject(projectId);
       const productContext = buildProductContext(project);
 
       // Step 0: AI Traffic & Competition Classification
@@ -449,7 +295,7 @@ export const keywordAiRouter = router({
               const upd: any = {};
               if (r.trafficLevel && ["high", "medium", "low"].includes(r.trafficLevel)) upd.trafficLevel = r.trafficLevel;
               if (r.competition && ["high", "medium", "low"].includes(r.competition)) upd.competition = r.competition;
-              if (Object.keys(upd).length > 0) { await updateKeyword(kw.id, upd); tcClassified++; }
+              if (Object.keys(upd).length > 0) { await db.updateKeyword(kw.id, upd); tcClassified++; }
             }
           } catch (e) { console.error("Pipeline traffic/competition classify error:", e); }
         }
@@ -469,11 +315,11 @@ export const keywordAiRouter = router({
             const kw = chunk.find(k => k.keyword.toLowerCase() === r.keyword?.toLowerCase());
             if (!kw) continue;
             if (r.action === "remove") {
-              await updateKeyword(kw.id, { status: "negative", isNegative: 1, relevance: "none" });
-              await createNegativeKeyword({ projectId, userId: ctx.user!.id, keyword: kw.keyword, reason: r.reason || "AI语义过滤移除", reasonCn: r.reason ? `AI语义过滤: ${r.reason}` : "AI语义过滤移除", source: "ai_suggest", matchType: "exact" });
+              await db.updateKeyword(kw.id, { status: "negative", isNegative: 1, relevance: "none" });
+              await db.createNegativeKeyword({ projectId, userId: ctx.user!.id, keyword: kw.keyword, reason: r.reason || "AI语义过滤移除", reasonCn: r.reason ? `AI语义过滤: ${r.reason}` : "AI语义过滤移除", source: "ai_suggest", matchType: "exact" });
               removed++;
             } else {
-              await updateKeyword(kw.id, { status: "cleaned", relevance: r.relevance || kw.relevance });
+              await db.updateKeyword(kw.id, { status: "cleaned", relevance: r.relevance || kw.relevance });
               kept++;
             }
           }
@@ -482,7 +328,7 @@ export const keywordAiRouter = router({
 
       // Step 2: AI Scene Tagging
       let tagged = 0;
-      const cleanedKws = (await getKeywordsByProject(projectId)).filter(k => k.status === "cleaned" || k.status === "scored");
+      const cleanedKws = (await db.getKeywordsByProject(projectId)).filter(k => k.status === "cleaned" || k.status === "scored");
       const tagChunks = chunkArray(cleanedKws, 30);
       for (const chunk of tagChunks) {
         const kwList = chunk.map(k => k.keyword).join("\n");
@@ -493,7 +339,7 @@ export const keywordAiRouter = router({
           for (const r of (parsed.results || [])) {
             const kw = chunk.find(k => k.keyword.toLowerCase() === r.keyword?.toLowerCase());
             if (!kw) continue;
-            await updateKeyword(kw.id, { sceneTags: JSON.stringify(r.sceneTags || []), intentTag: r.intentTag || null, status: "tagged" });
+            await db.updateKeyword(kw.id, { sceneTags: JSON.stringify(r.sceneTags || []), intentTag: r.intentTag || null, status: "tagged" });
             tagged++;
           }
         } catch (e) { console.error("Pipeline tag error:", e); }
@@ -501,7 +347,7 @@ export const keywordAiRouter = router({
 
       // Step 3: AI Root Classification
       let classified = 0;
-      const taggedKws = (await getKeywordsByProject(projectId)).filter(k => k.isNegative === 0);
+      const taggedKws = (await db.getKeywordsByProject(projectId)).filter(k => k.isNegative === 0);
       const classChunks = chunkArray(taggedKws, 30);
       for (const chunk of classChunks) {
         const kwList = chunk.map(k => k.keyword).join("\n");
@@ -512,7 +358,7 @@ export const keywordAiRouter = router({
           for (const r of (parsed.results || [])) {
             const kw = chunk.find(k => k.keyword.toLowerCase() === r.keyword?.toLowerCase());
             if (!kw) continue;
-            await updateKeyword(kw.id, { rootWord: r.rootWord || null, rootCategory: r.rootCategory || null, rootImpact: r.rootImpact || null });
+            await db.updateKeyword(kw.id, { rootWord: r.rootWord || null, rootCategory: r.rootCategory || null, rootImpact: r.rootImpact || null });
             classified++;
           }
         } catch (e) { console.error("Pipeline classify error:", e); }
@@ -520,7 +366,7 @@ export const keywordAiRouter = router({
 
       // Step 4: AI Strategy Matrix
       let categorized = 0;
-      const allKwsFinal = (await getKeywordsByProject(projectId)).filter(k => k.isNegative === 0);
+      const allKwsFinal = (await db.getKeywordsByProject(projectId)).filter(k => k.isNegative === 0);
       const matrixChunks = chunkArray(allKwsFinal, 25);
       for (const chunk of matrixChunks) {
         const kwList = chunk.map(k => `${k.keyword} | traffic: ${k.trafficLevel} | relevance: ${k.relevance} | competition: ${k.competition} | SPR: ${k.spr || "N/A"} | monthly_search: ${k.monthlySearchVolume || "N/A"}`).join("\n");
@@ -535,9 +381,9 @@ export const keywordAiRouter = router({
             if (r.strategyCategory === "negative") {
               updateData.isNegative = 1;
               updateData.status = "negative";
-              await createNegativeKeyword({ projectId, userId: ctx.user!.id, keyword: kw.keyword, reason: "3D matrix analysis marked as negative", reasonCn: "3D矩阵分析标记为否定词", source: "ai_suggest", matchType: "exact" });
+              await db.createNegativeKeyword({ projectId, userId: ctx.user!.id, keyword: kw.keyword, reason: "3D matrix analysis marked as negative", reasonCn: "3D矩阵分析标记为否定词", source: "ai_suggest", matchType: "exact" });
             }
-            await updateKeyword(kw.id, updateData);
+            await db.updateKeyword(kw.id, updateData);
             categorized++;
           }
         } catch (e) { console.error("Pipeline matrix error:", e); }
@@ -562,10 +408,10 @@ export const keywordAiRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { projectId, keywordIds } = input;
-      const project = await getProjectById(projectId, ctx.user!.id);
+      const project = await db.getProjectById(projectId, ctx.user!.id);
       if (!project) throw new Error("项目不存在");
 
-      const allKeywords = await getKeywordsByProject(projectId);
+      const allKeywords = await db.getKeywordsByProject(projectId);
       const toClassify = keywordIds
         ? allKeywords.filter(k => keywordIds.includes(k.id))
         : allKeywords.filter(k => k.isNegative === 0);
@@ -628,7 +474,7 @@ export const keywordAiRouter = router({
             }
 
             if (Object.keys(updateData).length > 0) {
-              await updateKeyword(kw.id, updateData);
+              await db.updateKeyword(kw.id, updateData);
               classifiedCount++;
             }
           }

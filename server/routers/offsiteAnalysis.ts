@@ -225,14 +225,8 @@ export const offsiteAnalysisRouter = router({
         const prompt = getPromptForSource(input.sourceType);
       // [Emperor] 优先调用 Emperor Skill: offsite.summary
 
-        try {
 
 
-          if (_emperorRes.success && _emperorRes.output) {
-
-            // Emperor 成功，结果已记录
-
-          }
 
 
         const aiResponse = await invokeLLM({
@@ -263,7 +257,7 @@ export const offsiteAnalysisRouter = router({
           updatedAt: Date.now(),
         });
         return { id, status: "failed", error: error?.message };
-      }
+            }
     }),
 
   // Edit analysis (user modifies AI result)
@@ -329,14 +323,8 @@ export const offsiteAnalysisRouter = router({
 
       // [Emperor] 优先调用 Emperor Skill: offsite.summary
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，结果已记录
-
-        }
 
 
       const aiResponse = await invokeLLM({
@@ -366,14 +354,8 @@ export const offsiteAnalysisRouter = router({
       const prompt = getPromptForSource(analysis.sourceType);
       // [Emperor] 优先调用 Emperor Skill: offsite.summary
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，结果已记录
-
-        }
 
 
       const aiResponse = await invokeLLM({

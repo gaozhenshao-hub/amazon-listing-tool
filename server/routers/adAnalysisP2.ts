@@ -145,9 +145,6 @@ export const adAnalysisP2Router = router({
       })).optional(),
     }))
     .mutation(async ({ input }) => {
-      // Emperor Skill 优先 - DSP策略
-      try {
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
 
       const response = await invokeLLM({
         messages: [
@@ -309,9 +306,6 @@ ${AD_KNOWLEDGE_BASE}
 
       messages.push({ role: "user", content: input.question });
 
-      // Emperor Skill 优先 - 广告助手
-      try {
-        if (emperorRes.success && emperorRes.output) return { reply: JSON.stringify(emperorRes.output) };
 
       const response = await invokeLLM({
         messages,
@@ -519,9 +513,6 @@ ${AD_KNOWLEDGE_BASE}
         `${c.channel}: 花费$${c.cost}(${c.costShare}%), 销售$${c.sales}, ACoS ${c.acos}%, ROAS ${c.roas}x, 订单${c.orders}`
       ).join('\n');
 
-      // Emperor Skill 优先 - 渠道策略
-      try {
-        if (emperorRes.success && emperorRes.output) return emperorRes.output;
 
       const response = await invokeLLM({
         messages: [

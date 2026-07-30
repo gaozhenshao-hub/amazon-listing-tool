@@ -503,14 +503,8 @@ export const devProjectTagsRouter = router({
 
       // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const response = await invokeLLM({
@@ -716,14 +710,8 @@ ${JSON.stringify(productContext, null, 2)}
 
       // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
 
-      try {
 
 
-        if (_emperorRes.success && _emperorRes.output) {
-
-          // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-        }
 
 
       const response = await invokeLLM({

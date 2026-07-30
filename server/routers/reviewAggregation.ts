@@ -108,14 +108,8 @@ export const reviewAggregationRouter = router({
 
       // [Emperor] 优先调用 Emperor Skill: analysis.review.extract
 
-        try {
 
 
-          if (_emperorRes.success && _emperorRes.output) {
-
-            // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-          }
 
 
         const response = await invokeLLM({
@@ -158,7 +152,7 @@ export const reviewAggregationRouter = router({
           errorMessage: err.message || "分析失败",
         });
         throw err;
-      }
+            }
     }),
 
   // Update individual points (editable)

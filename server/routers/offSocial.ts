@@ -55,14 +55,8 @@ export const offSocialRouter = router({
     const startTime = Date.now();
       // [Emperor] 优先调用 Emperor Skill: off.social.content
 
-    try {
 
 
-      if (_emperorRes.success && _emperorRes.output) {
-
-        // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-      }
 
 
     const resp = await invokeLLM({
@@ -85,14 +79,8 @@ export const offSocialRouter = router({
     const startTime = Date.now();
       // [Emperor] 优先调用 Emperor Skill: off.social.content
 
-    try {
 
 
-      if (_emperorRes.success && _emperorRes.output) {
-
-        // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-      }
 
 
     const resp = await invokeLLM({
@@ -135,14 +123,8 @@ export const offSocialRouter = router({
     const startTime = Date.now();
       // [Emperor] 优先调用 Emperor Skill: off.social.content
 
-    try {
 
 
-      if (_emperorRes.success && _emperorRes.output) {
-
-        // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-      }
 
 
     const resp = await invokeLLM({

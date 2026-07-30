@@ -406,14 +406,8 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
       try {
       // [Emperor] 优先调用 Emperor Skill: analysis.comparison.summary
 
-        try {
 
 
-          if (_emperorRes.success && _emperorRes.output) {
-
-            // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-          }
 
 
         const response = await invokeLLM({
@@ -490,7 +484,7 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
             .where(eq(meetingRecords.id, input.meetingId));
         }
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `AI extraction failed: ${err.message}` });
-      }
+            }
     }),
 
   /** Full pipeline: transcribe + extract in one call (for direct text input) */
@@ -534,14 +528,8 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
       try {
       // [Emperor] 优先调用 Emperor Skill: analysis.comparison.summary
 
-        try {
 
 
-          if (_emperorRes.success && _emperorRes.output) {
-
-            // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-          }
 
 
         const response = await invokeLLM({
@@ -599,7 +587,7 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
           .set({ status: "error", errorMessage: err.message })
           .where(eq(meetingRecords.id, meetingId));
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `AI extraction failed: ${err.message}` });
-      }
+            }
     }),
 
   /** Delete meeting record */

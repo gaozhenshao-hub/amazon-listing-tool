@@ -43,14 +43,8 @@ export const kbListingsRouter = router({
           });
       // [Emperor] 优先调用 Emperor Skill: listing.competitor.analyze
 
-          try {
 
 
-            if (_emperorRes.success && _emperorRes.output) {
-
-              // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-            }
 
 
           const response = await invokeLLM({
@@ -88,7 +82,7 @@ export const kbListingsRouter = router({
         } catch (err: any) {
           console.error("[KB Listings] Import failed:", err.message);
           await kbDb.updateListingCopywriting(Number(id), ctx.user.id, { status: "archived" });
-        }
+              }
       })();
       return { id: Number(id), asin };
     }),
@@ -119,14 +113,8 @@ export const kbListingsRouter = router({
             });
       // [Emperor] 优先调用 Emperor Skill: listing.competitor.analyze
 
-            try {
 
 
-              if (_emperorRes.success && _emperorRes.output) {
-
-                // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-              }
 
 
             const response = await invokeLLM({
@@ -144,7 +132,7 @@ export const kbListingsRouter = router({
           } catch (err: any) {
             console.error(`[KB Listings] Batch import failed for ${asin}:`, err.message);
             await kbDb.updateListingCopywriting(Number(id), ctx.user.id, { status: "archived" });
-          }
+                }
         })();
       }
       return { imported: results.length, items: results };
@@ -173,14 +161,8 @@ export const kbListingsRouter = router({
           });
       // [Emperor] 优先调用 Emperor Skill: listing.competitor.analyze
 
-          try {
 
 
-            if (_emperorRes.success && _emperorRes.output) {
-
-              // Emperor 成功，但仍需走原有逻辑解析（保持兼容性）
-
-            }
 
 
           const response = await invokeLLM({
@@ -198,7 +180,7 @@ export const kbListingsRouter = router({
         } catch (err: any) {
           console.error("[KB Listings] Link import failed:", err.message);
           await kbDb.updateListingCopywriting(Number(id), ctx.user.id, { status: "archived" });
-        }
+              }
       })();
       return { id: Number(id), asin };
     }),

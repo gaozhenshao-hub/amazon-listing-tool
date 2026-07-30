@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { invokeLLM } from "../_core/llm";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { eq, desc, and, sql } from "drizzle-orm";
+import { budgetTracking } from "../../drizzle/schema";
 
 // ─── 12-Category Classification Thresholds ──────────────────────
 interface ClassificationThresholds {
@@ -489,16 +491,6 @@ export const adAnalysisRouter = router({
       // ─── Emperor Skill 优先，降级到内置 LLM ───────────────────
       try {
         const emperorContext = `分类：${category.label}\n特征：${category.condition}\n问题分析：${category.problemAnalysis}\n广告目的：${category.adPurpose}\n广告策略：${category.adStrategy}\n预期结果：${category.expectedResult}\n\n搜索词数据：\n${JSON.stringify(anonymizedTerms)}`;
-        if (emperorRes.success && emperorRes.output) {
-          const result = emperorRes.output as any;
-          // De-anonymize results
-          if (result.advice) {
-            result.advice = deAnonymizeResults(result.advice, asinMap);
-          } else if (result.recommendations) {
-            result.recommendations = deAnonymizeResults(result.recommendations, asinMap);
-          }
-          return result;
-        }
       } catch (emperorErr) {
       }
 
@@ -1116,9 +1108,6 @@ ${JSON.stringify(input.hourlyData)}
       // AI diagnosis - Emperor Skill 优先，降级到内置 LLM
       try {
         const emperorContext = `广告诊断数据（${input.days}天汇总，数据已脱敏）：\n${JSON.stringify(metrics)}`;
-        if (emperorRes.success && emperorRes.output) {
-          return { ...emperorRes.output, metrics };
-        }
       } catch (emperorErr) {
       }
 
@@ -2221,12 +2210,6 @@ ${JSON.stringify(input.terms.slice(0, 20))}
       });
 
 
-      // Emperor Skill 优先 - 否定词生成
-      try {
-        const negCtx = `目标ACoS: ${input.targetAcos}%\n否定词候选(${negCandidates.length}个): ${JSON.stringify(anonymize(negCandidates.slice(0, 80)))}\n加词候选(${addCandidates.length}个): ${JSON.stringify(anonymize(addCandidates.slice(0, 80)))}`;
-        if (emperorNegRes.success && emperorNegRes.output) return emperorNegRes.output;
-      } catch (emperorErr) {
-      }
 
       const response = await invokeLLM({
         messages: [
@@ -2429,15 +2412,6 @@ ${JSON.stringify(anonymize(addCandidates.slice(0, 80)))}
       try {
         // Emperor Skill 优先 - 预算分配
         const budgetCtx = `总预算:$${totalCurrentBudget}/天 | 总花费:$${totalCost} | 总销售:$${totalSales} | ACoS:${overallAcos}% | 目标ACoS:${input.targetAcos}%\n各活动：\n${campaignSummaries.map((c, i) => `${i+1}. [${c.name}] 预算:$${c.currentBudget}/天 | 花费:$${c.cost} | 销售:$${c.sales} | ACoS:${c.acos}% | ROAS:${c.roas}x`).join('\n')}`;
-        if (emperorBudgetRes.success && emperorBudgetRes.output) {
-          return {
-            allocation: emperorBudgetRes.output,
-            campaignData: campaignSummaries,
-            totals: { totalCurrentBudget, totalCost, totalSales, overallAcos },
-            dateRange: { start: datesToQuery[0], end: datesToQuery[datesToQuery.length - 1], days: datesToQuery.length },
-            isMock: true,
-          };
-        }
       } catch (emperorBudgetErr) {
       }
 
@@ -2786,38 +2760,6 @@ ${JSON.stringify(anonymize(addCandidates.slice(0, 80)))}
       try {
         // Emperor Skill 优先 - 广告诊断
         const effectCtx = `基线数据：花费$${Number(record.baselineSpend)||0} | 销售$${Number(record.baselineSales)||0} | ACoS:${baseAcos}% | ROAS:${baseRoas}x\n执行后：花费$${Math.round(totalSpend*100)/100} | 销售$${Math.round(totalSales*100)/100} | ACoS:${followupAcos}% | ROAS:${followupRoas}x\n变化：ACoS ${acosChange>0?'+':''}${acosChange}% | ROAS ${roasChange>0?'+':''}${roasChange}%`;
-        if (emperorEffectRes.success && emperorEffectRes.output) {
-          const out = emperorEffectRes.output as any;
-          effectSummary = out.overall_assessment || effectCtx;
-          effectScore = out.overall_score || 50;
-        } else {
-          const llmRes = await invokeLLM({
-          messages: [
-            { role: 'system', content: '你是亚马逊广告效果评估专家。请严格按JSON格式输出。' },
-            { role: 'user', content: `请评估以下预算调整的执行效果：\n\n基线数据：花费$${Number(record.baselineSpend)||0} | 销售$${Number(record.baselineSales)||0} | ACoS:${baseAcos}% | ROAS:${baseRoas}x\n执行后：花费$${Math.round(totalSpend*100)/100} | 销售$${Math.round(totalSales*100)/100} | ACoS:${followupAcos}% | ROAS:${followupRoas}x\n变化：ACoS ${acosChange>0?'+':''}${acosChange}% | ROAS ${roasChange>0?'+':''}${roasChange}%\n活动数:${campaignIds.length} | 订单:${totalOrders}\n\n请给出简短评价(100字内)和评分(1-100)。` },
-          ],
-          response_format: {
-            type: 'json_schema',
-            json_schema: {
-              name: 'budget_effect',
-              strict: true,
-              schema: {
-                type: 'object',
-                properties: {
-                  summary: { type: 'string' },
-                  score: { type: 'integer' },
-                  recommendation: { type: 'string' },
-                },
-                required: ['summary', 'score', 'recommendation'],
-                additionalProperties: false,
-              },
-            },
-          },
-        });
-        const parsed = JSON.parse(String(llmRes.choices[0].message.content) || '{}');
-        effectSummary = `${parsed.summary}\n\n建议：${parsed.recommendation}`;
-        effectScore = Math.max(1, Math.min(100, parsed.score || 50));
-        } // end else
       } catch {
         effectSummary = `ACoS变化: ${acosChange>0?'+':''}${acosChange}%, ROAS变化: ${roasChange>0?'+':''}${roasChange}%`;
         effectScore = acosChange < 0 ? 70 : (acosChange > 10 ? 30 : 50);
