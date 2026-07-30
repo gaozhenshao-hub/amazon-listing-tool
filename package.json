@@ -51,6 +51,7 @@
     "@trpc/client": "^11.6.0",
     "@trpc/react-query": "^11.6.0",
     "@trpc/server": "^11.6.0",
+    "@types/handlebars": "^4.1.0",
     "@types/multer": "^2.2.0",
     "@types/tunnel": "^0.0.7",
     "@xyflow/react": "^12.11.2",

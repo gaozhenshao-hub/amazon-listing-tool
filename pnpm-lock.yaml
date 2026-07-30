@@ -127,6 +127,9 @@ importers:
       '@trpc/server':
         specifier: ^11.6.0
         version: 11.6.0(typescript@5.9.3)
+      '@types/handlebars':
+        specifier: ^4.1.0
+        version: 4.1.0
       '@types/multer':
         specifier: ^2.2.0
         version: 2.2.0
@@ -2544,6 +2547,10 @@ packages:
 
   '@types/google.maps@3.58.1':
     resolution: {integrity: sha512-X9QTSvGJ0nCfMzYOnaVs/k6/4L+7F5uCS+4iUmkLEls6J9S/Phv+m/i3mDeyc49ZBgwab3EFO1HEoBY7k98EGQ==}
+
+  '@types/handlebars@4.1.0':
+    resolution: {integrity: sha512-gq9YweFKNNB1uFK71eRqsd4niVkXrxHugqWFQkeLRJvGjnxsLr16bYtcsG4tOFwmYi0Bax+wCkbf1reUfdl4kA==}
+    deprecated: This is a stub types definition. handlebars provides its own type definitions, so you do not need this installed.
 
   '@types/hast@3.0.4':
     resolution: {integrity: sha512-WPs+bbQw5aCj+x6laNGWLH3wviHtoCv/P3+otBhbOhJgG8qtpdAMlTCxLtsTWA7LH1Oh/bFCHsBn0TPS5m30EQ==}
@@ -7750,6 +7757,10 @@ snapshots:
   '@types/geojson@7946.0.16': {}
 
   '@types/google.maps@3.58.1': {}
+
+  '@types/handlebars@4.1.0':
+    dependencies:
+      handlebars: 4.7.9
 
   '@types/hast@3.0.4':
     dependencies:
