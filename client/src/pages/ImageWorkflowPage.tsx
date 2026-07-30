@@ -1254,6 +1254,51 @@ function Step1SellingPoints({
 // ═══════════════════════════════════════════════════════════════════
 // ─── Step 2: Image Outline ───────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════
+const OUTLINE_APLUS_MODULES = [
+  { id: 'premium_full_image', name: '高级完整图片', desc: '全屏背景+文字覆盖', category: '全屏展示', specs: '1464x600px；标题800字符，正文300字符', structure: '单张全宽大图' },
+  { id: 'premium_text', name: '高级文本', desc: '纯文本模块', category: '文本', specs: '标题80字符，正文300字符', structure: '纯文字说明' },
+  { id: 'premium_bg_image_text', name: '高级背景图像+文本', desc: '背景图+叠加文字', category: '全屏展示', specs: '1464x600px；标题60字符，副标题40字符，正文300字符', structure: '单张背景图叠字' },
+  { id: 'premium_four_image_text', name: '高级四图片+文本', desc: '4张小图+文字', category: '图文组合', specs: '每图300x225px；标题30字符，正文150字符', structure: '4张子图，适合拆分卖点或步骤' },
+  { id: 'premium_dual_image_text', name: '高级双图片+文本', desc: '左右双图', category: '图文组合', specs: '每图650x350px；标题50字符，副标题50字符，正文300字符', structure: '2张并列图' },
+  { id: 'premium_single_image_text', name: '高级单图+文本', desc: '大图+长文', category: '图文组合', specs: '800x600px；标题80字符，副标题40字符，正文500字符', structure: '单张说明图' },
+  { id: 'premium_full_video', name: '高级全视频', desc: '全宽视频模块', category: '多媒体', specs: '视频≤200MB，≤180秒，960x540px', structure: '1个视频脚本/封面' },
+  { id: 'premium_video_text', name: '高级视频+文本', desc: '视频+文字', category: '多媒体', specs: '800x600px；标题80字符，副标题40字符，正文500字符', structure: '1个视频脚本+说明图' },
+  { id: 'premium_comparison_1', name: '高级比较表1', desc: '4-7产品对比', category: '对比展示', specs: '产品图200x225px；5-12个特征', structure: '4-7列产品对比' },
+  { id: 'premium_comparison_2', name: '高级比较表2', desc: '2-3产品对比', category: '对比展示', specs: '产品图300x225px；2-5个特征', structure: '2-3列产品对比' },
+  { id: 'premium_comparison_3', name: '高级比较表3', desc: '2-4产品纵向对比', category: '对比展示', specs: '产品图488x700px；3-7个特征', structure: '2-4张纵向对比图' },
+  { id: 'premium_hotspot_1', name: '高级热点1', desc: '点击热点说明', category: '交互展示', specs: '1464x600px；2-6个热点，标题50字符，正文200字符', structure: '1张底图+2-6个热点' },
+  { id: 'premium_hotspot_2', name: '高级热点2', desc: '热点模块', category: '交互展示', specs: '1464x600px；2-6个热点，模块标题80字符', structure: '1张底图+2-6个热点' },
+  { id: 'premium_nav_carousel', name: '高级导航轮播', desc: '2-5个导航面板', category: '轮播展示', specs: '每面板1464x600px；导航文本25字符', structure: '2-5张轮播面板' },
+  { id: 'premium_rule_carousel', name: '高级规则轮播', desc: '2-5个规则面板', category: '轮播展示', specs: '每面板1464x600px；模块标题100字符', structure: '2-5张轮播面板' },
+  { id: 'premium_simple_carousel', name: '高级简单图像轮播', desc: '2-6个图片面板', category: '轮播展示', specs: '每面板1464x600px；标题50字符', structure: '2-6张轮播面板' },
+  { id: 'premium_video_carousel', name: '高级视频图像轮播', desc: '2-6个视频/图片面板', category: '轮播展示', specs: '每面板800x600px；标题80字符', structure: '2-6个视频或图片面板' },
+  { id: 'premium_qa', name: '高级问答', desc: '2-5个问答', category: '信息展示', specs: '问题120字符，回答250字符', structure: '2-5组问答内容' },
+  { id: 'premium_tech_specs', name: '高级技术规格', desc: '3-15个规格', category: '信息展示', specs: '规格图300x300px；标题80字符', structure: '3-15个规格项' },
+  { id: 'brand_highlight', name: '品牌亮点', desc: '3-4个品牌亮点', category: '品牌建设', specs: '图标135x135px；标题30字符，正文80字符', structure: '3-4个品牌亮点卡片' },
+  { id: 'standard_image_text', name: '标准图文', desc: '标准A+基础模块', category: '标准A+', specs: '970x300px；标题160字符，正文6000字符', structure: '单张标准图文' },
+  { id: 'standard_comparison', name: '标准对比表', desc: '最多5个产品', category: '标准A+', specs: '产品图150x150px；标题80字符，正文250字符', structure: '最多5列对比表' },
+  { id: 'standard_four_image', name: '标准四图', desc: '4张图+文字', category: '标准A+', specs: '每图220x220px；标题60字符，正文160字符', structure: '4张子图' },
+  { id: 'standard_single_image', name: '标准单图', desc: '全宽单图', category: '标准A+', specs: '970x600px；标题160字符，正文6000字符', structure: '单张全宽图' },
+];
+const OUTLINE_APLUS_CATEGORIES = Array.from(new Set(OUTLINE_APLUS_MODULES.map((m) => m.category)));
+
+function findOutlineAplusModule(value?: string) {
+  if (!value) return undefined;
+  return OUTLINE_APLUS_MODULES.find((m) => m.id === value || m.name === value);
+}
+
+function normalizeAplusModuleStyle(mod: any) {
+  const selected = findOutlineAplusModule(mod.selectedModuleType || mod.recommendedModuleType || mod.selectedModuleName);
+  return selected ? {
+    ...mod,
+    selectedModuleType: selected.id,
+    selectedModuleName: selected.name,
+    selectedModuleCategory: selected.category,
+    selectedModuleSpecs: selected.specs,
+    selectedModuleStructure: selected.structure,
+  } : mod;
+}
+
 function Step2ImageOutline({
   projectId,
   session,
@@ -1265,7 +1310,8 @@ function Step2ImageOutline({
 }) {
   const generateMutation = trpc.imageWorkflow.generateStep2.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep2.useMutation();
-  const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
+  const unlockMutation = trpc.imageWorkflow.unlockStep2.useMutation();
+  const utils = trpc.useUtils();
   const [editData, setEditData] = useState<any>(null);
   const [isLocked, setIsLocked] = useState(!!session?.step2Confirmed);
 
@@ -1280,7 +1326,8 @@ function Step2ImageOutline({
 
   const handleUnlock = async () => {
     try {
-      await resetMutation.mutateAsync({ projectId, step: 2 });
+      await unlockMutation.mutateAsync({ projectId });
+      await utils.imageWorkflow.getSession.invalidate({ projectId });
       setIsLocked(false);
       toast.success("已解锁，可编辑图片大纲");
     } catch (err: any) {
@@ -1301,7 +1348,12 @@ function Step2ImageOutline({
   const handleConfirm = async () => {
     if (!editData) return;
     try {
-      await confirmMutation.mutateAsync({ projectId, userEdit: JSON.stringify(editData) });
+      const normalizedData = {
+        ...editData,
+        aPlusModules: (editData.aPlusModules || []).map(normalizeAplusModuleStyle),
+      };
+      setEditData(normalizedData);
+      await confirmMutation.mutateAsync({ projectId, userEdit: JSON.stringify(normalizedData) });
       toast.success("图片大纲已确认");
       onConfirm();
     } catch (err: any) {
@@ -1322,6 +1374,21 @@ function Step2ImageOutline({
     if (!editData) return;
     const newData = { ...editData, aPlusModules: [...(editData.aPlusModules || [])] };
     newData.aPlusModules[idx] = { ...newData.aPlusModules[idx], [field]: value };
+    setEditData(newData);
+  };
+
+  const updateAPlusModuleStyle = (idx: number, moduleType: string) => {
+    const selected = OUTLINE_APLUS_MODULES.find((m) => m.id === moduleType);
+    if (!selected || !editData) return;
+    const newData = { ...editData, aPlusModules: [...(editData.aPlusModules || [])] };
+    newData.aPlusModules[idx] = {
+      ...newData.aPlusModules[idx],
+      selectedModuleType: selected.id,
+      selectedModuleName: selected.name,
+      selectedModuleCategory: selected.category,
+      selectedModuleSpecs: selected.specs,
+      selectedModuleStructure: selected.structure,
+    };
     setEditData(newData);
   };
 
@@ -1360,8 +1427,8 @@ function Step2ImageOutline({
                   <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                     <Lock className="w-3 h-3 mr-1" /> 已锁定
                   </Badge>
-                  <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={resetMutation.isPending}>
-                    {resetMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
+                  <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={unlockMutation.isPending}>
+                    {unlockMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
                     解锁编辑
                   </Button>
                 </div>
@@ -1535,32 +1602,81 @@ function Step2ImageOutline({
           )}
 
           {/* A+ Modules */}
-          {editData.aPlusModules?.map((mod: any, idx: number) => (
-            <Card key={idx}>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-purple-500" /> A+ 模块 {mod.moduleNumber || idx + 1}
-                  {mod.moduleType && <Badge variant="outline" className="text-xs">{mod.moduleType}</Badge>}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {isConfirmed ? (
-                  <>
-                    <p className="text-sm"><strong>目的:</strong> {mod.purpose}</p>
-                    <p className="text-sm"><strong>内容:</strong> {mod.contentBrief}</p>
-                    <p className="text-sm"><strong>位置逻辑:</strong> {mod.position}</p>
-                  </>
-                ) : (
-                  <>
-                    <Input value={mod.moduleType || ""} onChange={(e) => updateAPlusModule(idx, "moduleType", e.target.value)} placeholder="模块类型" className="h-8 text-sm" />
-                    <Input value={mod.purpose || ""} onChange={(e) => updateAPlusModule(idx, "purpose", e.target.value)} placeholder="模块目的" className="h-8 text-sm" />
-                    <Textarea value={mod.contentBrief || ""} onChange={(e) => updateAPlusModule(idx, "contentBrief", e.target.value)} placeholder="内容简述" className="min-h-[50px] text-sm" />
-                    <Input value={mod.position || ""} onChange={(e) => updateAPlusModule(idx, "position", e.target.value)} placeholder="位置逻辑" className="h-8 text-sm" />
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+          {editData.aPlusModules?.map((mod: any, idx: number) => {
+            const rawSelectedStyle = mod.selectedModuleType || mod.recommendedModuleType || "";
+            const matchedModule = findOutlineAplusModule(rawSelectedStyle);
+            const selectedStyle = matchedModule?.id || "";
+            const selectedModule = matchedModule || findOutlineAplusModule(mod.selectedModuleName);
+            return (
+              <Card key={idx}>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2 flex-wrap">
+                    <Layers className="w-4 h-4 text-purple-500" /> A+ 模块 {mod.moduleNumber || idx + 1}
+                    {mod.moduleType && <Badge variant="outline" className="text-xs">{mod.moduleType}</Badge>}
+                    {(mod.selectedModuleName || selectedModule?.name) && (
+                      <Badge variant="secondary" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
+                        {mod.selectedModuleName || selectedModule?.name}
+                      </Badge>
+                    )}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {isConfirmed ? (
+                    <>
+                      <p className="text-sm"><strong>目的:</strong> {mod.purpose}</p>
+                      <p className="text-sm"><strong>内容:</strong> {mod.contentBrief}</p>
+                      <p className="text-sm"><strong>位置逻辑:</strong> {mod.position}</p>
+                      {(mod.selectedModuleName || selectedModule) && (
+                        <div className="rounded-lg border border-purple-100 bg-purple-50/60 p-3 text-xs text-purple-800">
+                          <p className="font-semibold">A+模块样式：{mod.selectedModuleName || selectedModule?.name}</p>
+                          <p className="mt-1">结构：{mod.selectedModuleStructure || selectedModule?.structure}</p>
+                          <p className="mt-1">规格：{mod.selectedModuleSpecs || selectedModule?.specs}</p>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="rounded-lg border border-purple-100 bg-purple-50/50 p-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Layers className="w-3.5 h-3.5 text-purple-500" />
+                          <span className="text-xs font-medium text-purple-700">超级A+模块样式</span>
+                        </div>
+                        <Select value={selectedStyle} onValueChange={(val) => updateAPlusModuleStyle(idx, val)}>
+                          <SelectTrigger className="h-8 text-xs bg-white">
+                            <SelectValue placeholder="选择A+模块样式，后续构图/效果图将按此结构生成" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {OUTLINE_APLUS_CATEGORIES.map((cat) => (
+                              <div key={cat}>
+                                <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50">{cat}</div>
+                                {OUTLINE_APLUS_MODULES.filter((m) => m.category === cat).map((moduleOption) => (
+                                  <SelectItem key={moduleOption.id} value={moduleOption.id}>
+                                    <div className="flex flex-col">
+                                      <span className="text-xs font-medium">{moduleOption.name}</span>
+                                      <span className="text-[10px] text-muted-foreground">{moduleOption.desc} | {moduleOption.structure}</span>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </div>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {selectedModule && (
+                          <p className="mt-2 text-[10px] text-purple-600">
+                            {selectedModule.name}: {selectedModule.specs}；{selectedModule.structure}
+                          </p>
+                        )}
+                      </div>
+                      <Input value={mod.moduleType || ""} onChange={(e) => updateAPlusModule(idx, "moduleType", e.target.value)} placeholder="模块类型" className="h-8 text-sm" />
+                      <Input value={mod.purpose || ""} onChange={(e) => updateAPlusModule(idx, "purpose", e.target.value)} placeholder="模块目的" className="h-8 text-sm" />
+                      <Textarea value={mod.contentBrief || ""} onChange={(e) => updateAPlusModule(idx, "contentBrief", e.target.value)} placeholder="内容简述" className="min-h-[50px] text-sm" />
+                      <Input value={mod.position || ""} onChange={(e) => updateAPlusModule(idx, "position", e.target.value)} placeholder="位置逻辑" className="h-8 text-sm" />
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
 
           {/* Overall Narrative */}
           {editData.overallNarrative && (
@@ -3074,23 +3190,16 @@ function Step5FinalSuggestions({
 }) {
   const generateMutation = trpc.imageWorkflow.generateStep5.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep5.useMutation();
-  const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
-  const aplusOptimizeMutation = trpc.imageWorkflow.optimizeWithAplusModule.useMutation();
+  const unlockMutation = trpc.imageWorkflow.unlockStep5.useMutation();
   const utils = trpc.useUtils();
   const [enData, setEnData] = useState<any>(null);
   const [cnData, setCnData] = useState<any>(null);
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [isLocked, setIsLocked] = useState(!!session?.step5Confirmed);
-  const [showModuleSelector, setShowModuleSelector] = useState(false);
-  const [selectedModules, setSelectedModules] = useState<string[]>([]);
   // Per-section module style state: { [sectionIndex]: moduleTypeId }
   const [sectionModuleStyles, setSectionModuleStyles] = useState<Record<number, string>>({});
   const [optimizingSectionIdx, setOptimizingSectionIdx] = useState<number | null>(null);
   const singleModuleOptimizeMutation = trpc.imageWorkflow.optimizeSingleAplusModule.useMutation();
-  const comboRecommendMutation = trpc.imageWorkflow.recommendAplusCombo.useMutation();
-  const [comboRecommendations, setComboRecommendations] = useState<any>(null);
-  const [showComboPanel, setShowComboPanel] = useState(false);
-  const [selectedComboIdx, setSelectedComboIdx] = useState<number | null>(null);
 
   // Amazon Premium A+ Module Types - comprehensive list matching backend prompt
   const APLUS_MODULES = [
@@ -3121,6 +3230,37 @@ function Step5FinalSuggestions({
   ];
 
   const MODULE_CATEGORIES = Array.from(new Set(APLUS_MODULES.map(m => m.category)));
+  const outlineAplusModules = useMemo(() => {
+    const outline = safeJsonParse(session?.step2UserEdit || session?.step2AiResult);
+    return Array.isArray(outline?.aPlusModules) ? outline.aPlusModules : [];
+  }, [session?.step2AiResult, session?.step2UserEdit]);
+
+  useEffect(() => {
+    const nextStyles: Record<number, string> = {};
+    outlineAplusModules.forEach((mod: any, idx: number) => {
+      const selected = findOutlineAplusModule(mod.selectedModuleType || mod.recommendedModuleType || mod.selectedModuleName);
+      if (selected) nextStyles[idx] = selected.id;
+    });
+    setSectionModuleStyles(nextStyles);
+  }, [outlineAplusModules]);
+
+  const applySectionModuleStyles = (data: any) => {
+    if (!data?.aPlusContent?.sections) return data;
+    const sections = data.aPlusContent.sections.map((section: any, idx: number) => {
+      const outlineModule = outlineAplusModules[idx];
+      const styleId = sectionModuleStyles[idx] || section.selectedModuleType || outlineModule?.selectedModuleType;
+      const selected = findOutlineAplusModule(styleId || outlineModule?.selectedModuleName);
+      return selected ? {
+        ...section,
+        selectedModuleType: selected.id,
+        selectedModuleName: selected.name,
+        selectedModuleCategory: selected.category,
+        selectedModuleSpecs: selected.specs,
+        selectedModuleStructure: selected.structure,
+      } : section;
+    });
+    return { ...data, aPlusContent: { ...data.aPlusContent, sections } };
+  };
 
   // Handle per-section module style optimize
   const handleSingleModuleOptimize = async (sectionIdx: number) => {
@@ -3143,7 +3283,16 @@ function Step5FinalSuggestions({
       if (result.en) {
         setEnData((prev: any) => {
           const sections = [...(prev.aPlusContent?.sections || [])];
-          sections[sectionIdx] = { ...sections[sectionIdx], ...result.en, selectedModuleType: moduleId, selectedModuleName: mod.name };
+          const normalizedModule = findOutlineAplusModule(moduleId);
+          sections[sectionIdx] = {
+            ...sections[sectionIdx],
+            ...result.en,
+            selectedModuleType: moduleId,
+            selectedModuleName: mod.name,
+            selectedModuleCategory: normalizedModule?.category,
+            selectedModuleSpecs: normalizedModule?.specs,
+            selectedModuleStructure: normalizedModule?.structure,
+          };
           return { ...prev, aPlusContent: { ...prev.aPlusContent, sections } };
         });
       }
@@ -3170,61 +3319,13 @@ function Step5FinalSuggestions({
 
   const handleUnlock = async () => {
     try {
-      await resetMutation.mutateAsync({ projectId, step: 5 });
+      await unlockMutation.mutateAsync({ projectId });
+      await utils.imageWorkflow.getSession.invalidate({ projectId });
       setIsLocked(false);
       toast.success("已解锁Step 5，可重新编辑");
     } catch (err: any) {
       toast.error(err.message || "解锁失败");
     }
-  };
-
-  const handleAplusModuleOptimize = async () => {
-    if (selectedModules.length === 0) {
-      toast.error("请先选择至少一个A+模块");
-      return;
-    }
-    try {
-      const result = await aplusOptimizeMutation.mutateAsync({
-        projectId,
-        selectedModules: selectedModules.map((id, i) => {
-          const mod = APLUS_MODULES.find(m => m.id === id);
-          return { moduleType: id, moduleName: mod?.name || id, position: i + 1 };
-        }),
-      });
-      if (result.en) setEnData(result.en);
-      if (result.cn) setCnData(result.cn);
-      await utils.imageWorkflow.getSession.invalidate({ projectId });
-      setShowModuleSelector(false);
-      toast.success("已根据A+模块样式二次优化");
-    } catch (err: any) {
-      toast.error(err.message || "A+模块优化失败");
-    }
-  };
-
-  // Handle AI combo recommendation
-  const handleComboRecommend = async () => {
-    try {
-      const result = await comboRecommendMutation.mutateAsync({ projectId });
-      setComboRecommendations(result);
-      setShowComboPanel(true);
-      toast.success("AI已生成3套推荐方案");
-    } catch (err: any) {
-      toast.error(err.message || "推荐失败");
-    }
-  };
-
-  // Apply a recommended combo to per-section module styles
-  const handleApplyCombo = (comboIdx: number) => {
-    const combo = comboRecommendations?.recommendations?.[comboIdx];
-    if (!combo?.modules) return;
-    const newStyles: Record<number, string> = {};
-    combo.modules.forEach((mod: any) => {
-      const idx = (mod.position || 1) - 1;
-      if (mod.moduleType) newStyles[idx] = mod.moduleType;
-    });
-    setSectionModuleStyles(newStyles);
-    setSelectedComboIdx(comboIdx);
-    toast.success(`已应用「${combo.name}」方案，可在各模块单独微调后点击AI优化`);
   };
 
   useEffect(() => {
@@ -3261,7 +3362,9 @@ function Step5FinalSuggestions({
   const handleConfirm = async () => {
     if (!enData) return;
     try {
-      await confirmMutation.mutateAsync({ projectId, userEdit: JSON.stringify(enData) });
+      const finalData = applySectionModuleStyles(enData);
+      setEnData(finalData);
+      await confirmMutation.mutateAsync({ projectId, userEdit: JSON.stringify(finalData) });
       await utils.imageWorkflow.getSession.invalidate({ projectId });
       toast.success("图片建议已确认");
       onConfirm();
@@ -3327,7 +3430,7 @@ function Step5FinalSuggestions({
   const handleExportHtml = () => {
     toast.info("正在准备导出...");
     try {
-      const content = buildPdfContent(enData, cnData);
+      const content = buildPdfContent(applySectionModuleStyles(enData), cnData);
       const blob = new Blob([content], { type: "text/html;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -3345,7 +3448,7 @@ function Step5FinalSuggestions({
   const handleExportPdf = () => {
     toast.info("正在生成PDF...");
     try {
-      const content = buildPdfContent(enData, cnData);
+      const content = buildPdfContent(applySectionModuleStyles(enData), cnData);
       const printWindow = window.open("", "_blank");
       if (!printWindow) {
         toast.error("无法打开打印窗口，请允许弹出窗口");
@@ -3484,8 +3587,8 @@ function Step5FinalSuggestions({
                     <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                       <Lock className="w-3 h-3 mr-1" /> 已锁定
                     </Badge>
-                    <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={resetMutation.isPending}>
-                      {resetMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
+                    <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={unlockMutation.isPending}>
+                      {unlockMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
                       解锁编辑
                     </Button>
                   </div>
@@ -3503,194 +3606,6 @@ function Step5FinalSuggestions({
           </CardContent>
         )}
       </Card>
-
-      {/* A+ Module Combo Recommendation Panel */}
-      {enData && !isConfirmed && (
-        <Card className="border-purple-200 bg-gradient-to-r from-purple-50/50 to-indigo-50/50">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-purple-500" /> AI推荐A+模块组合方案
-              </CardTitle>
-              <Button
-                variant={showComboPanel ? "secondary" : "default"}
-                size="sm"
-                className={showComboPanel ? "" : "bg-purple-600 hover:bg-purple-700"}
-                onClick={() => {
-                  if (!comboRecommendations) handleComboRecommend();
-                  else setShowComboPanel(!showComboPanel);
-                }}
-                disabled={comboRecommendMutation.isPending}
-              >
-                {comboRecommendMutation.isPending ? (
-                  <><Loader2 className="w-4 h-4 mr-1 animate-spin" /> 分析中...</>
-                ) : showComboPanel ? "收起" : (
-                  <><Sparkles className="w-4 h-4 mr-1" /> {comboRecommendations ? "查看推荐" : "AI智能推荐"}</>
-                )}
-              </Button>
-            </div>
-            <CardDescription>基于产品类目、卖点数量和品牌调性，AI自动推荐3套最佳的A+模块组合方案，一键应用后可单独微调</CardDescription>
-          </CardHeader>
-          {showComboPanel && comboRecommendations?.recommendations && (
-            <CardContent>
-              {comboRecommendations.analysisNote && (
-                <div className="mb-4 p-3 bg-white/80 rounded-lg border border-purple-100 text-sm text-muted-foreground">
-                  <strong className="text-purple-700">分析说明：</strong> {comboRecommendations.analysisNote}
-                </div>
-              )}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {comboRecommendations.recommendations.map((combo: any, cIdx: number) => {
-                  const isApplied = selectedComboIdx === cIdx;
-                  return (
-                    <div
-                      key={cIdx}
-                      className={`relative p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                        isApplied
-                          ? "border-purple-500 bg-purple-50 shadow-md"
-                          : "border-gray-200 bg-white hover:border-purple-300 hover:shadow-sm"
-                      }`}
-                      onClick={() => handleApplyCombo(cIdx)}
-                    >
-                      {/* Score badge */}
-                      {combo.score && (
-                        <div className={`absolute -top-2 -right-2 w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white ${
-                          combo.score >= 85 ? 'bg-green-500' : combo.score >= 70 ? 'bg-blue-500' : 'bg-orange-500'
-                        }`}>
-                          {combo.score}
-                        </div>
-                      )}
-                      {isApplied && (
-                        <div className="absolute -top-2 -left-2">
-                          <Badge className="bg-purple-600 text-white text-[10px]">已应用</Badge>
-                        </div>
-                      )}
-                      <h4 className="font-semibold text-sm text-purple-800 mb-1">{combo.name}</h4>
-                      <p className="text-xs text-muted-foreground mb-2">{combo.description}</p>
-                      {combo.visualRhythm && (
-                        <p className="text-[10px] text-purple-600 mb-2 italic">节奏: {combo.visualRhythm}</p>
-                      )}
-                      {/* Module list */}
-                      <div className="space-y-1.5 mb-3">
-                        {combo.modules?.map((mod: any, mIdx: number) => {
-                          const modInfo = APLUS_MODULES.find(m => m.id === mod.moduleType);
-                          return (
-                            <div key={mIdx} className="flex items-start gap-2">
-                              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-purple-100 text-purple-700 text-[10px] font-bold flex items-center justify-center">{mod.position || mIdx + 1}</span>
-                              <div className="min-w-0">
-                                <span className="text-xs font-medium">{mod.moduleName || modInfo?.name}</span>
-                                {mod.purpose && <p className="text-[10px] text-muted-foreground truncate">{mod.purpose}</p>}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {/* Strengths */}
-                      {combo.strengths?.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mb-2">
-                          {combo.strengths.map((s: string, sIdx: number) => (
-                            <Badge key={sIdx} variant="outline" className="text-[10px] bg-green-50 text-green-700 border-green-200">{s}</Badge>
-                          ))}
-                        </div>
-                      )}
-                      {combo.bestFor && (
-                        <p className="text-[10px] text-muted-foreground">✅ 最适合: {combo.bestFor}</p>
-                      )}
-                      <Button
-                        size="sm"
-                        variant={isApplied ? "secondary" : "default"}
-                        className={`w-full mt-2 text-xs ${isApplied ? '' : 'bg-purple-600 hover:bg-purple-700'}`}
-                        onClick={(e) => { e.stopPropagation(); handleApplyCombo(cIdx); }}
-                      >
-                        {isApplied ? <><Check className="w-3 h-3 mr-1" /> 已应用</> : <>一键应用该方案</>}
-                      </Button>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-                <span>点击方案卡片或“一键应用”按钮，将自动填充各A+模块的样式选择器</span>
-                <Button variant="ghost" size="sm" className="text-xs" onClick={handleComboRecommend} disabled={comboRecommendMutation.isPending}>
-                  {comboRecommendMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
-                  重新推荐
-                </Button>
-              </div>
-            </CardContent>
-          )}
-          {showComboPanel && comboRecommendMutation.isPending && (
-            <CardContent>
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-purple-500 mr-2" />
-                <span className="text-sm text-muted-foreground">AI正在分析产品特征并生成最佳模块组合方案...</span>
-              </div>
-            </CardContent>
-          )}
-        </Card>
-      )}
-
-      {/* A+ Module Selector Panel */}
-      {enData && !isConfirmed && (
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Layers className="w-4 h-4 text-purple-500" /> 选择亚马逊超级A+模块样式
-              </CardTitle>
-              <Button variant={showModuleSelector ? "secondary" : "outline"} size="sm" onClick={() => setShowModuleSelector(!showModuleSelector)}>
-                {showModuleSelector ? "收起" : "选择A+模块"}
-              </Button>
-            </div>
-            <CardDescription>选择亚马逊高级A+模块样式，AI将根据模块规格二次优化图片建议</CardDescription>
-          </CardHeader>
-          {showModuleSelector && (
-            <CardContent>
-              <div className="space-y-4">
-                {MODULE_CATEGORIES.map(cat => (
-                  <div key={cat}>
-                    <h4 className="text-sm font-medium text-muted-foreground mb-2">{cat}</h4>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                      {APLUS_MODULES.filter(m => m.category === cat).map(mod => {
-                        const isSelected = selectedModules.includes(mod.id);
-                        return (
-                          <button
-                            key={mod.id}
-                            onClick={() => {
-                              setSelectedModules(prev =>
-                                isSelected ? prev.filter(id => id !== mod.id) : [...prev, mod.id]
-                              );
-                            }}
-                            className={`p-3 rounded-lg border text-left transition-all ${
-                              isSelected
-                                ? "border-purple-400 bg-purple-50 shadow-sm"
-                                : "border-gray-200 hover:border-purple-200 hover:bg-purple-50/30"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2">
-                              <div className={`w-4 h-4 rounded border flex items-center justify-center ${
-                                isSelected ? "bg-purple-500 border-purple-500" : "border-gray-300"
-                              }`}>
-                                {isSelected && <Check className="w-3 h-3 text-white" />}
-                              </div>
-                              <span className="text-sm font-medium">{mod.name}</span>
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-1 ml-6">{mod.desc}</p>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-                <div className="flex items-center justify-between pt-2 border-t">
-                  <span className="text-sm text-muted-foreground">已选择 {selectedModules.length} 个模块</span>
-                  <Button onClick={handleAplusModuleOptimize} disabled={selectedModules.length === 0 || aplusOptimizeMutation.isPending}>
-                    {aplusOptimizeMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-                    根据模块二次优化
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          )}
-        </Card>
-      )}
 
       {enData && !generateMutation.isPending && (
         <>
@@ -3870,8 +3785,13 @@ function Step5FinalSuggestions({
               {/* Draggable A+ sections with per-section module style selector */}
               {enData.aPlusContent.sections?.map((section: any, idx: number) => {
                 const cnSection = cnData?.aPlusContent?.sections?.[idx];
-                const selectedStyle = sectionModuleStyles[idx] || section.selectedModuleType || '';
+                const outlineModule = outlineAplusModules[idx];
+                const outlineSelectedModule = findOutlineAplusModule(
+                  outlineModule?.selectedModuleType || outlineModule?.recommendedModuleType || outlineModule?.selectedModuleName
+                );
+                const selectedStyle = sectionModuleStyles[idx] || section.selectedModuleType || outlineSelectedModule?.id || '';
                 const selectedMod = APLUS_MODULES.find(m => m.id === selectedStyle);
+                const selectedModuleName = section.selectedModuleName || outlineModule?.selectedModuleName || selectedMod?.name;
                 const isOptimizing = optimizingSectionIdx === idx;
                 return (
                   <Card
@@ -3889,9 +3809,9 @@ function Step5FinalSuggestions({
                           <CardTitle className="text-sm flex items-center gap-2">
                             A+ 模块 {idx + 1}
                             {section.type && <Badge variant="outline" className="text-xs">{section.type}</Badge>}
-                            {section.selectedModuleName && (
+                            {selectedModuleName && (
                               <Badge variant="secondary" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
-                                {section.selectedModuleName}
+                                {selectedModuleName}
                               </Badge>
                             )}
                           </CardTitle>
@@ -3912,7 +3832,7 @@ function Step5FinalSuggestions({
                         <div className="mt-3 p-3 bg-purple-50/50 rounded-lg border border-purple-100">
                           <div className="flex items-center gap-2 mb-2">
                             <Layers className="w-3.5 h-3.5 text-purple-500" />
-                            <span className="text-xs font-medium text-purple-700">选择超级A+模块样式</span>
+                            <span className="text-xs font-medium text-purple-700">A+模块样式微调</span>
                           </div>
                           <div className="flex items-center gap-2">
                             <Select
@@ -4014,8 +3934,14 @@ function Step5FinalSuggestions({
                                 {section.moduleSpecificContent.panels && (
                                   <div><strong>面板:</strong> {section.moduleSpecificContent.panels.length}个面板</div>
                                 )}
+                                {section.moduleSpecificContent.subImages && (
+                                  <div><strong>子图:</strong> {section.moduleSpecificContent.subImages.length}张子图</div>
+                                )}
                                 {section.moduleSpecificContent.hotspots && (
                                   <div><strong>热点:</strong> {section.moduleSpecificContent.hotspots.length}个热点</div>
+                                )}
+                                {section.moduleSpecificContent.comparisonRows && (
+                                  <div><strong>比较表:</strong> {section.moduleSpecificContent.comparisonRows.length}行</div>
                                 )}
                                 {section.moduleSpecificContent.qaItems && (
                                   <div><strong>问答:</strong> {section.moduleSpecificContent.qaItems.length}个问答</div>
@@ -4174,9 +4100,25 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
     s.push(`<hr class="divider"/>`);
     s.push(`<h2 id="step2"><span class="step-badge">Step 2</span>图片大纲</h2>`);
     const outline = safeJsonParse(session.step2UserEdit || session.step2AiResult);
-    if (outline?.images?.length) {
+    const outlineImages = outline?.images || [
+      outline?.mainImage ? {
+        imageLabel: '主图',
+        imageType: '主图',
+        content: outline.mainImage.contentBrief,
+        sellingPoint: outline.mainImage.sellingPointRef,
+        expressionMethod: outline.mainImage.purpose,
+      } : null,
+      ...(outline?.secondaryImages || []).map((img: any) => ({
+        imageLabel: `辅图 ${img.imageNumber || ''}`,
+        imageType: '辅图',
+        content: img.contentBrief,
+        sellingPoint: Array.isArray(img.sellingPointRefs) ? img.sellingPointRefs.join(', ') : img.sellingPointRefs,
+        expressionMethod: img.expressionType,
+      })),
+    ].filter(Boolean);
+    if (outlineImages?.length) {
       s.push(`<table><tr><th>图片</th><th>内容规划</th><th>呼应卖点</th><th>表达方式</th></tr>`);
-      outline.images.forEach((img: any) => {
+      outlineImages.forEach((img: any) => {
         s.push(`<tr><td><strong>${img.imageLabel || img.label || ''}</strong><br/><span class="badge">${img.imageType || ''}</span></td><td>${img.content || img.description || ''}</td><td>${img.sellingPoint || img.linkedSellingPoint || ''}</td><td>${img.expressionMethod || ''}</td></tr>`);
       });
       s.push(`</table>`);
@@ -4186,6 +4128,19 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
     }
     if (outline?.aPlusOutline) {
       s.push(`<h3>A+ 内容大纲</h3><div class="card">${typeof outline.aPlusOutline === 'string' ? outline.aPlusOutline : JSON.stringify(outline.aPlusOutline)}</div>`);
+    }
+    if (outline?.aPlusModules?.length) {
+      s.push(`<h3>A+ 模块样式</h3>`);
+      outline.aPlusModules.forEach((mod: any, idx: number) => {
+        s.push(`<div class="card">`);
+        s.push(`<h4>A+ 模块 ${mod.moduleNumber || idx + 1}: ${mod.selectedModuleName || mod.moduleType || ''}</h4>`);
+        if (mod.selectedModuleStructure) s.push(`<p><strong>结构:</strong> ${mod.selectedModuleStructure}</p>`);
+        if (mod.selectedModuleSpecs) s.push(`<p><strong>规格:</strong> ${mod.selectedModuleSpecs}</p>`);
+        if (mod.purpose) s.push(`<p><strong>目的:</strong> ${mod.purpose}</p>`);
+        if (mod.contentBrief) s.push(`<p><strong>内容:</strong> ${mod.contentBrief}</p>`);
+        if (mod.position) s.push(`<p><strong>位置:</strong> ${mod.position}</p>`);
+        s.push(`</div>`);
+      });
     }
     if (!outline) {
       s.push(`<p style="color:#999;">未生成或未确认</p>`);
@@ -4295,7 +4250,9 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
       s.push(`<h3>A+ Content</h3>`);
       en.aPlusContent.sections.forEach((sec: any, idx: number) => {
         const cnSec = cn?.aPlusContent?.sections?.[idx];
-        s.push(`<h4>Module ${idx + 1}: ${sec.title || ''}</h4><div class="grid"><div class="en"><p><strong>Purpose:</strong> ${sec.purpose || ''}</p><p>${sec.content || ''}</p>${sec.fabe ? `<div class="fabe">FABE: F: ${sec.fabe.feature || ''} | A: ${sec.fabe.advantage || ''} | B: ${sec.fabe.benefit || ''} | E: ${sec.fabe.evidence || ''}</div>` : ''}</div><div class="cn"><p><strong>目的:</strong> ${cnSec?.purpose || ''}</p><p>${cnSec?.content || ''}</p>${cnSec?.fabe ? `<div class="fabe">FABE: F: ${cnSec.fabe.feature || ''} | A: ${cnSec.fabe.advantage || ''} | B: ${cnSec.fabe.benefit || ''} | E: ${cnSec.fabe.evidence || ''}</div>` : ''}</div></div>`);
+        const moduleMeta = [sec.selectedModuleName, sec.selectedModuleStructure, sec.selectedModuleSpecs].filter(Boolean).join(' | ');
+        const moduleSpecific = sec.moduleSpecificContent ? `<div class="fabe"><strong>模块专属结构:</strong> ${JSON.stringify(sec.moduleSpecificContent)}</div>` : '';
+        s.push(`<h4>Module ${idx + 1}: ${sec.title || ''}</h4><div class="grid"><div class="en">${moduleMeta ? `<p><strong>A+ Module:</strong> ${moduleMeta}</p>` : ''}<p><strong>Purpose:</strong> ${sec.purpose || ''}</p><p>${sec.content || ''}</p>${sec.fabe ? `<div class="fabe">FABE: F: ${sec.fabe.feature || ''} | A: ${sec.fabe.advantage || ''} | B: ${sec.fabe.benefit || ''} | E: ${sec.fabe.evidence || ''}</div>` : ''}${moduleSpecific}</div><div class="cn"><p><strong>目的:</strong> ${cnSec?.purpose || ''}</p><p>${cnSec?.content || ''}</p>${cnSec?.fabe ? `<div class="fabe">FABE: F: ${cnSec.fabe.feature || ''} | A: ${cnSec.fabe.advantage || ''} | B: ${cnSec.fabe.benefit || ''} | E: ${cnSec.fabe.evidence || ''}</div>` : ''}</div></div>`);
       });
     }
   } else {

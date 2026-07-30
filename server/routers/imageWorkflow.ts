@@ -20,6 +20,26 @@ import {
 import { IMAGE_ADVICE_TRANSLATION_PROMPT } from "../prompts";
 import { storagePut } from "../storage";
 
+const APLUS_MODULE_STYLE_GUIDE = [
+  "premium_full_image: 高级完整图片，单张全宽大图，1464x600px",
+  "premium_bg_image_text: 高级背景图像+文本，单张背景图叠字，1464x600px",
+  "premium_four_image_text: 高级四图片+文本，4张子图，每图300x225px",
+  "premium_dual_image_text: 高级双图片+文本，2张并列图，每图650x350px",
+  "premium_single_image_text: 高级单图+文本，单张说明图，800x600px",
+  "premium_nav_carousel: 高级导航轮播，2-5张轮播面板，每面板1464x600px",
+  "premium_rule_carousel: 高级规则轮播，2-5张轮播面板，每面板1464x600px",
+  "premium_simple_carousel: 高级简单图像轮播，2-6张轮播面板，每面板1464x600px",
+  "premium_video_carousel: 高级视频图像轮播，2-6个视频或图片面板，每面板800x600px",
+  "premium_hotspot_1/premium_hotspot_2: 高级热点，1张底图+2-6个热点",
+  "premium_comparison_1/2/3: 高级比较表，按产品列和特征行拆分",
+  "premium_qa: 高级问答，2-5组问答内容",
+  "premium_tech_specs: 高级技术规格，3-15个规格项",
+  "brand_highlight: 品牌亮点，3-4个品牌亮点卡片",
+  "standard_four_image: 标准四图，4张子图",
+  "standard_comparison: 标准对比表，最多5列对比",
+  "standard_single_image/standard_image_text: 标准单图或图文",
+].join("\n");
+
 // ─── Helper: Build context from project data ─────────────────────
 async function buildImageWorkflowContext(projectId: number) {
   const parts: string[] = [];
@@ -738,7 +758,7 @@ export const imageWorkflowRouter = router({
         ? context
         : "暂无竞品分析数据。请根据产品名称、品牌和类目，结合亚马逊运营经验，自行推断并生成完整的图片大纲。";
 
-      const userMsg2 = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${sellingPoints}\n\n--- 产品背景信息 ---\n${contextHint2}${step0Summary}\n\n请根据以上卖点体系和竞品分析，规划每张图片的内容大纲，并在辅图的referenceHighlights字段中引用竞品亮点。`;
+      const userMsg2 = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${sellingPoints}\n\n--- 产品背景信息 ---\n${contextHint2}${step0Summary}\n\n--- 可选亚马逊A+模块样式 ---\n${APLUS_MODULE_STYLE_GUIDE}\n\n请根据以上卖点体系和竞品分析，规划每张图片的内容大纲，并在辅图的referenceHighlights字段中引用竞品亮点。A+模块请优先推荐适合的selectedModuleType/selectedModuleName/selectedModuleStructure；如果是轮播、四图、比较表、热点等一个模块多张图或多面板的样式，请在contentBrief中明确每个面板/子图/热点的内容安排。`;
 
       const result = await callLLMWithRetry(STEP2_IMAGE_OUTLINE_PROMPT, userMsg2);
       await db.updateImageWorkflowSession(session.id, {
@@ -764,6 +784,38 @@ export const imageWorkflowRouter = router({
         step2UserEdit: input.userEdit,
         step2Confirmed: 1,
         currentStep: 3,
+      });
+
+      return { success: true };
+    }),
+
+  // ─── Step 2: Unlock outline without deleting the current draft ──
+  unlockStep2: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
+
+      await db.updateImageWorkflowSession(session.id, {
+        step2Confirmed: 0,
+        currentStep: 2,
+        step3AiResult: null,
+        step3UserEdit: null,
+        step3Confirmed: 0,
+        step4AiResult: null,
+        step4UserEdit: null,
+        step4Confirmed: 0,
+        step4CompositionRefs: null,
+        step4EffectRefs: null,
+        step5AiResult: null,
+        step5AiResultCn: null,
+        step5UserEdit: null,
+        step5Confirmed: 0,
+        step5SelectedModule: null,
+        step5OptimizedResult: null,
+        step5OptimizedResultCn: null,
+        status: "in_progress",
       });
 
       return { success: true };
@@ -864,7 +916,7 @@ export const imageWorkflowRouter = router({
       const response = await invokeLLM({
         messages: [
           { role: "system", content: STEP4_REFERENCE_PROMPT },
-          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}\n\n--- 已确认的风格方案 ---\n${session.step3UserEdit || session.step3AiResult}\n${kbImageInfo}\n\n请为每张图推荐构图参考和效果图参考。` },
+          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}\n\n--- 已确认的风格方案 ---\n${session.step3UserEdit || session.step3AiResult}\n${kbImageInfo}\n\n请为每张图推荐构图参考和效果图参考。若图片大纲中的A+模块包含selectedModuleType/selectedModuleName/selectedModuleStructure，必须按该模块结构生成参考：轮播模块拆成每个面板的构图/效果参考，四图模块拆成4张子图，热点模块包含底图和各热点位置，比较表模块包含产品列和特征行布局。` },
         ],
         response_format: { type: "json_object" },
       });
@@ -924,7 +976,7 @@ export const imageWorkflowRouter = router({
       const response = await invokeLLM({
         messages: [
           { role: "system", content: STEP5_FINAL_SUGGESTION_PROMPT },
-          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}${kbReference}\n\n请综合以上所有确认结果（包括知识库参考），输出每张图的完整图片建议。` },
+          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}${kbReference}\n\n请综合以上所有确认结果（包括知识库参考），输出每张图的完整图片建议。A+内容必须继承图片大纲里已选择的selectedModuleType/selectedModuleName/selectedModuleStructure；轮播、四图、比较表、热点等多图/多面板模块必须输出对应面板、子图、热点或表格布局，不要再退化成单张普通图片建议。` },
         ],
         response_format: { type: "json_object" },
       });
@@ -969,6 +1021,23 @@ export const imageWorkflowRouter = router({
         step5UserEdit: input.userEdit,
         step5Confirmed: 1,
         status: "completed",
+      });
+
+      return { success: true };
+    }),
+
+  // ─── Step 5: Unlock final suggestions without deleting results ─
+  unlockStep5: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
+
+      await db.updateImageWorkflowSession(session.id, {
+        step5Confirmed: 0,
+        currentStep: 5,
+        status: "in_progress",
       });
 
       return { success: true };

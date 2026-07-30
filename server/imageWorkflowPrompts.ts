@@ -143,6 +143,8 @@ export const STEP2_IMAGE_OUTLINE_PROMPT = `${EXPERT_ROLE}
 - 必要性描述需要安排在合适的位置
 - 场景图按场景占比权重分配
 - A+内容需要讲述完整的品牌/产品故事
+- A+模块必须在图片大纲阶段选定亚马逊A+模块样式：selectedModuleType 使用用户消息中给出的模块ID，selectedModuleName/selectedModuleStructure/selectedModuleSpecs 同步写入
+- 如果A+模块样式是一组多图、多面板或交互结构（轮播、四图、双图、热点、比较表等），contentBrief 必须拆清楚每个面板/子图/热点/表格行列要生成什么
 
 **图片排序逻辑：**
 1. 主图：产品最佳展示角度
@@ -180,9 +182,14 @@ export const STEP2_IMAGE_OUTLINE_PROMPT = `${EXPERT_ROLE}
     {
       "moduleNumber": 1,
       "moduleType": "Banner/对比图/特写图/场景图/参数图/品牌故事/交叉销售",
+      "selectedModuleType": "亚马逊A+模块样式ID，例如 premium_nav_carousel",
+      "selectedModuleName": "亚马逊A+模块样式名称，例如 高级导航轮播",
+      "selectedModuleCategory": "模块分类，例如 轮播展示",
+      "selectedModuleSpecs": "尺寸和字符规格，例如 每面板1464x600px；导航文本25字符",
+      "selectedModuleStructure": "模块结构，例如 2-5张轮播面板",
       "purpose": "模块目的",
       "sellingPointRefs": ["呼应的卖点"],
-      "contentBrief": "内容简述",
+      "contentBrief": "内容简述；多图/多面板模块需要逐项列出每个面板/子图/热点/表格的内容",
       "position": "在A+中的位置逻辑"
     }
   ],
@@ -254,6 +261,8 @@ export const STEP4_REFERENCE_PROMPT = `${EXPERT_ROLE}
 - 描述具体的元素摆放位置和比例
 - 说明视觉焦点和视线引导
 - 注明参考了哪张参考图的哪个特征
+- 对A+模块必须继承图片大纲中的 selectedModuleType / selectedModuleName / selectedModuleStructure，并按该模块结构拆分构图参考
+- 轮播模块要为每个面板分别给出构图和效果参考；四图/双图模块要拆到每张子图；热点模块要包含底图布局和热点位置；比较表模块要给出产品列和特征行布局
 
 **效果图参考要求：**
 - 基于确认的风格方案和参考图描述最终效果
@@ -269,6 +278,9 @@ export const STEP4_REFERENCE_PROMPT = `${EXPERT_ROLE}
       "imageNumber": 1,
       "imageType": "主图/辅图/A+模块",
       "purpose": "图片目的（来自大纲）",
+      "selectedModuleType": "A+模块样式ID（仅A+模块需要）",
+      "selectedModuleName": "A+模块样式名称（仅A+模块需要）",
+      "selectedModuleStructure": "A+模块结构（仅A+模块需要）",
       "referenceImageUsed": "引用了哪张参考图（如：参考图1-构图，参考图2-配色）",
       "compositionReference": {
         "compositionType": "构图方式（三分法/对称/对角线/留白/框架/S形等）",
@@ -303,6 +315,7 @@ export const STEP5_FINAL_SUGGESTION_PROMPT = `${EXPERT_ROLE}
 3. **配色方案** — 基于确认的风格，为每张图提供具体配色。
 4. **构图方式** — 基于确认的参考图，明确构图和元素摆放。
 5. **数据可视化** — 利用图表、图标、数据等可视化元素增强说服力。
+6. **A+模块结构继承** — A+ Content 的每个 sections 项必须继承图片大纲中已选的 selectedModuleType / selectedModuleName / selectedModuleStructure / selectedModuleSpecs；轮播、四图、双图、热点、比较表等模块必须在 moduleSpecificContent 中输出可执行的多面板/多子图/热点/表格结构。
 
 请以JSON格式输出（与现有图片建议格式一致）：
 {
@@ -358,6 +371,10 @@ export const STEP5_FINAL_SUGGESTION_PROMPT = `${EXPERT_ROLE}
     "sections": [
       {
         "type": "模块类型",
+        "selectedModuleType": "图片大纲中已选的A+模块样式ID",
+        "selectedModuleName": "图片大纲中已选的A+模块样式名称",
+        "selectedModuleStructure": "图片大纲中已选的A+模块结构",
+        "selectedModuleSpecs": "图片大纲中已选的A+模块规格",
         "title": "模块标题",
         "purpose": "模块目的",
         "content": "内容描述",
@@ -375,6 +392,12 @@ export const STEP5_FINAL_SUGGESTION_PROMPT = `${EXPERT_ROLE}
         },
         "composition": "构图方式",
         "dataVisualization": "数据可视化建议",
+        "moduleSpecificContent": {
+          "panels": ["轮播/多面板模块：每个面板的标题、画面、文案和卖点"],
+          "subImages": ["四图/双图模块：每张子图的内容与构图"],
+          "hotspots": ["热点模块：热点位置、标题、说明"],
+          "comparisonRows": ["比较表模块：特征行、产品列、对比内容"]
+        },
         "icons": ["图标建议"],
         "tips": []
       }
