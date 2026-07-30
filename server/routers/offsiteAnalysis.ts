@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { callDataApi } from "../_core/dataApi";
@@ -228,7 +227,6 @@ export const offsiteAnalysisRouter = router({
 
         try {
 
-          const _emperorRes = await runSkillViaEmperor("offsite.summary", { context: JSON.stringify({}).slice(0, 3000) });
 
           if (_emperorRes.success && _emperorRes.output) {
 
@@ -236,7 +234,6 @@ export const offsiteAnalysisRouter = router({
 
           }
 
-        } catch (_e) { console.warn("[Emperor] offsiteAnalysis.ts fallback:", _e); }
 
         const aiResponse = await invokeLLM({
           messages: [
@@ -334,7 +331,6 @@ export const offsiteAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("offsite.summary", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -342,7 +338,6 @@ export const offsiteAnalysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] offsiteAnalysis.ts fallback:", _e); }
 
       const aiResponse = await invokeLLM({
         messages: [
@@ -373,7 +368,6 @@ export const offsiteAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("offsite.summary", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -381,7 +375,6 @@ export const offsiteAnalysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] offsiteAnalysis.ts fallback:", _e); }
 
       const aiResponse = await invokeLLM({
         messages: [

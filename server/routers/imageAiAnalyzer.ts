@@ -11,7 +11,6 @@
  */
 
 import { invokeLLM } from "../_core/llm";
-import { analyzeImageViaEmperor } from "../emperorClient";
 import type { ProductImage } from "../scraper";
 
 // ─── Types ───
@@ -173,9 +172,7 @@ export async function analyzeImage(
 
   // Emperor Skill 优先 - 图片分析
   try {
-    const emperorRes = await analyzeImageViaEmperor(JSON.stringify({imageUrl: imageUrl || "", context: ""}).slice(0, 2000));
     if (emperorRes.success && emperorRes.output) return emperorRes.output as unknown as ImageAnalysisResult;
-  } catch (e) { console.warn("[Emperor] imageAnalyze fallback:", e); }
 
   const response = await invokeLLM({
     messages: [

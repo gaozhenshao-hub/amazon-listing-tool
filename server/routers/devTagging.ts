@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -191,7 +190,6 @@ ${dimensionText}
 
           try {
 
-            const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(productData ?? {}).slice(0, 3000) });
 
             if (_emperorRes.success && _emperorRes.output) {
 
@@ -199,7 +197,6 @@ ${dimensionText}
 
             }
 
-          } catch (_e) { console.warn("[Emperor] devTagging.ts fallback:", _e); }
 
           const response = await invokeLLM({
             messages: [

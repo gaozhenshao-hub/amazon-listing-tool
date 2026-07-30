@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -92,7 +91,6 @@ export const afterSalesRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("aftersales.service.briefing", { context: JSON.stringify(input).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -100,7 +98,6 @@ export const afterSalesRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] afterSales.ts fallback:", _e); }
 
       const resp = await invokeLLM({
         messages: [
@@ -189,7 +186,6 @@ export const afterSalesRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("aftersales.service.briefing", { context: JSON.stringify(input).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -197,7 +193,6 @@ export const afterSalesRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] afterSales.ts fallback:", _e); }
 
       const resp = await invokeLLM({
         messages: [
@@ -386,7 +381,6 @@ ${input.voiceOfBuyerData ? JSON.stringify(input.voiceOfBuyerData, null, 2) : '�
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("aftersales.service.briefing", { context: JSON.stringify(input).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -394,7 +388,6 @@ ${input.voiceOfBuyerData ? JSON.stringify(input.voiceOfBuyerData, null, 2) : '�
 
         }
 
-      } catch (_e) { console.warn("[Emperor] afterSales.ts fallback:", _e); }
 
       const resp = await invokeLLM({
         messages: [
@@ -495,7 +488,6 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("aftersales.service.briefing", { context: JSON.stringify(input).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -503,7 +495,6 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
 
         }
 
-      } catch (_e) { console.warn("[Emperor] afterSales.ts fallback:", _e); }
 
       const resp = await invokeLLM({
         messages: [
@@ -675,7 +666,6 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("aftersales.service.briefing", { context: JSON.stringify(input).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -683,7 +673,6 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
 
         }
 
-      } catch (_e) { console.warn("[Emperor] afterSales.ts fallback:", _e); }
 
       const resp = await invokeLLM({
         messages: [

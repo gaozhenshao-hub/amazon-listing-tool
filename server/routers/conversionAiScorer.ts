@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 /**
  * 转化率对比 — AI评分引擎
  * 
@@ -438,7 +437,6 @@ async function aiScoreBatch(
 
     try {
 
-      const _emperorRes = await runSkillViaEmperor("listing.scoring.overall", { context: JSON.stringify(context ?? {}).slice(0, 3000) });
 
       if (_emperorRes.success && _emperorRes.output) {
 
@@ -446,7 +444,6 @@ async function aiScoreBatch(
 
       }
 
-    } catch (_e) { console.warn("[Emperor] conversionAiScorer.ts fallback:", _e); }
 
     const response = await invokeLLM({
       messages: [

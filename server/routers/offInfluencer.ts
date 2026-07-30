@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -51,7 +50,6 @@ export const offInfluencerRouter = router({
 
     try {
 
-      const _emperorRes = await runSkillViaEmperor("off.influencer.match", { context: JSON.stringify(input).slice(0, 3000) });
 
       if (_emperorRes.success && _emperorRes.output) {
 
@@ -59,7 +57,6 @@ export const offInfluencerRouter = router({
 
       }
 
-    } catch (_e) { console.warn("[Emperor] offInfluencer.ts fallback:", _e); }
 
     const resp = await invokeLLM({
       messages: [

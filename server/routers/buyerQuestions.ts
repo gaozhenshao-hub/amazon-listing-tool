@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
@@ -161,7 +160,6 @@ ${input.searchTerms.slice(0, 200).join("\n")}
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("analysis.rufus.attribute", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -169,7 +167,6 @@ ${input.searchTerms.slice(0, 200).join("\n")}
 
         }
 
-      } catch (_e) { console.warn("[Emperor] buyerQuestions.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -256,7 +253,6 @@ ${activeQuestions.map((q, i) => `${i + 1}. ${q.question}`).join("\n")}
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("analysis.rufus.attribute", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -264,7 +260,6 @@ ${activeQuestions.map((q, i) => `${i + 1}. ${q.question}`).join("\n")}
 
         }
 
-      } catch (_e) { console.warn("[Emperor] buyerQuestions.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [

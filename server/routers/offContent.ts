@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -35,7 +34,6 @@ export const offContentRouter = router({
 
     try {
 
-      const _emperorRes = await runSkillViaEmperor("off.content.calendar", { context: JSON.stringify(input).slice(0, 3000) });
 
       if (_emperorRes.success && _emperorRes.output) {
 
@@ -43,7 +41,6 @@ export const offContentRouter = router({
 
       }
 
-    } catch (_e) { console.warn("[Emperor] offContent.ts fallback:", _e); }
 
     const resp = await invokeLLM({
       messages: [

@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 /**
  * Ad Local Analysis Router
  * Reads from local uploaded ad report data (DB tables) and returns data
@@ -1153,7 +1152,6 @@ export const adLocalAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("ad.diagnosis", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -1161,7 +1159,6 @@ export const adLocalAnalysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] adLocalAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1232,7 +1229,6 @@ export const adLocalAnalysisRouter = router({
 
         try {
 
-          const _emperorRes = await runSkillViaEmperor("ad.diagnosis", { context: JSON.stringify({}).slice(0, 3000) });
 
           if (_emperorRes.success && _emperorRes.output) {
 
@@ -1240,7 +1236,6 @@ export const adLocalAnalysisRouter = router({
 
           }
 
-        } catch (_e) { console.warn("[Emperor] adLocalAnalysis.ts fallback:", _e); }
 
         const llmRes = await invokeLLM({
           messages: [
@@ -1301,7 +1296,6 @@ export const adLocalAnalysisRouter = router({
 
         try {
 
-          const _emperorRes = await runSkillViaEmperor("ad.diagnosis", { context: JSON.stringify({}).slice(0, 3000) });
 
           if (_emperorRes.success && _emperorRes.output) {
 
@@ -1309,7 +1303,6 @@ export const adLocalAnalysisRouter = router({
 
           }
 
-        } catch (_e) { console.warn("[Emperor] adLocalAnalysis.ts fallback:", _e); }
 
         const llmRes = await invokeLLM({
           messages: [
@@ -1438,7 +1431,6 @@ export const adLocalAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("ad.diagnosis", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -1446,7 +1438,6 @@ export const adLocalAnalysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] adLocalAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages,
@@ -1560,7 +1551,6 @@ export const adLocalAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("ad.diagnosis", { context: JSON.stringify(summary ?? {}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -1568,7 +1558,6 @@ export const adLocalAnalysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] adLocalAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1624,7 +1613,6 @@ export const adLocalAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("ad.diagnosis", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -1632,7 +1620,6 @@ export const adLocalAnalysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] adLocalAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [

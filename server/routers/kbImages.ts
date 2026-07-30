@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -148,7 +147,6 @@ async function processImport(setId: number, asin: string, userId: number, runAna
 
           try {
 
-            const _emperorRes = await runSkillViaEmperor("analysis.image.recognition", { context: JSON.stringify({}).slice(0, 3000) });
 
             if (_emperorRes.success && _emperorRes.output) {
 
@@ -156,7 +154,6 @@ async function processImport(setId: number, asin: string, userId: number, runAna
 
             }
 
-          } catch (_e) { console.warn("[Emperor] kbImages.ts fallback:", _e); }
 
           const response = await invokeLLM({
             messages: [
@@ -327,7 +324,6 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
 
         try {
 
-          const _emperorRes = await runSkillViaEmperor("analysis.image.recognition", { context: JSON.stringify({}).slice(0, 3000) });
 
           if (_emperorRes.success && _emperorRes.output) {
 
@@ -335,7 +331,6 @@ async function runAnalysisOnly(setId: number, asin: string, userId: number) {
 
           }
 
-        } catch (_e) { console.warn("[Emperor] kbImages.ts fallback:", _e); }
 
         const response = await invokeLLM({
           messages: [

@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -265,7 +264,6 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(productData ?? {}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -273,7 +271,6 @@ export const devAnalysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -407,7 +404,6 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(productData ?? {}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -415,7 +411,6 @@ export const devAnalysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -563,7 +558,6 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(productData ?? {}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -571,7 +565,6 @@ export const devAnalysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -710,7 +703,6 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(productData ?? {}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -718,7 +710,6 @@ export const devAnalysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -849,7 +840,6 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -857,7 +847,6 @@ export const devAnalysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1025,7 +1014,6 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -1033,7 +1021,6 @@ export const devAnalysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1245,7 +1232,6 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -1253,7 +1239,6 @@ export const devAnalysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1369,7 +1354,6 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -1377,7 +1361,6 @@ export const devAnalysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1472,7 +1455,6 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -1480,7 +1462,6 @@ export const devAnalysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1632,7 +1613,6 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -1640,7 +1620,6 @@ export const devAnalysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1835,7 +1814,6 @@ export const devAnalysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(productData ?? {}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -1843,7 +1821,6 @@ export const devAnalysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -2014,7 +1991,6 @@ async function generateExternalSummary(rawData: unknown, prompt: string): Promis
 
   try {
 
-    const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify({}).slice(0, 3000) });
 
     if (_emperorRes.success && _emperorRes.output) {
 
@@ -2022,7 +1998,6 @@ async function generateExternalSummary(rawData: unknown, prompt: string): Promis
 
     }
 
-  } catch (_e) { console.warn("[Emperor] devAnalysis.ts fallback:", _e); }
 
   const response = await invokeLLM({
     messages: [

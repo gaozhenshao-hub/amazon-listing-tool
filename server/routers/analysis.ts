@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -396,7 +395,6 @@ export const analysisRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: JSON.stringify({}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -404,7 +402,6 @@ export const analysisRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] analysis.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [

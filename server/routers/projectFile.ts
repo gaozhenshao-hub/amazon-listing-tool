@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -75,7 +74,6 @@ async function analyzeRufusAttributes(rawContent: string): Promise<any> {
 
   try {
 
-    const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: rawContent.slice(0, 3000) });
 
     if (_emperorRes.success && _emperorRes.output) {
 
@@ -83,7 +81,6 @@ async function analyzeRufusAttributes(rawContent: string): Promise<any> {
 
     }
 
-  } catch (_e) { console.warn("[Emperor] projectFile.ts fallback:", _e); }
 
   const response = await invokeLLM({
     messages: [
@@ -113,7 +110,6 @@ async function analyzeCompetitorListings(rawContent: string): Promise<any> {
 
   try {
 
-    const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: rawContent.slice(0, 3000) });
 
     if (_emperorRes.success && _emperorRes.output) {
 
@@ -121,7 +117,6 @@ async function analyzeCompetitorListings(rawContent: string): Promise<any> {
 
     }
 
-  } catch (_e) { console.warn("[Emperor] projectFile.ts fallback:", _e); }
 
   const response = await invokeLLM({
     messages: [
@@ -163,7 +158,6 @@ async function analyzeCosmoScenes(parsedData: any): Promise<any> {
 
   try {
 
-    const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: (headerInfo + "\n" + summary).slice(0, 3000) });
 
     if (_emperorRes.success && _emperorRes.output) {
 
@@ -171,7 +165,6 @@ async function analyzeCosmoScenes(parsedData: any): Promise<any> {
 
     }
 
-  } catch (_e) { console.warn("[Emperor] projectFile.ts fallback:", _e); }
 
   const response = await invokeLLM({
     messages: [
@@ -212,7 +205,6 @@ async function analyzeA9Keywords(parsedData: any): Promise<any> {
 
   try {
 
-    const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: (headerInfo + "\n" + summary).slice(0, 3000) });
 
     if (_emperorRes.success && _emperorRes.output) {
 
@@ -220,7 +212,6 @@ async function analyzeA9Keywords(parsedData: any): Promise<any> {
 
     }
 
-  } catch (_e) { console.warn("[Emperor] projectFile.ts fallback:", _e); }
 
   const response = await invokeLLM({
     messages: [

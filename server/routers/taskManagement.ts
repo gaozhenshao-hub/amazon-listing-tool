@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -409,7 +408,6 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
 
         try {
 
-          const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: JSON.stringify({}).slice(0, 3000) });
 
           if (_emperorRes.success && _emperorRes.output) {
 
@@ -417,7 +415,6 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
 
           }
 
-        } catch (_e) { console.warn("[Emperor] taskManagement.ts fallback:", _e); }
 
         const response = await invokeLLM({
           messages: [
@@ -539,7 +536,6 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
 
         try {
 
-          const _emperorRes = await runSkillViaEmperor("analysis.comparison.summary", { context: JSON.stringify({}).slice(0, 3000) });
 
           if (_emperorRes.success && _emperorRes.output) {
 
@@ -547,7 +543,6 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
 
           }
 
-        } catch (_e) { console.warn("[Emperor] taskManagement.ts fallback:", _e); }
 
         const response = await invokeLLM({
           messages: [

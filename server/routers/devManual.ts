@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -99,7 +98,6 @@ export const devManualRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -107,7 +105,6 @@ export const devManualRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] devManual.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -191,7 +188,6 @@ BOM Components: ${bom.map((b: any) => b.partName).join(", ")}${refContext}`;
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -199,7 +195,6 @@ BOM Components: ${bom.map((b: any) => b.partName).join(", ")}${refContext}`;
 
         }
 
-      } catch (_e) { console.warn("[Emperor] devManual.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -470,7 +465,6 @@ ${bom.map((b: any) => `${b.partName} | 材质:${b.material || "未知"} | 工艺
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -478,7 +472,6 @@ ${bom.map((b: any) => `${b.partName} | 材质:${b.material || "未知"} | 工艺
 
         }
 
-      } catch (_e) { console.warn("[Emperor] devManual.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [

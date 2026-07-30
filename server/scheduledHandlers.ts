@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "./emperorClient";
 /**
  * Scheduled Task Handlers
  * 
@@ -104,7 +103,6 @@ export async function weeklyReportHandler(req: Request, res: Response) {
 
     try {
 
-      const _emperorRes = await runSkillViaEmperor("ops.profit.analysis", { context: JSON.stringify(dataSummary).slice(0, 3000) });
 
       if (_emperorRes.success && _emperorRes.output) {
 
@@ -112,7 +110,6 @@ export async function weeklyReportHandler(req: Request, res: Response) {
 
       }
 
-    } catch (_e) { console.warn("[Emperor] scheduledHandlers.ts fallback:", _e); }
 
     const llmResponse = await invokeLLM({
       messages: [

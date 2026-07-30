@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -1815,7 +1814,6 @@ export const productOpsRouter = router({
 
         try {
 
-          const _emperorRes = await runSkillViaEmperor("ops.searchterm.advice", { context: JSON.stringify(data ?? {}).slice(0, 3000) });
 
           if (_emperorRes.success && _emperorRes.output) {
 
@@ -1823,7 +1821,6 @@ export const productOpsRouter = router({
 
           }
 
-        } catch (_e) { console.warn("[Emperor] productOps.ts fallback:", _e); }
 
         const response = await invokeLLM({
           messages: [
@@ -3427,7 +3424,6 @@ export const productOpsRouter = router({
 
         try {
 
-          const _emperorRes = await runSkillViaEmperor("ops.searchterm.advice", { context: JSON.stringify({}).slice(0, 3000) });
 
           if (_emperorRes.success && _emperorRes.output) {
 
@@ -3435,7 +3431,6 @@ export const productOpsRouter = router({
 
           }
 
-        } catch (_e) { console.warn("[Emperor] productOps.ts fallback:", _e); }
 
         const response = await invokeLLM({
           messages: [

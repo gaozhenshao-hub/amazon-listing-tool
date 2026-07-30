@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
@@ -293,7 +292,6 @@ export const opsProductPlanRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("ops.competitor.analysis", { context: JSON.stringify(input).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -301,7 +299,6 @@ export const opsProductPlanRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] opsProductPlan.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -484,7 +481,6 @@ export const opsProductPlanRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("ops.competitor.analysis", { context: JSON.stringify(input).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -492,7 +488,6 @@ export const opsProductPlanRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] opsProductPlan.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -667,7 +662,6 @@ export const opsProductPlanRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("ops.competitor.analysis", { context: JSON.stringify(input).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -675,7 +669,6 @@ export const opsProductPlanRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] opsProductPlan.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [

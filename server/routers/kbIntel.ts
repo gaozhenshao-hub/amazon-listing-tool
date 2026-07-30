@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 /**
  * kbIntel Router — 外部情报采集引擎
  *
@@ -402,7 +401,6 @@ export const kbIntelRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("analysis.competitor.multi", { context: JSON.stringify(input).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -410,7 +408,6 @@ export const kbIntelRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] kbIntel.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [

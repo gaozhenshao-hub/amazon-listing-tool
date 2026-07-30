@@ -2,21 +2,6 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "../_core/llm";
-import {
-  generateTitleViaEmperor,
-  generateBulletsViaEmperor,
-  generateDescriptionViaEmperor,
-  generateSearchTermsViaEmperor,
-  generateImageAdviceViaEmperor,
-  generateQAViaEmperor,
-  checkTitleViaEmperor,
-  checkBulletsViaEmperor,
-  checkDescriptionViaEmperor,
-  checkSearchTermsViaEmperor,
-  checkQAViaEmperor,
-  generateSellingPointsViaEmperor,
-  refineSingleBulletViaEmperor,
-} from "../emperorClient";
 import * as db from "../db";
 import {
   TITLE_GENERATION_PROMPT,
@@ -922,19 +907,6 @@ export const listingRouter = router({
       }
 
       // 优先调用 Emperor Skill，失败时降级到内置 LLM
-      const emperorResult = await generateTitleViaEmperor(context, input.emphasis);
-      if (emperorResult.success && emperorResult.output) {
-        let parsed = emperorResult.output as any;
-        let validation = validateTitles(parsed);
-        if (!validation.valid) {
-          for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
-            parsed = await refineTitles(parsed, validation.issues);
-            validation = validateTitles(parsed);
-          }
-        }
-        return parsed;
-      }
-      console.warn("[generateTitle] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
       const response = await invokeLLM({
         messages: [
           { role: "system", content: TITLE_GENERATION_PROMPT },
@@ -971,19 +943,6 @@ export const listingRouter = router({
       }
 
       // 优先调用 Emperor Skill，失败时降级到内置 LLM
-      const emperorResult = await generateBulletsViaEmperor(context, undefined, input.emphasis);
-      if (emperorResult.success && emperorResult.output) {
-        let parsed = emperorResult.output as any;
-        let validation = validateBullets(parsed);
-        if (!validation.valid) {
-          for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
-            parsed = await refineBullets(parsed, validation.issues);
-            validation = validateBullets(parsed);
-          }
-        }
-        return parsed;
-      }
-      console.warn("[generateBulletPoints] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
       const response = await invokeLLM({
         messages: [
           { role: "system", content: BULLET_POINTS_PROMPT },
@@ -1019,11 +978,6 @@ export const listingRouter = router({
       }
 
       // 优先调用 Emperor Skill，失败时降级到内置 LLM
-      const emperorResult = await generateDescriptionViaEmperor(context, input.emphasis);
-      if (emperorResult.success && emperorResult.output) {
-        return emperorResult.output as any;
-      }
-      console.warn("[generateDescription] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
       const response = await invokeLLM({
         messages: [
           { role: "system", content: DESCRIPTION_PROMPT },
@@ -1063,11 +1017,6 @@ export const listingRouter = router({
 
       // 优先调用 Emperor Skill，失败时降级到内置 LLM
       const fullContext = context + extraContext;
-      const emperorResult = await generateSearchTermsViaEmperor(fullContext, input.emphasis);
-      if (emperorResult.success && emperorResult.output) {
-        return emperorResult.output as any;
-      }
-      console.warn("[generateSearchTerms] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
       const response = await invokeLLM({
         messages: [
           { role: "system", content: SEARCH_TERMS_PROMPT },
@@ -1098,21 +1047,6 @@ export const listingRouter = router({
 
       // 优先调用 Emperor Skill，失败时降级到内置 LLM
       let imageData: any;
-      const emperorResult = await generateImageAdviceViaEmperor(context);
-      if (emperorResult.success && emperorResult.output) {
-        imageData = emperorResult.output as any;
-      } else {
-        console.warn("[generateImageAdvice] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
-        const response = await invokeLLM({
-          messages: [
-            { role: "system", content: IMAGE_ADVICE_PROMPT },
-            { role: "user", content: `Provide image recommendations for this product:\n\n${context}` },
-          ],
-          response_format: { type: "json_object" },
-        });
-        const content = (response.choices?.[0]?.message?.content ?? "") as string;
-        imageData = safeParseJSON(content);
-      }
 
       // Save image advice to the active listing (or create one if none exists)
       const existingListings = await db.getListingsByProject(input.projectId);
@@ -2151,24 +2085,6 @@ Please expand this keyword/theme into a complete selling point core with FABE di
 
       // 优先调用 Emperor Skill，失败时降级到内置 LLM
       let parsed: any;
-      const emperorResult = await generateQAViaEmperor(context, input.emphasis);
-      if (emperorResult.success && emperorResult.output) {
-        parsed = emperorResult.output as any;
-      } else {
-        console.warn("[generateQA] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
-        const response = await invokeLLM({
-          messages: [
-            { role: "system", content: QA_GENERATION_PROMPT },
-            { role: "user", content: `Generate Q&A pairs for this Amazon product listing:\n\n${context}` },
-          ],
-          response_format: { type: "json_object" },
-          max_tokens: 4096,
-        });
-        const content = (response.choices?.[0]?.message?.content ?? "") as string;
-        const qaParsed = safeParseJSON<any>(content);
-        if ((qaParsed as any).raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI 返回格式异常，请重试" });
-        parsed = qaParsed;
-      }
 
       // Auto-save QA to listing if active listing exists
       if (listing) {
@@ -2190,12 +2106,6 @@ Please expand this keyword/theme into a complete selling point core with FABE di
       title: z.string(),
     }))
     .mutation(async ({ input }) => {
-      const emperorResult = await checkTitleViaEmperor(input.title);
-      if (emperorResult.success && emperorResult.output) {
-        const out = emperorResult.output as any;
-        return { checkListScores: out.checkListScores || out };
-      }
-      console.warn("[evaluateTitleChecklist] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
       const response = await invokeLLM({
         messages: [
           { role: "system", content: EVALUATE_TITLE_CHECKLIST_PROMPT },
@@ -2214,12 +2124,6 @@ Please expand this keyword/theme into a complete selling point core with FABE di
       description: z.string(),
     }))
     .mutation(async ({ input }) => {
-      const emperorResult = await checkDescriptionViaEmperor(input.description);
-      if (emperorResult.success && emperorResult.output) {
-        const out = emperorResult.output as any;
-        return { checkListScores: out.checkListScores || out };
-      }
-      console.warn("[evaluateDescriptionChecklist] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
       const response = await invokeLLM({
         messages: [
           { role: "system", content: EVALUATE_DESCRIPTION_CHECKLIST_PROMPT },
@@ -2244,12 +2148,6 @@ Please expand this keyword/theme into a complete selling point core with FABE di
       let stContext = `Search Terms:\n${input.searchTerms}`;
       if (input.title) stContext += `\n\nProduct Title (for duplication check):\n${input.title}`;
       if (input.bulletPoints) stContext += `\n\nBullet Points (for long-tail coverage check):\n${input.bulletPoints}`;
-      const emperorResult = await checkSearchTermsViaEmperor(stContext);
-      if (emperorResult.success && emperorResult.output) {
-        const out = emperorResult.output as any;
-        return { checkListScores: out.checkListScores || out };
-      }
-      console.warn("[evaluateSearchTermsChecklist] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
       let userMsg = `Evaluate these Amazon backend search terms:\n\n${input.searchTerms}`;
       userMsg += `\n\nByte count: ${new TextEncoder().encode(input.searchTerms).length}`;
       if (input.title) userMsg += `\n\nProduct Title (for duplication check):\n${input.title}`;
@@ -2285,12 +2183,6 @@ Please expand this keyword/theme into a complete selling point core with FABE di
           ).join("\n\n");
         }
       } catch {}
-      const emperorResult = await checkQAViaEmperor(qaText);
-      if (emperorResult.success && emperorResult.output) {
-        const out = emperorResult.output as any;
-        return { checkListScores: out.checkListScores || out };
-      }
-      console.warn("[evaluateQAChecklist] Emperor Skill 失败，降级到内置 LLM:", emperorResult.error);
       const response = await invokeLLM({
         messages: [
           { role: "system", content: EVALUATE_QA_CHECKLIST_PROMPT },

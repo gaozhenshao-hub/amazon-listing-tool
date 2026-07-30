@@ -25,7 +25,6 @@ import {
   adClinicRecords,
 } from "../../drizzle/schema";
 import { eq, and, inArray, gte, lte, desc, sql } from "drizzle-orm";
-import { diagnoseAdViaEmperor, adviseAdSearchTermsViaEmperor, generateAdNegativeViaEmperor, allocateAdBudgetViaEmperor, generateAdStructureViaEmperor, suggestAdDaypartingViaEmperor } from "../emperorClient";
 
 async function getDbInstance() {
   const d = await getDb();
@@ -544,9 +543,7 @@ export const adDeepAnalysisRouter = router({
 
       // Emperor Skill 优先 - 广告深度分析
       try {
-        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -594,9 +591,7 @@ export const adDeepAnalysisRouter = router({
 
       // Emperor Skill 优先 - 广告深度分析
       try {
-        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) { /* Emperor result, continue with DB save */ }
-      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -660,9 +655,7 @@ export const adDeepAnalysisRouter = router({
 
       // Emperor Skill 优先 - 广告深度分析
       try {
-        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -704,9 +697,7 @@ export const adDeepAnalysisRouter = router({
       const dataSummary = summarizePlacementData(data);
       // Emperor Skill 优先 - 广告深度分析
       try {
-        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
 
       const response = await invokeLLM({
         messages: [{ role: "system", content: PLACEMENT_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下广告位数据:\n\n${dataSummary}` }],
@@ -735,9 +726,7 @@ export const adDeepAnalysisRouter = router({
       const dataSummary = summarizeSearchTermData(data);
       // Emperor Skill 优先 - 广告深度分析
       try {
-        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
 
       const response = await invokeLLM({
         messages: [{ role: "system", content: SEARCH_TERM_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下搜索词数据:\n\n${dataSummary}` }],
@@ -766,9 +755,7 @@ export const adDeepAnalysisRouter = router({
       const dataSummary = summarizeImpressionShareData(data);
       // Emperor Skill 优先 - 广告深度分析
       try {
-        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
 
       const response = await invokeLLM({
         messages: [{ role: "system", content: IMPRESSION_SHARE_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下展示量份额数据:\n\n${dataSummary}` }],
@@ -797,9 +784,7 @@ export const adDeepAnalysisRouter = router({
       const dataSummary = summarizeSbBenchmarkData(data);
       // Emperor Skill 优先 - 广告深度分析
       try {
-        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
 
       const response = await invokeLLM({
         messages: [{ role: "system", content: SB_BENCHMARK_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下SB Benchmark数据:\n\n${dataSummary}` }],
@@ -829,9 +814,7 @@ export const adDeepAnalysisRouter = router({
       const dataSummary = summarizeBusinessCrossData(businessData, adData);
       // Emperor Skill 优先 - 广告深度分析
       try {
-        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
 
       const response = await invokeLLM({
         messages: [{ role: "system", content: BUSINESS_CROSS_ANALYSIS_PROMPT }, { role: "user", content: `请分析以下业务×广告交叉数据:\n\n${dataSummary}` }],
@@ -903,9 +886,7 @@ export const adDeepAnalysisRouter = router({
 
       // Emperor Skill 优先 - 广告深度分析
       try {
-        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) { /* Emperor result, continue with DB save */ }
-      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -995,9 +976,7 @@ export const adDeepAnalysisRouter = router({
 
       // Emperor Skill 优先 - 广告深度分析
       try {
-        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] adDeepAnalysis fallback:", e); }
 
       const response = await invokeLLM({
         messages: [

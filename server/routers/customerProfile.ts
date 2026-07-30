@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
@@ -221,7 +220,6 @@ ${JSON.stringify(data, null, 2)}
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify(data ?? {}).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -229,7 +227,6 @@ ${JSON.stringify(data, null, 2)}
 
         }
 
-      } catch (_e) { console.warn("[Emperor] customerProfile.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [

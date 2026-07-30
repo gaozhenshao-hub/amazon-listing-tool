@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
@@ -112,7 +111,6 @@ export const kbSkillsRouter = router({
 
             try {
 
-              const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify({}).slice(0, 3000) });
 
               if (_emperorRes.success && _emperorRes.output) {
 
@@ -120,7 +118,6 @@ export const kbSkillsRouter = router({
 
               }
 
-            } catch (_e) { console.warn("[Emperor] kbSkills.ts fallback:", _e); }
 
             const response = await invokeLLM({
               messages: [
@@ -142,7 +139,6 @@ export const kbSkillsRouter = router({
 
           try {
 
-            const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify({}).slice(0, 3000) });
 
             if (_emperorRes.success && _emperorRes.output) {
 
@@ -150,7 +146,6 @@ export const kbSkillsRouter = router({
 
             }
 
-          } catch (_e) { console.warn("[Emperor] kbSkills.ts fallback:", _e); }
 
           const response = await invokeLLM({
             messages: [
@@ -225,7 +220,6 @@ export const kbSkillsRouter = router({
 
             try {
 
-              const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify({}).slice(0, 3000) });
 
               if (_emperorRes.success && _emperorRes.output) {
 
@@ -233,7 +227,6 @@ export const kbSkillsRouter = router({
 
               }
 
-            } catch (_e) { console.warn("[Emperor] kbSkills.ts fallback:", _e); }
 
             const response = await invokeLLM({
               messages: [
@@ -348,7 +341,6 @@ export const kbSkillsRouter = router({
 
           try {
 
-            const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify({}).slice(0, 3000) });
 
             if (_emperorRes.success && _emperorRes.output) {
 
@@ -356,7 +348,6 @@ export const kbSkillsRouter = router({
 
             }
 
-          } catch (_e) { console.warn("[Emperor] kbSkills.ts fallback:", _e); }
 
           const aiResponse = await invokeLLM({
             messages: [
@@ -462,7 +453,6 @@ export const kbSkillsRouter = router({
 
           try {
 
-            const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify({}).slice(0, 3000) });
 
             if (_emperorRes.success && _emperorRes.output) {
 
@@ -470,7 +460,6 @@ export const kbSkillsRouter = router({
 
             }
 
-          } catch (_e) { console.warn("[Emperor] kbSkills.ts fallback:", _e); }
 
           const aiResponse = await invokeLLM({
             messages: [
@@ -563,7 +552,6 @@ export const kbSkillsRouter = router({
 
           try {
 
-            const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify({}).slice(0, 3000) });
 
             if (_emperorRes.success && _emperorRes.output) {
 
@@ -571,7 +559,6 @@ export const kbSkillsRouter = router({
 
             }
 
-          } catch (_e) { console.warn("[Emperor] kbSkills.ts fallback:", _e); }
 
           const aiResponse = await invokeLLM({
             messages: [
@@ -617,7 +604,6 @@ export const kbSkillsRouter = router({
 
           try {
 
-            const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify(input.content ?? {}).slice(0, 3000) });
 
             if (_emperorRes.success && _emperorRes.output) {
 
@@ -625,7 +611,6 @@ export const kbSkillsRouter = router({
 
             }
 
-          } catch (_e) { console.warn("[Emperor] kbSkills.ts fallback:", _e); }
 
           const response = await invokeLLM({
             messages: [
@@ -747,7 +732,6 @@ export const kbSkillsRouter = router({
 
           try {
 
-            const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify(content ?? {}).slice(0, 3000) });
 
             if (_emperorRes.success && _emperorRes.output) {
 
@@ -755,7 +739,6 @@ export const kbSkillsRouter = router({
 
             }
 
-          } catch (_e) { console.warn("[Emperor] kbSkills.ts fallback:", _e); }
 
           const response = await invokeLLM({
             messages: [

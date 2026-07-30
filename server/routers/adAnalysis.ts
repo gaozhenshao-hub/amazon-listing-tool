@@ -1,15 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { invokeLLM } from "../_core/llm";
-import {
-  adviseAdSearchTermsViaEmperor,
-  suggestAdDaypartingViaEmperor,
-  diagnoseAdViaEmperor,
-  generateAdNegativeViaEmperor,
-  allocateAdBudgetViaEmperor,
-} from "../emperorClient";
-import { searchTermActions, budgetTracking } from "../../drizzle/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 
 // ─── 12-Category Classification Thresholds ──────────────────────
@@ -498,7 +489,6 @@ export const adAnalysisRouter = router({
       // ─── Emperor Skill 优先，降级到内置 LLM ───────────────────
       try {
         const emperorContext = `分类：${category.label}\n特征：${category.condition}\n问题分析：${category.problemAnalysis}\n广告目的：${category.adPurpose}\n广告策略：${category.adStrategy}\n预期结果：${category.expectedResult}\n\n搜索词数据：\n${JSON.stringify(anonymizedTerms)}`;
-        const emperorRes = await adviseAdSearchTermsViaEmperor(emperorContext);
         if (emperorRes.success && emperorRes.output) {
           const result = emperorRes.output as any;
           // De-anonymize results
@@ -510,7 +500,6 @@ export const adAnalysisRouter = router({
           return result;
         }
       } catch (emperorErr) {
-        console.warn("[Emperor] adviseAdSearchTerms failed, falling back:", emperorErr);
       }
 
       const response = await invokeLLM({
@@ -1127,12 +1116,10 @@ ${JSON.stringify(input.hourlyData)}
       // AI diagnosis - Emperor Skill 优先，降级到内置 LLM
       try {
         const emperorContext = `广告诊断数据（${input.days}天汇总，数据已脱敏）：\n${JSON.stringify(metrics)}`;
-        const emperorRes = await diagnoseAdViaEmperor(emperorContext);
         if (emperorRes.success && emperorRes.output) {
           return { ...emperorRes.output, metrics };
         }
       } catch (emperorErr) {
-        console.warn("[Emperor] diagnoseAd failed, falling back:", emperorErr);
       }
 
       const response = await invokeLLM({
@@ -2237,10 +2224,8 @@ ${JSON.stringify(input.terms.slice(0, 20))}
       // Emperor Skill 优先 - 否定词生成
       try {
         const negCtx = `目标ACoS: ${input.targetAcos}%\n否定词候选(${negCandidates.length}个): ${JSON.stringify(anonymize(negCandidates.slice(0, 80)))}\n加词候选(${addCandidates.length}个): ${JSON.stringify(anonymize(addCandidates.slice(0, 80)))}`;
-        const emperorNegRes = await generateAdNegativeViaEmperor(negCtx);
         if (emperorNegRes.success && emperorNegRes.output) return emperorNegRes.output;
       } catch (emperorErr) {
-        console.warn('[Emperor] generateAdNegative failed, falling back:', emperorErr);
       }
 
       const response = await invokeLLM({
@@ -2444,7 +2429,6 @@ ${JSON.stringify(anonymize(addCandidates.slice(0, 80)))}
       try {
         // Emperor Skill 优先 - 预算分配
         const budgetCtx = `总预算:$${totalCurrentBudget}/天 | 总花费:$${totalCost} | 总销售:$${totalSales} | ACoS:${overallAcos}% | 目标ACoS:${input.targetAcos}%\n各活动：\n${campaignSummaries.map((c, i) => `${i+1}. [${c.name}] 预算:$${c.currentBudget}/天 | 花费:$${c.cost} | 销售:$${c.sales} | ACoS:${c.acos}% | ROAS:${c.roas}x`).join('\n')}`;
-        const emperorBudgetRes = await allocateAdBudgetViaEmperor(budgetCtx);
         if (emperorBudgetRes.success && emperorBudgetRes.output) {
           return {
             allocation: emperorBudgetRes.output,
@@ -2455,7 +2439,6 @@ ${JSON.stringify(anonymize(addCandidates.slice(0, 80)))}
           };
         }
       } catch (emperorBudgetErr) {
-        console.warn('[Emperor] allocateAdBudget failed, falling back:', emperorBudgetErr);
       }
 
       try {
@@ -2803,7 +2786,6 @@ ${JSON.stringify(anonymize(addCandidates.slice(0, 80)))}
       try {
         // Emperor Skill 优先 - 广告诊断
         const effectCtx = `基线数据：花费$${Number(record.baselineSpend)||0} | 销售$${Number(record.baselineSales)||0} | ACoS:${baseAcos}% | ROAS:${baseRoas}x\n执行后：花费$${Math.round(totalSpend*100)/100} | 销售$${Math.round(totalSales*100)/100} | ACoS:${followupAcos}% | ROAS:${followupRoas}x\n变化：ACoS ${acosChange>0?'+':''}${acosChange}% | ROAS ${roasChange>0?'+':''}${roasChange}%`;
-        const emperorEffectRes = await diagnoseAdViaEmperor(effectCtx);
         if (emperorEffectRes.success && emperorEffectRes.output) {
           const out = emperorEffectRes.output as any;
           effectSummary = out.overall_assessment || effectCtx;

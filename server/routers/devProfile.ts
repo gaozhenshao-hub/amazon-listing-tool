@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -160,7 +159,6 @@ export const devProfileRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -168,7 +166,6 @@ export const devProfileRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] devProfile.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [
@@ -225,7 +222,6 @@ export const devProfileRouter = router({
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -233,7 +229,6 @@ export const devProfileRouter = router({
 
         }
 
-      } catch (_e) { console.warn("[Emperor] devProfile.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [

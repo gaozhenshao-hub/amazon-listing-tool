@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -64,7 +63,6 @@ export const offCampaignRouter = router({
 
     try {
 
-      const _emperorRes = await runSkillViaEmperor("off.campaign.analysis", { context: JSON.stringify(input).slice(0, 3000) });
 
       if (_emperorRes.success && _emperorRes.output) {
 
@@ -72,7 +70,6 @@ export const offCampaignRouter = router({
 
       }
 
-    } catch (_e) { console.warn("[Emperor] offCampaign.ts fallback:", _e); }
 
     const resp = await invokeLLM({
       messages: [

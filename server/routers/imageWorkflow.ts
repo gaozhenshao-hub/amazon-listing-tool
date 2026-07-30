@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { analyzeImageViaEmperor } from "../emperorClient";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import * as db from "../db";

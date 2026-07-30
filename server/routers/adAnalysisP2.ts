@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
-import { diagnoseAdViaEmperor, adviseAdSearchTermsViaEmperor, generateAdNegativeViaEmperor, allocateAdBudgetViaEmperor, generateAdStructureViaEmperor, suggestAdDaypartingViaEmperor } from "../emperorClient";
 
 // ─── 3.7 DSP广告分析 ──────────────────────────────────────────────
 
@@ -148,9 +147,7 @@ export const adAnalysisP2Router = router({
     .mutation(async ({ input }) => {
       // Emperor Skill 优先 - DSP策略
       try {
-        const emperorRes = await diagnoseAdViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] aiDspStrategy fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -314,9 +311,7 @@ ${AD_KNOWLEDGE_BASE}
 
       // Emperor Skill 优先 - 广告助手
       try {
-        const emperorRes = await diagnoseAdViaEmperor(input.question || "");
         if (emperorRes.success && emperorRes.output) return { reply: JSON.stringify(emperorRes.output) };
-      } catch (e) { console.warn("[Emperor] adChatBot fallback:", e); }
 
       const response = await invokeLLM({
         messages,
@@ -526,9 +521,7 @@ ${AD_KNOWLEDGE_BASE}
 
       // Emperor Skill 优先 - 渠道策略
       try {
-        const emperorRes = await adviseAdSearchTermsViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] aiChannelStrategy fallback:", e); }
 
       const response = await invokeLLM({
         messages: [

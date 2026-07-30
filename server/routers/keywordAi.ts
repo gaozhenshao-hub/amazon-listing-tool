@@ -1,19 +1,5 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
-import {
-  filterKeywordsViaEmperor,
-  tagKeywordScenesViaEmperor,
-  classifyKeywordRootsViaEmperor,
-  classifyKeywordTrafficViaEmperor,
-  runSkill,
-} from "../emperorClient";
-import {
-  getKeywordsByProject,
-  updateKeyword,
-  createNegativeKeyword,
-  getProjectById,
-} from "../db";
 import {
   KEYWORD_SEMANTIC_FILTER_PROMPT,
   KEYWORD_SCENE_TAG_PROMPT,
@@ -66,7 +52,6 @@ export const keywordAiRouter = router({
           // Emperor Skill 优先，降级到内置 LLM
           let parsed: any = {};
           try {
-            const emperorRes = await filterKeywordsViaEmperor(
               `${productContext}\n\nKeywords to filter:\n${kwList}`
             );
             if (emperorRes.success && emperorRes.output) {
@@ -80,7 +65,6 @@ export const keywordAiRouter = router({
               };
             }
           } catch (emperorErr) {
-            console.warn("[Emperor] filterKeywords failed, falling back to invokeLLM:", emperorErr);
           }
           if (!parsed.results) {
             const response = await invokeLLM({
@@ -165,7 +149,6 @@ export const keywordAiRouter = router({
           // Emperor Skill 优先，降级到内置 LLM
           let parsed: any = {};
           try {
-            const emperorRes = await tagKeywordScenesViaEmperor(
               `${productContext}\n\nKeywords:\n${kwList}`
             );
             if (emperorRes.success && emperorRes.output?.keywords) {
@@ -176,7 +159,6 @@ export const keywordAiRouter = router({
               })) };
             }
           } catch (emperorErr) {
-            console.warn("[Emperor] tagKeywordScenes failed, falling back:", emperorErr);
           }
           if (!parsed.results) {
             const response = await invokeLLM({
@@ -243,7 +225,6 @@ export const keywordAiRouter = router({
           // Emperor Skill 优先，降级到内置 LLM
           let parsed: any = {};
           try {
-            const emperorRes = await classifyKeywordRootsViaEmperor(
               `${productContext}\n\nKeywords:\n${kwList}`
             );
             if (emperorRes.success && emperorRes.output?.roots) {
@@ -256,7 +237,6 @@ export const keywordAiRouter = router({
               parsed = { results };
             }
           } catch (emperorErr) {
-            console.warn("[Emperor] classifyKeywordRoots failed, falling back:", emperorErr);
           }
           if (!parsed.results) {
             const response = await invokeLLM({
@@ -419,7 +399,6 @@ export const keywordAiRouter = router({
         });
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
       } catch (emperorErr) {
-        console.warn("[Emperor] keyword.listing.layout failed, falling back:", emperorErr);
       }
       const response = await invokeLLM({
         messages: [

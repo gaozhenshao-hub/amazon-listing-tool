@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 /**
  * kbBot Router — 知识库AI机器人
  *
@@ -218,7 +217,6 @@ async function performKbSearch(
 
     try {
 
-      const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify({}).slice(0, 3000) });
 
       if (_emperorRes.success && _emperorRes.output) {
 
@@ -226,7 +224,6 @@ async function performKbSearch(
 
       }
 
-    } catch (_e) { console.warn("[Emperor] kbBot.ts fallback:", _e); }
 
     const selectionResponse = await invokeLLM({
       messages: [
@@ -322,7 +319,6 @@ ${l1Prompt}`,
 
     try {
 
-      const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify({}).slice(0, 3000) });
 
       if (_emperorRes.success && _emperorRes.output) {
 
@@ -330,7 +326,6 @@ ${l1Prompt}`,
 
       }
 
-    } catch (_e) { console.warn("[Emperor] kbBot.ts fallback:", _e); }
 
     const l2SelectionResponse = await invokeLLM({
       messages: [
@@ -412,7 +407,6 @@ ${l2Prompt}`,
 
   try {
 
-    const _emperorRes = await runSkillViaEmperor("analysis.competitor.single", { context: JSON.stringify({}).slice(0, 3000) });
 
     if (_emperorRes.success && _emperorRes.output) {
 
@@ -420,7 +414,6 @@ ${l2Prompt}`,
 
     }
 
-  } catch (_e) { console.warn("[Emperor] kbBot.ts fallback:", _e); }
 
   const answerResponse = await invokeLLM({
     messages: [

@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { adviseOpsSearchTermsViaEmperor, analyzeInventoryViaEmperor, analyzeProfitViaEmperor } from "../emperorClient";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
@@ -521,9 +520,7 @@ ${JSON.stringify(input.skuData, null, 2)}
 
       // Emperor Skill 优先 - 运营分析
       try {
-        const emperorRes = await analyzeProfitViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] operations fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -747,9 +744,7 @@ ${activeSkus.map((s, i) => `
 
       // Emperor Skill 优先 - 运营分析
       try {
-        const emperorRes = await analyzeProfitViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] operations fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1022,9 +1017,7 @@ ${activeSkus.map((s, i) => `
 
       // Emperor Skill 优先 - 运营分析
       try {
-        const emperorRes = await analyzeProfitViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] operations fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1686,9 +1679,7 @@ ${activeSkus.map((s, i) => `
     .mutation(async ({ input }) => {
       // Emperor Skill 优先 - 运营分析
       try {
-        const emperorRes = await analyzeProfitViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] operations fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -1984,9 +1975,7 @@ ${JSON.stringify(input.searchTerms.map(t => ({
 
       // Emperor Skill 优先 - 运营分析
       try {
-        const emperorRes = await analyzeProfitViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] operations fallback:", e); }
 
       const response = await invokeLLM({
         messages: [
@@ -2178,9 +2167,7 @@ ${JSON.stringify(input.searchTerms.map(t => ({
       try {
       // Emperor Skill 优先 - 运营分析
       try {
-        const emperorRes = await analyzeProfitViaEmperor(JSON.stringify(input).slice(0, 2000));
         if (emperorRes.success && emperorRes.output) return emperorRes.output;
-      } catch (e) { console.warn("[Emperor] operations fallback:", e); }
 
         const response = await invokeLLM({
           messages: [

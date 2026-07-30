@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "./emperorClient";
 /**
  * AI Replenishment Prediction Engine
  * 
@@ -354,7 +353,6 @@ ${historicalLeadTimesStr}
 
     try {
 
-      const _emperorRes = await runSkillViaEmperor("ops.inventory.analysis", { context: JSON.stringify(input ?? {}).slice(0, 3000) });
 
       if (_emperorRes.success && _emperorRes.output) {
 
@@ -362,7 +360,6 @@ ${historicalLeadTimesStr}
 
       }
 
-    } catch (_e) { console.warn("[Emperor] replenishmentEngine.ts fallback:", _e); }
 
     const response = await invokeLLM({
       messages: [

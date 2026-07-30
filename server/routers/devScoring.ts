@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -45,7 +44,6 @@ ${products.slice(0, 10).map(p => `${p.asin} | ${p.title} | $${p.price} | ${p.rat
 
       try {
 
-        const _emperorRes = await runSkillViaEmperor("dev.analysis.product", { context: JSON.stringify(input).slice(0, 3000) });
 
         if (_emperorRes.success && _emperorRes.output) {
 
@@ -53,7 +51,6 @@ ${products.slice(0, 10).map(p => `${p.asin} | ${p.title} | $${p.price} | ${p.rat
 
         }
 
-      } catch (_e) { console.warn("[Emperor] devScoring.ts fallback:", _e); }
 
       const response = await invokeLLM({
         messages: [

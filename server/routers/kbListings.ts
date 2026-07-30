@@ -1,4 +1,3 @@
-import { runSkillViaEmperor } from "../emperorClient";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -46,7 +45,6 @@ export const kbListingsRouter = router({
 
           try {
 
-            const _emperorRes = await runSkillViaEmperor("listing.competitor.analyze", { context: JSON.stringify(input).slice(0, 3000) });
 
             if (_emperorRes.success && _emperorRes.output) {
 
@@ -54,7 +52,6 @@ export const kbListingsRouter = router({
 
             }
 
-          } catch (_e) { console.warn("[Emperor] kbListings.ts fallback:", _e); }
 
           const response = await invokeLLM({
             messages: [
@@ -124,7 +121,6 @@ export const kbListingsRouter = router({
 
             try {
 
-              const _emperorRes = await runSkillViaEmperor("listing.competitor.analyze", { context: JSON.stringify(input).slice(0, 3000) });
 
               if (_emperorRes.success && _emperorRes.output) {
 
@@ -132,7 +128,6 @@ export const kbListingsRouter = router({
 
               }
 
-            } catch (_e) { console.warn("[Emperor] kbListings.ts fallback:", _e); }
 
             const response = await invokeLLM({
               messages: [
@@ -180,7 +175,6 @@ export const kbListingsRouter = router({
 
           try {
 
-            const _emperorRes = await runSkillViaEmperor("listing.competitor.analyze", { context: JSON.stringify(input).slice(0, 3000) });
 
             if (_emperorRes.success && _emperorRes.output) {
 
@@ -188,7 +182,6 @@ export const kbListingsRouter = router({
 
             }
 
-          } catch (_e) { console.warn("[Emperor] kbListings.ts fallback:", _e); }
 
           const response = await invokeLLM({
             messages: [
