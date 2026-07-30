@@ -3,6 +3,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { invokeLLM } from "../_core/llm";
 import * as db from "../db";
+import { runEmperorSkill } from "../services/emperorSkillRunner";
 import {
   TITLE_GENERATION_PROMPT,
   BULLET_POINTS_PROMPT,
@@ -65,6 +66,36 @@ function safeParseJSON<T = any>(raw: unknown, fallback?: T): T | { raw: string }
   // Fallback
   if (fallback !== undefined) return fallback;
   return { raw: str };
+}
+
+function parseJsonOrThrow<T = any>(content: string): T {
+  const parsed = safeParseJSON<T>(content);
+  if ((parsed as any).raw) {
+    throw new Error("AI response format error");
+  }
+  return parsed as T;
+}
+
+async function executeListingSkill<T = any>(
+  skillSlug: string,
+  userId: number,
+  context: string,
+  variables: Record<string, unknown> = {},
+  emphasis?: string,
+): Promise<T> {
+  const result = await runEmperorSkill<T>({
+    skillSlug,
+    userId,
+    context,
+    emphasis,
+    variables: {
+      context,
+      emphasis: emphasis || "",
+      ...variables,
+    },
+    validate: parseJsonOrThrow,
+  });
+  return result.parsed;
 }
 
 // Helper: resolve project access based on user role
@@ -299,7 +330,8 @@ async function generateChineseTranslation(
   description: string,
   searchTerms: string,
   qaContent?: string,
-  itemHighlights?: string
+  itemHighlights?: string,
+  userId = 0,
 ): Promise<{ titleCn: string; itemHighlightsCn: string; bulletPointsCn: any[]; descriptionCn: string; searchTermsCn: string; qaContentCn?: string }> {
   const inputContent: any = {
     title,
@@ -322,21 +354,19 @@ async function generateChineseTranslation(
     }
   }
 
-  const translationPrompt = qaContent
-    ? CHINESE_TRANSLATION_PROMPT + `\n\nALSO translate the "qaItems" array. For each QA item, translate "question" to "questionZh" and "answer" to "answerZh". Return the translated QA as "qaContentCn" in the response.`
-    : CHINESE_TRANSLATION_PROMPT;
-
-  const response = await invokeLLM({
-    messages: [
-      { role: "system", content: translationPrompt },
-      { role: "user", content: `Please translate the following Amazon listing content into Chinese:\n\n${JSON.stringify(inputContent, null, 2)}` },
-    ],
-    response_format: { type: "json_object" },
-  });
-
-    const content = (response.choices?.[0]?.message?.content ?? "") as string;
-  const parsed = safeParseJSON<any>(content, {});
-  if ((parsed as any).raw) return { titleCn: "", itemHighlightsCn: "", bulletPointsCn: [], descriptionCn: "", searchTermsCn: "" };
+  const context = `Please translate the following Amazon listing content into Chinese:\n\n${JSON.stringify(inputContent, null, 2)}`;
+  const parsed = await executeListingSkill<any>(
+    "listing.translate.chinese",
+    userId,
+    context,
+    {
+      listing: inputContent,
+      includeQA: Boolean(qaContent),
+      qaInstruction: qaContent
+        ? `ALSO translate the "qaItems" array. For each QA item, translate "question" to "questionZh" and "answer" to "answerZh". Return the translated QA as "qaContentCn" in the response.`
+        : "",
+    },
+  );
   return {
     titleCn: parsed.titleCn || "",
     itemHighlightsCn: parsed.itemHighlightsCn || "",
@@ -906,18 +936,13 @@ export const listingRouter = router({
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
 
-      // 优先调用 Emperor Skill，失败时降级到内置 LLM
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: TITLE_GENERATION_PROMPT },
-          { role: "user", content: `Generate optimized Amazon titles in TWO-STAGE format for this product. Layer 1 (title) MUST be ≤75 characters. Layer 2 (itemHighlights) MUST be ≤125 characters. Count every character precisely before outputting.\n\n${context}` },
-        ],
-        response_format: { type: "json_object" },
-        max_tokens: 4096,
-      });
-            const content = (response.choices?.[0]?.message?.content ?? "") as string;
-      let parsed = safeParseJSON<any>(content);
-      if ((parsed as any).raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI 返回格式异常，请重试" });
+      let parsed = await executeListingSkill<any>(
+        "listing.title.generate",
+        ctx.user.id,
+        context,
+        { project, analyses, enrichedData },
+        input.emphasis,
+      );
       let validation = validateTitles(parsed);
       if (!validation.valid) {
         for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
@@ -942,17 +967,13 @@ export const listingRouter = router({
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
 
-      // 优先调用 Emperor Skill，失败时降级到内置 LLM
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: BULLET_POINTS_PROMPT },
-          { role: "user", content: `Generate 5 optimized Amazon bullet points for this product.\n\nCRITICAL: Each bullet (subtitle + space + fullText) MUST be 200-280 characters. Count every character precisely before outputting. If any bullet is outside 200-280, revise it before responding.\n\n${context}` },
-        ],
-        response_format: { type: "json_object" },
-      });
-            const content = (response.choices?.[0]?.message?.content ?? "") as string;
-      let parsed = safeParseJSON<any>(content);
-      if ((parsed as any).raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI 返回格式异常，请重试" });
+      let parsed = await executeListingSkill<any>(
+        "listing.bullets.generate",
+        ctx.user.id,
+        context,
+        { project, analyses, enrichedData },
+        input.emphasis,
+      );
       let validation = validateBullets(parsed);
       if (!validation.valid) {
         for (let retry = 0; retry < MAX_RETRIES && !validation.valid; retry++) {
@@ -977,18 +998,13 @@ export const listingRouter = router({
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
 
-      // 优先调用 Emperor Skill，失败时降级到内置 LLM
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: DESCRIPTION_PROMPT },
-          { role: "user", content: `Generate an optimized Amazon product description:\n\n${context}` },
-        ],
-        response_format: { type: "json_object" },
-        max_tokens: 4096,
-      });
-            const content = (response.choices?.[0]?.message?.content ?? "") as string;
-      const descParsed = safeParseJSON<any>(content);
-      if ((descParsed as any).raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI 返回格式异常，请重试" });
+      const descParsed = await executeListingSkill<any>(
+        "listing.description.generate",
+        ctx.user.id,
+        context,
+        { project, analyses, enrichedData },
+        input.emphasis,
+      );
       return descParsed;
     }),
   // Generate search terms
@@ -1015,19 +1031,14 @@ export const listingRouter = router({
         extraContext = `\n\nCurrent Title (do NOT repeat these words): ${input.existingTitle}`;
       }
 
-      // 优先调用 Emperor Skill，失败时降级到内置 LLM
       const fullContext = context + extraContext;
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: SEARCH_TERMS_PROMPT },
-          { role: "user", content: `Generate backend search terms for this product:\n\n${context}${extraContext}` },
-        ],
-        response_format: { type: "json_object" },
-        max_tokens: 2048,
-      });
-            const content = (response.choices?.[0]?.message?.content ?? "") as string;
-      const stParsed = safeParseJSON<any>(content);
-      if ((stParsed as any).raw) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI 返回格式异常，请重试" });
+      const stParsed = await executeListingSkill<any>(
+        "listing.searchterms.generate",
+        ctx.user.id,
+        fullContext,
+        { project, analyses, enrichedData, existingTitle: input.existingTitle || "" },
+        input.emphasis,
+      );
       return stParsed;
     }),
   // Generate image advice
@@ -1045,8 +1056,13 @@ export const listingRouter = router({
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
 
-      // 优先调用 Emperor Skill，失败时降级到内置 LLM
-      let imageData: any;
+      const imageData = await executeListingSkill<any>(
+        "listing.image.advice",
+        ctx.user.id,
+        context,
+        { project, analyses, enrichedData },
+        input.emphasis,
+      );
 
       // Save image advice to the active listing (or create one if none exists)
       const existingListings = await db.getListingsByProject(input.projectId);
@@ -1102,57 +1118,17 @@ export const listingRouter = router({
         context += `\n\n--- [User Emphasis / 用户重点强调] ---\n用户希望在Listing中重点突出以下卖点或场景，请在标题、五点、描述中优先体现这些内容：\n${input.emphasis.trim()}`;
       }
 
-      // Generate all components in parallel
-      const [titleRes, bulletRes, descRes, searchRes, imageRes] = await Promise.all([
-        invokeLLM({
-          messages: [
-            { role: "system", content: TITLE_GENERATION_PROMPT },
-            { role: "user", content: `Generate optimized Amazon titles. Each title MUST be exactly 180-200 characters. Count every character precisely before outputting.\n\n${context}` },
-          ],
-          response_format: { type: "json_object" },
-        }),
-        invokeLLM({
-          messages: [
-            { role: "system", content: BULLET_POINTS_PROMPT },
-            { role: "user", content: `Generate 5 optimized Amazon bullet points. Each bullet (subtitle + space + fullText) MUST be 200-280 characters. Count every character precisely before outputting.\n\n${context}` },
-          ],
-          response_format: { type: "json_object" },
-        }),
-        invokeLLM({
-          messages: [
-            { role: "system", content: DESCRIPTION_PROMPT },
-            { role: "user", content: `Generate an optimized Amazon product description:\n\n${context}` },
-          ],
-          response_format: { type: "json_object" },
-        }),
-        invokeLLM({
-          messages: [
-            { role: "system", content: SEARCH_TERMS_PROMPT },
-            { role: "user", content: `Generate backend search terms:\n\n${context}` },
-          ],
-          response_format: { type: "json_object" },
-        }),
-        invokeLLM({
-          messages: [
-            { role: "system", content: IMAGE_ADVICE_PROMPT },
-            { role: "user", content: `Provide image recommendations:\n\n${context}` },
-          ],
-          response_format: { type: "json_object" },
-        }),
+      const commonVariables = { project, analyses, enrichedData };
+      const [titleDataRaw, bulletDataRaw, descData, searchData, imageData] = await Promise.all([
+        executeListingSkill<any>("listing.title.generate", ctx.user.id, context, commonVariables, input.emphasis),
+        executeListingSkill<any>("listing.bullets.generate", ctx.user.id, context, commonVariables, input.emphasis),
+        executeListingSkill<any>("listing.description.generate", ctx.user.id, context, commonVariables, input.emphasis),
+        executeListingSkill<any>("listing.searchterms.generate", ctx.user.id, context, commonVariables, input.emphasis),
+        executeListingSkill<any>("listing.image.advice", ctx.user.id, context, commonVariables, input.emphasis),
       ]);
 
-      const parse = (res: any) => {
-        const c = typeof res.choices[0].message.content === "string"
-          ? res.choices[0].message.content
-          : JSON.stringify(res.choices[0].message.content);
-        return safeParseJSON(c);
-      };
-
-      let titleData = parse(titleRes);
-      let bulletData = parse(bulletRes);
-      const descData = parse(descRes);
-      const searchData = parse(searchRes);
-      const imageData = parse(imageRes);
+      let titleData = titleDataRaw;
+      let bulletData = bulletDataRaw;
 
       // Validate titles and retry if needed
       let titleValidation = validateTitles(titleData);
@@ -1187,7 +1163,8 @@ export const listingRouter = router({
           englishDesc,
           englishSearchTerms,
           undefined,
-          englishItemHighlights
+          englishItemHighlights,
+          ctx.user.id,
         );
       } catch (err) {
         console.error("Chinese translation failed:", err);
@@ -1267,7 +1244,9 @@ export const listingRouter = router({
         bulletPoints,
         listing.description || "",
         listing.searchTerms || "",
-        listing.qaContent || undefined
+        listing.qaContent || undefined,
+        listing.itemHighlights || undefined,
+        ctx.user.id,
       );
 
       // Translate image advice to Chinese if available
@@ -1544,7 +1523,10 @@ export const listingRouter = router({
           newTitle,
           newBullets,
           listing.description || "",
-          listing.searchTerms || ""
+          listing.searchTerms || "",
+          undefined,
+          listing.itemHighlights || undefined,
+          ctx.user.id,
         );
         if (input.title && cnData.titleCn) updateData.titleCn = cnData.titleCn;
         if (input.bulletPoints && cnData.bulletPointsCn?.length > 0) {
@@ -1612,60 +1594,26 @@ export const listingRouter = router({
         }
       } catch (e) { /* buyer questions not available, continue without */ }
 
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: SELLING_POINTS_CORE_PROMPT },
-          { role: "user", content: `Based on the following product data, generate 7 core selling point themes for Amazon bullet points.\n\n${context}` },
-        ],
-        response_format: { type: "json_object" },
-        max_tokens: 4096,
-      });
-
-      const rawMsg = response.choices?.[0]?.message?.content;
-      const rawContent: string = typeof rawMsg === "string"
-        ? rawMsg
-        : rawMsg != null ? (JSON.stringify(rawMsg) ?? "") : "";
-
-      if (!rawContent) {
-        console.error("[generateSellingPointsCores] LLM returned empty/undefined content");
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI 返回内容为空，请重试" });
+      const parsed = await executeListingSkill<any>(
+        "listing.sellingpoints.generate",
+        ctx.user.id,
+        context,
+        { project, analyses, enrichedData },
+        input.emphasis,
+      );
+      if (!Array.isArray(parsed.sellingPoints)) {
+        if (Array.isArray(parsed.selling_points)) parsed.sellingPoints = parsed.selling_points;
+        else if (Array.isArray(parsed.points)) parsed.sellingPoints = parsed.points;
+        else if (Array.isArray(parsed.bulletCores)) parsed.sellingPoints = parsed.bulletCores;
+        else if (Array.isArray(parsed.cores)) parsed.sellingPoints = parsed.cores;
+        else if (Array.isArray(parsed.themes)) parsed.sellingPoints = parsed.themes;
       }
-
-      // Strip thinking tags (Gemini may include <thinking>...</thinking> blocks)
-      // Strip markdown code fences if LLM wraps JSON in ```json ... ```
-      const content = rawContent
-        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
-        .replace(/^```(?:json)?\s*/im, "")
-        .replace(/\s*```\s*$/im, "")
-        .trim();
-      // If content still doesn't start with '{', try to extract first JSON object
-      const jsonStart = content.indexOf("{");
-      const jsonEnd = content.lastIndexOf("}");
-      const cleanContent = jsonStart >= 0 && jsonEnd > jsonStart
-        ? content.slice(jsonStart, jsonEnd + 1)
-        : content;
-
-      try {
-        const parsed = JSON.parse(cleanContent);
-        // Normalize field name variants to sellingPoints
-        if (!Array.isArray(parsed.sellingPoints)) {
-          if (Array.isArray(parsed.selling_points)) parsed.sellingPoints = parsed.selling_points;
-          else if (Array.isArray(parsed.points)) parsed.sellingPoints = parsed.points;
-          else if (Array.isArray(parsed.bulletCores)) parsed.sellingPoints = parsed.bulletCores;
-          else if (Array.isArray(parsed.cores)) parsed.sellingPoints = parsed.cores;
-          else if (Array.isArray(parsed.themes)) parsed.sellingPoints = parsed.themes;
-        }
-        // Normalize overallStrategy field name variants
-        if (!parsed.overallStrategy) {
-          if (parsed.overall_strategy) parsed.overallStrategy = parsed.overall_strategy;
-          else if (parsed.strategy) parsed.overallStrategy = parsed.strategy;
-          else if (parsed.summary) parsed.overallStrategy = parsed.summary;
-        }
-        return parsed;
-      } catch (e) {
-        console.error("[generateSellingPointsCores] JSON.parse failed:", String(e), "\nRaw (first 500 chars):", rawContent.slice(0, 500));
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "AI 返回格式异常，请重试" });
+      if (!parsed.overallStrategy) {
+        if (parsed.overall_strategy) parsed.overallStrategy = parsed.overall_strategy;
+        else if (parsed.strategy) parsed.overallStrategy = parsed.strategy;
+        else if (parsed.summary) parsed.overallStrategy = parsed.summary;
       }
+      return parsed;
     }),
 
   // Step 2: Generate a single bullet point based on confirmed selling point core
@@ -2083,8 +2031,13 @@ Please expand this keyword/theme into a complete selling point core with FABE di
         context += `\n\n--- [User Emphasis] ---\n用户希望重点突出：${input.emphasis.trim()}`;
       }
 
-      // 优先调用 Emperor Skill，失败时降级到内置 LLM
-      let parsed: any;
+      const parsed = await executeListingSkill<any>(
+        "listing.qa.generate",
+        ctx.user.id,
+        context,
+        { project, analyses, enrichedData, listing },
+        input.emphasis,
+      );
 
       // Auto-save QA to listing if active listing exists
       if (listing) {

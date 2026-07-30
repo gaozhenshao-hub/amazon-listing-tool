@@ -124,15 +124,111 @@ function parseJson<T>(value: unknown, fallback: T): T {
   }
 }
 
+export function safeParseSkillJSON<T = unknown>(raw: unknown, fallback?: T): T | { raw: string } {
+  if (raw === undefined || raw === null) {
+    if (fallback !== undefined) return fallback;
+    return { raw: String(raw) };
+  }
+
+  const str = typeof raw === "string" ? raw : (JSON.stringify(raw) ?? "");
+  if (!str.trim()) {
+    if (fallback !== undefined) return fallback;
+    return { raw: "" };
+  }
+
+  const cleaned = str
+    .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+    .replace(/^```(?:json)?\s*/im, "")
+    .replace(/\s*```\s*$/im, "")
+    .trim();
+
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch {
+    // Continue to extracting a JSON payload from provider prose.
+  }
+
+  const candidates: Array<[number, number]> = [
+    [cleaned.indexOf("{"), cleaned.lastIndexOf("}")],
+    [cleaned.indexOf("["), cleaned.lastIndexOf("]")],
+  ];
+
+  for (const [start, end] of candidates) {
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(cleaned.slice(start, end + 1)) as T;
+      } catch {
+        // Try the next candidate.
+      }
+    }
+  }
+
+  if (fallback !== undefined) return fallback;
+  return { raw: str };
+}
+
+function getTemplateValue(path: string, variables: Record<string, unknown>): unknown {
+  if (path === "this" || path === ".") return variables.this;
+  if (path === "@index") return variables.index;
+  return path.split(".").reduce<unknown>((current, key) => {
+    if (key === "this" && current === variables) return variables.this;
+    if (current && typeof current === "object") return (current as Record<string, unknown>)[key];
+    return undefined;
+  }, variables);
+}
+
+function isTruthyTemplateValue(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length > 0;
+  return Boolean(value);
+}
+
+function stringifyTemplateValue(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
+
 export function renderSkillTemplate(template: string, variables: Record<string, unknown>): string {
-  return template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, path: string) => {
-    const value = path.split(".").reduce<unknown>((current, key) => {
-      if (current && typeof current === "object") return (current as Record<string, unknown>)[key];
-      return undefined;
-    }, variables);
-    if (value === undefined || value === null) return "";
-    return typeof value === "object" ? JSON.stringify(value) : String(value);
-  });
+  try {
+    let output = template;
+
+    output = output.replace(
+      /\{\{\s*#each\s+([\w.]+)\s*\}\}([\s\S]*?)\{\{\s*\/each\s*\}\}/g,
+      (_, path: string, block: string) => {
+        const value = getTemplateValue(path, variables);
+        if (!Array.isArray(value)) return "";
+        return value.map((item, index) => renderSkillTemplate(block, {
+          ...variables,
+          this: item,
+          index,
+        })).join("");
+      },
+    );
+
+    output = output.replace(
+      /\{\{\s*#if\s+([\w.]+)\s*\}\}([\s\S]*?)(?:\{\{\s*else\s*\}\}([\s\S]*?))?\{\{\s*\/if\s*\}\}/g,
+      (_, path: string, truthyBlock: string, falsyBlock = "") => {
+        return isTruthyTemplateValue(getTemplateValue(path, variables)) ? truthyBlock : falsyBlock;
+      },
+    );
+
+    output = output.replace(
+      /\{\{\s*#unless\s+([\w.]+)\s*\}\}([\s\S]*?)\{\{\s*\/unless\s*\}\}/g,
+      (_, path: string, block: string) => {
+        return isTruthyTemplateValue(getTemplateValue(path, variables)) ? "" : block;
+      },
+    );
+
+    output = output.replace(/\{\{\{\s*([\w.@]+)\s*\}\}\}/g, (_, path: string) => {
+      return stringifyTemplateValue(getTemplateValue(path, variables));
+    });
+    return output.replace(/\{\{\s*([\w.@]+)\s*\}\}/g, (_, path: string) => {
+      return stringifyTemplateValue(getTemplateValue(path, variables));
+    });
+  } catch {
+    return template.replace(/\{\{\{?\s*([\w.@]+)\s*\}?\}\}/g, (_, path: string) => {
+      return stringifyTemplateValue(getTemplateValue(path, variables));
+    });
+  }
 }
 
 function classifyProviderError(error: unknown): SkillRunError {
