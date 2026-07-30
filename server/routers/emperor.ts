@@ -210,21 +210,36 @@ export const emperorSkillsRouter = router({
 // Skill Engine Router (Run Skills)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function resolveModel(skill: any, modelOverrideSlug?: string): Promise<{ modelId: string; provider: string }> {
+interface ResolvedModel {
+  modelId: string;
+  provider: string;
+  baseUrl?: string;
+  apiKeyRef?: string;
+}
+async function resolveModel(skill: any, modelOverrideSlug?: string): Promise<ResolvedModel> {
+  const fromRow = (row: any): ResolvedModel => ({
+    modelId: row.modelId,
+    provider: row.provider,
+    baseUrl: row.baseUrl || undefined,
+    apiKeyRef: row.apiKeyRef || undefined,
+  });
   if (modelOverrideSlug) {
     const rows = await rawExecute("SELECT * FROM emperor_model_providers WHERE slug = ? AND isActive = 1 LIMIT 1", [modelOverrideSlug]);
-    if (rows[0]) return { modelId: rows[0].modelId, provider: rows[0].provider };
+    if (rows[0]) return fromRow(rows[0]);
   }
   if (skill.modelOverride) {
     const rows = await rawExecute("SELECT * FROM emperor_model_providers WHERE slug = ? AND isActive = 1 LIMIT 1", [skill.modelOverride]);
-    if (rows[0]) return { modelId: rows[0].modelId, provider: rows[0].provider };
+    if (rows[0]) return fromRow(rows[0]);
   }
   const manifest = typeof skill.manifest === "string" ? JSON.parse(skill.manifest) : skill.manifest;
   const modelPolicy = manifest?.implementation?.modelPolicy;
   if (modelPolicy) {
     const rows = await rawExecute("SELECT * FROM emperor_model_providers WHERE modelId = ? AND isActive = 1 LIMIT 1", [modelPolicy]);
-    if (rows[0]) return { modelId: rows[0].modelId, provider: rows[0].provider };
+    if (rows[0]) return fromRow(rows[0]);
   }
+  // Fallback: try default model
+  const defaultRows = await rawExecute("SELECT * FROM emperor_model_providers WHERE isDefault = 1 AND isActive = 1 LIMIT 1");
+  if (defaultRows[0]) return fromRow(defaultRows[0]);
   return { modelId: "manus-default", provider: "manus_builtin" };
 }
 
@@ -272,16 +287,53 @@ export const emperorRunRouter = router({
           { role: "user", content: userPrompt },
         ];
 
-        const llmParams: any = { messages };
-        if (impl.supportsJsonMode === true && systemPrompt.toLowerCase().includes("json")) {
-          llmParams.response_format = { type: "json_object" };
-        }
-        if (impl.temperature !== undefined) llmParams.temperature = impl.temperature;
-        if (impl.maxTokens) llmParams.max_tokens = impl.maxTokens;
+        let content = "";
+        let usage: { prompt_tokens?: number; completion_tokens?: number } = {};
 
-        const response = await invokeLLM(llmParams);
-        const content = response?.choices?.[0]?.message?.content || "";
-        const usage = (response?.usage || {}) as { prompt_tokens?: number; completion_tokens?: number };
+        if (modelInfo.provider === "custom" && modelInfo.baseUrl && modelInfo.apiKeyRef) {
+          // ── External LLM via OpenAI-compatible API (Teamo Router etc.) ──
+          const apiUrl = `${modelInfo.baseUrl.replace(/\/$/, "")}/chat/completions`;
+          const externalPayload: any = {
+            model: modelInfo.modelId,
+            messages: [...messages],
+            max_tokens: impl.maxTokens || 4096,
+          };
+          if (impl.temperature !== undefined) externalPayload.temperature = impl.temperature;
+          if (impl.supportsJsonMode === true && systemPrompt.toLowerCase().includes("json")) {
+            externalPayload.messages[0] = {
+              ...externalPayload.messages[0],
+              content: externalPayload.messages[0].content + "\n\nIMPORTANT: You MUST respond with valid JSON only. No markdown code fences, no explanation, no extra text.",
+            };
+          }
+          const extResponse = await fetch(apiUrl, {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: `Bearer ${modelInfo.apiKeyRef}` },
+            body: JSON.stringify(externalPayload),
+            signal: AbortSignal.timeout(120_000),
+          });
+          if (!extResponse.ok) {
+            const errText = await extResponse.text();
+            throw new Error(`External LLM [${modelInfo.modelId}] failed: ${extResponse.status} – ${errText.slice(0, 300)}`);
+          }
+          const extResult = await extResponse.json() as any;
+          const msg = extResult?.choices?.[0]?.message;
+          content = msg?.content || "";
+          // DeepSeek V4 may return empty content with reasoning_content
+          if (!content && msg?.reasoning_content) content = msg.reasoning_content;
+          usage = extResult?.usage || {};
+        } else {
+          // ── Manus built-in LLM ──
+          const llmParams: any = { messages };
+          if (impl.supportsJsonMode === true && systemPrompt.toLowerCase().includes("json")) {
+            llmParams.response_format = { type: "json_object" };
+          }
+          if (impl.temperature !== undefined) llmParams.temperature = impl.temperature;
+          if (impl.maxTokens) llmParams.max_tokens = impl.maxTokens;
+          const response = await invokeLLM(llmParams);
+          const rawContent = response?.choices?.[0]?.message?.content;
+          content = typeof rawContent === "string" ? rawContent : (rawContent ? JSON.stringify(rawContent) : "");
+          usage = (response?.usage || {}) as { prompt_tokens?: number; completion_tokens?: number };
+        }
         const completedAt = new Date();
         const durationMs = completedAt.getTime() - startedAt.getTime();
         const inputTok = usage.prompt_tokens || 0;

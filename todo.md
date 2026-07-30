@@ -263,3 +263,19 @@
 - [x] 修复 invokeLLM json_object 模式返回空内容的问题（Forge API 不支持 json_object，改为纯文本模式 + JSON 指令注入 + 自动清理 markdown code fence）
 - [x] 修复 emperor.ts rawExecute 500 错误：从 $client (mysql2 Pool) 改为 drizzle db.execute(sql template)，解决 agents.list 等接口 500 错误
 - [x] 端到端验证：generateSellingPointsCores（7 个卖点，解析成功）+ generateTitle（3 个标题，解析成功）
+
+## Listing 五步流程迁移到新皇帝 Skill 系统（2026-07-30）
+- [x] 将 Teamo Router 31 个模型写入 emperor_model_providers 表
+- [x] 修改皇帝 run 引擎支持 custom provider 调用外部 LLM（Teamo Router）
+- [x] 设置 DeepSeek V4 Pro 为默认模型
+- [x] 端到端测试验证（deepseek-v4-flash + claude-sonnet-5 均成功）
+- [ ] 创建 server/services/emperorSkillRunner.ts 统一 Skill 调用层
+- [ ] 升级 renderTemplate 支持 Handlebars 条件语法
+- [ ] 迁移 generateSellingPointsCores → listing.sellingpoints.generate
+- [ ] 迁移 generateTitle → listing.title.generate
+- [ ] 迁移 generateBulletPoints → listing.bullets.generate
+- [ ] 迁移 generateDescription → listing.description.generate
+- [ ] 迁移 generateSearchTerms → listing.searchterms.generate
+- [ ] 迁移 generateQA → listing.qa.generate
+- [ ] 迁移辅助接口（翻译/图片建议/自检/AB测试）
+- [ ] 端到端测试验证
