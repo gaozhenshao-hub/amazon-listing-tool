@@ -1255,7 +1255,7 @@ ${session.step3UserEdit || session.step3AiResult}
       if (!session) throw new Error("No workflow session found");
       if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
 
-      const currentSuggestions = session.step5UserEdit || session.step5AiResult;
+      const currentSuggestions = session.step5UserEdit || session.step5OptimizedResult || session.step5AiResult;
 
 
       const response = await invokeLLM({
@@ -1271,10 +1271,14 @@ ${session.step3UserEdit || session.step3AiResult}
 
       const result = parseLLMJson(response);
 
+      const optimizedEn = result.en || result;
+      const optimizedCn = result.cn || null;
       await db.updateImageWorkflowSession(session.id, {
         step5SelectedModule: JSON.stringify(input.selectedModules),
-        step5OptimizedResult: JSON.stringify(result.en || result),
-        step5OptimizedResultCn: result.cn ? JSON.stringify(result.cn) : null,
+        step5OptimizedResult: JSON.stringify(optimizedEn),
+        step5OptimizedResultCn: optimizedCn ? JSON.stringify(optimizedCn) : null,
+        step5UserEdit: JSON.stringify(optimizedEn),
+        step5AiResultCn: optimizedCn ? JSON.stringify(optimizedCn) : session.step5AiResultCn,
       });
 
       return result;
@@ -1296,7 +1300,7 @@ ${session.step3UserEdit || session.step3AiResult}
       if (!session) throw new Error("No workflow session found");
       if (!session.step5AiResult) throw new Error("Step 5 not generated yet");
 
-      const currentSuggestions = session.step5UserEdit || session.step5AiResult;
+      const currentSuggestions = session.step5UserEdit || session.step5OptimizedResult || session.step5AiResult;
       let currentData: any;
       try { currentData = JSON.parse(currentSuggestions); } catch { throw new Error("Invalid step5 data"); }
 
@@ -1316,7 +1320,39 @@ ${session.step3UserEdit || session.step3AiResult}
       });
 
       const result = parseLLMJson(response);
-      return { en: result.en || result, cn: result.cn || null };
+      const optimizedSectionEn = result.en || result;
+      const optimizedSectionCn = result.cn || null;
+      const sections = [...(currentData.aPlusContent?.sections || [])];
+      sections[input.sectionIndex] = {
+        ...sections[input.sectionIndex],
+        ...optimizedSectionEn,
+        selectedModuleType: input.moduleType,
+        selectedModuleName: input.moduleName,
+      };
+      const nextData = { ...currentData, aPlusContent: { ...currentData.aPlusContent, sections } };
+
+      let nextCnData: any | null = null;
+      if (optimizedSectionCn) {
+        try {
+          const rawCn = session.step5AiResultCn || session.step5OptimizedResultCn || "";
+          nextCnData = rawCn ? JSON.parse(rawCn) : null;
+          if (nextCnData?.aPlusContent?.sections) {
+            const cnSections = [...nextCnData.aPlusContent.sections];
+            cnSections[input.sectionIndex] = { ...cnSections[input.sectionIndex], ...optimizedSectionCn };
+            nextCnData = { ...nextCnData, aPlusContent: { ...nextCnData.aPlusContent, sections: cnSections } };
+          }
+        } catch {
+          nextCnData = null;
+        }
+      }
+
+      await db.updateImageWorkflowSession(session.id, {
+        step5UserEdit: JSON.stringify(nextData),
+        step5OptimizedResult: JSON.stringify(nextData),
+        step5OptimizedResultCn: nextCnData ? JSON.stringify(nextCnData) : session.step5OptimizedResultCn,
+        step5AiResultCn: nextCnData ? JSON.stringify(nextCnData) : session.step5AiResultCn,
+      });
+      return { en: optimizedSectionEn, cn: optimizedSectionCn };
     }),
 
   // ─── Step 5d: Recommend A+ module combination ───────────────────
@@ -1506,8 +1542,8 @@ ${session.step3UserEdit || session.step3AiResult}
 
       // Return the data for client-side PDF generation
       return {
-        en: session.step5UserEdit || session.step5AiResult,
-        cn: session.step5AiResultCn,
+        en: session.step5UserEdit || session.step5OptimizedResult || session.step5AiResult,
+        cn: session.step5AiResultCn || session.step5OptimizedResultCn,
         sellingPoints: session.step1UserEdit || session.step1AiResult,
         outline: session.step2UserEdit || session.step2AiResult,
         style: session.step3UserEdit || session.step3AiResult,

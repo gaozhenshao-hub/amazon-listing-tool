@@ -3076,6 +3076,7 @@ function Step5FinalSuggestions({
   const confirmMutation = trpc.imageWorkflow.confirmStep5.useMutation();
   const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
   const aplusOptimizeMutation = trpc.imageWorkflow.optimizeWithAplusModule.useMutation();
+  const utils = trpc.useUtils();
   const [enData, setEnData] = useState<any>(null);
   const [cnData, setCnData] = useState<any>(null);
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
@@ -3154,6 +3155,7 @@ function Step5FinalSuggestions({
           return { ...prev, aPlusContent: { ...prev.aPlusContent, sections } };
         });
       }
+      await utils.imageWorkflow.getSession.invalidate({ projectId });
       toast.success(`A+模块 ${sectionIdx + 1} 已根据「${mod.name}」样式重新优化`);
     } catch (err: any) {
       toast.error(err.message || "优化失败");
@@ -3191,6 +3193,7 @@ function Step5FinalSuggestions({
       });
       if (result.en) setEnData(result.en);
       if (result.cn) setCnData(result.cn);
+      await utils.imageWorkflow.getSession.invalidate({ projectId });
       setShowModuleSelector(false);
       toast.success("已根据A+模块样式二次优化");
     } catch (err: any) {
@@ -3225,18 +3228,30 @@ function Step5FinalSuggestions({
   };
 
   useEffect(() => {
-    if (session?.step5AiResult) {
-      try { setEnData(JSON.parse(session.step5UserEdit || session.step5AiResult)); } catch {}
+    const savedStep5Result = session?.step5UserEdit || session?.step5OptimizedResult || session?.step5AiResult;
+    if (savedStep5Result) {
+      try { setEnData(JSON.parse(savedStep5Result)); } catch {}
     }
-    // CN data is no longer auto-generated; clear it
-    setCnData(null);
-  }, [session?.step5AiResult, session?.step5UserEdit]);
+    const savedStep5CnResult = session?.step5AiResultCn || session?.step5OptimizedResultCn;
+    if (savedStep5CnResult) {
+      try { setCnData(JSON.parse(savedStep5CnResult)); } catch { setCnData(null); }
+    } else {
+      setCnData(null);
+    }
+  }, [
+    session?.step5AiResult,
+    session?.step5UserEdit,
+    session?.step5OptimizedResult,
+    session?.step5AiResultCn,
+    session?.step5OptimizedResultCn,
+  ]);
 
   const handleGenerate = async () => {
     try {
       const result = await generateMutation.mutateAsync({ projectId });
       setEnData(result.en);
       setCnData(result.cn);
+      await utils.imageWorkflow.getSession.invalidate({ projectId });
       toast.success("图片建议生成完成");
     } catch (err: any) {
       toast.error(err.message || "生成失败");
@@ -3247,6 +3262,7 @@ function Step5FinalSuggestions({
     if (!enData) return;
     try {
       await confirmMutation.mutateAsync({ projectId, userEdit: JSON.stringify(enData) });
+      await utils.imageWorkflow.getSession.invalidate({ projectId });
       toast.success("图片建议已确认");
       onConfirm();
     } catch (err: any) {
@@ -4260,8 +4276,8 @@ td { padding: 8px; border: 1px solid #e5e7eb; }
   s.push(`<hr class="divider"/>`);
   s.push(`<h2 id="step5"><span class="step-badge">Step 5</span>图片结构及内容建议</h2>`);
 
-  const en = enData || (session ? safeJsonParse(session.step5UserEdit || session.step5AiResult) : null);
-  const cn = cnData || (session ? safeJsonParse(session.step5AiResultCn) : null);
+  const en = enData || (session ? safeJsonParse(session.step5UserEdit || session.step5OptimizedResult || session.step5AiResult) : null);
+  const cn = cnData || (session ? safeJsonParse(session.step5AiResultCn || session.step5OptimizedResultCn) : null);
 
   if (en) {
     if (en.designGuidelines) {
