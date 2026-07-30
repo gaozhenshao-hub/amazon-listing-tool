@@ -6,6 +6,7 @@ import { z } from "zod";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
 import { invokeLLM } from "../_core/llm";
+import { renderSkillTemplate } from "../services/emperorSkillRunner";
 import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
 
@@ -243,14 +244,6 @@ async function resolveModel(skill: any, modelOverrideSlug?: string): Promise<Res
   return { modelId: "manus-default", provider: "manus_builtin" };
 }
 
-function renderTemplate(template: string, vars: Record<string, any>): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
-    const val = vars[key];
-    if (val === undefined || val === null) return "";
-    return typeof val === "object" ? JSON.stringify(val) : String(val);
-  });
-}
-
 export const emperorRunRouter = router({
   run: protectedProcedure
     .input(z.object({
@@ -272,9 +265,12 @@ export const emperorRunRouter = router({
       const modelInfo = await resolveModel(skill, input.modelOverride);
 
       const templateVars = { context: input.context, emphasis: input.emphasis, ...input.variables };
-      const systemPrompt = impl.systemPrompt || "You are a helpful assistant.";
+      const systemPrompt = impl.systemPrompt || "";
+      if (!systemPrompt.trim()) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `Skill '${input.skillSlug}' systemPrompt 为空` });
+      }
       const userPromptTemplate = impl.userPromptTemplate || "{{context}}";
-      const userPrompt = renderTemplate(userPromptTemplate, templateVars);
+      const userPrompt = renderSkillTemplate(userPromptTemplate, templateVars);
 
       await rawExecute(
         "INSERT INTO emperor_skill_runs (runId,skillSlug,skillName,userId,input,status,modelSlug,startedAt) VALUES (?,?,?,?,?,?,?,?)",
@@ -329,6 +325,7 @@ export const emperorRunRouter = router({
           }
           if (impl.temperature !== undefined) llmParams.temperature = impl.temperature;
           if (impl.maxTokens) llmParams.max_tokens = impl.maxTokens;
+          llmParams.bypassEmperor = true;
           const response = await invokeLLM(llmParams);
           const rawContent = response?.choices?.[0]?.message?.content;
           content = typeof rawContent === "string" ? rawContent : (rawContent ? JSON.stringify(rawContent) : "");

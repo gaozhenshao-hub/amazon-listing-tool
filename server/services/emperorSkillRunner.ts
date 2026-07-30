@@ -1,7 +1,9 @@
 import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
+import { createHash } from "crypto";
+import Handlebars from "handlebars";
 import { getDb } from "../db";
-import { invokeLLM } from "../_core/llm";
+import { invokeLLM, type Message, type MessageContent } from "../_core/llm";
 
 export type SkillRunErrorCode =
   | "SKILL_NOT_FOUND"
@@ -11,6 +13,7 @@ export type SkillRunErrorCode =
   | "PROVIDER_UNAVAILABLE"
   | "EMPTY_RESPONSE"
   | "INVALID_OUTPUT"
+  | "PROMPT_MISSING"
   | "DATABASE_ERROR"
   | "UNKNOWN";
 
@@ -64,6 +67,9 @@ export type RunSkillInput<T> = {
   emphasis?: string;
   modelOverride?: string;
   fallbackModels?: string[];
+  attachments?: MessageContent[];
+  legacySystemPrompt?: string;
+  migrationSource?: string;
   validate?: (content: string) => T;
 };
 
@@ -187,48 +193,126 @@ function stringifyTemplateValue(value: unknown): string {
   return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
+function withTemplateStringifiers(value: unknown, seen = new WeakMap<object, unknown>()): unknown {
+  if (!value || typeof value !== "object") return value;
+  if (value instanceof Date) return value;
+  if (seen.has(value)) return seen.get(value);
+
+  if (Array.isArray(value)) {
+    const arrayValue: unknown[] = [];
+    seen.set(value, arrayValue);
+    arrayValue.push(...value.map((item) => withTemplateStringifiers(item, seen)));
+    Object.defineProperty(arrayValue, "toString", {
+      value: () => stringifyTemplateValue(arrayValue),
+      enumerable: false,
+    });
+    return arrayValue;
+  }
+
+  const record = value as Record<string, unknown>;
+  const output: Record<string, unknown> = {};
+  seen.set(value, output);
+  for (const [key, child] of Object.entries(record)) {
+    output[key] = withTemplateStringifiers(child, seen);
+  }
+  Object.defineProperty(output, "toString", {
+    value: () => stringifyTemplateValue(output),
+    enumerable: false,
+  });
+  return output;
+}
+
+function renderSkillTemplateFallback(template: string, variables: Record<string, unknown>): string {
+  let output = template;
+
+  output = output.replace(
+    /\{\{\s*#each\s+([\w.]+)\s*\}\}([\s\S]*?)\{\{\s*\/each\s*\}\}/g,
+    (_, path: string, block: string) => {
+      const value = getTemplateValue(path, variables);
+      if (!Array.isArray(value)) return "";
+      return value.map((item, index) => renderSkillTemplateFallback(block, {
+        ...variables,
+        this: item,
+        index,
+      })).join("");
+    },
+  );
+
+  output = output.replace(
+    /\{\{\s*#if\s+([\w.]+)\s*\}\}([\s\S]*?)(?:\{\{\s*else\s*\}\}([\s\S]*?))?\{\{\s*\/if\s*\}\}/g,
+    (_, path: string, truthyBlock: string, falsyBlock = "") => {
+      return isTruthyTemplateValue(getTemplateValue(path, variables)) ? truthyBlock : falsyBlock;
+    },
+  );
+
+  output = output.replace(
+    /\{\{\s*#unless\s+([\w.]+)\s*\}\}([\s\S]*?)\{\{\s*\/unless\s*\}\}/g,
+    (_, path: string, block: string) => {
+      return isTruthyTemplateValue(getTemplateValue(path, variables)) ? "" : block;
+    },
+  );
+
+  output = output.replace(/\{\{\{\s*([\w.@]+)\s*\}\}\}/g, (_, path: string) => {
+    return stringifyTemplateValue(getTemplateValue(path, variables));
+  });
+  return output.replace(/\{\{\s*([\w.@]+)\s*\}\}/g, (_, path: string) => {
+    return stringifyTemplateValue(getTemplateValue(path, variables));
+  });
+}
+
 export function renderSkillTemplate(template: string, variables: Record<string, unknown>): string {
   try {
-    let output = template;
-
-    output = output.replace(
-      /\{\{\s*#each\s+([\w.]+)\s*\}\}([\s\S]*?)\{\{\s*\/each\s*\}\}/g,
-      (_, path: string, block: string) => {
-        const value = getTemplateValue(path, variables);
-        if (!Array.isArray(value)) return "";
-        return value.map((item, index) => renderSkillTemplate(block, {
-          ...variables,
-          this: item,
-          index,
-        })).join("");
-      },
-    );
-
-    output = output.replace(
-      /\{\{\s*#if\s+([\w.]+)\s*\}\}([\s\S]*?)(?:\{\{\s*else\s*\}\}([\s\S]*?))?\{\{\s*\/if\s*\}\}/g,
-      (_, path: string, truthyBlock: string, falsyBlock = "") => {
-        return isTruthyTemplateValue(getTemplateValue(path, variables)) ? truthyBlock : falsyBlock;
-      },
-    );
-
-    output = output.replace(
-      /\{\{\s*#unless\s+([\w.]+)\s*\}\}([\s\S]*?)\{\{\s*\/unless\s*\}\}/g,
-      (_, path: string, block: string) => {
-        return isTruthyTemplateValue(getTemplateValue(path, variables)) ? "" : block;
-      },
-    );
-
-    output = output.replace(/\{\{\{\s*([\w.@]+)\s*\}\}\}/g, (_, path: string) => {
-      return stringifyTemplateValue(getTemplateValue(path, variables));
+    const compiled = Handlebars.compile(template, {
+      noEscape: true,
+      strict: false,
     });
-    return output.replace(/\{\{\s*([\w.@]+)\s*\}\}/g, (_, path: string) => {
-      return stringifyTemplateValue(getTemplateValue(path, variables));
-    });
+    return compiled(withTemplateStringifiers(variables) as Record<string, unknown>);
   } catch {
-    return template.replace(/\{\{\{?\s*([\w.@]+)\s*\}?\}\}/g, (_, path: string) => {
-      return stringifyTemplateValue(getTemplateValue(path, variables));
-    });
+    try {
+      return renderSkillTemplateFallback(template, variables);
+    } catch {
+      return template.replace(/\{\{\{?\s*([\w.@]+)\s*\}?\}\}/g, (_, path: string) => {
+        return stringifyTemplateValue(getTemplateValue(path, variables));
+      });
+    }
   }
+}
+
+function normalizePromptForAudit(prompt: string): string {
+  return prompt.replace(/\s+/g, " ").trim();
+}
+
+function hashPrompt(prompt: string): string {
+  return createHash("sha256").update(prompt).digest("hex").slice(0, 16);
+}
+
+function buildPromptAudit(skillSlug: string, dbSystemPrompt: string, legacySystemPrompt?: string, source?: string) {
+  if (!legacySystemPrompt?.trim()) {
+    return {
+      skillSlug,
+      source,
+      systemPromptSource: "emperor_skills.manifest.implementation.systemPrompt",
+      legacyPromptProvided: false,
+      skillPromptHash: hashPrompt(dbSystemPrompt),
+      skillPromptLength: dbSystemPrompt.length,
+    };
+  }
+
+  const normalizedDb = normalizePromptForAudit(dbSystemPrompt);
+  const normalizedLegacy = normalizePromptForAudit(legacySystemPrompt);
+  return {
+    skillSlug,
+    source,
+    systemPromptSource: "emperor_skills.manifest.implementation.systemPrompt",
+    legacyPromptProvided: true,
+    exactMatch: dbSystemPrompt === legacySystemPrompt,
+    normalizedMatch: normalizedDb === normalizedLegacy,
+    skillPromptHash: hashPrompt(dbSystemPrompt),
+    legacyPromptHash: hashPrompt(legacySystemPrompt),
+    skillPromptLength: dbSystemPrompt.length,
+    legacyPromptLength: legacySystemPrompt.length,
+    lengthDelta: dbSystemPrompt.length - legacySystemPrompt.length,
+  };
 }
 
 function classifyProviderError(error: unknown): SkillRunError {
@@ -285,6 +369,7 @@ async function resolveModelCandidates(
   const uniqueSlugs = [...new Set([...preferred, ...fallbackModels, "manus-default"])];
   const models: ModelRow[] = [];
   for (const slug of uniqueSlugs) {
+    if (models.length >= 2) break;
     const model = await getModelBySlug(slug);
     if (model) models.push(model);
   }
@@ -296,7 +381,7 @@ async function resolveModelCandidates(
 
 async function callModel(
   model: ModelRow,
-  messages: Array<{ role: "system" | "user"; content: string }>,
+  messages: Message[],
   implementation: NonNullable<SkillManifest["implementation"]>,
   timeoutSeconds: number,
 ): Promise<{ content: string; inputTokens: number; outputTokens: number }> {
@@ -338,6 +423,7 @@ async function callModel(
   const params: any = {
     messages,
     max_tokens: implementation.maxTokens || 4096,
+    bypassEmperor: true,
   };
   if (implementation.supportsJsonMode) params.response_format = { type: "json_object" };
   const result = await invokeLLM(params);
@@ -363,8 +449,16 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
     emphasis: input.emphasis || "",
     ...input.variables,
   };
-  const systemPrompt = implementation.systemPrompt || "You are a helpful assistant.";
-  const userPrompt = renderSkillTemplate(implementation.userPromptTemplate || "{{context}}", variables);
+  const systemPrompt = implementation.systemPrompt || "";
+  if (!systemPrompt.trim()) {
+    throw new SkillRunError("PROMPT_MISSING", `Skill '${skill.slug}' has empty systemPrompt`, false);
+  }
+  const promptAudit = buildPromptAudit(skill.slug, systemPrompt, input.legacySystemPrompt, input.migrationSource);
+  const executionVariables = {
+    ...variables,
+    __promptAudit: promptAudit,
+  };
+  const userPrompt = renderSkillTemplate(implementation.userPromptTemplate || "{{context}}", executionVariables);
   const models = await resolveModelCandidates(
     skill,
     input.modelOverride,
@@ -375,7 +469,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
   const startedAt = new Date();
   await rawExecute(
     "INSERT INTO emperor_skill_runs (runId,skillSlug,skillName,userId,input,status,modelSlug,startedAt) VALUES (?,?,?,?,?,?,?,?)",
-    [runId, skill.slug, skill.name, input.userId, JSON.stringify(variables), "running", models[0].slug, startedAt],
+    [runId, skill.slug, skill.name, input.userId, JSON.stringify(executionVariables), "running", models[0].slug, startedAt],
   );
 
   let lastError: SkillRunError | null = null;
@@ -386,7 +480,12 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
         model,
         [
           { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
+          {
+            role: "user",
+            content: input.attachments?.length
+              ? [{ type: "text", text: userPrompt }, ...input.attachments]
+              : userPrompt,
+          },
         ],
         implementation,
         timeoutSeconds,

@@ -8,6 +8,7 @@
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc --noEmit",
+    "audit:emperor-prompts": "node scripts/audit-emperor-prompt-consistency.mjs",
     "format": "prettier --write .",
     "test": "vitest run",
     "db:push": "drizzle-kit generate && drizzle-kit migrate"
@@ -69,6 +70,7 @@
     "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "framer-motion": "^12.23.22",
+    "handlebars": "^4.7.9",
     "http-proxy-agent": "^8.0.0",
     "https-proxy-agent": "^8.0.0",
     "input-otp": "^1.4.2",

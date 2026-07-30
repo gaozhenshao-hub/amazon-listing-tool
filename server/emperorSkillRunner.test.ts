@@ -37,6 +37,13 @@ describe("renderSkillTemplate", () => {
       items: [{ name: "A", enabled: true }, { name: "B", enabled: false }],
     })).toBe("A;");
   });
+
+  it("renders native Handlebars unless and nested iteration metadata", () => {
+    expect(renderSkillTemplate("{{#unless disabled}}{{#each modules}}{{@index}}={{title}};{{/each}}{{/unless}}", {
+      disabled: false,
+      modules: [{ title: "Hero" }, { title: "Carousel" }],
+    })).toBe("0=Hero;1=Carousel;");
+  });
 });
 
 describe("safeParseSkillJSON", () => {

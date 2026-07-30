@@ -66,6 +66,25 @@ export type InvokeParams = {
   output_schema?: OutputSchema;
   responseFormat?: ResponseFormat;
   response_format?: ResponseFormat;
+  /**
+   * Internal escape hatch used by the Emperor Skill runner. Regular business
+   * code should not set this; it prevents Skill -> invokeLLM recursion.
+   */
+  bypassEmperor?: boolean;
+  /**
+   * Optional explicit Skill routing hint. When omitted, the gateway will infer
+   * a Skill from the caller file and legacy prompt.
+   */
+  skillSlug?: string;
+  userId?: number;
+  emperorSkill?: {
+    slug?: string;
+    userId?: number;
+    context?: string;
+    emphasis?: string;
+    variables?: Record<string, unknown>;
+    fallbackToLegacy?: boolean;
+  };
 };
 
 export type ToolCall = {
@@ -265,7 +284,7 @@ const normalizeResponseFormat = ({
   };
 };
 
-export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
+export async function invokeRawLLM(params: InvokeParams): Promise<InvokeResult> {
   assertApiKey();
 
   const {
@@ -364,4 +383,26 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   }
 
   return result;
+}
+
+export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
+  if (params.bypassEmperor || process.env.EMPEROR_SKILL_GATEWAY === "disabled") {
+    return invokeRawLLM(params);
+  }
+
+  if (!params.tools?.length) {
+    try {
+      const { invokeViaEmperorSkill } = await import("../services/emperorInvocationGateway");
+      const migratedResult = await invokeViaEmperorSkill(params);
+      if (migratedResult) return migratedResult;
+    } catch (error) {
+      const allowFallback =
+        params.emperorSkill?.fallbackToLegacy === true ||
+        process.env.EMPEROR_ALLOW_LEGACY_LLM_FALLBACK === "true";
+      if (!allowFallback) throw error;
+      console.warn("[EmperorMigration] Falling back to legacy invokeLLM:", error instanceof Error ? error.message : error);
+    }
+  }
+
+  return invokeRawLLM(params);
 }
