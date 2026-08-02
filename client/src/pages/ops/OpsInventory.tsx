@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useMarketplace } from "@/contexts/MarketplaceContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -66,6 +66,8 @@ export default function OpsInventory() {
   const [tagFilterMode, setTagFilterMode] = useState<"hide" | "show_all">("hide");
   const [operatorFilter, setOperatorFilter] = useState("all");
   const [storeFilter, setStoreFilter] = useState("all");
+  const [aiReplenishRunId, setAiReplenishRunId] = useState<string | null>(null);
+  const [aiReplenishResult, setAiReplenishResult] = useState<any>(null);
   const { marketplace } = useMarketplace();
 
   // Tag system
@@ -141,10 +143,40 @@ export default function OpsInventory() {
     },
   });
 
-  const aiReplenish = trpc.operations.aiReplenishmentPlan.useMutation({
-    onSuccess: () => toast.success("AI补货建议已生成"),
+  const aiReplenish = trpc.aiJobs.startOpsReplenishmentPlan.useMutation({
+    onSuccess: (job) => {
+      setAiReplenishRunId(job.runId);
+      toast.success("AI补货建议任务已开始");
+    },
     onError: (err: any) => toast.error("生成失败", { description: err.message }),
   });
+  const aiReplenishJob = trpc.aiJobs.get.useQuery(
+    { runId: aiReplenishRunId || "" },
+    {
+      enabled: !!aiReplenishRunId,
+      refetchInterval: (query) => {
+        const status = (query.state.data as any)?.status;
+        return status === "queued" || status === "running" ? 2000 : false;
+      },
+    }
+  );
+  const aiReplenishStatus = aiReplenishJob.data?.status;
+  const aiReplenishPending = aiReplenish.isPending || aiReplenishStatus === "queued" || aiReplenishStatus === "running";
+  const aiReplenishData = aiReplenishResult;
+
+  useEffect(() => {
+    const job = aiReplenishJob.data as any;
+    if (!job || !aiReplenishRunId) return;
+    if (job.status === "succeeded") {
+      const output = job.output?.parsed || job.output;
+      setAiReplenishResult(output);
+      setAiReplenishRunId(null);
+      toast.success("AI补货建议已生成");
+    } else if (job.status === "failed") {
+      setAiReplenishRunId(null);
+      toast.error("生成失败", { description: job.error || "请稍后重试" });
+    }
+  }, [aiReplenishJob.data, aiReplenishRunId]);
 
   const allItems = data?.items || [];
   const items = useMemo(() => {
@@ -210,6 +242,7 @@ export default function OpsInventory() {
       return;
     }
     setShowAiDialog(true);
+    setAiReplenishResult(null);
     aiReplenish.mutate({ skuData: criticalItems });
   };
 
@@ -421,8 +454,8 @@ export default function OpsInventory() {
             </div>
             <div className="ml-auto flex items-center gap-2">
               <span className="text-sm text-gray-500">共 {items.length}{hiddenAsins.size > 0 && tagFilterMode === "hide" ? `/${allItems.length}` : ''} 个SKU</span>
-              <Button size="sm" onClick={handleAiReplenish} disabled={aiReplenish.isPending}>
-                {aiReplenish.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}
+              <Button size="sm" onClick={handleAiReplenish} disabled={aiReplenishPending}>
+                {aiReplenishPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Sparkles className="w-4 h-4 mr-1" />}
                 AI补货建议
               </Button>
             </div>
@@ -634,14 +667,15 @@ export default function OpsInventory() {
               AI智能补货建议
             </DialogTitle>
           </DialogHeader>
-          {aiReplenish.isPending ? (
+          {aiReplenishPending ? (
             <div className="flex flex-col items-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-3" />
-              <p className="text-sm text-gray-500">AI正在分析库存数据，生成补货建议...</p>
+              <p className="text-sm text-gray-500">AI正在后台分析库存数据，生成补货建议...</p>
+              {aiReplenishRunId && <p className="text-xs text-gray-400 mt-2">任务ID: {aiReplenishRunId}</p>}
             </div>
-          ) : aiReplenish.data ? (
+          ) : aiReplenishData ? (
             <div className="space-y-4">
-              {(aiReplenish.data as any).suggestions?.map((s: any, i: number) => (
+              {(aiReplenishData as any).suggestions?.map((s: any, i: number) => (
                 <Card key={i} className={`border-l-4 ${
                   s.urgency === "urgent" ? "border-l-red-500" :
                   s.urgency === "soon" ? "border-l-amber-500" :

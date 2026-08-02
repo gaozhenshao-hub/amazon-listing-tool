@@ -65,6 +65,30 @@ export const usageStats = mysqlTable("usage_stats", {
 export type UsageStat = typeof usageStats.$inferSelect;
 export type InsertUsageStat = typeof usageStats.$inferInsert;
 
+// Generic AI job runs for long-running Emperor Skill / LLM tasks.
+export const aiJobs = mysqlTable("ai_jobs", {
+  id: int("id").autoincrement().primaryKey(),
+  runId: varchar("runId", { length: 80 }).notNull().unique(),
+  kind: varchar("kind", { length: 128 }).notNull(),
+  module: varchar("module", { length: 64 }).notNull(),
+  procedure: varchar("procedure", { length: 128 }),
+  status: mysqlEnum("status", ["queued", "running", "succeeded", "failed", "canceled"]).default("queued").notNull(),
+  progress: int("progress").default(0).notNull(),
+  userId: int("userId").notNull(),
+  projectId: int("projectId"),
+  skillSlug: varchar("skillSlug", { length: 128 }),
+  input: json("input"),
+  output: json("output"),
+  errorMessage: text("errorMessage"),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AiJob = typeof aiJobs.$inferSelect;
+export type InsertAiJob = typeof aiJobs.$inferInsert;
+
 // Knowledge base sync logs (P2P bidirectional sync)
 export const kbSyncLogs = mysqlTable("kb_sync_logs", {
   id: int("id").autoincrement().primaryKey(),
@@ -1366,6 +1390,13 @@ export const imageWorkflowSessions = mysqlTable("image_workflow_sessions", {
   step5AiResultCn: text("step5AiResultCn"),    // AI final image suggestions JSON (Chinese)
   step5UserEdit: text("step5UserEdit"),        // User edited final suggestions JSON
   step5Confirmed: int("step5Confirmed").default(0).notNull(),
+  // Step 5 async generation state
+  step5RunId: varchar("step5RunId", { length: 80 }),
+  step5RunStatus: mysqlEnum("step5RunStatus", ["idle", "queued", "running", "succeeded", "failed", "canceled"]).default("idle").notNull(),
+  step5RunProgress: int("step5RunProgress").default(0).notNull(),
+  step5RunError: text("step5RunError"),
+  step5RunStartedAt: timestamp("step5RunStartedAt"),
+  step5RunCompletedAt: timestamp("step5RunCompletedAt"),
 
   // Step 4: Reference images (per-image composition + effect reference URLs)
   step4CompositionRefs: text("step4CompositionRefs"),  // JSON: { [imageKey]: url } per-image composition reference

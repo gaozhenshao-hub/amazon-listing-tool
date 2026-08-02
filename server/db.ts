@@ -20,6 +20,7 @@ import {
   competitorImageAnalyses, InsertCompetitorImageAnalysis,
   expressionGroups, InsertExpressionGroup,
   expressionGroupImages, InsertExpressionGroupImage,
+  aiJobs, InsertAiJob,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -183,6 +184,50 @@ export async function getLoginLogs(limit = 100) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(loginLogs).orderBy(desc(loginLogs.createdAt)).limit(limit);
+}
+
+// --- Generic AI Job Helpers ---------------------------------------
+
+export async function createAiJob(data: InsertAiJob) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [result] = await db.insert(aiJobs).values(data);
+  const rows = await db.select().from(aiJobs).where(eq(aiJobs.id, result.insertId)).limit(1);
+  return rows[0];
+}
+
+export async function getAiJobByRunId(runId: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(aiJobs).where(eq(aiJobs.runId, runId)).limit(1);
+  return rows[0] || null;
+}
+
+export async function updateAiJobByRunId(runId: string, data: Partial<InsertAiJob>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(aiJobs).set(data).where(eq(aiJobs.runId, runId));
+  const rows = await db.select().from(aiJobs).where(eq(aiJobs.runId, runId)).limit(1);
+  return rows[0] || null;
+}
+
+export async function listAiJobsForUser(
+  userId: number,
+  opts: { module?: string; status?: InsertAiJob["status"]; limit?: number } = {},
+) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [
+    eq(aiJobs.userId, userId),
+    opts.module ? eq(aiJobs.module, opts.module) : undefined,
+    opts.status ? eq(aiJobs.status, opts.status) : undefined,
+  ].filter(Boolean) as any[];
+  const where = conditions.length === 1 ? conditions[0] : and(...conditions);
+  return db.select()
+    .from(aiJobs)
+    .where(where)
+    .orderBy(desc(aiJobs.createdAt))
+    .limit(Math.min(Math.max(opts.limit || 20, 1), 100));
 }
 
 // --- Project Helpers ----------------------------------------------------
@@ -710,6 +755,13 @@ export async function getImageWorkflowSessionByProject(projectId: number) {
     .where(eq(imageWorkflowSessions.projectId, projectId))
     .orderBy(desc(imageWorkflowSessions.updatedAt))
     .limit(1);
+  return rows[0] || null;
+}
+
+export async function getImageWorkflowSessionById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(imageWorkflowSessions).where(eq(imageWorkflowSessions.id, id)).limit(1);
   return rows[0] || null;
 }
 
