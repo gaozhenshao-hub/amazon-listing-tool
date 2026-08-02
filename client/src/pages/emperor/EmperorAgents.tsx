@@ -66,6 +66,14 @@ export default function EmperorAgents() {
     onSuccess: () => { toast.success("已删除"); refetch(); },
     onError: (e) => toast.error(e.message),
   });
+  const installListingTemplate = trpc.emperor.agents.installListingTemplate.useMutation({
+    onSuccess: (data: any) => {
+      toast.success("Listing 全链路 Agent 已安装");
+      refetch();
+      if (data?.slug) navigate(`/emperor/agents/${data.slug}/canvas`);
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const handleCreate = () => {
     if (!form.name.trim()) return toast.error("请填写 Agent 名称");
@@ -113,13 +121,24 @@ export default function EmperorAgents() {
             <RefreshCw className="h-4 w-4" />
           </Button>
           {isAdmin && (
-            <Button
-              onClick={() => setShowCreateDialog(true)}
-              className="bg-violet-600 hover:bg-violet-500 text-white gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              新建 Agent
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                onClick={() => installListingTemplate.mutate()}
+                disabled={installListingTemplate.isPending}
+                className="border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 gap-2"
+              >
+                {installListingTemplate.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitBranch className="h-4 w-4" />}
+                安装 Listing 模板
+              </Button>
+              <Button
+                onClick={() => setShowCreateDialog(true)}
+                className="bg-violet-600 hover:bg-violet-500 text-white gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                新建 Agent
+              </Button>
+            </>
           )}
         </div>
       </div>

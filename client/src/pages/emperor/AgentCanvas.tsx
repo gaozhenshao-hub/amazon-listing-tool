@@ -14,7 +14,8 @@ import {
   ArrowLeft, Save, Play, ChevronDown, X, Plus,
   Zap, Code2, GitBranch, RefreshCw, Wrench,
   BookOpen, LogOut, LogIn, Bot, RotateCcw,
-  Globe, UserCheck, Loader2
+  Globe, UserCheck, Loader2, CheckCircle2, Circle,
+  AlertTriangle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -375,10 +376,47 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
 
   const { data: runData, refetch: refetchRun } = trpc.emperor.agents.getRun.useQuery(
     { runId: runId! },
-    { enabled: !!runId, refetchInterval: runId ? 2000 : false }
+    {
+      enabled: !!runId,
+      refetchInterval: (query) => {
+        const data = query.state.data as any;
+        const status = data?.run?.status || data?.status;
+        return status === "running" ? 2000 : false;
+      },
+    }
   );
 
-  const run = runData as any;
+  const executeNode = trpc.emperor.agents.executeNode.useMutation({
+    onSuccess: () => { toast.success("节点已开始执行"); refetchRun(); },
+    onError: (e) => toast.error("节点执行失败: " + e.message),
+  });
+  const confirmNode = trpc.emperor.agents.confirmNode.useMutation({
+    onSuccess: () => { toast.success("节点已确认"); refetchRun(); },
+    onError: (e) => toast.error("确认失败: " + e.message),
+  });
+
+  const detail = runData as any;
+  const run = detail?.run || detail;
+  const checkpoints = (detail?.checkpoints as any[]) || [];
+  const busyNodeId = executeNode.variables?.nodeId || confirmNode.variables?.nodeId;
+  const statusLabel: Record<string, string> = {
+    pending: "待依赖",
+    ready: "可执行",
+    running: "执行中",
+    waiting_human: "待确认",
+    confirmed: "已确认",
+    skipped: "已跳过",
+    failed: "失败",
+  };
+  const statusClass: Record<string, string> = {
+    pending: "bg-slate-500/15 text-slate-400",
+    ready: "bg-blue-500/15 text-blue-300",
+    running: "bg-amber-500/15 text-amber-300",
+    waiting_human: "bg-violet-500/15 text-violet-300",
+    confirmed: "bg-emerald-500/15 text-emerald-300",
+    skipped: "bg-slate-500/15 text-slate-400",
+    failed: "bg-red-500/15 text-red-300",
+  };
 
   return (
     <div className="absolute right-0 top-0 bottom-0 w-72 bg-[#0d1117] border-l border-white/8 flex flex-col z-10">
@@ -418,10 +456,76 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
             <div className="flex items-center justify-between">
               <span className="text-xs text-slate-400">运行状态</span>
               <Badge className={`text-[10px] ${run.status === "completed" ? "bg-emerald-500/20 text-emerald-400" : run.status === "failed" ? "bg-red-500/20 text-red-400" : "bg-amber-500/20 text-amber-400"}`}>
-                {run.status === "running" ? <><Loader2 size={10} className="animate-spin inline mr-1" />运行中</> : run.status === "completed" ? "已完成" : "失败"}
+                {run.status === "running" ? <><Loader2 size={10} className="animate-spin inline mr-1" />运行中</> : run.status === "completed" ? "已完成" : run.status === "waiting_human" ? "等待人工" : "失败"}
               </Badge>
             </div>
             <div className="text-xs text-slate-500 font-mono break-all">{run.runId}</div>
+            <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+              <div className="h-full bg-emerald-500" style={{ width: `${Number(run.progress || 0)}%` }} />
+            </div>
+          </div>
+        )}
+        {checkpoints.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-slate-400 text-xs">节点 Checkpoints</Label>
+              <button onClick={() => refetchRun()} className="text-slate-500 hover:text-white">
+                <RefreshCw size={12} />
+              </button>
+            </div>
+            <div className="space-y-2">
+              {checkpoints.map((checkpoint: any) => {
+                const isBusy = busyNodeId === checkpoint.nodeId && (executeNode.isPending || confirmNode.isPending);
+                return (
+                  <div key={checkpoint.nodeId} className="rounded-lg bg-white/5 border border-white/8 p-2.5">
+                    <div className="flex items-start gap-2">
+                      {checkpoint.status === "confirmed" ? (
+                        <CheckCircle2 size={14} className="mt-0.5 text-emerald-400" />
+                      ) : checkpoint.status === "failed" ? (
+                        <AlertTriangle size={14} className="mt-0.5 text-red-400" />
+                      ) : checkpoint.status === "running" ? (
+                        <Loader2 size={14} className="mt-0.5 text-amber-300 animate-spin" />
+                      ) : (
+                        <Circle size={14} className="mt-0.5 text-slate-500" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-medium text-slate-200 truncate">{checkpoint.nodeLabel || checkpoint.nodeId}</span>
+                          <Badge className={`text-[9px] px-1.5 py-0 ${statusClass[checkpoint.status] || statusClass.pending}`}>
+                            {statusLabel[checkpoint.status] || checkpoint.status}
+                          </Badge>
+                        </div>
+                        {checkpoint.errorMessage && (
+                          <p className="text-[10px] text-red-300 mt-1 line-clamp-2">{checkpoint.errorMessage}</p>
+                        )}
+                        {(checkpoint.status === "ready" || checkpoint.status === "failed") && (
+                          <Button
+                            size="sm"
+                            disabled={isBusy}
+                            onClick={() => runId && executeNode.mutate({ runId, nodeId: checkpoint.nodeId })}
+                            className="mt-2 h-6 text-[10px] bg-blue-600 hover:bg-blue-500 text-white"
+                          >
+                            {isBusy ? <Loader2 size={10} className="animate-spin mr-1" /> : <Play size={10} className="mr-1" />}
+                            执行节点
+                          </Button>
+                        )}
+                        {checkpoint.status === "waiting_human" && (
+                          <Button
+                            size="sm"
+                            disabled={isBusy}
+                            onClick={() => runId && confirmNode.mutate({ runId, nodeId: checkpoint.nodeId })}
+                            className="mt-2 h-6 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white"
+                          >
+                            {isBusy ? <Loader2 size={10} className="animate-spin mr-1" /> : <CheckCircle2 size={10} className="mr-1" />}
+                            确认并解锁下游
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
