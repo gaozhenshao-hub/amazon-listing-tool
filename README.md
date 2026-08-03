@@ -72,7 +72,7 @@ Only touch the files under "←" markers. Anything under `server/_core` or other
 **Required workflow:**
 1. Upload assets using the CLI: `manus-upload-file --webdev path/to/image.png`
 2. Use the returned storage path directly in your code: `<img src="/manus-storage/image_a1b2c3d4.png" />`
-3. Store the original local file in `/home/ubuntu/webdev-static-assets/` (outside the project directory)
+3. Store the original local file outside the project directory, for example in a machine-specific static-assets folder.
 
 Only small configuration files like `favicon.ico`, `robots.txt`, and `manifest.json` belong in `client/public/`.
 

@@ -9,12 +9,14 @@ import {
   canTransitionRunStatus,
   diffAgentArtifactContent,
   getListingAgentDag,
+  estimateAgentHumanEditRate,
   LISTING_AGENT_SLUG,
   normalizeAgentDag,
   parseStoredAgentRunInputs,
   resolveAgentNodeSkillBinding,
   validateAgentDag,
 } from "./services/emperorAgentRunner";
+import { scoreAiOutputQuality } from "./services/aiOsObservability";
 import {
   assertToolConfigUsesSecretRefs,
   buildToolSecretRef,
@@ -35,6 +37,12 @@ describe("Emperor Agent workflow kernel", () => {
     expect(schema.emperorAgents.triggerType).toBeDefined();
     expect(schema.emperorAgents.maxExecutionSeconds).toBeDefined();
     expect(schema.emperorAgentTemplateVersions).toBeDefined();
+    expect(schema.emperorAgentTemplateVersions.parentVersionId).toBeDefined();
+    expect(schema.emperorAgentTemplateVersions.isDefault).toBeDefined();
+    expect(schema.emperorAgentTemplateVersions.rolloutPercent).toBeDefined();
+    expect(schema.emperorAgentTemplateVersions.rolloutPolicy).toBeDefined();
+    expect(schema.emperorAgentTemplateVersions.activatedAt).toBeDefined();
+    expect(schema.emperorAgentTemplateVersions.deprecatedAt).toBeDefined();
     expect(schema.emperorAgentRuns).toBeDefined();
     expect(schema.emperorAgentRuns.templateVersionId).toBeDefined();
     expect(schema.emperorAgentRuns.templateVersion).toBeDefined();
@@ -75,6 +83,7 @@ describe("Emperor Agent workflow kernel", () => {
     expect(schema.emperorMcpConnectors.governancePolicy).toBeDefined();
     expect(schema.emperorMcpConnectors.secretRefs).toBeDefined();
     expect(schema.emperorAiOsMetrics).toBeDefined();
+    expect(schema.emperorAiOsEvaluations).toBeDefined();
   });
 
   it("should define Listing as a human-in-the-loop DAG", () => {
@@ -352,6 +361,45 @@ describe("Emperor Agent workflow kernel", () => {
     expect(diff.map((entry) => entry.path)).toContain("$.added");
   });
 
+  it("should estimate human edit rate for confirmed artifacts", () => {
+    const lightEditRate = estimateAgentHumanEditRate(
+      { title: "Premium Water Filter", bullets: ["Fast install", "Leak proof seal"] },
+      { title: "Premium Water Filter", bullets: ["Fast install", "Leak-proof seal"] },
+    );
+    const heavyEditRate = estimateAgentHumanEditRate(
+      { title: "Premium Water Filter", bullets: ["Fast install", "Leak proof seal"] },
+      { title: "Replacement Filter Cartridge", bullets: ["NSF tested", "6 month service life", "Tool-free setup"] },
+    );
+
+    expect(lightEditRate).toBeGreaterThanOrEqual(0);
+    expect(lightEditRate).toBeLessThan(heavyEditRate);
+    expect(heavyEditRate).toBeLessThanOrEqual(1);
+  });
+
+  it("should score Skill and Agent outputs for observability", () => {
+    const good = scoreAiOutputQuality({
+      output: {
+        title: "Premium Water Filter Replacement Cartridge for Standard Systems",
+        bulletPoints: [
+          "Tool-free installation with a leak-resistant seal.",
+          "Maintains stable water flow for daily kitchen use.",
+        ],
+      },
+      status: "succeeded",
+      expectedKeys: ["title", "bulletPoints"],
+    });
+    const failed = scoreAiOutputQuality({
+      output: "Error: provider timeout",
+      status: "failed",
+      retryCount: 3,
+    });
+
+    expect(good.score).toBeGreaterThanOrEqual(75);
+    expect(good.grade).toMatch(/^(good|excellent)$/);
+    expect(failed.score).toBeLessThan(40);
+    expect(failed.grade).toMatch(/^(poor|weak)$/);
+  });
+
   it("should register Agent runner routes", () => {
     const procedures = (appRouter as any)._def.procedures;
     expect(procedures["emperor.agents.run"]).toBeDefined();
@@ -363,6 +411,11 @@ describe("Emperor Agent workflow kernel", () => {
     expect(procedures["emperor.agents.rollbackArtifactVersion"]).toBeDefined();
     expect(procedures["emperor.agents.diffArtifactVersions"]).toBeDefined();
     expect(procedures["emperor.agents.listTemplateVersions"]).toBeDefined();
+    expect(procedures["emperor.agents.publishTemplateVersion"]).toBeDefined();
+    expect(procedures["emperor.agents.rollbackTemplateVersion"]).toBeDefined();
+    expect(procedures["emperor.agents.setTemplateRollout"]).toBeDefined();
+    expect(procedures["emperor.agents.diffTemplateVersions"]).toBeDefined();
+    expect(procedures["emperor.agents.backfillRunTemplateVersions"]).toBeDefined();
     expect(procedures["emperor.agents.executeNode"]).toBeDefined();
     expect(procedures["emperor.agents.scheduleRun"]).toBeDefined();
     expect(procedures["emperor.agents.cancelRun"]).toBeDefined();
@@ -380,6 +433,8 @@ describe("Emperor Agent workflow kernel", () => {
     expect(procedures["emperor.tools.upsert"]).toBeDefined();
     expect(procedures["emperor.tools.upsertSecret"]).toBeDefined();
     expect(procedures["emperor.observability.metrics"]).toBeDefined();
+    expect(procedures["emperor.observability.evaluations"]).toBeDefined();
+    expect(procedures["emperor.observability.dashboard"]).toBeDefined();
     expect(LISTING_AGENT_SLUG).toBe("listing.full.workflow");
   });
 

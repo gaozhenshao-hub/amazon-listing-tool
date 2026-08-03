@@ -21,6 +21,7 @@ import {
 } from "./emperorSkillRunner";
 import { calculateAiJobRetryDelayMs, cancelAiJob, failAiJob, getAiJobRun, registerAiJobHandler, retryAiJob, startRegisteredAiJob, type AiJobSnapshot } from "./aiJobRunner";
 import { invokeEmperorTool } from "./emperorToolGateway";
+import { recordAiOsEvaluation, recordAiOsMetric } from "./aiOsObservability";
 
 export { canTransitionNodeStatus, canTransitionRunStatus };
 export type { AgentNodeStatus, AgentRunStatus } from "./agentStateMachine";
@@ -357,6 +358,15 @@ function parseJson(value: unknown, fallback: unknown = null): unknown {
 
 function stringifyJson(value: unknown): string {
   return JSON.stringify(value ?? null);
+}
+
+function stringifyJsonOrNull(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  return typeof value === "string" ? value : stringifyJson(value);
+}
+
+function toRecord(value: unknown): Record<string, any> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {};
 }
 
 function generateRunId(prefix = "agent"): string {
@@ -723,8 +733,81 @@ export function getListingAgentDag(): EmperorAgentDag {
 function normalizeTemplateVersionRow(row: any) {
   return {
     ...row,
+    isDefault: Boolean(row?.isDefault),
+    rolloutPercent: Math.min(Math.max(Number(row?.rolloutPercent ?? 100), 0), 100),
+    rolloutPolicy: parseJson(row?.rolloutPolicy, null),
     dagDefinition: normalizeAgentDag(row.dagDefinition),
   };
+}
+
+function templateRolloutBucket(input: { agentSlug: string; userId: number; projectId?: number | null; version: string }) {
+  const key = `${input.agentSlug}:${input.version}:${input.userId}:${input.projectId ?? "none"}`;
+  const hash = createHash("sha256").update(key).digest("hex").slice(0, 8);
+  return Number.parseInt(hash, 16) % 100;
+}
+
+async function findAgentTemplateVersion(input: {
+  agentSlug: string;
+  versionId?: number | null;
+  version?: string | null;
+}) {
+  if (!input.versionId && !input.version) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Template versionId or version is required" });
+  }
+  const rows = input.versionId
+    ? await rawExecute("SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND id=? LIMIT 1", [input.agentSlug, input.versionId])
+    : await rawExecute("SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND version=? LIMIT 1", [input.agentSlug, input.version || ""]);
+  if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Agent template version not found" });
+  return normalizeTemplateVersionRow(rows[0]);
+}
+
+async function getDefaultAgentTemplateVersion(agentSlug: string) {
+  const rows = await rawExecute(
+    `SELECT * FROM emperor_agent_template_versions
+     WHERE agentSlug=? AND status='released' AND isDefault=1
+     ORDER BY versionNumber DESC, id DESC
+     LIMIT 1`,
+    [agentSlug],
+  );
+  return rows[0] ? normalizeTemplateVersionRow(rows[0]) : null;
+}
+
+async function selectAgentTemplateVersionForRun(input: {
+  agent: any;
+  userId: number;
+  projectId?: number | null;
+}) {
+  const canaryRows = await rawExecute(
+    `SELECT * FROM emperor_agent_template_versions
+     WHERE agentSlug=? AND status='released' AND isDefault=0 AND rolloutPercent > 0 AND rolloutPercent < 100
+     ORDER BY versionNumber DESC, id DESC
+     LIMIT 20`,
+    [input.agent.slug],
+  ).catch(() => []);
+  for (const row of canaryRows) {
+    const template = normalizeTemplateVersionRow(row);
+    if (templateRolloutBucket({
+      agentSlug: input.agent.slug,
+      version: template.version,
+      userId: input.userId,
+      projectId: input.projectId ?? null,
+    }) < template.rolloutPercent) {
+      return template;
+    }
+  }
+
+  const defaultVersion = await getDefaultAgentTemplateVersion(input.agent.slug).catch(() => null);
+  if (defaultVersion) return defaultVersion;
+  return recordAgentTemplateVersion({
+    agentSlug: input.agent.slug,
+    agentName: input.agent.name,
+    dag: normalizeAgentDag(input.agent.dagDefinition),
+    status: input.agent.status === "draft" ? "draft" : "released",
+    createdBy: input.userId,
+    releaseNotes: "Captured default Agent template",
+    isDefault: input.agent.status !== "draft",
+    rolloutPercent: input.agent.status === "draft" ? 0 : 100,
+  });
 }
 
 export async function recordAgentTemplateVersion(input: {
@@ -734,26 +817,45 @@ export async function recordAgentTemplateVersion(input: {
   status?: AgentTemplateVersionStatus;
   createdBy?: number | null;
   releaseNotes?: string | null;
+  parentVersionId?: number | null;
+  isDefault?: boolean;
+  rolloutPercent?: number | null;
+  rolloutPolicy?: unknown;
 }) {
   const dag = assertValidAgentDag(input.dag, "record agent template version");
   const status = input.status || "released";
   const dagHash = hashJson(dag);
+  const rolloutPercent = Math.min(Math.max(Math.floor(Number(input.rolloutPercent ?? (status === "released" ? 100 : 0))), 0), 100);
+  const isDefault = input.isDefault ?? (status === "released" && rolloutPercent >= 100);
+  const rolloutPolicyProvided = input.rolloutPolicy !== undefined;
   const existing = await rawExecute(
     "SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND dagHash=? LIMIT 1",
     [input.agentSlug, dagHash],
   );
   if (existing[0]) {
     const nextStatus = existing[0].status === "released" && status === "draft" ? "released" : status;
+    const nextIsDefault = input.isDefault === undefined ? Number(existing[0].isDefault || 0) : (isDefault ? 1 : 0);
+    const nextRolloutPercent = input.rolloutPercent === undefined ? Number(existing[0].rolloutPercent ?? rolloutPercent) : rolloutPercent;
     await rawExecute(
-      "UPDATE emperor_agent_template_versions SET agentName=?,status=?,releaseNotes=COALESCE(?,releaseNotes),releasedAt=COALESCE(releasedAt,?),updatedAt=NOW() WHERE id=?",
+      "UPDATE emperor_agent_template_versions SET agentName=?,status=?,isDefault=?,rolloutPercent=?,rolloutPolicy=?,releaseNotes=COALESCE(?,releaseNotes),releasedAt=COALESCE(releasedAt,?),activatedAt=COALESCE(activatedAt,?),updatedAt=NOW() WHERE id=?",
       [
         input.agentName || null,
         nextStatus,
+        nextIsDefault,
+        nextRolloutPercent,
+        rolloutPolicyProvided ? stringifyJson(input.rolloutPolicy) : stringifyJsonOrNull(existing[0].rolloutPolicy),
         input.releaseNotes || null,
         nextStatus === "released" ? new Date() : null,
+        nextIsDefault ? new Date() : null,
         existing[0].id,
       ],
     );
+    if (nextIsDefault) {
+      await rawExecute(
+        "UPDATE emperor_agent_template_versions SET isDefault=0,deprecatedAt=COALESCE(deprecatedAt,?),updatedAt=NOW() WHERE agentSlug=? AND id<>?",
+        [new Date(), input.agentSlug, existing[0].id],
+      );
+    }
     const rows = await rawExecute("SELECT * FROM emperor_agent_template_versions WHERE id=? LIMIT 1", [existing[0].id]);
     return normalizeTemplateVersionRow(rows[0] || existing[0]);
   }
@@ -766,25 +868,38 @@ export async function recordAgentTemplateVersion(input: {
   const version = `v${versionNumber}`;
   await rawExecute(
     `INSERT INTO emperor_agent_template_versions
-     (agentSlug,agentName,versionNumber,version,dagHash,status,dagDefinition,releaseNotes,createdBy,releasedAt)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+     (agentSlug,agentName,parentVersionId,versionNumber,version,dagHash,status,isDefault,rolloutPercent,rolloutPolicy,dagDefinition,releaseNotes,createdBy,releasedAt,activatedAt)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
       input.agentSlug,
       input.agentName || null,
+      input.parentVersionId || null,
       versionNumber,
       version,
       dagHash,
       status,
+      isDefault ? 1 : 0,
+      rolloutPercent,
+      input.rolloutPolicy === undefined ? null : stringifyJson(input.rolloutPolicy),
       stringifyJson(dag),
       input.releaseNotes || null,
       input.createdBy || null,
       status === "released" ? new Date() : null,
+      isDefault ? new Date() : null,
     ],
   );
   const rows = await rawExecute(
     "SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND dagHash=? LIMIT 1",
     [input.agentSlug, dagHash],
   );
+  if (isDefault && rows[0]?.id) {
+    await rawExecute(
+      "UPDATE emperor_agent_template_versions SET isDefault=0,deprecatedAt=COALESCE(deprecatedAt,?),updatedAt=NOW() WHERE agentSlug=? AND id<>?",
+      [new Date(), input.agentSlug, rows[0].id],
+    );
+    const refreshed = await rawExecute("SELECT * FROM emperor_agent_template_versions WHERE id=? LIMIT 1", [rows[0].id]);
+    return normalizeTemplateVersionRow(refreshed[0] || rows[0]);
+  }
   return normalizeTemplateVersionRow(rows[0]);
 }
 
@@ -801,6 +916,242 @@ export async function listAgentTemplateVersions(input: {
     [input.agentSlug],
   );
   return rows.map(normalizeTemplateVersionRow);
+}
+
+export async function publishAgentTemplateVersion(input: {
+  agentSlug: string;
+  versionId?: number | null;
+  version?: string | null;
+  rolloutPercent?: number;
+  rolloutPolicy?: unknown;
+  releaseNotes?: string | null;
+  userId?: number | null;
+}) {
+  const template = await findAgentTemplateVersion(input);
+  const dag = assertValidAgentDag(template.dagDefinition, "publish agent template version");
+  const rolloutPercent = Math.min(Math.max(Math.floor(Number(input.rolloutPercent ?? 100)), 0), 100);
+  const now = new Date();
+  if (rolloutPercent >= 100) {
+    await rawExecute(
+      "UPDATE emperor_agent_template_versions SET isDefault=0,deprecatedAt=COALESCE(deprecatedAt,?),updatedAt=NOW() WHERE agentSlug=? AND id<>?",
+      [now, input.agentSlug, template.id],
+    );
+    await rawExecute(
+      "UPDATE emperor_agents SET dagDefinition=?, status='active', updatedAt=NOW() WHERE slug=?",
+      [stringifyJson(dag), input.agentSlug],
+    );
+  }
+  await rawExecute(
+    `UPDATE emperor_agent_template_versions
+     SET status='released',
+         isDefault=?,
+         rolloutPercent=?,
+         rolloutPolicy=?,
+         releaseNotes=COALESCE(?, releaseNotes),
+         releasedAt=COALESCE(releasedAt, ?),
+         activatedAt=?,
+         deprecatedAt=NULL,
+         updatedAt=NOW()
+     WHERE id=?`,
+    [
+      rolloutPercent >= 100 ? 1 : 0,
+      rolloutPercent,
+      input.rolloutPolicy === undefined ? stringifyJsonOrNull(template.rolloutPolicy) : stringifyJson(input.rolloutPolicy),
+      input.releaseNotes || null,
+      now,
+      rolloutPercent > 0 ? now : null,
+      template.id,
+    ],
+  );
+  const rows = await rawExecute("SELECT * FROM emperor_agent_template_versions WHERE id=? LIMIT 1", [template.id]);
+  await recordAiOsMetric({
+    entityType: "agent_run",
+    entityId: `${input.agentSlug}:${template.version}`,
+    metricName: rolloutPercent >= 100 ? "template.published" : "template.rollout_started",
+    metricValue: rolloutPercent,
+    status: "released",
+    userId: input.userId ?? null,
+    agentSlug: input.agentSlug,
+    metadata: { version: template.version, versionId: template.id, rolloutPercent },
+  });
+  return {
+    success: true,
+    templateVersion: normalizeTemplateVersionRow(rows[0] || template),
+    validation: validateAgentDag(dag),
+  };
+}
+
+export async function rollbackAgentTemplateVersion(input: {
+  agentSlug: string;
+  targetVersionId?: number | null;
+  targetVersion?: string | null;
+  releaseNotes?: string | null;
+  userId?: number | null;
+}) {
+  const target = await findAgentTemplateVersion({
+    agentSlug: input.agentSlug,
+    versionId: input.targetVersionId ?? null,
+    version: input.targetVersion ?? null,
+  });
+  return publishAgentTemplateVersion({
+    agentSlug: input.agentSlug,
+    versionId: target.id,
+    rolloutPercent: 100,
+    releaseNotes: input.releaseNotes || `Rollback to ${target.version}`,
+    userId: input.userId ?? null,
+  });
+}
+
+export async function setAgentTemplateRollout(input: {
+  agentSlug: string;
+  versionId?: number | null;
+  version?: string | null;
+  rolloutPercent: number;
+  rolloutPolicy?: unknown;
+  userId?: number | null;
+}) {
+  return publishAgentTemplateVersion({
+    agentSlug: input.agentSlug,
+    versionId: input.versionId ?? null,
+    version: input.version ?? null,
+    rolloutPercent: input.rolloutPercent,
+    rolloutPolicy: input.rolloutPolicy,
+    releaseNotes: `Rollout set to ${Math.min(Math.max(Math.floor(Number(input.rolloutPercent)), 0), 100)}%`,
+    userId: input.userId ?? null,
+  });
+}
+
+export async function diffAgentTemplateVersions(input: {
+  agentSlug: string;
+  baseVersionId?: number | null;
+  baseVersion?: string | null;
+  targetVersionId?: number | null;
+  targetVersion?: string | null;
+  limit?: number;
+}) {
+  const target = await findAgentTemplateVersion({
+    agentSlug: input.agentSlug,
+    versionId: input.targetVersionId ?? null,
+    version: input.targetVersion ?? null,
+  });
+  let base = input.baseVersionId || input.baseVersion
+    ? await findAgentTemplateVersion({
+      agentSlug: input.agentSlug,
+      versionId: input.baseVersionId ?? null,
+      version: input.baseVersion ?? null,
+    })
+    : null;
+  if (!base) {
+    const rows = await rawExecute(
+      `SELECT * FROM emperor_agent_template_versions
+       WHERE agentSlug=? AND versionNumber < ?
+       ORDER BY versionNumber DESC, id DESC
+       LIMIT 1`,
+      [input.agentSlug, target.versionNumber],
+    );
+    base = rows[0] ? normalizeTemplateVersionRow(rows[0]) : null;
+  }
+  if (!base) throw new TRPCError({ code: "NOT_FOUND", message: "Base template version not found" });
+  const entries = diffAgentArtifactContent(base.dagDefinition, target.dagDefinition, input.limit || 300);
+  return {
+    agentSlug: input.agentSlug,
+    base: {
+      id: base.id,
+      version: base.version,
+      dagHash: base.dagHash,
+    },
+    target: {
+      id: target.id,
+      version: target.version,
+      dagHash: target.dagHash,
+      rolloutPercent: target.rolloutPercent,
+      isDefault: target.isDefault,
+    },
+    changed: entries.length > 0,
+    entries,
+  };
+}
+
+export async function backfillAgentRunTemplateVersions(input: {
+  agentSlug?: string | null;
+  limit?: number;
+  dryRun?: boolean;
+  userId?: number | null;
+} = {}) {
+  const limit = Math.min(Math.max(input.limit || 200, 1), 1000);
+  const clauses = ["(templateVersionId IS NULL OR templateVersion IS NULL OR dagHash IS NULL)"];
+  const params: unknown[] = [];
+  if (input.agentSlug) {
+    clauses.push("agentSlug=?");
+    params.push(input.agentSlug);
+  }
+  const rows = await rawExecute(
+    `SELECT id,runId,agentSlug,agentName,userId,projectId,inputs,dagHash,templateVersionId,templateVersion
+     FROM emperor_agent_runs
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY createdAt ASC
+     LIMIT ${limit}`,
+    params,
+  );
+  const agentCache = new Map<string, any>();
+  const results: Array<{ runId: string; agentSlug: string; templateVersion: string | null; templateVersionId: number | null; dagHash: string | null; updated: boolean }> = [];
+  for (const row of rows) {
+    if (!agentCache.has(row.agentSlug)) {
+      agentCache.set(row.agentSlug, await getAgentBySlug(row.agentSlug));
+    }
+    const agent = agentCache.get(row.agentSlug);
+    const storedInputs = parseStoredAgentRunInputs(row.inputs);
+    const dag = assertValidAgentDag(storedInputs.runtime?.dagSnapshot || agent.dagDefinition, "backfill run template version");
+    const template = await recordAgentTemplateVersion({
+      agentSlug: row.agentSlug,
+      agentName: row.agentName || agent.name,
+      dag,
+      status: agent.status === "draft" ? "draft" : "released",
+      createdBy: input.userId ?? row.userId ?? null,
+      releaseNotes: "Backfilled from historical Agent run",
+      isDefault: false,
+      rolloutPercent: 0,
+    });
+    const stored = buildStoredAgentRunInputs({
+      inputs: storedInputs.inputs,
+      agentSlug: row.agentSlug,
+      agentName: row.agentName || agent.name,
+      templateVersionId: template.id ?? null,
+      templateVersion: template.version ?? null,
+      dag,
+    });
+    if (!input.dryRun) {
+      await rawExecute(
+        "UPDATE emperor_agent_runs SET templateVersionId=?,templateVersion=?,dagHash=?,inputs=?,updatedAt=NOW() WHERE id=?",
+        [template.id ?? null, template.version ?? null, template.dagHash ?? hashJson(dag), stringifyJson(stored), row.id],
+      );
+    }
+    results.push({
+      runId: row.runId,
+      agentSlug: row.agentSlug,
+      templateVersion: template.version ?? null,
+      templateVersionId: template.id ?? null,
+      dagHash: template.dagHash ?? hashJson(dag),
+      updated: !input.dryRun,
+    });
+  }
+  await recordAiOsMetric({
+    entityType: "agent_run",
+    entityId: input.agentSlug || "all",
+    metricName: "template.backfilled_runs",
+    metricValue: results.length,
+    status: input.dryRun ? "dry_run" : "completed",
+    userId: input.userId ?? null,
+    agentSlug: input.agentSlug || null,
+    metadata: { dryRun: input.dryRun === true, limit },
+  });
+  return {
+    success: true,
+    dryRun: input.dryRun === true,
+    scanned: rows.length,
+    updated: input.dryRun ? 0 : results.length,
+    results,
+  };
 }
 
 export async function upsertListingAgentTemplate() {
@@ -1492,6 +1843,17 @@ export function diffAgentArtifactContent(before: unknown, after: unknown, limit 
   return diffValues(before, after, "$", [], Math.min(Math.max(Math.floor(limit), 1), 1000));
 }
 
+export function estimateAgentHumanEditRate(before: unknown, after: unknown): number {
+  if (JSON.stringify(before ?? null) === JSON.stringify(after ?? null)) return 0;
+  const beforeText = JSON.stringify(before ?? "");
+  const afterText = JSON.stringify(after ?? "");
+  const maxLength = Math.max(beforeText.length, afterText.length, 1);
+  const lengthDelta = Math.abs(afterText.length - beforeText.length) / maxLength;
+  const diffCount = diffAgentArtifactContent(before, after, 1000).length;
+  const structuralDelta = Math.min(diffCount / 50, 1);
+  return Math.round(Math.min(Math.max(Math.max(lengthDelta, structuralDelta), 0), 1) * 1000) / 1000;
+}
+
 export async function diffAgentArtifactVersions(input: {
   runId: string;
   nodeId: string;
@@ -2018,6 +2380,41 @@ async function refreshRunAfterCheckpoint(runId: string, dag: EmperorAgentDag) {
     completedAt: allDone ? new Date() : null,
   }));
 
+  if (runRow.status !== status && ["completed", "failed", "canceled"].includes(status)) {
+    const durationMs = runRow.startedAt ? Date.now() - new Date(runRow.startedAt).getTime() : null;
+    void recordAiOsEvaluation({
+      entityType: "agent_run",
+      entityId: runId,
+      output: outputMap,
+      status,
+      userId: runRow.userId,
+      projectId: runRow.projectId ?? null,
+      agentSlug: runRow.agentSlug,
+      retryCount: checkpoints.reduce((sum, checkpoint) => sum + Number(checkpoint.retryCount || 0), 0),
+      metadata: {
+        progress,
+        checkpointCount: checkpoints.length,
+        confirmedCount: checkpoints.filter((checkpoint) => isConfirmedStatus(checkpoint.status)).length,
+        durationMs,
+      },
+    });
+    void recordAiOsMetric({
+      entityType: "agent_run",
+      entityId: runId,
+      metricName: `agent_run.${status}`,
+      metricValue: durationMs,
+      status,
+      userId: runRow.userId,
+      projectId: runRow.projectId ?? null,
+      agentSlug: runRow.agentSlug,
+      metadata: {
+        progress,
+        checkpointCount: checkpoints.length,
+        retryCount: checkpoints.reduce((sum, checkpoint) => sum + Number(checkpoint.retryCount || 0), 0),
+      },
+    });
+  }
+
   if (!anyRunning && !anyWaiting && nextReady) {
     await addEvent(runId, checkpoints[0]?.agentSlug || "", nextReady.nodeId, "node.ready", `节点 ${nextReady.nodeLabel || nextReady.nodeId} 已就绪`);
   }
@@ -2233,6 +2630,62 @@ async function finalizeNodeOutput(input: {
       ...nextMetadata,
     },
   });
+  const skillRunMetadata = toRecord(toRecord(nextMetadata).skillRun);
+  const nodeDurationMs = Number(skillRunMetadata.durationMs || 0);
+  const inputTokens = Number(skillRunMetadata.inputTokens || 0);
+  const outputTokens = Number(skillRunMetadata.outputTokens || 0);
+  void recordAiOsEvaluation({
+    entityType: "agent_node",
+    entityId: `${input.run.runId}:${input.node.id}`,
+    output: input.output,
+    status: nextStatus,
+    userId: input.userId,
+    projectId: input.run.projectId ?? null,
+    agentSlug: input.run.agentSlug,
+    nodeId: input.node.id,
+    skillSlug: input.node.skillSlug || null,
+    retryCount: checkpoint.retryCount || 0,
+    fallbackCount: Number(skillRunMetadata.fallbackCount || 0),
+    metadata: {
+      outputKey: input.node.outputKey || input.node.id,
+      waitingForHuman,
+      skillRunId: input.skillRunId || null,
+      sourceAiJobRunId: input.sourceAiJobRunId || null,
+      durationMs: nodeDurationMs || null,
+      inputTokens,
+      outputTokens,
+    },
+  });
+  if (nodeDurationMs > 0) {
+    void recordAiOsMetric({
+      entityType: "agent_node",
+      entityId: `${input.run.runId}:${input.node.id}`,
+      metricName: "agent_node.duration_ms",
+      metricValue: nodeDurationMs,
+      status: nextStatus,
+      userId: input.userId,
+      projectId: input.run.projectId ?? null,
+      agentSlug: input.run.agentSlug,
+      nodeId: input.node.id,
+      skillSlug: input.node.skillSlug || null,
+      metadata: { outputKey: input.node.outputKey || input.node.id },
+    });
+  }
+  if (inputTokens + outputTokens > 0) {
+    void recordAiOsMetric({
+      entityType: "agent_node",
+      entityId: `${input.run.runId}:${input.node.id}`,
+      metricName: "agent_node.tokens",
+      metricValue: inputTokens + outputTokens,
+      status: nextStatus,
+      userId: input.userId,
+      projectId: input.run.projectId ?? null,
+      agentSlug: input.run.agentSlug,
+      nodeId: input.node.id,
+      skillSlug: input.node.skillSlug || null,
+      metadata: { inputTokens, outputTokens },
+    });
+  }
 
   if (waitingForHuman) {
     await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.waiting_human", input.completedMessage || `节点 ${input.node.label || input.node.id} 已生成，等待人工确认`, {
@@ -2283,6 +2736,39 @@ async function failNodeExecution(input: {
     });
     return;
   }
+  void recordAiOsMetric({
+    entityType: "agent_node",
+    entityId: `${input.run.runId}:${input.node.id}`,
+    metricName: "agent_node.failed",
+    metricValue: null,
+    status: "failed",
+    userId: input.run.userId,
+    projectId: input.run.projectId ?? null,
+    agentSlug: input.run.agentSlug,
+    nodeId: input.node.id,
+    skillSlug: input.node.skillSlug || null,
+    metadata: {
+      failureKind: input.failureKind || "error",
+      error: message,
+      sourceAiJobRunId: input.sourceAiJobRunId || null,
+      sourceAiJobAttempt: input.sourceAiJobAttempt ?? null,
+    },
+  });
+  void recordAiOsEvaluation({
+    entityType: "agent_node",
+    entityId: `${input.run.runId}:${input.node.id}:failed`,
+    output: { error: message, failureKind: input.failureKind || "error" },
+    status: "failed",
+    userId: input.run.userId,
+    projectId: input.run.projectId ?? null,
+    agentSlug: input.run.agentSlug,
+    nodeId: input.node.id,
+    skillSlug: input.node.skillSlug || null,
+    metadata: {
+      sourceAiJobRunId: input.sourceAiJobRunId || null,
+      sourceAiJobAttempt: input.sourceAiJobAttempt ?? null,
+    },
+  });
   await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.failed", `节点 ${input.node.label || input.node.id} 执行失败`, { error: message });
 }
 
@@ -2415,15 +2901,12 @@ export async function startAgentRun(input: {
   projectId?: number | null;
 }) {
   const agent = await getAgentBySlug(input.slug);
-  const dag = assertValidAgentDag(agent.dagDefinition, "start run");
-  const templateVersion = await recordAgentTemplateVersion({
-    agentSlug: agent.slug,
-    agentName: agent.name,
-    dag,
-    status: agent.status === "draft" ? "draft" : "released",
-    createdBy: input.userId,
-    releaseNotes: "Captured for Agent run",
+  const templateVersion = await selectAgentTemplateVersionForRun({
+    agent,
+    userId: input.userId,
+    projectId: input.projectId ?? null,
   });
+  const dag = assertValidAgentDag(templateVersion?.dagDefinition || agent.dagDefinition, "start run");
   const nodeMetadata = new Map<string, Record<string, unknown>>();
   for (const node of dag.nodes) {
     nodeMetadata.set(node.id, await buildNodeRunMetadata(node));
@@ -2816,6 +3299,34 @@ export async function confirmAgentNode(input: {
         skipped: input.skip === true,
         ...checkpointMetadata(checkpoint),
       },
+    });
+    const humanEditRate = input.skip ? 0 : estimateAgentHumanEditRate(effectiveCheckpointOutput(checkpoint), finalContent);
+    void recordAiOsMetric({
+      entityType: "agent_node",
+      entityId: `${input.runId}:${input.nodeId}`,
+      metricName: "agent_node.human_edit_rate",
+      metricValue: humanEditRate,
+      status: nextStatus,
+      userId: input.userId,
+      projectId: detail.run.projectId ?? null,
+      agentSlug: checkpoint.agentSlug,
+      nodeId: input.nodeId,
+      skillSlug: node.skillSlug || null,
+      metadata: { skipped: input.skip === true, outputKey: node.outputKey || node.id },
+    });
+    void recordAiOsEvaluation({
+      entityType: "agent_node",
+      entityId: `${input.runId}:${input.nodeId}:confirmed`,
+      output: finalContent,
+      status: nextStatus,
+      userId: input.userId,
+      projectId: detail.run.projectId ?? null,
+      agentSlug: checkpoint.agentSlug,
+      nodeId: input.nodeId,
+      skillSlug: node.skillSlug || null,
+      humanEditRate,
+      retryCount: checkpoint.retryCount || 0,
+      metadata: { skipped: input.skip === true, outputKey: node.outputKey || node.id },
     });
   }
   await addEvent(input.runId, checkpoint.agentSlug, input.nodeId, input.skip ? "node.skipped" : "node.confirmed", `节点 ${checkpoint.nodeLabel || input.nodeId} 已${input.skip ? "跳过" : "确认"}`);

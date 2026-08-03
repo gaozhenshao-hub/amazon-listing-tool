@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
+import { repoPath } from "../testPaths";
 
-const SOURCE_PATH = "/home/ubuntu/amazon-listing-tool/server/routers/productOps.ts";
-const SCHEMA_PATH = "/home/ubuntu/amazon-listing-tool/drizzle/schema.ts";
-const FRONTEND_PATH = "/home/ubuntu/amazon-listing-tool/client/src/pages/ops/OpsProductConversion.tsx";
+const SOURCE_PATH = repoPath("server/routers/productOps.ts");
+const SCHEMA_PATH = repoPath("drizzle/schema.ts");
+const FRONTEND_PATH = repoPath("client/src/pages/ops/OpsProductConversion.tsx");
 
 describe("Check Item Customization - Backend APIs", () => {
   const source = fs.readFileSync(SOURCE_PATH, "utf-8");

@@ -11,8 +11,10 @@ import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
 import {
   assertValidAgentDag,
+  backfillAgentRunTemplateVersions,
   cancelAgentRun,
   confirmAgentNode,
+  diffAgentTemplateVersions,
   executeAgentNode,
   diffAgentArtifactVersions,
   getAgentRun,
@@ -20,14 +22,17 @@ import {
   listAgentArtifacts,
   normalizeAgentDag,
   pauseAgentRun,
+  publishAgentTemplateVersion,
   recordAgentTemplateVersion,
   recoverTimedOutAgentNodes,
   rerunAgentNode,
   resolveAgentArtifactRef,
   resumeAgentRun,
   rollbackAgentArtifactVersion,
+  rollbackAgentTemplateVersion,
   scheduleAgentRun,
   selectAgentArtifactVersion,
+  setAgentTemplateRollout,
   startAgentRun,
   updateAgentNodeDraft,
   upsertListingAgentTemplate,
@@ -43,7 +48,7 @@ import {
   upsertEmperorTool,
   upsertEmperorToolSecret,
 } from "../services/emperorToolGateway";
-import { listAiOsMetrics } from "../services/aiOsObservability";
+import { buildAiOsObservabilityDashboard, listAiOsEvaluations, listAiOsMetrics, recordAiOsEvaluation, recordAiOsMetric } from "../services/aiOsObservability";
 
 function generateRunId(): string {
   return `run_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -381,13 +386,71 @@ export const emperorRunRouter = router({
           ["succeeded", JSON.stringify({ content }), inputTok, outputTok, durationMs, completedAt, runId]
         );
         await rawExecute("UPDATE emperor_skills SET callCount = callCount + 1 WHERE slug = ?", [input.skillSlug]);
+        void recordAiOsEvaluation({
+          entityType: "skill",
+          entityId: runId,
+          output: content,
+          status: "succeeded",
+          userId: ctx.user.id,
+          skillSlug: input.skillSlug,
+          metadata: {
+            skillName: skill.name,
+            modelId: modelInfo.modelId,
+            provider: modelInfo.provider,
+            inputTokens: inputTok,
+            outputTokens: outputTok,
+            durationMs,
+            source: "emperor.run.run",
+          },
+        });
+        void recordAiOsMetric({
+          entityType: "skill",
+          entityId: runId,
+          metricName: "skill.succeeded",
+          metricValue: durationMs,
+          status: "succeeded",
+          userId: ctx.user.id,
+          skillSlug: input.skillSlug,
+          metadata: { skillName: skill.name, modelId: modelInfo.modelId, provider: modelInfo.provider, source: "emperor.run.run" },
+        });
+        void recordAiOsMetric({
+          entityType: "skill",
+          entityId: runId,
+          metricName: "skill.tokens",
+          metricValue: inputTok + outputTok,
+          status: "succeeded",
+          userId: ctx.user.id,
+          skillSlug: input.skillSlug,
+          metadata: { inputTokens: inputTok, outputTokens: outputTok, source: "emperor.run.run" },
+        });
 
         return { runId, status: "succeeded", content, durationMs, inputTokens: inputTok, outputTokens: outputTok };
       } catch (err: any) {
+        const completedAt = new Date();
+        const durationMs = completedAt.getTime() - startedAt.getTime();
         await rawExecute(
-          "UPDATE emperor_skill_runs SET status=?,errorMessage=?,completedAt=? WHERE runId=?",
-          ["failed", err.message || "Unknown error", new Date(), runId]
+          "UPDATE emperor_skill_runs SET status=?,errorMessage=?,durationMs=?,completedAt=? WHERE runId=?",
+          ["failed", err.message || "Unknown error", durationMs, completedAt, runId]
         );
+        void recordAiOsEvaluation({
+          entityType: "skill",
+          entityId: runId,
+          output: { error: err.message || "Unknown error" },
+          status: "failed",
+          userId: ctx.user.id,
+          skillSlug: input.skillSlug,
+          metadata: { skillName: skill.name, source: "emperor.run.run" },
+        });
+        void recordAiOsMetric({
+          entityType: "skill",
+          entityId: runId,
+          metricName: "skill.failed",
+          metricValue: durationMs,
+          status: "failed",
+          userId: ctx.user.id,
+          skillSlug: input.skillSlug,
+          metadata: { skillName: skill.name, error: err.message || "Unknown error", source: "emperor.run.run" },
+        });
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message || "Skill execution failed" });
       }
     }),
@@ -916,6 +979,98 @@ export const emperorAgentsRouter = router({
     }))
     .query(async ({ input }) => {
       return listAgentTemplateVersions({ agentSlug: input.slug, limit: input.limit });
+    }),
+
+  publishTemplateVersion: adminProcedure
+    .input(z.object({
+      slug: z.string(),
+      versionId: z.number().int().positive().optional(),
+      version: z.string().optional(),
+      rolloutPercent: z.number().int().min(0).max(100).optional().default(100),
+      rolloutPolicy: z.any().optional(),
+      releaseNotes: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      return publishAgentTemplateVersion({
+        agentSlug: input.slug,
+        versionId: input.versionId ?? null,
+        version: input.version ?? null,
+        rolloutPercent: input.rolloutPercent,
+        rolloutPolicy: input.rolloutPolicy,
+        releaseNotes: input.releaseNotes || null,
+        userId: ctx.user.id,
+      });
+    }),
+
+  rollbackTemplateVersion: adminProcedure
+    .input(z.object({
+      slug: z.string(),
+      targetVersionId: z.number().int().positive().optional(),
+      targetVersion: z.string().optional(),
+      releaseNotes: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      return rollbackAgentTemplateVersion({
+        agentSlug: input.slug,
+        targetVersionId: input.targetVersionId ?? null,
+        targetVersion: input.targetVersion ?? null,
+        releaseNotes: input.releaseNotes || null,
+        userId: ctx.user.id,
+      });
+    }),
+
+  setTemplateRollout: adminProcedure
+    .input(z.object({
+      slug: z.string(),
+      versionId: z.number().int().positive().optional(),
+      version: z.string().optional(),
+      rolloutPercent: z.number().int().min(0).max(100),
+      rolloutPolicy: z.any().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      return setAgentTemplateRollout({
+        agentSlug: input.slug,
+        versionId: input.versionId ?? null,
+        version: input.version ?? null,
+        rolloutPercent: input.rolloutPercent,
+        rolloutPolicy: input.rolloutPolicy,
+        userId: ctx.user.id,
+      });
+    }),
+
+  diffTemplateVersions: protectedProcedure
+    .input(z.object({
+      slug: z.string(),
+      baseVersionId: z.number().int().positive().optional(),
+      baseVersion: z.string().optional(),
+      targetVersionId: z.number().int().positive().optional(),
+      targetVersion: z.string().optional(),
+      limit: z.number().int().min(1).max(1000).optional(),
+    }))
+    .query(async ({ input }) => {
+      return diffAgentTemplateVersions({
+        agentSlug: input.slug,
+        baseVersionId: input.baseVersionId ?? null,
+        baseVersion: input.baseVersion ?? null,
+        targetVersionId: input.targetVersionId ?? null,
+        targetVersion: input.targetVersion ?? null,
+        limit: input.limit,
+      });
+    }),
+
+  backfillRunTemplateVersions: adminProcedure
+    .input(z.object({
+      slug: z.string().optional(),
+      limit: z.number().int().min(1).max(1000).optional(),
+      dryRun: z.boolean().optional().default(false),
+    }).optional())
+    .mutation(async ({ input, ctx }) => {
+      return backfillAgentRunTemplateVersions({
+        agentSlug: input?.slug ?? null,
+        limit: input?.limit,
+        dryRun: input?.dryRun,
+        userId: ctx.user.id,
+      });
     }),
 
   getAvailableSkills: protectedProcedure.query(async () => {
@@ -1500,6 +1655,30 @@ export const emperorObservabilityRouter = router({
     }).optional())
     .query(async ({ input }) => {
       return listAiOsMetrics(input || {});
+    }),
+
+  evaluations: adminProcedure
+    .input(z.object({
+      entityType: z.string().optional(),
+      entityId: z.string().optional(),
+      agentSlug: z.string().optional(),
+      skillSlug: z.string().optional(),
+      limit: z.number().min(1).max(500).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return listAiOsEvaluations(input || {});
+    }),
+
+  dashboard: adminProcedure
+    .input(z.object({
+      days: z.number().int().min(1).max(365).optional().default(30),
+      agentSlug: z.string().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return buildAiOsObservabilityDashboard({
+        days: input?.days,
+        agentSlug: input?.agentSlug,
+      });
     }),
 });
 

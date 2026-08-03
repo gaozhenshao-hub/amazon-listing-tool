@@ -16,7 +16,7 @@ describe("PlatformHome page", () => {
   const source = readFileSync(platformHomePath, "utf-8");
 
   it("should display the correct platform title", () => {
-    expect(source).toContain("亚马逊全链路智能工具");
+    expect(source).toContain("AMZ 全链路");
   });
 
   it("should show user greeting with name", () => {
@@ -128,7 +128,7 @@ describe("DashboardLayout home button", () => {
   });
 
   it("should display correct title on login page", () => {
-    expect(source).toContain("亚马逊全链路智能工具");
+    expect(source).toContain("AMZ 全链路");
   });
 });
 
@@ -136,6 +136,6 @@ describe("HTML title", () => {
   const html = readFileSync(indexHtmlPath, "utf-8");
 
   it("should have the correct page title", () => {
-    expect(html).toContain("<title>亚马逊全链路智能工具</title>");
+    expect(html).toContain("<title>AMZ 全链路</title>");
   });
 });

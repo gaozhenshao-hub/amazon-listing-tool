@@ -1,6 +1,6 @@
 # Listing SOP PDF 关键信息整理
 
-来源文件：`/home/ubuntu/upload/亚马逊Listing运营SOP：两段式标题与Rufus训练法终极指南.pdf`
+来源文件：用户上传的《亚马逊Listing运营SOP：两段式标题与Rufus训练法终极指南.pdf》
 
 ## 核心规则
 
@@ -46,4 +46,3 @@
 - 第2页：两段式结构表格、Listing 五维优化法（场景化）
 - 第3页：问题导向、关键词语义、信任背书、A+视觉化、SP Prompts
 - 第4页：SP Prompts 实战、自检清单
-

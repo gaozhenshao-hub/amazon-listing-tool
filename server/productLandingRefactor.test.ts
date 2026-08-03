@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { repoPath } from "./testPaths";
+
+const devPagePath = (fileName: string) => repoPath("client/src/pages/dev", fileName);
 
 /**
  * Tests for the 6-stage product landing flow refactoring:
@@ -221,64 +224,64 @@ describe("ProfitEditor - sensitivity analysis matrix calculation", () => {
 describe("Refactored component files exist", () => {
   it("BomEditor.tsx should exist", async () => {
     const fs = await import("fs");
-    const exists = fs.existsSync("/home/ubuntu/amazon-listing-tool/client/src/pages/dev/BomEditor.tsx");
+    const exists = fs.existsSync(devPagePath("BomEditor.tsx"));
     expect(exists).toBe(true);
   });
 
   it("ProfileEditor.tsx should exist", async () => {
     const fs = await import("fs");
-    const exists = fs.existsSync("/home/ubuntu/amazon-listing-tool/client/src/pages/dev/ProfileEditor.tsx");
+    const exists = fs.existsSync(devPagePath("ProfileEditor.tsx"));
     expect(exists).toBe(true);
   });
 
   it("TestReportEditor.tsx should exist", async () => {
     const fs = await import("fs");
-    const exists = fs.existsSync("/home/ubuntu/amazon-listing-tool/client/src/pages/dev/TestReportEditor.tsx");
+    const exists = fs.existsSync(devPagePath("TestReportEditor.tsx"));
     expect(exists).toBe(true);
   });
 
   it("ScoringEditor.tsx should exist", async () => {
     const fs = await import("fs");
-    const exists = fs.existsSync("/home/ubuntu/amazon-listing-tool/client/src/pages/dev/ScoringEditor.tsx");
+    const exists = fs.existsSync(devPagePath("ScoringEditor.tsx"));
     expect(exists).toBe(true);
   });
 
   it("ManualEditor.tsx should exist", async () => {
     const fs = await import("fs");
-    const exists = fs.existsSync("/home/ubuntu/amazon-listing-tool/client/src/pages/dev/ManualEditor.tsx");
+    const exists = fs.existsSync(devPagePath("ManualEditor.tsx"));
     expect(exists).toBe(true);
   });
 
   it("ProfitEditor.tsx should exist", async () => {
     const fs = await import("fs");
-    const exists = fs.existsSync("/home/ubuntu/amazon-listing-tool/client/src/pages/dev/ProfitEditor.tsx");
+    const exists = fs.existsSync(devPagePath("ProfitEditor.tsx"));
     expect(exists).toBe(true);
   });
 
   it("Old ProfitCalculator function should be removed from DevProjectDetail.tsx", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("/home/ubuntu/amazon-listing-tool/client/src/pages/dev/DevProjectDetail.tsx", "utf-8");
+    const content = fs.readFileSync(devPagePath("DevProjectDetail.tsx"), "utf-8");
     expect(content).not.toContain("function ProfitCalculator");
     expect(content).toContain("ProfitEditor");
   });
 
   it("Old ManualViewer function should be removed from DevProjectDetail.tsx", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("/home/ubuntu/amazon-listing-tool/client/src/pages/dev/DevProjectDetail.tsx", "utf-8");
+    const content = fs.readFileSync(devPagePath("DevProjectDetail.tsx"), "utf-8");
     expect(content).not.toContain("function ManualViewer");
     expect(content).toContain("ManualEditor");
   });
 
   it("Old TestReportViewer function should be removed from DevProjectDetail.tsx", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("/home/ubuntu/amazon-listing-tool/client/src/pages/dev/DevProjectDetail.tsx", "utf-8");
+    const content = fs.readFileSync(devPagePath("DevProjectDetail.tsx"), "utf-8");
     expect(content).not.toContain("function TestReportViewer");
     expect(content).toContain("TestReportEditor");
   });
 
   it("Old ProfileSection function should be removed from DevProjectDetail.tsx", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("/home/ubuntu/amazon-listing-tool/client/src/pages/dev/DevProjectDetail.tsx", "utf-8");
+    const content = fs.readFileSync(devPagePath("DevProjectDetail.tsx"), "utf-8");
     expect(content).not.toContain("function ProfileSection");
     expect(content).toContain("ProfileEditor");
   });
@@ -288,7 +291,7 @@ describe("Refactored component files exist", () => {
 describe("Unified interaction pattern: AI生成 → 表格展示 → 人工编辑 → 确认锁定", () => {
   it("BomEditor should support inline editing pattern", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("/home/ubuntu/amazon-listing-tool/client/src/pages/dev/BomEditor.tsx", "utf-8");
+    const content = fs.readFileSync(devPagePath("BomEditor.tsx"), "utf-8");
     // Should have editing state
     expect(content).toContain("editingId");
     // Should have save/confirm actions
@@ -300,7 +303,7 @@ describe("Unified interaction pattern: AI生成 → 表格展示 → 人工编�
 
   it("ProfileEditor should support structured table editing", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("/home/ubuntu/amazon-listing-tool/client/src/pages/dev/ProfileEditor.tsx", "utf-8");
+    const content = fs.readFileSync(devPagePath("ProfileEditor.tsx"), "utf-8");
     // Should have section confirmation
     expect(content).toContain("confirmSection");
     // Should have confirmed state tracking
@@ -309,7 +312,7 @@ describe("Unified interaction pattern: AI生成 → 表格展示 → 人工编�
 
   it("ScoringEditor should support editable scoring with weighted total", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("/home/ubuntu/amazon-listing-tool/client/src/pages/dev/ScoringEditor.tsx", "utf-8");
+    const content = fs.readFileSync(devPagePath("ScoringEditor.tsx"), "utf-8");
     // Should have score editing
     expect(content).toContain("updateScore");
     // Should have total score display
@@ -318,7 +321,7 @@ describe("Unified interaction pattern: AI生成 → 表格展示 → 人工编�
 
   it("ManualEditor should support per-chapter editing", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("/home/ubuntu/amazon-listing-tool/client/src/pages/dev/ManualEditor.tsx", "utf-8");
+    const content = fs.readFileSync(devPagePath("ManualEditor.tsx"), "utf-8");
     // Should have chapter editing
     expect(content).toContain("editingIdx");
     // Should have confirm/lock per chapter
@@ -327,7 +330,7 @@ describe("Unified interaction pattern: AI生成 → 表格展示 → 人工编�
 
   it("ProfitEditor should support sensitivity analysis", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("/home/ubuntu/amazon-listing-tool/client/src/pages/dev/ProfitEditor.tsx", "utf-8");
+    const content = fs.readFileSync(devPagePath("ProfitEditor.tsx"), "utf-8");
     // Should have sensitivity matrix
     expect(content).toContain("sensitivityMatrix");
     // Should have plan saving
@@ -340,7 +343,7 @@ describe("Unified interaction pattern: AI生成 → 表格展示 → 人工编�
 
   it("TestReportEditor should support full field editing", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("/home/ubuntu/amazon-listing-tool/client/src/pages/dev/TestReportEditor.tsx", "utf-8");
+    const content = fs.readFileSync(devPagePath("TestReportEditor.tsx"), "utf-8");
     // Should have editing state
     expect(content).toContain("editingCell");
     // Should have add/delete test items

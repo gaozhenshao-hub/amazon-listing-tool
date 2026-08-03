@@ -4866,14 +4866,20 @@ export const emperorAgentTemplateVersions = mysqlTable("emperor_agent_template_v
   id: int("id").autoincrement().primaryKey(),
   agentSlug: varchar("agentSlug", { length: 128 }).notNull(),
   agentName: varchar("agentName", { length: 255 }),
+  parentVersionId: int("parentVersionId"),
   versionNumber: int("versionNumber").notNull(),
   version: varchar("version", { length: 40 }).notNull(),
   dagHash: varchar("dagHash", { length: 64 }).notNull(),
   status: mysqlEnum("status", ["draft", "released", "deprecated"]).default("released").notNull(),
+  isDefault: int("isDefault").default(0).notNull(),
+  rolloutPercent: int("rolloutPercent").default(100).notNull(),
+  rolloutPolicy: json("rolloutPolicy"),
   dagDefinition: json("dagDefinition").notNull(),
   releaseNotes: text("releaseNotes"),
   createdBy: int("createdBy"),
   releasedAt: timestamp("releasedAt"),
+  activatedAt: timestamp("activatedAt"),
+  deprecatedAt: timestamp("deprecatedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -5074,6 +5080,29 @@ export const emperorAiOsMetrics = mysqlTable("emperor_ai_os_metrics", {
 });
 export type EmperorAiOsMetric = typeof emperorAiOsMetrics.$inferSelect;
 export type InsertEmperorAiOsMetric = typeof emperorAiOsMetrics.$inferInsert;
+
+export const emperorAiOsEvaluations = mysqlTable("emperor_ai_os_evaluations", {
+  id: int("id").autoincrement().primaryKey(),
+  evaluationId: varchar("evaluationId", { length: 80 }).unique().notNull(),
+  entityType: varchar("entityType", { length: 40 }).notNull(),
+  entityId: varchar("entityId", { length: 128 }).notNull(),
+  evaluationType: varchar("evaluationType", { length: 80 }).default("heuristic_quality").notNull(),
+  score: decimal("score", { precision: 5, scale: 2 }).notNull(),
+  grade: varchar("grade", { length: 20 }),
+  status: varchar("status", { length: 40 }),
+  evaluator: varchar("evaluator", { length: 80 }).default("system.heuristic").notNull(),
+  userId: int("userId"),
+  projectId: int("projectId"),
+  agentSlug: varchar("agentSlug", { length: 128 }),
+  nodeId: varchar("nodeId", { length: 128 }),
+  skillSlug: varchar("skillSlug", { length: 128 }),
+  toolSlug: varchar("toolSlug", { length: 128 }),
+  rubric: json("rubric"),
+  details: json("details"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type EmperorAiOsEvaluation = typeof emperorAiOsEvaluations.$inferSelect;
+export type InsertEmperorAiOsEvaluation = typeof emperorAiOsEvaluations.$inferInsert;
 
 // Emperor 知识库（cc-haha 四分类记忆体系）
 export const emperorKnowledge = mysqlTable("emperor_knowledge", {

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { repoPath } from "./testPaths";
 
 // ─── Test 1: Notification Router exports ───
 describe("notification router", () => {
@@ -170,7 +171,7 @@ describe("kbReview notification integration", () => {
 describe("NotificationBell component", () => {
   it("should exist as a file", async () => {
     const fs = await import("fs");
-    const exists = fs.existsSync("/home/ubuntu/amazon-listing-tool/client/src/components/NotificationBell.tsx");
+    const exists = fs.existsSync(repoPath("client/src/components/NotificationBell.tsx"));
     expect(exists).toBe(true);
   });
 });
