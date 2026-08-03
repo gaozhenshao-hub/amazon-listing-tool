@@ -3,6 +3,14 @@ import { createHash } from "crypto";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb } from "../db";
 import {
+  assertNodeTransition,
+  canTransitionNodeStatus,
+  canTransitionRunStatus,
+  withAgentStateMachine,
+  type AgentNodeStatus,
+  type AgentRunStatus,
+} from "./agentStateMachine";
+import {
   getEmperorSkillRuntimeSnapshot,
   normalizeSkillVersion,
   runEmperorSkill,
@@ -14,8 +22,8 @@ import {
 import { calculateAiJobRetryDelayMs, cancelAiJob, failAiJob, registerAiJobHandler, startRegisteredAiJob, type AiJobSnapshot } from "./aiJobRunner";
 import { invokeEmperorTool } from "./emperorToolGateway";
 
-export type AgentNodeStatus = "pending" | "ready" | "running" | "waiting_human" | "confirmed" | "skipped" | "failed";
-export type AgentRunStatus = "running" | "waiting_human" | "paused" | "completed" | "failed" | "canceled";
+export { canTransitionNodeStatus, canTransitionRunStatus };
+export type { AgentNodeStatus, AgentRunStatus } from "./agentStateMachine";
 
 export type EmperorAgentNode = {
   id: string;
@@ -166,25 +174,6 @@ type CheckpointRow = {
 export const LISTING_AGENT_SLUG = "listing.full.workflow";
 let agentArtifactStoreAvailable = true;
 
-const NODE_STATUS_TRANSITIONS: Record<AgentNodeStatus, AgentNodeStatus[]> = {
-  pending: ["ready", "skipped"],
-  ready: ["running", "skipped", "pending"],
-  running: ["waiting_human", "confirmed", "failed", "pending"],
-  waiting_human: ["confirmed", "skipped", "running", "pending"],
-  confirmed: ["ready", "pending"],
-  skipped: ["ready", "pending"],
-  failed: ["ready", "running", "pending"],
-};
-
-const RUN_STATUS_TRANSITIONS: Record<AgentRunStatus, AgentRunStatus[]> = {
-  waiting_human: ["running", "paused", "completed", "failed", "canceled"],
-  running: ["waiting_human", "paused", "completed", "failed", "canceled"],
-  paused: ["waiting_human", "running", "failed", "canceled"],
-  failed: ["waiting_human", "running", "paused", "canceled"],
-  completed: [],
-  canceled: [],
-};
-
 function hashJson(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value ?? null)).digest("hex").slice(0, 16);
 }
@@ -245,30 +234,6 @@ export function parseStoredAgentRunInputs(raw: unknown): {
     return { inputs: payload, runtime };
   }
   return { inputs: parsed, runtime: null };
-}
-
-export function canTransitionNodeStatus(from: AgentNodeStatus, to: AgentNodeStatus): boolean {
-  return from === to || NODE_STATUS_TRANSITIONS[from]?.includes(to) === true;
-}
-
-export function canTransitionRunStatus(from: AgentRunStatus, to: AgentRunStatus): boolean {
-  return from === to || RUN_STATUS_TRANSITIONS[from]?.includes(to) === true;
-}
-
-function assertNodeTransition(from: AgentNodeStatus, to: AgentNodeStatus, action: string) {
-  if (canTransitionNodeStatus(from, to)) return;
-  throw new TRPCError({
-    code: "BAD_REQUEST",
-    message: `Invalid node transition for ${action}: ${from} -> ${to}`,
-  });
-}
-
-function assertRunTransition(from: AgentRunStatus, to: AgentRunStatus, action: string) {
-  if (canTransitionRunStatus(from, to)) return;
-  throw new TRPCError({
-    code: "BAD_REQUEST",
-    message: `Invalid run transition for ${action}: ${from} -> ${to}`,
-  });
 }
 
 function assertRunMutable(run: { status?: string }, action: string) {
@@ -1049,7 +1014,6 @@ async function refreshRunAfterCheckpoint(runId: string, dag: EmperorAgentDag) {
   const anyRunning = checkpoints.some((checkpoint) => checkpoint.status === "running");
   const anyWaiting = checkpoints.some((checkpoint) => checkpoint.status === "waiting_human");
   const status: AgentRunStatus = allDone ? "completed" : anyRunning ? "running" : failed && !nextReady && !anyWaiting ? "failed" : "waiting_human";
-  assertRunTransition(runRow.status as AgentRunStatus, status, "refresh run");
   const currentNodeId = running?.nodeId || waiting?.nodeId || nextReady?.nodeId || failed?.nodeId || null;
   const outputMap = checkpoints.reduce<Record<string, unknown>>((acc, checkpoint) => {
     const node = dag.nodes.find((item) => item.id === checkpoint.nodeId);
@@ -1061,10 +1025,14 @@ async function refreshRunAfterCheckpoint(runId: string, dag: EmperorAgentDag) {
     return acc;
   }, {});
 
-  await rawExecute(
-    "UPDATE emperor_agent_runs SET status=?,currentNodeId=?,progress=?,outputs=?,completedAt=? WHERE runId=?",
-    [status, currentNodeId, progress, stringifyJson(outputMap), allDone ? new Date() : null, runId],
-  );
+  await withAgentStateMachine((stateMachine) => stateMachine.refreshRun({
+    runId,
+    to: status,
+    currentNodeId,
+    progress,
+    outputs: outputMap,
+    completedAt: allDone ? new Date() : null,
+  }));
 
   if (!anyRunning && !anyWaiting && nextReady) {
     await addEvent(runId, checkpoints[0]?.agentSlug || "", nextReady.nodeId, "node.ready", `节点 ${nextReady.nodeLabel || nextReady.nodeId} 已就绪`);
@@ -1082,11 +1050,7 @@ async function unlockChildren(runId: string, dag: EmperorAgentDag, nodeId: strin
     const parents = parentIds(dag, childId);
     const ready = parents.every((parentId) => isConfirmedStatus(byNode.get(parentId)?.status || ""));
     if (!ready) continue;
-    assertNodeTransition(child.status, "ready", "unlock child");
-    await rawExecute(
-      "UPDATE emperor_agent_checkpoints SET status='ready',updatedAt=NOW() WHERE runId=? AND nodeId=?",
-      [runId, childId],
-    );
+    await withAgentStateMachine((stateMachine) => stateMachine.markNodeReady({ runId, nodeId: childId, action: "unlock child" }));
   }
 }
 
@@ -1225,25 +1189,33 @@ async function finalizeNodeOutput(input: {
 
   const waitingForHuman = nodeRequiresHumanGate(input.node);
   const nextStatus: AgentNodeStatus = waitingForHuman ? "waiting_human" : "confirmed";
-  assertNodeTransition(checkpoint.status, nextStatus, "finalize node");
   const nextMetadata = {
     ...checkpointMetadata(checkpoint),
     ...(input.runtimeMetadata || {}),
   };
-  await rawExecute(
-    "UPDATE emperor_agent_checkpoints SET status=?,output=?,metadata=?,skillRunId=COALESCE(?,skillRunId),reviewerUserId=?,completedAt=?,confirmedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,updatedAt=NOW() WHERE runId=? AND nodeId=?",
-    [
-      nextStatus,
-      stringifyJson(input.output),
-      stringifyJson(nextMetadata),
-      input.skillRunId || null,
-      waitingForHuman ? null : input.userId,
-      new Date(),
-      waitingForHuman ? null : new Date(),
-      input.run.runId,
-      input.node.id,
-    ],
-  );
+  const completedAt = new Date();
+  const transition = await withAgentStateMachine((stateMachine) => stateMachine.completeNode({
+    runId: input.run.runId,
+    nodeId: input.node.id,
+    to: nextStatus,
+    output: input.output,
+    metadata: nextMetadata,
+    skillRunId: input.skillRunId || null,
+    reviewerUserId: waitingForHuman ? null : input.userId,
+    completedAt,
+    confirmedAt: waitingForHuman ? null : completedAt,
+    sourceAiJobRunId: input.sourceAiJobRunId || null,
+    updateRunToWaitingHuman: waitingForHuman,
+  }));
+  if (transition.ignored) {
+    await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.output_ignored", `节点 ${input.node.label || input.node.id} 的结果已忽略：Checkpoint 已变化`, {
+      skillRunId: input.skillRunId || null,
+      sourceAiJobRunId: input.sourceAiJobRunId || null,
+      checkpointStatus: transition.from,
+      currentAiJobRunId: transition.currentAiJobRunId || null,
+    });
+    return;
+  }
   await persistAgentArtifact({
     run: input.run,
     node: input.node,
@@ -1259,9 +1231,6 @@ async function finalizeNodeOutput(input: {
   });
 
   if (waitingForHuman) {
-    if (latestRun.status !== "paused") {
-      await rawExecute("UPDATE emperor_agent_runs SET status='waiting_human',currentNodeId=?,updatedAt=NOW() WHERE runId=?", [input.node.id, input.run.runId]);
-    }
     await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.waiting_human", input.completedMessage || `节点 ${input.node.label || input.node.id} 已生成，等待人工确认`, {
       skillRunId: input.skillRunId || null,
     });
@@ -1287,14 +1256,12 @@ async function failNodeExecution(input: {
   }
 
   const message = input.error instanceof Error ? input.error.message : String(input.error);
-  const checkpoint = await getCheckpoint(input.run.runId, input.node.id);
-  assertNodeTransition(checkpoint.status, "failed", "fail node");
-  assertRunTransition(latestRun.status as AgentRunStatus, "failed", "fail run");
-  await rawExecute(
-    "UPDATE emperor_agent_checkpoints SET status='failed',errorMessage=?,completedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,updatedAt=NOW() WHERE runId=? AND nodeId=?",
-    [message, new Date(), input.run.runId, input.node.id],
-  );
-  await rawExecute("UPDATE emperor_agent_runs SET status='failed',errorMessage=?,currentNodeId=?,updatedAt=NOW() WHERE runId=?", [message, input.node.id, input.run.runId]);
+  await withAgentStateMachine((stateMachine) => stateMachine.failNode({
+    runId: input.run.runId,
+    nodeId: input.node.id,
+    message,
+    completedAt: new Date(),
+  }));
   await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.failed", `节点 ${input.node.label || input.node.id} 执行失败`, { error: message });
 }
 
@@ -1472,11 +1439,7 @@ async function unlockReadyNodes(runId: string, dag: EmperorAgentDag) {
     const parents = parentIds(dag, node.id);
     const ready = parents.length === 0 || parents.every((parentId) => isConfirmedStatus(byNode.get(parentId)?.status || ""));
     if (!ready) continue;
-    assertNodeTransition(checkpoint.status, "ready", "unlock ready node");
-    await rawExecute(
-      "UPDATE emperor_agent_checkpoints SET status='ready',updatedAt=NOW() WHERE runId=? AND nodeId=?",
-      [runId, node.id],
-    );
+    await withAgentStateMachine((stateMachine) => stateMachine.markNodeReady({ runId, nodeId: node.id, action: "unlock ready node" }));
     newlyReady.push(node.id);
   }
   return newlyReady;
@@ -1571,23 +1534,10 @@ export async function rerunAgentNode(input: {
     if (descendant) assertNodeTransition(descendant.status, "pending", "reset descendant");
   }
 
-  if (descendants.length > 0) {
-    const placeholders = descendants.map(() => "?").join(",");
-    await rawExecute(
-      `UPDATE emperor_agent_checkpoints
-       SET status='pending',input=NULL,output=NULL,userEdit=NULL,skillRunId=NULL,aiJobRunId=NULL,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,reviewerUserId=NULL,errorMessage=NULL,startedAt=NULL,completedAt=NULL,confirmedAt=NULL,updatedAt=NOW()
-       WHERE runId=? AND nodeId IN (${placeholders})`,
-      [input.runId, ...descendants],
-    );
-  }
-
-  await rawExecute(
-    `UPDATE emperor_agent_checkpoints
-     SET status='ready',input=NULL,output=NULL,userEdit=NULL,skillRunId=NULL,aiJobRunId=NULL,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,reviewerUserId=NULL,errorMessage=NULL,startedAt=NULL,completedAt=NULL,confirmedAt=NULL,updatedAt=NOW()
-     WHERE runId=? AND nodeId=?`,
-    [input.runId, input.nodeId],
-  );
-  await rawExecute("UPDATE emperor_agent_runs SET status='waiting_human',currentNodeId=?,errorMessage=NULL,completedAt=NULL,updatedAt=NOW() WHERE runId=?", [input.nodeId, input.runId]);
+  await withAgentStateMachine(async (stateMachine) => {
+    await stateMachine.resetDescendants({ runId: input.runId, nodeIds: descendants });
+    await stateMachine.resetNodeForRerun({ runId: input.runId, nodeId: input.nodeId });
+  });
   await addEvent(input.runId, detail.run.agentSlug, input.nodeId, "node.rerun_requested", `节点 ${node.label || input.nodeId} 已请求重跑`, { resetDescendants: descendants });
   return executeAgentNode({ runId: input.runId, nodeId: input.nodeId, userId: input.userId });
 }
@@ -1600,25 +1550,17 @@ export async function cancelAgentRun(input: {
   const detail = await getAgentRun(input.runId, input.userId);
   const run = detail.run;
   if (run.status === "canceled") return detail;
-  assertRunTransition(run.status as AgentRunStatus, "canceled", "cancel run");
 
   const checkpoints = detail.checkpoints as CheckpointRow[];
-  for (const checkpoint of checkpoints) {
-    if (checkpoint.status !== "running") continue;
-    assertNodeTransition(checkpoint.status, "failed", "cancel running node");
-    if (checkpoint.aiJobRunId) {
-      await cancelAiJob(checkpoint.aiJobRunId, input.reason || "Agent run canceled");
-    }
-  }
-
-  await rawExecute(
-    "UPDATE emperor_agent_checkpoints SET status='failed',errorMessage=?,completedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,updatedAt=NOW() WHERE runId=? AND status='running'",
-    [input.reason || "Agent run canceled", new Date(), input.runId],
-  );
-  await rawExecute(
-    "UPDATE emperor_agent_runs SET status='canceled',currentNodeId=NULL,errorMessage=?,completedAt=?,updatedAt=NOW() WHERE runId=?",
-    [input.reason || "Agent run canceled", new Date(), input.runId],
-  );
+  const runningAiJobRunIds = checkpoints
+    .filter((checkpoint) => checkpoint.status === "running" && checkpoint.aiJobRunId)
+    .map((checkpoint) => checkpoint.aiJobRunId as string);
+  await withAgentStateMachine((stateMachine) => stateMachine.cancelRun({
+    runId: input.runId,
+    reason: input.reason || "Agent run canceled",
+    completedAt: new Date(),
+  }));
+  await Promise.all(runningAiJobRunIds.map((runId) => cancelAiJob(runId, input.reason || "Agent run canceled").catch(() => null)));
   await addEvent(input.runId, run.agentSlug, null, "run.canceled", "Agent Run 已取消", {
     reason: input.reason || null,
   });
@@ -1633,11 +1575,12 @@ export async function pauseAgentRun(input: {
   const detail = await getAgentRun(input.runId, input.userId);
   const run = detail.run;
   if (run.status === "paused") return detail;
-  assertRunTransition(run.status as AgentRunStatus, "paused", "pause run");
-  await rawExecute(
-    "UPDATE emperor_agent_runs SET status='paused',errorMessage=?,updatedAt=NOW() WHERE runId=?",
-    [input.reason || null, input.runId],
-  );
+  await withAgentStateMachine((stateMachine) => stateMachine.transitionRun({
+    runId: input.runId,
+    to: "paused",
+    action: "pause run",
+    errorMessage: input.reason || null,
+  }));
   await addEvent(input.runId, run.agentSlug, null, "run.paused", "Agent Run 已暂停", {
     reason: input.reason || null,
   });
@@ -1656,11 +1599,12 @@ export async function resumeAgentRun(input: {
   const allDone = checkpoints.length > 0 && checkpoints.every((checkpoint) => isConfirmedStatus(checkpoint.status));
   const anyRunning = checkpoints.some((checkpoint) => checkpoint.status === "running");
   const nextStatus: AgentRunStatus = allDone ? "completed" : anyRunning ? "running" : "waiting_human";
-  assertRunTransition(run.status as AgentRunStatus, nextStatus, "resume run");
-  await rawExecute(
-    "UPDATE emperor_agent_runs SET status=?,errorMessage=NULL,updatedAt=NOW() WHERE runId=?",
-    [nextStatus, input.runId],
-  );
+  await withAgentStateMachine((stateMachine) => stateMachine.transitionRun({
+    runId: input.runId,
+    to: nextStatus,
+    action: "resume run",
+    clearError: true,
+  }));
   await addEvent(input.runId, run.agentSlug, null, "run.resumed", "Agent Run 已恢复", { nextStatus });
   await unlockReadyNodes(input.runId, dag);
   await refreshRunAfterCheckpoint(input.runId, dag);
@@ -1685,17 +1629,15 @@ export async function recoverTimedOutAgentNodes(opts: { limit?: number } = {}) {
     }
 
     const message = `Node timed out at ${checkpoint.timeoutAt instanceof Date ? checkpoint.timeoutAt.toISOString() : checkpoint.timeoutAt}`;
-    await rawExecute(
-      "UPDATE emperor_agent_checkpoints SET status='failed',errorMessage=?,completedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,updatedAt=NOW() WHERE runId=? AND nodeId=? AND status='running'",
-      [message, new Date(), checkpoint.runId, checkpoint.nodeId],
-    );
+    await withAgentStateMachine((stateMachine) => stateMachine.failNode({
+      runId: checkpoint.runId,
+      nodeId: checkpoint.nodeId,
+      message,
+      completedAt: new Date(),
+    }));
     if (checkpoint.aiJobRunId) {
       await failAiJob(checkpoint.aiJobRunId, new Error(message));
     }
-    await rawExecute(
-      "UPDATE emperor_agent_runs SET status='failed',errorMessage=?,currentNodeId=?,updatedAt=NOW() WHERE runId=?",
-      [message, checkpoint.nodeId, checkpoint.runId],
-    );
     await addEvent(checkpoint.runId, checkpoint.agentSlug, checkpoint.nodeId, "node.timeout", `节点 ${checkpoint.nodeLabel || checkpoint.nodeId} 执行超时`, {
       error: message,
       aiJobRunId: checkpoint.aiJobRunId || null,
@@ -1725,20 +1667,15 @@ export async function confirmAgentNode(input: {
   if (checkpoint.status !== "waiting_human") {
     throw new TRPCError({ code: "BAD_REQUEST", message: `Node is not confirmable: ${checkpoint.status}` });
   }
-  assertNodeTransition(checkpoint.status, nextStatus, "confirm node");
-  await rawExecute(
-    "UPDATE emperor_agent_checkpoints SET status=?,output=COALESCE(?,output),userEdit=?,reviewerUserId=?,confirmedAt=?,completedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,updatedAt=NOW() WHERE runId=? AND nodeId=?",
-    [
-      nextStatus,
-      input.output === undefined ? null : stringifyJson(input.output),
-      input.userEdit === undefined ? (checkpoint.userEdit === undefined ? null : stringifyJson(checkpoint.userEdit)) : stringifyJson(input.userEdit),
-      input.userId,
-      new Date(),
-      new Date(),
-      input.runId,
-      input.nodeId,
-    ],
-  );
+  await withAgentStateMachine((stateMachine) => stateMachine.confirmNode({
+    runId: input.runId,
+    nodeId: input.nodeId,
+    to: nextStatus,
+    output: input.output,
+    userEdit: input.userEdit === undefined ? checkpoint.userEdit ?? null : input.userEdit,
+    reviewerUserId: input.userId,
+    confirmedAt: new Date(),
+  }));
   const node = dag.nodes.find((item) => item.id === input.nodeId);
   if (node) {
     const finalContent = input.skip
@@ -1788,8 +1725,6 @@ export async function executeAgentNode(input: {
   if (!["ready", "waiting_human", "failed"].includes(checkpoint.status)) {
     throw new TRPCError({ code: "BAD_REQUEST", message: `Node is not executable: ${checkpoint.status}` });
   }
-  assertNodeTransition(checkpoint.status, "running", "execute node");
-  assertRunTransition(run.status as AgentRunStatus, "running", "execute node");
 
   const nodeInput = buildNodeInput(run, dag, node, detail.checkpoints, detail.artifacts);
   const metadata = checkpointMetadata(checkpoint);
@@ -1800,16 +1735,16 @@ export async function executeAgentNode(input: {
   const lockToken = generateRunId("node_lock");
   const lockedAt = new Date();
   const timeoutAt = nodeTimeoutAt(node);
-  await rawExecute(
-    "UPDATE emperor_agent_checkpoints SET status='running',attempt=attempt+1,input=?,errorMessage=NULL,startedAt=?,lockToken=?,lockedAt=?,timeoutAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=? AND status=?",
-    [stringifyJson(nodeInput), lockedAt, lockToken, lockedAt, timeoutAt, input.runId, input.nodeId, checkpoint.status],
-  );
-  const claimedCheckpoint = await getCheckpoint(input.runId, input.nodeId);
-  if (claimedCheckpoint.lockToken !== lockToken) {
-    await addEvent(input.runId, run.agentSlug, input.nodeId, "node.execution_deduped", `节点 ${node.label || node.id} 已被其他执行请求锁定`);
-    return getAgentRun(input.runId, input.userId, true);
-  }
-  await rawExecute("UPDATE emperor_agent_runs SET status='running',currentNodeId=?,updatedAt=NOW() WHERE runId=?", [input.nodeId, input.runId]);
+  await withAgentStateMachine((stateMachine) => stateMachine.claimNodeRunning({
+    runId: input.runId,
+    nodeId: input.nodeId,
+    nodeInput,
+    lockToken,
+    lockedAt,
+    timeoutAt,
+    allowedFromStatuses: ["ready", "waiting_human", "failed"],
+    action: "execute node",
+  }));
   await addEvent(input.runId, run.agentSlug, input.nodeId, "node.running", `节点 ${node.label || node.id} 开始执行`, { nodeInput });
 
   try {
@@ -1852,9 +1787,9 @@ export async function executeAgentNode(input: {
     throw error;
   }
 
-  let job: AiJobSnapshot;
+  let job: AiJobSnapshot | null = null;
   try {
-    job = await startRegisteredAiJob({
+    const createdJob = await startRegisteredAiJob({
       kind: `agent.node.${node.id}`,
       module: "emperorAgent",
       procedure: "emperor.agents.executeNode",
@@ -1876,12 +1811,18 @@ export async function executeAgentNode(input: {
       },
       progress: 5,
     });
+    job = createdJob;
 
-    await rawExecute(
-      "UPDATE emperor_agent_checkpoints SET aiJobRunId=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
-      [job.runId, input.runId, input.nodeId],
-    );
+    await withAgentStateMachine((stateMachine) => stateMachine.attachNodeAiJob({
+      runId: input.runId,
+      nodeId: input.nodeId,
+      aiJobRunId: createdJob.runId,
+      lockToken,
+    }));
   } catch (error) {
+    if (job?.runId) {
+      await cancelAiJob(job.runId, "Agent node AI job attach failed").catch(() => null);
+    }
     await failNodeExecution({ run, node, error });
     throw error;
   }
@@ -1988,10 +1929,12 @@ async function runAgentNodeSkillJob(job: AiJobSnapshot) {
       const retryDelayMs = calculateAiJobRetryDelayMs(job.attempt);
       const timeoutMs = Math.min(Math.max(job.timeoutSeconds || 600, 5), 7200) * 1000;
       const nextTimeoutAt = new Date(Date.now() + retryDelayMs + timeoutMs + 5000);
-      await rawExecute(
-        "UPDATE emperor_agent_checkpoints SET errorMessage=?,timeoutAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=? AND status='running'",
-        [error instanceof Error ? error.message : String(error), nextTimeoutAt, payload.runId, payload.nodeId],
-      );
+      await withAgentStateMachine((stateMachine) => stateMachine.updateNodeRetry({
+        runId: payload.runId,
+        nodeId: payload.nodeId,
+        message: error instanceof Error ? error.message : String(error),
+        timeoutAt: nextTimeoutAt,
+      }));
       await addEvent(payload.runId, run.agentSlug, node.id, "node.retry_scheduled", `节点 ${node.label || node.id} 失败，已等待第 ${job.attempt + 1}/${job.maxAttempts} 次重试`, {
         aiJobRunId: job.runId,
         attempt: job.attempt,

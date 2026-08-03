@@ -17,6 +17,7 @@ import {
   invokeEmperorTool,
   validateJsonSchemaValue,
 } from "./services/emperorToolGateway";
+import { AgentStateMachine } from "./services/agentStateMachine";
 
 describe("Emperor Agent workflow kernel", () => {
   it("should expose Agent workflow schema tables", async () => {
@@ -154,6 +155,7 @@ describe("Emperor Agent workflow kernel", () => {
 
   it("should enforce explicit Agent status transitions", () => {
     expect(canTransitionNodeStatus("pending", "ready")).toBe(true);
+    expect(AgentStateMachine.canTransitionNodeStatus("pending", "ready")).toBe(true);
     expect(canTransitionNodeStatus("ready", "running")).toBe(true);
     expect(canTransitionNodeStatus("running", "waiting_human")).toBe(true);
     expect(canTransitionNodeStatus("waiting_human", "confirmed")).toBe(true);
@@ -161,12 +163,15 @@ describe("Emperor Agent workflow kernel", () => {
     expect(canTransitionNodeStatus("confirmed", "running")).toBe(false);
 
     expect(canTransitionRunStatus("waiting_human", "running")).toBe(true);
+    expect(AgentStateMachine.canTransitionRunStatus("waiting_human", "running")).toBe(true);
     expect(canTransitionRunStatus("running", "canceled")).toBe(true);
     expect(canTransitionRunStatus("running", "paused")).toBe(true);
     expect(canTransitionRunStatus("paused", "waiting_human")).toBe(true);
     expect(canTransitionRunStatus("failed", "running")).toBe(true);
     expect(canTransitionRunStatus("completed", "running")).toBe(false);
     expect(canTransitionRunStatus("canceled", "waiting_human")).toBe(false);
+    expect(() => AgentStateMachine.assertNodeTransition("pending", "confirmed", "unit test")).toThrow(/Invalid node transition/);
+    expect(() => AgentStateMachine.assertRunTransition("completed", "running", "unit test")).toThrow(/Invalid run transition/);
   });
 
   it("should register Agent runner routes", () => {
