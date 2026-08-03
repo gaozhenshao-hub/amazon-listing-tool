@@ -10,6 +10,7 @@ import { renderSkillTemplate } from "../services/emperorSkillRunner";
 import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
 import {
+  cancelAgentRun,
   confirmAgentNode,
   executeAgentNode,
   getAgentRun,
@@ -859,6 +860,15 @@ export const emperorAgentsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       return scheduleAgentRun({ runId: input.runId, userId: ctx.user.id, mode: input.mode });
+    }),
+
+  cancelRun: protectedProcedure
+    .input(z.object({
+      runId: z.string(),
+      reason: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return cancelAgentRun({ runId: input.runId, userId: ctx.user.id, reason: input.reason });
     }),
 
   rerunNode: protectedProcedure

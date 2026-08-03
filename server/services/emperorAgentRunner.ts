@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
-import { getDb } from "../db";
+import { getDb, updateAiJobByRunId } from "../db";
 import { runEmperorSkill, safeParseSkillJSON } from "./emperorSkillRunner";
 import { startAiJobInProcess } from "./aiJobRunner";
 import { invokeEmperorTool } from "./emperorToolGateway";
@@ -65,6 +65,57 @@ type CheckpointRow = {
 };
 
 export const LISTING_AGENT_SLUG = "listing.full.workflow";
+
+const NODE_STATUS_TRANSITIONS: Record<AgentNodeStatus, AgentNodeStatus[]> = {
+  pending: ["ready", "skipped"],
+  ready: ["running", "skipped", "pending"],
+  running: ["waiting_human", "confirmed", "failed", "pending"],
+  waiting_human: ["confirmed", "skipped", "running", "pending"],
+  confirmed: ["ready", "pending"],
+  skipped: ["ready", "pending"],
+  failed: ["ready", "running", "pending"],
+};
+
+const RUN_STATUS_TRANSITIONS: Record<AgentRunStatus, AgentRunStatus[]> = {
+  waiting_human: ["running", "completed", "failed", "canceled"],
+  running: ["waiting_human", "completed", "failed", "canceled"],
+  failed: ["waiting_human", "running", "canceled"],
+  completed: [],
+  canceled: [],
+};
+
+export function canTransitionNodeStatus(from: AgentNodeStatus, to: AgentNodeStatus): boolean {
+  return from === to || NODE_STATUS_TRANSITIONS[from]?.includes(to) === true;
+}
+
+export function canTransitionRunStatus(from: AgentRunStatus, to: AgentRunStatus): boolean {
+  return from === to || RUN_STATUS_TRANSITIONS[from]?.includes(to) === true;
+}
+
+function assertNodeTransition(from: AgentNodeStatus, to: AgentNodeStatus, action: string) {
+  if (canTransitionNodeStatus(from, to)) return;
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: `Invalid node transition for ${action}: ${from} -> ${to}`,
+  });
+}
+
+function assertRunTransition(from: AgentRunStatus, to: AgentRunStatus, action: string) {
+  if (canTransitionRunStatus(from, to)) return;
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: `Invalid run transition for ${action}: ${from} -> ${to}`,
+  });
+}
+
+function assertRunMutable(run: { status?: string }, action: string) {
+  if (run.status === "canceled" || run.status === "completed") {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Run is ${run.status}; cannot ${action}`,
+    });
+  }
+}
 
 async function rawExecute(sqlStr: string, params: unknown[] = []): Promise<any[]> {
   const db = await getDb();
@@ -297,8 +348,13 @@ function effectiveCheckpointOutput(checkpoint: CheckpointRow): unknown {
 }
 
 async function refreshRunAfterCheckpoint(runId: string, dag: EmperorAgentDag) {
+  const runRow = await getRunRow(runId);
   const checkpoints = await getCheckpoints(runId);
   const progress = calculateProgress(checkpoints);
+  if (runRow.status === "canceled") {
+    return { checkpoints, status: "canceled" as AgentRunStatus, progress };
+  }
+
   const allDone = checkpoints.length > 0 && checkpoints.every((checkpoint) => isConfirmedStatus(checkpoint.status));
   const failed = checkpoints.find((checkpoint) => checkpoint.status === "failed");
   const running = checkpoints.find((checkpoint) => checkpoint.status === "running");
@@ -307,6 +363,7 @@ async function refreshRunAfterCheckpoint(runId: string, dag: EmperorAgentDag) {
   const anyRunning = checkpoints.some((checkpoint) => checkpoint.status === "running");
   const anyWaiting = checkpoints.some((checkpoint) => checkpoint.status === "waiting_human");
   const status: AgentRunStatus = allDone ? "completed" : anyRunning ? "running" : failed && !nextReady && !anyWaiting ? "failed" : "waiting_human";
+  assertRunTransition(runRow.status as AgentRunStatus, status, "refresh run");
   const currentNodeId = running?.nodeId || waiting?.nodeId || nextReady?.nodeId || failed?.nodeId || null;
   const outputMap = checkpoints.reduce<Record<string, unknown>>((acc, checkpoint) => {
     const node = dag.nodes.find((item) => item.id === checkpoint.nodeId);
@@ -339,6 +396,7 @@ async function unlockChildren(runId: string, dag: EmperorAgentDag, nodeId: strin
     const parents = parentIds(dag, childId);
     const ready = parents.every((parentId) => isConfirmedStatus(byNode.get(parentId)?.status || ""));
     if (!ready) continue;
+    assertNodeTransition(child.status, "ready", "unlock child");
     await rawExecute(
       "UPDATE emperor_agent_checkpoints SET status='ready',updatedAt=NOW() WHERE runId=? AND nodeId=?",
       [runId, childId],
@@ -402,8 +460,18 @@ async function finalizeNodeOutput(input: {
   skillRunId?: string | null;
   completedMessage?: string;
 }) {
+  const latestRun = await getRunRow(input.run.runId);
+  if (latestRun.status === "canceled") {
+    await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.output_ignored", `节点 ${input.node.label || input.node.id} 的结果已忽略：Run 已取消`, {
+      skillRunId: input.skillRunId || null,
+    });
+    return;
+  }
+
   const waitingForHuman = nodeRequiresHumanGate(input.node);
   const nextStatus: AgentNodeStatus = waitingForHuman ? "waiting_human" : "confirmed";
+  const checkpoint = await getCheckpoint(input.run.runId, input.node.id);
+  assertNodeTransition(checkpoint.status, nextStatus, "finalize node");
   await rawExecute(
     "UPDATE emperor_agent_checkpoints SET status=?,output=?,skillRunId=COALESCE(?,skillRunId),reviewerUserId=?,completedAt=?,confirmedAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
     [
@@ -438,7 +506,16 @@ async function failNodeExecution(input: {
   node: EmperorAgentNode;
   error: unknown;
 }) {
+  const latestRun = await getRunRow(input.run.runId);
+  if (latestRun.status === "canceled") {
+    await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.failure_ignored", `节点 ${input.node.label || input.node.id} 的失败已忽略：Run 已取消`);
+    return;
+  }
+
   const message = input.error instanceof Error ? input.error.message : String(input.error);
+  const checkpoint = await getCheckpoint(input.run.runId, input.node.id);
+  assertNodeTransition(checkpoint.status, "failed", "fail node");
+  assertRunTransition(latestRun.status as AgentRunStatus, "failed", "fail run");
   await rawExecute(
     "UPDATE emperor_agent_checkpoints SET status='failed',errorMessage=?,completedAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
     [message, new Date(), input.run.runId, input.node.id],
@@ -575,6 +652,7 @@ async function unlockReadyNodes(runId: string, dag: EmperorAgentDag) {
     const parents = parentIds(dag, node.id);
     const ready = parents.length === 0 || parents.every((parentId) => isConfirmedStatus(byNode.get(parentId)?.status || ""));
     if (!ready) continue;
+    assertNodeTransition(checkpoint.status, "ready", "unlock ready node");
     await rawExecute(
       "UPDATE emperor_agent_checkpoints SET status='ready',updatedAt=NOW() WHERE runId=? AND nodeId=?",
       [runId, node.id],
@@ -590,6 +668,7 @@ export async function scheduleAgentRun(input: {
   mode?: "unlock" | "next" | "all_ready";
 }) {
   const detail = await getAgentRun(input.runId, input.userId);
+  assertRunMutable(detail.run, "schedule run");
   const dag = normalizeAgentDag(detail.dag);
   const unlocked = await unlockReadyNodes(input.runId, dag);
   for (const nodeId of unlocked) {
@@ -620,6 +699,7 @@ export async function updateAgentNodeDraft(input: {
   userEdit: unknown;
 }) {
   const detail = await getAgentRun(input.runId, input.userId);
+  assertRunMutable(detail.run, "update node draft");
   const checkpoint = await getCheckpoint(input.runId, input.nodeId);
   if (!["waiting_human", "confirmed", "failed"].includes(checkpoint.status)) {
     throw new TRPCError({ code: "BAD_REQUEST", message: `Node draft is not editable: ${checkpoint.status}` });
@@ -640,10 +720,19 @@ export async function rerunAgentNode(input: {
   resetDescendants?: boolean;
 }) {
   const detail = await getAgentRun(input.runId, input.userId);
+  assertRunMutable(detail.run, "rerun node");
   const dag = normalizeAgentDag(detail.dag);
   const node = dag.nodes.find((item) => item.id === input.nodeId);
   if (!node) throw new TRPCError({ code: "NOT_FOUND", message: "Agent node not found" });
   const descendants = input.resetDescendants === false ? [] : descendantIds(dag, input.nodeId);
+  const checkpointByNode = new Map((detail.checkpoints as CheckpointRow[]).map((checkpoint) => [checkpoint.nodeId, checkpoint]));
+
+  const current = checkpointByNode.get(input.nodeId);
+  if (current) assertNodeTransition(current.status, "ready", "rerun node");
+  for (const descendantId of descendants) {
+    const descendant = checkpointByNode.get(descendantId);
+    if (descendant) assertNodeTransition(descendant.status, "pending", "reset descendant");
+  }
 
   if (descendants.length > 0) {
     const placeholders = descendants.map(() => "?").join(",");
@@ -666,6 +755,44 @@ export async function rerunAgentNode(input: {
   return executeAgentNode({ runId: input.runId, nodeId: input.nodeId, userId: input.userId });
 }
 
+export async function cancelAgentRun(input: {
+  runId: string;
+  userId: number;
+  reason?: string;
+}) {
+  const detail = await getAgentRun(input.runId, input.userId);
+  const run = detail.run;
+  if (run.status === "canceled") return detail;
+  assertRunTransition(run.status as AgentRunStatus, "canceled", "cancel run");
+
+  const checkpoints = detail.checkpoints as CheckpointRow[];
+  for (const checkpoint of checkpoints) {
+    if (checkpoint.status !== "running") continue;
+    assertNodeTransition(checkpoint.status, "failed", "cancel running node");
+    if (checkpoint.aiJobRunId) {
+      await updateAiJobByRunId(checkpoint.aiJobRunId, {
+        status: "canceled",
+        progress: 100,
+        errorMessage: input.reason || "Agent run canceled",
+        completedAt: new Date(),
+      });
+    }
+  }
+
+  await rawExecute(
+    "UPDATE emperor_agent_checkpoints SET status='failed',errorMessage=?,completedAt=?,updatedAt=NOW() WHERE runId=? AND status='running'",
+    [input.reason || "Agent run canceled", new Date(), input.runId],
+  );
+  await rawExecute(
+    "UPDATE emperor_agent_runs SET status='canceled',currentNodeId=NULL,errorMessage=?,completedAt=?,updatedAt=NOW() WHERE runId=?",
+    [input.reason || "Agent run canceled", new Date(), input.runId],
+  );
+  await addEvent(input.runId, run.agentSlug, null, "run.canceled", "Agent Run 已取消", {
+    reason: input.reason || null,
+  });
+  return getAgentRun(input.runId, input.userId, true);
+}
+
 export async function confirmAgentNode(input: {
   runId: string;
   nodeId: string;
@@ -675,9 +802,18 @@ export async function confirmAgentNode(input: {
   skip?: boolean;
 }) {
   const detail = await getAgentRun(input.runId, input.userId);
+  assertRunMutable(detail.run, "confirm node");
   const dag = normalizeAgentDag(detail.dag);
   const checkpoint = await getCheckpoint(input.runId, input.nodeId);
   const nextStatus: AgentNodeStatus = input.skip ? "skipped" : "confirmed";
+  if (checkpoint.status === nextStatus) {
+    await addEvent(input.runId, checkpoint.agentSlug, input.nodeId, "node.confirm_deduped", `节点 ${checkpoint.nodeLabel || input.nodeId} 已是${input.skip ? "跳过" : "确认"}状态`);
+    return getAgentRun(input.runId, input.userId, true);
+  }
+  if (checkpoint.status !== "waiting_human") {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `Node is not confirmable: ${checkpoint.status}` });
+  }
+  assertNodeTransition(checkpoint.status, nextStatus, "confirm node");
   await rawExecute(
     "UPDATE emperor_agent_checkpoints SET status=?,output=COALESCE(?,output),userEdit=?,reviewerUserId=?,confirmedAt=?,completedAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
     [
@@ -705,13 +841,20 @@ export async function executeAgentNode(input: {
 }) {
   const detail = await getAgentRun(input.runId, input.userId);
   const run = detail.run;
+  assertRunMutable(run, "execute node");
   const dag = normalizeAgentDag(detail.dag);
   const node = dag.nodes.find((item) => item.id === input.nodeId);
   if (!node) throw new TRPCError({ code: "NOT_FOUND", message: "Agent node not found" });
   const checkpoint = await getCheckpoint(input.runId, input.nodeId);
+  if (checkpoint.status === "running") {
+    await addEvent(input.runId, run.agentSlug, input.nodeId, "node.execution_deduped", `节点 ${node.label || node.id} 已在执行中，忽略重复执行请求`);
+    return getAgentRun(input.runId, input.userId, true);
+  }
   if (!["ready", "waiting_human", "failed"].includes(checkpoint.status)) {
     throw new TRPCError({ code: "BAD_REQUEST", message: `Node is not executable: ${checkpoint.status}` });
   }
+  assertNodeTransition(checkpoint.status, "running", "execute node");
+  assertRunTransition(run.status as AgentRunStatus, "running", "execute node");
 
   const nodeInput = buildNodeInput(run, dag, node, detail.checkpoints);
   await rawExecute(

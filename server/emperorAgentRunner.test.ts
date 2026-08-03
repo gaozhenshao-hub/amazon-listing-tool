@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import {
+  canTransitionNodeStatus,
+  canTransitionRunStatus,
   getListingAgentDag,
   LISTING_AGENT_SLUG,
   normalizeAgentDag,
@@ -44,12 +46,28 @@ describe("Emperor Agent workflow kernel", () => {
     expect(normalizeAgentDag('{"nodes":[{"id":"A"}],"edges":[{"source":"A","target":"B"}]}').edges).toHaveLength(1);
   });
 
+  it("should enforce explicit Agent status transitions", () => {
+    expect(canTransitionNodeStatus("pending", "ready")).toBe(true);
+    expect(canTransitionNodeStatus("ready", "running")).toBe(true);
+    expect(canTransitionNodeStatus("running", "waiting_human")).toBe(true);
+    expect(canTransitionNodeStatus("waiting_human", "confirmed")).toBe(true);
+    expect(canTransitionNodeStatus("pending", "confirmed")).toBe(false);
+    expect(canTransitionNodeStatus("confirmed", "running")).toBe(false);
+
+    expect(canTransitionRunStatus("waiting_human", "running")).toBe(true);
+    expect(canTransitionRunStatus("running", "canceled")).toBe(true);
+    expect(canTransitionRunStatus("failed", "running")).toBe(true);
+    expect(canTransitionRunStatus("completed", "running")).toBe(false);
+    expect(canTransitionRunStatus("canceled", "waiting_human")).toBe(false);
+  });
+
   it("should register Agent runner routes", () => {
     const procedures = (appRouter as any)._def.procedures;
     expect(procedures["emperor.agents.run"]).toBeDefined();
     expect(procedures["emperor.agents.getRun"]).toBeDefined();
     expect(procedures["emperor.agents.executeNode"]).toBeDefined();
     expect(procedures["emperor.agents.scheduleRun"]).toBeDefined();
+    expect(procedures["emperor.agents.cancelRun"]).toBeDefined();
     expect(procedures["emperor.agents.rerunNode"]).toBeDefined();
     expect(procedures["emperor.agents.updateNodeDraft"]).toBeDefined();
     expect(procedures["emperor.agents.confirmNode"]).toBeDefined();

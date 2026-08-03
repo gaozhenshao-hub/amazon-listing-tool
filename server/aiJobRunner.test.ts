@@ -28,6 +28,7 @@ describe("Generic AI Job infrastructure", () => {
     expect(isActiveAiJob("queued")).toBe(true);
     expect(isActiveAiJob("running")).toBe(true);
     expect(isActiveAiJob("succeeded")).toBe(false);
+    expect(isActiveAiJob("canceled")).toBe(false);
   });
 
   it("should build snapshots with parsed JSON payloads", () => {

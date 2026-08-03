@@ -123,6 +123,9 @@ export async function markAiJobRunning(runId: string, progress = 10) {
 }
 
 export async function completeAiJob(runId: string, output: unknown) {
+  const existing = await getAiJobRun(runId);
+  if (existing?.status === "canceled") return existing;
+
   const job = await updateAiJobByRunId(runId, {
     status: "succeeded",
     progress: 100,
@@ -134,6 +137,9 @@ export async function completeAiJob(runId: string, output: unknown) {
 }
 
 export async function failAiJob(runId: string, error: unknown) {
+  const existing = await getAiJobRun(runId);
+  if (existing?.status === "canceled") return existing;
+
   const job = await updateAiJobByRunId(runId, {
     status: "failed",
     progress: 100,
