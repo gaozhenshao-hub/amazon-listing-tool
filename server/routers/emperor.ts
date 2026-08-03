@@ -36,6 +36,11 @@ function generateRunId(): string {
   return `run_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function normalizeSkillVersionForDb(value: unknown): number {
+  const version = Number.parseInt(String(value ?? "1").trim().split(".")[0] || "1", 10);
+  return Number.isFinite(version) && version > 0 ? version : 1;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Raw SQL helper (uses drizzle db.execute with sql template)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -147,7 +152,7 @@ export const emperorSkillsRouter = router({
       executionMode: z.enum(["inline","fork","background"]).optional().default("inline"),
       allowedTools: z.array(z.string()).optional(),
       disallowedTools: z.array(z.string()).optional(),
-      version: z.string().optional().default("1.0.0"),
+      version: z.union([z.string(), z.number()]).optional().default(1),
     }))
     .mutation(async ({ input }) => {
       const manifest = {
@@ -161,7 +166,7 @@ export const emperorSkillsRouter = router({
         [
           input.slug, input.name, input.description||null, input.category||"通用",
           input.modelOverride||null, input.status||"Draft", JSON.stringify(manifest),
-          input.version||"1.0.0",
+          normalizeSkillVersionForDb(input.version),
           input.whenToUse||null,
           input.timeoutSeconds||120,
           input.executionMode||"inline",
@@ -189,7 +194,7 @@ export const emperorSkillsRouter = router({
       executionMode: z.enum(["inline","fork","background"]).optional(),
       allowedTools: z.array(z.string()).nullable().optional(),
       disallowedTools: z.array(z.string()).nullable().optional(),
-      version: z.string().optional(),
+      version: z.union([z.string(), z.number()]).optional(),
     }))
     .mutation(async ({ input }) => {
       const { slug, systemPrompt, userPromptTemplate, whenToUse, timeoutSeconds, executionMode, allowedTools, disallowedTools, version, ...updates } = input;
@@ -214,7 +219,7 @@ export const emperorSkillsRouter = router({
       if (executionMode !== undefined) { sets.push("execution_mode = ?"); params.push(executionMode); }
       if (allowedTools !== undefined) { sets.push("allowed_tools = ?"); params.push(allowedTools ? JSON.stringify(allowedTools) : null); }
       if (disallowedTools !== undefined) { sets.push("disallowed_tools = ?"); params.push(disallowedTools ? JSON.stringify(disallowedTools) : null); }
-      if (version !== undefined) { sets.push("version = ?"); params.push(version); }
+      if (version !== undefined) { sets.push("version = ?"); params.push(normalizeSkillVersionForDb(version)); }
       if (sets.length === 0) return { success: true };
       params.push(slug);
       await rawExecute(`UPDATE emperor_skills SET ${sets.join(", ")} WHERE slug = ?`, params);

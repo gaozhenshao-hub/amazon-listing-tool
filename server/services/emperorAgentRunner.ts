@@ -1,7 +1,16 @@
 import { TRPCError } from "@trpc/server";
+import { createHash } from "crypto";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb, updateAiJobByRunId } from "../db";
-import { runEmperorSkill, safeParseSkillJSON } from "./emperorSkillRunner";
+import {
+  getEmperorSkillRuntimeSnapshot,
+  normalizeSkillVersion,
+  runEmperorSkill,
+  safeParseSkillJSON,
+  SkillRunError,
+  type SkillRuntimeSnapshot,
+  type SkillVersionPolicy,
+} from "./emperorSkillRunner";
 import { registerAiJobHandler, startRegisteredAiJob, type AiJobSnapshot } from "./aiJobRunner";
 import { invokeEmperorTool } from "./emperorToolGateway";
 
@@ -14,6 +23,9 @@ export type EmperorAgentNode = {
   label: string;
   subtitle?: string;
   skillSlug?: string;
+  skillVersion?: string | number;
+  skillVersionRef?: string;
+  skillVersionPolicy?: SkillVersionPolicy;
   toolSlug?: string;
   toolParams?: unknown;
   executionMode?: "inline" | "fork" | "background";
@@ -65,6 +77,20 @@ export type AgentDagValidationResult = {
   topologicalNodeIds: string[];
 };
 
+export type AgentNodeSkillBinding = {
+  policy: SkillVersionPolicy;
+  pinnedVersion?: string;
+  ref: string;
+};
+
+export type StoredAgentRunRuntime = {
+  agentSlug: string;
+  agentName?: string | null;
+  dagSnapshot: EmperorAgentDag;
+  dagHash: string;
+  preparedAt: string;
+};
+
 type CheckpointRow = {
   runId: string;
   agentSlug: string;
@@ -101,6 +127,64 @@ const RUN_STATUS_TRANSITIONS: Record<AgentRunStatus, AgentRunStatus[]> = {
   completed: [],
   canceled: [],
 };
+
+function hashJson(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value ?? null)).digest("hex").slice(0, 16);
+}
+
+export function resolveAgentNodeSkillBinding(node: Pick<EmperorAgentNode, "skillVersion" | "skillVersionPolicy" | "skillVersionRef">): AgentNodeSkillBinding {
+  const rawRef = String(node.skillVersionRef || "").trim();
+  if (rawRef === "latest") return { policy: "latest", ref: "latest" };
+  if (rawRef === "snapshot") return { policy: "snapshot", ref: "snapshot" };
+  if (rawRef.startsWith("pinned:")) {
+    const rawPinnedVersion = rawRef.slice("pinned:".length).trim();
+    if (!rawPinnedVersion) return { policy: "pinned", ref: "pinned" };
+    const pinnedVersion = normalizeSkillVersion(rawPinnedVersion);
+    return { policy: "pinned", pinnedVersion, ref: `pinned:${pinnedVersion}` };
+  }
+  if (node.skillVersion !== undefined && node.skillVersion !== null && String(node.skillVersion).trim()) {
+    const pinnedVersion = normalizeSkillVersion(node.skillVersion);
+    return { policy: "pinned", pinnedVersion, ref: `pinned:${pinnedVersion}` };
+  }
+  if (node.skillVersionPolicy === "latest") return { policy: "latest", ref: "latest" };
+  if (node.skillVersionPolicy === "pinned") return { policy: "pinned", ref: "pinned" };
+  return { policy: "snapshot", ref: "snapshot" };
+}
+
+export function buildStoredAgentRunInputs(input: {
+  inputs: Record<string, unknown>;
+  agentSlug: string;
+  agentName?: string | null;
+  dag: EmperorAgentDag;
+}): Record<string, unknown> {
+  return {
+    __agentRun: {
+      agentSlug: input.agentSlug,
+      agentName: input.agentName ?? null,
+      dagSnapshot: input.dag,
+      dagHash: hashJson(input.dag),
+      preparedAt: new Date().toISOString(),
+    } satisfies StoredAgentRunRuntime,
+    payload: input.inputs,
+  };
+}
+
+export function parseStoredAgentRunInputs(raw: unknown): {
+  inputs: Record<string, unknown>;
+  runtime: StoredAgentRunRuntime | null;
+} {
+  const parsed = parseJson(raw, {}) as Record<string, unknown>;
+  const runtime = parsed.__agentRun && typeof parsed.__agentRun === "object"
+    ? parsed.__agentRun as StoredAgentRunRuntime
+    : null;
+  if (runtime) {
+    const payload = parsed.payload && typeof parsed.payload === "object"
+      ? parsed.payload as Record<string, unknown>
+      : {};
+    return { inputs: payload, runtime };
+  }
+  return { inputs: parsed, runtime: null };
+}
 
 export function canTransitionNodeStatus(from: AgentNodeStatus, to: AgentNodeStatus): boolean {
   return from === to || NODE_STATUS_TRANSITIONS[from]?.includes(to) === true;
@@ -254,6 +338,15 @@ export function validateAgentDag(raw: unknown): AgentDagValidationResult {
     if (nodeType === "skill_node" && !node.skillSlug) {
       addDagIssue(issues, "error", "node.skill_missing", "Skill node must declare skillSlug.", { nodeId });
     }
+    if (nodeType === "skill_node") {
+      const binding = resolveAgentNodeSkillBinding(node);
+      if (node.skillVersionPolicy && !["latest", "snapshot", "pinned"].includes(node.skillVersionPolicy)) {
+        addDagIssue(issues, "error", "node.skill_version_policy_invalid", "Skill version policy must be latest, snapshot, or pinned.", { nodeId });
+      }
+      if (binding.policy === "pinned" && !binding.pinnedVersion) {
+        addDagIssue(issues, "error", "node.skill_version_missing", "Pinned Skill nodes must declare skillVersion or skillVersionRef like pinned:3.", { nodeId });
+      }
+    }
     if (["mcp_node", "knowledge_node"].includes(nodeType) && !resolveNodeToolSlugForValidation(node)) {
       addDagIssue(issues, "error", "node.tool_missing", `${nodeType} must resolve to a Tool slug.`, { nodeId });
     }
@@ -396,6 +489,43 @@ function checkpointPayload(row: any): CheckpointRow {
     userEdit: parseJson(row.userEdit),
     metadata: parseJson(row.metadata),
   };
+}
+
+function checkpointMetadata(checkpoint: Pick<CheckpointRow, "metadata"> | null | undefined): Record<string, unknown> {
+  return checkpoint?.metadata && typeof checkpoint.metadata === "object"
+    ? checkpoint.metadata as Record<string, unknown>
+    : {};
+}
+
+async function buildNodeRunMetadata(node: EmperorAgentNode): Promise<Record<string, unknown>> {
+  const metadata: Record<string, unknown> = {
+    node,
+    preparedAt: new Date().toISOString(),
+  };
+  if (node.nodeType !== "skill_node" || !node.skillSlug) return metadata;
+
+  const binding = resolveAgentNodeSkillBinding(node);
+  let skillSnapshot: SkillRuntimeSnapshot;
+  try {
+    skillSnapshot = await getEmperorSkillRuntimeSnapshot(node.skillSlug);
+  } catch (error) {
+    if (error instanceof SkillRunError) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
+    }
+    throw error;
+  }
+
+  if (binding.policy === "pinned" && binding.pinnedVersion && binding.pinnedVersion !== skillSnapshot.version) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Agent node ${node.id} pins Skill ${node.skillSlug} to version ${binding.pinnedVersion}, but current version is ${skillSnapshot.version}.`,
+    });
+  }
+
+  metadata.skillVersionPolicy = binding.policy;
+  metadata.skillVersionRef = binding.ref;
+  metadata.skillSnapshot = skillSnapshot;
+  return metadata;
 }
 
 export function getListingAgentDag(): EmperorAgentDag {
@@ -719,6 +849,9 @@ function buildNodeInput(run: any, dag: EmperorAgentDag, node: EmperorAgentNode, 
       id: node.id,
       label: node.label,
       skillSlug: node.skillSlug,
+      skillVersion: node.skillVersion,
+      skillVersionRef: node.skillVersionRef,
+      skillVersionPolicy: node.skillVersionPolicy,
       toolSlug: node.toolSlug,
       outputKey: node.outputKey,
       nodeType: node.nodeType,
@@ -749,6 +882,7 @@ async function finalizeNodeOutput(input: {
   userId: number;
   output: unknown;
   skillRunId?: string | null;
+  runtimeMetadata?: Record<string, unknown>;
   completedMessage?: string;
 }) {
   const latestRun = await getRunRow(input.run.runId);
@@ -763,11 +897,16 @@ async function finalizeNodeOutput(input: {
   const nextStatus: AgentNodeStatus = waitingForHuman ? "waiting_human" : "confirmed";
   const checkpoint = await getCheckpoint(input.run.runId, input.node.id);
   assertNodeTransition(checkpoint.status, nextStatus, "finalize node");
+  const nextMetadata = {
+    ...checkpointMetadata(checkpoint),
+    ...(input.runtimeMetadata || {}),
+  };
   await rawExecute(
-    "UPDATE emperor_agent_checkpoints SET status=?,output=?,skillRunId=COALESCE(?,skillRunId),reviewerUserId=?,completedAt=?,confirmedAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
+    "UPDATE emperor_agent_checkpoints SET status=?,output=?,metadata=?,skillRunId=COALESCE(?,skillRunId),reviewerUserId=?,completedAt=?,confirmedAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
     [
       nextStatus,
       stringifyJson(input.output),
+      stringifyJson(nextMetadata),
       input.skillRunId || null,
       waitingForHuman ? null : input.userId,
       new Date(),
@@ -786,6 +925,7 @@ async function finalizeNodeOutput(input: {
     metadata: {
       source: "finalizeNodeOutput",
       waitingForHuman,
+      ...nextMetadata,
     },
   });
 
@@ -902,6 +1042,17 @@ export async function startAgentRun(input: {
 }) {
   const agent = await getAgentBySlug(input.slug);
   const dag = assertValidAgentDag(agent.dagDefinition, "start run");
+  const nodeMetadata = new Map<string, Record<string, unknown>>();
+  for (const node of dag.nodes) {
+    nodeMetadata.set(node.id, await buildNodeRunMetadata(node));
+  }
+  const storedInputs = buildStoredAgentRunInputs({
+    inputs: input.inputs,
+    agentSlug: agent.slug,
+    agentName: agent.name,
+    dag,
+  });
+  const runRuntime = parseStoredAgentRunInputs(storedInputs).runtime;
 
   const runId = generateRunId("agent");
   const rootNodeIds = dag.nodes.filter((node) => parentIds(dag, node.id).length === 0).map((node) => node.id);
@@ -909,18 +1060,22 @@ export async function startAgentRun(input: {
 
   await rawExecute(
     "INSERT INTO emperor_agent_runs (runId,agentSlug,agentName,userId,projectId,status,currentNodeId,progress,inputs,startedAt) VALUES (?,?,?,?,?,?,?,?,?,?)",
-    [runId, agent.slug, agent.name, input.userId, input.projectId ?? null, "waiting_human", firstReady, 0, stringifyJson(input.inputs), new Date()],
+    [runId, agent.slug, agent.name, input.userId, input.projectId ?? null, "waiting_human", firstReady, 0, stringifyJson(storedInputs), new Date()],
   );
 
   for (const node of dag.nodes) {
     const status: AgentNodeStatus = rootNodeIds.includes(node.id) ? "ready" : "pending";
     await rawExecute(
       "INSERT INTO emperor_agent_checkpoints (runId,agentSlug,nodeId,nodeLabel,nodeType,status,metadata) VALUES (?,?,?,?,?,?,?)",
-      [runId, agent.slug, node.id, node.label || node.id, node.nodeType || "skill_node", status, stringifyJson({ node })],
+      [runId, agent.slug, node.id, node.label || node.id, node.nodeType || "skill_node", status, stringifyJson(nodeMetadata.get(node.id) || { node })],
     );
   }
 
-  await addEvent(runId, agent.slug, null, "run.started", `Agent ${agent.name} 已启动`, { inputs: input.inputs });
+  await addEvent(runId, agent.slug, null, "run.started", `Agent ${agent.name} 已启动`, {
+    inputs: input.inputs,
+    dagHash: runRuntime?.dagHash || null,
+    skillSnapshots: [...nodeMetadata.values()].filter((metadata) => metadata.skillSnapshot).map((metadata) => metadata.skillSnapshot),
+  });
   return getAgentRun(runId, input.userId, true);
 }
 
@@ -930,15 +1085,17 @@ export async function getAgentRun(runId: string, userId?: number, skipOwnerCheck
     throw new TRPCError({ code: "FORBIDDEN", message: "Cannot read this Agent run" });
   }
   const agent = await getAgentBySlug(run.agentSlug);
-  const dag = normalizeAgentDag(agent.dagDefinition);
+  const storedInputs = parseStoredAgentRunInputs(run.inputs);
+  const dag = normalizeAgentDag(storedInputs.runtime?.dagSnapshot || agent.dagDefinition);
   const checkpoints = await getCheckpoints(runId);
   const events = await rawExecute("SELECT * FROM emperor_agent_events WHERE runId=? ORDER BY createdAt ASC LIMIT 200", [runId]);
   const artifacts = await listAgentArtifacts({ runId, userId, skipOwnerCheck: true });
   return {
     run: {
       ...run,
-      inputs: parseJson(run.inputs, {}),
+      inputs: storedInputs.inputs,
       outputs: parseJson(run.outputs, {}),
+      runtime: storedInputs.runtime,
     },
     agent,
     dag,
@@ -1027,6 +1184,7 @@ export async function updateAgentNodeDraft(input: {
       metadata: {
         source: "updateNodeDraft",
         checkpointStatus: checkpoint.status,
+        ...checkpointMetadata(checkpoint),
       },
     });
   }
@@ -1168,6 +1326,7 @@ export async function confirmAgentNode(input: {
       metadata: {
         source: "confirmNode",
         skipped: input.skip === true,
+        ...checkpointMetadata(checkpoint),
       },
     });
   }
@@ -1201,6 +1360,11 @@ export async function executeAgentNode(input: {
   assertRunTransition(run.status as AgentRunStatus, "running", "execute node");
 
   const nodeInput = buildNodeInput(run, dag, node, detail.checkpoints);
+  const metadata = checkpointMetadata(checkpoint);
+  const binding = resolveAgentNodeSkillBinding(node);
+  const skillSnapshot = metadata.skillSnapshot && typeof metadata.skillSnapshot === "object"
+    ? metadata.skillSnapshot as SkillRuntimeSnapshot
+    : null;
   await rawExecute(
     "UPDATE emperor_agent_checkpoints SET status='running',attempt=attempt+1,input=?,errorMessage=NULL,startedAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
     [stringifyJson(nodeInput), new Date(), input.runId, input.nodeId],
@@ -1260,6 +1424,10 @@ export async function executeAgentNode(input: {
       agentSlug: run.agentSlug,
       nodeId: node.id,
       skillSlug: node.skillSlug,
+      skillVersionPolicy: metadata.skillVersionPolicy || binding.policy,
+      expectedSkillVersion: skillSnapshot?.version || binding.pinnedVersion || null,
+      expectedSkillPromptHash: skillSnapshot?.systemPromptHash || null,
+      skillSnapshot,
       nodeInput,
     },
     progress: 5,
@@ -1276,12 +1444,20 @@ function parseAgentNodeJobInput(job: AiJobSnapshot): {
   runId: string;
   nodeId: string;
   skillSlug: string;
+  skillVersionPolicy: SkillVersionPolicy;
+  expectedSkillVersion?: string | number | null;
+  expectedSkillPromptHash?: string | null;
+  skillSnapshot?: SkillRuntimeSnapshot | null;
   nodeInput: unknown;
 } {
   const payload = job.input as Record<string, unknown> | null;
   const runId = String(payload?.runId || "");
   const nodeId = String(payload?.nodeId || "");
   const skillSlug = String(payload?.skillSlug || job.skillSlug || "");
+  const rawPolicy = String(payload?.skillVersionPolicy || "snapshot");
+  const skillVersionPolicy: SkillVersionPolicy = rawPolicy === "latest" || rawPolicy === "pinned" || rawPolicy === "snapshot"
+    ? rawPolicy
+    : "snapshot";
   if (!runId || !nodeId || !skillSlug) {
     throw new Error("Invalid Agent node job input");
   }
@@ -1289,6 +1465,12 @@ function parseAgentNodeJobInput(job: AiJobSnapshot): {
     runId,
     nodeId,
     skillSlug,
+    skillVersionPolicy,
+    expectedSkillVersion: payload?.expectedSkillVersion as string | number | null | undefined,
+    expectedSkillPromptHash: payload?.expectedSkillPromptHash as string | null | undefined,
+    skillSnapshot: payload?.skillSnapshot && typeof payload.skillSnapshot === "object"
+      ? payload.skillSnapshot as SkillRuntimeSnapshot
+      : null,
     nodeInput: payload?.nodeInput ?? null,
   };
 }
@@ -1320,6 +1502,9 @@ async function runAgentNodeSkillJob(job: AiJobSnapshot) {
         nodeId: node.id,
         nodeInput: payload.nodeInput,
       },
+      skillVersionPolicy: payload.skillVersionPolicy,
+      expectedSkillVersion: payload.expectedSkillVersion ?? undefined,
+      expectedSkillPromptHash: payload.expectedSkillPromptHash || undefined,
       validate: (content) => safeParseSkillJSON(content),
     });
     await finalizeNodeOutput({
@@ -1329,6 +1514,23 @@ async function runAgentNodeSkillJob(job: AiJobSnapshot) {
       userId: job.userId,
       output: result,
       skillRunId: result.runId,
+      runtimeMetadata: {
+        skillVersionPolicy: payload.skillVersionPolicy,
+        skillSnapshot: payload.skillSnapshot || null,
+        skillRun: {
+          runId: result.runId,
+          skillSlug: result.skillSlug,
+          skillVersion: result.skillVersion,
+          skillPromptHash: result.skillPromptHash,
+          skillManifestHash: result.skillManifestHash,
+          modelSlug: result.modelSlug,
+          provider: result.provider,
+          durationMs: result.durationMs,
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+          fallbackCount: result.fallbackCount,
+        },
+      },
       completedMessage: `节点 ${node.label || node.id} 已生成，等待人工确认`,
     });
     return result;

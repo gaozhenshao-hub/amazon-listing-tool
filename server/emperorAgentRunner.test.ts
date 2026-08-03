@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import {
+  buildStoredAgentRunInputs,
   canTransitionNodeStatus,
   canTransitionRunStatus,
   getListingAgentDag,
   LISTING_AGENT_SLUG,
   normalizeAgentDag,
+  parseStoredAgentRunInputs,
+  resolveAgentNodeSkillBinding,
   validateAgentDag,
 } from "./services/emperorAgentRunner";
 import {
@@ -72,6 +75,35 @@ describe("Emperor Agent workflow kernel", () => {
     expect(invalid.errors.map((issue) => issue.code)).toContain("node.skill_missing");
     expect(invalid.errors.map((issue) => issue.code)).toContain("edge.target_missing");
     expect(invalid.errors.map((issue) => issue.code)).toContain("dag.cycle_detected");
+  });
+
+  it("should resolve Skill version policies for Agent nodes", () => {
+    expect(resolveAgentNodeSkillBinding({}).policy).toBe("snapshot");
+    expect(resolveAgentNodeSkillBinding({ skillVersionRef: "latest" })).toEqual({ policy: "latest", ref: "latest" });
+    expect(resolveAgentNodeSkillBinding({ skillVersion: 7 })).toEqual({ policy: "pinned", pinnedVersion: "7", ref: "pinned:7" });
+    expect(resolveAgentNodeSkillBinding({ skillVersionRef: "pinned:3" })).toEqual({ policy: "pinned", pinnedVersion: "3", ref: "pinned:3" });
+    expect(resolveAgentNodeSkillBinding({ skillVersionRef: "pinned:" })).toEqual({ policy: "pinned", ref: "pinned" });
+  });
+
+  it("should freeze Agent run inputs with a DAG snapshot", () => {
+    const dag = getListingAgentDag();
+    const stored = buildStoredAgentRunInputs({
+      inputs: { asin: "B0TEST123", locale: "en-US" },
+      agentSlug: LISTING_AGENT_SLUG,
+      agentName: "Listing Agent",
+      dag,
+    });
+    const parsed = parseStoredAgentRunInputs(stored);
+    expect(parsed.inputs).toEqual({ asin: "B0TEST123", locale: "en-US" });
+    expect(parsed.runtime?.agentSlug).toBe(LISTING_AGENT_SLUG);
+    expect(parsed.runtime?.dagHash).toHaveLength(16);
+    expect(parsed.runtime?.dagSnapshot.nodes.length).toBe(dag.nodes.length);
+  });
+
+  it("should preserve legacy Agent run inputs that contain a payload field", () => {
+    const parsed = parseStoredAgentRunInputs({ payload: { userValue: true }, asin: "B0LEGACY" });
+    expect(parsed.runtime).toBeNull();
+    expect(parsed.inputs).toEqual({ payload: { userValue: true }, asin: "B0LEGACY" });
   });
 
   it("should enforce explicit Agent status transitions", () => {
