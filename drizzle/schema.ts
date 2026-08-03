@@ -4990,6 +4990,12 @@ export const emperorTools = mysqlTable("emperor_tools", {
   description: text("description"),
   type: mysqlEnum("type", ["mcp", "api", "internal", "code"]).notNull(),
   config: json("config"),
+  governancePolicy: json("governancePolicy"),
+  permissionPolicy: json("permissionPolicy"),
+  rateLimitPolicy: json("rateLimitPolicy"),
+  circuitBreakerPolicy: json("circuitBreakerPolicy"),
+  secretRefs: json("secretRefs"),
+  outputPolicy: json("outputPolicy"),
   inputSchema: json("inputSchema"),
   outputSchema: json("outputSchema"),
   isActive: int("isActive").default(1).notNull(),
@@ -5014,7 +5020,14 @@ export const emperorToolRuns = mysqlTable("emperor_tool_runs", {
   projectId: int("projectId"),
   input: json("input"),
   output: json("output"),
+  normalizedOutput: json("normalizedOutput"),
   errorMessage: text("errorMessage"),
+  failureKind: mysqlEnum("failureKind", ["policy", "rate_limit", "circuit_open", "schema", "auth", "timeout", "network", "http", "executor", "unknown"]),
+  retryable: int("retryable").default(0).notNull(),
+  attemptCount: int("attemptCount").default(0).notNull(),
+  governanceDecision: json("governanceDecision"),
+  secretRefs: json("secretRefs"),
+  circuitState: varchar("circuitState", { length: 32 }),
   durationMs: int("durationMs"),
   httpStatus: int("httpStatus"),
   requestHost: varchar("requestHost", { length: 255 }),
@@ -5025,6 +5038,23 @@ export const emperorToolRuns = mysqlTable("emperor_tool_runs", {
 });
 export type EmperorToolRun = typeof emperorToolRuns.$inferSelect;
 export type InsertEmperorToolRun = typeof emperorToolRuns.$inferInsert;
+
+export const emperorToolSecrets = mysqlTable("emperor_tool_secrets", {
+  id: int("id").autoincrement().primaryKey(),
+  slug: varchar("slug", { length: 128 }).unique().notNull(),
+  description: text("description"),
+  encryptedValue: text("encryptedValue").notNull(),
+  iv: varchar("iv", { length: 32 }).notNull(),
+  authTag: varchar("authTag", { length: 32 }).notNull(),
+  keyVersion: varchar("keyVersion", { length: 64 }).default("v1").notNull(),
+  metadata: json("metadata"),
+  createdBy: int("createdBy"),
+  updatedBy: int("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmperorToolSecret = typeof emperorToolSecrets.$inferSelect;
+export type InsertEmperorToolSecret = typeof emperorToolSecrets.$inferInsert;
 
 export const emperorAiOsMetrics = mysqlTable("emperor_ai_os_metrics", {
   id: int("id").autoincrement().primaryKey(),
@@ -5073,6 +5103,8 @@ export const emperorMcpConnectors = mysqlTable("emperor_mcp_connectors", {
   connectionType: mysqlEnum("connectionType", ["http_api", "database", "webhook", "internal", "script"]).default("http_api").notNull(),
   // 连接配置 JSON（含 baseUrl、apiKey 等，敏感字段加密存储）
   config: json("config"),
+  governancePolicy: json("governancePolicy"),
+  secretRefs: json("secretRefs"),
   isActive: int("isActive").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

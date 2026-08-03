@@ -1,4 +1,5 @@
 import { TRPCError } from "@trpc/server";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb } from "../db";
 import { recordAiOsMetric } from "./aiOsObservability";
@@ -11,6 +12,12 @@ export type EmperorToolDefinition = {
   description?: string | null;
   type: EmperorToolType;
   config?: unknown;
+  governancePolicy?: unknown;
+  permissionPolicy?: unknown;
+  rateLimitPolicy?: unknown;
+  circuitBreakerPolicy?: unknown;
+  secretRefs?: unknown;
+  outputPolicy?: unknown;
   inputSchema?: unknown;
   outputSchema?: unknown;
   isActive?: number | boolean;
@@ -31,6 +38,7 @@ export type EmperorToolInvocationResult = {
   type: EmperorToolType;
   success: boolean;
   output: unknown;
+  normalizedOutput: EmperorToolNormalizedOutput;
   metadata: {
     toolRunId?: string | null;
     durationMs: number;
@@ -38,14 +46,60 @@ export type EmperorToolInvocationResult = {
     requestHost?: string | null;
     riskLevel?: ToolRiskLevel;
     attempts?: number;
+    failureKind?: EmperorToolFailureKind | null;
+    retryable?: boolean;
+    circuitState?: ToolCircuitRuntimeState;
+    governanceDecision?: ToolGovernanceDecision;
+    secretRefs?: string[];
     source: "builtin" | "emperor_tools" | "mcp_connector";
   };
 };
 
 export type ToolRiskLevel = "low" | "medium" | "high" | "critical";
 type ToolRunStatus = "running" | "succeeded" | "failed" | "blocked";
+export type EmperorToolFailureKind = "policy" | "rate_limit" | "circuit_open" | "schema" | "auth" | "timeout" | "network" | "http" | "executor" | "unknown";
+type ToolCircuitRuntimeState = "closed" | "open" | "half_open";
+
+export type ToolGovernanceDecision = {
+  allowed: boolean;
+  riskLevel: ToolRiskLevel;
+  permissionPolicy?: unknown;
+  rateLimitPolicy?: unknown;
+  circuitBreakerPolicy?: unknown;
+  secretRefs: string[];
+  rateLimitScope?: string;
+  circuitState: ToolCircuitRuntimeState;
+};
+
+export type EmperorToolNormalizedOutput = {
+  ok: boolean;
+  data: unknown;
+  error?: {
+    kind: EmperorToolFailureKind;
+    message: string;
+    retryable: boolean;
+    httpStatus?: number | null;
+  } | null;
+  meta: {
+    toolSlug: string;
+    type: EmperorToolType;
+    source: "builtin" | "emperor_tools" | "mcp_connector";
+    status?: number | null;
+    requestHost?: string | null;
+    attempts: number;
+    durationMs: number;
+  };
+};
+
 let toolRunStoreAvailable = true;
 const toolRateLimitBuckets = new Map<string, number[]>();
+const toolInFlightCounts = new Map<string, number>();
+const toolCircuitStates = new Map<string, {
+  state: ToolCircuitRuntimeState;
+  failures: number;
+  openedUntil: number;
+  lastFailureAt: number;
+}>();
 
 async function rawExecute(sqlStr: string, params: unknown[] = []): Promise<any[]> {
   const db = await getDb();
@@ -90,7 +144,9 @@ function generateToolRunId(prefix = "tool"): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
-const SENSITIVE_KEY_PATTERN = /(authorization|cookie|token|secret|password|api[-_]?key|access[-_]?key|refresh[-_]?token)/i;
+const SENSITIVE_KEY_PATTERN = /(authorization|cookie|token|secret|password|api[-_]?key|access[-_]?key|refresh[-_]?token|connection[-_]?string|dsn)/i;
+const SECRET_REF_PATTERN = /^(env:[A-Z0-9_]+|secret:\/\/[a-z0-9._:-]+)$/i;
+const SECRET_TEMPLATE_PATTERN = /\$\{(env:[A-Z0-9_]+|secret:[a-z0-9._:-]+)\}/gi;
 
 function sanitizeForAudit(value: unknown, depth = 0): unknown {
   if (value === null || value === undefined) return null;
@@ -109,6 +165,10 @@ function sanitizeForAudit(value: unknown, depth = 0): unknown {
     );
   }
   return String(value);
+}
+
+export function sanitizeToolConfigForPublic(value: unknown): unknown {
+  return sanitizeForAudit(value);
 }
 
 function serializeToolError(error: unknown): string {
@@ -132,62 +192,296 @@ function boundedToolAttempts(value: unknown): number {
   return Number.isFinite(attempts) ? Math.min(Math.max(Math.floor(attempts), 1), 5) : 1;
 }
 
+function secretKeyMaterial(): Buffer {
+  const configured = process.env.TOOL_SECRET_KEY || process.env.EMPEROR_SECRET_KEY || process.env.JWT_SECRET || "development-tool-secret-key";
+  return createHash("sha256").update(configured).digest();
+}
+
+export function buildToolSecretRef(slug: string): string {
+  return `secret://${slug}`;
+}
+
+export function encryptToolSecretValue(value: string): { encryptedValue: string; iv: string; authTag: string; keyVersion: string } {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", secretKeyMaterial(), iv);
+  const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+  return {
+    encryptedValue: encrypted.toString("base64"),
+    iv: iv.toString("base64"),
+    authTag: cipher.getAuthTag().toString("base64"),
+    keyVersion: "v1",
+  };
+}
+
+export function decryptToolSecretValue(input: { encryptedValue: string; iv: string; authTag: string }): string {
+  const decipher = createDecipheriv("aes-256-gcm", secretKeyMaterial(), Buffer.from(input.iv, "base64"));
+  decipher.setAuthTag(Buffer.from(input.authTag, "base64"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(input.encryptedValue, "base64")),
+    decipher.final(),
+  ]).toString("utf8");
+}
+
+async function loadStoredToolSecret(slug: string): Promise<string> {
+  const rows = await rawExecute("SELECT encryptedValue,iv,authTag FROM emperor_tool_secrets WHERE slug=? LIMIT 1", [slug]);
+  if (!rows[0]) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `Missing Tool secret reference: ${slug}` });
+  }
+  return decryptToolSecretValue(rows[0]);
+}
+
+function isSecretReferenceString(value: string): boolean {
+  SECRET_TEMPLATE_PATTERN.lastIndex = 0;
+  return SECRET_REF_PATTERN.test(value.trim()) || SECRET_TEMPLATE_PATTERN.test(value);
+}
+
+function assertNoPlaintextSecrets(value: unknown, path = "$", depth = 0) {
+  if (depth > 8 || value === null || value === undefined) return;
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertNoPlaintextSecrets(item, `${path}[${index}]`, depth + 1));
+    return;
+  }
+  if (typeof value !== "object") return;
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    const nextPath = `${path}.${key}`;
+    if (SENSITIVE_KEY_PATTERN.test(key) && typeof item === "string" && item.trim() && !isSecretReferenceString(item)) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Tool secret value at ${nextPath} must use env:NAME or secret://slug reference`,
+      });
+    }
+    assertNoPlaintextSecrets(item, nextPath, depth + 1);
+  }
+}
+
+export function assertToolConfigUsesSecretRefs(value: unknown, path = "$") {
+  assertNoPlaintextSecrets(value, path);
+}
+
+async function resolveSecretRefString(value: string, refs: string[]): Promise<string> {
+  const trimmed = value.trim();
+  if (/^env:/i.test(trimmed)) {
+    const key = trimmed.slice(4);
+    const secret = process.env[key];
+    if (!secret) throw new TRPCError({ code: "BAD_REQUEST", message: `Missing environment secret: ${key}` });
+    refs.push(`env:${key}`);
+    return secret;
+  }
+  if (/^secret:\/\//i.test(trimmed)) {
+    const slug = trimmed.slice("secret://".length);
+    refs.push(`secret://${slug}`);
+    return loadStoredToolSecret(slug);
+  }
+  SECRET_TEMPLATE_PATTERN.lastIndex = 0;
+  let output = value;
+  for (const match of value.matchAll(SECRET_TEMPLATE_PATTERN)) {
+    const ref = match[1];
+    const replacement = /^env:/i.test(ref)
+      ? await resolveSecretRefString(ref, refs)
+      : await resolveSecretRefString(`secret://${ref.slice("secret:".length)}`, refs);
+    output = output.replace(match[0], replacement);
+  }
+  return output;
+}
+
+async function resolveSecretRefs(value: unknown, refs: string[] = [], depth = 0): Promise<unknown> {
+  if (depth > 8) return value;
+  if (typeof value === "string") return resolveSecretRefString(value, refs);
+  if (Array.isArray(value)) {
+    return Promise.all(value.map((item) => resolveSecretRefs(item, refs, depth + 1)));
+  }
+  if (value && typeof value === "object") {
+    const entries = await Promise.all(
+      Object.entries(value as Record<string, unknown>).map(async ([key, item]) => [key, await resolveSecretRefs(item, refs, depth + 1)] as const),
+    );
+    return Object.fromEntries(entries);
+  }
+  return value;
+}
+
+function publicSecretRefs(value: unknown, depth = 0): string[] {
+  if (depth > 8 || value === null || value === undefined) return [];
+  if (typeof value === "string") {
+    const refs: string[] = [];
+    const trimmed = value.trim();
+    if (SECRET_REF_PATTERN.test(trimmed)) refs.push(trimmed.replace(/^secret:/i, "secret:"));
+    for (const match of value.matchAll(SECRET_TEMPLATE_PATTERN)) {
+      refs.push(match[1].replace(/^secret:/i, "secret://"));
+    }
+    return refs;
+  }
+  if (Array.isArray(value)) return value.flatMap((item) => publicSecretRefs(item, depth + 1));
+  if (typeof value === "object") return Object.values(value).flatMap((item) => publicSecretRefs(item, depth + 1));
+  return [];
+}
+
+function toolPermissionPolicy(tool: EmperorToolDefinition): Record<string, any> {
+  return {
+    ...toRecord(toRecord(tool.config).permissions),
+    ...toRecord(toRecord(tool.config).permissionPolicy),
+    ...toRecord(tool.permissionPolicy),
+  };
+}
+
 function assertToolPermission(tool: EmperorToolDefinition, invocation: EmperorToolInvocationInput) {
   const config = toRecord(tool.config);
+  const policy = toolPermissionPolicy(tool);
   const role = String(invocation.userRole || "");
-  const allowedRoles = parseArrayConfig(config.allowedRoles);
+  const allowedRoles = parseArrayConfig(policy.allowedRoles || config.allowedRoles);
   if (allowedRoles.length > 0 && (!role || !allowedRoles.includes(role))) {
     throw new TRPCError({ code: "FORBIDDEN", message: `Tool ${tool.slug} is not allowed for role ${role || "(unknown)"}` });
   }
-  const deniedRoles = parseArrayConfig(config.deniedRoles);
+  const deniedRoles = parseArrayConfig(policy.deniedRoles || config.deniedRoles);
   if (role && deniedRoles.includes(role)) {
     throw new TRPCError({ code: "FORBIDDEN", message: `Tool ${tool.slug} is denied for role ${role}` });
   }
-  const allowedUserIds = parseArrayConfig(config.allowedUserIds).map(Number).filter(Number.isFinite);
+  const allowedUserIds = parseArrayConfig(policy.allowedUserIds || config.allowedUserIds).map(Number).filter(Number.isFinite);
   if (allowedUserIds.length > 0 && !allowedUserIds.includes(invocation.userId)) {
     throw new TRPCError({ code: "FORBIDDEN", message: `Tool ${tool.slug} is not allowed for this user` });
   }
+  const requiredProjectIds = parseArrayConfig(policy.allowedProjectIds || config.allowedProjectIds).map(Number).filter(Number.isFinite);
+  if (requiredProjectIds.length > 0 && (!invocation.projectId || !requiredProjectIds.includes(invocation.projectId))) {
+    throw new TRPCError({ code: "FORBIDDEN", message: `Tool ${tool.slug} is not allowed for this project` });
+  }
+}
+
+function toolRateLimitPolicy(tool: EmperorToolDefinition): Record<string, any> {
+  return {
+    ...toRecord(toRecord(tool.config).rateLimit),
+    ...toRecord(toRecord(tool.config).rateLimitPolicy),
+    ...toRecord(tool.rateLimitPolicy),
+  };
+}
+
+function rateLimitScopeKey(tool: EmperorToolDefinition, invocation: EmperorToolInvocationInput, policy: Record<string, any>) {
+  const scope = String(policy.scope || "user");
+  if (scope === "tool") return { scope, key: tool.slug };
+  if (scope === "project") return { scope, key: `${tool.slug}:project:${invocation.projectId || "none"}` };
+  if (scope === "agentRun") return { scope, key: `${tool.slug}:run:${invocation.runId || "none"}` };
+  return { scope: "user", key: `${tool.slug}:user:${invocation.userId}` };
 }
 
 function assertToolRateLimit(tool: EmperorToolDefinition, invocation: EmperorToolInvocationInput) {
   const config = toRecord(tool.config);
-  const limit = Number(config.rateLimitPerMinute || config.maxCallsPerMinute || 0);
+  const policy = toolRateLimitPolicy(tool);
+  const limit = Number(policy.perMinute || config.rateLimitPerMinute || config.maxCallsPerMinute || 0);
+  const hourLimit = Number(policy.perHour || config.rateLimitPerHour || config.maxCallsPerHour || 0);
+  const concurrencyLimit = Number(policy.concurrency || config.concurrency || 0);
+  const { key } = rateLimitScopeKey(tool, invocation, policy);
+  if (Number.isFinite(concurrencyLimit) && concurrencyLimit > 0) {
+    const inFlight = toolInFlightCounts.get(key) || 0;
+    if (inFlight >= Math.min(Math.max(Math.floor(concurrencyLimit), 1), 1000)) {
+      throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: `Tool ${tool.slug} exceeded concurrency limit` });
+    }
+  }
+  if (Number.isFinite(hourLimit) && hourLimit > 0) {
+    assertWindowLimit(tool.slug, key, "hour", hourLimit, 3_600_000);
+  }
   if (!Number.isFinite(limit) || limit <= 0) return;
-  const boundedLimit = Math.min(Math.max(Math.floor(limit), 1), 1000);
-  const key = `${tool.slug}:${invocation.userId}`;
+  assertWindowLimit(tool.slug, key, "minute", limit, 60_000);
+}
+
+function assertWindowLimit(toolSlug: string, scopeKey: string, windowName: string, limit: number, windowMs: number) {
+  const boundedLimit = Math.min(Math.max(Math.floor(limit), 1), 100_000);
+  const key = `${scopeKey}:${windowName}`;
   const now = Date.now();
-  const windowStart = now - 60_000;
+  const windowStart = now - windowMs;
   const bucket = (toolRateLimitBuckets.get(key) || []).filter((timestamp) => timestamp >= windowStart);
   if (bucket.length >= boundedLimit) {
     toolRateLimitBuckets.set(key, bucket);
-    throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: `Tool ${tool.slug} exceeded ${boundedLimit}/minute rate limit` });
+    throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: `Tool ${toolSlug} exceeded ${boundedLimit}/${windowName} rate limit` });
   }
   bucket.push(now);
   toolRateLimitBuckets.set(key, bucket);
 }
 
-function resolveSecretRef(value: unknown): unknown {
-  if (typeof value !== "string") return value;
-  const directMatch = value.match(/^env:([A-Z0-9_]+)$/i);
-  const templateMatch = value.match(/^\$\{env:([A-Z0-9_]+)\}$/i);
-  const key = directMatch?.[1] || templateMatch?.[1];
-  if (!key) return value;
-  const secret = process.env[key];
-  if (!secret) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: `Missing environment secret: ${key}` });
-  }
-  return secret;
+function incrementToolInFlight(tool: EmperorToolDefinition, invocation: EmperorToolInvocationInput) {
+  const policy = toolRateLimitPolicy(tool);
+  const { key } = rateLimitScopeKey(tool, invocation, policy);
+  toolInFlightCounts.set(key, (toolInFlightCounts.get(key) || 0) + 1);
+  return () => {
+    const next = Math.max((toolInFlightCounts.get(key) || 1) - 1, 0);
+    if (next === 0) toolInFlightCounts.delete(key);
+    else toolInFlightCounts.set(key, next);
+  };
 }
 
-function resolveSecretRefs(value: unknown, depth = 0): unknown {
-  if (depth > 5) return value;
-  if (Array.isArray(value)) return value.map((item) => resolveSecretRefs(item, depth + 1));
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, resolveSecretRefs(item, depth + 1)]),
-    );
+function toolCircuitPolicy(tool: EmperorToolDefinition): Record<string, any> {
+  return {
+    ...toRecord(toRecord(tool.config).circuitBreaker),
+    ...toRecord(toRecord(tool.config).circuitBreakerPolicy),
+    ...toRecord(tool.circuitBreakerPolicy),
+  };
+}
+
+function buildToolGovernanceDecision(input: {
+  tool: EmperorToolDefinition & { source: "builtin" | "emperor_tools" | "mcp_connector" };
+  invocation: EmperorToolInvocationInput;
+  riskLevel: ToolRiskLevel;
+  secretRefs: string[];
+}): ToolGovernanceDecision {
+  const ratePolicy = toolRateLimitPolicy(input.tool);
+  const rateScope = rateLimitScopeKey(input.tool, input.invocation, ratePolicy);
+  return {
+    allowed: true,
+    riskLevel: input.riskLevel,
+    permissionPolicy: toolPermissionPolicy(input.tool),
+    rateLimitPolicy: ratePolicy,
+    circuitBreakerPolicy: toolCircuitPolicy(input.tool),
+    secretRefs: [...new Set(input.secretRefs)],
+    rateLimitScope: rateScope.scope,
+    circuitState: getToolCircuitState(input.tool),
+  };
+}
+
+function circuitKey(tool: EmperorToolDefinition) {
+  return tool.slug;
+}
+
+function getToolCircuitState(tool: EmperorToolDefinition): ToolCircuitRuntimeState {
+  const policy = toolCircuitPolicy(tool);
+  if (policy.enabled === false) return "closed";
+  const state = toolCircuitStates.get(circuitKey(tool));
+  if (!state) return "closed";
+  if (state.state === "open" && state.openedUntil <= Date.now()) return "half_open";
+  return state.state;
+}
+
+function assertToolCircuitClosed(tool: EmperorToolDefinition) {
+  const policy = toolCircuitPolicy(tool);
+  if (policy.enabled === false) return;
+  const key = circuitKey(tool);
+  const state = toolCircuitStates.get(key);
+  if (!state) return;
+  if (state.state === "open" && state.openedUntil > Date.now()) {
+    throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: `Tool ${tool.slug} circuit breaker is open` });
   }
-  return resolveSecretRef(value);
+  if (state.state === "open" && state.openedUntil <= Date.now()) {
+    toolCircuitStates.set(key, { ...state, state: "half_open" });
+  }
+}
+
+function recordToolCircuitSuccess(tool: EmperorToolDefinition) {
+  const policy = toolCircuitPolicy(tool);
+  if (policy.enabled === false) return;
+  toolCircuitStates.delete(circuitKey(tool));
+}
+
+function recordToolCircuitFailure(tool: EmperorToolDefinition, failureKind: EmperorToolFailureKind) {
+  const policy = toolCircuitPolicy(tool);
+  if (policy.enabled === false || ["policy", "rate_limit", "schema", "auth", "circuit_open"].includes(failureKind)) return;
+  const key = circuitKey(tool);
+  const current = toolCircuitStates.get(key);
+  const failureThreshold = Math.min(Math.max(Number(policy.failureThreshold || 5), 1), 100);
+  const resetAfterMs = Math.min(Math.max(Number(policy.resetAfterMs || policy.openMs || 60_000), 1000), 86_400_000);
+  const failures = (current?.failures || 0) + 1;
+  const nextState: ToolCircuitRuntimeState = failures >= failureThreshold ? "open" : "closed";
+  toolCircuitStates.set(key, {
+    state: nextState,
+    failures,
+    openedUntil: nextState === "open" ? Date.now() + resetAfterMs : 0,
+    lastFailureAt: Date.now(),
+  });
 }
 
 function schemaTypes(schema: Record<string, any>): string[] {
@@ -386,13 +680,14 @@ async function createToolRunRecord(input: {
   invocation: EmperorToolInvocationInput;
   riskLevel: ToolRiskLevel;
   requestHost?: string | null;
+  governanceDecision: ToolGovernanceDecision;
 }) {
   if (!toolRunStoreAvailable) return;
   try {
     await rawExecute(
       `INSERT INTO emperor_tool_runs
-       (toolRunId,toolSlug,toolName,toolType,source,status,riskLevel,userId,agentRunId,nodeId,projectId,input,requestHost,startedAt)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (toolRunId,toolSlug,toolName,toolType,source,status,riskLevel,userId,agentRunId,nodeId,projectId,input,requestHost,governanceDecision,secretRefs,circuitState,startedAt)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         input.toolRunId,
         input.tool.slug,
@@ -407,6 +702,9 @@ async function createToolRunRecord(input: {
         input.invocation.projectId ?? null,
         stringifyJson(sanitizeForAudit(input.invocation.params ?? {})),
         input.requestHost || null,
+        stringifyJson(input.governanceDecision),
+        stringifyJson(input.governanceDecision.secretRefs),
+        input.governanceDecision.circuitState,
         new Date(),
       ],
     );
@@ -420,20 +718,30 @@ async function finishToolRunRecord(input: {
   toolRunId: string;
   status: ToolRunStatus;
   output?: unknown;
+  normalizedOutput?: EmperorToolNormalizedOutput;
   error?: unknown;
+  failureKind?: EmperorToolFailureKind | null;
+  retryable?: boolean;
+  attempts?: number;
+  circuitState?: ToolCircuitRuntimeState;
   durationMs: number;
   httpStatus?: number;
 }) {
   if (!toolRunStoreAvailable) return;
   try {
     await rawExecute(
-      "UPDATE emperor_tool_runs SET status=?,output=?,errorMessage=?,durationMs=?,httpStatus=?,completedAt=?,updatedAt=NOW() WHERE toolRunId=?",
+      "UPDATE emperor_tool_runs SET status=?,output=?,normalizedOutput=?,errorMessage=?,failureKind=?,retryable=?,attemptCount=?,durationMs=?,httpStatus=?,circuitState=?,completedAt=?,updatedAt=NOW() WHERE toolRunId=?",
       [
         input.status,
         input.output === undefined ? null : stringifyJson(sanitizeForAudit(input.output)),
+        input.normalizedOutput === undefined ? null : stringifyJson(sanitizeForAudit(input.normalizedOutput)),
         input.error === undefined ? null : serializeToolError(input.error),
+        input.failureKind || null,
+        input.retryable ? 1 : 0,
+        input.attempts || 0,
         input.durationMs,
         input.httpStatus || null,
+        input.circuitState || null,
         new Date(),
         input.toolRunId,
       ],
@@ -446,7 +754,80 @@ async function finishToolRunRecord(input: {
 
 function isPolicyBlock(error: unknown): boolean {
   const message = serializeToolError(error);
-  return /(blocked|not allowed|allowlist|only supports|timeout exceeds|private or local network|invalid URL)/i.test(message);
+  return /(blocked|not allowed|allowlist|only supports|timeout exceeds|private or local network|invalid URL|must use env:NAME or secret:\/\/slug)/i.test(message);
+}
+
+export function classifyToolFailure(error: unknown, httpStatus?: number): { kind: EmperorToolFailureKind; retryable: boolean } {
+  const message = serializeToolError(error);
+  const code = error instanceof TRPCError ? error.code : "";
+  const parsedStatus = httpStatus || Number(message.match(/(?:HTTP tool failed|MCP HTTP executor failed):\s*(\d+)/i)?.[1] || 0) || undefined;
+  if (/circuit breaker is open/i.test(message)) return { kind: "circuit_open", retryable: true };
+  if (code === "TOO_MANY_REQUESTS" || /rate limit|concurrency limit/i.test(message)) return { kind: "rate_limit", retryable: true };
+  if (code === "FORBIDDEN" || isPolicyBlock(error)) return { kind: "policy", retryable: false };
+  if (/schema validation failed/i.test(message)) return { kind: "schema", retryable: false };
+  if (/missing .*secret|unauthorized|forbidden|401|403/i.test(message)) return { kind: "auth", retryable: false };
+  if (/timeout|aborted|AbortError|ETIMEDOUT/i.test(message)) return { kind: "timeout", retryable: true };
+  if (/fetch failed|ECONNRESET|ENOTFOUND|ECONNREFUSED|network/i.test(message)) return { kind: "network", retryable: true };
+  if (parsedStatus && parsedStatus >= 500) return { kind: "http", retryable: true };
+  if (parsedStatus && parsedStatus >= 400) return { kind: "http", retryable: false };
+  if (/executor|unsupported|cannot execute/i.test(message)) return { kind: "executor", retryable: false };
+  return { kind: "unknown", retryable: false };
+}
+
+function normalizeToolOutput(input: {
+  tool: EmperorToolDefinition & { source: "builtin" | "emperor_tools" | "mcp_connector" };
+  output?: unknown;
+  error?: unknown;
+  attempts: number;
+  durationMs: number;
+  status?: number | null;
+  requestHost?: string | null;
+  failureKind?: EmperorToolFailureKind | null;
+  retryable?: boolean;
+}): EmperorToolNormalizedOutput {
+  if (input.error) {
+    const classified = input.failureKind
+      ? { kind: input.failureKind, retryable: input.retryable ?? false }
+      : classifyToolFailure(input.error, input.status || undefined);
+    return {
+      ok: false,
+      data: null,
+      error: {
+        kind: classified.kind,
+        message: serializeToolError(input.error),
+        retryable: classified.retryable,
+        httpStatus: input.status || null,
+      },
+      meta: {
+        toolSlug: input.tool.slug,
+        type: input.tool.type,
+        source: input.tool.source,
+        status: input.status || null,
+        requestHost: input.requestHost || null,
+        attempts: input.attempts,
+        durationMs: input.durationMs,
+      },
+    };
+  }
+  const outputPolicy = toRecord(input.tool.outputPolicy || toRecord(input.tool.config).outputPolicy);
+  const record = toRecord(input.output);
+  const data = outputPolicy.unwrapKey && Object.prototype.hasOwnProperty.call(record, String(outputPolicy.unwrapKey))
+    ? record[String(outputPolicy.unwrapKey)]
+    : input.output;
+  return {
+    ok: true,
+    data,
+    error: null,
+    meta: {
+      toolSlug: input.tool.slug,
+      type: input.tool.type,
+      source: input.tool.source,
+      status: input.status || null,
+      requestHost: input.requestHost || null,
+      attempts: input.attempts,
+      durationMs: input.durationMs,
+    },
+  };
 }
 
 function isMissingDatabase(error: unknown): boolean {
@@ -597,15 +978,21 @@ export function getBuiltinToolDefinitions() {
 
 export async function listEmperorTools() {
   const toolRows = await rawExecute(
-    "SELECT slug,name,description,type,config,inputSchema,outputSchema,isActive,createdAt,updatedAt FROM emperor_tools ORDER BY name"
+    "SELECT slug,name,description,type,config,governancePolicy,permissionPolicy,rateLimitPolicy,circuitBreakerPolicy,secretRefs,outputPolicy,inputSchema,outputSchema,isActive,createdAt,updatedAt FROM emperor_tools ORDER BY name"
   ).catch(() => []);
   const connectorRows = await rawExecute(
-    "SELECT slug,name,description,connectionType,config,isActive,createdAt,updatedAt FROM emperor_mcp_connectors ORDER BY name"
+    "SELECT slug,name,description,connectionType,config,governancePolicy,secretRefs,isActive,createdAt,updatedAt FROM emperor_mcp_connectors ORDER BY name"
   ).catch(() => []);
 
   const dbTools = toolRows.map((row) => ({
     ...row,
-    config: parseJson(row.config, {}),
+    config: sanitizeForAudit(parseJson(row.config, {})),
+    governancePolicy: parseJson(row.governancePolicy, {}),
+    permissionPolicy: parseJson(row.permissionPolicy, {}),
+    rateLimitPolicy: parseJson(row.rateLimitPolicy, {}),
+    circuitBreakerPolicy: parseJson(row.circuitBreakerPolicy, {}),
+    secretRefs: parseJson(row.secretRefs, []),
+    outputPolicy: parseJson(row.outputPolicy, {}),
     inputSchema: parseJson(row.inputSchema, null),
     outputSchema: parseJson(row.outputSchema, null),
     source: "emperor_tools" as const,
@@ -615,7 +1002,9 @@ export async function listEmperorTools() {
     name: row.name,
     description: row.description,
     type: "mcp" as const,
-    config: { connectorSlug: row.slug, connectionType: row.connectionType, connectorConfig: parseJson(row.config, {}) },
+    config: { connectorSlug: row.slug, connectionType: row.connectionType, connectorConfig: sanitizeForAudit(parseJson(row.config, {})) },
+    governancePolicy: parseJson(row.governancePolicy, {}),
+    secretRefs: parseJson(row.secretRefs, []),
     inputSchema: null,
     outputSchema: null,
     isActive: row.isActive,
@@ -643,6 +1032,12 @@ async function getToolDefinition(slug: string): Promise<EmperorToolDefinition & 
       description: rows[0].description,
       type: rows[0].type,
       config: parseJson(rows[0].config, {}),
+      governancePolicy: parseJson(rows[0].governancePolicy, {}),
+      permissionPolicy: parseJson(rows[0].permissionPolicy, {}),
+      rateLimitPolicy: parseJson(rows[0].rateLimitPolicy, {}),
+      circuitBreakerPolicy: parseJson(rows[0].circuitBreakerPolicy, {}),
+      secretRefs: parseJson(rows[0].secretRefs, []),
+      outputPolicy: parseJson(rows[0].outputPolicy, {}),
       inputSchema: parseJson(rows[0].inputSchema, null),
       outputSchema: parseJson(rows[0].outputSchema, null),
       isActive: rows[0].isActive,
@@ -663,6 +1058,8 @@ async function getToolDefinition(slug: string): Promise<EmperorToolDefinition & 
         connectionType: connectors[0].connectionType,
         connectorConfig: parseJson(connectors[0].config, {}),
       },
+      governancePolicy: parseJson(connectors[0].governancePolicy, {}),
+      secretRefs: parseJson(connectors[0].secretRefs, []),
       isActive: connectors[0].isActive,
       source: "mcp_connector",
     };
@@ -671,7 +1068,7 @@ async function getToolDefinition(slug: string): Promise<EmperorToolDefinition & 
   throw new TRPCError({ code: "NOT_FOUND", message: `Tool not found: ${slug}` });
 }
 
-async function invokeInternalTool(slug: string, params: unknown) {
+async function invokeInternalTool(slug: string, params: unknown, resolvedSecretRefs: string[] = []) {
   switch (slug) {
     case "internal.agent.capture_input":
       return captureInput(params);
@@ -687,7 +1084,7 @@ async function invokeInternalTool(slug: string, params: unknown) {
         name: "HTTP API 请求",
         type: "api",
         config: {},
-      }, params);
+      }, params, resolvedSecretRefs);
       return result;
     }
     default:
@@ -695,14 +1092,118 @@ async function invokeInternalTool(slug: string, params: unknown) {
   }
 }
 
+type ToolExecutorContext = {
+  tool: EmperorToolDefinition & { source: "builtin" | "emperor_tools" | "mcp_connector" };
+  params: unknown;
+  invocation: EmperorToolInvocationInput;
+  resolvedSecretRefs: string[];
+};
+
+type ToolExecutorResult = {
+  output: unknown;
+  status?: number;
+  requestHost?: string | null;
+};
+
+type EmperorToolExecutor = (context: ToolExecutorContext) => Promise<ToolExecutorResult>;
+const emperorToolExecutors = new Map<string, EmperorToolExecutor>();
+
+export function registerEmperorToolExecutor(key: string, executor: EmperorToolExecutor) {
+  emperorToolExecutors.set(key, executor);
+}
+
 function buildUrl(baseUrl: string, path = "") {
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   return new URL(path.replace(/^\//, ""), normalizedBase).toString();
 }
 
-async function invokeHttpTool(tool: EmperorToolDefinition, params: unknown) {
-  const config = toRecord(resolveSecretRefs(tool.config));
+function mergeToolHeaders(...values: unknown[]) {
+  return Object.assign({}, ...values.map(toRecord));
+}
+
+const HTTP_REQUEST_CONTROL_KEYS = new Set([
+  "url",
+  "baseUrl",
+  "path",
+  "endpoint",
+  "method",
+  "headers",
+  "authType",
+  "authConfig",
+  "apiKey",
+  "apiKeyRef",
+  "token",
+  "accessToken",
+  "username",
+  "password",
+  "timeoutMs",
+  "allowedHosts",
+  "allowedMethods",
+  "capability",
+  "toolName",
+]);
+
+function buildHttpRequestBody(request: Record<string, any>) {
+  const explicitBody = request.body ?? request.payload ?? request.arguments ?? request.params;
+  if (explicitBody !== undefined) return explicitBody;
+  const data = Object.fromEntries(
+    Object.entries(request).filter(([key, value]) => !HTTP_REQUEST_CONTROL_KEYS.has(key) && value !== undefined),
+  );
+  return Object.keys(data).length > 0 ? data : {};
+}
+
+function pickConnectorCapability(connectorConfig: Record<string, any>, request: Record<string, any>): Record<string, any> | null {
+  const requested = String(request.capability || request.toolName || request.name || "").trim();
+  if (!requested) return null;
+  const capabilities = Array.isArray(connectorConfig.capabilities) ? connectorConfig.capabilities : [];
+  const match = capabilities.find((capability) => String(toRecord(capability).name || "").trim() === requested);
+  return match ? toRecord(match) : null;
+}
+
+function mergeConnectorHttpCapabilityParams(params: unknown, connectorConfig: Record<string, any>) {
   const request = toRecord(params);
+  const capability = pickConnectorCapability(connectorConfig, request);
+  if (!capability) return params;
+  const next = {
+    ...request,
+    method: request.method || capability.method,
+    path: request.path || request.endpoint || capability.path || capability.endpoint,
+  };
+  return next;
+}
+
+function applyToolAuth(input: {
+  url: URL;
+  headers: Record<string, string>;
+  config: Record<string, any>;
+  request: Record<string, any>;
+}) {
+  const authConfig = toRecord(input.config.authConfig);
+  const authType = String(input.request.authType || input.config.authType || authConfig.authType || "none");
+  if (authType === "bearer") {
+    const token = String(input.request.token || input.config.token || input.config.apiKeyRef || authConfig.token || authConfig.apiKeyRef || "");
+    if (token) input.headers.authorization = token.toLowerCase().startsWith("bearer ") ? token : `Bearer ${token}`;
+  } else if (authType === "api_key") {
+    const apiKey = String(input.request.apiKey || input.config.apiKey || input.config.apiKeyRef || authConfig.apiKey || authConfig.apiKeyRef || "");
+    const headerName = String(input.config.apiKeyHeader || authConfig.headerName || "x-api-key");
+    const queryParam = String(input.config.apiKeyQueryParam || authConfig.queryParam || "");
+    if (apiKey && queryParam) input.url.searchParams.set(queryParam, apiKey);
+    else if (apiKey) input.headers[headerName] = apiKey;
+  } else if (authType === "basic") {
+    const username = String(input.request.username || input.config.username || authConfig.username || "");
+    const password = String(input.request.password || input.config.password || authConfig.password || "");
+    if (username || password) input.headers.authorization = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
+  } else if (authType === "oauth2") {
+    const token = String(input.request.accessToken || input.config.accessToken || authConfig.accessToken || "");
+    if (token) input.headers.authorization = token.toLowerCase().startsWith("bearer ") ? token : `Bearer ${token}`;
+  }
+}
+
+async function invokeHttpTool(tool: EmperorToolDefinition, params: unknown, resolvedSecretRefs: string[] = []): Promise<ToolExecutorResult> {
+  assertNoPlaintextSecrets(tool.config, "tool.config");
+  assertNoPlaintextSecrets(params, "tool.params");
+  const config = toRecord(await resolveSecretRefs(tool.config, resolvedSecretRefs));
+  const request = toRecord(await resolveSecretRefs(params, resolvedSecretRefs));
   const baseUrl = String(request.baseUrl || config.baseUrl || "");
   const path = String(request.path || config.path || "");
   const method = String(request.method || config.method || "POST").toUpperCase();
@@ -710,23 +1211,24 @@ async function invokeHttpTool(tool: EmperorToolDefinition, params: unknown) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "HTTP tool requires baseUrl or url" });
   }
 
-  const url = request.url ? String(request.url) : buildUrl(baseUrl, path);
-  const headers = {
-    "content-type": "application/json",
-    ...toRecord(config.headers),
-    ...toRecord(request.headers),
-  };
+  const rawUrl = request.url ? String(request.url) : buildUrl(baseUrl, path);
+  const headers = mergeToolHeaders(
+    { "content-type": "application/json" },
+    toRecord(config.headers),
+    toRecord(request.headers),
+  ) as Record<string, string>;
   const rawTimeoutMs = Number(request.timeoutMs || config.timeoutMs || 30000);
   const timeoutMs = Number.isFinite(rawTimeoutMs) && rawTimeoutMs > 0 ? rawTimeoutMs : 30000;
   let parsedUrl: URL;
   try {
-    parsedUrl = new URL(url);
+    parsedUrl = new URL(rawUrl);
   } catch {
     throw new TRPCError({ code: "BAD_REQUEST", message: "HTTP tool received an invalid URL" });
   }
+  applyToolAuth({ url: parsedUrl, headers, config, request });
   assertHttpPolicy(tool, parsedUrl, method, timeoutMs);
-  const body = request.body ?? request.payload ?? params;
-  const response = await fetch(url, {
+  const body = buildHttpRequestBody(request);
+  const response = await fetch(parsedUrl.toString(), {
     method,
     headers,
     body: ["GET", "HEAD"].includes(method) ? undefined : JSON.stringify(body ?? {}),
@@ -744,30 +1246,138 @@ async function invokeHttpTool(tool: EmperorToolDefinition, params: unknown) {
   return { status: response.status, output, requestHost: parsedUrl.hostname };
 }
 
-async function invokeMcpConnector(tool: EmperorToolDefinition, params: unknown) {
-  const config = toRecord(tool.config);
+async function invokeMcpHttpTool(tool: EmperorToolDefinition, params: unknown, resolvedSecretRefs: string[] = []): Promise<ToolExecutorResult> {
+  const config = toRecord(await resolveSecretRefs(tool.config, resolvedSecretRefs));
+  const connectorConfig = toRecord(config.connectorConfig || config);
+  const request = toRecord(await resolveSecretRefs(params, resolvedSecretRefs));
+  const baseUrl = String(request.baseUrl || connectorConfig.mcpEndpoint || connectorConfig.baseUrl || "");
+  if (!baseUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "MCP HTTP executor requires mcpEndpoint or baseUrl" });
+  const method = String(request.method || "tools/call");
+  const toolName = String(request.toolName || request.capability || connectorConfig.toolName || "");
+  const url = new URL(baseUrl);
+  const headers = mergeToolHeaders(
+    { "content-type": "application/json" },
+    connectorConfig.headers,
+    request.headers,
+  ) as Record<string, string>;
+  applyToolAuth({ url, headers, config: connectorConfig, request });
+  assertHttpPolicy({ ...tool, type: "api", config: connectorConfig }, url, "POST", Number(request.timeoutMs || connectorConfig.timeoutMs || 30000));
+  const rpcPayload = {
+    jsonrpc: "2.0",
+    id: request.id || generateToolRunId("mcp_rpc"),
+    method,
+    params: {
+      name: toolName,
+      arguments: request.arguments || request.params || request.payload || {},
+    },
+  };
+  const response = await fetch(url.toString(), {
+    method: "POST",
+    headers,
+    body: JSON.stringify(request.rpcPayload || rpcPayload),
+    signal: AbortSignal.timeout(Number(request.timeoutMs || connectorConfig.timeoutMs || 30000)),
+  });
+  const contentType = response.headers.get("content-type") || "";
+  const payload = contentType.includes("application/json") ? await response.json() : await response.text();
+  if (!response.ok) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `MCP HTTP executor failed: ${response.status}`, cause: payload });
+  }
+  const resultRecord = toRecord(payload);
+  if (resultRecord.error) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `MCP tool failed: ${serializeToolError(resultRecord.error)}`, cause: resultRecord.error });
+  }
+  return {
+    status: response.status,
+    requestHost: url.hostname,
+    output: resultRecord.result ?? payload,
+  };
+}
+
+async function invokeMcpConnector(tool: EmperorToolDefinition, params: unknown, resolvedSecretRefs: string[] = []): Promise<ToolExecutorResult> {
+  assertNoPlaintextSecrets(tool.config, "tool.config");
+  assertNoPlaintextSecrets(params, "tool.params");
+  const config = toRecord(await resolveSecretRefs(tool.config, resolvedSecretRefs));
   const connectorConfig = toRecord(config.connectorConfig || config);
   const connectionType = String(config.connectionType || connectorConfig.connectionType || "internal");
+  const executor = String(connectorConfig.executor || connectorConfig.protocol || "");
+
+  if (executor === "mcp_http" || connectorConfig.mcpEndpoint) {
+    const result = await invokeMcpHttpTool({
+      ...tool,
+      config: {
+        ...config,
+        connectorConfig,
+      },
+    }, params, resolvedSecretRefs);
+    return {
+      status: result.status,
+      requestHost: result.requestHost,
+      output: {
+        connectorSlug: config.connectorSlug,
+        connectionType,
+        result: result.output,
+      },
+    };
+  }
 
   if (connectionType === "http_api" || connectorConfig.baseUrl) {
+    const httpParams = mergeConnectorHttpCapabilityParams(params, connectorConfig);
     const result = await invokeHttpTool({
       ...tool,
       type: "api",
       config: connectorConfig,
-    }, params);
+    }, httpParams, resolvedSecretRefs);
     return {
-      connectorSlug: config.connectorSlug,
-      connectionType,
-      ...result,
+      status: result.status,
+      requestHost: result.requestHost,
+      output: {
+        connectorSlug: config.connectorSlug,
+        connectionType,
+        result: result.output,
+      },
     };
   }
 
   return {
-    connectorSlug: config.connectorSlug,
-    connectionType,
-    params,
-    message: "MCP Connector 已统一接入 Tool Gateway；当前连接类型需要后续绑定真实 MCP 执行器。",
+    output: {
+      connectorSlug: config.connectorSlug,
+      connectionType,
+      params: sanitizeForAudit(params),
+      message: "MCP Connector 已统一接入 Tool Gateway；请为该 connector 配置 executor=mcp_http、mcpEndpoint 或注册专用 executor。",
+    },
   };
+}
+
+registerEmperorToolExecutor("internal", async ({ tool, params, resolvedSecretRefs }) => {
+  const result = await invokeInternalTool(tool.slug, params, resolvedSecretRefs);
+  return toRecord(result).output !== undefined && toRecord(result).status !== undefined
+    ? result as ToolExecutorResult
+    : { output: result };
+});
+
+registerEmperorToolExecutor("api", async ({ tool, params, resolvedSecretRefs }) => {
+  return invokeHttpTool(tool, params, resolvedSecretRefs);
+});
+
+registerEmperorToolExecutor("mcp", async ({ tool, params, resolvedSecretRefs }) => {
+  return invokeMcpConnector(tool, params, resolvedSecretRefs);
+});
+
+async function executeToolWithRegisteredExecutor(context: ToolExecutorContext): Promise<ToolExecutorResult> {
+  const config = toRecord(context.tool.config);
+  const connectorConfig = toRecord(config.connectorConfig);
+  const executorKey = String(config.executorKey || connectorConfig.executorKey || context.tool.type);
+  const executor = emperorToolExecutors.get(executorKey) || emperorToolExecutors.get(context.tool.type);
+  if (!executor) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `No Tool executor registered for ${executorKey}` });
+  }
+  if (context.tool.type === "code") {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Code tools require an approved internal handler and cannot execute arbitrary code.",
+    });
+  }
+  return executor(context);
 }
 
 export async function invokeEmperorTool(input: EmperorToolInvocationInput): Promise<EmperorToolInvocationResult> {
@@ -775,6 +1385,18 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
   const tool = await getToolDefinition(input.toolSlug);
   const toolRunId = generateToolRunId();
   const riskLevel = inferToolRisk(tool, input.params);
+  const publicRefs = [
+    ...publicSecretRefs(tool.secretRefs),
+    ...publicSecretRefs(tool.config),
+    ...publicSecretRefs(input.params),
+  ];
+  const resolvedSecretRefs = [...new Set(publicRefs)];
+  const governanceDecision = buildToolGovernanceDecision({
+    tool,
+    invocation: input,
+    riskLevel,
+    secretRefs: resolvedSecretRefs,
+  });
   const requestUrl = tool.type === "api" || tool.type === "mcp" || tool.slug === "internal.http.request"
     ? inferRequestUrl(input.params, tool.config)
     : null;
@@ -784,54 +1406,68 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
     invocation: input,
     riskLevel,
     requestHost: requestUrl?.hostname || null,
+    governanceDecision,
   });
 
   let output: unknown;
+  let normalizedOutput: EmperorToolNormalizedOutput | null = null;
   let status: number | undefined;
   let requestHost: string | null = requestUrl?.hostname || null;
   let attempts = 0;
   const config = toRecord(tool.config);
-  const maxAttempts = boundedToolAttempts(toRecord(config.retry).maxAttempts || config.maxAttempts || config.retryAttempts || 1);
+  const retryPolicy = {
+    ...toRecord(config.retry),
+    ...toRecord(toRecord(tool.governancePolicy).retry),
+  };
+  const maxAttempts = boundedToolAttempts(retryPolicy.maxAttempts || config.maxAttempts || config.retryAttempts || 1);
+  let releaseInFlight: (() => void) | null = null;
 
   try {
+    assertNoPlaintextSecrets(tool.config, "tool.config");
+    assertNoPlaintextSecrets(input.params, "tool.params");
     assertToolPermission(tool, input);
+    assertToolCircuitClosed(tool);
     assertToolRateLimit(tool, input);
+    releaseInFlight = incrementToolInFlight(tool, input);
     assertToolSchema("input", tool, input.params ?? {});
 
     for (attempts = 1; attempts <= maxAttempts; attempts += 1) {
       try {
-        if (tool.type === "internal") {
-          output = await invokeInternalTool(tool.slug, input.params);
-          status = Number(toRecord(output).status) || undefined;
-          requestHost = toRecord(output).requestHost || requestHost;
-        } else if (tool.type === "api") {
-          const result = await invokeHttpTool(tool, input.params);
-          status = result.status;
-          requestHost = result.requestHost || requestHost;
-          output = result.output;
-        } else if (tool.type === "mcp") {
-          output = await invokeMcpConnector(tool, input.params);
-          status = Number(toRecord(output).status) || undefined;
-          requestHost = toRecord(output).requestHost || requestHost;
-        } else {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Code tools require an approved internal handler and cannot execute arbitrary code.",
-          });
-        }
+        const execution = await executeToolWithRegisteredExecutor({
+          tool,
+          params: input.params,
+          invocation: input,
+          resolvedSecretRefs,
+        });
+        status = execution.status;
+        requestHost = execution.requestHost || requestHost;
+        output = execution.output;
         break;
       } catch (error) {
-        if (attempts >= maxAttempts || isPolicyBlock(error)) throw error;
+        const classified = classifyToolFailure(error, status);
+        if (attempts >= maxAttempts || !classified.retryable || isPolicyBlock(error)) throw error;
         const delayMs = Math.min(500 * 2 ** (attempts - 1), 5000);
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
     }
     assertToolSchema("output", tool, output);
+    recordToolCircuitSuccess(tool);
+    normalizedOutput = normalizeToolOutput({
+      tool,
+      output,
+      attempts,
+      durationMs: Date.now() - startedAt,
+      status,
+      requestHost,
+    });
 
     await finishToolRunRecord({
       toolRunId,
       status: "succeeded",
       output,
+      normalizedOutput,
+      attempts,
+      circuitState: getToolCircuitState(tool),
       durationMs: Date.now() - startedAt,
       httpStatus: status,
     });
@@ -845,13 +1481,41 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
       projectId: input.projectId ?? null,
       nodeId: input.nodeId || null,
       toolSlug: tool.slug,
-      metadata: { type: tool.type, source: tool.source, attempts, httpStatus: status, requestHost },
+      metadata: {
+        type: tool.type,
+        source: tool.source,
+        attempts,
+        httpStatus: status,
+        requestHost,
+        governanceDecision,
+        secretRefs: resolvedSecretRefs,
+        circuitState: getToolCircuitState(tool),
+      },
     });
   } catch (error) {
+    const classified = classifyToolFailure(error, status);
+    const circuitFailureKind = classified.kind;
+    recordToolCircuitFailure(tool, circuitFailureKind);
+    normalizedOutput = normalizeToolOutput({
+      tool,
+      error,
+      attempts,
+      durationMs: Date.now() - startedAt,
+      status,
+      requestHost,
+      failureKind: classified.kind,
+      retryable: classified.retryable,
+    });
+    const blocked = ["policy", "rate_limit", "circuit_open", "schema", "auth"].includes(classified.kind);
     await finishToolRunRecord({
       toolRunId,
-      status: isPolicyBlock(error) ? "blocked" : "failed",
+      status: blocked ? "blocked" : "failed",
+      normalizedOutput,
       error,
+      failureKind: classified.kind,
+      retryable: classified.retryable,
+      attempts,
+      circuitState: getToolCircuitState(tool),
       durationMs: Date.now() - startedAt,
       httpStatus: status,
     });
@@ -865,9 +1529,23 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
       projectId: input.projectId ?? null,
       nodeId: input.nodeId || null,
       toolSlug: tool.slug,
-      metadata: { type: tool.type, source: tool.source, attempts, httpStatus: status, requestHost, error: serializeToolError(error) },
+      metadata: {
+        type: tool.type,
+        source: tool.source,
+        attempts,
+        httpStatus: status,
+        requestHost,
+        failureKind: classified.kind,
+        retryable: classified.retryable,
+        governanceDecision,
+        secretRefs: resolvedSecretRefs,
+        circuitState: getToolCircuitState(tool),
+        error: serializeToolError(error),
+      },
     });
     throw error;
+  } finally {
+    if (releaseInFlight) releaseInFlight();
   }
 
   return {
@@ -875,6 +1553,7 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
     type: tool.type,
     success: true,
     output,
+    normalizedOutput: normalizedOutput!,
     metadata: {
       toolRunId,
       durationMs: Date.now() - startedAt,
@@ -882,6 +1561,11 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
       requestHost,
       riskLevel,
       attempts,
+      failureKind: null,
+      retryable: false,
+      circuitState: getToolCircuitState(tool),
+      governanceDecision,
+      secretRefs: resolvedSecretRefs,
       source: tool.source,
     },
   };
@@ -930,6 +1614,9 @@ export async function listEmperorToolRuns(input: {
       ...row,
       input: parseJson(row.input, null),
       output: parseJson(row.output, null),
+      normalizedOutput: parseJson(row.normalizedOutput, null),
+      governanceDecision: parseJson(row.governanceDecision, null),
+      secretRefs: parseJson(row.secretRefs, []),
     }));
   } catch (error) {
     toolRunStoreAvailable = false;
@@ -944,26 +1631,67 @@ export async function upsertEmperorTool(input: {
   description?: string | null;
   type: EmperorToolType;
   config?: unknown;
+  governancePolicy?: unknown;
+  permissionPolicy?: unknown;
+  rateLimitPolicy?: unknown;
+  circuitBreakerPolicy?: unknown;
+  secretRefs?: unknown;
+  outputPolicy?: unknown;
   inputSchema?: unknown;
   outputSchema?: unknown;
   isActive?: boolean;
 }) {
+  assertNoPlaintextSecrets(input.config, "tool.config");
+  assertNoPlaintextSecrets(input.secretRefs, "tool.secretRefs");
   await rawExecute(
-    `INSERT INTO emperor_tools (slug,name,description,type,config,inputSchema,outputSchema,isActive)
-     VALUES (?,?,?,?,?,?,?,?)
-     ON DUPLICATE KEY UPDATE name=VALUES(name),description=VALUES(description),type=VALUES(type),config=VALUES(config),inputSchema=VALUES(inputSchema),outputSchema=VALUES(outputSchema),isActive=VALUES(isActive),updatedAt=NOW()`,
+    `INSERT INTO emperor_tools (slug,name,description,type,config,governancePolicy,permissionPolicy,rateLimitPolicy,circuitBreakerPolicy,secretRefs,outputPolicy,inputSchema,outputSchema,isActive)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON DUPLICATE KEY UPDATE name=VALUES(name),description=VALUES(description),type=VALUES(type),config=VALUES(config),governancePolicy=VALUES(governancePolicy),permissionPolicy=VALUES(permissionPolicy),rateLimitPolicy=VALUES(rateLimitPolicy),circuitBreakerPolicy=VALUES(circuitBreakerPolicy),secretRefs=VALUES(secretRefs),outputPolicy=VALUES(outputPolicy),inputSchema=VALUES(inputSchema),outputSchema=VALUES(outputSchema),isActive=VALUES(isActive),updatedAt=NOW()`,
     [
       input.slug,
       input.name,
       input.description || null,
       input.type,
       input.config === undefined ? null : JSON.stringify(input.config),
+      input.governancePolicy === undefined ? null : JSON.stringify(input.governancePolicy),
+      input.permissionPolicy === undefined ? null : JSON.stringify(input.permissionPolicy),
+      input.rateLimitPolicy === undefined ? null : JSON.stringify(input.rateLimitPolicy),
+      input.circuitBreakerPolicy === undefined ? null : JSON.stringify(input.circuitBreakerPolicy),
+      input.secretRefs === undefined ? null : JSON.stringify(input.secretRefs),
+      input.outputPolicy === undefined ? null : JSON.stringify(input.outputPolicy),
       input.inputSchema === undefined ? null : JSON.stringify(input.inputSchema),
       input.outputSchema === undefined ? null : JSON.stringify(input.outputSchema),
       input.isActive === false ? 0 : 1,
     ],
   );
   return { success: true, slug: input.slug };
+}
+
+export async function upsertEmperorToolSecret(input: {
+  slug: string;
+  value: string;
+  description?: string | null;
+  metadata?: unknown;
+  userId?: number | null;
+}) {
+  const encrypted = encryptToolSecretValue(input.value);
+  await rawExecute(
+    `INSERT INTO emperor_tool_secrets (slug,description,encryptedValue,iv,authTag,keyVersion,metadata,createdBy,updatedBy)
+     VALUES (?,?,?,?,?,?,?,?,?)
+     ON DUPLICATE KEY UPDATE description=VALUES(description),encryptedValue=VALUES(encryptedValue),iv=VALUES(iv),authTag=VALUES(authTag),keyVersion=VALUES(keyVersion),metadata=VALUES(metadata),updatedBy=VALUES(updatedBy),updatedAt=NOW()`,
+    [
+      input.slug,
+      input.description || null,
+      encrypted.encryptedValue,
+      encrypted.iv,
+      encrypted.authTag,
+      encrypted.keyVersion,
+      input.metadata === undefined ? null : JSON.stringify(sanitizeForAudit(input.metadata)),
+      input.userId || null,
+      input.userId || null,
+    ],
+  );
+  return { success: true, ref: buildToolSecretRef(input.slug), slug: input.slug };
 }
 
 export async function seedBuiltinTools() {

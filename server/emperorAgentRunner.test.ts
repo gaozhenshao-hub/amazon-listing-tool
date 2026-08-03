@@ -16,6 +16,11 @@ import {
   validateAgentDag,
 } from "./services/emperorAgentRunner";
 import {
+  assertToolConfigUsesSecretRefs,
+  buildToolSecretRef,
+  classifyToolFailure,
+  decryptToolSecretValue,
+  encryptToolSecretValue,
   getBuiltinToolDefinitions,
   invokeEmperorTool,
   validateJsonSchemaValue,
@@ -55,7 +60,20 @@ describe("Emperor Agent workflow kernel", () => {
     expect(schema.emperorAgentArtifacts.fileSizeBytes).toBeDefined();
     expect(schema.emperorAgentArtifacts.storageUri).toBeDefined();
     expect(schema.emperorTools).toBeDefined();
+    expect(schema.emperorTools.governancePolicy).toBeDefined();
+    expect(schema.emperorTools.permissionPolicy).toBeDefined();
+    expect(schema.emperorTools.rateLimitPolicy).toBeDefined();
+    expect(schema.emperorTools.circuitBreakerPolicy).toBeDefined();
+    expect(schema.emperorTools.secretRefs).toBeDefined();
+    expect(schema.emperorTools.outputPolicy).toBeDefined();
     expect(schema.emperorToolRuns).toBeDefined();
+    expect(schema.emperorToolRuns.failureKind).toBeDefined();
+    expect(schema.emperorToolRuns.normalizedOutput).toBeDefined();
+    expect(schema.emperorToolRuns.governanceDecision).toBeDefined();
+    expect(schema.emperorToolRuns.secretRefs).toBeDefined();
+    expect(schema.emperorToolSecrets).toBeDefined();
+    expect(schema.emperorMcpConnectors.governancePolicy).toBeDefined();
+    expect(schema.emperorMcpConnectors.secretRefs).toBeDefined();
     expect(schema.emperorAiOsMetrics).toBeDefined();
   });
 
@@ -360,6 +378,7 @@ describe("Emperor Agent workflow kernel", () => {
     expect(procedures["emperor.tools.listRuns"]).toBeDefined();
     expect(procedures["emperor.tools.invoke"]).toBeDefined();
     expect(procedures["emperor.tools.upsert"]).toBeDefined();
+    expect(procedures["emperor.tools.upsertSecret"]).toBeDefined();
     expect(procedures["emperor.observability.metrics"]).toBeDefined();
     expect(LISTING_AGENT_SLUG).toBe("listing.full.workflow");
   });
@@ -392,6 +411,24 @@ describe("Emperor Agent workflow kernel", () => {
     expect(result.metadata.riskLevel).toBe("low");
     expect(result.metadata.toolRunId).toMatch(/^tool_\d+_[a-z0-9]+$/);
     expect(result.metadata.attempts).toBe(1);
+    expect(result.normalizedOutput.ok).toBe(true);
+    expect((result.normalizedOutput.data as any).title).toBe("Water Filter Replacement");
+    expect(result.metadata.governanceDecision?.allowed).toBe(true);
+  });
+
+  it("should encrypt Tool secrets and classify gateway failures", () => {
+    const encrypted = encryptToolSecretValue("seller-secret-value");
+    expect(encrypted.encryptedValue).not.toContain("seller-secret-value");
+    expect(decryptToolSecretValue(encrypted)).toBe("seller-secret-value");
+    expect(buildToolSecretRef("seller-api")).toBe("secret://seller-api");
+    expect(() => assertToolConfigUsesSecretRefs({ authConfig: { apiKey: "plain-secret" } }, "tool.config")).toThrow(/must use/);
+    expect(() => assertToolConfigUsesSecretRefs({
+      authConfig: { apiKey: "secret://seller-api" },
+      connectionString: "env:SELLER_DB_DSN",
+    }, "tool.config")).not.toThrow();
+    expect(classifyToolFailure(new Error("Tool circuit breaker is open")).kind).toBe("circuit_open");
+    expect(classifyToolFailure(new Error("HTTP tool failed: 503")).retryable).toBe(true);
+    expect(classifyToolFailure(new Error("Tool inputSchema validation failed")).kind).toBe("schema");
   });
 
   it("should validate Tool Gateway JSON schema contracts", () => {
