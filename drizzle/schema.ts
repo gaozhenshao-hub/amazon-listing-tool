@@ -4969,6 +4969,25 @@ export const emperorToolRuns = mysqlTable("emperor_tool_runs", {
 export type EmperorToolRun = typeof emperorToolRuns.$inferSelect;
 export type InsertEmperorToolRun = typeof emperorToolRuns.$inferInsert;
 
+export const emperorAiOsMetrics = mysqlTable("emperor_ai_os_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  entityType: varchar("entityType", { length: 40 }).notNull(),
+  entityId: varchar("entityId", { length: 128 }).notNull(),
+  metricName: varchar("metricName", { length: 80 }).notNull(),
+  metricValue: decimal("metricValue", { precision: 18, scale: 4 }),
+  status: varchar("status", { length: 40 }),
+  userId: int("userId"),
+  projectId: int("projectId"),
+  agentSlug: varchar("agentSlug", { length: 128 }),
+  nodeId: varchar("nodeId", { length: 128 }),
+  skillSlug: varchar("skillSlug", { length: 128 }),
+  toolSlug: varchar("toolSlug", { length: 128 }),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type EmperorAiOsMetric = typeof emperorAiOsMetrics.$inferSelect;
+export type InsertEmperorAiOsMetric = typeof emperorAiOsMetrics.$inferInsert;
+
 // Emperor 知识库（cc-haha 四分类记忆体系）
 export const emperorKnowledge = mysqlTable("emperor_knowledge", {
   id: int("id").autoincrement().primaryKey(),

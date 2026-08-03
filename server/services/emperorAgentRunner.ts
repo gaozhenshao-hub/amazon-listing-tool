@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { createHash } from "crypto";
 import { sql as drizzleSql } from "drizzle-orm";
-import { getDb, updateAiJobByRunId } from "../db";
+import { getDb } from "../db";
 import {
   getEmperorSkillRuntimeSnapshot,
   normalizeSkillVersion,
@@ -11,7 +11,7 @@ import {
   type SkillRuntimeSnapshot,
   type SkillVersionPolicy,
 } from "./emperorSkillRunner";
-import { registerAiJobHandler, startRegisteredAiJob, type AiJobSnapshot } from "./aiJobRunner";
+import { calculateAiJobRetryDelayMs, cancelAiJob, failAiJob, registerAiJobHandler, startRegisteredAiJob, type AiJobSnapshot } from "./aiJobRunner";
 import { invokeEmperorTool } from "./emperorToolGateway";
 
 export type AgentNodeStatus = "pending" | "ready" | "running" | "waiting_human" | "confirmed" | "skipped" | "failed";
@@ -136,6 +136,12 @@ export type AgentContextPackage = {
     artifactRefs: string[];
     builtAt: string;
   };
+};
+
+export type AgentContextPackageOptions = {
+  maxStringLength?: number;
+  maxArtifactContentLength?: number;
+  includeArtifactContent?: boolean;
 };
 
 type CheckpointRow = {
@@ -322,8 +328,9 @@ export function normalizeAgentDag(raw: unknown): EmperorAgentDag {
 }
 
 function nodeMaxAttempts(node: EmperorAgentNode): number {
-  const value = Number(node.maxAttempts || 1);
-  return Number.isFinite(value) ? Math.min(Math.max(Math.floor(value), 1), 10) : 1;
+  const defaultAttempts = node.nodeType === "skill_node" || node.toolSlug ? 2 : 1;
+  const value = Number(node.maxAttempts || defaultAttempts);
+  return Number.isFinite(value) ? Math.min(Math.max(Math.floor(value), 1), 10) : defaultAttempts;
 }
 
 function nodeTimeoutAt(node: EmperorAgentNode): Date {
@@ -822,6 +829,27 @@ function summarizeArtifactContent(content: unknown): string {
   }
 }
 
+function contextStringLimit(value?: number, fallback = 4000): number {
+  return Number.isFinite(value) ? Math.min(Math.max(Math.floor(Number(value)), 200), 50000) : fallback;
+}
+
+function trimContextValue(value: unknown, maxLength: number): unknown {
+  if (typeof value === "string") {
+    return value.length > maxLength
+      ? { __truncated: true, originalLength: value.length, preview: value.slice(0, maxLength) }
+      : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => trimContextValue(item, maxLength));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, trimContextValue(item, maxLength)]),
+    );
+  }
+  return value;
+}
+
 async function persistAgentArtifact(input: {
   run: any;
   node: EmperorAgentNode;
@@ -904,6 +932,84 @@ export async function listAgentArtifacts(input: {
     console.warn("[Agent Artifact] Failed to list artifacts:", error);
     return [];
   }
+}
+
+function parseAgentArtifactRef(ref: string) {
+  const match = ref.match(/^artifact:\/\/([^/]+)\/([^/]+)\/([^@]+)@(\d+)$/);
+  if (!match) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid artifact ref" });
+  }
+  return {
+    runId: match[1],
+    nodeId: match[2],
+    artifactKey: match[3],
+    version: Number(match[4]),
+  };
+}
+
+export async function resolveAgentArtifactRef(input: {
+  ref: string;
+  userId?: number;
+  skipOwnerCheck?: boolean;
+}) {
+  const parsed = parseAgentArtifactRef(input.ref);
+  const run = await getRunRow(parsed.runId);
+  if (!input.skipOwnerCheck && input.userId && run.userId !== input.userId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Cannot read this Artifact" });
+  }
+  const rows = await rawExecute(
+    "SELECT * FROM emperor_agent_artifacts WHERE runId=? AND nodeId=? AND artifactKey=? AND version=? LIMIT 1",
+    [parsed.runId, parsed.nodeId, parsed.artifactKey, parsed.version],
+  );
+  if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Artifact not found" });
+  return {
+    ...rows[0],
+    content: parseJson(rows[0].content),
+    metadata: parseJson(rows[0].metadata, {}),
+  };
+}
+
+export async function selectAgentArtifactVersion(input: {
+  runId: string;
+  nodeId: string;
+  artifactKey: string;
+  version: number;
+  userId: number;
+}) {
+  const run = await getRunRow(input.runId);
+  if (run.userId !== input.userId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Cannot select this Artifact" });
+  }
+  const rows = await rawExecute(
+    "SELECT * FROM emperor_agent_artifacts WHERE runId=? AND nodeId=? AND artifactKey=? AND version=? LIMIT 1",
+    [input.runId, input.nodeId, input.artifactKey, input.version],
+  );
+  if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Artifact not found" });
+  const artifact = {
+    ...rows[0],
+    content: parseJson(rows[0].content),
+    metadata: parseJson(rows[0].metadata, {}),
+  };
+  await rawExecute(
+    "UPDATE emperor_agent_artifacts SET status='superseded',updatedAt=NOW() WHERE runId=? AND nodeId=? AND artifactKey=? AND status='final'",
+    [input.runId, input.nodeId, input.artifactKey],
+  );
+  await rawExecute(
+    "UPDATE emperor_agent_artifacts SET status='final',updatedAt=NOW() WHERE runId=? AND nodeId=? AND artifactKey=? AND version=?",
+    [input.runId, input.nodeId, input.artifactKey, input.version],
+  );
+  await rawExecute(
+    "UPDATE emperor_agent_checkpoints SET userEdit=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
+    [stringifyJson(artifact.content), input.runId, input.nodeId],
+  );
+  await addEvent(input.runId, run.agentSlug, input.nodeId, "artifact.version_selected", `Artifact ${input.artifactKey}@${input.version} 已设为当前版本`, {
+    artifactKey: input.artifactKey,
+    version: input.version,
+  });
+  return {
+    ...artifact,
+    status: "final",
+  };
 }
 
 async function getRunRow(runId: string) {
@@ -990,25 +1096,29 @@ export function buildAgentContextPackage(input: {
   node: EmperorAgentNode;
   checkpoints: CheckpointRow[];
   artifacts?: any[];
+  options?: AgentContextPackageOptions;
 }): AgentContextPackage {
   const { run, dag, node, checkpoints } = input;
+  const maxStringLength = contextStringLimit(input.options?.maxStringLength);
+  const maxArtifactContentLength = contextStringLimit(input.options?.maxArtifactContentLength, 8000);
+  const includeArtifactContent = input.options?.includeArtifactContent !== false;
   const parents = parentIds(dag, node.id);
   const parentOutputs = checkpoints
     .filter((checkpoint) => parents.includes(checkpoint.nodeId))
     .reduce<Record<string, unknown>>((acc, checkpoint) => {
       const parentNode = dag.nodes.find((item) => item.id === checkpoint.nodeId);
-      acc[parentNode?.outputKey || checkpoint.nodeId] = effectiveCheckpointOutput(checkpoint);
+      acc[parentNode?.outputKey || checkpoint.nodeId] = trimContextValue(effectiveCheckpointOutput(checkpoint), maxStringLength);
       return acc;
     }, {});
   const confirmedOutputs = checkpoints
     .filter((checkpoint) => isConfirmedStatus(checkpoint.status))
     .reduce<Record<string, unknown>>((acc, checkpoint) => {
       const confirmedNode = dag.nodes.find((item) => item.id === checkpoint.nodeId);
-      acc[confirmedNode?.outputKey || checkpoint.nodeId] = effectiveCheckpointOutput(checkpoint);
+      acc[confirmedNode?.outputKey || checkpoint.nodeId] = trimContextValue(effectiveCheckpointOutput(checkpoint), maxStringLength);
       return acc;
     }, {});
   const artifacts = (input.artifacts || [])
-    .filter((artifact) => artifact.status === "final" || parents.includes(artifact.nodeId))
+    .filter((artifact) => artifact.status === "final")
     .map((artifact) => ({
       artifactId: artifact.id,
       runId: artifact.runId,
@@ -1016,14 +1126,14 @@ export function buildAgentContextPackage(input: {
       artifactKey: artifact.artifactKey,
       version: Number(artifact.version || 1),
       status: artifact.status,
-      content: artifact.content,
+      content: includeArtifactContent ? trimContextValue(artifact.content, maxArtifactContentLength) : null,
       sourceSkillRunId: artifact.sourceSkillRunId || null,
       sourceAiJobRunId: artifact.sourceAiJobRunId || null,
     }));
   const artifactRefs = artifacts.map((artifact) => `artifact://${artifact.runId}/${artifact.nodeId}/${artifact.artifactKey}@${artifact.version}`);
   const parsedRunInputs = parseJson(run.inputs, {});
   const runInputs = parsedRunInputs && typeof parsedRunInputs === "object" && !Array.isArray(parsedRunInputs)
-    ? parsedRunInputs as Record<string, unknown>
+    ? trimContextValue(parsedRunInputs, maxStringLength) as Record<string, unknown>
     : {};
   return {
     version: "1.0",
@@ -1056,7 +1166,12 @@ export function buildAgentContextPackage(input: {
 }
 
 function buildNodeInput(run: any, dag: EmperorAgentDag, node: EmperorAgentNode, checkpoints: CheckpointRow[], artifacts?: any[]) {
-  const contextPackage = buildAgentContextPackage({ run, dag, node, checkpoints, artifacts });
+  const contextOptions = node.contextPackageOptions && typeof node.contextPackageOptions === "object"
+    ? node.contextPackageOptions as AgentContextPackageOptions
+    : node.contextBudget && typeof node.contextBudget === "object"
+      ? node.contextBudget as AgentContextPackageOptions
+      : undefined;
+  const contextPackage = buildAgentContextPackage({ run, dag, node, checkpoints, artifacts, options: contextOptions });
   return {
     ...contextPackage,
     contextPackage,
@@ -1085,6 +1200,7 @@ async function finalizeNodeOutput(input: {
   userId: number;
   output: unknown;
   skillRunId?: string | null;
+  sourceAiJobRunId?: string | null;
   runtimeMetadata?: Record<string, unknown>;
   completedMessage?: string;
 }) {
@@ -1096,9 +1212,19 @@ async function finalizeNodeOutput(input: {
     return;
   }
 
+  const checkpoint = await getCheckpoint(input.run.runId, input.node.id);
+  if (input.sourceAiJobRunId && (checkpoint.status !== "running" || checkpoint.aiJobRunId !== input.sourceAiJobRunId)) {
+    await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.output_ignored", `节点 ${input.node.label || input.node.id} 的结果已忽略：Checkpoint 已变化`, {
+      skillRunId: input.skillRunId || null,
+      sourceAiJobRunId: input.sourceAiJobRunId,
+      checkpointStatus: checkpoint.status,
+      currentAiJobRunId: checkpoint.aiJobRunId || null,
+    });
+    return;
+  }
+
   const waitingForHuman = nodeRequiresHumanGate(input.node);
   const nextStatus: AgentNodeStatus = waitingForHuman ? "waiting_human" : "confirmed";
-  const checkpoint = await getCheckpoint(input.run.runId, input.node.id);
   assertNodeTransition(checkpoint.status, nextStatus, "finalize node");
   const nextMetadata = {
     ...checkpointMetadata(checkpoint),
@@ -1124,7 +1250,7 @@ async function finalizeNodeOutput(input: {
     status: waitingForHuman ? "draft" : "final",
     content: input.output,
     sourceSkillRunId: input.skillRunId || checkpoint.skillRunId || null,
-    sourceAiJobRunId: checkpoint.aiJobRunId || null,
+    sourceAiJobRunId: input.sourceAiJobRunId || checkpoint.aiJobRunId || null,
     metadata: {
       source: "finalizeNodeOutput",
       waitingForHuman,
@@ -1481,12 +1607,7 @@ export async function cancelAgentRun(input: {
     if (checkpoint.status !== "running") continue;
     assertNodeTransition(checkpoint.status, "failed", "cancel running node");
     if (checkpoint.aiJobRunId) {
-      await updateAiJobByRunId(checkpoint.aiJobRunId, {
-        status: "canceled",
-        progress: 100,
-        errorMessage: input.reason || "Agent run canceled",
-        completedAt: new Date(),
-      });
+      await cancelAiJob(checkpoint.aiJobRunId, input.reason || "Agent run canceled");
     }
   }
 
@@ -1569,12 +1690,7 @@ export async function recoverTimedOutAgentNodes(opts: { limit?: number } = {}) {
       [message, new Date(), checkpoint.runId, checkpoint.nodeId],
     );
     if (checkpoint.aiJobRunId) {
-      await updateAiJobByRunId(checkpoint.aiJobRunId, {
-        status: "failed",
-        progress: 100,
-        errorMessage: message,
-        completedAt: new Date(),
-      });
+      await failAiJob(checkpoint.aiJobRunId, new Error(message));
     }
     await rawExecute(
       "UPDATE emperor_agent_runs SET status='failed',errorMessage=?,currentNodeId=?,updatedAt=NOW() WHERE runId=?",
@@ -1736,33 +1852,39 @@ export async function executeAgentNode(input: {
     throw error;
   }
 
-  const job = await startRegisteredAiJob({
-    kind: `agent.node.${node.id}`,
-    module: "emperorAgent",
-    procedure: "emperor.agents.executeNode",
-    userId: input.userId,
-    projectId: run.projectId ?? null,
-    skillSlug: node.skillSlug,
-    maxAttempts: nodeMaxAttempts(node),
-    timeoutSeconds: Number(node.timeoutSeconds || 600),
-    input: {
-      runId: input.runId,
-      agentSlug: run.agentSlug,
-      nodeId: node.id,
+  let job: AiJobSnapshot;
+  try {
+    job = await startRegisteredAiJob({
+      kind: `agent.node.${node.id}`,
+      module: "emperorAgent",
+      procedure: "emperor.agents.executeNode",
+      userId: input.userId,
+      projectId: run.projectId ?? null,
       skillSlug: node.skillSlug,
-      skillVersionPolicy: metadata.skillVersionPolicy || binding.policy,
-      expectedSkillVersion: skillSnapshot?.version || binding.pinnedVersion || null,
-      expectedSkillPromptHash: skillSnapshot?.systemPromptHash || null,
-      skillSnapshot,
-      nodeInput,
-    },
-    progress: 5,
-  });
+      maxAttempts: nodeMaxAttempts(node),
+      timeoutSeconds: Number(node.timeoutSeconds || 600),
+      input: {
+        runId: input.runId,
+        agentSlug: run.agentSlug,
+        nodeId: node.id,
+        skillSlug: node.skillSlug,
+        skillVersionPolicy: metadata.skillVersionPolicy || binding.policy,
+        expectedSkillVersion: skillSnapshot?.version || binding.pinnedVersion || null,
+        expectedSkillPromptHash: skillSnapshot?.systemPromptHash || null,
+        skillSnapshot,
+        nodeInput,
+      },
+      progress: 5,
+    });
 
-  await rawExecute(
-    "UPDATE emperor_agent_checkpoints SET aiJobRunId=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
-    [job.runId, input.runId, input.nodeId],
-  );
+    await rawExecute(
+      "UPDATE emperor_agent_checkpoints SET aiJobRunId=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
+      [job.runId, input.runId, input.nodeId],
+    );
+  } catch (error) {
+    await failNodeExecution({ run, node, error });
+    throw error;
+  }
   return getAgentRun(input.runId, input.userId, true);
 }
 
@@ -1840,6 +1962,7 @@ async function runAgentNodeSkillJob(job: AiJobSnapshot) {
       userId: job.userId,
       output: result,
       skillRunId: result.runId,
+      sourceAiJobRunId: job.runId,
       runtimeMetadata: {
         skillVersionPolicy: payload.skillVersionPolicy,
         skillSnapshot: payload.skillSnapshot || null,
@@ -1861,7 +1984,24 @@ async function runAgentNodeSkillJob(job: AiJobSnapshot) {
     });
     return result;
   } catch (error) {
-    await failNodeExecution({ run, node, error });
+    if (job.attempt < job.maxAttempts) {
+      const retryDelayMs = calculateAiJobRetryDelayMs(job.attempt);
+      const timeoutMs = Math.min(Math.max(job.timeoutSeconds || 600, 5), 7200) * 1000;
+      const nextTimeoutAt = new Date(Date.now() + retryDelayMs + timeoutMs + 5000);
+      await rawExecute(
+        "UPDATE emperor_agent_checkpoints SET errorMessage=?,timeoutAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=? AND status='running'",
+        [error instanceof Error ? error.message : String(error), nextTimeoutAt, payload.runId, payload.nodeId],
+      );
+      await addEvent(payload.runId, run.agentSlug, node.id, "node.retry_scheduled", `节点 ${node.label || node.id} 失败，已等待第 ${job.attempt + 1}/${job.maxAttempts} 次重试`, {
+        aiJobRunId: job.runId,
+        attempt: job.attempt,
+        maxAttempts: job.maxAttempts,
+        retryDelayMs,
+        timeoutAt: nextTimeoutAt.toISOString(),
+      });
+    } else {
+      await failNodeExecution({ run, node, error });
+    }
     throw error;
   }
 }

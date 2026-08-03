@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb } from "../db";
+import { recordAiOsMetric } from "./aiOsObservability";
 
 export type EmperorToolType = "mcp" | "api" | "internal" | "code";
 
@@ -19,6 +20,7 @@ export type EmperorToolInvocationInput = {
   toolSlug: string;
   params?: unknown;
   userId: number;
+  userRole?: string | null;
   runId?: string;
   nodeId?: string;
   projectId?: number | null;
@@ -35,6 +37,7 @@ export type EmperorToolInvocationResult = {
     status?: number;
     requestHost?: string | null;
     riskLevel?: ToolRiskLevel;
+    attempts?: number;
     source: "builtin" | "emperor_tools" | "mcp_connector";
   };
 };
@@ -42,6 +45,7 @@ export type EmperorToolInvocationResult = {
 export type ToolRiskLevel = "low" | "medium" | "high" | "critical";
 type ToolRunStatus = "running" | "succeeded" | "failed" | "blocked";
 let toolRunStoreAvailable = true;
+const toolRateLimitBuckets = new Map<string, number[]>();
 
 async function rawExecute(sqlStr: string, params: unknown[] = []): Promise<any[]> {
   const db = await getDb();
@@ -121,6 +125,69 @@ function parseArrayConfig(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String).filter(Boolean);
   if (typeof value === "string") return value.split(",").map((item) => item.trim()).filter(Boolean);
   return [];
+}
+
+function boundedToolAttempts(value: unknown): number {
+  const attempts = Number(value);
+  return Number.isFinite(attempts) ? Math.min(Math.max(Math.floor(attempts), 1), 5) : 1;
+}
+
+function assertToolPermission(tool: EmperorToolDefinition, invocation: EmperorToolInvocationInput) {
+  const config = toRecord(tool.config);
+  const role = String(invocation.userRole || "");
+  const allowedRoles = parseArrayConfig(config.allowedRoles);
+  if (allowedRoles.length > 0 && (!role || !allowedRoles.includes(role))) {
+    throw new TRPCError({ code: "FORBIDDEN", message: `Tool ${tool.slug} is not allowed for role ${role || "(unknown)"}` });
+  }
+  const deniedRoles = parseArrayConfig(config.deniedRoles);
+  if (role && deniedRoles.includes(role)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: `Tool ${tool.slug} is denied for role ${role}` });
+  }
+  const allowedUserIds = parseArrayConfig(config.allowedUserIds).map(Number).filter(Number.isFinite);
+  if (allowedUserIds.length > 0 && !allowedUserIds.includes(invocation.userId)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: `Tool ${tool.slug} is not allowed for this user` });
+  }
+}
+
+function assertToolRateLimit(tool: EmperorToolDefinition, invocation: EmperorToolInvocationInput) {
+  const config = toRecord(tool.config);
+  const limit = Number(config.rateLimitPerMinute || config.maxCallsPerMinute || 0);
+  if (!Number.isFinite(limit) || limit <= 0) return;
+  const boundedLimit = Math.min(Math.max(Math.floor(limit), 1), 1000);
+  const key = `${tool.slug}:${invocation.userId}`;
+  const now = Date.now();
+  const windowStart = now - 60_000;
+  const bucket = (toolRateLimitBuckets.get(key) || []).filter((timestamp) => timestamp >= windowStart);
+  if (bucket.length >= boundedLimit) {
+    toolRateLimitBuckets.set(key, bucket);
+    throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: `Tool ${tool.slug} exceeded ${boundedLimit}/minute rate limit` });
+  }
+  bucket.push(now);
+  toolRateLimitBuckets.set(key, bucket);
+}
+
+function resolveSecretRef(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const directMatch = value.match(/^env:([A-Z0-9_]+)$/i);
+  const templateMatch = value.match(/^\$\{env:([A-Z0-9_]+)\}$/i);
+  const key = directMatch?.[1] || templateMatch?.[1];
+  if (!key) return value;
+  const secret = process.env[key];
+  if (!secret) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `Missing environment secret: ${key}` });
+  }
+  return secret;
+}
+
+function resolveSecretRefs(value: unknown, depth = 0): unknown {
+  if (depth > 5) return value;
+  if (Array.isArray(value)) return value.map((item) => resolveSecretRefs(item, depth + 1));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, resolveSecretRefs(item, depth + 1)]),
+    );
+  }
+  return resolveSecretRef(value);
 }
 
 function schemaTypes(schema: Record<string, any>): string[] {
@@ -634,7 +701,7 @@ function buildUrl(baseUrl: string, path = "") {
 }
 
 async function invokeHttpTool(tool: EmperorToolDefinition, params: unknown) {
-  const config = toRecord(tool.config);
+  const config = toRecord(resolveSecretRefs(tool.config));
   const request = toRecord(params);
   const baseUrl = String(request.baseUrl || config.baseUrl || "");
   const path = String(request.path || config.path || "");
@@ -706,7 +773,6 @@ async function invokeMcpConnector(tool: EmperorToolDefinition, params: unknown) 
 export async function invokeEmperorTool(input: EmperorToolInvocationInput): Promise<EmperorToolInvocationResult> {
   const startedAt = Date.now();
   const tool = await getToolDefinition(input.toolSlug);
-  assertToolSchema("input", tool, input.params ?? {});
   const toolRunId = generateToolRunId();
   const riskLevel = inferToolRisk(tool, input.params);
   const requestUrl = tool.type === "api" || tool.type === "mcp" || tool.slug === "internal.http.request"
@@ -723,26 +789,42 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
   let output: unknown;
   let status: number | undefined;
   let requestHost: string | null = requestUrl?.hostname || null;
+  let attempts = 0;
+  const config = toRecord(tool.config);
+  const maxAttempts = boundedToolAttempts(toRecord(config.retry).maxAttempts || config.maxAttempts || config.retryAttempts || 1);
 
   try {
-    if (tool.type === "internal") {
-      output = await invokeInternalTool(tool.slug, input.params);
-      status = Number(toRecord(output).status) || undefined;
-      requestHost = toRecord(output).requestHost || requestHost;
-    } else if (tool.type === "api") {
-      const result = await invokeHttpTool(tool, input.params);
-      status = result.status;
-      requestHost = result.requestHost || requestHost;
-      output = result.output;
-    } else if (tool.type === "mcp") {
-      output = await invokeMcpConnector(tool, input.params);
-      status = Number(toRecord(output).status) || undefined;
-      requestHost = toRecord(output).requestHost || requestHost;
-    } else {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: "Code tools require an approved internal handler and cannot execute arbitrary code.",
-      });
+    assertToolPermission(tool, input);
+    assertToolRateLimit(tool, input);
+    assertToolSchema("input", tool, input.params ?? {});
+
+    for (attempts = 1; attempts <= maxAttempts; attempts += 1) {
+      try {
+        if (tool.type === "internal") {
+          output = await invokeInternalTool(tool.slug, input.params);
+          status = Number(toRecord(output).status) || undefined;
+          requestHost = toRecord(output).requestHost || requestHost;
+        } else if (tool.type === "api") {
+          const result = await invokeHttpTool(tool, input.params);
+          status = result.status;
+          requestHost = result.requestHost || requestHost;
+          output = result.output;
+        } else if (tool.type === "mcp") {
+          output = await invokeMcpConnector(tool, input.params);
+          status = Number(toRecord(output).status) || undefined;
+          requestHost = toRecord(output).requestHost || requestHost;
+        } else {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Code tools require an approved internal handler and cannot execute arbitrary code.",
+          });
+        }
+        break;
+      } catch (error) {
+        if (attempts >= maxAttempts || isPolicyBlock(error)) throw error;
+        const delayMs = Math.min(500 * 2 ** (attempts - 1), 5000);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
     }
     assertToolSchema("output", tool, output);
 
@@ -753,6 +835,18 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
       durationMs: Date.now() - startedAt,
       httpStatus: status,
     });
+    void recordAiOsMetric({
+      entityType: "tool",
+      entityId: toolRunId,
+      metricName: "tool.succeeded",
+      metricValue: Date.now() - startedAt,
+      status: "succeeded",
+      userId: input.userId,
+      projectId: input.projectId ?? null,
+      nodeId: input.nodeId || null,
+      toolSlug: tool.slug,
+      metadata: { type: tool.type, source: tool.source, attempts, httpStatus: status, requestHost },
+    });
   } catch (error) {
     await finishToolRunRecord({
       toolRunId,
@@ -760,6 +854,18 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
       error,
       durationMs: Date.now() - startedAt,
       httpStatus: status,
+    });
+    void recordAiOsMetric({
+      entityType: "tool",
+      entityId: toolRunId,
+      metricName: isPolicyBlock(error) ? "tool.blocked" : "tool.failed",
+      metricValue: Date.now() - startedAt,
+      status: isPolicyBlock(error) ? "blocked" : "failed",
+      userId: input.userId,
+      projectId: input.projectId ?? null,
+      nodeId: input.nodeId || null,
+      toolSlug: tool.slug,
+      metadata: { type: tool.type, source: tool.source, attempts, httpStatus: status, requestHost, error: serializeToolError(error) },
     });
     throw error;
   }
@@ -775,6 +881,7 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
       status,
       requestHost,
       riskLevel,
+      attempts,
       source: tool.source,
     },
   };

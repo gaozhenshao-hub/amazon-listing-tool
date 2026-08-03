@@ -39,6 +39,7 @@ describe("Emperor Agent workflow kernel", () => {
     expect(schema.emperorAgentArtifacts).toBeDefined();
     expect(schema.emperorTools).toBeDefined();
     expect(schema.emperorToolRuns).toBeDefined();
+    expect(schema.emperorAiOsMetrics).toBeDefined();
   });
 
   it("should define Listing as a human-in-the-loop DAG", () => {
@@ -112,6 +113,7 @@ describe("Emperor Agent workflow kernel", () => {
   });
 
   it("should build context packages from confirmed checkpoints and artifacts", () => {
+    const longNotes = "x".repeat(250);
     const dag = {
       nodes: [
         { id: "A", nodeType: "input_node", label: "A", outputKey: "alpha" },
@@ -124,18 +126,23 @@ describe("Emperor Agent workflow kernel", () => {
       dag,
       node: dag.nodes[1],
       checkpoints: [
-        { runId: "agent_1", agentSlug: "demo.agent", nodeId: "A", nodeType: "input_node", status: "confirmed", output: { product: "Filter" } },
+        { runId: "agent_1", agentSlug: "demo.agent", nodeId: "A", nodeType: "input_node", status: "confirmed", output: { product: "Filter", notes: longNotes } },
         { runId: "agent_1", agentSlug: "demo.agent", nodeId: "B", nodeType: "skill_node", status: "ready" },
       ] as any,
       artifacts: [
-        { id: 12, runId: "agent_1", nodeId: "A", artifactKey: "alpha", version: 2, status: "final", content: { product: "Filter" } },
+        { id: 12, runId: "agent_1", nodeId: "A", artifactKey: "alpha", version: 2, status: "final", content: { product: "Filter", notes: longNotes } },
+        { id: 13, runId: "agent_1", nodeId: "A", artifactKey: "alpha", version: 3, status: "draft", content: { product: "Draft" } },
       ],
+      options: { maxStringLength: 200, maxArtifactContentLength: 200 },
     });
 
     expect(contextPackage.version).toBe("1.0");
-    expect(contextPackage.parentOutputs.alpha).toEqual({ product: "Filter" });
-    expect(contextPackage.confirmedOutputs.alpha).toEqual({ product: "Filter" });
+    expect((contextPackage.parentOutputs.alpha as any).product).toBe("Filter");
+    expect((contextPackage.parentOutputs.alpha as any).notes.__truncated).toBe(true);
+    expect((contextPackage.confirmedOutputs.alpha as any).product).toBe("Filter");
+    expect(contextPackage.artifacts).toHaveLength(1);
     expect(contextPackage.artifacts[0].version).toBe(2);
+    expect((contextPackage.artifacts[0].content as any).notes.__truncated).toBe(true);
     expect(contextPackage.provenance.artifactRefs).toContain("artifact://agent_1/A/alpha@2");
   });
 
@@ -168,6 +175,8 @@ describe("Emperor Agent workflow kernel", () => {
     expect(procedures["emperor.agents.getRun"]).toBeDefined();
     expect(procedures["emperor.agents.validateDag"]).toBeDefined();
     expect(procedures["emperor.agents.listArtifacts"]).toBeDefined();
+    expect(procedures["emperor.agents.getArtifactByRef"]).toBeDefined();
+    expect(procedures["emperor.agents.selectArtifactVersion"]).toBeDefined();
     expect(procedures["emperor.agents.listTemplateVersions"]).toBeDefined();
     expect(procedures["emperor.agents.executeNode"]).toBeDefined();
     expect(procedures["emperor.agents.scheduleRun"]).toBeDefined();
@@ -184,6 +193,7 @@ describe("Emperor Agent workflow kernel", () => {
     expect(procedures["emperor.tools.listRuns"]).toBeDefined();
     expect(procedures["emperor.tools.invoke"]).toBeDefined();
     expect(procedures["emperor.tools.upsert"]).toBeDefined();
+    expect(procedures["emperor.observability.metrics"]).toBeDefined();
     expect(LISTING_AGENT_SLUG).toBe("listing.full.workflow");
   });
 
@@ -214,6 +224,7 @@ describe("Emperor Agent workflow kernel", () => {
     expect((result.output as any).bulletPoints).toEqual(["Fast install"]);
     expect(result.metadata.riskLevel).toBe("low");
     expect(result.metadata.toolRunId).toMatch(/^tool_\d+_[a-z0-9]+$/);
+    expect(result.metadata.attempts).toBe(1);
   });
 
   it("should validate Tool Gateway JSON schema contracts", () => {

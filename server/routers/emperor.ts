@@ -22,8 +22,10 @@ import {
   recordAgentTemplateVersion,
   recoverTimedOutAgentNodes,
   rerunAgentNode,
+  resolveAgentArtifactRef,
   resumeAgentRun,
   scheduleAgentRun,
+  selectAgentArtifactVersion,
   startAgentRun,
   updateAgentNodeDraft,
   upsertListingAgentTemplate,
@@ -36,6 +38,7 @@ import {
   seedBuiltinTools,
   upsertEmperorTool,
 } from "../services/emperorToolGateway";
+import { listAiOsMetrics } from "../services/aiOsObservability";
 
 function generateRunId(): string {
   return `run_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -918,6 +921,34 @@ export const emperorAgentsRouter = router({
       });
     }),
 
+  getArtifactByRef: protectedProcedure
+    .input(z.object({ ref: z.string().min(1) }))
+    .query(async ({ input, ctx }) => {
+      const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
+      return resolveAgentArtifactRef({
+        ref: input.ref,
+        userId: isAdmin ? undefined : ctx.user.id,
+        skipOwnerCheck: isAdmin,
+      });
+    }),
+
+  selectArtifactVersion: protectedProcedure
+    .input(z.object({
+      runId: z.string(),
+      nodeId: z.string(),
+      artifactKey: z.string(),
+      version: z.number().int().min(1),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      return selectAgentArtifactVersion({
+        runId: input.runId,
+        nodeId: input.nodeId,
+        artifactKey: input.artifactKey,
+        version: input.version,
+        userId: ctx.user.id,
+      });
+    }),
+
   listRuns: protectedProcedure
     .input(z.object({ slug: z.string(), limit: z.number().optional().default(20) }))
     .query(async ({ input, ctx }) => {
@@ -1153,6 +1184,7 @@ export const emperorToolsRouter = router({
         toolSlug: input.toolSlug,
         params: input.params,
         userId: ctx.user.id,
+        userRole: (ctx.user as any).role || null,
         runId: input.runId,
         nodeId: input.nodeId,
       });
@@ -1337,6 +1369,23 @@ export const emperorKnowledgeRouter = router({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Observability Router
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const emperorObservabilityRouter = router({
+  metrics: adminProcedure
+    .input(z.object({
+      entityType: z.string().optional(),
+      entityId: z.string().optional(),
+      metricName: z.string().optional(),
+      limit: z.number().min(1).max(500).optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return listAiOsMetrics(input || {});
+    }),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Combined Emperor Router
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1350,4 +1399,5 @@ export const emperorRouter = router({
   scheduled: emperorScheduledRouter,
   diagnostics: emperorDiagnosticsRouter,
   knowledge: emperorKnowledgeRouter,
+  observability: emperorObservabilityRouter,
 });

@@ -9,6 +9,7 @@ import {
   retryAiJobByRunId,
   updateAiJobByRunId,
 } from "../db";
+import { recordAiOsMetric } from "./aiOsObservability";
 
 export type AiJobStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
 
@@ -50,6 +51,8 @@ export type AiJobHandlerRegistration = {
 const ACTIVE_STATUSES = new Set<AiJobStatus>(["queued", "running"]);
 const handlerRegistrations = new Map<string, AiJobHandlerRegistration>();
 const runningRunIds = new Set<string>();
+const pendingScheduleRunIds = new Set<string>();
+const activeAbortControllers = new Map<string, AbortController>();
 const DEFAULT_WORKER_LEASE_SECONDS = 15 * 60;
 const DEFAULT_JOB_TIMEOUT_SECONDS = 10 * 60;
 const WORKER_ID = `web_${process.pid}_${Math.random().toString(36).slice(2, 8)}`;
@@ -97,6 +100,24 @@ export function getAiJobWorkerId() {
 
 export function isAiJobSchedulingEnabled() {
   return process.env.AI_JOB_RUNNER_MODE !== "external" && process.env.AI_JOB_IN_PROCESS !== "false";
+}
+
+export function getMaxConcurrentAiJobs() {
+  const value = Number(process.env.AI_JOB_MAX_CONCURRENCY || process.env.AI_JOB_WORKER_CONCURRENCY || 2);
+  return Number.isFinite(value) ? Math.min(Math.max(Math.floor(value), 1), 25) : 2;
+}
+
+export function getAiJobRuntimeStatus() {
+  return {
+    workerId: WORKER_ID,
+    schedulingEnabled: isAiJobSchedulingEnabled(),
+    maxConcurrency: getMaxConcurrentAiJobs(),
+    runningCount: runningRunIds.size,
+    pendingScheduleCount: pendingScheduleRunIds.size,
+    runningRunIds: [...runningRunIds],
+    pendingScheduleRunIds: [...pendingScheduleRunIds],
+    registeredHandlers: listAiJobHandlerRegistrations(),
+  };
 }
 
 export function calculateAiJobRetryDelayMs(attempt: number): number {
@@ -209,6 +230,20 @@ export async function completeAiJob(runId: string, output: unknown) {
     lastHeartbeatAt: null,
     completedAt: new Date(),
   } as Partial<InsertAiJob>);
+  if (job) {
+    const snapshot = buildAiJobSnapshot(job);
+    void recordAiOsMetric({
+      entityType: "job",
+      entityId: snapshot.runId,
+      metricName: "job.completed",
+      metricValue: snapshot.completedAt && snapshot.startedAt ? snapshot.completedAt.getTime() - snapshot.startedAt.getTime() : null,
+      status: snapshot.status,
+      userId: snapshot.userId,
+      projectId: snapshot.projectId,
+      skillSlug: snapshot.skillSlug,
+      metadata: { kind: snapshot.kind, module: snapshot.module, procedure: snapshot.procedure, attempt: snapshot.attempt },
+    });
+  }
   return job ? buildAiJobSnapshot(job) : null;
 }
 
@@ -225,6 +260,20 @@ export async function failAiJob(runId: string, error: unknown) {
     lastHeartbeatAt: null,
     completedAt: new Date(),
   });
+  if (job) {
+    const snapshot = buildAiJobSnapshot(job);
+    void recordAiOsMetric({
+      entityType: "job",
+      entityId: snapshot.runId,
+      metricName: "job.failed",
+      metricValue: snapshot.completedAt && snapshot.startedAt ? snapshot.completedAt.getTime() - snapshot.startedAt.getTime() : null,
+      status: snapshot.status,
+      userId: snapshot.userId,
+      projectId: snapshot.projectId,
+      skillSlug: snapshot.skillSlug,
+      metadata: { kind: snapshot.kind, module: snapshot.module, procedure: snapshot.procedure, attempt: snapshot.attempt, error: snapshot.error },
+    });
+  }
   return job ? buildAiJobSnapshot(job) : null;
 }
 
@@ -246,6 +295,35 @@ export async function retryAiJob(runId: string, error: unknown) {
   return null;
 }
 
+export async function cancelAiJob(runId: string, reason = "AI job canceled") {
+  activeAbortControllers.get(runId)?.abort(reason);
+  const job = await updateAiJobByRunId(runId, {
+    status: "canceled",
+    progress: 100,
+    errorMessage: reason,
+    leaseUntil: null,
+    lockedBy: null,
+    lastHeartbeatAt: null,
+    completedAt: new Date(),
+  });
+  if (job) {
+    const snapshot = buildAiJobSnapshot(job);
+    void recordAiOsMetric({
+      entityType: "job",
+      entityId: snapshot.runId,
+      metricName: "job.canceled",
+      metricValue: null,
+      status: snapshot.status,
+      userId: snapshot.userId,
+      projectId: snapshot.projectId,
+      skillSlug: snapshot.skillSlug,
+      metadata: { kind: snapshot.kind, module: snapshot.module, procedure: snapshot.procedure, reason },
+    });
+  }
+  pendingScheduleRunIds.delete(runId);
+  return job ? buildAiJobSnapshot(job) : null;
+}
+
 export async function getAiJobRun(runId: string) {
   const job = await getAiJobByRunId(runId);
   return job ? buildAiJobSnapshot(job) : null;
@@ -260,6 +338,8 @@ export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<
   runningRunIds.add(runId);
   let heartbeat: ReturnType<typeof setInterval> | null = null;
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const abortController = new AbortController();
+  activeAbortControllers.set(runId, abortController);
   try {
     const running = await markAiJobRunning(runId, Math.max(existing.progress || 0, 10));
     if (!running) return existing;
@@ -276,7 +356,10 @@ export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<
     const timeout = new Promise<never>((_, reject) => {
       timeoutHandle = setTimeout(() => reject(new Error(`AI job timed out after ${leaseSeconds}s`)), leaseSeconds * 1000);
     });
-    const output = await Promise.race([handler(current), timeout]);
+    const canceled = new Promise<never>((_, reject) => {
+      abortController.signal.addEventListener("abort", () => reject(new Error(String(abortController.signal.reason || "AI job canceled"))), { once: true });
+    });
+    const output = await Promise.race([handler(current), timeout, canceled]);
     return await completeAiJob(runId, output);
   } catch (error) {
     await retryAiJob(runId, error);
@@ -285,6 +368,7 @@ export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<
     if (heartbeat) clearInterval(heartbeat);
     if (timeoutHandle) clearTimeout(timeoutHandle);
     await releaseAiJobLease(runId, WORKER_ID).catch(() => null);
+    activeAbortControllers.delete(runId);
     runningRunIds.delete(runId);
   }
 }
@@ -295,6 +379,7 @@ export async function scheduleAiJobRun(runId: string, handler?: AiJobHandler) {
   const existing = await getAiJobRun(runId);
   if (!existing) throw new Error(`AI job not found: ${runId}`);
   if (!isActiveAiJob(existing.status) || runningRunIds.has(runId)) return existing;
+  if (pendingScheduleRunIds.has(runId)) return existing;
 
   const resolvedHandler = handler || resolveAiJobHandler(existing);
   if (!resolvedHandler) {
@@ -302,7 +387,22 @@ export async function scheduleAiJobRun(runId: string, handler?: AiJobHandler) {
     return existing;
   }
 
+  if (runningRunIds.size >= getMaxConcurrentAiJobs()) {
+    if (!pendingScheduleRunIds.has(runId)) {
+      pendingScheduleRunIds.add(runId);
+      setTimeout(() => {
+        pendingScheduleRunIds.delete(runId);
+        void scheduleAiJobRun(runId, resolvedHandler).catch((error) => {
+          console.error(`[AI Job] ${runId} reschedule failed:`, error);
+        });
+      }, 1000);
+    }
+    return existing;
+  }
+
+  pendingScheduleRunIds.add(runId);
   setTimeout(() => {
+    pendingScheduleRunIds.delete(runId);
     void runAiJobInProcess(runId, resolvedHandler).catch((error) => {
       console.error(`[AI Job] ${runId} failed:`, error);
     });

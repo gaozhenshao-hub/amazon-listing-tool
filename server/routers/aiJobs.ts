@@ -1,10 +1,12 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
 import { getAiJobByRunId, listAiJobsForUser } from "../db";
 import {
   buildAiJobSnapshot,
+  cancelAiJob,
   getAiJobRun,
+  getAiJobRuntimeStatus,
   registerAiJobHandler,
   startRegisteredAiJob,
 } from "../services/aiJobRunner";
@@ -307,6 +309,11 @@ export const aiJobsRouter = router({
       return job;
     }),
 
+  runtimeStatus: adminProcedure
+    .query(() => {
+      return getAiJobRuntimeStatus();
+    }),
+
   list: protectedProcedure
     .input(z.object({
       module: z.string().optional(),
@@ -316,6 +323,18 @@ export const aiJobsRouter = router({
     .query(async ({ ctx, input }) => {
       const rows = await listAiJobsForUser(ctx.user.id, input || {});
       return rows.map(buildAiJobSnapshot);
+    }),
+
+  cancel: protectedProcedure
+    .input(z.object({
+      runId: z.string().min(1),
+      reason: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const job = await getAiJobRun(input.runId);
+      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "AI job not found" });
+      assertCanReadJob(ctx.user, job);
+      return cancelAiJob(input.runId, input.reason || "User canceled AI job");
     }),
 
   startListingFiveSteps: protectedProcedure

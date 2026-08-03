@@ -4,7 +4,9 @@ import {
   buildAiJobSnapshot,
   calculateAiJobRetryDelayMs,
   generateAiJobRunId,
+  getAiJobRuntimeStatus,
   getAiJobWorkerId,
+  getMaxConcurrentAiJobs,
   isActiveAiJob,
   isAiJobSchedulingEnabled,
   listAiJobHandlerRegistrations,
@@ -39,6 +41,8 @@ describe("Generic AI Job infrastructure", () => {
     expect(runId).toMatch(/^image_workflow_\d+_[a-z0-9]+$/);
     expect(getAiJobWorkerId()).toMatch(/^web_\d+_[a-z0-9]+$/);
     expect(isAiJobSchedulingEnabled()).toBe(true);
+    expect(getMaxConcurrentAiJobs()).toBeGreaterThanOrEqual(1);
+    expect(getMaxConcurrentAiJobs()).toBeLessThanOrEqual(25);
     expect(calculateAiJobRetryDelayMs(1)).toBe(30000);
     expect(calculateAiJobRetryDelayMs(3)).toBe(120000);
     expect(calculateAiJobRetryDelayMs(9)).toBe(600000);
@@ -46,6 +50,12 @@ describe("Generic AI Job infrastructure", () => {
     expect(isActiveAiJob("running")).toBe(true);
     expect(isActiveAiJob("succeeded")).toBe(false);
     expect(isActiveAiJob("canceled")).toBe(false);
+
+    const runtimeStatus = getAiJobRuntimeStatus();
+    expect(runtimeStatus.workerId).toBe(getAiJobWorkerId());
+    expect(runtimeStatus.runningRunIds).toEqual(expect.any(Array));
+    expect(runtimeStatus.pendingScheduleRunIds).toEqual(expect.any(Array));
+    expect(runtimeStatus.registeredHandlers).toEqual(expect.any(Array));
   });
 
   it("should build snapshots with parsed JSON payloads", () => {
@@ -120,6 +130,8 @@ describe("Generic AI Job infrastructure", () => {
   it("should register aiJobs routes in the app router", () => {
     const procedures = (appRouter as any)._def.procedures;
     expect(procedures["aiJobs.get"]).toBeDefined();
+    expect(procedures["aiJobs.runtimeStatus"]).toBeDefined();
+    expect(procedures["aiJobs.cancel"]).toBeDefined();
     expect(procedures["aiJobs.startListingFiveSteps"]).toBeDefined();
     expect(procedures["aiJobs.startAdSearchTermAdvice"]).toBeDefined();
     expect(procedures["aiJobs.startOpsReplenishmentPlan"]).toBeDefined();
