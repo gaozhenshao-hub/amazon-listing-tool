@@ -1,4 +1,4 @@
-import { eq, desc, and, or, inArray, sql } from "drizzle-orm";
+import { eq, desc, asc, and, or, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
@@ -228,6 +228,16 @@ export async function listAiJobsForUser(
     .where(where)
     .orderBy(desc(aiJobs.createdAt))
     .limit(Math.min(Math.max(opts.limit || 20, 1), 100));
+}
+
+export async function listRecoverableAiJobs(opts: { limit?: number } = {}) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select()
+    .from(aiJobs)
+    .where(inArray(aiJobs.status, ["queued", "running"]))
+    .orderBy(asc(aiJobs.createdAt))
+    .limit(Math.min(Math.max(opts.limit || 50, 1), 200));
 }
 
 // --- Project Helpers ----------------------------------------------------

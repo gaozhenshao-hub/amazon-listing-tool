@@ -5,7 +5,8 @@ import { getAiJobByRunId, listAiJobsForUser } from "../db";
 import {
   buildAiJobSnapshot,
   getAiJobRun,
-  startAiJobInProcess,
+  registerAiJobHandler,
+  startRegisteredAiJob,
 } from "../services/aiJobRunner";
 import { runEmperorSkill, safeParseSkillJSON } from "../services/emperorSkillRunner";
 
@@ -31,6 +32,8 @@ const listingJobInput = z.object({
   modelOverride: z.string().optional(),
   projectId: z.number().optional(),
 });
+
+const listingStepJobInput = listingJobInput.extend({ skillSlug: listingStepSchema });
 
 const adSearchTermJobInput = z.object({
   searchTerms: z.array(z.record(z.string(), z.unknown())).max(50),
@@ -258,6 +261,42 @@ function assertCanReadJob(user: { id: number; role?: string }, job: { userId: nu
   }
 }
 
+registerAiJobHandler({
+  id: "listing.generateFiveSteps",
+  match: (job) => job.kind === "listing.generateFiveSteps",
+  handler: (job) => runListingFiveSteps(listingJobInput.parse(job.input), job.userId),
+});
+
+registerAiJobHandler({
+  id: "listing.runStep",
+  match: (job) => job.procedure === "listingSkill.runStep",
+  handler: (job) => {
+    const input = listingStepJobInput.parse(job.input);
+    return runEmperorSkill({
+      skillSlug: input.skillSlug,
+      userId: job.userId,
+      context: input.context,
+      emphasis: input.emphasis,
+      variables: input.variables,
+      modelOverride: input.modelOverride,
+      fallbackModels: DEFAULT_FALLBACK_MODELS,
+      validate: parseJsonOutput,
+    });
+  },
+});
+
+registerAiJobHandler({
+  id: "ad.searchTermAdvice",
+  match: (job) => job.kind === "ad.searchTermAdvice",
+  handler: (job) => runAdSearchTermAdvice(adSearchTermJobInput.parse(job.input), job.userId),
+});
+
+registerAiJobHandler({
+  id: "ops.replenishmentPlan",
+  match: (job) => job.kind === "ops.replenishmentPlan",
+  handler: (job) => runOpsReplenishmentPlan(opsReplenishmentJobInput.parse(job.input), job.userId),
+});
+
 export const aiJobsRouter = router({
   get: protectedProcedure
     .input(z.object({ runId: z.string().min(1) }))
@@ -282,7 +321,7 @@ export const aiJobsRouter = router({
   startListingFiveSteps: protectedProcedure
     .input(listingJobInput)
     .mutation(async ({ ctx, input }) => {
-      return startAiJobInProcess({
+      return startRegisteredAiJob({
         kind: "listing.generateFiveSteps",
         module: "listing",
         procedure: "listingSkill.generateFiveSteps",
@@ -291,13 +330,13 @@ export const aiJobsRouter = router({
         skillSlug: "listing.*",
         input,
         progress: 5,
-      }, () => runListingFiveSteps(input, ctx.user.id));
+      });
     }),
 
   startListingStep: protectedProcedure
-    .input(listingJobInput.extend({ skillSlug: listingStepSchema }))
+    .input(listingStepJobInput)
     .mutation(async ({ ctx, input }) => {
-      return startAiJobInProcess({
+      return startRegisteredAiJob({
         kind: `listing.${input.skillSlug}`,
         module: "listing",
         procedure: "listingSkill.runStep",
@@ -306,22 +345,13 @@ export const aiJobsRouter = router({
         skillSlug: input.skillSlug,
         input,
         progress: 5,
-      }, () => runEmperorSkill({
-        skillSlug: input.skillSlug,
-        userId: ctx.user.id,
-        context: input.context,
-        emphasis: input.emphasis,
-        variables: input.variables,
-        modelOverride: input.modelOverride,
-        fallbackModels: DEFAULT_FALLBACK_MODELS,
-        validate: parseJsonOutput,
-      }));
+      });
     }),
 
   startAdSearchTermAdvice: protectedProcedure
     .input(adSearchTermJobInput)
     .mutation(async ({ ctx, input }) => {
-      return startAiJobInProcess({
+      return startRegisteredAiJob({
         kind: "ad.searchTermAdvice",
         module: "adAnalysis",
         procedure: "adAnalysis.aiSearchTermAdvice",
@@ -329,13 +359,13 @@ export const aiJobsRouter = router({
         skillSlug: "ad.searchterm.advice",
         input,
         progress: 5,
-      }, () => runAdSearchTermAdvice(input, ctx.user.id));
+      });
     }),
 
   startOpsReplenishmentPlan: protectedProcedure
     .input(opsReplenishmentJobInput)
     .mutation(async ({ ctx, input }) => {
-      return startAiJobInProcess({
+      return startRegisteredAiJob({
         kind: "ops.replenishmentPlan",
         module: "operations",
         procedure: "operations.aiReplenishmentPlan",
@@ -343,6 +373,6 @@ export const aiJobsRouter = router({
         skillSlug: "ops.inventory.analysis",
         input,
         progress: 5,
-      }, () => runOpsReplenishmentPlan(input, ctx.user.id));
+      });
     }),
 });

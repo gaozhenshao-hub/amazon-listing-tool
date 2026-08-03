@@ -22,6 +22,7 @@ describe("Emperor Agent workflow kernel", () => {
     expect(schema.emperorAgentRuns).toBeDefined();
     expect(schema.emperorAgentCheckpoints).toBeDefined();
     expect(schema.emperorAgentEvents).toBeDefined();
+    expect(schema.emperorAgentArtifacts).toBeDefined();
     expect(schema.emperorTools).toBeDefined();
   });
 
@@ -65,6 +66,7 @@ describe("Emperor Agent workflow kernel", () => {
     const procedures = (appRouter as any)._def.procedures;
     expect(procedures["emperor.agents.run"]).toBeDefined();
     expect(procedures["emperor.agents.getRun"]).toBeDefined();
+    expect(procedures["emperor.agents.listArtifacts"]).toBeDefined();
     expect(procedures["emperor.agents.executeNode"]).toBeDefined();
     expect(procedures["emperor.agents.scheduleRun"]).toBeDefined();
     expect(procedures["emperor.agents.cancelRun"]).toBeDefined();

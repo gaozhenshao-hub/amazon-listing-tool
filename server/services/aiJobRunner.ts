@@ -2,6 +2,7 @@ import type { AiJob, InsertAiJob } from "../../drizzle/schema";
 import {
   createAiJob,
   getAiJobByRunId,
+  listRecoverableAiJobs,
   updateAiJobByRunId,
 } from "../db";
 
@@ -28,10 +29,37 @@ export type AiJobSnapshot = {
 
 export type AiJobHandler<T = unknown> = (job: AiJobSnapshot) => Promise<T>;
 
+export type AiJobHandlerRegistration = {
+  id: string;
+  match: (job: AiJobSnapshot) => boolean;
+  handler: AiJobHandler;
+  recoverable?: boolean;
+};
+
 const ACTIVE_STATUSES = new Set<AiJobStatus>(["queued", "running"]);
+const handlerRegistrations = new Map<string, AiJobHandlerRegistration>();
+const runningRunIds = new Set<string>();
 
 export function isActiveAiJob(status?: string | null): boolean {
   return ACTIVE_STATUSES.has((status || "queued") as AiJobStatus);
+}
+
+export function registerAiJobHandler(registration: AiJobHandlerRegistration) {
+  handlerRegistrations.set(registration.id, {
+    ...registration,
+    recoverable: registration.recoverable !== false,
+  });
+}
+
+export function listAiJobHandlerRegistrations() {
+  return [...handlerRegistrations.values()].map(({ id, recoverable }) => ({ id, recoverable: recoverable !== false }));
+}
+
+export function resolveAiJobHandler(job: AiJobSnapshot): AiJobHandler | null {
+  for (const registration of handlerRegistrations.values()) {
+    if (registration.match(job)) return registration.handler;
+  }
+  return null;
 }
 
 export function generateAiJobRunId(prefix = "ai"): string {
@@ -112,6 +140,9 @@ export async function createAiJobRun(input: {
 }
 
 export async function markAiJobRunning(runId: string, progress = 10) {
+  const existing = await getAiJobRun(runId);
+  if (existing?.status === "canceled") return existing;
+
   const job = await updateAiJobByRunId(runId, {
     status: "running",
     progress,
@@ -158,17 +189,75 @@ export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<
   const existing = await getAiJobRun(runId);
   if (!existing) throw new Error(`AI job not found: ${runId}`);
   if (existing.status === "canceled") return existing;
+  if (runningRunIds.has(runId)) return existing;
 
-  const running = await markAiJobRunning(runId, Math.max(existing.progress || 0, 10));
-  const current = running || existing;
-
+  runningRunIds.add(runId);
   try {
+    const running = await markAiJobRunning(runId, Math.max(existing.progress || 0, 10));
+    const current = running || existing;
+    if (current.status === "canceled") return current;
+
     const output = await handler(current);
     return await completeAiJob(runId, output);
   } catch (error) {
     await failAiJob(runId, error);
     throw error;
+  } finally {
+    runningRunIds.delete(runId);
   }
+}
+
+export async function scheduleAiJobRun(runId: string, handler?: AiJobHandler) {
+  const existing = await getAiJobRun(runId);
+  if (!existing) throw new Error(`AI job not found: ${runId}`);
+  if (!isActiveAiJob(existing.status) || runningRunIds.has(runId)) return existing;
+
+  const resolvedHandler = handler || resolveAiJobHandler(existing);
+  if (!resolvedHandler) {
+    console.warn(`[AI Job] No handler registered for ${existing.kind} (${runId}); leaving job ${existing.status}.`);
+    return existing;
+  }
+
+  setTimeout(() => {
+    void runAiJobInProcess(runId, resolvedHandler).catch((error) => {
+      console.error(`[AI Job] ${runId} failed:`, error);
+    });
+  }, 0);
+
+  return existing;
+}
+
+export async function startRegisteredAiJob(input: Parameters<typeof createAiJobRun>[0]) {
+  const job = await createAiJobRun(input);
+  const handler = resolveAiJobHandler(job);
+  if (!handler) {
+    await failAiJob(job.runId, new Error(`No AI job handler registered for ${job.kind}`));
+    throw new Error(`No AI job handler registered for ${job.kind}`);
+  }
+  await scheduleAiJobRun(job.runId, handler);
+  return job;
+}
+
+export async function recoverActiveAiJobs(opts: { limit?: number } = {}) {
+  const rows = await listRecoverableAiJobs({ limit: opts.limit });
+  const result = {
+    scanned: rows.length,
+    scheduled: 0,
+    skippedWithoutHandler: 0,
+  };
+
+  for (const row of rows) {
+    const job = buildAiJobSnapshot(row);
+    const handler = resolveAiJobHandler(job);
+    if (!handler) {
+      result.skippedWithoutHandler += 1;
+      continue;
+    }
+    await scheduleAiJobRun(job.runId, handler);
+    result.scheduled += 1;
+  }
+
+  return result;
 }
 
 export async function startAiJobInProcess<T>(
@@ -176,10 +265,6 @@ export async function startAiJobInProcess<T>(
   handler: AiJobHandler<T>,
 ) {
   const job = await createAiJobRun(input);
-  setTimeout(() => {
-    void runAiJobInProcess(job.runId, handler).catch((error) => {
-      console.error(`[AI Job] ${job.runId} failed:`, error);
-    });
-  }, 0);
+  await scheduleAiJobRun(job.runId, handler);
   return job;
 }

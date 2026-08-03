@@ -4872,6 +4872,28 @@ export const emperorAgentEvents = mysqlTable("emperor_agent_events", {
 export type EmperorAgentEvent = typeof emperorAgentEvents.$inferSelect;
 export type InsertEmperorAgentEvent = typeof emperorAgentEvents.$inferInsert;
 
+export const emperorAgentArtifacts = mysqlTable("emperor_agent_artifacts", {
+  id: int("id").autoincrement().primaryKey(),
+  runId: varchar("runId", { length: 80 }).notNull(),
+  agentSlug: varchar("agentSlug", { length: 128 }).notNull(),
+  nodeId: varchar("nodeId", { length: 128 }).notNull(),
+  artifactKey: varchar("artifactKey", { length: 128 }).notNull(),
+  artifactType: mysqlEnum("artifactType", ["json", "text", "markdown", "html", "image", "file", "other"]).default("json").notNull(),
+  status: mysqlEnum("status", ["draft", "final", "superseded"]).default("draft").notNull(),
+  version: int("version").default(1).notNull(),
+  userId: int("userId").notNull(),
+  projectId: int("projectId"),
+  content: json("content"),
+  summary: text("summary"),
+  metadata: json("metadata"),
+  sourceSkillRunId: varchar("sourceSkillRunId", { length: 80 }),
+  sourceAiJobRunId: varchar("sourceAiJobRunId", { length: 80 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmperorAgentArtifact = typeof emperorAgentArtifacts.$inferSelect;
+export type InsertEmperorAgentArtifact = typeof emperorAgentArtifacts.$inferInsert;
+
 export const emperorTools = mysqlTable("emperor_tools", {
   id: int("id").autoincrement().primaryKey(),
   slug: varchar("slug", { length: 128 }).unique().notNull(),

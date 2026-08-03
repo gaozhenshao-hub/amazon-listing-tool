@@ -85,6 +85,15 @@ async function startServer() {
     import("../nextsls/adapter").then(m => m.initNextSlsAdapterFromDb()).catch(err => console.error("[NextSLS] Failed to init:", err));
     // Initialize weekly auto-sync cron job (every Monday 02:00 Asia/Shanghai)
     import("../cronJobs").then(m => m.initCronJobs()).catch(err => console.error("[AutoSync] Failed to init:", err));
+    // Recover durable AI jobs that were queued/running before a restart.
+    import("../services/aiJobRunner")
+      .then(m => m.recoverActiveAiJobs())
+      .then(result => {
+        if (result.scheduled > 0 || result.skippedWithoutHandler > 0) {
+          console.log(`[AI Job] Recovery scanned=${result.scanned}, scheduled=${result.scheduled}, skippedWithoutHandler=${result.skippedWithoutHandler}`);
+        }
+      })
+      .catch(err => console.error("[AI Job] Recovery failed:", err));
   });
 }
 

@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb, updateAiJobByRunId } from "../db";
 import { runEmperorSkill, safeParseSkillJSON } from "./emperorSkillRunner";
-import { startAiJobInProcess } from "./aiJobRunner";
+import { registerAiJobHandler, startRegisteredAiJob, type AiJobSnapshot } from "./aiJobRunner";
 import { invokeEmperorTool } from "./emperorToolGateway";
 
 export type AgentNodeStatus = "pending" | "ready" | "running" | "waiting_human" | "confirmed" | "skipped" | "failed";
@@ -65,6 +65,7 @@ type CheckpointRow = {
 };
 
 export const LISTING_AGENT_SLUG = "listing.full.workflow";
+let agentArtifactStoreAvailable = true;
 
 const NODE_STATUS_TRANSITIONS: Record<AgentNodeStatus, AgentNodeStatus[]> = {
   pending: ["ready", "skipped"],
@@ -329,6 +330,105 @@ async function getCheckpoint(runId: string, nodeId: string): Promise<CheckpointR
   return checkpointPayload(rows[0]);
 }
 
+function inferArtifactType(content: unknown): "json" | "text" | "other" {
+  if (typeof content === "string") return "text";
+  if (content && typeof content === "object") return "json";
+  return "other";
+}
+
+function summarizeArtifactContent(content: unknown): string {
+  if (typeof content === "string") return content.slice(0, 500);
+  try {
+    return JSON.stringify(content ?? null).slice(0, 500);
+  } catch {
+    return "";
+  }
+}
+
+async function persistAgentArtifact(input: {
+  run: any;
+  node: EmperorAgentNode;
+  status: "draft" | "final";
+  content: unknown;
+  sourceSkillRunId?: string | null;
+  sourceAiJobRunId?: string | null;
+  metadata?: unknown;
+}) {
+  if (!agentArtifactStoreAvailable) return;
+  const artifactKey = input.node.outputKey || input.node.id;
+  try {
+    if (input.status === "final") {
+      await rawExecute(
+        "UPDATE emperor_agent_artifacts SET status='superseded',updatedAt=NOW() WHERE runId=? AND nodeId=? AND artifactKey=? AND status='final'",
+        [input.run.runId, input.node.id, artifactKey],
+      );
+    }
+
+    const versionRows = await rawExecute(
+      "SELECT COALESCE(MAX(version),0)+1 as nextVersion FROM emperor_agent_artifacts WHERE runId=? AND nodeId=? AND artifactKey=?",
+      [input.run.runId, input.node.id, artifactKey],
+    );
+    const version = Number(versionRows[0]?.nextVersion || 1);
+
+    await rawExecute(
+      `INSERT INTO emperor_agent_artifacts
+       (runId,agentSlug,nodeId,artifactKey,artifactType,status,version,userId,projectId,content,summary,metadata,sourceSkillRunId,sourceAiJobRunId)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        input.run.runId,
+        input.run.agentSlug,
+        input.node.id,
+        artifactKey,
+        inferArtifactType(input.content),
+        input.status,
+        version,
+        input.run.userId,
+        input.run.projectId ?? null,
+        stringifyJson(input.content),
+        summarizeArtifactContent(input.content),
+        stringifyJson(input.metadata ?? {}),
+        input.sourceSkillRunId || null,
+        input.sourceAiJobRunId || null,
+      ],
+    );
+  } catch (error) {
+    agentArtifactStoreAvailable = false;
+    console.warn("[Agent Artifact] Failed to persist artifact:", error);
+  }
+}
+
+export async function listAgentArtifacts(input: {
+  runId: string;
+  userId?: number;
+  nodeId?: string;
+  skipOwnerCheck?: boolean;
+}) {
+  if (!agentArtifactStoreAvailable) return [];
+  const run = await getRunRow(input.runId);
+  if (!input.skipOwnerCheck && input.userId && run.userId !== input.userId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Cannot read this Agent run" });
+  }
+  const params: unknown[] = [input.runId];
+  let sql = "SELECT * FROM emperor_agent_artifacts WHERE runId=?";
+  if (input.nodeId) {
+    sql += " AND nodeId=?";
+    params.push(input.nodeId);
+  }
+  sql += " ORDER BY createdAt DESC, id DESC LIMIT 200";
+  try {
+    const rows = await rawExecute(sql, params);
+    return rows.map((artifact) => ({
+      ...artifact,
+      content: parseJson(artifact.content),
+      metadata: parseJson(artifact.metadata, {}),
+    }));
+  } catch (error) {
+    agentArtifactStoreAvailable = false;
+    console.warn("[Agent Artifact] Failed to list artifacts:", error);
+    return [];
+  }
+}
+
 async function getRunRow(runId: string) {
   const rows = await rawExecute("SELECT * FROM emperor_agent_runs WHERE runId=? LIMIT 1", [runId]);
   if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Agent run not found" });
@@ -485,6 +585,18 @@ async function finalizeNodeOutput(input: {
       input.node.id,
     ],
   );
+  await persistAgentArtifact({
+    run: input.run,
+    node: input.node,
+    status: waitingForHuman ? "draft" : "final",
+    content: input.output,
+    sourceSkillRunId: input.skillRunId || checkpoint.skillRunId || null,
+    sourceAiJobRunId: checkpoint.aiJobRunId || null,
+    metadata: {
+      source: "finalizeNodeOutput",
+      waitingForHuman,
+    },
+  });
 
   if (waitingForHuman) {
     await rawExecute("UPDATE emperor_agent_runs SET status='waiting_human',currentNodeId=?,updatedAt=NOW() WHERE runId=?", [input.node.id, input.run.runId]);
@@ -629,6 +741,7 @@ export async function getAgentRun(runId: string, userId?: number, skipOwnerCheck
   const dag = normalizeAgentDag(agent.dagDefinition);
   const checkpoints = await getCheckpoints(runId);
   const events = await rawExecute("SELECT * FROM emperor_agent_events WHERE runId=? ORDER BY createdAt ASC LIMIT 200", [runId]);
+  const artifacts = await listAgentArtifacts({ runId, userId, skipOwnerCheck: true });
   return {
     run: {
       ...run,
@@ -639,6 +752,7 @@ export async function getAgentRun(runId: string, userId?: number, skipOwnerCheck
     dag,
     checkpoints,
     events: events.map((event) => ({ ...event, payload: parseJson(event.payload) })),
+    artifacts,
   };
 }
 
@@ -700,6 +814,8 @@ export async function updateAgentNodeDraft(input: {
 }) {
   const detail = await getAgentRun(input.runId, input.userId);
   assertRunMutable(detail.run, "update node draft");
+  const dag = normalizeAgentDag(detail.dag);
+  const node = dag.nodes.find((item) => item.id === input.nodeId);
   const checkpoint = await getCheckpoint(input.runId, input.nodeId);
   if (!["waiting_human", "confirmed", "failed"].includes(checkpoint.status)) {
     throw new TRPCError({ code: "BAD_REQUEST", message: `Node draft is not editable: ${checkpoint.status}` });
@@ -708,8 +824,22 @@ export async function updateAgentNodeDraft(input: {
     "UPDATE emperor_agent_checkpoints SET userEdit=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
     [stringifyJson(input.userEdit), input.runId, input.nodeId],
   );
+  if (node) {
+    await persistAgentArtifact({
+      run: detail.run,
+      node,
+      status: "draft",
+      content: input.userEdit,
+      sourceSkillRunId: checkpoint.skillRunId || null,
+      sourceAiJobRunId: checkpoint.aiJobRunId || null,
+      metadata: {
+        source: "updateNodeDraft",
+        checkpointStatus: checkpoint.status,
+      },
+    });
+  }
   await addEvent(input.runId, detail.run.agentSlug, input.nodeId, "node.draft_saved", `节点 ${checkpoint.nodeLabel || input.nodeId} 草稿已保存`);
-  await refreshRunAfterCheckpoint(input.runId, normalizeAgentDag(detail.dag));
+  await refreshRunAfterCheckpoint(input.runId, dag);
   return getAgentRun(input.runId, input.userId, true);
 }
 
@@ -827,6 +957,28 @@ export async function confirmAgentNode(input: {
       input.nodeId,
     ],
   );
+  const node = dag.nodes.find((item) => item.id === input.nodeId);
+  if (node) {
+    const finalContent = input.skip
+      ? { skipped: true, previousOutput: effectiveCheckpointOutput(checkpoint) }
+      : input.userEdit !== undefined
+        ? input.userEdit
+        : input.output !== undefined
+          ? input.output
+          : effectiveCheckpointOutput(checkpoint);
+    await persistAgentArtifact({
+      run: detail.run,
+      node,
+      status: "final",
+      content: finalContent,
+      sourceSkillRunId: checkpoint.skillRunId || null,
+      sourceAiJobRunId: checkpoint.aiJobRunId || null,
+      metadata: {
+        source: "confirmNode",
+        skipped: input.skip === true,
+      },
+    });
+  }
   await addEvent(input.runId, checkpoint.agentSlug, input.nodeId, input.skip ? "node.skipped" : "node.confirmed", `节点 ${checkpoint.nodeLabel || input.nodeId} 已${input.skip ? "跳过" : "确认"}`);
   await unlockChildren(input.runId, dag, input.nodeId);
   await unlockReadyNodes(input.runId, dag);
@@ -904,7 +1056,7 @@ export async function executeAgentNode(input: {
     throw error;
   }
 
-  const job = await startAiJobInProcess({
+  const job = await startRegisteredAiJob({
     kind: `agent.node.${node.id}`,
     module: "emperorAgent",
     procedure: "emperor.agents.executeNode",
@@ -919,33 +1071,6 @@ export async function executeAgentNode(input: {
       nodeInput,
     },
     progress: 5,
-  }, async () => {
-    try {
-      const result = await runEmperorSkill({
-        skillSlug: node.skillSlug!,
-        userId: input.userId,
-        context: buildSkillContext(node, nodeInput),
-        variables: {
-          agentRunId: input.runId,
-          nodeId: node.id,
-          nodeInput,
-        },
-        validate: (content) => safeParseSkillJSON(content),
-      });
-      await finalizeNodeOutput({
-        run,
-        dag,
-        node,
-        userId: input.userId,
-        output: result,
-        skillRunId: result.runId,
-        completedMessage: `节点 ${node.label || node.id} 已生成，等待人工确认`,
-      });
-      return result;
-    } catch (error) {
-      await failNodeExecution({ run, node, error });
-      throw error;
-    }
   });
 
   await rawExecute(
@@ -954,3 +1079,75 @@ export async function executeAgentNode(input: {
   );
   return getAgentRun(input.runId, input.userId, true);
 }
+
+function parseAgentNodeJobInput(job: AiJobSnapshot): {
+  runId: string;
+  nodeId: string;
+  skillSlug: string;
+  nodeInput: unknown;
+} {
+  const payload = job.input as Record<string, unknown> | null;
+  const runId = String(payload?.runId || "");
+  const nodeId = String(payload?.nodeId || "");
+  const skillSlug = String(payload?.skillSlug || job.skillSlug || "");
+  if (!runId || !nodeId || !skillSlug) {
+    throw new Error("Invalid Agent node job input");
+  }
+  return {
+    runId,
+    nodeId,
+    skillSlug,
+    nodeInput: payload?.nodeInput ?? null,
+  };
+}
+
+async function runAgentNodeSkillJob(job: AiJobSnapshot) {
+  const payload = parseAgentNodeJobInput(job);
+  const detail = await getAgentRun(payload.runId, job.userId);
+  const run = detail.run;
+  const dag = normalizeAgentDag(detail.dag);
+  const node = dag.nodes.find((item) => item.id === payload.nodeId);
+  if (!node) throw new Error(`Agent node not found: ${payload.nodeId}`);
+  const checkpoint = await getCheckpoint(payload.runId, payload.nodeId);
+
+  if (["waiting_human", "confirmed", "skipped"].includes(checkpoint.status)) {
+    return {
+      deduped: true,
+      status: checkpoint.status,
+      output: effectiveCheckpointOutput(checkpoint),
+    };
+  }
+
+  try {
+    const result = await runEmperorSkill({
+      skillSlug: payload.skillSlug,
+      userId: job.userId,
+      context: buildSkillContext(node, payload.nodeInput),
+      variables: {
+        agentRunId: payload.runId,
+        nodeId: node.id,
+        nodeInput: payload.nodeInput,
+      },
+      validate: (content) => safeParseSkillJSON(content),
+    });
+    await finalizeNodeOutput({
+      run,
+      dag,
+      node,
+      userId: job.userId,
+      output: result,
+      skillRunId: result.runId,
+      completedMessage: `节点 ${node.label || node.id} 已生成，等待人工确认`,
+    });
+    return result;
+  } catch (error) {
+    await failNodeExecution({ run, node, error });
+    throw error;
+  }
+}
+
+registerAiJobHandler({
+  id: "emperorAgent.nodeSkill",
+  match: (job) => job.module === "emperorAgent" && job.procedure === "emperor.agents.executeNode",
+  handler: runAgentNodeSkillJob,
+});

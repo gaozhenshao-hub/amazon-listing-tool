@@ -14,6 +14,7 @@ import {
   confirmAgentNode,
   executeAgentNode,
   getAgentRun,
+  listAgentArtifacts,
   rerunAgentNode,
   scheduleAgentRun,
   startAgentRun,
@@ -839,6 +840,21 @@ export const emperorAgentsRouter = router({
     .query(async ({ input, ctx }) => {
       const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
       return getAgentRun(input.runId, isAdmin ? undefined : ctx.user.id, isAdmin);
+    }),
+
+  listArtifacts: protectedProcedure
+    .input(z.object({
+      runId: z.string(),
+      nodeId: z.string().optional(),
+    }))
+    .query(async ({ input, ctx }) => {
+      const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
+      return listAgentArtifacts({
+        runId: input.runId,
+        nodeId: input.nodeId,
+        userId: isAdmin ? undefined : ctx.user.id,
+        skipOwnerCheck: isAdmin,
+      });
     }),
 
   listRuns: protectedProcedure

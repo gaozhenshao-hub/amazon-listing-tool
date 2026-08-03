@@ -4,6 +4,8 @@ import {
   buildAiJobSnapshot,
   generateAiJobRunId,
   isActiveAiJob,
+  listAiJobHandlerRegistrations,
+  resolveAiJobHandler,
 } from "./services/aiJobRunner";
 
 describe("Generic AI Job infrastructure", () => {
@@ -56,6 +58,37 @@ describe("Generic AI Job infrastructure", () => {
     expect(snapshot.input).toEqual({ context: "demo" });
     expect(snapshot.output).toEqual({ ok: true });
     expect(snapshot.status).toBe("succeeded");
+  });
+
+  it("should register recoverable handlers for migrated long AI jobs", () => {
+    const handlers = listAiJobHandlerRegistrations().map((handler) => handler.id);
+    expect(handlers).toContain("listing.generateFiveSteps");
+    expect(handlers).toContain("listing.runStep");
+    expect(handlers).toContain("ad.searchTermAdvice");
+    expect(handlers).toContain("ops.replenishmentPlan");
+    expect(handlers).toContain("imageWorkflow.step5FinalSuggestion");
+    expect(handlers).toContain("emperorAgent.nodeSkill");
+
+    const now = new Date();
+    const handler = resolveAiJobHandler({
+      runId: "ai_1",
+      kind: "listing.generateFiveSteps",
+      module: "listing",
+      procedure: "listingSkill.generateFiveSteps",
+      status: "queued",
+      progress: 5,
+      userId: 7,
+      projectId: null,
+      skillSlug: "listing.*",
+      input: { context: "demo" },
+      output: null,
+      error: null,
+      startedAt: null,
+      completedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    expect(handler).toBeTypeOf("function");
   });
 
   it("should register aiJobs routes in the app router", () => {
