@@ -1,12 +1,14 @@
 // Full test: Excel → CSV → parseSellerSpriteData
 import { readFileSync } from "fs";
+import path from "path";
 import * as XLSX from "xlsx";
 
 // Import the parser (CommonJS style)
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 
-const filePath = "/home/ubuntu/upload/Search(Gen-Dreadlocks-Machine)-59-US-20260407.xlsx";
+const filePath = process.env.SELLERSPRITE_TEST_XLSX
+  || path.resolve(process.cwd(), "fixtures/sellersprite/Search(Gen-Dreadlocks-Machine)-59-US-20260407.xlsx");
 const buffer = readFileSync(filePath);
 
 // Convert Excel to CSV (same logic as backend)

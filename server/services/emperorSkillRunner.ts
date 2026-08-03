@@ -4,6 +4,7 @@ import { createHash } from "crypto";
 import Handlebars from "handlebars";
 import { getDb } from "../db";
 import { invokeLLM, type Message, type MessageContent } from "../_core/llm";
+import { recordAiOsEvaluation, recordAiOsMetric } from "./aiOsObservability";
 
 export type SkillRunErrorCode =
   | "SKILL_NOT_FOUND"
@@ -14,6 +15,7 @@ export type SkillRunErrorCode =
   | "EMPTY_RESPONSE"
   | "INVALID_OUTPUT"
   | "PROMPT_MISSING"
+  | "SKILL_VERSION_MISMATCH"
   | "DATABASE_ERROR"
   | "UNKNOWN";
 
@@ -36,7 +38,8 @@ type SkillRow = {
   modelOverride?: string | null;
   model_override?: string | null;
   timeout_seconds?: number | null;
-  version?: string | null;
+  status?: string | null;
+  version?: string | number | null;
 };
 
 type ModelRow = {
@@ -70,11 +73,19 @@ export type RunSkillInput<T> = {
   attachments?: MessageContent[];
   legacySystemPrompt?: string;
   migrationSource?: string;
+  skillVersionPolicy?: SkillVersionPolicy;
+  expectedSkillVersion?: string | number;
+  expectedSkillPromptHash?: string;
   validate?: (content: string) => T;
 };
 
 export type RunSkillResult<T = string> = {
   runId: string;
+  skillSlug: string;
+  skillName: string;
+  skillVersion: string;
+  skillPromptHash: string;
+  skillManifestHash: string;
   content: string;
   parsed: T;
   modelSlug: string;
@@ -83,6 +94,21 @@ export type RunSkillResult<T = string> = {
   inputTokens: number;
   outputTokens: number;
   fallbackCount: number;
+};
+
+export type SkillVersionPolicy = "latest" | "snapshot" | "pinned";
+
+export type SkillRuntimeSnapshot = {
+  slug: string;
+  name: string;
+  version: string;
+  status?: string | null;
+  modelOverride?: string | null;
+  timeoutSeconds: number;
+  systemPromptHash: string;
+  systemPromptLength: number;
+  userPromptHash: string;
+  manifestHash: string;
 };
 
 const DEFAULT_FALLBACKS = [
@@ -286,6 +312,58 @@ function hashPrompt(prompt: string): string {
   return createHash("sha256").update(prompt).digest("hex").slice(0, 16);
 }
 
+function hashJson(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value ?? null)).digest("hex").slice(0, 16);
+}
+
+export function normalizeSkillVersion(value: unknown): string {
+  const raw = String(value ?? "1").trim();
+  return raw || "1";
+}
+
+function buildSkillRuntimeSnapshot(skill: SkillRow, manifest: SkillManifest): SkillRuntimeSnapshot {
+  const implementation = manifest.implementation || {};
+  const systemPrompt = implementation.systemPrompt || "";
+  const userPromptTemplate = implementation.userPromptTemplate || "";
+  return {
+    slug: skill.slug,
+    name: skill.name,
+    version: normalizeSkillVersion(skill.version),
+    status: skill.status ?? null,
+    modelOverride: skill.modelOverride || skill.model_override || null,
+    timeoutSeconds: Math.min(Math.max(Number(skill.timeout_seconds || 120), 5), 600),
+    systemPromptHash: hashPrompt(systemPrompt),
+    systemPromptLength: systemPrompt.length,
+    userPromptHash: hashPrompt(userPromptTemplate),
+    manifestHash: hashJson(manifest),
+  };
+}
+
+function assertSkillSnapshotCompatible(
+  snapshot: SkillRuntimeSnapshot,
+  input: Pick<RunSkillInput<unknown>, "skillVersionPolicy" | "expectedSkillVersion" | "expectedSkillPromptHash">,
+) {
+  const policy = input.skillVersionPolicy || ((input.expectedSkillVersion || input.expectedSkillPromptHash) ? "snapshot" : "latest");
+  if (policy === "latest") return;
+
+  const expectedVersion = input.expectedSkillVersion === undefined ? "" : normalizeSkillVersion(input.expectedSkillVersion);
+  if (expectedVersion && expectedVersion !== snapshot.version) {
+    throw new SkillRunError(
+      "SKILL_VERSION_MISMATCH",
+      `Skill '${snapshot.slug}' version changed: expected ${expectedVersion}, current ${snapshot.version}`,
+      false,
+    );
+  }
+
+  if (input.expectedSkillPromptHash && input.expectedSkillPromptHash !== snapshot.systemPromptHash) {
+    throw new SkillRunError(
+      "SKILL_VERSION_MISMATCH",
+      `Skill '${snapshot.slug}' prompt changed after the Agent run started`,
+      false,
+    );
+  }
+}
+
 function buildPromptAudit(skillSlug: string, dbSystemPrompt: string, legacySystemPrompt?: string, source?: string) {
   if (!legacySystemPrompt?.trim()) {
     return {
@@ -334,6 +412,12 @@ async function getSkill(skillSlug: string): Promise<SkillRow> {
   const rows = await rawExecute("SELECT * FROM emperor_skills WHERE slug = ? LIMIT 1", [skillSlug]);
   if (!rows[0]) throw new SkillRunError("SKILL_NOT_FOUND", `Skill '${skillSlug}' not found`, false);
   return rows[0] as SkillRow;
+}
+
+export async function getEmperorSkillRuntimeSnapshot(skillSlug: string): Promise<SkillRuntimeSnapshot> {
+  const skill = await getSkill(skillSlug);
+  const manifest = parseJson<SkillManifest>(skill.manifest, {});
+  return buildSkillRuntimeSnapshot(skill, manifest);
 }
 
 async function getModelBySlug(slug: string): Promise<ModelRow | null> {
@@ -442,8 +526,10 @@ async function callModel(
 export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Promise<RunSkillResult<T>> {
   const skill = await getSkill(input.skillSlug);
   const manifest = parseJson<SkillManifest>(skill.manifest, {});
+  const skillSnapshot = buildSkillRuntimeSnapshot(skill, manifest);
+  assertSkillSnapshotCompatible(skillSnapshot, input);
   const implementation = manifest.implementation || {};
-  const timeoutSeconds = Math.min(Math.max(Number(skill.timeout_seconds || 120), 5), 600);
+  const timeoutSeconds = skillSnapshot.timeoutSeconds;
   const variables = {
     context: input.context || "",
     emphasis: input.emphasis || "",
@@ -456,7 +542,11 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
   const promptAudit = buildPromptAudit(skill.slug, systemPrompt, input.legacySystemPrompt, input.migrationSource);
   const executionVariables = {
     ...variables,
-    __promptAudit: promptAudit,
+    __promptAudit: {
+      ...promptAudit,
+      skillVersion: skillSnapshot.version,
+      skillManifestHash: skillSnapshot.manifestHash,
+    },
   };
   const userPrompt = renderSkillTemplate(implementation.userPromptTemplate || "{{context}}", executionVariables);
   const models = await resolveModelCandidates(
@@ -499,11 +589,18 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
 
       const completedAt = new Date();
       const durationMs = completedAt.getTime() - startedAt.getTime();
+      const totalTokens = response.inputTokens + response.outputTokens;
       await rawExecute(
         "UPDATE emperor_skill_runs SET status=?,output=?,modelSlug=?,inputTokens=?,outputTokens=?,durationMs=?,completedAt=? WHERE runId=?",
         [
           "succeeded",
-          JSON.stringify({ content: response.content, fallbackCount: index }),
+          JSON.stringify({
+            content: response.content,
+            fallbackCount: index,
+            skillVersion: skillSnapshot.version,
+            skillPromptHash: skillSnapshot.systemPromptHash,
+            skillManifestHash: skillSnapshot.manifestHash,
+          }),
           model.slug,
           response.inputTokens,
           response.outputTokens,
@@ -513,8 +610,52 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
         ],
       );
       await rawExecute("UPDATE emperor_skills SET callCount = callCount + 1 WHERE slug = ?", [skill.slug]);
+      void recordAiOsEvaluation({
+        entityType: "skill",
+        entityId: runId,
+        output: parsed,
+        status: "succeeded",
+        userId: input.userId,
+        skillSlug: skill.slug,
+        retryCount: index,
+        fallbackCount: index,
+        metadata: {
+          skillName: skill.name,
+          skillVersion: skillSnapshot.version,
+          modelSlug: model.slug,
+          provider: model.provider,
+          inputTokens: response.inputTokens,
+          outputTokens: response.outputTokens,
+          durationMs,
+        },
+      });
+      void recordAiOsMetric({
+        entityType: "skill",
+        entityId: runId,
+        metricName: "skill.succeeded",
+        metricValue: durationMs,
+        status: "succeeded",
+        userId: input.userId,
+        skillSlug: skill.slug,
+        metadata: { skillName: skill.name, modelSlug: model.slug, provider: model.provider, fallbackCount: index },
+      });
+      void recordAiOsMetric({
+        entityType: "skill",
+        entityId: runId,
+        metricName: "skill.tokens",
+        metricValue: totalTokens,
+        status: "succeeded",
+        userId: input.userId,
+        skillSlug: skill.slug,
+        metadata: { inputTokens: response.inputTokens, outputTokens: response.outputTokens, modelSlug: model.slug },
+      });
       return {
         runId,
+        skillSlug: skill.slug,
+        skillName: skill.name,
+        skillVersion: skillSnapshot.version,
+        skillPromptHash: skillSnapshot.systemPromptHash,
+        skillManifestHash: skillSnapshot.manifestHash,
         content: response.content,
         parsed,
         modelSlug: model.slug,
@@ -531,10 +672,31 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
   }
 
   const completedAt = new Date();
+  const durationMs = completedAt.getTime() - startedAt.getTime();
   await rawExecute(
-    "UPDATE emperor_skill_runs SET status=?,errorMessage=?,completedAt=? WHERE runId=?",
-    ["failed", `${lastError?.code || "UNKNOWN"}: ${lastError?.message || "Skill execution failed"}`, completedAt, runId],
+    "UPDATE emperor_skill_runs SET status=?,errorMessage=?,durationMs=?,completedAt=? WHERE runId=?",
+    ["failed", `${lastError?.code || "UNKNOWN"}: ${lastError?.message || "Skill execution failed"}`, durationMs, completedAt, runId],
   );
+  void recordAiOsEvaluation({
+    entityType: "skill",
+    entityId: runId,
+    output: { errorCode: lastError?.code || "UNKNOWN", message: lastError?.message || "Skill execution failed" },
+    status: "failed",
+    userId: input.userId,
+    skillSlug: skill.slug,
+    retryCount: models.length - 1,
+    metadata: { skillName: skill.name, retryable: lastError?.retryable ?? false },
+  });
+  void recordAiOsMetric({
+    entityType: "skill",
+    entityId: runId,
+    metricName: "skill.failed",
+    metricValue: durationMs,
+    status: "failed",
+    userId: input.userId,
+    skillSlug: skill.slug,
+    metadata: { skillName: skill.name, errorCode: lastError?.code || "UNKNOWN", retryable: lastError?.retryable ?? false },
+  });
   throw new TRPCError({
     code: "INTERNAL_SERVER_ERROR",
     message: "AI 服务暂时不可用，请稍后重试",

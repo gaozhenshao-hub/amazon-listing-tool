@@ -85,6 +85,23 @@ async function startServer() {
     import("../nextsls/adapter").then(m => m.initNextSlsAdapterFromDb()).catch(err => console.error("[NextSLS] Failed to init:", err));
     // Initialize weekly auto-sync cron job (every Monday 02:00 Asia/Shanghai)
     import("../cronJobs").then(m => m.initCronJobs()).catch(err => console.error("[AutoSync] Failed to init:", err));
+    // Recover durable AI jobs that were queued/running before a restart.
+    import("../services/aiJobRunner")
+      .then(m => m.recoverActiveAiJobs())
+      .then(result => {
+        if (result.scheduled > 0 || result.skippedWithoutHandler > 0) {
+          console.log(`[AI Job] Recovery scanned=${result.scanned}, scheduled=${result.scheduled}, skippedWithoutHandler=${result.skippedWithoutHandler}`);
+        }
+      })
+      .catch(err => console.error("[AI Job] Recovery failed:", err));
+    import("../services/emperorAgentRunner")
+      .then(m => m.recoverTimedOutAgentNodes())
+      .then(result => {
+        if (result.failed > 0 || result.retried > 0 || result.skippedPaused > 0 || result.skippedStale > 0) {
+          console.log(`[Agent Runtime] Timeout recovery scanned=${result.scanned}, retried=${result.retried}, failed=${result.failed}, skippedPaused=${result.skippedPaused}, skippedStale=${result.skippedStale}`);
+        }
+      })
+      .catch(err => console.error("[Agent Runtime] Timeout recovery failed:", err));
   });
 }
 

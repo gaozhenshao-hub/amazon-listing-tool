@@ -424,6 +424,10 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
     onSuccess: () => { toast.success("调度器已推进"); refetchRun(); },
     onError: (e) => toast.error("调度失败: " + e.message),
   });
+  const cancelRun = trpc.emperor.agents.cancelRun.useMutation({
+    onSuccess: () => { toast.success("运行已取消"); refetchRun(); },
+    onError: (e) => toast.error("取消失败: " + e.message),
+  });
   const rerunNode = trpc.emperor.agents.rerunNode.useMutation({
     onSuccess: () => { toast.success("节点已重跑"); refetchRun(); },
     onError: (e) => toast.error("重跑失败: " + e.message),
@@ -448,6 +452,7 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
     || checkpoints[0];
   const busyNodeId = executeNode.variables?.nodeId || confirmNode.variables?.nodeId || rerunNode.variables?.nodeId || updateDraft.variables?.nodeId;
   const hasReadyNodes = checkpoints.some((checkpoint) => checkpoint.status === "ready");
+  const isRunTerminal = run?.status === "completed" || run?.status === "canceled";
   const statusLabel: Record<string, string> = {
     pending: "待依赖",
     ready: "可执行",
@@ -528,18 +533,18 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
             <div className="flex items-center justify-between">
               <span className="text-xs text-slate-400">运行状态</span>
               <Badge className={`text-[10px] ${run.status === "completed" ? "bg-emerald-500/20 text-emerald-400" : run.status === "failed" ? "bg-red-500/20 text-red-400" : "bg-amber-500/20 text-amber-400"}`}>
-                {run.status === "running" ? <><Loader2 size={10} className="animate-spin inline mr-1" />运行中</> : run.status === "completed" ? "已完成" : run.status === "waiting_human" ? "等待人工" : "失败"}
+                {run.status === "running" ? <><Loader2 size={10} className="animate-spin inline mr-1" />运行中</> : run.status === "completed" ? "已完成" : run.status === "waiting_human" ? "等待人工" : run.status === "canceled" ? "已取消" : "失败"}
               </Badge>
             </div>
             <div className="text-xs text-slate-500 font-mono break-all">{run.runId}</div>
             <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
               <div className="h-full bg-emerald-500" style={{ width: `${Number(run.progress || 0)}%` }} />
             </div>
-            <div className="grid grid-cols-3 gap-2 pt-1">
+            <div className="grid grid-cols-4 gap-2 pt-1">
               <Button
                 size="sm"
                 variant="outline"
-                disabled={scheduleRun.isPending}
+                disabled={isRunTerminal || scheduleRun.isPending}
                 onClick={() => runId && scheduleRun.mutate({ runId, mode: "unlock" })}
                 className="h-7 text-[10px] border-white/10 text-slate-300 hover:bg-white/5"
               >
@@ -547,7 +552,7 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
               </Button>
               <Button
                 size="sm"
-                disabled={!hasReadyNodes || scheduleRun.isPending}
+                disabled={isRunTerminal || !hasReadyNodes || scheduleRun.isPending}
                 onClick={() => runId && scheduleRun.mutate({ runId, mode: "next" })}
                 className="h-7 text-[10px] bg-blue-600 hover:bg-blue-500 text-white"
               >
@@ -555,11 +560,20 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
               </Button>
               <Button
                 size="sm"
-                disabled={!hasReadyNodes || scheduleRun.isPending}
+                disabled={isRunTerminal || !hasReadyNodes || scheduleRun.isPending}
                 onClick={() => runId && scheduleRun.mutate({ runId, mode: "all_ready" })}
                 className="h-7 text-[10px] bg-violet-600 hover:bg-violet-500 text-white"
               >
                 <SkipForward size={11} className="mr-1" />全部就绪
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={isRunTerminal || cancelRun.isPending}
+                onClick={() => runId && cancelRun.mutate({ runId, reason: "User canceled from Agent console" })}
+                className="h-7 text-[10px] border-red-500/30 text-red-300 hover:bg-red-500/10"
+              >
+                <X size={11} className="mr-1" />取消
               </Button>
             </div>
           </div>
@@ -636,7 +650,7 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
                     {(selectedCheckpoint.status === "ready" || selectedCheckpoint.status === "failed") && (
                       <Button
                         size="sm"
-                        disabled={busyNodeId === selectedCheckpoint.nodeId && executeNode.isPending}
+                        disabled={isRunTerminal || (busyNodeId === selectedCheckpoint.nodeId && executeNode.isPending)}
                         onClick={() => runId && executeNode.mutate({ runId, nodeId: selectedCheckpoint.nodeId })}
                         className="h-8 text-xs bg-blue-600 hover:bg-blue-500 text-white"
                       >
@@ -647,7 +661,7 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={busyNodeId === selectedCheckpoint.nodeId && updateDraft.isPending}
+                        disabled={isRunTerminal || (busyNodeId === selectedCheckpoint.nodeId && updateDraft.isPending)}
                         onClick={() => runId && updateDraft.mutate({ runId, nodeId: selectedCheckpoint.nodeId, userEdit: parseDraft() })}
                         className="h-8 text-xs border-white/10 text-slate-300 hover:bg-white/5"
                       >
@@ -657,7 +671,7 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
                     {selectedCheckpoint.status === "waiting_human" && (
                       <Button
                         size="sm"
-                        disabled={busyNodeId === selectedCheckpoint.nodeId && confirmNode.isPending}
+                        disabled={isRunTerminal || (busyNodeId === selectedCheckpoint.nodeId && confirmNode.isPending)}
                         onClick={() => runId && confirmNode.mutate({ runId, nodeId: selectedCheckpoint.nodeId, userEdit: parseDraft() })}
                         className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white"
                       >
@@ -668,7 +682,7 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={busyNodeId === selectedCheckpoint.nodeId && rerunNode.isPending}
+                        disabled={isRunTerminal || (busyNodeId === selectedCheckpoint.nodeId && rerunNode.isPending)}
                         onClick={() => runId && rerunNode.mutate({ runId, nodeId: selectedCheckpoint.nodeId, resetDescendants: true })}
                         className="h-8 text-xs border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
                       >
@@ -679,7 +693,7 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={busyNodeId === selectedCheckpoint.nodeId && confirmNode.isPending}
+                        disabled={isRunTerminal || (busyNodeId === selectedCheckpoint.nodeId && confirmNode.isPending)}
                         onClick={() => runId && confirmNode.mutate({ runId, nodeId: selectedCheckpoint.nodeId, skip: true })}
                         className="h-8 text-xs border-white/10 text-slate-400 hover:bg-white/5"
                       >

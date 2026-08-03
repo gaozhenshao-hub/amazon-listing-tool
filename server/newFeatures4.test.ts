@@ -6,6 +6,10 @@
  * 4. Image AI analyzer (imageAiAnalyzer.ts)
  */
 import { describe, it, expect, vi } from "vitest";
+import { repoPath } from "./testPaths";
+
+const serverFilePath = (fileName: string) => repoPath("server", fileName);
+const routerFilePath = (fileName: string) => repoPath("server/routers", fileName);
 
 // ═══════════════════════════════════════════════════════
 // 1. Anti-Bot Module Tests
@@ -237,7 +241,7 @@ describe("ProductOps Router - New Procedures", () => {
 describe("Data Flow Integration", () => {
   it("scraper should use antiBot module", async () => {
     const scraperCode = await import("fs").then(fs => 
-      fs.readFileSync("/home/ubuntu/amazon-listing-tool/server/scraper.ts", "utf-8")
+      fs.readFileSync(serverFilePath("scraper.ts"), "utf-8")
     );
     expect(scraperCode).toContain("antiBot");
     expect(scraperCode).toContain("smartFetch");
@@ -245,7 +249,7 @@ describe("Data Flow Integration", () => {
 
   it("crawlerEngine should use antiBot module", async () => {
     const crawlerCode = await import("fs").then(fs => 
-      fs.readFileSync("/home/ubuntu/amazon-listing-tool/server/crawlerEngine.ts", "utf-8")
+      fs.readFileSync(serverFilePath("crawlerEngine.ts"), "utf-8")
     );
     expect(crawlerCode).toContain("antiBot");
     expect(crawlerCode).toContain("smartFetch");
@@ -253,7 +257,7 @@ describe("Data Flow Integration", () => {
 
   it("conversionDataCollector should not have createFallbackData generating fake data", async () => {
     const collectorCode = await import("fs").then(fs => 
-      fs.readFileSync("/home/ubuntu/amazon-listing-tool/server/routers/conversionDataCollector.ts", "utf-8")
+      fs.readFileSync(routerFilePath("conversionDataCollector.ts"), "utf-8")
     );
     // Should return null instead of fake data
     expect(collectorCode).toContain("return null");
@@ -263,7 +267,7 @@ describe("Data Flow Integration", () => {
 
   it("conversionAiScorer should not default to score 3 on failure", async () => {
     const scorerCode = await import("fs").then(fs => 
-      fs.readFileSync("/home/ubuntu/amazon-listing-tool/server/routers/conversionAiScorer.ts", "utf-8")
+      fs.readFileSync(routerFilePath("conversionAiScorer.ts"), "utf-8")
     );
     // Should have null score handling
     expect(scorerCode).toContain("score: null");

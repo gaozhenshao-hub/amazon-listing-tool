@@ -74,12 +74,24 @@ export const aiJobs = mysqlTable("ai_jobs", {
   procedure: varchar("procedure", { length: 128 }),
   status: mysqlEnum("status", ["queued", "running", "succeeded", "failed", "canceled"]).default("queued").notNull(),
   progress: int("progress").default(0).notNull(),
+  priority: int("priority").default(0).notNull(),
+  queueName: varchar("queueName", { length: 64 }).default("default").notNull(),
+  attempt: int("attempt").default(0).notNull(),
+  maxAttempts: int("maxAttempts").default(1).notNull(),
+  timeoutSeconds: int("timeoutSeconds").default(600).notNull(),
   userId: int("userId").notNull(),
   projectId: int("projectId"),
   skillSlug: varchar("skillSlug", { length: 128 }),
   input: json("input"),
   output: json("output"),
   errorMessage: text("errorMessage"),
+  nextRunAt: timestamp("nextRunAt"),
+  leaseUntil: timestamp("leaseUntil"),
+  lockedBy: varchar("lockedBy", { length: 128 }),
+  claimedAt: timestamp("claimedAt"),
+  lastHeartbeatAt: timestamp("lastHeartbeatAt"),
+  deadLetterAt: timestamp("deadLetterAt"),
+  deadLetterReason: text("deadLetterReason"),
   startedAt: timestamp("startedAt"),
   completedAt: timestamp("completedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -88,6 +100,45 @@ export const aiJobs = mysqlTable("ai_jobs", {
 
 export type AiJob = typeof aiJobs.$inferSelect;
 export type InsertAiJob = typeof aiJobs.$inferInsert;
+
+export const aiJobWorkers = mysqlTable("ai_job_workers", {
+  id: int("id").autoincrement().primaryKey(),
+  workerId: varchar("workerId", { length: 128 }).notNull().unique(),
+  hostname: varchar("hostname", { length: 255 }),
+  pid: int("pid"),
+  role: varchar("role", { length: 64 }).default("worker").notNull(),
+  status: mysqlEnum("status", ["active", "draining", "stopped", "unhealthy"]).default("active").notNull(),
+  concurrency: int("concurrency").default(1).notNull(),
+  runningCount: int("runningCount").default(0).notNull(),
+  lastHeartbeatAt: timestamp("lastHeartbeatAt"),
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  stoppedAt: timestamp("stoppedAt"),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AiJobWorker = typeof aiJobWorkers.$inferSelect;
+export type InsertAiJobWorker = typeof aiJobWorkers.$inferInsert;
+
+export const aiJobDeadLetters = mysqlTable("ai_job_dead_letters", {
+  id: int("id").autoincrement().primaryKey(),
+  runId: varchar("runId", { length: 80 }).notNull().unique(),
+  kind: varchar("kind", { length: 128 }).notNull(),
+  module: varchar("module", { length: 64 }).notNull(),
+  procedure: varchar("procedure", { length: 128 }),
+  status: varchar("status", { length: 40 }),
+  attempt: int("attempt").default(0).notNull(),
+  maxAttempts: int("maxAttempts").default(1).notNull(),
+  userId: int("userId"),
+  projectId: int("projectId"),
+  skillSlug: varchar("skillSlug", { length: 128 }),
+  errorMessage: text("errorMessage"),
+  input: json("input"),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AiJobDeadLetter = typeof aiJobDeadLetters.$inferSelect;
+export type InsertAiJobDeadLetter = typeof aiJobDeadLetters.$inferInsert;
 
 // Knowledge base sync logs (P2P bidirectional sync)
 export const kbSyncLogs = mysqlTable("kb_sync_logs", {
@@ -4811,15 +4862,42 @@ export const emperorAgents = mysqlTable("emperor_agents", {
 export type EmperorAgent = typeof emperorAgents.$inferSelect;
 export type InsertEmperorAgent = typeof emperorAgents.$inferInsert;
 
+export const emperorAgentTemplateVersions = mysqlTable("emperor_agent_template_versions", {
+  id: int("id").autoincrement().primaryKey(),
+  agentSlug: varchar("agentSlug", { length: 128 }).notNull(),
+  agentName: varchar("agentName", { length: 255 }),
+  parentVersionId: int("parentVersionId"),
+  versionNumber: int("versionNumber").notNull(),
+  version: varchar("version", { length: 40 }).notNull(),
+  dagHash: varchar("dagHash", { length: 64 }).notNull(),
+  status: mysqlEnum("status", ["draft", "released", "deprecated"]).default("released").notNull(),
+  isDefault: int("isDefault").default(0).notNull(),
+  rolloutPercent: int("rolloutPercent").default(100).notNull(),
+  rolloutPolicy: json("rolloutPolicy"),
+  dagDefinition: json("dagDefinition").notNull(),
+  releaseNotes: text("releaseNotes"),
+  createdBy: int("createdBy"),
+  releasedAt: timestamp("releasedAt"),
+  activatedAt: timestamp("activatedAt"),
+  deprecatedAt: timestamp("deprecatedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmperorAgentTemplateVersion = typeof emperorAgentTemplateVersions.$inferSelect;
+export type InsertEmperorAgentTemplateVersion = typeof emperorAgentTemplateVersions.$inferInsert;
+
 // Agent 运行实例。长流程不直接等 LLM 返回，而是以 run/checkpoint 推进。
 export const emperorAgentRuns = mysqlTable("emperor_agent_runs", {
   id: int("id").autoincrement().primaryKey(),
   runId: varchar("runId", { length: 80 }).unique().notNull(),
   agentSlug: varchar("agentSlug", { length: 128 }).notNull(),
   agentName: varchar("agentName", { length: 255 }),
+  templateVersionId: int("templateVersionId"),
+  templateVersion: varchar("templateVersion", { length: 40 }),
+  dagHash: varchar("dagHash", { length: 64 }),
   userId: int("userId").notNull(),
   projectId: int("projectId"),
-  status: mysqlEnum("status", ["running", "waiting_human", "completed", "failed", "canceled"]).default("waiting_human").notNull(),
+  status: mysqlEnum("status", ["running", "waiting_human", "paused", "completed", "failed", "canceled"]).default("waiting_human").notNull(),
   currentNodeId: varchar("currentNodeId", { length: 128 }),
   progress: int("progress").default(0).notNull(),
   inputs: json("inputs"),
@@ -4842,12 +4920,21 @@ export const emperorAgentCheckpoints = mysqlTable("emperor_agent_checkpoints", {
   nodeType: varchar("nodeType", { length: 64 }).notNull(),
   status: mysqlEnum("status", ["pending", "ready", "running", "waiting_human", "confirmed", "skipped", "failed"]).default("pending").notNull(),
   attempt: int("attempt").default(0).notNull(),
+  maxAttempts: int("maxAttempts").default(1).notNull(),
   input: json("input"),
   output: json("output"),
   userEdit: json("userEdit"),
   metadata: json("metadata"),
   skillRunId: varchar("skillRunId", { length: 80 }),
   aiJobRunId: varchar("aiJobRunId", { length: 80 }),
+  aiJobAttempt: int("aiJobAttempt").default(0).notNull(),
+  aiJobClaimedAt: timestamp("aiJobClaimedAt"),
+  lockToken: varchar("lockToken", { length: 80 }),
+  lockedAt: timestamp("lockedAt"),
+  timeoutAt: timestamp("timeoutAt"),
+  retryCount: int("retryCount").default(0).notNull(),
+  retryScheduledAt: timestamp("retryScheduledAt"),
+  lastFailureKind: varchar("lastFailureKind", { length: 40 }),
   reviewerUserId: int("reviewerUserId"),
   errorMessage: text("errorMessage"),
   startedAt: timestamp("startedAt"),
@@ -4872,6 +4959,36 @@ export const emperorAgentEvents = mysqlTable("emperor_agent_events", {
 export type EmperorAgentEvent = typeof emperorAgentEvents.$inferSelect;
 export type InsertEmperorAgentEvent = typeof emperorAgentEvents.$inferInsert;
 
+export const emperorAgentArtifacts = mysqlTable("emperor_agent_artifacts", {
+  id: int("id").autoincrement().primaryKey(),
+  runId: varchar("runId", { length: 80 }).notNull(),
+  agentSlug: varchar("agentSlug", { length: 128 }).notNull(),
+  nodeId: varchar("nodeId", { length: 128 }).notNull(),
+  artifactKey: varchar("artifactKey", { length: 128 }).notNull(),
+  artifactType: mysqlEnum("artifactType", ["json", "text", "markdown", "html", "image", "file", "table", "other"]).default("json").notNull(),
+  status: mysqlEnum("status", ["draft", "final", "superseded"]).default("draft").notNull(),
+  version: int("version").default(1).notNull(),
+  isCurrent: int("isCurrent").default(0).notNull(),
+  currentSince: timestamp("currentSince"),
+  selectedBy: int("selectedBy"),
+  userId: int("userId").notNull(),
+  projectId: int("projectId"),
+  content: json("content"),
+  contentHash: varchar("contentHash", { length: 64 }),
+  summary: text("summary"),
+  metadata: json("metadata"),
+  mimeType: varchar("mimeType", { length: 128 }),
+  fileName: varchar("fileName", { length: 255 }),
+  fileSizeBytes: bigint("fileSizeBytes", { mode: "number" }),
+  storageUri: text("storageUri"),
+  sourceSkillRunId: varchar("sourceSkillRunId", { length: 80 }),
+  sourceAiJobRunId: varchar("sourceAiJobRunId", { length: 80 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmperorAgentArtifact = typeof emperorAgentArtifacts.$inferSelect;
+export type InsertEmperorAgentArtifact = typeof emperorAgentArtifacts.$inferInsert;
+
 export const emperorTools = mysqlTable("emperor_tools", {
   id: int("id").autoincrement().primaryKey(),
   slug: varchar("slug", { length: 128 }).unique().notNull(),
@@ -4879,6 +4996,12 @@ export const emperorTools = mysqlTable("emperor_tools", {
   description: text("description"),
   type: mysqlEnum("type", ["mcp", "api", "internal", "code"]).notNull(),
   config: json("config"),
+  governancePolicy: json("governancePolicy"),
+  permissionPolicy: json("permissionPolicy"),
+  rateLimitPolicy: json("rateLimitPolicy"),
+  circuitBreakerPolicy: json("circuitBreakerPolicy"),
+  secretRefs: json("secretRefs"),
+  outputPolicy: json("outputPolicy"),
   inputSchema: json("inputSchema"),
   outputSchema: json("outputSchema"),
   isActive: int("isActive").default(1).notNull(),
@@ -4887,6 +5010,99 @@ export const emperorTools = mysqlTable("emperor_tools", {
 });
 export type EmperorTool = typeof emperorTools.$inferSelect;
 export type InsertEmperorTool = typeof emperorTools.$inferInsert;
+
+export const emperorToolRuns = mysqlTable("emperor_tool_runs", {
+  id: int("id").autoincrement().primaryKey(),
+  toolRunId: varchar("toolRunId", { length: 80 }).unique().notNull(),
+  toolSlug: varchar("toolSlug", { length: 128 }).notNull(),
+  toolName: varchar("toolName", { length: 255 }),
+  toolType: mysqlEnum("toolType", ["mcp", "api", "internal", "code"]).notNull(),
+  source: mysqlEnum("source", ["builtin", "emperor_tools", "mcp_connector"]).notNull(),
+  status: mysqlEnum("status", ["running", "succeeded", "failed", "blocked"]).default("running").notNull(),
+  riskLevel: mysqlEnum("riskLevel", ["low", "medium", "high", "critical"]).default("medium").notNull(),
+  userId: int("userId").notNull(),
+  agentRunId: varchar("agentRunId", { length: 80 }),
+  nodeId: varchar("nodeId", { length: 128 }),
+  projectId: int("projectId"),
+  input: json("input"),
+  output: json("output"),
+  normalizedOutput: json("normalizedOutput"),
+  errorMessage: text("errorMessage"),
+  failureKind: mysqlEnum("failureKind", ["policy", "rate_limit", "circuit_open", "schema", "auth", "timeout", "network", "http", "executor", "unknown"]),
+  retryable: int("retryable").default(0).notNull(),
+  attemptCount: int("attemptCount").default(0).notNull(),
+  governanceDecision: json("governanceDecision"),
+  secretRefs: json("secretRefs"),
+  circuitState: varchar("circuitState", { length: 32 }),
+  durationMs: int("durationMs"),
+  httpStatus: int("httpStatus"),
+  requestHost: varchar("requestHost", { length: 255 }),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmperorToolRun = typeof emperorToolRuns.$inferSelect;
+export type InsertEmperorToolRun = typeof emperorToolRuns.$inferInsert;
+
+export const emperorToolSecrets = mysqlTable("emperor_tool_secrets", {
+  id: int("id").autoincrement().primaryKey(),
+  slug: varchar("slug", { length: 128 }).unique().notNull(),
+  description: text("description"),
+  encryptedValue: text("encryptedValue").notNull(),
+  iv: varchar("iv", { length: 32 }).notNull(),
+  authTag: varchar("authTag", { length: 32 }).notNull(),
+  keyVersion: varchar("keyVersion", { length: 64 }).default("v1").notNull(),
+  metadata: json("metadata"),
+  createdBy: int("createdBy"),
+  updatedBy: int("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmperorToolSecret = typeof emperorToolSecrets.$inferSelect;
+export type InsertEmperorToolSecret = typeof emperorToolSecrets.$inferInsert;
+
+export const emperorAiOsMetrics = mysqlTable("emperor_ai_os_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  entityType: varchar("entityType", { length: 40 }).notNull(),
+  entityId: varchar("entityId", { length: 128 }).notNull(),
+  metricName: varchar("metricName", { length: 80 }).notNull(),
+  metricValue: decimal("metricValue", { precision: 18, scale: 4 }),
+  status: varchar("status", { length: 40 }),
+  userId: int("userId"),
+  projectId: int("projectId"),
+  agentSlug: varchar("agentSlug", { length: 128 }),
+  nodeId: varchar("nodeId", { length: 128 }),
+  skillSlug: varchar("skillSlug", { length: 128 }),
+  toolSlug: varchar("toolSlug", { length: 128 }),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type EmperorAiOsMetric = typeof emperorAiOsMetrics.$inferSelect;
+export type InsertEmperorAiOsMetric = typeof emperorAiOsMetrics.$inferInsert;
+
+export const emperorAiOsEvaluations = mysqlTable("emperor_ai_os_evaluations", {
+  id: int("id").autoincrement().primaryKey(),
+  evaluationId: varchar("evaluationId", { length: 80 }).unique().notNull(),
+  entityType: varchar("entityType", { length: 40 }).notNull(),
+  entityId: varchar("entityId", { length: 128 }).notNull(),
+  evaluationType: varchar("evaluationType", { length: 80 }).default("heuristic_quality").notNull(),
+  score: decimal("score", { precision: 5, scale: 2 }).notNull(),
+  grade: varchar("grade", { length: 20 }),
+  status: varchar("status", { length: 40 }),
+  evaluator: varchar("evaluator", { length: 80 }).default("system.heuristic").notNull(),
+  userId: int("userId"),
+  projectId: int("projectId"),
+  agentSlug: varchar("agentSlug", { length: 128 }),
+  nodeId: varchar("nodeId", { length: 128 }),
+  skillSlug: varchar("skillSlug", { length: 128 }),
+  toolSlug: varchar("toolSlug", { length: 128 }),
+  rubric: json("rubric"),
+  details: json("details"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type EmperorAiOsEvaluation = typeof emperorAiOsEvaluations.$inferSelect;
+export type InsertEmperorAiOsEvaluation = typeof emperorAiOsEvaluations.$inferInsert;
 
 // Emperor 知识库（cc-haha 四分类记忆体系）
 export const emperorKnowledge = mysqlTable("emperor_knowledge", {
@@ -4916,6 +5132,8 @@ export const emperorMcpConnectors = mysqlTable("emperor_mcp_connectors", {
   connectionType: mysqlEnum("connectionType", ["http_api", "database", "webhook", "internal", "script"]).default("http_api").notNull(),
   // 连接配置 JSON（含 baseUrl、apiKey 等，敏感字段加密存储）
   config: json("config"),
+  governancePolicy: json("governancePolicy"),
+  secretRefs: json("secretRefs"),
   isActive: int("isActive").default(1).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

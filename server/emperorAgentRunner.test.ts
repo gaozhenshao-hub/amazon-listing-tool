@@ -1,14 +1,33 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import {
+  buildAgentArtifactRef,
+  buildAgentContextPackage,
+  buildAgentRetryEventPayload,
+  buildStoredAgentRunInputs,
+  canTransitionNodeStatus,
+  canTransitionRunStatus,
+  diffAgentArtifactContent,
   getListingAgentDag,
+  estimateAgentHumanEditRate,
   LISTING_AGENT_SLUG,
   normalizeAgentDag,
+  parseStoredAgentRunInputs,
+  resolveAgentNodeSkillBinding,
+  validateAgentDag,
 } from "./services/emperorAgentRunner";
+import { scoreAiOutputQuality } from "./services/aiOsObservability";
 import {
+  assertToolConfigUsesSecretRefs,
+  buildToolSecretRef,
+  classifyToolFailure,
+  decryptToolSecretValue,
+  encryptToolSecretValue,
   getBuiltinToolDefinitions,
   invokeEmperorTool,
+  validateJsonSchemaValue,
 } from "./services/emperorToolGateway";
+import { AgentStateMachine } from "./services/agentStateMachine";
 
 describe("Emperor Agent workflow kernel", () => {
   it("should expose Agent workflow schema tables", async () => {
@@ -17,10 +36,54 @@ describe("Emperor Agent workflow kernel", () => {
     expect(schema.emperorAgents.scope).toBeDefined();
     expect(schema.emperorAgents.triggerType).toBeDefined();
     expect(schema.emperorAgents.maxExecutionSeconds).toBeDefined();
+    expect(schema.emperorAgentTemplateVersions).toBeDefined();
+    expect(schema.emperorAgentTemplateVersions.parentVersionId).toBeDefined();
+    expect(schema.emperorAgentTemplateVersions.isDefault).toBeDefined();
+    expect(schema.emperorAgentTemplateVersions.rolloutPercent).toBeDefined();
+    expect(schema.emperorAgentTemplateVersions.rolloutPolicy).toBeDefined();
+    expect(schema.emperorAgentTemplateVersions.activatedAt).toBeDefined();
+    expect(schema.emperorAgentTemplateVersions.deprecatedAt).toBeDefined();
     expect(schema.emperorAgentRuns).toBeDefined();
+    expect(schema.emperorAgentRuns.templateVersionId).toBeDefined();
+    expect(schema.emperorAgentRuns.templateVersion).toBeDefined();
+    expect(schema.emperorAgentRuns.dagHash).toBeDefined();
     expect(schema.emperorAgentCheckpoints).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.maxAttempts).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.lockToken).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.lockedAt).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.timeoutAt).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.aiJobAttempt).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.aiJobClaimedAt).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.retryCount).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.retryScheduledAt).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.lastFailureKind).toBeDefined();
     expect(schema.emperorAgentEvents).toBeDefined();
+    expect(schema.emperorAgentArtifacts).toBeDefined();
+    expect(schema.emperorAgentArtifacts.isCurrent).toBeDefined();
+    expect(schema.emperorAgentArtifacts.currentSince).toBeDefined();
+    expect(schema.emperorAgentArtifacts.selectedBy).toBeDefined();
+    expect(schema.emperorAgentArtifacts.contentHash).toBeDefined();
+    expect(schema.emperorAgentArtifacts.mimeType).toBeDefined();
+    expect(schema.emperorAgentArtifacts.fileName).toBeDefined();
+    expect(schema.emperorAgentArtifacts.fileSizeBytes).toBeDefined();
+    expect(schema.emperorAgentArtifacts.storageUri).toBeDefined();
     expect(schema.emperorTools).toBeDefined();
+    expect(schema.emperorTools.governancePolicy).toBeDefined();
+    expect(schema.emperorTools.permissionPolicy).toBeDefined();
+    expect(schema.emperorTools.rateLimitPolicy).toBeDefined();
+    expect(schema.emperorTools.circuitBreakerPolicy).toBeDefined();
+    expect(schema.emperorTools.secretRefs).toBeDefined();
+    expect(schema.emperorTools.outputPolicy).toBeDefined();
+    expect(schema.emperorToolRuns).toBeDefined();
+    expect(schema.emperorToolRuns.failureKind).toBeDefined();
+    expect(schema.emperorToolRuns.normalizedOutput).toBeDefined();
+    expect(schema.emperorToolRuns.governanceDecision).toBeDefined();
+    expect(schema.emperorToolRuns.secretRefs).toBeDefined();
+    expect(schema.emperorToolSecrets).toBeDefined();
+    expect(schema.emperorMcpConnectors.governancePolicy).toBeDefined();
+    expect(schema.emperorMcpConnectors.secretRefs).toBeDefined();
+    expect(schema.emperorAiOsMetrics).toBeDefined();
+    expect(schema.emperorAiOsEvaluations).toBeDefined();
   });
 
   it("should define Listing as a human-in-the-loop DAG", () => {
@@ -44,20 +107,334 @@ describe("Emperor Agent workflow kernel", () => {
     expect(normalizeAgentDag('{"nodes":[{"id":"A"}],"edges":[{"source":"A","target":"B"}]}').edges).toHaveLength(1);
   });
 
+  it("should validate Agent DAG contracts before execution", () => {
+    const valid = validateAgentDag(getListingAgentDag());
+    expect(valid.valid).toBe(true);
+    expect(valid.errors).toHaveLength(0);
+    expect(valid.rootNodeIds).toContain("N0");
+
+    const invalid = validateAgentDag({
+      nodes: [
+        { id: "A", nodeType: "skill_node", label: "A" },
+        { id: "A", nodeType: "output_node", label: "Duplicate" },
+        { id: "B", nodeType: "output_node", label: "B" },
+      ],
+      edges: [
+        { source: "A", target: "B" },
+        { source: "B", target: "A" },
+        { source: "A", target: "MISSING" },
+      ],
+    });
+    expect(invalid.valid).toBe(false);
+    expect(invalid.errors.map((issue) => issue.code)).toContain("node.id_duplicate");
+    expect(invalid.errors.map((issue) => issue.code)).toContain("node.skill_missing");
+    expect(invalid.errors.map((issue) => issue.code)).toContain("edge.target_missing");
+    expect(invalid.errors.map((issue) => issue.code)).toContain("dag.cycle_detected");
+  });
+
+  it("should resolve Skill version policies for Agent nodes", () => {
+    expect(resolveAgentNodeSkillBinding({}).policy).toBe("snapshot");
+    expect(resolveAgentNodeSkillBinding({ skillVersionRef: "latest" })).toEqual({ policy: "latest", ref: "latest" });
+    expect(resolveAgentNodeSkillBinding({ skillVersion: 7 })).toEqual({ policy: "pinned", pinnedVersion: "7", ref: "pinned:7" });
+    expect(resolveAgentNodeSkillBinding({ skillVersionRef: "pinned:3" })).toEqual({ policy: "pinned", pinnedVersion: "3", ref: "pinned:3" });
+    expect(resolveAgentNodeSkillBinding({ skillVersionRef: "pinned:" })).toEqual({ policy: "pinned", ref: "pinned" });
+  });
+
+  it("should freeze Agent run inputs with a DAG snapshot", () => {
+    const dag = getListingAgentDag();
+    const stored = buildStoredAgentRunInputs({
+      inputs: { asin: "B0TEST123", locale: "en-US" },
+      agentSlug: LISTING_AGENT_SLUG,
+      agentName: "Listing Agent",
+      dag,
+    });
+    const parsed = parseStoredAgentRunInputs(stored);
+    expect(parsed.inputs).toEqual({ asin: "B0TEST123", locale: "en-US" });
+    expect(parsed.runtime?.agentSlug).toBe(LISTING_AGENT_SLUG);
+    expect(parsed.runtime?.templateVersion).toBeNull();
+    expect(parsed.runtime?.dagHash).toHaveLength(16);
+    expect(parsed.runtime?.dagSnapshot.nodes.length).toBe(dag.nodes.length);
+  });
+
+  it("should build context packages from confirmed checkpoints and artifacts", () => {
+    const longNotes = "x".repeat(250);
+    const dag = {
+      nodes: [
+        { id: "A", nodeType: "input_node", label: "A", outputKey: "alpha" },
+        { id: "B", nodeType: "skill_node", label: "B", outputKey: "beta", skillSlug: "listing.title.generate" },
+      ],
+      edges: [{ source: "A", target: "B" }],
+    };
+    const contextPackage = buildAgentContextPackage({
+      run: { runId: "agent_1", agentSlug: "demo.agent", projectId: 9, inputs: { locale: "en-US" } },
+      dag,
+      node: dag.nodes[1],
+      checkpoints: [
+        { runId: "agent_1", agentSlug: "demo.agent", nodeId: "A", nodeType: "input_node", status: "confirmed", output: { product: "Checkpoint", notes: longNotes } },
+        { runId: "agent_1", agentSlug: "demo.agent", nodeId: "B", nodeType: "skill_node", status: "ready" },
+      ] as any,
+      artifacts: [
+        { id: 12, runId: "agent_1", nodeId: "A", artifactKey: "alpha", artifactType: "json", version: 2, status: "final", isCurrent: 1, content: { product: "Filter", notes: longNotes }, metadata: { source: "test" }, contentHash: "hash_2" },
+        { id: 13, runId: "agent_1", nodeId: "A", artifactKey: "alpha", version: 3, status: "draft", content: { product: "Draft" } },
+      ],
+      options: { maxStringLength: 200, maxArtifactContentLength: 200 },
+    });
+
+    expect(contextPackage.version).toBe("1.0");
+    expect(contextPackage.schema).toEqual({
+      name: "agent.context_package",
+      version: "1.1",
+      sections: ["runInputs", "parentOutputs", "confirmedOutputs", "artifacts", "resourceRefs", "contextBudget", "provenance"],
+    });
+    expect((contextPackage.parentOutputs.alpha as any).product).toBe("Filter");
+    expect((contextPackage.parentOutputs.alpha as any).notes.__truncated).toBe(true);
+    expect((contextPackage.confirmedOutputs.alpha as any).product).toBe("Filter");
+    expect(contextPackage.artifacts).toHaveLength(1);
+    expect(contextPackage.artifacts[0].version).toBe(2);
+    expect(contextPackage.artifacts[0].isCurrent).toBe(true);
+    expect(contextPackage.artifacts[0].currentRef).toBe("artifact://agent_1/A/alpha@current");
+    expect((contextPackage.artifacts[0].content as any).notes.__truncated).toBe(true);
+    expect(contextPackage.provenance.artifactRefs).toContain("artifact://agent_1/A/alpha@2");
+    expect(contextPackage.provenance.currentArtifactRefs).toContain("artifact://agent_1/A/alpha@current");
+    expect(contextPackage.provenance.sources.map((source) => source.sourceType)).toContain("artifact");
+    expect(contextPackage.contextBudget.estimatedTokens).toBeGreaterThan(0);
+    expect(contextPackage.contextBudget.truncatedFields).toContain("parentOutputs.alpha.notes");
+    expect(contextPackage.resourceRefs.table).toHaveLength(0);
+  });
+
+  it("should resolve resource Artifact refs and enforce Context Package budget", () => {
+    const rows = Array.from({ length: 30 }, (_, index) => ({ keyword: `keyword-${index}`, volume: index * 100 }));
+    const dag = {
+      nodes: [
+        { id: "N1", nodeType: "skill_node", label: "N1", outputKey: "competitorAnalysis", skillSlug: "listing.competitor.analyze" },
+        { id: "N3", nodeType: "input_node", label: "N3", outputKey: "productAttributes" },
+        { id: "G1", nodeType: "skill_node", label: "G1", outputKey: "sellingPoints", skillSlug: "listing.sellingpoints.generate" },
+      ],
+      edges: [{ source: "N1", target: "G1" }, { source: "N3", target: "G1" }],
+    };
+    const contextPackage = buildAgentContextPackage({
+      run: {
+        runId: "agent_2",
+        agentSlug: "listing.full.workflow",
+        projectId: 9,
+        inputs: {
+          brief: "z".repeat(800),
+          sheetRef: "artifact://agent_2/N3/productAttributes@current",
+        },
+      },
+      dag,
+      node: dag.nodes[2],
+      checkpoints: [
+        { runId: "agent_2", agentSlug: "listing.full.workflow", nodeId: "N1", nodeType: "skill_node", status: "confirmed", output: { items: rows } },
+        { runId: "agent_2", agentSlug: "listing.full.workflow", nodeId: "N3", nodeType: "input_node", status: "confirmed", output: { source: "checkpoint" } },
+      ] as any,
+      artifacts: [
+        {
+          id: 22,
+          runId: "agent_2",
+          nodeId: "N3",
+          artifactKey: "productAttributes",
+          artifactType: "table",
+          version: 1,
+          status: "final",
+          isCurrent: 1,
+          content: { table: { rows, columns: ["keyword", "volume"] } },
+          metadata: { mimeType: "text/csv", fileName: "attributes.csv", table: { rowCount: rows.length } },
+          mimeType: "text/csv",
+          fileName: "attributes.csv",
+          fileSizeBytes: 2048,
+          storageUri: "artifact-storage://agent_2/attributes.csv",
+          contentHash: "hash_table",
+        },
+      ],
+      options: {
+        maxStringLength: 200,
+        maxArrayItems: 10,
+        maxTokens: 3000,
+        sectionTokenBudgets: { runInputs: 700, parentOutputs: 1000, confirmedOutputs: 500, artifacts: 300 },
+      },
+    });
+
+    expect((contextPackage.runInputs.brief as any).__truncated).toBe(true);
+    expect((contextPackage.runInputs.sheetRef as any).__resolvedArtifactRef).toBe("artifact://agent_2/N3/productAttributes@current");
+    expect((contextPackage.parentOutputs.productAttributes as any).__artifactRef).toBe("artifact://agent_2/N3/productAttributes@current");
+    expect(contextPackage.resourceRefs.table).toHaveLength(1);
+    expect(contextPackage.resourceRefs.table[0].fileName).toBe("attributes.csv");
+    expect(contextPackage.contextBudget.maxTokens).toBe(3000);
+    expect(contextPackage.contextBudget.resolvedArtifactRefs).toContain("artifact://agent_2/N3/productAttributes@current");
+    expect(contextPackage.contextBudget.summarizedFields.some((path) => path.includes("competitorAnalysis.items"))).toBe(true);
+    expect(contextPackage.provenance.sources.some((source) => source.sourceType === "artifact_ref" && source.path === "runInputs.sheetRef")).toBe(true);
+  });
+
+  it("should preserve legacy Agent run inputs that contain a payload field", () => {
+    const parsed = parseStoredAgentRunInputs({ payload: { userValue: true }, asin: "B0LEGACY" });
+    expect(parsed.runtime).toBeNull();
+    expect(parsed.inputs).toEqual({ payload: { userValue: true }, asin: "B0LEGACY" });
+  });
+
+  it("should enforce explicit Agent status transitions", () => {
+    expect(canTransitionNodeStatus("pending", "ready")).toBe(true);
+    expect(AgentStateMachine.canTransitionNodeStatus("pending", "ready")).toBe(true);
+    expect(canTransitionNodeStatus("ready", "running")).toBe(true);
+    expect(canTransitionNodeStatus("running", "waiting_human")).toBe(true);
+    expect(canTransitionNodeStatus("waiting_human", "confirmed")).toBe(true);
+    expect(canTransitionNodeStatus("pending", "confirmed")).toBe(false);
+    expect(canTransitionNodeStatus("confirmed", "running")).toBe(false);
+
+    expect(canTransitionRunStatus("waiting_human", "running")).toBe(true);
+    expect(AgentStateMachine.canTransitionRunStatus("waiting_human", "running")).toBe(true);
+    expect(canTransitionRunStatus("running", "canceled")).toBe(true);
+    expect(canTransitionRunStatus("running", "paused")).toBe(true);
+    expect(canTransitionRunStatus("paused", "waiting_human")).toBe(true);
+    expect(canTransitionRunStatus("failed", "running")).toBe(true);
+    expect(canTransitionRunStatus("completed", "running")).toBe(false);
+    expect(canTransitionRunStatus("canceled", "waiting_human")).toBe(false);
+    expect(() => AgentStateMachine.assertNodeTransition("pending", "confirmed", "unit test")).toThrow(/Invalid node transition/);
+    expect(() => AgentStateMachine.assertRunTransition("completed", "running", "unit test")).toThrow(/Invalid run transition/);
+  });
+
+  it("should standardize Agent node retry events", () => {
+    const retryScheduledAt = new Date("2026-08-03T10:00:00.000Z");
+    const timeoutAt = new Date("2026-08-03T10:10:05.000Z");
+    const payload = buildAgentRetryEventPayload({
+      job: {
+        runId: "agent_job_1",
+        kind: "agent.node.G1",
+        module: "emperorAgent",
+        procedure: "emperor.agents.executeNode",
+        status: "running",
+        progress: 20,
+        priority: 0,
+        queueName: "default",
+        attempt: 1,
+        maxAttempts: 3,
+        timeoutSeconds: 600,
+        userId: 7,
+        projectId: 3,
+        skillSlug: "listing.sellingpoints.generate",
+        input: null,
+        output: null,
+        error: "timeout",
+        nextRunAt: null,
+        leaseUntil: null,
+        lockedBy: "worker_1",
+        claimedAt: retryScheduledAt,
+        lastHeartbeatAt: null,
+        deadLetterAt: null,
+        deadLetterReason: null,
+        startedAt: retryScheduledAt,
+        completedAt: null,
+        createdAt: retryScheduledAt,
+        updatedAt: retryScheduledAt,
+      },
+      retryDelayMs: 30000,
+      retryScheduledAt,
+      timeoutAt,
+      failureKind: "timeout",
+      error: "Node timed out",
+    });
+
+    expect(payload.schemaVersion).toBe("1.0");
+    expect(payload.failureKind).toBe("timeout");
+    expect(payload.aiJobRunId).toBe("agent_job_1");
+    expect(payload.attempt).toBe(1);
+    expect(payload.nextAttempt).toBe(2);
+    expect(payload.maxAttempts).toBe(3);
+    expect(payload.retryScheduledAt).toBe("2026-08-03T10:00:00.000Z");
+    expect(payload.timeoutAt).toBe("2026-08-03T10:10:05.000Z");
+  });
+
+  it("should build Artifact refs and JSON diffs", () => {
+    const ref = buildAgentArtifactRef({ runId: "agent_1", nodeId: "G1", artifactKey: "sellingPoints", version: 4 });
+    const currentRef = buildAgentArtifactRef({ runId: "agent_1", nodeId: "G1", artifactKey: "sellingPoints", version: 4 }, "current");
+    const diff = diffAgentArtifactContent(
+      { title: "Old", bullets: ["A", "B"], nested: { keep: true, remove: "x" } },
+      { title: "New", bullets: ["A", "C", "D"], nested: { keep: true }, added: 1 },
+    );
+
+    expect(ref).toBe("artifact://agent_1/G1/sellingPoints@4");
+    expect(currentRef).toBe("artifact://agent_1/G1/sellingPoints@current");
+    expect(diff.map((entry) => entry.path)).toContain("$.title");
+    expect(diff.map((entry) => entry.path)).toContain("$.bullets[1]");
+    expect(diff.map((entry) => entry.path)).toContain("$.bullets[2]");
+    expect(diff.map((entry) => entry.path)).toContain("$.nested.remove");
+    expect(diff.map((entry) => entry.path)).toContain("$.added");
+  });
+
+  it("should estimate human edit rate for confirmed artifacts", () => {
+    const lightEditRate = estimateAgentHumanEditRate(
+      { title: "Premium Water Filter", bullets: ["Fast install", "Leak proof seal"] },
+      { title: "Premium Water Filter", bullets: ["Fast install", "Leak-proof seal"] },
+    );
+    const heavyEditRate = estimateAgentHumanEditRate(
+      { title: "Premium Water Filter", bullets: ["Fast install", "Leak proof seal"] },
+      { title: "Replacement Filter Cartridge", bullets: ["NSF tested", "6 month service life", "Tool-free setup"] },
+    );
+
+    expect(lightEditRate).toBeGreaterThanOrEqual(0);
+    expect(lightEditRate).toBeLessThan(heavyEditRate);
+    expect(heavyEditRate).toBeLessThanOrEqual(1);
+  });
+
+  it("should score Skill and Agent outputs for observability", () => {
+    const good = scoreAiOutputQuality({
+      output: {
+        title: "Premium Water Filter Replacement Cartridge for Standard Systems",
+        bulletPoints: [
+          "Tool-free installation with a leak-resistant seal.",
+          "Maintains stable water flow for daily kitchen use.",
+        ],
+      },
+      status: "succeeded",
+      expectedKeys: ["title", "bulletPoints"],
+    });
+    const failed = scoreAiOutputQuality({
+      output: "Error: provider timeout",
+      status: "failed",
+      retryCount: 3,
+    });
+
+    expect(good.score).toBeGreaterThanOrEqual(75);
+    expect(good.grade).toMatch(/^(good|excellent)$/);
+    expect(failed.score).toBeLessThan(40);
+    expect(failed.grade).toMatch(/^(poor|weak)$/);
+  });
+
   it("should register Agent runner routes", () => {
     const procedures = (appRouter as any)._def.procedures;
     expect(procedures["emperor.agents.run"]).toBeDefined();
     expect(procedures["emperor.agents.getRun"]).toBeDefined();
+    expect(procedures["emperor.agents.validateDag"]).toBeDefined();
+    expect(procedures["emperor.agents.listArtifacts"]).toBeDefined();
+    expect(procedures["emperor.agents.getArtifactByRef"]).toBeDefined();
+    expect(procedures["emperor.agents.selectArtifactVersion"]).toBeDefined();
+    expect(procedures["emperor.agents.rollbackArtifactVersion"]).toBeDefined();
+    expect(procedures["emperor.agents.diffArtifactVersions"]).toBeDefined();
+    expect(procedures["emperor.agents.listTemplateVersions"]).toBeDefined();
+    expect(procedures["emperor.agents.publishTemplateVersion"]).toBeDefined();
+    expect(procedures["emperor.agents.rollbackTemplateVersion"]).toBeDefined();
+    expect(procedures["emperor.agents.setTemplateRollout"]).toBeDefined();
+    expect(procedures["emperor.agents.diffTemplateVersions"]).toBeDefined();
+    expect(procedures["emperor.agents.backfillRunTemplateVersions"]).toBeDefined();
     expect(procedures["emperor.agents.executeNode"]).toBeDefined();
     expect(procedures["emperor.agents.scheduleRun"]).toBeDefined();
+    expect(procedures["emperor.agents.cancelRun"]).toBeDefined();
+    expect(procedures["emperor.agents.pauseRun"]).toBeDefined();
+    expect(procedures["emperor.agents.resumeRun"]).toBeDefined();
+    expect(procedures["emperor.agents.recoverTimedOutNodes"]).toBeDefined();
     expect(procedures["emperor.agents.rerunNode"]).toBeDefined();
     expect(procedures["emperor.agents.updateNodeDraft"]).toBeDefined();
     expect(procedures["emperor.agents.confirmNode"]).toBeDefined();
     expect(procedures["emperor.agents.installListingTemplate"]).toBeDefined();
     expect(procedures["emperor.agents.getAvailableTools"]).toBeDefined();
     expect(procedures["emperor.tools.list"]).toBeDefined();
+    expect(procedures["emperor.tools.listRuns"]).toBeDefined();
     expect(procedures["emperor.tools.invoke"]).toBeDefined();
     expect(procedures["emperor.tools.upsert"]).toBeDefined();
+    expect(procedures["emperor.tools.upsertSecret"]).toBeDefined();
+    expect(procedures["emperor.observability.metrics"]).toBeDefined();
+    expect(procedures["emperor.observability.evaluations"]).toBeDefined();
+    expect(procedures["emperor.observability.dashboard"]).toBeDefined();
     expect(LISTING_AGENT_SLUG).toBe("listing.full.workflow");
   });
 
@@ -86,5 +463,55 @@ describe("Emperor Agent workflow kernel", () => {
     expect(result.success).toBe(true);
     expect((result.output as any).title).toBe("Water Filter Replacement");
     expect((result.output as any).bulletPoints).toEqual(["Fast install"]);
+    expect(result.metadata.riskLevel).toBe("low");
+    expect(result.metadata.toolRunId).toMatch(/^tool_\d+_[a-z0-9]+$/);
+    expect(result.metadata.attempts).toBe(1);
+    expect(result.normalizedOutput.ok).toBe(true);
+    expect((result.normalizedOutput.data as any).title).toBe("Water Filter Replacement");
+    expect(result.metadata.governanceDecision?.allowed).toBe(true);
+  });
+
+  it("should encrypt Tool secrets and classify gateway failures", () => {
+    const encrypted = encryptToolSecretValue("seller-secret-value");
+    expect(encrypted.encryptedValue).not.toContain("seller-secret-value");
+    expect(decryptToolSecretValue(encrypted)).toBe("seller-secret-value");
+    expect(buildToolSecretRef("seller-api")).toBe("secret://seller-api");
+    expect(() => assertToolConfigUsesSecretRefs({ authConfig: { apiKey: "plain-secret" } }, "tool.config")).toThrow(/must use/);
+    expect(() => assertToolConfigUsesSecretRefs({
+      authConfig: { apiKey: "secret://seller-api" },
+      connectionString: "env:SELLER_DB_DSN",
+    }, "tool.config")).not.toThrow();
+    expect(classifyToolFailure(new Error("Tool circuit breaker is open")).kind).toBe("circuit_open");
+    expect(classifyToolFailure(new Error("HTTP tool failed: 503")).retryable).toBe(true);
+    expect(classifyToolFailure(new Error("Tool inputSchema validation failed")).kind).toBe("schema");
+  });
+
+  it("should validate Tool Gateway JSON schema contracts", () => {
+    const schema = {
+      type: "object",
+      required: ["url", "method"],
+      properties: {
+        url: { type: "string", minLength: 8 },
+        method: { type: "string", enum: ["GET", "POST"] },
+        retries: { type: "integer", minimum: 0 },
+      },
+      additionalProperties: false,
+    };
+
+    expect(validateJsonSchemaValue(schema, { url: "https://example.com", method: "GET", retries: 1 })).toEqual([]);
+    const errors = validateJsonSchemaValue(schema, { url: "bad", method: "DELETE", extra: true });
+    expect(errors.join("\n")).toMatch(/method/);
+    expect(errors.join("\n")).toMatch(/extra/);
+  });
+
+  it("should block HTTP tools from private network targets by default", async () => {
+    await expect(invokeEmperorTool({
+      toolSlug: "internal.http.request",
+      userId: 1,
+      params: {
+        url: "http://localhost:3000/private",
+        method: "GET",
+      },
+    })).rejects.toThrow(/private or local network/);
   });
 });

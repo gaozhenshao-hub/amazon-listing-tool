@@ -1,11 +1,16 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getAiJobByRunId, listAiJobsForUser } from "../db";
+import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
+import { listAiJobsForUser } from "../db";
 import {
   buildAiJobSnapshot,
+  cancelAiJob,
   getAiJobRun,
-  startAiJobInProcess,
+  getAiJobRuntimeStatus,
+  getAiJobWorkerHealth,
+  listAiJobDeadLetterRuns,
+  registerAiJobHandler,
+  startRegisteredAiJob,
 } from "../services/aiJobRunner";
 import { runEmperorSkill, safeParseSkillJSON } from "../services/emperorSkillRunner";
 
@@ -24,20 +29,27 @@ const listingStepSchema = z.enum([
   "listing.qa.generate",
 ]);
 
+const jobQueueOptionsSchema = z.object({
+  jobPriority: z.number().int().min(-1000).max(1000).optional(),
+  queueName: z.string().trim().min(1).max(64).optional(),
+});
+
 const listingJobInput = z.object({
   context: z.string().min(1),
   emphasis: z.string().optional().default(""),
   variables: z.record(z.string(), z.unknown()).optional().default({}),
   modelOverride: z.string().optional(),
   projectId: z.number().optional(),
-});
+}).merge(jobQueueOptionsSchema);
+
+const listingStepJobInput = listingJobInput.extend({ skillSlug: listingStepSchema });
 
 const adSearchTermJobInput = z.object({
   searchTerms: z.array(z.record(z.string(), z.unknown())).max(50),
   categoryId: z.number(),
   categoryLabel: z.string().optional(),
   campaignId: z.string().optional(),
-});
+}).merge(jobQueueOptionsSchema);
 
 const opsReplenishmentJobInput = z.object({
   skuData: z.array(z.object({
@@ -50,7 +62,7 @@ const opsReplenishmentJobInput = z.object({
     safety_stock_days: z.number().optional().default(14),
     moq: z.number().optional().default(100),
   })).max(20),
-});
+}).merge(jobQueueOptionsSchema);
 
 const jobStatusSchema = z.enum(["queued", "running", "succeeded", "failed", "canceled"]);
 
@@ -258,6 +270,42 @@ function assertCanReadJob(user: { id: number; role?: string }, job: { userId: nu
   }
 }
 
+registerAiJobHandler({
+  id: "listing.generateFiveSteps",
+  match: (job) => job.kind === "listing.generateFiveSteps",
+  handler: (job) => runListingFiveSteps(listingJobInput.parse(job.input), job.userId),
+});
+
+registerAiJobHandler({
+  id: "listing.runStep",
+  match: (job) => job.procedure === "listingSkill.runStep",
+  handler: (job) => {
+    const input = listingStepJobInput.parse(job.input);
+    return runEmperorSkill({
+      skillSlug: input.skillSlug,
+      userId: job.userId,
+      context: input.context,
+      emphasis: input.emphasis,
+      variables: input.variables,
+      modelOverride: input.modelOverride,
+      fallbackModels: DEFAULT_FALLBACK_MODELS,
+      validate: parseJsonOutput,
+    });
+  },
+});
+
+registerAiJobHandler({
+  id: "ad.searchTermAdvice",
+  match: (job) => job.kind === "ad.searchTermAdvice",
+  handler: (job) => runAdSearchTermAdvice(adSearchTermJobInput.parse(job.input), job.userId),
+});
+
+registerAiJobHandler({
+  id: "ops.replenishmentPlan",
+  match: (job) => job.kind === "ops.replenishmentPlan",
+  handler: (job) => runOpsReplenishmentPlan(opsReplenishmentJobInput.parse(job.input), job.userId),
+});
+
 export const aiJobsRouter = router({
   get: protectedProcedure
     .input(z.object({ runId: z.string().min(1) }))
@@ -266,6 +314,30 @@ export const aiJobsRouter = router({
       if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "AI job not found" });
       assertCanReadJob(ctx.user, job);
       return job;
+    }),
+
+  runtimeStatus: adminProcedure
+    .query(async () => {
+      return {
+        ...getAiJobRuntimeStatus(),
+        workerHealth: await getAiJobWorkerHealth({ limit: 100 }),
+      };
+    }),
+
+  workerHealth: adminProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(200).optional(),
+    }).optional())
+    .query(({ input }) => {
+      return getAiJobWorkerHealth({ limit: input?.limit });
+    }),
+
+  deadLetters: adminProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(200).optional(),
+    }).optional())
+    .query(({ input }) => {
+      return listAiJobDeadLetterRuns({ limit: input?.limit });
     }),
 
   list: protectedProcedure
@@ -279,10 +351,22 @@ export const aiJobsRouter = router({
       return rows.map(buildAiJobSnapshot);
     }),
 
+  cancel: protectedProcedure
+    .input(z.object({
+      runId: z.string().min(1),
+      reason: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const job = await getAiJobRun(input.runId);
+      if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "AI job not found" });
+      assertCanReadJob(ctx.user, job);
+      return cancelAiJob(input.runId, input.reason || "User canceled AI job");
+    }),
+
   startListingFiveSteps: protectedProcedure
     .input(listingJobInput)
     .mutation(async ({ ctx, input }) => {
-      return startAiJobInProcess({
+      return startRegisteredAiJob({
         kind: "listing.generateFiveSteps",
         module: "listing",
         procedure: "listingSkill.generateFiveSteps",
@@ -291,13 +375,15 @@ export const aiJobsRouter = router({
         skillSlug: "listing.*",
         input,
         progress: 5,
-      }, () => runListingFiveSteps(input, ctx.user.id));
+        priority: input.jobPriority ?? 0,
+        queueName: input.queueName,
+      });
     }),
 
   startListingStep: protectedProcedure
-    .input(listingJobInput.extend({ skillSlug: listingStepSchema }))
+    .input(listingStepJobInput)
     .mutation(async ({ ctx, input }) => {
-      return startAiJobInProcess({
+      return startRegisteredAiJob({
         kind: `listing.${input.skillSlug}`,
         module: "listing",
         procedure: "listingSkill.runStep",
@@ -306,22 +392,15 @@ export const aiJobsRouter = router({
         skillSlug: input.skillSlug,
         input,
         progress: 5,
-      }, () => runEmperorSkill({
-        skillSlug: input.skillSlug,
-        userId: ctx.user.id,
-        context: input.context,
-        emphasis: input.emphasis,
-        variables: input.variables,
-        modelOverride: input.modelOverride,
-        fallbackModels: DEFAULT_FALLBACK_MODELS,
-        validate: parseJsonOutput,
-      }));
+        priority: input.jobPriority ?? 0,
+        queueName: input.queueName,
+      });
     }),
 
   startAdSearchTermAdvice: protectedProcedure
     .input(adSearchTermJobInput)
     .mutation(async ({ ctx, input }) => {
-      return startAiJobInProcess({
+      return startRegisteredAiJob({
         kind: "ad.searchTermAdvice",
         module: "adAnalysis",
         procedure: "adAnalysis.aiSearchTermAdvice",
@@ -329,13 +408,15 @@ export const aiJobsRouter = router({
         skillSlug: "ad.searchterm.advice",
         input,
         progress: 5,
-      }, () => runAdSearchTermAdvice(input, ctx.user.id));
+        priority: input.jobPriority ?? 0,
+        queueName: input.queueName,
+      });
     }),
 
   startOpsReplenishmentPlan: protectedProcedure
     .input(opsReplenishmentJobInput)
     .mutation(async ({ ctx, input }) => {
-      return startAiJobInProcess({
+      return startRegisteredAiJob({
         kind: "ops.replenishmentPlan",
         module: "operations",
         procedure: "operations.aiReplenishmentPlan",
@@ -343,6 +424,8 @@ export const aiJobsRouter = router({
         skillSlug: "ops.inventory.analysis",
         input,
         progress: 5,
-      }, () => runOpsReplenishmentPlan(input, ctx.user.id));
+        priority: input.jobPriority ?? 0,
+        queueName: input.queueName,
+      });
     }),
 });

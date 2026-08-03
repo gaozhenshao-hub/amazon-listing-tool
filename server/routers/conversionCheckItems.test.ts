@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
+import { repoPath } from "../testPaths";
+
+const PRODUCT_OPS_PATH = repoPath("server/routers/productOps.ts");
 
 describe("Conversion Check Items - 129 Default Dimensions (Excel-based, no Post)", () => {
   it("getDefault129CheckItems should return exactly 129 items", async () => {
     const fs = await import("fs");
-    const source = fs.readFileSync(
-      "/home/ubuntu/amazon-listing-tool/server/routers/productOps.ts",
-      "utf-8"
-    );
+    const source = fs.readFileSync(PRODUCT_OPS_PATH, "utf-8");
 
     // Verify the function exists
     expect(source).toContain("function getDefault129CheckItems()");
@@ -22,10 +22,7 @@ describe("Conversion Check Items - 129 Default Dimensions (Excel-based, no Post)
 
   it("should have exactly 18 categories (no Post category)", async () => {
     const fs = await import("fs");
-    const source = fs.readFileSync(
-      "/home/ubuntu/amazon-listing-tool/server/routers/productOps.ts",
-      "utf-8"
-    );
+    const source = fs.readFileSync(PRODUCT_OPS_PATH, "utf-8");
 
     const expectedCategories = [
       "标题", "五点", "标", "价格", "限购",
@@ -44,10 +41,7 @@ describe("Conversion Check Items - 129 Default Dimensions (Excel-based, no Post)
 
   it("each category should have correct item count", async () => {
     const fs = await import("fs");
-    const source = fs.readFileSync(
-      "/home/ubuntu/amazon-listing-tool/server/routers/productOps.ts",
-      "utf-8"
-    );
+    const source = fs.readFileSync(PRODUCT_OPS_PATH, "utf-8");
 
     const funcStart = source.indexOf("function getDefault129CheckItems()");
     const funcEnd = source.indexOf("return items;\n}", funcStart);
@@ -75,10 +69,7 @@ describe("Conversion Check Items - 129 Default Dimensions (Excel-based, no Post)
 
   it("主图 category should have 首图(6), 辅图(13), 视频(3), 季节版(1) sub-dimensions", async () => {
     const fs = await import("fs");
-    const source = fs.readFileSync(
-      "/home/ubuntu/amazon-listing-tool/server/routers/productOps.ts",
-      "utf-8"
-    );
+    const source = fs.readFileSync(PRODUCT_OPS_PATH, "utf-8");
 
     const funcStart = source.indexOf("function getDefault129CheckItems()");
     const funcEnd = source.indexOf("return items;\n}", funcStart);
@@ -107,10 +98,7 @@ describe("Conversion Check Items - 129 Default Dimensions (Excel-based, no Post)
 
   it("价格 category should have 11 detailed items including multiple 定价策略", async () => {
     const fs = await import("fs");
-    const source = fs.readFileSync(
-      "/home/ubuntu/amazon-listing-tool/server/routers/productOps.ts",
-      "utf-8"
-    );
+    const source = fs.readFileSync(PRODUCT_OPS_PATH, "utf-8");
 
     const funcStart = source.indexOf("function getDefault129CheckItems()");
     const funcEnd = source.indexOf("return items;\n}", funcStart);
@@ -131,10 +119,7 @@ describe("Conversion Check Items - 129 Default Dimensions (Excel-based, no Post)
 
   it("getCheckItems should auto-initialize when table is empty", async () => {
     const fs = await import("fs");
-    const source = fs.readFileSync(
-      "/home/ubuntu/amazon-listing-tool/server/routers/productOps.ts",
-      "utf-8"
-    );
+    const source = fs.readFileSync(PRODUCT_OPS_PATH, "utf-8");
 
     // Verify auto-initialization logic exists in getCheckItems
     expect(source).toContain("Auto-initialize default check items if none exist");
@@ -155,10 +140,7 @@ describe("Conversion Check Items - 129 Default Dimensions (Excel-based, no Post)
 
   it("key check items from Excel should exist with correct standards", async () => {
     const fs = await import("fs");
-    const source = fs.readFileSync(
-      "/home/ubuntu/amazon-listing-tool/server/routers/productOps.ts",
-      "utf-8"
-    );
+    const source = fs.readFileSync(PRODUCT_OPS_PATH, "utf-8");
 
     // Verify specific items from Excel
     expect(source).toContain('subDimension: "FABE法则"');
@@ -180,10 +162,7 @@ describe("Conversion Check Items - 129 Default Dimensions (Excel-based, no Post)
 
   it("initDefaultCheckItems mutation should check for existing defaults before inserting", async () => {
     const fs = await import("fs");
-    const source = fs.readFileSync(
-      "/home/ubuntu/amazon-listing-tool/server/routers/productOps.ts",
-      "utf-8"
-    );
+    const source = fs.readFileSync(PRODUCT_OPS_PATH, "utf-8");
 
     expect(source).toContain("initDefaultCheckItems: protectedProcedure.mutation");
     expect(source).toContain("Default items already exist");

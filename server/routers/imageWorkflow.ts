@@ -20,10 +20,8 @@ import {
 import { IMAGE_ADVICE_TRANSLATION_PROMPT } from "../prompts";
 import { storagePut } from "../storage";
 import {
-  completeAiJob,
-  createAiJobRun,
-  failAiJob,
-  markAiJobRunning,
+  registerAiJobHandler,
+  startRegisteredAiJob,
 } from "../services/aiJobRunner";
 
 const APLUS_MODULE_STYLE_GUIDE = [
@@ -45,6 +43,11 @@ const APLUS_MODULE_STYLE_GUIDE = [
   "standard_comparison: 标准对比表，最多5列对比",
   "standard_single_image/standard_image_text: 标准单图或图文",
 ].join("\n");
+
+const step5JobInput = z.object({
+  projectId: z.number(),
+  sessionId: z.number(),
+});
 
 // ─── Helper: Build context from project data ─────────────────────
 async function buildImageWorkflowContext(projectId: number) {
@@ -448,13 +451,12 @@ async function runStep5GenerationJob(args: {
   };
 
   try {
-    await markAiJobRunning(runId, 20).catch(() => null);
     const session = await updateIfCurrent({
       step5RunStatus: "running",
       step5RunProgress: 20,
       step5RunError: null,
     });
-    if (!session) return;
+    if (!session) return { skipped: true, reason: "Step 5 run is no longer current" };
 
     const project = await db.getProjectByIdAdmin(projectId);
     if (!project) throw new Error("Project not found");
@@ -471,10 +473,10 @@ async function runStep5GenerationJob(args: {
       step5RunCompletedAt: new Date(),
       currentStep: 5,
     });
-    if (!updated) return;
+    if (!updated) return { skipped: true, reason: "Step 5 run changed before completion" };
 
     await persistStep5ListingAdvice(projectId, resultStr);
-    await completeAiJob(runId, buildStep5RunSnapshot(updated)).catch(() => null);
+    return buildStep5RunSnapshot(updated);
   } catch (error) {
     await updateIfCurrent({
       step5RunStatus: "failed",
@@ -482,9 +484,23 @@ async function runStep5GenerationJob(args: {
       step5RunError: serializeStep5Error(error),
       step5RunCompletedAt: new Date(),
     });
-    await failAiJob(runId, error).catch(() => null);
+    throw error;
   }
 }
+
+registerAiJobHandler({
+  id: "imageWorkflow.step5FinalSuggestion",
+  match: (job) => job.kind === "image.step5.finalSuggestion",
+  handler: (job) => {
+    const input = step5JobInput.parse(job.input);
+    return runStep5GenerationJob({
+      runId: job.runId,
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      userId: job.userId,
+    });
+  },
+});
 
 // ═══════════════════════════════════════════════════════════════════
 export const imageWorkflowRouter = router({
@@ -1117,7 +1133,7 @@ export const imageWorkflowRouter = router({
         currentStep: 5,
         status: "in_progress",
       });
-      await createAiJobRun({
+      await startRegisteredAiJob({
         runId,
         kind: "image.step5.finalSuggestion",
         module: "imageWorkflow",
@@ -1130,18 +1146,7 @@ export const imageWorkflowRouter = router({
           sessionId: session.id,
         },
         progress: 5,
-      }).catch((error) => {
-        console.warn("[ImageWorkflow] Failed to create AI job record:", error);
       });
-
-      setTimeout(() => {
-        void runStep5GenerationJob({
-          runId,
-          projectId: input.projectId,
-          sessionId: session.id,
-          userId: ctx.user.id,
-        });
-      }, 0);
 
       return buildStep5RunSnapshot(queuedSession);
     }),

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
+const realAiIt = process.env.RUN_REAL_DB_TESTS === "1" || process.env.RUN_REAL_LLM_TESTS === "1" ? it : it.skip;
+
 // ═══════════════════════════════════════════════════════════════
 // Test: Conversion Data Collector Types & Structure
 // ═══════════════════════════════════════════════════════════════
@@ -414,7 +416,7 @@ describe("ConversionAiScorer - Source Field", () => {
     expect(scores[0].source).toBe("programmatic");
   });
 
-  it("AI scores should have source='ai'", async () => {
+  realAiIt("AI scores should have source='ai'", async () => {
     const mod = await import("./routers/conversionAiScorer");
     const data = createMockCrawlData();
     

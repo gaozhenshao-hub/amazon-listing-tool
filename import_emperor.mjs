@@ -1,5 +1,6 @@
 import mysql from 'mysql2/promise';
 import { readFileSync } from 'fs';
+import path from 'path';
 
 const dbUrl = process.env.DATABASE_URL;
 if (!dbUrl) throw new Error('DATABASE_URL not set');
@@ -37,7 +38,8 @@ for (let i = 1; i <= 6; i++) {
 }
 
 // Insert agents and MCPs
-const store = JSON.parse(readFileSync('/home/ubuntu/emperor_platform_store.json', 'utf8'));
+const storePath = process.env.EMPEROR_PLATFORM_STORE_PATH || path.resolve(process.cwd(), 'emperor_platform_store.json');
+const store = JSON.parse(readFileSync(storePath, 'utf8'));
 
 for (const a of store.agents || []) {
   const dag = a.dagDefinition || a.dag || {};

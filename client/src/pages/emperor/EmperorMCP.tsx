@@ -50,6 +50,18 @@ function slugify(n: string) {
     || `tool-${Date.now()}`;
 }
 
+function secretSlugFor(connectorSlug: string, kind: string) {
+  return `${connectorSlug}-${kind}`.toLowerCase().replace(/[^a-z0-9._:-]+/g, "-").replace(/^-|-$/g, "").slice(0, 128);
+}
+
+function hostnameFromUrl(value: string) {
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 // ─── Four-Step Wizard Dialog ──────────────────────────────────────────────────
 
 const STEPS = ["基本信息", "连接配置", "认证方式", "能力定义"];
@@ -74,30 +86,80 @@ function WizardDialog({ open, onOpenChange, onSaved }: {
     onSuccess: () => { toast.success("MCP 工具已接入"); onSaved(); onOpenChange(false); },
     onError: (e) => toast.error("保存失败: " + e.message),
   });
+  const upsertSecretMutation = trpc.emperor.tools.upsertSecret.useMutation({
+    onError: (e) => toast.error("密钥保存失败: " + e.message),
+  });
 
   const sf = <K extends keyof typeof defaultWizard>(k: K, v: (typeof defaultWizard)[K]) =>
     setForm(f => ({ ...f, [k]: v }));
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
+    const connectorSlug = form.slug || slugify(form.name);
     const config: Record<string, unknown> = {};
     if (form.baseUrl) config.baseUrl = form.baseUrl;
-    if (form.connectionString) config.connectionString = form.connectionString;
-    if (form.command) config.command = form.command;
-    if (form.authMethod !== "none") {
-      config.auth = {
-        method: form.authMethod,
-        apiKey: form.apiKey, apiKeyHeader: form.apiKeyHeader,
-        bearerToken: form.bearerToken,
-        basicUser: form.basicUser, basicPass: form.basicPass,
-      };
+    if (form.openApiSpec) config.openApiSpec = form.openApiSpec;
+    if (form.baseUrl) {
+      const host = hostnameFromUrl(form.baseUrl);
+      if (host) config.allowedHosts = [host];
     }
-    if (form.capabilities.length > 0) config.capabilities = form.capabilities;
-    upsertMutation.mutate({
-      slug: form.slug || slugify(form.name),
+    if (form.command) config.command = form.command;
+
+    const secretRefs: string[] = [];
+    const storeSecret = async (kind: string, value: string) => {
+      const secretValue = value.trim();
+      if (!secretValue) return "";
+      const result = await upsertSecretMutation.mutateAsync({
+        slug: secretSlugFor(connectorSlug, kind),
+        value: secretValue,
+        description: `${form.name} ${kind}`,
+        metadata: { connectorSlug, authMethod: form.authMethod },
+      });
+      if (result.ref) secretRefs.push(result.ref);
+      return result.ref;
+    };
+
+    if (form.connectionString) {
+      const ref = await storeSecret("connection-string", form.connectionString);
+      if (ref) config.connectionString = ref;
+    }
+
+    if (form.authMethod !== "none") {
+      config.authType = form.authMethod;
+      if (form.authMethod === "api_key") {
+        const ref = await storeSecret("api-key", form.apiKey);
+        config.authConfig = {
+          apiKeyRef: ref,
+          headerName: form.apiKeyHeader || "X-API-Key",
+        };
+      } else if (form.authMethod === "bearer") {
+        const ref = await storeSecret("bearer-token", form.bearerToken);
+        config.authConfig = { apiKeyRef: ref };
+      } else if (form.authMethod === "basic") {
+        const ref = await storeSecret("basic-password", form.basicPass);
+        config.authConfig = {
+          username: form.basicUser,
+          password: ref,
+        };
+      } else if (form.authMethod === "oauth2") {
+        const ref = await storeSecret("oauth-access-token", form.bearerToken);
+        config.authConfig = { accessToken: ref };
+      }
+    }
+    if (form.capabilities.length > 0) {
+      config.capabilities = form.capabilities.map((capability) => ({
+        name: capability.name,
+        description: capability.description,
+        path: capability.endpoint,
+        endpoint: capability.endpoint,
+      }));
+    }
+    await upsertMutation.mutateAsync({
+      slug: connectorSlug,
       name: form.name,
       description: form.description || undefined,
-      connectionType: form.toolType as "http_api" | "database" | "webhook" | "internal" | "script",
+      connectionType: form.toolType === "database" ? "database" : form.toolType === "script" ? "script" : "http_api",
       config,
+      secretRefs,
       isActive: true,
     });
   };
@@ -275,11 +337,11 @@ function WizardDialog({ open, onOpenChange, onSaved }: {
                   </div>
                 </div>
               )}
-              {form.authMethod === "bearer" && (
+              {(form.authMethod === "bearer" || form.authMethod === "oauth2") && (
                 <div>
-                  <label className="text-xs text-slate-400 mb-1.5 block">Bearer Token</label>
+                  <label className="text-xs text-slate-400 mb-1.5 block">{form.authMethod === "oauth2" ? "Access Token" : "Bearer Token"}</label>
                   <Input type="password" value={form.bearerToken} onChange={(e) => sf("bearerToken", e.target.value)}
-                    placeholder="your-bearer-token" className="bg-white/5 border-white/10 text-white font-mono text-sm" />
+                    placeholder={form.authMethod === "oauth2" ? "your-access-token" : "your-bearer-token"} className="bg-white/5 border-white/10 text-white font-mono text-sm" />
                 </div>
               )}
               {form.authMethod === "basic" && (
@@ -373,10 +435,10 @@ function WizardDialog({ open, onOpenChange, onSaved }: {
           </Button>
           <Button
             onClick={() => step < STEPS.length - 1 ? setStep(s => s + 1) : handleFinish()}
-            disabled={!canNext() || upsertMutation.isPending}
+            disabled={!canNext() || upsertMutation.isPending || upsertSecretMutation.isPending}
             className="bg-violet-600 hover:bg-violet-500 text-white"
           >
-            {upsertMutation.isPending ? (
+            {upsertMutation.isPending || upsertSecretMutation.isPending ? (
               <><Loader2 className="h-4 w-4 animate-spin mr-2" />保存中...</>
             ) : step < STEPS.length - 1 ? (
               <>下一步 <ChevronRight className="h-4 w-4 ml-1" /></>

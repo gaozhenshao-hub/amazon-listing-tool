@@ -1,6 +1,6 @@
 # 领星ERP开放API参考索引
 
-> 本文件为精简版索引，从489个API文档中提取。完整文档备份在 `/home/ubuntu/lingxing-api-docs-backup/`
+> 本文件为精简版索引，从489个API文档中提取。完整文档备份路径由本地环境配置维护。
 
 - **API基础URL**: `https://openapi.lingxing.com`
 - **文档地址**: `https://apidoc.lingxing.com`（访问密钥: hTpAZDmc6D）
@@ -1022,4 +1022,3 @@
 - 领星API需要IP白名单，本项目使用代理 `154.40.32.64:14727`
 - 代理通过HTTP CONNECT隧道实现，确保出口IP固定
 - 配置存储在数据库 `system_settings` 表（category=lingxing_proxy）
-
