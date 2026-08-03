@@ -2,6 +2,16 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, protectedProcedure, router } from "../../../_core/trpc";
 import {
+  actorFromContext,
+  assertResourceAction,
+  buildWorkspaceScopeFilter,
+  recordSecurityAuditLog,
+  workspaceIdFromContext,
+  type SecurityAction,
+  type SecurityRiskLevel,
+} from "../../../services/securityGovernance";
+import type { TrpcContext } from "../../../_core/context";
+import {
   assertValidAgentDag,
   backfillAgentRunTemplateVersions,
   cancelAgentRun,
@@ -33,20 +43,55 @@ import {
 import { listEmperorTools } from "../services/toolGateway";
 import { rawExecute } from "../routerContext";
 
+async function assertAgentAction(ctx: TrpcContext, action: SecurityAction, resourceId?: string | null) {
+  await assertResourceAction({
+    actor: actorFromContext(ctx),
+    resource: "agent",
+    action,
+    resourceId,
+  });
+}
+
+async function auditAgentAction(input: {
+  ctx: TrpcContext;
+  action: string;
+  resourceId?: string | null;
+  resourceName?: string | null;
+  agentRunId?: string | null;
+  status?: "success" | "denied" | "failed";
+  riskLevel?: SecurityRiskLevel;
+  metadata?: unknown;
+}) {
+  await recordSecurityAuditLog({
+    ctx: input.ctx,
+    workspaceId: workspaceIdFromContext(input.ctx),
+    action: input.action,
+    resourceType: "agent",
+    resourceId: input.resourceId,
+    resourceName: input.resourceName,
+    agentRunId: input.agentRunId,
+    status: input.status || "success",
+    riskLevel: input.riskLevel || "medium",
+    metadata: input.metadata,
+  });
+}
+
 export const emperorAgentsRouter = router({
   list: protectedProcedure
     .input(z.object({
       search: z.string().optional(),
       status: z.enum(["draft","active","deprecated"]).optional(),
     }).optional())
-    .query(async ({ input }) => {
-      let sql = "SELECT id,slug,name,description,status,triggerType,scope,maxExecutionSeconds,dagDefinition,updatedAt,createdAt FROM emperor_agents";
-      const params: any[] = [];
-      const where: string[] = [];
+    .query(async ({ input, ctx }) => {
+      await assertAgentAction(ctx, "read");
+      const scope = buildWorkspaceScopeFilter(workspaceIdFromContext(ctx));
+      let sql = "SELECT id,workspaceId,slug,name,description,status,triggerType,scope,maxExecutionSeconds,dagDefinition,updatedAt,createdAt FROM emperor_agents";
+      const params: any[] = [...scope.params];
+      const where: string[] = [scope.clause];
       if (input?.search) { where.push("(name LIKE ? OR slug LIKE ?)"); params.push(`%${input.search}%`, `%${input.search}%`); }
       if (input?.status) { where.push("status=?"); params.push(input.status); }
       if (where.length) sql += " WHERE " + where.join(" AND ");
-      sql += " ORDER BY updatedAt DESC";
+      sql += " ORDER BY workspaceId IS NULL ASC, updatedAt DESC";
       const rows = await rawExecute(sql, params);
       return rows.map((r: any) => {
         const dag = normalizeAgentDag(r.dagDefinition);
@@ -60,8 +105,17 @@ export const emperorAgentsRouter = router({
 
   get: protectedProcedure
     .input(z.object({ slug: z.string() }))
-    .query(async ({ input }) => {
-      const rows = await rawExecute("SELECT * FROM emperor_agents WHERE slug = ? LIMIT 1", [input.slug]);
+    .query(async ({ input, ctx }) => {
+      await assertAgentAction(ctx, "read", input.slug);
+      const scope = buildWorkspaceScopeFilter(workspaceIdFromContext(ctx));
+      const rows = await rawExecute(
+        `SELECT *
+         FROM emperor_agents
+         WHERE slug = ? AND ${scope.clause}
+         ORDER BY workspaceId IS NULL ASC
+         LIMIT 1`,
+        [input.slug, ...scope.params],
+      );
       if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
       const dag = normalizeAgentDag(rows[0].dagDefinition);
       return { ...rows[0], dagDefinition: dag, validation: validateAgentDag(dag) };
@@ -69,7 +123,8 @@ export const emperorAgentsRouter = router({
 
   validateDag: protectedProcedure
     .input(z.object({ workflow: z.any() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await assertAgentAction(ctx, "read");
       return validateAgentDag(input.workflow);
     }),
 
@@ -83,12 +138,15 @@ export const emperorAgentsRouter = router({
       maxExecutionSeconds: z.number().optional().default(300),
       cronExpression: z.string().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await assertAgentAction(ctx, "create", input.slug);
       const existing = await rawExecute("SELECT id FROM emperor_agents WHERE slug = ? LIMIT 1", [input.slug]);
       if (existing[0]) throw new TRPCError({ code: "CONFLICT", message: "Slug 已存在" });
+      const workspaceId = workspaceIdFromContext(ctx);
       await rawExecute(
-        `INSERT INTO emperor_agents (slug,name,description,status,scope,triggerType,maxExecutionSeconds,cronExpression,dagDefinition) VALUES (?,?,?,'draft',?,?,?,?,?)`,
+        `INSERT INTO emperor_agents (workspaceId,slug,name,description,status,scope,triggerType,maxExecutionSeconds,cronExpression,dagDefinition) VALUES (?,?,?,?, 'draft',?,?,?,?,?)`,
         [
+          workspaceId,
           input.slug,
           input.name,
           input.description||null,
@@ -99,6 +157,14 @@ export const emperorAgentsRouter = router({
           JSON.stringify({ nodes: [], edges: [] }),
         ]
       );
+      await auditAgentAction({
+        ctx,
+        action: "agent.create",
+        resourceId: input.slug,
+        resourceName: input.name,
+        riskLevel: "high",
+        metadata: { scope: input.scope, triggerType: input.triggerType },
+      });
       return { success: true, slug: input.slug };
     }),
 
@@ -113,10 +179,19 @@ export const emperorAgentsRouter = router({
     }))
     .mutation(async ({ input, ctx }) => {
       const { slug, ...rest } = input;
+      await assertAgentAction(ctx, "update", slug);
       const sets: string[] = []; const vals: any[] = [];
       let releasedDag: any = null;
+      const scope = buildWorkspaceScopeFilter(workspaceIdFromContext(ctx));
       if (rest.status === "active") {
-        const rows = await rawExecute("SELECT name,dagDefinition FROM emperor_agents WHERE slug=? LIMIT 1", [slug]);
+        const rows = await rawExecute(
+          `SELECT name,dagDefinition
+           FROM emperor_agents
+           WHERE slug=? AND ${scope.clause}
+           ORDER BY workspaceId IS NULL ASC
+           LIMIT 1`,
+          [slug, ...scope.params],
+        );
         if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
         const dag = normalizeAgentDag(rows[0].dagDefinition);
         assertValidAgentDag(dag, "activate agent");
@@ -129,10 +204,11 @@ export const emperorAgentsRouter = router({
       if (rest.maxExecutionSeconds !== undefined) { sets.push("maxExecutionSeconds=?"); vals.push(rest.maxExecutionSeconds); }
       if (!sets.length) return { success: true };
       sets.push("updatedAt=NOW()");
-      vals.push(slug);
-      await rawExecute(`UPDATE emperor_agents SET ${sets.join(",")} WHERE slug=?`, vals);
+      vals.push(slug, ...scope.params);
+      await rawExecute(`UPDATE emperor_agents SET ${sets.join(",")} WHERE slug=? AND ${scope.clause}`, vals);
       const templateVersion = releasedDag
         ? await recordAgentTemplateVersion({
+          workspaceId: workspaceIdFromContext(ctx),
           agentSlug: slug,
           agentName: rest.name ?? releasedDag.name,
           dag: releasedDag.dag,
@@ -141,6 +217,14 @@ export const emperorAgentsRouter = router({
           releaseNotes: "Agent activated",
         })
         : null;
+      await auditAgentAction({
+        ctx,
+        action: "agent.update",
+        resourceId: slug,
+        resourceName: rest.name || null,
+        riskLevel: rest.status === "active" ? "high" : "medium",
+        metadata: { status: rest.status, templateVersion },
+      });
       return { success: true, templateVersion };
     }),
 
@@ -153,19 +237,37 @@ export const emperorAgentsRouter = router({
       }).passthrough(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await assertAgentAction(ctx, "update", input.slug);
       const dag = assertValidAgentDag(input.workflow, "save workflow");
+      const scope = buildWorkspaceScopeFilter(workspaceIdFromContext(ctx));
       await rawExecute(
-        "UPDATE emperor_agents SET dagDefinition=?, updatedAt=NOW() WHERE slug=?",
-        [JSON.stringify(dag), input.slug]
+        `UPDATE emperor_agents SET dagDefinition=?, updatedAt=NOW() WHERE slug=? AND ${scope.clause}`,
+        [JSON.stringify(dag), input.slug, ...scope.params]
       );
-      const rows = await rawExecute("SELECT name,status FROM emperor_agents WHERE slug=? LIMIT 1", [input.slug]);
+      const rows = await rawExecute(
+        `SELECT name,status
+         FROM emperor_agents
+         WHERE slug=? AND ${scope.clause}
+         ORDER BY workspaceId IS NULL ASC
+         LIMIT 1`,
+        [input.slug, ...scope.params],
+      );
       const templateVersion = await recordAgentTemplateVersion({
+        workspaceId: workspaceIdFromContext(ctx),
         agentSlug: input.slug,
         agentName: rows[0]?.name || null,
         dag,
         status: rows[0]?.status === "active" ? "released" : "draft",
         createdBy: ctx.user.id,
         releaseNotes: "Workflow saved",
+      });
+      await auditAgentAction({
+        ctx,
+        action: "agent.workflow.save",
+        resourceId: input.slug,
+        resourceName: rows[0]?.name || null,
+        riskLevel: "high",
+        metadata: { templateVersion, validation: validateAgentDag(dag) },
       });
       return { success: true, validation: validateAgentDag(dag), templateVersion };
     }),
@@ -175,8 +277,13 @@ export const emperorAgentsRouter = router({
       slug: z.string(),
       limit: z.number().min(1).max(100).optional().default(20),
     }))
-    .query(async ({ input }) => {
-      return listAgentTemplateVersions({ agentSlug: input.slug, limit: input.limit });
+    .query(async ({ input, ctx }) => {
+      await assertAgentAction(ctx, "read", input.slug);
+      return listAgentTemplateVersions({
+        agentSlug: input.slug,
+        limit: input.limit,
+        workspaceId: workspaceIdFromContext(ctx),
+      });
     }),
 
   publishTemplateVersion: adminProcedure
@@ -189,7 +296,8 @@ export const emperorAgentsRouter = router({
       releaseNotes: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      return publishAgentTemplateVersion({
+      await assertAgentAction(ctx, "update", input.slug);
+      const result = await publishAgentTemplateVersion({
         agentSlug: input.slug,
         versionId: input.versionId ?? null,
         version: input.version ?? null,
@@ -197,7 +305,16 @@ export const emperorAgentsRouter = router({
         rolloutPolicy: input.rolloutPolicy,
         releaseNotes: input.releaseNotes || null,
         userId: ctx.user.id,
+        workspaceId: workspaceIdFromContext(ctx),
       });
+      await auditAgentAction({
+        ctx,
+        action: "agent_template.publish",
+        resourceId: input.slug,
+        riskLevel: "high",
+        metadata: { versionId: input.versionId, version: input.version, rolloutPercent: input.rolloutPercent },
+      });
+      return result;
     }),
 
   rollbackTemplateVersion: adminProcedure
@@ -208,13 +325,23 @@ export const emperorAgentsRouter = router({
       releaseNotes: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      return rollbackAgentTemplateVersion({
+      await assertAgentAction(ctx, "update", input.slug);
+      const result = await rollbackAgentTemplateVersion({
         agentSlug: input.slug,
         targetVersionId: input.targetVersionId ?? null,
         targetVersion: input.targetVersion ?? null,
         releaseNotes: input.releaseNotes || null,
         userId: ctx.user.id,
+        workspaceId: workspaceIdFromContext(ctx),
       });
+      await auditAgentAction({
+        ctx,
+        action: "agent_template.rollback",
+        resourceId: input.slug,
+        riskLevel: "high",
+        metadata: { targetVersionId: input.targetVersionId, targetVersion: input.targetVersion },
+      });
+      return result;
     }),
 
   setTemplateRollout: adminProcedure
@@ -226,14 +353,24 @@ export const emperorAgentsRouter = router({
       rolloutPolicy: z.any().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      return setAgentTemplateRollout({
+      await assertAgentAction(ctx, "update", input.slug);
+      const result = await setAgentTemplateRollout({
         agentSlug: input.slug,
         versionId: input.versionId ?? null,
         version: input.version ?? null,
         rolloutPercent: input.rolloutPercent,
         rolloutPolicy: input.rolloutPolicy,
         userId: ctx.user.id,
+        workspaceId: workspaceIdFromContext(ctx),
       });
+      await auditAgentAction({
+        ctx,
+        action: "agent_template.rollout",
+        resourceId: input.slug,
+        riskLevel: "high",
+        metadata: { versionId: input.versionId, version: input.version, rolloutPercent: input.rolloutPercent },
+      });
+      return result;
     }),
 
   diffTemplateVersions: protectedProcedure
@@ -245,7 +382,8 @@ export const emperorAgentsRouter = router({
       targetVersion: z.string().optional(),
       limit: z.number().int().min(1).max(1000).optional(),
     }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      await assertAgentAction(ctx, "read", input.slug);
       return diffAgentTemplateVersions({
         agentSlug: input.slug,
         baseVersionId: input.baseVersionId ?? null,
@@ -253,6 +391,7 @@ export const emperorAgentsRouter = router({
         targetVersionId: input.targetVersionId ?? null,
         targetVersion: input.targetVersion ?? null,
         limit: input.limit,
+        workspaceId: workspaceIdFromContext(ctx),
       });
     }),
 
@@ -263,29 +402,63 @@ export const emperorAgentsRouter = router({
       dryRun: z.boolean().optional().default(false),
     }).optional())
     .mutation(async ({ input, ctx }) => {
-      return backfillAgentRunTemplateVersions({
+      await assertAgentAction(ctx, "update", input?.slug || null);
+      const result = await backfillAgentRunTemplateVersions({
         agentSlug: input?.slug ?? null,
         limit: input?.limit,
         dryRun: input?.dryRun,
         userId: ctx.user.id,
       });
+      await auditAgentAction({
+        ctx,
+        action: "agent_template.backfill",
+        resourceId: input?.slug || null,
+        riskLevel: "high",
+        metadata: { limit: input?.limit, dryRun: input?.dryRun, result },
+      });
+      return result;
     }),
 
-  getAvailableSkills: protectedProcedure.query(async () => {
-    return rawExecute("SELECT slug,name,description,category FROM emperor_skills WHERE status='Released' ORDER BY name");
+  getAvailableSkills: protectedProcedure.query(async ({ ctx }) => {
+    await assertAgentAction(ctx, "read");
+    const scope = buildWorkspaceScopeFilter(workspaceIdFromContext(ctx));
+    return rawExecute(
+      `SELECT slug,name,description,category
+       FROM emperor_skills
+       WHERE status='Released' AND ${scope.clause}
+       ORDER BY workspaceId IS NULL ASC, name`,
+      scope.params,
+    );
   }),
 
-  getAvailableModels: protectedProcedure.query(async () => {
-    const rows = await rawExecute("SELECT slug,name,provider,modelId,isDefault FROM emperor_model_providers WHERE isActive=1 ORDER BY isDefault DESC, name ASC");
+  getAvailableModels: protectedProcedure.query(async ({ ctx }) => {
+    await assertAgentAction(ctx, "read");
+    const scope = buildWorkspaceScopeFilter(workspaceIdFromContext(ctx));
+    const rows = await rawExecute(
+      `SELECT slug,name,provider,modelId,isDefault
+       FROM emperor_model_providers
+       WHERE isActive=1 AND ${scope.clause}
+       ORDER BY workspaceId IS NULL ASC, isDefault DESC, name ASC`,
+      scope.params,
+    );
     return rows.map((r: any) => ({ ...r, isDefault: !!r.isDefault }));
   }),
 
-  getAvailableMcpTools: protectedProcedure.query(async () => {
-    return rawExecute("SELECT slug,name,description,connectionType FROM emperor_mcp_connectors WHERE isActive=1 ORDER BY name");
+  getAvailableMcpTools: protectedProcedure.query(async ({ ctx }) => {
+    await assertResourceAction({ actor: actorFromContext(ctx), resource: "tool", action: "read" });
+    const scope = buildWorkspaceScopeFilter(workspaceIdFromContext(ctx));
+    return rawExecute(
+      `SELECT slug,name,description,connectionType
+       FROM emperor_mcp_connectors
+       WHERE isActive=1 AND ${scope.clause}
+       ORDER BY workspaceId IS NULL ASC, name`,
+      scope.params,
+    );
   }),
 
-  getAvailableTools: protectedProcedure.query(async () => {
-    return listEmperorTools();
+  getAvailableTools: protectedProcedure.query(async ({ ctx }) => {
+    await assertResourceAction({ actor: actorFromContext(ctx), resource: "tool", action: "read" });
+    return listEmperorTools(workspaceIdFromContext(ctx));
   }),
 
   run: protectedProcedure
@@ -295,17 +468,29 @@ export const emperorAgentsRouter = router({
       projectId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      return startAgentRun({
+      await assertAgentAction(ctx, "run", input.slug);
+      const result = await startAgentRun({
         slug: input.slug,
         inputs: input.inputs,
         userId: ctx.user.id,
+        workspaceId: workspaceIdFromContext(ctx),
         projectId: input.projectId ?? null,
       });
+      await auditAgentAction({
+        ctx,
+        action: "agent.run",
+        resourceId: input.slug,
+        agentRunId: (result as any).runId || null,
+        riskLevel: "medium",
+        metadata: { projectId: input.projectId },
+      });
+      return result;
     }),
 
   getRun: protectedProcedure
     .input(z.object({ runId: z.string() }))
     .query(async ({ input, ctx }) => {
+      await assertAgentAction(ctx, "read", input.runId);
       const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
       return getAgentRun(input.runId, isAdmin ? undefined : ctx.user.id, isAdmin);
     }),
@@ -318,6 +503,7 @@ export const emperorAgentsRouter = router({
       currentOnly: z.boolean().optional(),
     }))
     .query(async ({ input, ctx }) => {
+      await assertAgentAction(ctx, "read", input.runId);
       const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
       return listAgentArtifacts({
         runId: input.runId,
@@ -332,6 +518,7 @@ export const emperorAgentsRouter = router({
   getArtifactByRef: protectedProcedure
     .input(z.object({ ref: z.string().min(1) }))
     .query(async ({ input, ctx }) => {
+      await assertAgentAction(ctx, "read");
       const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
       return resolveAgentArtifactRef({
         ref: input.ref,
@@ -348,13 +535,23 @@ export const emperorAgentsRouter = router({
       version: z.number().int().min(1),
     }))
     .mutation(async ({ input, ctx }) => {
-      return selectAgentArtifactVersion({
+      await assertAgentAction(ctx, "confirm", input.runId);
+      const result = await selectAgentArtifactVersion({
         runId: input.runId,
         nodeId: input.nodeId,
         artifactKey: input.artifactKey,
         version: input.version,
         userId: ctx.user.id,
       });
+      await auditAgentAction({
+        ctx,
+        action: "agent_artifact.select_version",
+        resourceId: input.artifactKey,
+        agentRunId: input.runId,
+        riskLevel: "medium",
+        metadata: { nodeId: input.nodeId, version: input.version },
+      });
+      return result;
     }),
 
   rollbackArtifactVersion: protectedProcedure
@@ -365,13 +562,23 @@ export const emperorAgentsRouter = router({
       targetVersion: z.number().int().min(1).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      return rollbackAgentArtifactVersion({
+      await assertAgentAction(ctx, "update", input.runId);
+      const result = await rollbackAgentArtifactVersion({
         runId: input.runId,
         nodeId: input.nodeId,
         artifactKey: input.artifactKey,
         targetVersion: input.targetVersion ?? null,
         userId: ctx.user.id,
       });
+      await auditAgentAction({
+        ctx,
+        action: "agent_artifact.rollback",
+        resourceId: input.artifactKey,
+        agentRunId: input.runId,
+        riskLevel: "high",
+        metadata: { nodeId: input.nodeId, targetVersion: input.targetVersion ?? null },
+      });
+      return result;
     }),
 
   diffArtifactVersions: protectedProcedure
@@ -384,6 +591,7 @@ export const emperorAgentsRouter = router({
       limit: z.number().int().min(1).max(1000).optional(),
     }))
     .query(async ({ input, ctx }) => {
+      await assertAgentAction(ctx, "read", input.runId);
       const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
       return diffAgentArtifactVersions({
         runId: input.runId,
@@ -400,17 +608,42 @@ export const emperorAgentsRouter = router({
   listRuns: protectedProcedure
     .input(z.object({ slug: z.string(), limit: z.number().optional().default(20) }))
     .query(async ({ input, ctx }) => {
+      await assertAgentAction(ctx, "read", input.slug);
       const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
+      const scope = buildWorkspaceScopeFilter(workspaceIdFromContext(ctx));
       if (isAdmin) {
-        return rawExecute("SELECT * FROM emperor_agent_runs WHERE agentSlug=? ORDER BY createdAt DESC LIMIT ?", [input.slug, input.limit]);
+        return rawExecute(
+          `SELECT *
+           FROM emperor_agent_runs
+           WHERE agentSlug=? AND ${scope.clause}
+           ORDER BY createdAt DESC
+           LIMIT ?`,
+          [input.slug, ...scope.params, input.limit],
+        );
       }
-      return rawExecute("SELECT * FROM emperor_agent_runs WHERE agentSlug=? AND userId=? ORDER BY createdAt DESC LIMIT ?", [input.slug, ctx.user.id, input.limit]);
+      return rawExecute(
+        `SELECT *
+         FROM emperor_agent_runs
+         WHERE agentSlug=? AND userId=? AND ${scope.clause}
+         ORDER BY createdAt DESC
+         LIMIT ?`,
+        [input.slug, ctx.user.id, ...scope.params, input.limit],
+      );
     }),
 
   executeNode: protectedProcedure
     .input(z.object({ runId: z.string(), nodeId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      return executeAgentNode({ runId: input.runId, nodeId: input.nodeId, userId: ctx.user.id });
+      await assertAgentAction(ctx, "run", input.runId);
+      const result = await executeAgentNode({ runId: input.runId, nodeId: input.nodeId, userId: ctx.user.id });
+      await auditAgentAction({
+        ctx,
+        action: "agent_node.execute",
+        resourceId: input.nodeId,
+        agentRunId: input.runId,
+        riskLevel: "medium",
+      });
+      return result;
     }),
 
   scheduleRun: protectedProcedure
@@ -419,7 +652,17 @@ export const emperorAgentsRouter = router({
       mode: z.enum(["unlock", "next", "all_ready"]).optional().default("unlock"),
     }))
     .mutation(async ({ ctx, input }) => {
-      return scheduleAgentRun({ runId: input.runId, userId: ctx.user.id, mode: input.mode });
+      await assertAgentAction(ctx, "run", input.runId);
+      const result = await scheduleAgentRun({ runId: input.runId, userId: ctx.user.id, mode: input.mode });
+      await auditAgentAction({
+        ctx,
+        action: "agent_run.schedule",
+        resourceId: input.runId,
+        agentRunId: input.runId,
+        riskLevel: "medium",
+        metadata: { mode: input.mode },
+      });
+      return result;
     }),
 
   cancelRun: protectedProcedure
@@ -428,7 +671,17 @@ export const emperorAgentsRouter = router({
       reason: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      return cancelAgentRun({ runId: input.runId, userId: ctx.user.id, reason: input.reason });
+      await assertAgentAction(ctx, "cancel", input.runId);
+      const result = await cancelAgentRun({ runId: input.runId, userId: ctx.user.id, reason: input.reason });
+      await auditAgentAction({
+        ctx,
+        action: "agent_run.cancel",
+        resourceId: input.runId,
+        agentRunId: input.runId,
+        riskLevel: "high",
+        metadata: { reason: input.reason },
+      });
+      return result;
     }),
 
   pauseRun: protectedProcedure
@@ -437,7 +690,17 @@ export const emperorAgentsRouter = router({
       reason: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      return pauseAgentRun({ runId: input.runId, userId: ctx.user.id, reason: input.reason });
+      await assertAgentAction(ctx, "cancel", input.runId);
+      const result = await pauseAgentRun({ runId: input.runId, userId: ctx.user.id, reason: input.reason });
+      await auditAgentAction({
+        ctx,
+        action: "agent_run.pause",
+        resourceId: input.runId,
+        agentRunId: input.runId,
+        riskLevel: "medium",
+        metadata: { reason: input.reason },
+      });
+      return result;
     }),
 
   resumeRun: protectedProcedure
@@ -445,13 +708,30 @@ export const emperorAgentsRouter = router({
       runId: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      return resumeAgentRun({ runId: input.runId, userId: ctx.user.id });
+      await assertAgentAction(ctx, "run", input.runId);
+      const result = await resumeAgentRun({ runId: input.runId, userId: ctx.user.id });
+      await auditAgentAction({
+        ctx,
+        action: "agent_run.resume",
+        resourceId: input.runId,
+        agentRunId: input.runId,
+        riskLevel: "medium",
+      });
+      return result;
     }),
 
   recoverTimedOutNodes: adminProcedure
     .input(z.object({ limit: z.number().min(1).max(200).optional() }).optional())
-    .mutation(async ({ input }) => {
-      return recoverTimedOutAgentNodes({ limit: input?.limit });
+    .mutation(async ({ input, ctx }) => {
+      await assertAgentAction(ctx, "update");
+      const result = await recoverTimedOutAgentNodes({ limit: input?.limit });
+      await auditAgentAction({
+        ctx,
+        action: "agent_node.recover_timed_out",
+        riskLevel: "high",
+        metadata: { limit: input?.limit, result },
+      });
+      return result;
     }),
 
   rerunNode: protectedProcedure
@@ -461,12 +741,22 @@ export const emperorAgentsRouter = router({
       resetDescendants: z.boolean().optional().default(true),
     }))
     .mutation(async ({ ctx, input }) => {
-      return rerunAgentNode({
+      await assertAgentAction(ctx, "run", input.runId);
+      const result = await rerunAgentNode({
         runId: input.runId,
         nodeId: input.nodeId,
         userId: ctx.user.id,
         resetDescendants: input.resetDescendants,
       });
+      await auditAgentAction({
+        ctx,
+        action: "agent_node.rerun",
+        resourceId: input.nodeId,
+        agentRunId: input.runId,
+        riskLevel: "medium",
+        metadata: { resetDescendants: input.resetDescendants },
+      });
+      return result;
     }),
 
   updateNodeDraft: protectedProcedure
@@ -476,12 +766,21 @@ export const emperorAgentsRouter = router({
       userEdit: z.any(),
     }))
     .mutation(async ({ ctx, input }) => {
-      return updateAgentNodeDraft({
+      await assertAgentAction(ctx, "update", input.runId);
+      const result = await updateAgentNodeDraft({
         runId: input.runId,
         nodeId: input.nodeId,
         userId: ctx.user.id,
         userEdit: input.userEdit,
       });
+      await auditAgentAction({
+        ctx,
+        action: "agent_node.update_draft",
+        resourceId: input.nodeId,
+        agentRunId: input.runId,
+        riskLevel: "medium",
+      });
+      return result;
     }),
 
   confirmNode: protectedProcedure
@@ -493,7 +792,8 @@ export const emperorAgentsRouter = router({
       skip: z.boolean().optional().default(false),
     }))
     .mutation(async ({ ctx, input }) => {
-      return confirmAgentNode({
+      await assertAgentAction(ctx, "confirm", input.runId);
+      const result = await confirmAgentNode({
         runId: input.runId,
         nodeId: input.nodeId,
         userId: ctx.user.id,
@@ -501,11 +801,28 @@ export const emperorAgentsRouter = router({
         userEdit: input.userEdit,
         skip: input.skip,
       });
+      await auditAgentAction({
+        ctx,
+        action: input.skip ? "agent_node.skip" : "agent_node.confirm",
+        resourceId: input.nodeId,
+        agentRunId: input.runId,
+        riskLevel: "high",
+      });
+      return result;
     }),
 
   installListingTemplate: adminProcedure
-    .mutation(async () => {
-      return upsertListingAgentTemplate();
+    .mutation(async ({ ctx }) => {
+      await assertAgentAction(ctx, "create", "listing-generation-v2");
+      const result = await upsertListingAgentTemplate();
+      await auditAgentAction({
+        ctx,
+        action: "agent_template.install_listing",
+        resourceId: "listing-generation-v2",
+        riskLevel: "high",
+        metadata: result,
+      });
+      return result;
     }),
 
   upsert: adminProcedure
@@ -518,12 +835,15 @@ export const emperorAgentsRouter = router({
       dagDefinition: z.any(),
     }))
     .mutation(async ({ input, ctx }) => {
+      await assertAgentAction(ctx, "update", input.slug);
       const dag = assertValidAgentDag(input.dagDefinition, "upsert agent");
+      const workspaceId = workspaceIdFromContext(ctx);
       await rawExecute(
-        `INSERT INTO emperor_agents (slug,name,description,category,status,dagDefinition) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),description=VALUES(description),category=VALUES(category),status=VALUES(status),dagDefinition=VALUES(dagDefinition),updatedAt=NOW()`,
-        [input.slug, input.name, input.description||null, input.category||"通用", input.status, JSON.stringify(dag)]
+        `INSERT INTO emperor_agents (workspaceId,slug,name,description,category,status,dagDefinition) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE workspaceId=VALUES(workspaceId),name=VALUES(name),description=VALUES(description),category=VALUES(category),status=VALUES(status),dagDefinition=VALUES(dagDefinition),updatedAt=NOW()`,
+        [workspaceId, input.slug, input.name, input.description||null, input.category||"通用", input.status, JSON.stringify(dag)]
       );
       const templateVersion = await recordAgentTemplateVersion({
+        workspaceId,
         agentSlug: input.slug,
         agentName: input.name,
         dag,
@@ -531,13 +851,32 @@ export const emperorAgentsRouter = router({
         createdBy: ctx.user.id,
         releaseNotes: "Agent upserted",
       });
+      await auditAgentAction({
+        ctx,
+        action: "agent.upsert",
+        resourceId: input.slug,
+        resourceName: input.name,
+        riskLevel: input.status === "active" ? "high" : "medium",
+        metadata: { templateVersion },
+      });
       return { success: true, validation: validateAgentDag(dag), templateVersion };
     }),
 
   delete: adminProcedure
     .input(z.object({ slug: z.string() }))
-    .mutation(async ({ input }) => {
-      await rawExecute("DELETE FROM emperor_agents WHERE slug = ?", [input.slug]);
+    .mutation(async ({ input, ctx }) => {
+      await assertAgentAction(ctx, "delete", input.slug);
+      const scope = buildWorkspaceScopeFilter(workspaceIdFromContext(ctx));
+      await rawExecute(
+        `DELETE FROM emperor_agents WHERE slug = ? AND ${scope.clause}`,
+        [input.slug, ...scope.params],
+      );
+      await auditAgentAction({
+        ctx,
+        action: "agent.delete",
+        resourceId: input.slug,
+        riskLevel: "high",
+      });
       return { success: true };
     }),
 });

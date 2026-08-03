@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { createHash } from "crypto";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb } from "../../../db";
+import { buildWorkspaceScopeFilter } from "../../../services/securityGovernance";
 import {
   assertNodeTransition,
   canTransitionNodeStatus,
@@ -223,6 +224,7 @@ export type AgentContextPackageOptions = {
 };
 
 type CheckpointRow = {
+  workspaceId?: number | null;
   runId: string;
   agentSlug: string;
   nodeId: string;
@@ -625,7 +627,7 @@ function checkpointMetadata(checkpoint: Pick<CheckpointRow, "metadata"> | null |
     : {};
 }
 
-async function buildNodeRunMetadata(node: EmperorAgentNode): Promise<Record<string, unknown>> {
+async function buildNodeRunMetadata(node: EmperorAgentNode, workspaceId?: number | null): Promise<Record<string, unknown>> {
   const metadata: Record<string, unknown> = {
     node,
     preparedAt: new Date().toISOString(),
@@ -635,7 +637,7 @@ async function buildNodeRunMetadata(node: EmperorAgentNode): Promise<Record<stri
   const binding = resolveAgentNodeSkillBinding(node);
   let skillSnapshot: SkillRuntimeSnapshot;
   try {
-    skillSnapshot = await getEmperorSkillRuntimeSnapshot(node.skillSlug);
+    skillSnapshot = await getEmperorSkillRuntimeSnapshot(node.skillSlug, workspaceId);
   } catch (error) {
     if (error instanceof SkillRunError) {
       throw new TRPCError({ code: "BAD_REQUEST", message: error.message, cause: error });
@@ -750,24 +752,37 @@ async function findAgentTemplateVersion(input: {
   agentSlug: string;
   versionId?: number | null;
   version?: string | null;
+  workspaceId?: number | null;
 }) {
   if (!input.versionId && !input.version) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Template versionId or version is required" });
   }
+  const scope = input.workspaceId === undefined ? null : buildWorkspaceScopeFilter(input.workspaceId);
   const rows = input.versionId
-    ? await rawExecute("SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND id=? LIMIT 1", [input.agentSlug, input.versionId])
-    : await rawExecute("SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND version=? LIMIT 1", [input.agentSlug, input.version || ""]);
+    ? await rawExecute(
+      scope
+        ? `SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND id=? AND ${scope.clause} ORDER BY workspaceId IS NULL ASC LIMIT 1`
+        : "SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND id=? LIMIT 1",
+      scope ? [input.agentSlug, input.versionId, ...scope.params] : [input.agentSlug, input.versionId],
+    )
+    : await rawExecute(
+      scope
+        ? `SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND version=? AND ${scope.clause} ORDER BY workspaceId IS NULL ASC LIMIT 1`
+        : "SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND version=? LIMIT 1",
+      scope ? [input.agentSlug, input.version || "", ...scope.params] : [input.agentSlug, input.version || ""],
+    );
   if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Agent template version not found" });
   return normalizeTemplateVersionRow(rows[0]);
 }
 
-async function getDefaultAgentTemplateVersion(agentSlug: string) {
+async function getDefaultAgentTemplateVersion(agentSlug: string, workspaceId?: number | null) {
+  const scope = buildWorkspaceScopeFilter(workspaceId);
   const rows = await rawExecute(
     `SELECT * FROM emperor_agent_template_versions
-     WHERE agentSlug=? AND status='released' AND isDefault=1
+     WHERE agentSlug=? AND status='released' AND isDefault=1 AND ${scope.clause}
      ORDER BY versionNumber DESC, id DESC
      LIMIT 1`,
-    [agentSlug],
+    [agentSlug, ...scope.params],
   );
   return rows[0] ? normalizeTemplateVersionRow(rows[0]) : null;
 }
@@ -775,14 +790,16 @@ async function getDefaultAgentTemplateVersion(agentSlug: string) {
 async function selectAgentTemplateVersionForRun(input: {
   agent: any;
   userId: number;
+  workspaceId?: number | null;
   projectId?: number | null;
 }) {
+  const scope = buildWorkspaceScopeFilter(input.workspaceId ?? input.agent.workspaceId ?? null);
   const canaryRows = await rawExecute(
     `SELECT * FROM emperor_agent_template_versions
-     WHERE agentSlug=? AND status='released' AND isDefault=0 AND rolloutPercent > 0 AND rolloutPercent < 100
+     WHERE agentSlug=? AND status='released' AND isDefault=0 AND rolloutPercent > 0 AND rolloutPercent < 100 AND ${scope.clause}
      ORDER BY versionNumber DESC, id DESC
      LIMIT 20`,
-    [input.agent.slug],
+    [input.agent.slug, ...scope.params],
   ).catch(() => []);
   for (const row of canaryRows) {
     const template = normalizeTemplateVersionRow(row);
@@ -796,9 +813,10 @@ async function selectAgentTemplateVersionForRun(input: {
     }
   }
 
-  const defaultVersion = await getDefaultAgentTemplateVersion(input.agent.slug).catch(() => null);
+  const defaultVersion = await getDefaultAgentTemplateVersion(input.agent.slug, input.workspaceId ?? input.agent.workspaceId ?? null).catch(() => null);
   if (defaultVersion) return defaultVersion;
   return recordAgentTemplateVersion({
+    workspaceId: input.workspaceId ?? input.agent.workspaceId ?? null,
     agentSlug: input.agent.slug,
     agentName: input.agent.name,
     dag: normalizeAgentDag(input.agent.dagDefinition),
@@ -811,6 +829,7 @@ async function selectAgentTemplateVersionForRun(input: {
 }
 
 export async function recordAgentTemplateVersion(input: {
+  workspaceId?: number | null;
   agentSlug: string;
   agentName?: string | null;
   dag: EmperorAgentDag;
@@ -828,9 +847,12 @@ export async function recordAgentTemplateVersion(input: {
   const rolloutPercent = Math.min(Math.max(Math.floor(Number(input.rolloutPercent ?? (status === "released" ? 100 : 0))), 0), 100);
   const isDefault = input.isDefault ?? (status === "released" && rolloutPercent >= 100);
   const rolloutPolicyProvided = input.rolloutPolicy !== undefined;
+  const scope = input.workspaceId === undefined ? null : buildWorkspaceScopeFilter(input.workspaceId);
   const existing = await rawExecute(
-    "SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND dagHash=? LIMIT 1",
-    [input.agentSlug, dagHash],
+    scope
+      ? `SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND dagHash=? AND ${scope.clause} ORDER BY workspaceId IS NULL ASC LIMIT 1`
+      : "SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND dagHash=? LIMIT 1",
+    scope ? [input.agentSlug, dagHash, ...scope.params] : [input.agentSlug, dagHash],
   );
   if (existing[0]) {
     const nextStatus = existing[0].status === "released" && status === "draft" ? "released" : status;
@@ -852,8 +874,10 @@ export async function recordAgentTemplateVersion(input: {
     );
     if (nextIsDefault) {
       await rawExecute(
-        "UPDATE emperor_agent_template_versions SET isDefault=0,deprecatedAt=COALESCE(deprecatedAt,?),updatedAt=NOW() WHERE agentSlug=? AND id<>?",
-        [new Date(), input.agentSlug, existing[0].id],
+        scope
+          ? `UPDATE emperor_agent_template_versions SET isDefault=0,deprecatedAt=COALESCE(deprecatedAt,?),updatedAt=NOW() WHERE agentSlug=? AND id<>? AND ${scope.clause}`
+          : "UPDATE emperor_agent_template_versions SET isDefault=0,deprecatedAt=COALESCE(deprecatedAt,?),updatedAt=NOW() WHERE agentSlug=? AND id<>?",
+        scope ? [new Date(), input.agentSlug, existing[0].id, ...scope.params] : [new Date(), input.agentSlug, existing[0].id],
       );
     }
     const rows = await rawExecute("SELECT * FROM emperor_agent_template_versions WHERE id=? LIMIT 1", [existing[0].id]);
@@ -861,16 +885,19 @@ export async function recordAgentTemplateVersion(input: {
   }
 
   const latest = await rawExecute(
-    "SELECT versionNumber FROM emperor_agent_template_versions WHERE agentSlug=? ORDER BY versionNumber DESC LIMIT 1",
-    [input.agentSlug],
+    scope
+      ? `SELECT versionNumber FROM emperor_agent_template_versions WHERE agentSlug=? AND ${scope.clause} ORDER BY versionNumber DESC LIMIT 1`
+      : "SELECT versionNumber FROM emperor_agent_template_versions WHERE agentSlug=? ORDER BY versionNumber DESC LIMIT 1",
+    scope ? [input.agentSlug, ...scope.params] : [input.agentSlug],
   );
   const versionNumber = Number(latest[0]?.versionNumber || 0) + 1;
   const version = `v${versionNumber}`;
   await rawExecute(
     `INSERT INTO emperor_agent_template_versions
-     (agentSlug,agentName,parentVersionId,versionNumber,version,dagHash,status,isDefault,rolloutPercent,rolloutPolicy,dagDefinition,releaseNotes,createdBy,releasedAt,activatedAt)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+     (workspaceId,agentSlug,agentName,parentVersionId,versionNumber,version,dagHash,status,isDefault,rolloutPercent,rolloutPolicy,dagDefinition,releaseNotes,createdBy,releasedAt,activatedAt)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [
+      input.workspaceId ?? null,
       input.agentSlug,
       input.agentName || null,
       input.parentVersionId || null,
@@ -889,13 +916,17 @@ export async function recordAgentTemplateVersion(input: {
     ],
   );
   const rows = await rawExecute(
-    "SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND dagHash=? LIMIT 1",
-    [input.agentSlug, dagHash],
+    scope
+      ? `SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND dagHash=? AND ${scope.clause} ORDER BY workspaceId IS NULL ASC LIMIT 1`
+      : "SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND dagHash=? LIMIT 1",
+    scope ? [input.agentSlug, dagHash, ...scope.params] : [input.agentSlug, dagHash],
   );
   if (isDefault && rows[0]?.id) {
     await rawExecute(
-      "UPDATE emperor_agent_template_versions SET isDefault=0,deprecatedAt=COALESCE(deprecatedAt,?),updatedAt=NOW() WHERE agentSlug=? AND id<>?",
-      [new Date(), input.agentSlug, rows[0].id],
+      scope
+        ? `UPDATE emperor_agent_template_versions SET isDefault=0,deprecatedAt=COALESCE(deprecatedAt,?),updatedAt=NOW() WHERE agentSlug=? AND id<>? AND ${scope.clause}`
+        : "UPDATE emperor_agent_template_versions SET isDefault=0,deprecatedAt=COALESCE(deprecatedAt,?),updatedAt=NOW() WHERE agentSlug=? AND id<>?",
+      scope ? [new Date(), input.agentSlug, rows[0].id, ...scope.params] : [new Date(), input.agentSlug, rows[0].id],
     );
     const refreshed = await rawExecute("SELECT * FROM emperor_agent_template_versions WHERE id=? LIMIT 1", [rows[0].id]);
     return normalizeTemplateVersionRow(refreshed[0] || rows[0]);
@@ -906,14 +937,21 @@ export async function recordAgentTemplateVersion(input: {
 export async function listAgentTemplateVersions(input: {
   agentSlug: string;
   limit?: number;
+  workspaceId?: number | null;
 }) {
   const limit = Math.min(Math.max(input.limit || 20, 1), 100);
+  const scope = input.workspaceId === undefined ? null : buildWorkspaceScopeFilter(input.workspaceId);
   const rows = await rawExecute(
-    `SELECT * FROM emperor_agent_template_versions
+    scope
+      ? `SELECT * FROM emperor_agent_template_versions
+     WHERE agentSlug=? AND ${scope.clause}
+     ORDER BY versionNumber DESC, id DESC
+     LIMIT ${limit}`
+      : `SELECT * FROM emperor_agent_template_versions
      WHERE agentSlug=?
      ORDER BY versionNumber DESC, id DESC
      LIMIT ${limit}`,
-    [input.agentSlug],
+    scope ? [input.agentSlug, ...scope.params] : [input.agentSlug],
   );
   return rows.map(normalizeTemplateVersionRow);
 }
@@ -926,19 +964,25 @@ export async function publishAgentTemplateVersion(input: {
   rolloutPolicy?: unknown;
   releaseNotes?: string | null;
   userId?: number | null;
+  workspaceId?: number | null;
 }) {
   const template = await findAgentTemplateVersion(input);
   const dag = assertValidAgentDag(template.dagDefinition, "publish agent template version");
   const rolloutPercent = Math.min(Math.max(Math.floor(Number(input.rolloutPercent ?? 100)), 0), 100);
   const now = new Date();
+  const scope = input.workspaceId === undefined ? null : buildWorkspaceScopeFilter(input.workspaceId);
   if (rolloutPercent >= 100) {
     await rawExecute(
-      "UPDATE emperor_agent_template_versions SET isDefault=0,deprecatedAt=COALESCE(deprecatedAt,?),updatedAt=NOW() WHERE agentSlug=? AND id<>?",
-      [now, input.agentSlug, template.id],
+      scope
+        ? `UPDATE emperor_agent_template_versions SET isDefault=0,deprecatedAt=COALESCE(deprecatedAt,?),updatedAt=NOW() WHERE agentSlug=? AND id<>? AND ${scope.clause}`
+        : "UPDATE emperor_agent_template_versions SET isDefault=0,deprecatedAt=COALESCE(deprecatedAt,?),updatedAt=NOW() WHERE agentSlug=? AND id<>?",
+      scope ? [now, input.agentSlug, template.id, ...scope.params] : [now, input.agentSlug, template.id],
     );
     await rawExecute(
-      "UPDATE emperor_agents SET dagDefinition=?, status='active', updatedAt=NOW() WHERE slug=?",
-      [stringifyJson(dag), input.agentSlug],
+      scope
+        ? `UPDATE emperor_agents SET dagDefinition=?, status='active', updatedAt=NOW() WHERE slug=? AND ${scope.clause}`
+        : "UPDATE emperor_agents SET dagDefinition=?, status='active', updatedAt=NOW() WHERE slug=?",
+      scope ? [stringifyJson(dag), input.agentSlug, ...scope.params] : [stringifyJson(dag), input.agentSlug],
     );
   }
   await rawExecute(
@@ -970,6 +1014,7 @@ export async function publishAgentTemplateVersion(input: {
     metricName: rolloutPercent >= 100 ? "template.published" : "template.rollout_started",
     metricValue: rolloutPercent,
     status: "released",
+    workspaceId: input.workspaceId ?? null,
     userId: input.userId ?? null,
     agentSlug: input.agentSlug,
     metadata: { version: template.version, versionId: template.id, rolloutPercent },
@@ -987,11 +1032,13 @@ export async function rollbackAgentTemplateVersion(input: {
   targetVersion?: string | null;
   releaseNotes?: string | null;
   userId?: number | null;
+  workspaceId?: number | null;
 }) {
   const target = await findAgentTemplateVersion({
     agentSlug: input.agentSlug,
     versionId: input.targetVersionId ?? null,
     version: input.targetVersion ?? null,
+    workspaceId: input.workspaceId ?? null,
   });
   return publishAgentTemplateVersion({
     agentSlug: input.agentSlug,
@@ -999,6 +1046,7 @@ export async function rollbackAgentTemplateVersion(input: {
     rolloutPercent: 100,
     releaseNotes: input.releaseNotes || `Rollback to ${target.version}`,
     userId: input.userId ?? null,
+    workspaceId: input.workspaceId ?? null,
   });
 }
 
@@ -1009,6 +1057,7 @@ export async function setAgentTemplateRollout(input: {
   rolloutPercent: number;
   rolloutPolicy?: unknown;
   userId?: number | null;
+  workspaceId?: number | null;
 }) {
   return publishAgentTemplateVersion({
     agentSlug: input.agentSlug,
@@ -1018,6 +1067,7 @@ export async function setAgentTemplateRollout(input: {
     rolloutPolicy: input.rolloutPolicy,
     releaseNotes: `Rollout set to ${Math.min(Math.max(Math.floor(Number(input.rolloutPercent)), 0), 100)}%`,
     userId: input.userId ?? null,
+    workspaceId: input.workspaceId ?? null,
   });
 }
 
@@ -1028,26 +1078,30 @@ export async function diffAgentTemplateVersions(input: {
   targetVersionId?: number | null;
   targetVersion?: string | null;
   limit?: number;
+  workspaceId?: number | null;
 }) {
   const target = await findAgentTemplateVersion({
     agentSlug: input.agentSlug,
     versionId: input.targetVersionId ?? null,
     version: input.targetVersion ?? null,
+    workspaceId: input.workspaceId ?? null,
   });
   let base = input.baseVersionId || input.baseVersion
     ? await findAgentTemplateVersion({
       agentSlug: input.agentSlug,
       versionId: input.baseVersionId ?? null,
       version: input.baseVersion ?? null,
+      workspaceId: input.workspaceId ?? null,
     })
     : null;
+  const scope = buildWorkspaceScopeFilter(input.workspaceId ?? null);
   if (!base) {
     const rows = await rawExecute(
       `SELECT * FROM emperor_agent_template_versions
-       WHERE agentSlug=? AND versionNumber < ?
+       WHERE agentSlug=? AND versionNumber < ? AND ${scope.clause}
        ORDER BY versionNumber DESC, id DESC
        LIMIT 1`,
-      [input.agentSlug, target.versionNumber],
+      [input.agentSlug, target.versionNumber, ...scope.params],
     );
     base = rows[0] ? normalizeTemplateVersionRow(rows[0]) : null;
   }
@@ -1141,6 +1195,7 @@ export async function backfillAgentRunTemplateVersions(input: {
     metricName: "template.backfilled_runs",
     metricValue: results.length,
     status: input.dryRun ? "dry_run" : "completed",
+    workspaceId: null,
     userId: input.userId ?? null,
     agentSlug: input.agentSlug || null,
     metadata: { dryRun: input.dryRun === true, limit },
@@ -1183,8 +1238,14 @@ export async function upsertListingAgentTemplate() {
   return { success: true, slug: LISTING_AGENT_SLUG, dag, templateVersion };
 }
 
-async function getAgentBySlug(slug: string) {
-  const rows = await rawExecute("SELECT * FROM emperor_agents WHERE slug=? LIMIT 1", [slug]);
+async function getAgentBySlug(slug: string, workspaceId?: number | null) {
+  const scope = workspaceId === undefined ? null : buildWorkspaceScopeFilter(workspaceId);
+  const rows = await rawExecute(
+    scope
+      ? `SELECT * FROM emperor_agents WHERE slug=? AND ${scope.clause} ORDER BY workspaceId IS NULL ASC LIMIT 1`
+      : "SELECT * FROM emperor_agents WHERE slug=? LIMIT 1",
+    scope ? [slug, ...scope.params] : [slug],
+  );
   if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
   return {
     ...rows[0],
@@ -1194,8 +1255,12 @@ async function getAgentBySlug(slug: string) {
 
 async function addEvent(runId: string, agentSlug: string, nodeId: string | null, eventType: string, message: string, payload?: unknown) {
   await rawExecute(
-    "INSERT INTO emperor_agent_events (runId,agentSlug,nodeId,eventType,message,payload) VALUES (?,?,?,?,?,?)",
-    [runId, agentSlug, nodeId, eventType, message, payload === undefined ? null : stringifyJson(payload)],
+    `INSERT INTO emperor_agent_events (workspaceId,runId,agentSlug,nodeId,eventType,message,payload)
+     SELECT workspaceId,?,?,?,?,?,?
+     FROM emperor_agent_runs
+     WHERE runId=?
+     LIMIT 1`,
+    [runId, agentSlug, nodeId, eventType, message, payload === undefined ? null : stringifyJson(payload), runId],
   );
 }
 
@@ -1464,9 +1529,10 @@ async function persistAgentArtifact(input: {
 
     await rawExecute(
       `INSERT INTO emperor_agent_artifacts
-       (runId,agentSlug,nodeId,artifactKey,artifactType,status,version,isCurrent,currentSince,selectedBy,userId,projectId,content,contentHash,summary,metadata,mimeType,fileName,fileSizeBytes,storageUri,sourceSkillRunId,sourceAiJobRunId)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (workspaceId,runId,agentSlug,nodeId,artifactKey,artifactType,status,version,isCurrent,currentSince,selectedBy,userId,projectId,content,contentHash,summary,metadata,mimeType,fileName,fileSizeBytes,storageUri,sourceSkillRunId,sourceAiJobRunId)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
+        input.run.workspaceId ?? null,
         input.run.runId,
         input.run.agentSlug,
         input.node.id,
@@ -2387,6 +2453,7 @@ async function refreshRunAfterCheckpoint(runId: string, dag: EmperorAgentDag) {
       entityId: runId,
       output: outputMap,
       status,
+      workspaceId: runRow.workspaceId ?? null,
       userId: runRow.userId,
       projectId: runRow.projectId ?? null,
       agentSlug: runRow.agentSlug,
@@ -2404,6 +2471,7 @@ async function refreshRunAfterCheckpoint(runId: string, dag: EmperorAgentDag) {
       metricName: `agent_run.${status}`,
       metricValue: durationMs,
       status,
+      workspaceId: runRow.workspaceId ?? null,
       userId: runRow.userId,
       projectId: runRow.projectId ?? null,
       agentSlug: runRow.agentSlug,
@@ -2639,6 +2707,7 @@ async function finalizeNodeOutput(input: {
     entityId: `${input.run.runId}:${input.node.id}`,
     output: input.output,
     status: nextStatus,
+    workspaceId: input.run.workspaceId ?? null,
     userId: input.userId,
     projectId: input.run.projectId ?? null,
     agentSlug: input.run.agentSlug,
@@ -2663,6 +2732,7 @@ async function finalizeNodeOutput(input: {
       metricName: "agent_node.duration_ms",
       metricValue: nodeDurationMs,
       status: nextStatus,
+      workspaceId: input.run.workspaceId ?? null,
       userId: input.userId,
       projectId: input.run.projectId ?? null,
       agentSlug: input.run.agentSlug,
@@ -2678,6 +2748,7 @@ async function finalizeNodeOutput(input: {
       metricName: "agent_node.tokens",
       metricValue: inputTokens + outputTokens,
       status: nextStatus,
+      workspaceId: input.run.workspaceId ?? null,
       userId: input.userId,
       projectId: input.run.projectId ?? null,
       agentSlug: input.run.agentSlug,
@@ -2742,6 +2813,7 @@ async function failNodeExecution(input: {
     metricName: "agent_node.failed",
     metricValue: null,
     status: "failed",
+    workspaceId: input.run.workspaceId ?? null,
     userId: input.run.userId,
     projectId: input.run.projectId ?? null,
     agentSlug: input.run.agentSlug,
@@ -2759,6 +2831,7 @@ async function failNodeExecution(input: {
     entityId: `${input.run.runId}:${input.node.id}:failed`,
     output: { error: message, failureKind: input.failureKind || "error" },
     status: "failed",
+    workspaceId: input.run.workspaceId ?? null,
     userId: input.run.userId,
     projectId: input.run.projectId ?? null,
     agentSlug: input.run.agentSlug,
@@ -2878,6 +2951,7 @@ async function executeToolBackedNode(input: {
         timeoutMs: (input.node as any).timeoutSeconds ? Number((input.node as any).timeoutSeconds) * 1000 : undefined,
       },
       userId: input.userId,
+      workspaceId: input.run.workspaceId ?? null,
       runId: input.run.runId,
       nodeId: input.node.id,
       projectId: input.run.projectId ?? null,
@@ -2888,6 +2962,7 @@ async function executeToolBackedNode(input: {
     toolSlug,
     params,
     userId: input.userId,
+    workspaceId: input.run.workspaceId ?? null,
     runId: input.run.runId,
     nodeId: input.node.id,
     projectId: input.run.projectId ?? null,
@@ -2898,18 +2973,21 @@ export async function startAgentRun(input: {
   slug: string;
   inputs: Record<string, unknown>;
   userId: number;
+  workspaceId?: number | null;
   projectId?: number | null;
 }) {
-  const agent = await getAgentBySlug(input.slug);
+  const agent = await getAgentBySlug(input.slug, input.workspaceId ?? null);
+  const workspaceId = input.workspaceId ?? agent.workspaceId ?? null;
   const templateVersion = await selectAgentTemplateVersionForRun({
     agent,
     userId: input.userId,
     projectId: input.projectId ?? null,
+    workspaceId,
   });
   const dag = assertValidAgentDag(templateVersion?.dagDefinition || agent.dagDefinition, "start run");
   const nodeMetadata = new Map<string, Record<string, unknown>>();
   for (const node of dag.nodes) {
-    nodeMetadata.set(node.id, await buildNodeRunMetadata(node));
+    nodeMetadata.set(node.id, await buildNodeRunMetadata(node, workspaceId));
   }
   const storedInputs = buildStoredAgentRunInputs({
     inputs: input.inputs,
@@ -2926,8 +3004,9 @@ export async function startAgentRun(input: {
   const firstReady = rootNodeIds[0] || dag.nodes[0].id;
 
   await rawExecute(
-    "INSERT INTO emperor_agent_runs (runId,agentSlug,agentName,templateVersionId,templateVersion,dagHash,userId,projectId,status,currentNodeId,progress,inputs,startedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    "INSERT INTO emperor_agent_runs (workspaceId,runId,agentSlug,agentName,templateVersionId,templateVersion,dagHash,userId,projectId,status,currentNodeId,progress,inputs,startedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     [
+      workspaceId,
       runId,
       agent.slug,
       agent.name,
@@ -2947,8 +3026,8 @@ export async function startAgentRun(input: {
   for (const node of dag.nodes) {
     const status: AgentNodeStatus = rootNodeIds.includes(node.id) ? "ready" : "pending";
     await rawExecute(
-      "INSERT INTO emperor_agent_checkpoints (runId,agentSlug,nodeId,nodeLabel,nodeType,status,maxAttempts,metadata) VALUES (?,?,?,?,?,?,?,?)",
-      [runId, agent.slug, node.id, node.label || node.id, node.nodeType || "skill_node", status, nodeMaxAttempts(node), stringifyJson(nodeMetadata.get(node.id) || { node })],
+      "INSERT INTO emperor_agent_checkpoints (workspaceId,runId,agentSlug,nodeId,nodeLabel,nodeType,status,maxAttempts,metadata) VALUES (?,?,?,?,?,?,?,?,?)",
+      [workspaceId, runId, agent.slug, node.id, node.label || node.id, node.nodeType || "skill_node", status, nodeMaxAttempts(node), stringifyJson(nodeMetadata.get(node.id) || { node })],
     );
   }
 
@@ -3307,6 +3386,7 @@ export async function confirmAgentNode(input: {
       metricName: "agent_node.human_edit_rate",
       metricValue: humanEditRate,
       status: nextStatus,
+      workspaceId: detail.run.workspaceId ?? null,
       userId: input.userId,
       projectId: detail.run.projectId ?? null,
       agentSlug: checkpoint.agentSlug,
@@ -3319,6 +3399,7 @@ export async function confirmAgentNode(input: {
       entityId: `${input.runId}:${input.nodeId}:confirmed`,
       output: finalContent,
       status: nextStatus,
+      workspaceId: detail.run.workspaceId ?? null,
       userId: input.userId,
       projectId: detail.run.projectId ?? null,
       agentSlug: checkpoint.agentSlug,
@@ -3424,6 +3505,7 @@ export async function executeAgentNode(input: {
       module: "emperorAgent",
       procedure: "emperor.agents.executeNode",
       userId: input.userId,
+      workspaceId: run.workspaceId ?? null,
       projectId: run.projectId ?? null,
       skillSlug: node.skillSlug,
       maxAttempts: nodeMaxAttempts(node),
@@ -3540,6 +3622,7 @@ async function runAgentNodeSkillJob(job: AiJobSnapshot) {
     const result = await runEmperorSkill({
       skillSlug: payload.skillSlug,
       userId: job.userId,
+      workspaceId: run.workspaceId ?? job.workspaceId ?? null,
       context: buildSkillContext(node, payload.nodeInput),
       variables: {
         agentRunId: payload.runId,

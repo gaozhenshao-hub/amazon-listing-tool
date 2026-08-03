@@ -1,19 +1,42 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, protectedProcedure, router } from "../../../_core/trpc";
+import { actorFromContext, assertResourceAction, buildWorkspaceScopeFilter, recordSecurityAuditLog, workspaceIdFromContext } from "../../../services/securityGovernance";
 import { assertToolConfigUsesSecretRefs, invokeEmperorTool, sanitizeToolConfigForPublic } from "../services/toolGateway";
 import { rawExecute } from "../routerContext";
 
 export const emperorMcpRouter = router({
-  list: protectedProcedure.query(async () => {
-    const rows = await rawExecute("SELECT id,slug,name,description,connectionType,isActive,createdAt FROM emperor_mcp_connectors ORDER BY name");
+  list: protectedProcedure.query(async ({ ctx }) => {
+    await assertResourceAction({ actor: actorFromContext(ctx), resource: "tool", action: "read" });
+    const scope = buildWorkspaceScopeFilter(workspaceIdFromContext(ctx));
+    const rows = await rawExecute(
+      `SELECT id,workspaceId,slug,name,description,connectionType,isActive,createdAt
+       FROM emperor_mcp_connectors
+       WHERE ${scope.clause}
+       ORDER BY workspaceId IS NULL ASC, name`,
+      scope.params,
+    );
     return rows.map((r: any) => ({ ...r, isActive: !!r.isActive }));
   }),
 
   get: protectedProcedure
     .input(z.object({ slug: z.string() }))
-    .query(async ({ input }) => {
-      const rows = await rawExecute("SELECT * FROM emperor_mcp_connectors WHERE slug = ? LIMIT 1", [input.slug]);
+    .query(async ({ input, ctx }) => {
+      await assertResourceAction({
+        actor: actorFromContext(ctx),
+        resource: "tool",
+        action: "read",
+        resourceId: input.slug,
+      });
+      const scope = buildWorkspaceScopeFilter(workspaceIdFromContext(ctx));
+      const rows = await rawExecute(
+        `SELECT *
+         FROM emperor_mcp_connectors
+         WHERE slug = ? AND ${scope.clause}
+         ORDER BY workspaceId IS NULL ASC
+         LIMIT 1`,
+        [input.slug, ...scope.params],
+      );
       if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
       const config = typeof rows[0].config === "string" ? JSON.parse(rows[0].config) : (rows[0].config ?? {});
       const secretRefs = typeof rows[0].secretRefs === "string" ? JSON.parse(rows[0].secretRefs) : (rows[0].secretRefs ?? []);
@@ -48,16 +71,19 @@ export const emperorMcpRouter = router({
         parameters: z.any().optional(),
       })).optional().default([]),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await assertResourceAction({ actor: actorFromContext(ctx), resource: "tool", action: "create" });
       assertToolConfigUsesSecretRefs(input.authConfig, "mcp.authConfig");
       assertToolConfigUsesSecretRefs(input.capabilities, "mcp.capabilities");
       assertToolConfigUsesSecretRefs(input.secretRefs, "mcp.secretRefs");
       const slug = input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64) + "-" + Date.now().toString(36);
       const connectionType = input.toolType === "database" ? "database" : input.toolType === "custom_script" ? "script" : "http_api";
       const config = JSON.stringify({ baseUrl: input.baseUrl, authType: input.authType, authConfig: input.authConfig, capabilities: input.capabilities });
+      const workspaceId = workspaceIdFromContext(ctx);
       await rawExecute(
-        `INSERT INTO emperor_mcp_connectors (slug,name,description,connectionType,config,governancePolicy,secretRefs,isActive) VALUES (?,?,?,?,?,?,?,1)`,
+        `INSERT INTO emperor_mcp_connectors (workspaceId,slug,name,description,connectionType,config,governancePolicy,secretRefs,isActive) VALUES (?,?,?,?,?,?,?,?,1)`,
         [
+          workspaceId,
           slug,
           input.name,
           input.description || null,
@@ -67,6 +93,16 @@ export const emperorMcpRouter = router({
           input.secretRefs ? JSON.stringify(input.secretRefs) : null,
         ],
       );
+      await recordSecurityAuditLog({
+        ctx,
+        workspaceId,
+        action: "mcp.create",
+        resourceType: "tool",
+        resourceId: slug,
+        resourceName: input.name,
+        status: "success",
+        riskLevel: "high",
+      });
       return { success: true, slug };
     }),
 
@@ -80,8 +116,14 @@ export const emperorMcpRouter = router({
       secretRefs: z.any().optional(),
       isActive: z.boolean().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { slug, ...rest } = input;
+      await assertResourceAction({
+        actor: actorFromContext(ctx),
+        resource: "tool",
+        action: "update",
+        resourceId: slug,
+      });
       assertToolConfigUsesSecretRefs(rest.config, "mcp.config");
       assertToolConfigUsesSecretRefs(rest.secretRefs, "mcp.secretRefs");
       const sets: string[] = []; const vals: any[] = [];
@@ -92,15 +134,32 @@ export const emperorMcpRouter = router({
       if (rest.secretRefs !== undefined) { sets.push("secretRefs=?"); vals.push(JSON.stringify(rest.secretRefs)); }
       if (rest.isActive !== undefined) { sets.push("isActive=?"); vals.push(rest.isActive?1:0); }
       if (!sets.length) return { success: true };
-      vals.push(slug);
-      await rawExecute(`UPDATE emperor_mcp_connectors SET ${sets.join(",")} WHERE slug=?`, vals);
+      const scope = buildWorkspaceScopeFilter(workspaceIdFromContext(ctx));
+      vals.push(slug, ...scope.params);
+      await rawExecute(`UPDATE emperor_mcp_connectors SET ${sets.join(",")},updatedAt=NOW() WHERE slug=? AND ${scope.clause}`, vals);
+      await recordSecurityAuditLog({
+        ctx,
+        action: "mcp.update",
+        resourceType: "tool",
+        resourceId: slug,
+        resourceName: rest.name || null,
+        status: "success",
+        riskLevel: "high",
+      });
       return { success: true };
     }),
 
   invoke: protectedProcedure
     .input(z.object({ slug: z.string(), capability: z.string(), params: z.any().optional() }))
     .mutation(async ({ ctx, input }) => {
-      return invokeEmperorTool({
+      await assertResourceAction({
+        actor: actorFromContext(ctx),
+        resource: "tool",
+        action: "invoke",
+        resourceId: input.slug,
+      });
+      const workspaceId = workspaceIdFromContext(ctx);
+      const result = await invokeEmperorTool({
         toolSlug: `mcp.${input.slug}`,
         params: {
           capability: input.capability,
@@ -108,7 +167,24 @@ export const emperorMcpRouter = router({
         },
         userId: ctx.user.id,
         userRole: (ctx.user as any).role || null,
+        workspaceId,
       });
+      await recordSecurityAuditLog({
+        ctx,
+        workspaceId,
+        action: "mcp.invoke",
+        resourceType: "tool",
+        resourceId: input.slug,
+        toolSlug: `mcp.${input.slug}`,
+        status: result.success ? "success" : "failed",
+        riskLevel: result.metadata.riskLevel || "medium",
+        metadata: {
+          capability: input.capability,
+          toolRunId: result.metadata.toolRunId,
+          failureKind: result.metadata.failureKind,
+        },
+      });
+      return result;
     }),
 
   upsert: adminProcedure
@@ -122,12 +198,20 @@ export const emperorMcpRouter = router({
       secretRefs: z.any().optional(),
       isActive: z.boolean().optional().default(true),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await assertResourceAction({
+        actor: actorFromContext(ctx),
+        resource: "tool",
+        action: "update",
+        resourceId: input.slug,
+      });
       assertToolConfigUsesSecretRefs(input.config, "mcp.config");
       assertToolConfigUsesSecretRefs(input.secretRefs, "mcp.secretRefs");
+      const workspaceId = workspaceIdFromContext(ctx);
       await rawExecute(
-        `INSERT INTO emperor_mcp_connectors (slug,name,description,connectionType,config,governancePolicy,secretRefs,isActive) VALUES (?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),description=VALUES(description),connectionType=VALUES(connectionType),config=VALUES(config),governancePolicy=VALUES(governancePolicy),secretRefs=VALUES(secretRefs),isActive=VALUES(isActive)`,
+        `INSERT INTO emperor_mcp_connectors (workspaceId,slug,name,description,connectionType,config,governancePolicy,secretRefs,isActive) VALUES (?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE workspaceId=VALUES(workspaceId),name=VALUES(name),description=VALUES(description),connectionType=VALUES(connectionType),config=VALUES(config),governancePolicy=VALUES(governancePolicy),secretRefs=VALUES(secretRefs),isActive=VALUES(isActive),updatedAt=NOW()`,
         [
+          workspaceId,
           input.slug,
           input.name,
           input.description || null,
@@ -138,13 +222,41 @@ export const emperorMcpRouter = router({
           input.isActive ? 1 : 0,
         ],
       );
+      await recordSecurityAuditLog({
+        ctx,
+        workspaceId,
+        action: "mcp.upsert",
+        resourceType: "tool",
+        resourceId: input.slug,
+        resourceName: input.name,
+        status: "success",
+        riskLevel: "high",
+      });
       return { success: true };
     }),
 
   delete: adminProcedure
     .input(z.object({ slug: z.string() }))
-    .mutation(async ({ input }) => {
-      await rawExecute("DELETE FROM emperor_mcp_connectors WHERE slug = ?", [input.slug]);
+    .mutation(async ({ input, ctx }) => {
+      await assertResourceAction({
+        actor: actorFromContext(ctx),
+        resource: "tool",
+        action: "delete",
+        resourceId: input.slug,
+      });
+      const scope = buildWorkspaceScopeFilter(workspaceIdFromContext(ctx));
+      await rawExecute(
+        `DELETE FROM emperor_mcp_connectors WHERE slug = ? AND ${scope.clause}`,
+        [input.slug, ...scope.params],
+      );
+      await recordSecurityAuditLog({
+        ctx,
+        action: "mcp.delete",
+        resourceType: "tool",
+        resourceId: input.slug,
+        status: "success",
+        riskLevel: "high",
+      });
       return { success: true };
     }),
 });

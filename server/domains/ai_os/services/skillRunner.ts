@@ -3,6 +3,7 @@ import { sql as drizzleSql } from "drizzle-orm";
 import { createHash } from "crypto";
 import Handlebars from "handlebars";
 import { getDb } from "../../../db";
+import { buildWorkspaceScopeFilter } from "../../../services/securityGovernance";
 import { invokeLLM, type Message, type MessageContent } from "../../../_core/llm";
 import { recordAiOsEvaluation, recordAiOsMetric } from "./observability";
 
@@ -32,6 +33,7 @@ export class SkillRunError extends Error {
 }
 
 type SkillRow = {
+  workspaceId?: number | null;
   slug: string;
   name: string;
   manifest: unknown;
@@ -43,6 +45,7 @@ type SkillRow = {
 };
 
 type ModelRow = {
+  workspaceId?: number | null;
   slug: string;
   provider: string;
   modelId: string;
@@ -65,6 +68,7 @@ type SkillManifest = {
 export type RunSkillInput<T> = {
   skillSlug: string;
   userId: number;
+  workspaceId?: number | null;
   variables: Record<string, unknown>;
   context?: string;
   emphasis?: string;
@@ -408,25 +412,34 @@ function classifyProviderError(error: unknown): SkillRunError {
   return new SkillRunError("UNKNOWN", "AI skill execution failed", false, error);
 }
 
-async function getSkill(skillSlug: string): Promise<SkillRow> {
-  const rows = await rawExecute("SELECT * FROM emperor_skills WHERE slug = ? LIMIT 1", [skillSlug]);
+async function getSkill(skillSlug: string, workspaceId?: number | null): Promise<SkillRow> {
+  const scope = workspaceId === undefined ? null : buildWorkspaceScopeFilter(workspaceId);
+  const rows = await rawExecute(
+    scope
+      ? `SELECT * FROM emperor_skills WHERE slug = ? AND ${scope.clause} ORDER BY workspaceId IS NULL ASC LIMIT 1`
+      : "SELECT * FROM emperor_skills WHERE slug = ? LIMIT 1",
+    scope ? [skillSlug, ...scope.params] : [skillSlug],
+  );
   if (!rows[0]) throw new SkillRunError("SKILL_NOT_FOUND", `Skill '${skillSlug}' not found`, false);
   return rows[0] as SkillRow;
 }
 
-export async function getEmperorSkillRuntimeSnapshot(skillSlug: string): Promise<SkillRuntimeSnapshot> {
-  const skill = await getSkill(skillSlug);
+export async function getEmperorSkillRuntimeSnapshot(skillSlug: string, workspaceId?: number | null): Promise<SkillRuntimeSnapshot> {
+  const skill = await getSkill(skillSlug, workspaceId);
   const manifest = parseJson<SkillManifest>(skill.manifest, {});
   return buildSkillRuntimeSnapshot(skill, manifest);
 }
 
-async function getModelBySlug(slug: string): Promise<ModelRow | null> {
+async function getModelBySlug(slug: string, workspaceId?: number | null): Promise<ModelRow | null> {
   if (slug === "manus-default") {
     return { slug, provider: "manus_builtin", modelId: "manus-default", isActive: true };
   }
+  const scope = workspaceId === undefined ? null : buildWorkspaceScopeFilter(workspaceId);
   const rows = await rawExecute(
-    "SELECT * FROM emperor_model_providers WHERE slug = ? AND isActive = 1 LIMIT 1",
-    [slug],
+    scope
+      ? `SELECT * FROM emperor_model_providers WHERE slug = ? AND isActive = 1 AND ${scope.clause} ORDER BY workspaceId IS NULL ASC LIMIT 1`
+      : "SELECT * FROM emperor_model_providers WHERE slug = ? AND isActive = 1 LIMIT 1",
+    scope ? [slug, ...scope.params] : [slug],
   );
   return (rows[0] as ModelRow | undefined) ?? null;
 }
@@ -435,6 +448,7 @@ async function resolveModelCandidates(
   skill: SkillRow,
   requestedModel: string | undefined,
   fallbackModels: string[],
+  workspaceId?: number | null,
 ): Promise<ModelRow[]> {
   const manifest = parseJson<SkillManifest>(skill.manifest, {});
   const preferred = [
@@ -444,8 +458,12 @@ async function resolveModelCandidates(
   ].filter((value): value is string => Boolean(value));
 
   if (preferred.length === 0) {
+    const scope = workspaceId === undefined ? null : buildWorkspaceScopeFilter(workspaceId);
     const defaults = await rawExecute(
-      "SELECT * FROM emperor_model_providers WHERE isDefault = 1 AND isActive = 1 LIMIT 1",
+      scope
+        ? `SELECT * FROM emperor_model_providers WHERE isDefault = 1 AND isActive = 1 AND ${scope.clause} ORDER BY workspaceId IS NULL ASC LIMIT 1`
+        : "SELECT * FROM emperor_model_providers WHERE isDefault = 1 AND isActive = 1 LIMIT 1",
+      scope ? scope.params : [],
     );
     if (defaults[0]?.slug) preferred.push(String(defaults[0].slug));
   }
@@ -454,7 +472,7 @@ async function resolveModelCandidates(
   const models: ModelRow[] = [];
   for (const slug of uniqueSlugs) {
     if (models.length >= 2) break;
-    const model = await getModelBySlug(slug);
+    const model = await getModelBySlug(slug, workspaceId);
     if (model) models.push(model);
   }
   if (models.length === 0) {
@@ -524,7 +542,7 @@ async function callModel(
 }
 
 export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Promise<RunSkillResult<T>> {
-  const skill = await getSkill(input.skillSlug);
+  const skill = await getSkill(input.skillSlug, input.workspaceId ?? null);
   const manifest = parseJson<SkillManifest>(skill.manifest, {});
   const skillSnapshot = buildSkillRuntimeSnapshot(skill, manifest);
   assertSkillSnapshotCompatible(skillSnapshot, input);
@@ -553,13 +571,14 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
     skill,
     input.modelOverride,
     input.fallbackModels || DEFAULT_FALLBACKS,
+    input.workspaceId ?? skill.workspaceId ?? null,
   );
 
   const runId = generateRunId();
   const startedAt = new Date();
   await rawExecute(
-    "INSERT INTO emperor_skill_runs (runId,skillSlug,skillName,userId,input,status,modelSlug,startedAt) VALUES (?,?,?,?,?,?,?,?)",
-    [runId, skill.slug, skill.name, input.userId, JSON.stringify(executionVariables), "running", models[0].slug, startedAt],
+    "INSERT INTO emperor_skill_runs (workspaceId,runId,skillSlug,skillName,userId,input,status,modelSlug,startedAt) VALUES (?,?,?,?,?,?,?,?,?)",
+    [input.workspaceId ?? skill.workspaceId ?? null, runId, skill.slug, skill.name, input.userId, JSON.stringify(executionVariables), "running", models[0].slug, startedAt],
   );
 
   let lastError: SkillRunError | null = null;
@@ -615,6 +634,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
         entityId: runId,
         output: parsed,
         status: "succeeded",
+        workspaceId: input.workspaceId ?? skill.workspaceId ?? null,
         userId: input.userId,
         skillSlug: skill.slug,
         retryCount: index,
@@ -635,6 +655,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
         metricName: "skill.succeeded",
         metricValue: durationMs,
         status: "succeeded",
+        workspaceId: input.workspaceId ?? skill.workspaceId ?? null,
         userId: input.userId,
         skillSlug: skill.slug,
         metadata: { skillName: skill.name, modelSlug: model.slug, provider: model.provider, fallbackCount: index },
@@ -645,6 +666,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
         metricName: "skill.tokens",
         metricValue: totalTokens,
         status: "succeeded",
+        workspaceId: input.workspaceId ?? skill.workspaceId ?? null,
         userId: input.userId,
         skillSlug: skill.slug,
         metadata: { inputTokens: response.inputTokens, outputTokens: response.outputTokens, modelSlug: model.slug },
@@ -682,6 +704,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
     entityId: runId,
     output: { errorCode: lastError?.code || "UNKNOWN", message: lastError?.message || "Skill execution failed" },
     status: "failed",
+    workspaceId: input.workspaceId ?? skill.workspaceId ?? null,
     userId: input.userId,
     skillSlug: skill.slug,
     retryCount: models.length - 1,
@@ -693,6 +716,7 @@ export async function runEmperorSkill<T = string>(input: RunSkillInput<T>): Prom
     metricName: "skill.failed",
     metricValue: durationMs,
     status: "failed",
+    workspaceId: input.workspaceId ?? skill.workspaceId ?? null,
     userId: input.userId,
     skillSlug: skill.slug,
     metadata: { skillName: skill.name, errorCode: lastError?.code || "UNKNOWN", retryable: lastError?.retryable ?? false },

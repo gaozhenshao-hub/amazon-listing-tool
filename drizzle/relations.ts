@@ -24,18 +24,90 @@ import {
   listingVersions,
   loginLogs,
   negativeKeywords,
+  organizations,
   projectFiles,
   projects,
   reviewAggregations,
   reviewImports,
+  securityAccessPolicies,
+  securityAuditLogs,
   sellingPointDrafts,
   usageStats,
   users,
+  workspaceMemberships,
+  workspaces,
 } from "./schema";
 
-export const usersRelations = relations(users, ({ many }) => ({
+export const organizationsRelations = relations(organizations, ({ many, one }) => ({
+  owner: one(users, {
+    fields: [organizations.ownerUserId],
+    references: [users.id],
+  }),
+  workspaces: many(workspaces),
+}));
+
+export const workspacesRelations = relations(workspaces, ({ many, one }) => ({
+  memberships: many(workspaceMemberships),
+  organization: one(organizations, {
+    fields: [workspaces.organizationId],
+    references: [organizations.id],
+  }),
+  owner: one(users, {
+    fields: [workspaces.ownerUserId],
+    references: [users.id],
+  }),
+  projects: many(projects),
+}));
+
+export const workspaceMembershipsRelations = relations(workspaceMemberships, ({ one }) => ({
+  user: one(users, {
+    fields: [workspaceMemberships.userId],
+    references: [users.id],
+  }),
+  workspace: one(workspaces, {
+    fields: [workspaceMemberships.workspaceId],
+    references: [workspaces.id],
+  }),
+}));
+
+export const securityAuditLogsRelations = relations(securityAuditLogs, ({ one }) => ({
+  actor: one(users, {
+    fields: [securityAuditLogs.actorUserId],
+    references: [users.id],
+  }),
+  project: one(projects, {
+    fields: [securityAuditLogs.projectId],
+    references: [projects.id],
+  }),
+  workspace: one(workspaces, {
+    fields: [securityAuditLogs.workspaceId],
+    references: [workspaces.id],
+  }),
+}));
+
+export const securityAccessPoliciesRelations = relations(securityAccessPolicies, ({ one }) => ({
+  createdByUser: one(users, {
+    fields: [securityAccessPolicies.createdBy],
+    references: [users.id],
+  }),
+  workspace: one(workspaces, {
+    fields: [securityAccessPolicies.workspaceId],
+    references: [workspaces.id],
+  }),
+}));
+
+export const usersRelations = relations(users, ({ many, one }) => ({
   aiJobs: many(aiJobs),
+  defaultWorkspace: one(workspaces, {
+    fields: [users.defaultWorkspaceId],
+    references: [workspaces.id],
+  }),
   loginLogs: many(loginLogs),
+  memberships: many(workspaceMemberships),
+  organization: one(organizations, {
+    fields: [users.organizationId],
+    references: [organizations.id],
+  }),
   projects: many(projects),
   usageStats: many(usageStats),
 }));
@@ -44,6 +116,10 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   owner: one(users, {
     fields: [projects.userId],
     references: [users.id],
+  }),
+  workspace: one(workspaces, {
+    fields: [projects.workspaceId],
+    references: [workspaces.id],
   }),
   adStructures: many(adStructures),
   agentRuns: many(emperorAgentRuns),

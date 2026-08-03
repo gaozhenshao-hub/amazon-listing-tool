@@ -1,11 +1,13 @@
 import { z } from "zod";
 import { adminProcedure, protectedProcedure, router } from "../../../_core/trpc";
-import { invokeEmperorTool, listEmperorToolRuns, listEmperorTools, seedBuiltinTools, upsertEmperorTool, upsertEmperorToolSecret } from "../services/toolGateway";
+import { actorFromContext, assertResourceAction, recordSecurityAuditLog, workspaceIdFromContext } from "../../../services/securityGovernance";
+import { invokeEmperorTool, listEmperorToolRuns, listEmperorTools, rotateEmperorToolSecret, seedBuiltinTools, upsertEmperorTool, upsertEmperorToolSecret } from "../services/toolGateway";
 import { rawExecute } from "../routerContext";
 
 export const emperorToolsRouter = router({
-  list: protectedProcedure.query(async () => {
-    return listEmperorTools();
+  list: protectedProcedure.query(async ({ ctx }) => {
+    await assertResourceAction({ actor: actorFromContext(ctx), resource: "tool", action: "read" });
+    return listEmperorTools(workspaceIdFromContext(ctx));
   }),
 
   listRuns: protectedProcedure
@@ -17,6 +19,7 @@ export const emperorToolsRouter = router({
       limit: z.number().min(1).max(200).optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
+      await assertResourceAction({ actor: actorFromContext(ctx), resource: "tool", action: "read" });
       const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
       return listEmperorToolRuns({
         userId: ctx.user.id,
@@ -26,11 +29,22 @@ export const emperorToolsRouter = router({
         nodeId: input?.nodeId,
         status: input?.status,
         limit: input?.limit,
+        workspaceId: workspaceIdFromContext(ctx),
       });
     }),
 
-  seedBuiltins: adminProcedure.mutation(async () => {
-    return seedBuiltinTools();
+  seedBuiltins: adminProcedure.mutation(async ({ ctx }) => {
+    await assertResourceAction({ actor: actorFromContext(ctx), resource: "tool", action: "create" });
+    const result = await seedBuiltinTools();
+    await recordSecurityAuditLog({
+      ctx,
+      action: "tool.seed_builtins",
+      resourceType: "tool",
+      status: "success",
+      riskLevel: "high",
+      metadata: result,
+    });
+    return result;
   }),
 
   invoke: protectedProcedure
@@ -41,14 +55,40 @@ export const emperorToolsRouter = router({
       nodeId: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      return invokeEmperorTool({
+      await assertResourceAction({
+        actor: actorFromContext(ctx),
+        resource: "tool",
+        action: "invoke",
+        resourceId: input.toolSlug,
+      });
+      const workspaceId = workspaceIdFromContext(ctx);
+      const result = await invokeEmperorTool({
         toolSlug: input.toolSlug,
         params: input.params,
         userId: ctx.user.id,
         userRole: (ctx.user as any).role || null,
+        workspaceId,
         runId: input.runId,
         nodeId: input.nodeId,
       });
+      await recordSecurityAuditLog({
+        ctx,
+        workspaceId,
+        action: "tool.invoke",
+        resourceType: "tool",
+        resourceId: input.toolSlug,
+        toolSlug: input.toolSlug,
+        agentRunId: input.runId || null,
+        status: result.success ? "success" : "failed",
+        riskLevel: result.metadata.riskLevel || "medium",
+        metadata: {
+          toolRunId: result.metadata.toolRunId,
+          failureKind: result.metadata.failureKind,
+          retryable: result.metadata.retryable,
+          secretRefs: result.metadata.secretRefs,
+        },
+      });
+      return result;
     }),
 
   upsert: adminProcedure
@@ -68,8 +108,28 @@ export const emperorToolsRouter = router({
       outputSchema: z.any().optional(),
       isActive: z.boolean().optional().default(true),
     }))
-    .mutation(async ({ input }) => {
-      return upsertEmperorTool(input);
+    .mutation(async ({ input, ctx }) => {
+      await assertResourceAction({
+        actor: actorFromContext(ctx),
+        resource: "tool",
+        action: "update",
+        resourceId: input.slug,
+      });
+      const result = await upsertEmperorTool({
+        ...input,
+        workspaceId: workspaceIdFromContext(ctx),
+      });
+      await recordSecurityAuditLog({
+        ctx,
+        action: "tool.upsert",
+        resourceType: "tool",
+        resourceId: input.slug,
+        resourceName: input.name,
+        status: "success",
+        riskLevel: "high",
+        metadata: { type: input.type, secretRefs: input.secretRefs },
+      });
+      return result;
     }),
 
   upsertSecret: adminProcedure
@@ -80,19 +140,79 @@ export const emperorToolsRouter = router({
       metadata: z.any().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      return upsertEmperorToolSecret({
+      await assertResourceAction({
+        actor: actorFromContext(ctx),
+        resource: "tool",
+        action: "manage_secret",
+        resourceId: input.slug,
+      });
+      const result = await upsertEmperorToolSecret({
         slug: input.slug,
         value: input.value,
         description: input.description || null,
         metadata: input.metadata,
         userId: ctx.user.id,
+        workspaceId: workspaceIdFromContext(ctx),
       });
+      await recordSecurityAuditLog({
+        ctx,
+        action: "tool_secret.upsert",
+        resourceType: "tool_secret",
+        resourceId: input.slug,
+        status: "success",
+        riskLevel: "critical",
+        metadata: { ref: result.ref },
+      });
+      return result;
+    }),
+
+  rotateSecret: adminProcedure
+    .input(z.object({ slug: z.string().min(1).max(128) }))
+    .mutation(async ({ ctx, input }) => {
+      await assertResourceAction({
+        actor: actorFromContext(ctx),
+        resource: "tool",
+        action: "rotate_secret",
+        resourceId: input.slug,
+      });
+      const result = await rotateEmperorToolSecret({
+        slug: input.slug,
+        userId: ctx.user.id,
+        workspaceId: workspaceIdFromContext(ctx),
+      });
+      await recordSecurityAuditLog({
+        ctx,
+        action: "tool_secret.rotate",
+        resourceType: "tool_secret",
+        resourceId: input.slug,
+        status: "success",
+        riskLevel: "critical",
+        metadata: {
+          keyVersion: result.keyVersion,
+          previousKeyVersion: result.previousKeyVersion,
+        },
+      });
+      return result;
     }),
 
   delete: adminProcedure
     .input(z.object({ slug: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      await assertResourceAction({
+        actor: actorFromContext(ctx),
+        resource: "tool",
+        action: "delete",
+        resourceId: input.slug,
+      });
       await rawExecute("DELETE FROM emperor_tools WHERE slug=?", [input.slug]);
+      await recordSecurityAuditLog({
+        ctx,
+        action: "tool.delete",
+        resourceType: "tool",
+        resourceId: input.slug,
+        status: "success",
+        riskLevel: "high",
+      });
       return { success: true };
     }),
 });

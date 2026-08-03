@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { protectedProcedure, router } from "../../_core/trpc";
+import { protectedProcedure as baseProtectedProcedure, router } from "../../_core/trpc";
+import { actorFromContext, assertResourceAction, recordSecurityAuditLog, workspaceIdFromContext, type SecurityAction } from "../../services/securityGovernance";
 import { getDb } from "./repository";
 import { invokeLLM } from "../../_core/llm";
 import { collectConversionData, collectMultipleAsins, type ConversionCrawlData } from "./service";
@@ -20,6 +21,57 @@ import {
   opsImportHistory,
 } from "./schema";
 import { eq, desc, and, or, sql, asc, isNull, inArray } from "drizzle-orm";
+
+function inferOpsSecurityAction(path: string, type: string): SecurityAction {
+  if (type === "query") return "read";
+  const normalized = path.toLowerCase();
+  if (normalized.includes("sync")) return "sync";
+  if (normalized.includes("import") || normalized.includes("upload") || normalized.includes("parse")) return "import";
+  if (normalized.includes("export")) return "export";
+  if (normalized.includes("delete") || normalized.includes("remove")) return "delete";
+  return "update";
+}
+
+export const protectedProcedure = baseProtectedProcedure.use(async ({ ctx, next, path, type }) => {
+  const action = inferOpsSecurityAction(path, type);
+  const workspaceId = workspaceIdFromContext(ctx);
+  await assertResourceAction({
+    actor: actorFromContext(ctx),
+    resource: "ops_data",
+    action,
+    workspaceId,
+  });
+  try {
+    const result = await next({ ctx });
+    if (type === "mutation") {
+      void recordSecurityAuditLog({
+        ctx,
+        workspaceId,
+        action: `ops_data.${action}`,
+        resourceType: "ops_data",
+        status: "success",
+        riskLevel: ["delete", "sync", "import"].includes(action) ? "high" : "medium",
+        metadata: { path },
+      });
+    }
+    return result;
+  } catch (error) {
+    if (type === "mutation") {
+      void recordSecurityAuditLog({
+        ctx,
+        workspaceId,
+        action: `ops_data.${action}`,
+        resourceType: "ops_data",
+        status: "failed",
+        riskLevel: ["delete", "sync", "import"].includes(action) ? "high" : "medium",
+        reason: error instanceof Error ? error.message : String(error),
+        metadata: { path },
+      });
+    }
+    throw error;
+  }
+});
+
 export {
   TRPCError,
   and,
@@ -60,7 +112,6 @@ export {
   productTodos,
   productVariants,
   productWeeklyOps,
-  protectedProcedure,
   resolveDataUserId,
   router,
   scoreAllCheckItems,

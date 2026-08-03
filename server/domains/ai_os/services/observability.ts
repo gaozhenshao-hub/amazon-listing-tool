@@ -72,6 +72,7 @@ export async function recordAiOsMetric(input: {
   metricName: string;
   metricValue?: number | null;
   status?: string | null;
+  workspaceId?: number | null;
   userId?: number | null;
   projectId?: number | null;
   agentSlug?: string | null;
@@ -84,9 +85,10 @@ export async function recordAiOsMetric(input: {
   try {
     await rawExecute(
       `INSERT INTO emperor_ai_os_metrics
-       (entityType,entityId,metricName,metricValue,status,userId,projectId,agentSlug,nodeId,skillSlug,toolSlug,metadata)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (workspaceId,entityType,entityId,metricName,metricValue,status,userId,projectId,agentSlug,nodeId,skillSlug,toolSlug,metadata)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
+        input.workspaceId ?? null,
         input.entityType,
         input.entityId,
         input.metricName,
@@ -214,6 +216,7 @@ export async function recordAiOsEvaluation(input: {
   retryCount?: number | null;
   fallbackCount?: number | null;
   humanEditRate?: number | null;
+  workspaceId?: number | null;
   userId?: number | null;
   projectId?: number | null;
   agentSlug?: string | null;
@@ -243,9 +246,10 @@ export async function recordAiOsEvaluation(input: {
   try {
     await rawExecute(
       `INSERT INTO emperor_ai_os_evaluations
-       (evaluationId,entityType,entityId,evaluationType,score,grade,status,evaluator,userId,projectId,agentSlug,nodeId,skillSlug,toolSlug,rubric,details)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (workspaceId,evaluationId,entityType,entityId,evaluationType,score,grade,status,evaluator,userId,projectId,agentSlug,nodeId,skillSlug,toolSlug,rubric,details)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
+        input.workspaceId ?? null,
         evaluationId,
         input.entityType,
         input.entityId,
@@ -271,6 +275,7 @@ export async function recordAiOsEvaluation(input: {
       metricValue: computed.score,
       status: input.status || null,
       userId: input.userId ?? null,
+      workspaceId: input.workspaceId ?? null,
       projectId: input.projectId ?? null,
       agentSlug: input.agentSlug || null,
       nodeId: input.nodeId || null,

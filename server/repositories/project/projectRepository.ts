@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import type { InsertProject } from "../../../drizzle/schema";
 import { competitorAnalyses, listings, projects, users } from "../../../drizzle/schema";
 import { requireDb, withDbTransaction, type DbExecutor } from "../dbClient";
@@ -11,16 +11,26 @@ export async function createProject(data: InsertProject) {
   return rows[0];
 }
 
-export async function getProjectsByUser(userId: number) {
-  const db = await requireDb("Project repository");
-  return db.select().from(projects).where(eq(projects.userId, userId)).orderBy(desc(projects.updatedAt));
+function workspaceCondition(workspaceId?: number | null) {
+  if (workspaceId === undefined) return undefined;
+  return workspaceId === null
+    ? isNull(projects.workspaceId)
+    : or(eq(projects.workspaceId, workspaceId), isNull(projects.workspaceId));
 }
 
-export async function getAllProjects() {
+export async function getProjectsByUser(userId: number, workspaceId?: number | null) {
   const db = await requireDb("Project repository");
+  const conditions = [eq(projects.userId, userId), workspaceCondition(workspaceId)].filter(Boolean) as any[];
+  return db.select().from(projects).where(and(...conditions)).orderBy(desc(projects.updatedAt));
+}
+
+export async function getAllProjects(workspaceId?: number | null) {
+  const db = await requireDb("Project repository");
+  const scope = workspaceCondition(workspaceId);
   const rows = await db
     .select({
       id: projects.id,
+      workspaceId: projects.workspaceId,
       name: projects.name,
       brand: projects.brand,
       productName: projects.productName,
@@ -32,6 +42,7 @@ export async function getAllProjects() {
       updatedAt: projects.updatedAt,
     })
     .from(projects)
+    .where(scope)
     .orderBy(desc(projects.updatedAt));
 
   const userIds = Array.from(new Set(rows.map((project) => project.userId)));
@@ -51,19 +62,21 @@ export async function getAllProjects() {
   }));
 }
 
-export async function getProjectById(id: number, userId: number) {
+export async function getProjectById(id: number, userId: number, workspaceId?: number | null) {
   const db = await requireDb("Project repository");
+  const conditions = [eq(projects.id, id), eq(projects.userId, userId), workspaceCondition(workspaceId)].filter(Boolean) as any[];
   const rows = await db
     .select()
     .from(projects)
-    .where(and(eq(projects.id, id), eq(projects.userId, userId)))
+    .where(and(...conditions))
     .limit(1);
   return rows[0] ?? null;
 }
 
-export async function getProjectByIdAdmin(id: number) {
+export async function getProjectByIdAdmin(id: number, workspaceId?: number | null) {
   const db = await requireDb("Project repository");
-  const rows = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
+  const conditions = [eq(projects.id, id), workspaceCondition(workspaceId)].filter(Boolean) as any[];
+  const rows = await db.select().from(projects).where(and(...conditions)).limit(1);
   return rows[0] ?? null;
 }
 

@@ -2,11 +2,13 @@ import { TRPCError } from "@trpc/server";
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb } from "../../../db";
+import { buildWorkspaceScopeFilter } from "../../../services/securityGovernance";
 import { recordAiOsMetric } from "./observability";
 
 export type EmperorToolType = "mcp" | "api" | "internal" | "code";
 
 export type EmperorToolDefinition = {
+  workspaceId?: number | null;
   slug: string;
   name: string;
   description?: string | null;
@@ -28,6 +30,7 @@ export type EmperorToolInvocationInput = {
   params?: unknown;
   userId: number;
   userRole?: string | null;
+  workspaceId?: number | null;
   runId?: string;
   nodeId?: string;
   projectId?: number | null;
@@ -192,8 +195,17 @@ function boundedToolAttempts(value: unknown): number {
   return Number.isFinite(attempts) ? Math.min(Math.max(Math.floor(attempts), 1), 5) : 1;
 }
 
-function secretKeyMaterial(): Buffer {
-  const configured = process.env.TOOL_SECRET_KEY || process.env.EMPEROR_SECRET_KEY || process.env.JWT_SECRET;
+export function currentToolSecretKeyVersion(): string {
+  return (process.env.TOOL_SECRET_KEY_VERSION || "v1").trim() || "v1";
+}
+
+function secretKeyMaterial(keyVersion = currentToolSecretKeyVersion()): Buffer {
+  const normalizedVersion = keyVersion.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+  const configured =
+    process.env[`TOOL_SECRET_KEY_${normalizedVersion}`] ||
+    process.env.TOOL_SECRET_KEY ||
+    process.env.EMPEROR_SECRET_KEY ||
+    process.env.JWT_SECRET;
   if (!configured) {
     if (process.env.NODE_ENV === "production") {
       throw new Error("TOOL_SECRET_KEY is required in production for Tool secret encryption.");
@@ -209,18 +221,19 @@ export function buildToolSecretRef(slug: string): string {
 
 export function encryptToolSecretValue(value: string): { encryptedValue: string; iv: string; authTag: string; keyVersion: string } {
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", secretKeyMaterial(), iv);
+  const keyVersion = currentToolSecretKeyVersion();
+  const cipher = createCipheriv("aes-256-gcm", secretKeyMaterial(keyVersion), iv);
   const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
   return {
     encryptedValue: encrypted.toString("base64"),
     iv: iv.toString("base64"),
     authTag: cipher.getAuthTag().toString("base64"),
-    keyVersion: "v1",
+    keyVersion,
   };
 }
 
-export function decryptToolSecretValue(input: { encryptedValue: string; iv: string; authTag: string }): string {
-  const decipher = createDecipheriv("aes-256-gcm", secretKeyMaterial(), Buffer.from(input.iv, "base64"));
+export function decryptToolSecretValue(input: { encryptedValue: string; iv: string; authTag: string; keyVersion?: string | null }): string {
+  const decipher = createDecipheriv("aes-256-gcm", secretKeyMaterial(input.keyVersion || "v1"), Buffer.from(input.iv, "base64"));
   decipher.setAuthTag(Buffer.from(input.authTag, "base64"));
   return Buffer.concat([
     decipher.update(Buffer.from(input.encryptedValue, "base64")),
@@ -228,8 +241,16 @@ export function decryptToolSecretValue(input: { encryptedValue: string; iv: stri
   ]).toString("utf8");
 }
 
-async function loadStoredToolSecret(slug: string): Promise<string> {
-  const rows = await rawExecute("SELECT encryptedValue,iv,authTag FROM emperor_tool_secrets WHERE slug=? LIMIT 1", [slug]);
+async function loadStoredToolSecret(slug: string, workspaceId?: number | null): Promise<string> {
+  const scope = buildWorkspaceScopeFilter(workspaceId);
+  const rows = await rawExecute(
+    `SELECT encryptedValue,iv,authTag,keyVersion
+     FROM emperor_tool_secrets
+     WHERE slug=? AND status <> 'retired' AND ${scope.clause}
+     ORDER BY workspaceId IS NULL ASC
+     LIMIT 1`,
+    [slug, ...scope.params],
+  );
   if (!rows[0]) {
     throw new TRPCError({ code: "BAD_REQUEST", message: `Missing Tool secret reference: ${slug}` });
   }
@@ -264,7 +285,7 @@ export function assertToolConfigUsesSecretRefs(value: unknown, path = "$") {
   assertNoPlaintextSecrets(value, path);
 }
 
-async function resolveSecretRefString(value: string, refs: string[]): Promise<string> {
+async function resolveSecretRefString(value: string, refs: string[], workspaceId?: number | null): Promise<string> {
   const trimmed = value.trim();
   if (/^env:/i.test(trimmed)) {
     const key = trimmed.slice(4);
@@ -276,29 +297,29 @@ async function resolveSecretRefString(value: string, refs: string[]): Promise<st
   if (/^secret:\/\//i.test(trimmed)) {
     const slug = trimmed.slice("secret://".length);
     refs.push(`secret://${slug}`);
-    return loadStoredToolSecret(slug);
+    return loadStoredToolSecret(slug, workspaceId);
   }
   SECRET_TEMPLATE_PATTERN.lastIndex = 0;
   let output = value;
   for (const match of value.matchAll(SECRET_TEMPLATE_PATTERN)) {
     const ref = match[1];
     const replacement = /^env:/i.test(ref)
-      ? await resolveSecretRefString(ref, refs)
-      : await resolveSecretRefString(`secret://${ref.slice("secret:".length)}`, refs);
+      ? await resolveSecretRefString(ref, refs, workspaceId)
+      : await resolveSecretRefString(`secret://${ref.slice("secret:".length)}`, refs, workspaceId);
     output = output.replace(match[0], replacement);
   }
   return output;
 }
 
-async function resolveSecretRefs(value: unknown, refs: string[] = [], depth = 0): Promise<unknown> {
+async function resolveSecretRefs(value: unknown, refs: string[] = [], depth = 0, workspaceId?: number | null): Promise<unknown> {
   if (depth > 8) return value;
-  if (typeof value === "string") return resolveSecretRefString(value, refs);
+  if (typeof value === "string") return resolveSecretRefString(value, refs, workspaceId);
   if (Array.isArray(value)) {
-    return Promise.all(value.map((item) => resolveSecretRefs(item, refs, depth + 1)));
+    return Promise.all(value.map((item) => resolveSecretRefs(item, refs, depth + 1, workspaceId)));
   }
   if (value && typeof value === "object") {
     const entries = await Promise.all(
-      Object.entries(value as Record<string, unknown>).map(async ([key, item]) => [key, await resolveSecretRefs(item, refs, depth + 1)] as const),
+      Object.entries(value as Record<string, unknown>).map(async ([key, item]) => [key, await resolveSecretRefs(item, refs, depth + 1, workspaceId)] as const),
     );
     return Object.fromEntries(entries);
   }
@@ -692,9 +713,10 @@ async function createToolRunRecord(input: {
   try {
     await rawExecute(
       `INSERT INTO emperor_tool_runs
-       (toolRunId,toolSlug,toolName,toolType,source,status,riskLevel,userId,agentRunId,nodeId,projectId,input,requestHost,governanceDecision,secretRefs,circuitState,startedAt)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (workspaceId,toolRunId,toolSlug,toolName,toolType,source,status,riskLevel,userId,agentRunId,nodeId,projectId,input,requestHost,governanceDecision,secretRefs,circuitState,startedAt)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
+        input.invocation.workspaceId ?? null,
         input.toolRunId,
         input.tool.slug,
         input.tool.name,
@@ -982,12 +1004,21 @@ export function getBuiltinToolDefinitions() {
   return BUILTIN_TOOLS;
 }
 
-export async function listEmperorTools() {
+export async function listEmperorTools(workspaceId?: number | null) {
+  const scope = buildWorkspaceScopeFilter(workspaceId);
   const toolRows = await rawExecute(
-    "SELECT slug,name,description,type,config,governancePolicy,permissionPolicy,rateLimitPolicy,circuitBreakerPolicy,secretRefs,outputPolicy,inputSchema,outputSchema,isActive,createdAt,updatedAt FROM emperor_tools ORDER BY name"
+    `SELECT workspaceId,slug,name,description,type,config,governancePolicy,permissionPolicy,rateLimitPolicy,circuitBreakerPolicy,secretRefs,outputPolicy,inputSchema,outputSchema,isActive,createdAt,updatedAt
+     FROM emperor_tools
+     WHERE ${scope.clause}
+     ORDER BY workspaceId IS NULL ASC, name`,
+    scope.params,
   ).catch(() => []);
   const connectorRows = await rawExecute(
-    "SELECT slug,name,description,connectionType,config,governancePolicy,secretRefs,isActive,createdAt,updatedAt FROM emperor_mcp_connectors ORDER BY name"
+    `SELECT workspaceId,slug,name,description,connectionType,config,governancePolicy,secretRefs,isActive,createdAt,updatedAt
+     FROM emperor_mcp_connectors
+     WHERE ${scope.clause}
+     ORDER BY workspaceId IS NULL ASC, name`,
+    scope.params,
   ).catch(() => []);
 
   const dbTools = toolRows.map((row) => ({
@@ -1005,6 +1036,7 @@ export async function listEmperorTools() {
   }));
   const connectorTools = connectorRows.map((row) => ({
     slug: `mcp.${row.slug}`,
+    workspaceId: row.workspaceId,
     name: row.name,
     description: row.description,
     type: "mcp" as const,
@@ -1026,13 +1058,22 @@ export async function listEmperorTools() {
   ];
 }
 
-async function getToolDefinition(slug: string): Promise<EmperorToolDefinition & { source: "builtin" | "emperor_tools" | "mcp_connector" }> {
+async function getToolDefinition(slug: string, workspaceId?: number | null): Promise<EmperorToolDefinition & { source: "builtin" | "emperor_tools" | "mcp_connector" }> {
   const builtin = builtinBySlug(slug);
   if (builtin) return { ...builtin, source: "builtin" };
 
-  const rows = await rawExecute("SELECT * FROM emperor_tools WHERE slug=? AND isActive=1 LIMIT 1", [slug]);
+  const scope = buildWorkspaceScopeFilter(workspaceId);
+  const rows = await rawExecute(
+    `SELECT *
+     FROM emperor_tools
+     WHERE slug=? AND isActive=1 AND ${scope.clause}
+     ORDER BY workspaceId IS NULL ASC
+     LIMIT 1`,
+    [slug, ...scope.params],
+  );
   if (rows[0]) {
     return {
+      workspaceId: rows[0].workspaceId ?? null,
       slug: rows[0].slug,
       name: rows[0].name,
       description: rows[0].description,
@@ -1052,9 +1093,17 @@ async function getToolDefinition(slug: string): Promise<EmperorToolDefinition & 
   }
 
   const connectorSlug = slug.startsWith("mcp.") ? slug.slice(4) : slug;
-  const connectors = await rawExecute("SELECT * FROM emperor_mcp_connectors WHERE slug=? AND isActive=1 LIMIT 1", [connectorSlug]);
+  const connectors = await rawExecute(
+    `SELECT *
+     FROM emperor_mcp_connectors
+     WHERE slug=? AND isActive=1 AND ${scope.clause}
+     ORDER BY workspaceId IS NULL ASC
+     LIMIT 1`,
+    [connectorSlug, ...scope.params],
+  );
   if (connectors[0]) {
     return {
+      workspaceId: connectors[0].workspaceId ?? null,
       slug,
       name: connectors[0].name,
       description: connectors[0].description,
@@ -1074,7 +1123,7 @@ async function getToolDefinition(slug: string): Promise<EmperorToolDefinition & 
   throw new TRPCError({ code: "NOT_FOUND", message: `Tool not found: ${slug}` });
 }
 
-async function invokeInternalTool(slug: string, params: unknown, resolvedSecretRefs: string[] = []) {
+async function invokeInternalTool(slug: string, params: unknown, resolvedSecretRefs: string[] = [], workspaceId?: number | null) {
   switch (slug) {
     case "internal.agent.capture_input":
       return captureInput(params);
@@ -1090,7 +1139,7 @@ async function invokeInternalTool(slug: string, params: unknown, resolvedSecretR
         name: "HTTP API 请求",
         type: "api",
         config: {},
-      }, params, resolvedSecretRefs);
+      }, params, resolvedSecretRefs, workspaceId);
       return result;
     }
     default:
@@ -1205,11 +1254,11 @@ function applyToolAuth(input: {
   }
 }
 
-async function invokeHttpTool(tool: EmperorToolDefinition, params: unknown, resolvedSecretRefs: string[] = []): Promise<ToolExecutorResult> {
+async function invokeHttpTool(tool: EmperorToolDefinition, params: unknown, resolvedSecretRefs: string[] = [], workspaceId?: number | null): Promise<ToolExecutorResult> {
   assertNoPlaintextSecrets(tool.config, "tool.config");
   assertNoPlaintextSecrets(params, "tool.params");
-  const config = toRecord(await resolveSecretRefs(tool.config, resolvedSecretRefs));
-  const request = toRecord(await resolveSecretRefs(params, resolvedSecretRefs));
+  const config = toRecord(await resolveSecretRefs(tool.config, resolvedSecretRefs, 0, workspaceId ?? tool.workspaceId ?? null));
+  const request = toRecord(await resolveSecretRefs(params, resolvedSecretRefs, 0, workspaceId ?? tool.workspaceId ?? null));
   const baseUrl = String(request.baseUrl || config.baseUrl || "");
   const path = String(request.path || config.path || "");
   const method = String(request.method || config.method || "POST").toUpperCase();
@@ -1252,10 +1301,10 @@ async function invokeHttpTool(tool: EmperorToolDefinition, params: unknown, reso
   return { status: response.status, output, requestHost: parsedUrl.hostname };
 }
 
-async function invokeMcpHttpTool(tool: EmperorToolDefinition, params: unknown, resolvedSecretRefs: string[] = []): Promise<ToolExecutorResult> {
-  const config = toRecord(await resolveSecretRefs(tool.config, resolvedSecretRefs));
+async function invokeMcpHttpTool(tool: EmperorToolDefinition, params: unknown, resolvedSecretRefs: string[] = [], workspaceId?: number | null): Promise<ToolExecutorResult> {
+  const config = toRecord(await resolveSecretRefs(tool.config, resolvedSecretRefs, 0, workspaceId ?? tool.workspaceId ?? null));
   const connectorConfig = toRecord(config.connectorConfig || config);
-  const request = toRecord(await resolveSecretRefs(params, resolvedSecretRefs));
+  const request = toRecord(await resolveSecretRefs(params, resolvedSecretRefs, 0, workspaceId ?? tool.workspaceId ?? null));
   const baseUrl = String(request.baseUrl || connectorConfig.mcpEndpoint || connectorConfig.baseUrl || "");
   if (!baseUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "MCP HTTP executor requires mcpEndpoint or baseUrl" });
   const method = String(request.method || "tools/call");
@@ -1299,10 +1348,10 @@ async function invokeMcpHttpTool(tool: EmperorToolDefinition, params: unknown, r
   };
 }
 
-async function invokeMcpConnector(tool: EmperorToolDefinition, params: unknown, resolvedSecretRefs: string[] = []): Promise<ToolExecutorResult> {
+async function invokeMcpConnector(tool: EmperorToolDefinition, params: unknown, resolvedSecretRefs: string[] = [], workspaceId?: number | null): Promise<ToolExecutorResult> {
   assertNoPlaintextSecrets(tool.config, "tool.config");
   assertNoPlaintextSecrets(params, "tool.params");
-  const config = toRecord(await resolveSecretRefs(tool.config, resolvedSecretRefs));
+  const config = toRecord(await resolveSecretRefs(tool.config, resolvedSecretRefs, 0, workspaceId ?? tool.workspaceId ?? null));
   const connectorConfig = toRecord(config.connectorConfig || config);
   const connectionType = String(config.connectionType || connectorConfig.connectionType || "internal");
   const executor = String(connectorConfig.executor || connectorConfig.protocol || "");
@@ -1314,7 +1363,7 @@ async function invokeMcpConnector(tool: EmperorToolDefinition, params: unknown, 
         ...config,
         connectorConfig,
       },
-    }, params, resolvedSecretRefs);
+    }, params, resolvedSecretRefs, workspaceId);
     return {
       status: result.status,
       requestHost: result.requestHost,
@@ -1332,7 +1381,7 @@ async function invokeMcpConnector(tool: EmperorToolDefinition, params: unknown, 
       ...tool,
       type: "api",
       config: connectorConfig,
-    }, httpParams, resolvedSecretRefs);
+    }, httpParams, resolvedSecretRefs, workspaceId);
     return {
       status: result.status,
       requestHost: result.requestHost,
@@ -1354,19 +1403,19 @@ async function invokeMcpConnector(tool: EmperorToolDefinition, params: unknown, 
   };
 }
 
-registerEmperorToolExecutor("internal", async ({ tool, params, resolvedSecretRefs }) => {
-  const result = await invokeInternalTool(tool.slug, params, resolvedSecretRefs);
+registerEmperorToolExecutor("internal", async ({ tool, params, resolvedSecretRefs, invocation }) => {
+  const result = await invokeInternalTool(tool.slug, params, resolvedSecretRefs, invocation.workspaceId ?? tool.workspaceId ?? null);
   return toRecord(result).output !== undefined && toRecord(result).status !== undefined
     ? result as ToolExecutorResult
     : { output: result };
 });
 
-registerEmperorToolExecutor("api", async ({ tool, params, resolvedSecretRefs }) => {
-  return invokeHttpTool(tool, params, resolvedSecretRefs);
+registerEmperorToolExecutor("api", async ({ tool, params, resolvedSecretRefs, invocation }) => {
+  return invokeHttpTool(tool, params, resolvedSecretRefs, invocation.workspaceId ?? tool.workspaceId ?? null);
 });
 
-registerEmperorToolExecutor("mcp", async ({ tool, params, resolvedSecretRefs }) => {
-  return invokeMcpConnector(tool, params, resolvedSecretRefs);
+registerEmperorToolExecutor("mcp", async ({ tool, params, resolvedSecretRefs, invocation }) => {
+  return invokeMcpConnector(tool, params, resolvedSecretRefs, invocation.workspaceId ?? tool.workspaceId ?? null);
 });
 
 async function executeToolWithRegisteredExecutor(context: ToolExecutorContext): Promise<ToolExecutorResult> {
@@ -1388,7 +1437,7 @@ async function executeToolWithRegisteredExecutor(context: ToolExecutorContext): 
 
 export async function invokeEmperorTool(input: EmperorToolInvocationInput): Promise<EmperorToolInvocationResult> {
   const startedAt = Date.now();
-  const tool = await getToolDefinition(input.toolSlug);
+  const tool = await getToolDefinition(input.toolSlug, input.workspaceId ?? null);
   const toolRunId = generateToolRunId();
   const riskLevel = inferToolRisk(tool, input.params);
   const publicRefs = [
@@ -1483,6 +1532,7 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
       metricName: "tool.succeeded",
       metricValue: Date.now() - startedAt,
       status: "succeeded",
+      workspaceId: input.workspaceId ?? tool.workspaceId ?? null,
       userId: input.userId,
       projectId: input.projectId ?? null,
       nodeId: input.nodeId || null,
@@ -1531,6 +1581,7 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
       metricName: isPolicyBlock(error) ? "tool.blocked" : "tool.failed",
       metricValue: Date.now() - startedAt,
       status: isPolicyBlock(error) ? "blocked" : "failed",
+      workspaceId: input.workspaceId ?? tool.workspaceId ?? null,
       userId: input.userId,
       projectId: input.projectId ?? null,
       nodeId: input.nodeId || null,
@@ -1585,6 +1636,7 @@ export async function listEmperorToolRuns(input: {
   nodeId?: string;
   status?: ToolRunStatus;
   limit?: number;
+  workspaceId?: number | null;
 } = {}) {
   if (!toolRunStoreAvailable) return [];
   const params: unknown[] = [];
@@ -1609,6 +1661,11 @@ export async function listEmperorToolRuns(input: {
     clauses.push("status=?");
     params.push(input.status);
   }
+  if (input.workspaceId !== undefined) {
+    const scope = buildWorkspaceScopeFilter(input.workspaceId);
+    clauses.push(scope.clause);
+    params.push(...scope.params);
+  }
   params.push(Math.min(Math.max(input.limit || 50, 1), 200));
   const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
   try {
@@ -1632,6 +1689,7 @@ export async function listEmperorToolRuns(input: {
 }
 
 export async function upsertEmperorTool(input: {
+  workspaceId?: number | null;
   slug: string;
   name: string;
   description?: string | null;
@@ -1650,10 +1708,11 @@ export async function upsertEmperorTool(input: {
   assertNoPlaintextSecrets(input.config, "tool.config");
   assertNoPlaintextSecrets(input.secretRefs, "tool.secretRefs");
   await rawExecute(
-    `INSERT INTO emperor_tools (slug,name,description,type,config,governancePolicy,permissionPolicy,rateLimitPolicy,circuitBreakerPolicy,secretRefs,outputPolicy,inputSchema,outputSchema,isActive)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-     ON DUPLICATE KEY UPDATE name=VALUES(name),description=VALUES(description),type=VALUES(type),config=VALUES(config),governancePolicy=VALUES(governancePolicy),permissionPolicy=VALUES(permissionPolicy),rateLimitPolicy=VALUES(rateLimitPolicy),circuitBreakerPolicy=VALUES(circuitBreakerPolicy),secretRefs=VALUES(secretRefs),outputPolicy=VALUES(outputPolicy),inputSchema=VALUES(inputSchema),outputSchema=VALUES(outputSchema),isActive=VALUES(isActive),updatedAt=NOW()`,
+    `INSERT INTO emperor_tools (workspaceId,slug,name,description,type,config,governancePolicy,permissionPolicy,rateLimitPolicy,circuitBreakerPolicy,secretRefs,outputPolicy,inputSchema,outputSchema,isActive)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON DUPLICATE KEY UPDATE workspaceId=VALUES(workspaceId),name=VALUES(name),description=VALUES(description),type=VALUES(type),config=VALUES(config),governancePolicy=VALUES(governancePolicy),permissionPolicy=VALUES(permissionPolicy),rateLimitPolicy=VALUES(rateLimitPolicy),circuitBreakerPolicy=VALUES(circuitBreakerPolicy),secretRefs=VALUES(secretRefs),outputPolicy=VALUES(outputPolicy),inputSchema=VALUES(inputSchema),outputSchema=VALUES(outputSchema),isActive=VALUES(isActive),updatedAt=NOW()`,
     [
+      input.workspaceId ?? null,
       input.slug,
       input.name,
       input.description || null,
@@ -1679,25 +1738,87 @@ export async function upsertEmperorToolSecret(input: {
   description?: string | null;
   metadata?: unknown;
   userId?: number | null;
+  workspaceId?: number | null;
 }) {
+  const scope = buildWorkspaceScopeFilter(input.workspaceId);
+  const existing = await rawExecute(
+    `SELECT keyVersion
+     FROM emperor_tool_secrets
+     WHERE slug=? AND ${scope.clause}
+     ORDER BY workspaceId IS NULL ASC
+     LIMIT 1`,
+    [input.slug, ...scope.params],
+  );
   const encrypted = encryptToolSecretValue(input.value);
   await rawExecute(
-    `INSERT INTO emperor_tool_secrets (slug,description,encryptedValue,iv,authTag,keyVersion,metadata,createdBy,updatedBy)
-     VALUES (?,?,?,?,?,?,?,?,?)
-     ON DUPLICATE KEY UPDATE description=VALUES(description),encryptedValue=VALUES(encryptedValue),iv=VALUES(iv),authTag=VALUES(authTag),keyVersion=VALUES(keyVersion),metadata=VALUES(metadata),updatedBy=VALUES(updatedBy),updatedAt=NOW()`,
+    `INSERT INTO emperor_tool_secrets (workspaceId,slug,description,encryptedValue,iv,authTag,keyVersion,previousKeyVersion,status,rotatedAt,metadata,createdBy,updatedBy)
+     VALUES (?,?,?,?,?,?,?,?,'active',NOW(),?,?,?)
+     ON DUPLICATE KEY UPDATE workspaceId=VALUES(workspaceId),description=VALUES(description),encryptedValue=VALUES(encryptedValue),iv=VALUES(iv),authTag=VALUES(authTag),previousKeyVersion=VALUES(previousKeyVersion),keyVersion=VALUES(keyVersion),status='active',rotatedAt=NOW(),metadata=VALUES(metadata),updatedBy=VALUES(updatedBy),updatedAt=NOW()`,
     [
+      input.workspaceId ?? null,
       input.slug,
       input.description || null,
       encrypted.encryptedValue,
       encrypted.iv,
       encrypted.authTag,
       encrypted.keyVersion,
+      existing[0]?.keyVersion || null,
       input.metadata === undefined ? null : JSON.stringify(sanitizeForAudit(input.metadata)),
       input.userId || null,
       input.userId || null,
     ],
   );
   return { success: true, ref: buildToolSecretRef(input.slug), slug: input.slug };
+}
+
+export async function rotateEmperorToolSecret(input: {
+  slug: string;
+  userId?: number | null;
+  workspaceId?: number | null;
+}) {
+  const rows = await rawExecute(
+    `SELECT encryptedValue,iv,authTag,keyVersion,description,metadata
+     FROM emperor_tool_secrets
+     WHERE slug=? AND status <> 'retired' AND ${buildWorkspaceScopeFilter(input.workspaceId).clause}
+     ORDER BY workspaceId IS NULL ASC
+     LIMIT 1`,
+    [input.slug, ...buildWorkspaceScopeFilter(input.workspaceId).params],
+  );
+  if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Tool secret not found" });
+  const plaintext = decryptToolSecretValue(rows[0]);
+  const encrypted = encryptToolSecretValue(plaintext);
+  await rawExecute(
+    `UPDATE emperor_tool_secrets
+     SET workspaceId=COALESCE(?,workspaceId),encryptedValue=?,iv=?,authTag=?,previousKeyVersion=?,keyVersion=?,status='active',rotatedAt=NOW(),updatedBy=?,updatedAt=NOW()
+     WHERE slug=?`,
+    [
+      input.workspaceId ?? null,
+      encrypted.encryptedValue,
+      encrypted.iv,
+      encrypted.authTag,
+      rows[0].keyVersion || null,
+      encrypted.keyVersion,
+      input.userId || null,
+      input.slug,
+    ],
+  );
+  await rawExecute(
+    `INSERT INTO emperor_secret_key_versions (scope,keyVersion,status,activatedAt,metadata,createdBy)
+     VALUES ('tool',?,'active',NOW(),?,?)
+     ON DUPLICATE KEY UPDATE status=VALUES(status),updatedAt=NOW()`,
+    [
+      encrypted.keyVersion,
+      JSON.stringify({ rotatedSecretSlug: input.slug }),
+      input.userId || null,
+    ],
+  );
+  return {
+    success: true,
+    ref: buildToolSecretRef(input.slug),
+    slug: input.slug,
+    keyVersion: encrypted.keyVersion,
+    previousKeyVersion: rows[0].keyVersion || null,
+  };
 }
 
 export async function seedBuiltinTools() {

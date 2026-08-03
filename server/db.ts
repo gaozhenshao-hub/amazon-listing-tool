@@ -1,6 +1,9 @@
 import { eq, desc, asc, and, or, sql, isNull, lt } from "drizzle-orm";
 import {
   InsertUser, users,
+  organizations,
+  workspaces,
+  workspaceMemberships,
   InsertProject, projects,
   InsertCompetitorAnalysis, competitorAnalyses,
   InsertListing, listings,
@@ -52,6 +55,74 @@ export {
 } from "./repositories/project";
 
 // --- Review Import Helpers ---
+
+function isMissingTenantSchema(error: unknown) {
+  return /doesn't exist|unknown column|no such table|no such column/i.test(String((error as Error).message));
+}
+
+async function ensureDefaultWorkspaceForUser(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, user: InsertUser): Promise<void> {
+  const identityConditions = [
+    user.openId ? eq(users.openId, user.openId) : null,
+    user.email ? eq(users.email, user.email) : null,
+    user.phone ? eq(users.phone, user.phone) : null,
+  ].filter(Boolean) as any[];
+
+  if (identityConditions.length === 0) return;
+
+  try {
+    await db.execute(sql`
+      INSERT INTO organizations (slug, name, status, metadata)
+      VALUES ('default', 'Default Organization', 'active', JSON_OBJECT('createdByRuntime', 'upsertUser'))
+      ON DUPLICATE KEY UPDATE updatedAt = updatedAt
+    `);
+    await db.execute(sql`
+      INSERT INTO workspaces (organizationId, slug, name, status, metadata)
+      SELECT id, 'default', 'Default Workspace', 'active', JSON_OBJECT('createdByRuntime', 'upsertUser')
+      FROM organizations
+      WHERE slug = 'default'
+      ON DUPLICATE KEY UPDATE updatedAt = updatedAt
+    `);
+
+    const userRows = await db
+      .select({ id: users.id, role: users.role })
+      .from(users)
+      .where(or(...identityConditions))
+      .limit(1);
+    const targetUser = userRows[0];
+    if (!targetUser) return;
+
+    const workspaceRows = await db
+      .select({ id: workspaces.id, organizationId: workspaces.organizationId })
+      .from(workspaces)
+      .where(eq(workspaces.slug, "default"))
+      .limit(1);
+    const defaultWorkspace = workspaceRows[0];
+    if (!defaultWorkspace) return;
+
+    await db.update(users).set({
+      organizationId: defaultWorkspace.organizationId ?? null,
+      defaultWorkspaceId: defaultWorkspace.id,
+    }).where(and(eq(users.id, targetUser.id), isNull(users.defaultWorkspaceId)));
+
+    await db.insert(workspaceMemberships).values({
+      workspaceId: defaultWorkspace.id,
+      userId: targetUser.id,
+      role: user.role || targetUser.role,
+      status: "active",
+      joinedAt: new Date(),
+    }).onDuplicateKeyUpdate({
+      set: {
+        role: user.role || targetUser.role,
+        status: "active",
+        updatedAt: new Date(),
+      },
+    });
+  } catch (error) {
+    if (!isMissingTenantSchema(error)) {
+      console.warn("[Database] Failed to ensure default workspace membership:", error);
+    }
+  }
+}
 
 export async function upsertUser(user: InsertUser): Promise<void> {
   const db = await getDb();
@@ -118,6 +189,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       // Password-based user without openId
       await db.insert(users).values(values);
     }
+    await ensureDefaultWorkspaceForUser(db, { ...user, ...values });
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
     throw error;

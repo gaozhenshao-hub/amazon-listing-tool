@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
+import { actorFromContext, assertResourceAction, recordSecurityAuditLog, workspaceIdFromContext } from "../services/securityGovernance";
 import {
   createProject,
   deleteProject,
@@ -12,25 +13,30 @@ import {
 
 export const projectRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
+    const workspaceId = workspaceIdFromContext(ctx);
+    await assertResourceAction({ actor: actorFromContext(ctx), resource: "project", action: "read", workspaceId });
     // super_admin, admin, and designer can see all projects with owner info
     // designer needs read-only access to all projects for image suggestions
     if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin' || ctx.user.role === 'designer') {
-      return getAllProjects();
+      return getAllProjects(workspaceId);
     }
-    return getProjectsByUser(ctx.user.id);
+    return getProjectsByUser(ctx.user.id, workspaceId);
   }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
     .query(async ({ ctx, input }) => {
+      const workspaceId = workspaceIdFromContext(ctx);
       // super_admin, admin, and designer can access any project (designer: read-only for image suggestions)
       if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin' || ctx.user.role === 'designer') {
-        const project = await getProjectByIdAdmin(input.id);
+        const project = await getProjectByIdAdmin(input.id, workspaceId);
         if (!project) throw new Error("Project not found");
+        await assertResourceAction({ actor: actorFromContext(ctx), resource: "project", action: "read", workspaceId, projectId: input.id, resourceId: input.id, ownerUserId: project.userId });
         return project;
       }
-      const project = await getProjectById(input.id, ctx.user.id);
+      const project = await getProjectById(input.id, ctx.user.id, workspaceId);
       if (!project) throw new Error("Project not found");
+      await assertResourceAction({ actor: actorFromContext(ctx), resource: "project", action: "read", workspaceId, projectId: input.id, resourceId: input.id, ownerUserId: project.userId });
       return project;
     }),
 
@@ -45,7 +51,10 @@ export const projectRouter = router({
       productSpecs: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      return createProject({
+      const workspaceId = workspaceIdFromContext(ctx);
+      await assertResourceAction({ actor: actorFromContext(ctx), resource: "project", action: "create", workspaceId });
+      const project = await createProject({
+        workspaceId,
         userId: ctx.user.id,
         name: input.name,
         brand: input.brand ?? null,
@@ -55,6 +64,18 @@ export const projectRouter = router({
         productFeatures: input.productFeatures ?? null,
         productSpecs: input.productSpecs ?? null,
       });
+      await recordSecurityAuditLog({
+        ctx,
+        workspaceId,
+        action: "project.create",
+        resourceType: "project",
+        resourceId: project.id,
+        resourceName: project.name,
+        projectId: project.id,
+        status: "success",
+        riskLevel: "medium",
+      });
+      return project;
     }),
 
   update: protectedProcedure
@@ -71,24 +92,42 @@ export const projectRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
+      const workspaceId = workspaceIdFromContext(ctx);
       // Admin can update any project
       if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
-        const project = await getProjectByIdAdmin(id);
+        const project = await getProjectByIdAdmin(id, workspaceId);
         if (!project) throw new Error("Project not found");
-        return updateProject(id, project.userId, data);
+        await assertResourceAction({ actor: actorFromContext(ctx), resource: "project", action: "update", workspaceId, projectId: id, resourceId: id, ownerUserId: project.userId });
+        const updated = await updateProject(id, project.userId, data);
+        await recordSecurityAuditLog({ ctx, workspaceId, action: "project.update", resourceType: "project", resourceId: id, projectId: id, status: "success", riskLevel: "medium", metadata: Object.keys(data) });
+        return updated;
       }
-      return updateProject(id, ctx.user.id, data);
+      const project = await getProjectById(id, ctx.user.id, workspaceId);
+      if (!project) throw new Error("Project not found");
+      await assertResourceAction({ actor: actorFromContext(ctx), resource: "project", action: "update", workspaceId, projectId: id, resourceId: id, ownerUserId: project.userId });
+      const updated = await updateProject(id, ctx.user.id, data);
+      await recordSecurityAuditLog({ ctx, workspaceId, action: "project.update", resourceType: "project", resourceId: id, projectId: id, status: "success", riskLevel: "medium", metadata: Object.keys(data) });
+      return updated;
     }),
 
   delete: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      const workspaceId = workspaceIdFromContext(ctx);
       // Admin can delete any project
       if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
-        const project = await getProjectByIdAdmin(input.id);
+        const project = await getProjectByIdAdmin(input.id, workspaceId);
         if (!project) throw new Error("Project not found");
-        return deleteProject(input.id, project.userId);
+        await assertResourceAction({ actor: actorFromContext(ctx), resource: "project", action: "delete", workspaceId, projectId: input.id, resourceId: input.id, ownerUserId: project.userId });
+        const result = await deleteProject(input.id, project.userId);
+        await recordSecurityAuditLog({ ctx, workspaceId, action: "project.delete", resourceType: "project", resourceId: input.id, projectId: input.id, status: result.success ? "success" : "failed", riskLevel: "high" });
+        return result;
       }
-      return deleteProject(input.id, ctx.user.id);
+      const project = await getProjectById(input.id, ctx.user.id, workspaceId);
+      if (!project) throw new Error("Project not found");
+      await assertResourceAction({ actor: actorFromContext(ctx), resource: "project", action: "delete", workspaceId, projectId: input.id, resourceId: input.id, ownerUserId: project.userId });
+      const result = await deleteProject(input.id, ctx.user.id);
+      await recordSecurityAuditLog({ ctx, workspaceId, action: "project.delete", resourceType: "project", resourceId: input.id, projectId: input.id, status: result.success ? "success" : "failed", riskLevel: "high" });
+      return result;
     }),
 });

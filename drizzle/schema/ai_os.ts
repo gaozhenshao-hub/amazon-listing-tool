@@ -16,6 +16,7 @@ export {
   emperorSkillRuns,
   emperorSkills,
   emperorToolRuns,
+  emperorSecretKeyVersions,
   emperorTools,
   emperorToolSecrets,
 } from "../schema";
@@ -37,6 +38,7 @@ export type {
   EmperorModelProvider,
   EmperorSkill,
   EmperorSkillRun,
+  EmperorSecretKeyVersion,
   EmperorTool,
   EmperorToolRun,
   EmperorToolSecret,
@@ -56,6 +58,7 @@ export type {
   InsertEmperorModelProvider,
   InsertEmperorSkill,
   InsertEmperorSkillRun,
+  InsertEmperorSecretKeyVersion,
   InsertEmperorTool,
   InsertEmperorToolRun,
   InsertEmperorToolSecret,

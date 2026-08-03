@@ -32,6 +32,7 @@ export type AiJobSnapshot = {
   attempt: number;
   maxAttempts: number;
   timeoutSeconds: number;
+  workspaceId: number | null;
   userId: number;
   projectId: number | null;
   skillSlug: string | null;
@@ -332,6 +333,7 @@ export function buildAiJobSnapshot(job: AiJob): AiJobSnapshot {
     attempt: Number((job as any).attempt || 0),
     maxAttempts: Number((job as any).maxAttempts || 1),
     timeoutSeconds: Number((job as any).timeoutSeconds || DEFAULT_JOB_TIMEOUT_SECONDS),
+    workspaceId: (job as any).workspaceId ?? null,
     userId: job.userId,
     projectId: job.projectId ?? null,
     skillSlug: job.skillSlug || null,
@@ -357,6 +359,7 @@ export async function createAiJobRun(input: {
   kind: string;
   module: string;
   procedure?: string | null;
+  workspaceId?: number | null;
   userId: number;
   projectId?: number | null;
   skillSlug?: string | null;
@@ -381,6 +384,7 @@ export async function createAiJobRun(input: {
     attempt: 0,
     maxAttempts: Math.min(Math.max(input.maxAttempts || 1, 1), 10),
     timeoutSeconds: Math.min(Math.max(input.timeoutSeconds || DEFAULT_JOB_TIMEOUT_SECONDS, 5), 7200),
+    workspaceId: input.workspaceId ?? null,
     userId: input.userId,
     projectId: input.projectId ?? null,
     skillSlug: input.skillSlug || null,
@@ -433,6 +437,7 @@ export async function completeAiJob(runId: string, output: unknown, guard: AiJob
       metricName: "job.completed",
       metricValue: snapshot.completedAt && snapshot.startedAt ? snapshot.completedAt.getTime() - snapshot.startedAt.getTime() : null,
       status: snapshot.status,
+      workspaceId: snapshot.workspaceId,
       userId: snapshot.userId,
       projectId: snapshot.projectId,
       skillSlug: snapshot.skillSlug,
@@ -456,6 +461,7 @@ async function recordAiJobDeadLetter(job: AiJob, reason: string, metadata?: unkn
       metricName: "job.dead_lettered",
       metricValue: null,
       status: snapshot.status,
+      workspaceId: snapshot.workspaceId,
       userId: snapshot.userId,
       projectId: snapshot.projectId,
       skillSlug: snapshot.skillSlug,
@@ -490,6 +496,7 @@ export async function failAiJob(runId: string, error: unknown, guard: AiJobMutat
       metricName: "job.failed",
       metricValue: snapshot.completedAt && snapshot.startedAt ? snapshot.completedAt.getTime() - snapshot.startedAt.getTime() : null,
       status: snapshot.status,
+      workspaceId: snapshot.workspaceId,
       userId: snapshot.userId,
       projectId: snapshot.projectId,
       skillSlug: snapshot.skillSlug,
@@ -543,6 +550,7 @@ export async function cancelAiJob(runId: string, reason = "AI job canceled") {
       metricName: "job.canceled",
       metricValue: null,
       status: snapshot.status,
+      workspaceId: snapshot.workspaceId,
       userId: snapshot.userId,
       projectId: snapshot.projectId,
       skillSlug: snapshot.skillSlug,
