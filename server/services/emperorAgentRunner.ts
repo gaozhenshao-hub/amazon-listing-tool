@@ -127,8 +127,58 @@ export type AgentContextArtifactRef = {
   sourceAiJobRunId?: string | null;
 };
 
+export type AgentContextResourceKind = "file" | "image" | "table";
+
+export type AgentContextResourceRef = {
+  kind: AgentContextResourceKind;
+  artifactId?: number;
+  runId: string;
+  nodeId: string;
+  artifactKey: string;
+  artifactType?: AgentArtifactType;
+  version: number;
+  ref: string;
+  currentRef: string;
+  mimeType?: string | null;
+  fileName?: string | null;
+  fileSizeBytes?: number | null;
+  storageUri?: string | null;
+  contentHash?: string | null;
+  metadata?: unknown;
+};
+
+export type AgentContextBudgetSection = {
+  estimatedTokens: number;
+  limitTokens: number;
+};
+
+export type AgentContextBudgetReport = {
+  maxTokens: number;
+  estimatedTokens: number;
+  overBudget: boolean;
+  sections: Record<string, AgentContextBudgetSection>;
+  truncatedFields: string[];
+  summarizedFields: string[];
+  resolvedArtifactRefs: string[];
+  resourceCounts: Record<AgentContextResourceKind, number>;
+};
+
+export type AgentContextProvenanceSource = {
+  path: string;
+  sourceType: "run_input" | "checkpoint" | "artifact" | "artifact_ref";
+  nodeId?: string;
+  artifactRef?: string;
+  checkpointStatus?: string;
+  artifactVersion?: number;
+};
+
 export type AgentContextPackage = {
   version: "1.0";
+  schema: {
+    name: "agent.context_package";
+    version: "1.1";
+    sections: string[];
+  };
   agentRunId: string;
   agentSlug: string;
   projectId: number | null;
@@ -148,11 +198,14 @@ export type AgentContextPackage = {
   parentOutputs: Record<string, unknown>;
   confirmedOutputs: Record<string, unknown>;
   artifacts: AgentContextArtifactRef[];
+  resourceRefs: Record<AgentContextResourceKind, AgentContextResourceRef[]>;
+  contextBudget: AgentContextBudgetReport;
   provenance: {
     parentNodeIds: string[];
     confirmedNodeIds: string[];
     artifactRefs: string[];
     currentArtifactRefs: string[];
+    sources: AgentContextProvenanceSource[];
     builtAt: string;
   };
 };
@@ -161,6 +214,11 @@ export type AgentContextPackageOptions = {
   maxStringLength?: number;
   maxArtifactContentLength?: number;
   includeArtifactContent?: boolean;
+  maxTokens?: number;
+  maxArrayItems?: number;
+  maxObjectKeys?: number;
+  summaryStringLength?: number;
+  sectionTokenBudgets?: Partial<Record<"runInputs" | "parentOutputs" | "confirmedOutputs" | "artifacts", number>>;
 };
 
 type CheckpointRow = {
@@ -890,21 +948,139 @@ function contextStringLimit(value?: number, fallback = 4000): number {
   return Number.isFinite(value) ? Math.min(Math.max(Math.floor(Number(value)), 200), 50000) : fallback;
 }
 
-function trimContextValue(value: unknown, maxLength: number): unknown {
+function contextNumberLimit(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(Math.max(Math.floor(parsed), min), max) : fallback;
+}
+
+function safeSerialize(value: unknown): string {
+  try {
+    return JSON.stringify(value ?? null);
+  } catch {
+    return String(value ?? "");
+  }
+}
+
+export function estimateAgentContextTokens(value: unknown): number {
+  return Math.max(1, Math.ceil(safeSerialize(value).length / 4));
+}
+
+function pushUnique(list: string[], value: string) {
+  if (!list.includes(value)) list.push(value);
+}
+
+type ContextTrimStats = {
+  truncatedFields: string[];
+  summarizedFields: string[];
+};
+
+type ContextTrimOptions = {
+  maxStringLength: number;
+  maxArrayItems: number;
+  maxObjectKeys: number;
+  path: string;
+  stats: ContextTrimStats;
+};
+
+function trimContextValueWithOptions(value: unknown, options: ContextTrimOptions): unknown {
   if (typeof value === "string") {
-    return value.length > maxLength
-      ? { __truncated: true, originalLength: value.length, preview: value.slice(0, maxLength) }
-      : value;
+    if (value.length <= options.maxStringLength) return value;
+    pushUnique(options.stats.truncatedFields, options.path);
+    return {
+      __truncated: true,
+      originalLength: value.length,
+      preview: value.slice(0, options.maxStringLength),
+    };
   }
   if (Array.isArray(value)) {
-    return value.map((item) => trimContextValue(item, maxLength));
+    const maxItems = options.maxArrayItems;
+    const source = value.length > maxItems ? value.slice(0, maxItems) : value;
+    const items = source.map((item, index) => trimContextValueWithOptions(item, {
+      ...options,
+      path: `${options.path}[${index}]`,
+    }));
+    if (value.length <= maxItems) return items;
+    pushUnique(options.stats.summarizedFields, options.path);
+    return {
+      __summary: true,
+      kind: "array",
+      originalLength: value.length,
+      sample: items,
+      omittedItems: value.length - source.length,
+    };
   }
   if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, item]) => [key, trimContextValue(item, maxLength)]),
+    const entries = Object.entries(value as Record<string, unknown>);
+    const maxKeys = options.maxObjectKeys;
+    const selectedEntries = entries.length > maxKeys ? entries.slice(0, maxKeys) : entries;
+    const trimmed = Object.fromEntries(
+      selectedEntries.map(([key, item]) => [key, trimContextValueWithOptions(item, {
+        ...options,
+        path: `${options.path}.${key}`,
+      })]),
     );
+    if (entries.length <= maxKeys) return trimmed;
+    pushUnique(options.stats.summarizedFields, options.path);
+    return {
+      ...trimmed,
+      __summary: true,
+      __truncatedKeys: entries.slice(maxKeys).map(([key]) => key),
+      __omittedKeyCount: entries.length - selectedEntries.length,
+    };
   }
   return value;
+}
+
+function summarizeContextValue(value: unknown, targetChars: number, path: string, stats: ContextTrimStats): unknown {
+  pushUnique(stats.summarizedFields, path);
+  const maxPreviewLength = Math.min(Math.max(Math.floor(targetChars), 200), 8000);
+  if (typeof value === "string") {
+    return {
+      __summary: true,
+      kind: "string",
+      originalLength: value.length,
+      preview: value.slice(0, maxPreviewLength),
+    };
+  }
+  if (Array.isArray(value)) {
+    const sampleSize = Math.min(value.length, 5);
+    return {
+      __summary: true,
+      kind: "array",
+      originalLength: value.length,
+      sample: value.slice(0, sampleSize).map((item, index) => trimContextValueWithOptions(item, {
+        maxStringLength: Math.min(maxPreviewLength, 1000),
+        maxArrayItems: 8,
+        maxObjectKeys: 20,
+        path: `${path}[${index}]`,
+        stats,
+      })),
+      omittedItems: Math.max(value.length - sampleSize, 0),
+    };
+  }
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    const previewEntries = entries.slice(0, 12);
+    return {
+      __summary: true,
+      kind: "object",
+      originalLength: safeSerialize(value).length,
+      keys: entries.map(([key]) => key).slice(0, 80),
+      preview: Object.fromEntries(previewEntries.map(([key, item]) => [key, trimContextValueWithOptions(item, {
+        maxStringLength: Math.min(maxPreviewLength, 1000),
+        maxArrayItems: 8,
+        maxObjectKeys: 20,
+        path: `${path}.${key}`,
+        stats,
+      })])),
+    };
+  }
+  return value;
+}
+
+function fitValueToTokenBudget(value: unknown, limitTokens: number, path: string, stats: ContextTrimStats): unknown {
+  if (estimateAgentContextTokens(value) <= limitTokens) return value;
+  return summarizeContextValue(value, limitTokens * 4, path, stats);
 }
 
 async function persistAgentArtifact(input: {
@@ -1038,6 +1214,82 @@ export function buildAgentArtifactRef(
 
 function isCurrentAgentArtifact(artifact: any): boolean {
   return Number(artifact.isCurrent || 0) === 1 || (artifact.isCurrent === undefined && artifact.status === "final");
+}
+
+function artifactResourceKind(artifact: Pick<AgentContextArtifactRef, "artifactType" | "metadata" | "mimeType" | "fileName">): AgentContextResourceKind | null {
+  const artifactType = normalizeArtifactType(artifact.artifactType);
+  if (artifactType === "image") return "image";
+  if (artifactType === "table") return "table";
+  if (artifactType === "file") return "file";
+  const metadata = asRecord(artifact.metadata);
+  const mimeType = firstString(artifact.mimeType, metadata.mimeType, metadata.contentType);
+  const fileName = firstString(artifact.fileName, metadata.fileName, metadata.name);
+  if (mimeType?.startsWith("image/")) return "image";
+  if (mimeType?.includes("spreadsheet") || mimeType === "text/csv" || mimeType?.includes("tab-separated-values")) return "table";
+  if (fileName && /\.(png|jpe?g|webp|gif|svg)$/i.test(fileName)) return "image";
+  if (fileName && /\.(csv|xlsx?|tsv)$/i.test(fileName)) return "table";
+  if (Object.keys(asRecord(metadata.image)).length > 0) return "image";
+  if (Object.keys(asRecord(metadata.table)).length > 0) return "table";
+  if (Object.keys(asRecord(metadata.file)).length > 0) return "file";
+  return null;
+}
+
+function buildAgentResourceRef(artifact: AgentContextArtifactRef): AgentContextResourceRef | null {
+  const kind = artifactResourceKind(artifact);
+  if (!kind) return null;
+  return {
+    kind,
+    artifactId: artifact.artifactId,
+    runId: artifact.runId,
+    nodeId: artifact.nodeId,
+    artifactKey: artifact.artifactKey,
+    artifactType: artifact.artifactType,
+    version: Number(artifact.version || 1),
+    ref: artifact.ref || buildAgentArtifactRef(artifact),
+    currentRef: artifact.currentRef || buildAgentArtifactRef(artifact, "current"),
+    mimeType: artifact.mimeType || null,
+    fileName: artifact.fileName || null,
+    fileSizeBytes: artifact.fileSizeBytes ?? null,
+    storageUri: artifact.storageUri || null,
+    contentHash: artifact.contentHash || null,
+    metadata: artifact.metadata || {},
+  };
+}
+
+function compactArtifactForContext(artifact: AgentContextArtifactRef, includeContent: boolean, maxLength: number, stats: ContextTrimStats, path: string) {
+  const ref = artifact.ref || buildAgentArtifactRef(artifact);
+  const currentRef = artifact.currentRef || buildAgentArtifactRef(artifact, "current");
+  const resource = buildAgentResourceRef(artifact);
+  if (resource) {
+    return {
+      __artifactRef: currentRef,
+      ref,
+      currentRef,
+      artifactType: artifact.artifactType,
+      resourceKind: resource.kind,
+      mimeType: artifact.mimeType || null,
+      fileName: artifact.fileName || null,
+      fileSizeBytes: artifact.fileSizeBytes ?? null,
+      storageUri: artifact.storageUri || null,
+      contentHash: artifact.contentHash || null,
+      summary: summarizeArtifactContent(artifact.content),
+      metadata: trimContextValueWithOptions(artifact.metadata || {}, {
+        maxStringLength: Math.min(maxLength, 1000),
+        maxArrayItems: 20,
+        maxObjectKeys: 40,
+        path: `${path}.metadata`,
+        stats,
+      }),
+    };
+  }
+  if (!includeContent) return null;
+  return trimContextValueWithOptions(artifact.content, {
+    maxStringLength: maxLength,
+    maxArrayItems: 80,
+    maxObjectKeys: 120,
+    path,
+    stats,
+  });
 }
 
 function parseAgentArtifactRef(ref: string) {
@@ -1329,13 +1581,402 @@ function chooseCurrentAgentArtifacts(artifacts: any[]) {
   return [...byKey.values()].filter(isCurrentAgentArtifact);
 }
 
-function artifactOutputForNode(currentArtifacts: any[], node: EmperorAgentNode | undefined, includeContent: boolean, maxLength: number) {
-  if (!node) return undefined;
-  const preferredKey = node.outputKey || node.id;
-  const artifact = currentArtifacts.find((item) => item.nodeId === node.id && item.artifactKey === preferredKey)
-    || currentArtifacts.find((item) => item.nodeId === node.id);
-  if (!artifact) return undefined;
-  return includeContent ? trimContextValue(artifact.content, maxLength) : null;
+type AgentContextSectionKey = "runInputs" | "parentOutputs" | "confirmedOutputs" | "artifacts";
+
+const CONTEXT_SECTION_KEYS: AgentContextSectionKey[] = ["runInputs", "parentOutputs", "confirmedOutputs", "artifacts"];
+
+type NormalizedContextOptions = {
+  maxStringLength: number;
+  maxArtifactContentLength: number;
+  includeArtifactContent: boolean;
+  maxTokens: number;
+  maxArrayItems: number;
+  maxObjectKeys: number;
+  summaryStringLength: number;
+  sectionTokenBudgets: Partial<Record<AgentContextSectionKey, number>>;
+};
+
+export type AgentContextPackageBuilderInput = {
+  run: any;
+  dag: EmperorAgentDag;
+  node: EmperorAgentNode;
+  checkpoints: any[];
+  artifacts?: any[];
+  options?: AgentContextPackageOptions;
+};
+
+function normalizeContextPackageOptions(options?: AgentContextPackageOptions): NormalizedContextOptions {
+  const maxTokens = contextNumberLimit(options?.maxTokens, 32000, 1000, 200000);
+  return {
+    maxStringLength: contextStringLimit(options?.maxStringLength),
+    maxArtifactContentLength: contextStringLimit(options?.maxArtifactContentLength, 8000),
+    includeArtifactContent: options?.includeArtifactContent !== false,
+    maxTokens,
+    maxArrayItems: contextNumberLimit(options?.maxArrayItems, 80, 5, 1000),
+    maxObjectKeys: contextNumberLimit(options?.maxObjectKeys, 120, 10, 2000),
+    summaryStringLength: contextStringLimit(options?.summaryStringLength, 1200),
+    sectionTokenBudgets: Object.fromEntries(
+      Object.entries(options?.sectionTokenBudgets || {}).map(([key, value]) => [
+        key,
+        contextNumberLimit(value, Math.floor(maxTokens / CONTEXT_SECTION_KEYS.length), 100, maxTokens),
+      ]),
+    ) as Partial<Record<AgentContextSectionKey, number>>,
+  };
+}
+
+function defaultSectionTokenBudget(section: AgentContextSectionKey, maxTokens: number): number {
+  const ratios: Record<AgentContextSectionKey, number> = {
+    runInputs: 0.16,
+    parentOutputs: 0.30,
+    confirmedOutputs: 0.26,
+    artifacts: 0.14,
+  };
+  return Math.max(100, Math.floor(maxTokens * ratios[section]));
+}
+
+function normalizeContextArtifact(rawArtifact: any): AgentContextArtifactRef {
+  const artifact = rawArtifact?.ref && rawArtifact?.currentRef ? rawArtifact : parseAgentArtifactRow(rawArtifact);
+  const metadata = parseJson(artifact.metadata, {}) as Record<string, unknown>;
+  const artifactType = normalizeArtifactType(artifact.artifactType) || inferArtifactType(artifact.content, metadata);
+  return {
+    ...artifact,
+    artifactId: artifact.artifactId ?? artifact.id,
+    artifactType,
+    version: Number(artifact.version || 1),
+    status: String(artifact.status || "final"),
+    isCurrent: isCurrentAgentArtifact(artifact),
+    content: artifact.content,
+    metadata,
+    contentHash: artifact.contentHash || hashArtifactContent(artifact.content),
+    mimeType: artifact.mimeType || (metadata.mimeType as string | undefined) || null,
+    fileName: artifact.fileName || (metadata.fileName as string | undefined) || null,
+    fileSizeBytes: artifact.fileSizeBytes === undefined || artifact.fileSizeBytes === null ? (metadata.fileSizeBytes as number | undefined) ?? null : Number(artifact.fileSizeBytes),
+    storageUri: artifact.storageUri || (metadata.storageUri as string | undefined) || null,
+    ref: artifact.ref || buildAgentArtifactRef(artifact),
+    currentRef: artifact.currentRef || buildAgentArtifactRef(artifact, "current"),
+  };
+}
+
+export class AgentContextPackageBuilder {
+  private readonly run: any;
+  private readonly dag: EmperorAgentDag;
+  private readonly node: EmperorAgentNode;
+  private readonly checkpoints: CheckpointRow[];
+  private readonly options: NormalizedContextOptions;
+  private readonly allArtifacts: AgentContextArtifactRef[];
+  private readonly currentArtifacts: AgentContextArtifactRef[];
+  private readonly artifactByRef = new Map<string, AgentContextArtifactRef>();
+  private readonly stats: ContextTrimStats & { resolvedArtifactRefs: string[] } = {
+    truncatedFields: [],
+    summarizedFields: [],
+    resolvedArtifactRefs: [],
+  };
+  private readonly resourceRefs: Record<AgentContextResourceKind, AgentContextResourceRef[]> = {
+    file: [],
+    image: [],
+    table: [],
+  };
+  private readonly sources: AgentContextProvenanceSource[] = [];
+
+  constructor(input: AgentContextPackageBuilderInput) {
+    this.run = input.run;
+    this.dag = input.dag;
+    this.node = input.node;
+    this.checkpoints = (input.checkpoints || []) as CheckpointRow[];
+    this.options = normalizeContextPackageOptions(input.options);
+    this.allArtifacts = (input.artifacts || []).filter(Boolean).map(normalizeContextArtifact);
+    this.currentArtifacts = chooseCurrentAgentArtifacts(this.allArtifacts).map(normalizeContextArtifact);
+    this.indexArtifacts();
+  }
+
+  build(): AgentContextPackage {
+    const parents = parentIds(this.dag, this.node.id);
+    const rawRunInputs = parseStoredAgentRunInputs(this.run.inputs).inputs;
+    this.addRunInputSources(rawRunInputs);
+    const runInputs = this.prepareSection("runInputs", rawRunInputs, "runInputs");
+    const parentOutputs = this.prepareSection("parentOutputs", this.buildOutputs(
+      this.checkpoints.filter((checkpoint) => parents.includes(checkpoint.nodeId)),
+      "parentOutputs",
+    ), "parentOutputs");
+    const confirmedOutputs = this.prepareSection("confirmedOutputs", this.buildOutputs(
+      this.checkpoints.filter((checkpoint) => isConfirmedStatus(checkpoint.status)),
+      "confirmedOutputs",
+    ), "confirmedOutputs");
+    const artifacts = this.prepareArtifactsSection(this.buildArtifactsSection());
+    const nodeParams = this.prepareSection("runInputs", this.node.toolParams ?? null, "node.params");
+    const budget = this.buildBudgetReport({ runInputs, parentOutputs, confirmedOutputs, artifacts }, nodeParams);
+    const artifactRefs = this.currentArtifacts.map((artifact) => artifact.ref || buildAgentArtifactRef(artifact));
+    const currentArtifactRefs = this.currentArtifacts.map((artifact) => artifact.currentRef || buildAgentArtifactRef(artifact, "current"));
+
+    return {
+      version: "1.0",
+      schema: {
+        name: "agent.context_package",
+        version: "1.1",
+        sections: ["runInputs", "parentOutputs", "confirmedOutputs", "artifacts", "resourceRefs", "contextBudget", "provenance"],
+      },
+      agentRunId: this.run.runId,
+      agentSlug: this.run.agentSlug,
+      projectId: this.run.projectId ?? null,
+      parentOutputs: parentOutputs as Record<string, unknown>,
+      confirmedOutputs: confirmedOutputs as Record<string, unknown>,
+      artifacts,
+      resourceRefs: this.resourceRefs,
+      contextBudget: budget,
+      node: {
+        id: this.node.id,
+        label: this.node.label,
+        skillSlug: this.node.skillSlug,
+        skillVersion: this.node.skillVersion,
+        skillVersionRef: this.node.skillVersionRef,
+        skillVersionPolicy: this.node.skillVersionPolicy,
+        toolSlug: this.node.toolSlug,
+        outputKey: this.node.outputKey,
+        nodeType: this.node.nodeType,
+        params: nodeParams,
+      },
+      runInputs: runInputs as Record<string, unknown>,
+      provenance: {
+        parentNodeIds: parents,
+        confirmedNodeIds: this.checkpoints.filter((checkpoint) => isConfirmedStatus(checkpoint.status)).map((checkpoint) => checkpoint.nodeId),
+        artifactRefs,
+        currentArtifactRefs,
+        sources: this.sources,
+        builtAt: new Date().toISOString(),
+      },
+    };
+  }
+
+  private indexArtifacts() {
+    for (const artifact of this.allArtifacts) {
+      const versionRef = artifact.ref || buildAgentArtifactRef(artifact);
+      const currentRef = artifact.currentRef || buildAgentArtifactRef(artifact, "current");
+      this.artifactByRef.set(versionRef, artifact);
+      this.artifactByRef.set(`artifact://${artifact.runId}/${artifact.nodeId}/${artifact.artifactKey}`, artifact);
+      if (isCurrentAgentArtifact(artifact)) this.artifactByRef.set(currentRef, artifact);
+    }
+  }
+
+  private sectionLimit(section: AgentContextSectionKey): number {
+    return this.options.sectionTokenBudgets[section] || defaultSectionTokenBudget(section, this.options.maxTokens);
+  }
+
+  private prepareSection(section: AgentContextSectionKey, value: unknown, path: string): unknown {
+    const resolved = this.resolveArtifactRefs(value, path);
+    const trimmed = trimContextValueWithOptions(resolved, {
+      maxStringLength: section === "artifacts" ? this.options.maxArtifactContentLength : this.options.maxStringLength,
+      maxArrayItems: this.options.maxArrayItems,
+      maxObjectKeys: this.options.maxObjectKeys,
+      path,
+      stats: this.stats,
+    });
+    const sectionLimited = fitValueToTokenBudget(trimmed, this.sectionLimit(section), path, this.stats);
+    if (estimateAgentContextTokens(sectionLimited) <= this.sectionLimit(section)) return sectionLimited;
+    return summarizeContextValue(sectionLimited, this.options.summaryStringLength, path, this.stats);
+  }
+
+  private prepareArtifactsSection(value: AgentContextArtifactRef[]): AgentContextArtifactRef[] {
+    const trimmed = trimContextValueWithOptions(this.resolveArtifactRefs(value, "artifacts"), {
+      maxStringLength: this.options.maxArtifactContentLength,
+      maxArrayItems: this.options.maxArrayItems,
+      maxObjectKeys: this.options.maxObjectKeys,
+      path: "artifacts",
+      stats: this.stats,
+    }) as AgentContextArtifactRef[];
+    const limit = this.sectionLimit("artifacts");
+    if (estimateAgentContextTokens(trimmed) <= limit) return trimmed;
+    const perArtifactChars = Math.max(400, Math.floor((limit * 4) / Math.max(trimmed.length, 1)));
+    return trimmed.map((artifact, index) => ({
+      ...artifact,
+      content: summarizeContextValue(artifact.content, perArtifactChars, `artifacts[${index}].content`, this.stats),
+    }));
+  }
+
+  private buildOutputs(checkpoints: CheckpointRow[], pathPrefix: "parentOutputs" | "confirmedOutputs"): Record<string, unknown> {
+    const outputs: Record<string, unknown> = {};
+    for (const checkpoint of checkpoints) {
+      const sourceNode = this.dag.nodes.find((item) => item.id === checkpoint.nodeId);
+      const key = sourceNode?.outputKey || checkpoint.nodeId;
+      const artifact = this.currentArtifactForNode(sourceNode);
+      if (artifact) {
+        outputs[key] = this.artifactContextValue(artifact, `${pathPrefix}.${key}`);
+        this.addSource({
+          path: `${pathPrefix}.${key}`,
+          sourceType: "artifact",
+          nodeId: artifact.nodeId,
+          artifactRef: artifact.currentRef || buildAgentArtifactRef(artifact, "current"),
+          artifactVersion: artifact.version,
+        });
+      } else {
+        outputs[key] = effectiveCheckpointOutput(checkpoint);
+        this.addSource({
+          path: `${pathPrefix}.${key}`,
+          sourceType: "checkpoint",
+          nodeId: checkpoint.nodeId,
+          checkpointStatus: checkpoint.status,
+        });
+      }
+    }
+    return outputs;
+  }
+
+  private buildArtifactsSection(): AgentContextArtifactRef[] {
+    return this.currentArtifacts.map((artifact, index) => {
+      this.addResourceRef(artifact);
+      this.addSource({
+        path: `artifacts[${index}]`,
+        sourceType: "artifact",
+        nodeId: artifact.nodeId,
+        artifactRef: artifact.currentRef || buildAgentArtifactRef(artifact, "current"),
+        artifactVersion: artifact.version,
+      });
+      return {
+        artifactId: artifact.artifactId,
+        runId: artifact.runId,
+        nodeId: artifact.nodeId,
+        artifactKey: artifact.artifactKey,
+        artifactType: artifact.artifactType,
+        version: Number(artifact.version || 1),
+        status: artifact.status,
+        isCurrent: isCurrentAgentArtifact(artifact),
+        ref: artifact.ref || buildAgentArtifactRef(artifact),
+        currentRef: artifact.currentRef || buildAgentArtifactRef(artifact, "current"),
+        content: this.artifactContextValue(artifact, `artifacts[${index}].content`),
+        metadata: artifact.metadata || {},
+        contentHash: artifact.contentHash || null,
+        mimeType: artifact.mimeType || null,
+        fileName: artifact.fileName || null,
+        fileSizeBytes: artifact.fileSizeBytes ?? null,
+        storageUri: artifact.storageUri || null,
+        sourceSkillRunId: artifact.sourceSkillRunId || null,
+        sourceAiJobRunId: artifact.sourceAiJobRunId || null,
+      };
+    });
+  }
+
+  private addRunInputSources(runInputs: Record<string, unknown>) {
+    for (const key of Object.keys(runInputs || {})) {
+      this.addSource({
+        path: `runInputs.${key}`,
+        sourceType: "run_input",
+      });
+    }
+  }
+
+  private currentArtifactForNode(node: EmperorAgentNode | undefined): AgentContextArtifactRef | undefined {
+    if (!node) return undefined;
+    const preferredKey = node.outputKey || node.id;
+    return this.currentArtifacts.find((item) => item.nodeId === node.id && item.artifactKey === preferredKey)
+      || this.currentArtifacts.find((item) => item.nodeId === node.id);
+  }
+
+  private artifactContextValue(artifact: AgentContextArtifactRef, path: string): unknown {
+    this.addResourceRef(artifact);
+    return compactArtifactForContext(
+      artifact,
+      this.options.includeArtifactContent,
+      this.options.maxArtifactContentLength,
+      this.stats,
+      path,
+    );
+  }
+
+  private resolveArtifactRefs(value: unknown, path: string): unknown {
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      const exact = this.artifactByRef.get(trimmed);
+      if (exact) {
+        pushUnique(this.stats.resolvedArtifactRefs, trimmed);
+        this.addSource({
+          path,
+          sourceType: "artifact_ref",
+          nodeId: exact.nodeId,
+          artifactRef: trimmed,
+          artifactVersion: exact.version,
+        });
+        return {
+          __resolvedArtifactRef: trimmed,
+          content: this.artifactContextValue(exact, path),
+        };
+      }
+      for (const match of value.matchAll(/artifact:\/\/[^/\s"'<>]+\/[^/\s"'<>]+\/[^@\s"'<>]+(?:@(?:\d+|current))?/g)) {
+        if (this.artifactByRef.has(match[0])) pushUnique(this.stats.resolvedArtifactRefs, match[0]);
+      }
+      return value;
+    }
+    if (Array.isArray(value)) {
+      return value.map((item, index) => this.resolveArtifactRefs(item, `${path}[${index}]`));
+    }
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([key, item]) => {
+          if (key === "ref" || key === "currentRef" || key === "__artifactRef") return [key, item];
+          return [key, this.resolveArtifactRefs(item, `${path}.${key}`)];
+        }),
+      );
+    }
+    return value;
+  }
+
+  private addResourceRef(artifact: AgentContextArtifactRef) {
+    const resource = buildAgentResourceRef(artifact);
+    if (!resource) return;
+    const exists = this.resourceRefs[resource.kind].some((item) => item.currentRef === resource.currentRef && item.ref === resource.ref);
+    if (exists) return;
+    const nextIndex = this.resourceRefs[resource.kind].length;
+    this.resourceRefs[resource.kind].push({
+      ...resource,
+      metadata: trimContextValueWithOptions(resource.metadata || {}, {
+        maxStringLength: 1000,
+        maxArrayItems: 20,
+        maxObjectKeys: 40,
+        path: `resourceRefs.${resource.kind}[${nextIndex}].metadata`,
+        stats: this.stats,
+      }),
+    });
+  }
+
+  private addSource(source: AgentContextProvenanceSource) {
+    const key = `${source.path}:${source.sourceType}:${source.artifactRef || ""}:${source.nodeId || ""}`;
+    if (!this.sources.some((item) => `${item.path}:${item.sourceType}:${item.artifactRef || ""}:${item.nodeId || ""}` === key)) {
+      this.sources.push(source);
+    }
+  }
+
+  private buildBudgetReport(sections: Record<AgentContextSectionKey, unknown>, nodeParams: unknown): AgentContextBudgetReport {
+    const sectionReports = Object.fromEntries(CONTEXT_SECTION_KEYS.map((section) => [
+      section,
+      {
+        estimatedTokens: estimateAgentContextTokens(sections[section]),
+        limitTokens: this.sectionLimit(section),
+      },
+    ])) as Record<string, AgentContextBudgetSection>;
+    const estimatedTokens = estimateAgentContextTokens({
+      node: {
+        ...this.node,
+        params: nodeParams,
+      },
+      runInputs: sections.runInputs,
+      parentOutputs: sections.parentOutputs,
+      confirmedOutputs: sections.confirmedOutputs,
+      artifacts: sections.artifacts,
+      resourceRefs: this.resourceRefs,
+    });
+    return {
+      maxTokens: this.options.maxTokens,
+      estimatedTokens,
+      overBudget: estimatedTokens > this.options.maxTokens,
+      sections: sectionReports,
+      truncatedFields: [...this.stats.truncatedFields],
+      summarizedFields: [...this.stats.summarizedFields],
+      resolvedArtifactRefs: [...this.stats.resolvedArtifactRefs],
+      resourceCounts: {
+        file: this.resourceRefs.file.length,
+        image: this.resourceRefs.image.length,
+        table: this.resourceRefs.table.length,
+      },
+    };
+  }
 }
 
 async function refreshRunAfterCheckpoint(runId: string, dag: EmperorAgentDag) {
@@ -1405,91 +2046,7 @@ export function buildAgentContextPackage(input: {
   artifacts?: any[];
   options?: AgentContextPackageOptions;
 }): AgentContextPackage {
-  const { run, dag, node, checkpoints } = input;
-  const maxStringLength = contextStringLimit(input.options?.maxStringLength);
-  const maxArtifactContentLength = contextStringLimit(input.options?.maxArtifactContentLength, 8000);
-  const includeArtifactContent = input.options?.includeArtifactContent !== false;
-  const parents = parentIds(dag, node.id);
-  const currentArtifacts = chooseCurrentAgentArtifacts(input.artifacts || []);
-  const parentOutputs = checkpoints
-    .filter((checkpoint) => parents.includes(checkpoint.nodeId))
-    .reduce<Record<string, unknown>>((acc, checkpoint) => {
-      const parentNode = dag.nodes.find((item) => item.id === checkpoint.nodeId);
-      const key = parentNode?.outputKey || checkpoint.nodeId;
-      const artifactOutput = artifactOutputForNode(currentArtifacts, parentNode, includeArtifactContent, maxArtifactContentLength);
-      acc[key] = artifactOutput !== undefined
-        ? artifactOutput
-        : trimContextValue(effectiveCheckpointOutput(checkpoint), maxStringLength);
-      return acc;
-    }, {});
-  const confirmedOutputs = checkpoints
-    .filter((checkpoint) => isConfirmedStatus(checkpoint.status))
-    .reduce<Record<string, unknown>>((acc, checkpoint) => {
-      const confirmedNode = dag.nodes.find((item) => item.id === checkpoint.nodeId);
-      const key = confirmedNode?.outputKey || checkpoint.nodeId;
-      const artifactOutput = artifactOutputForNode(currentArtifacts, confirmedNode, includeArtifactContent, maxArtifactContentLength);
-      acc[key] = artifactOutput !== undefined
-        ? artifactOutput
-        : trimContextValue(effectiveCheckpointOutput(checkpoint), maxStringLength);
-      return acc;
-    }, {});
-  const artifacts = currentArtifacts
-    .map((artifact) => ({
-      artifactId: artifact.id,
-      runId: artifact.runId,
-      nodeId: artifact.nodeId,
-      artifactKey: artifact.artifactKey,
-      artifactType: artifact.artifactType,
-      version: Number(artifact.version || 1),
-      status: artifact.status,
-      isCurrent: isCurrentAgentArtifact(artifact),
-      ref: buildAgentArtifactRef(artifact),
-      currentRef: buildAgentArtifactRef(artifact, "current"),
-      content: includeArtifactContent ? trimContextValue(artifact.content, maxArtifactContentLength) : null,
-      metadata: artifact.metadata || {},
-      contentHash: artifact.contentHash || null,
-      mimeType: artifact.mimeType || null,
-      fileName: artifact.fileName || null,
-      fileSizeBytes: artifact.fileSizeBytes ?? null,
-      storageUri: artifact.storageUri || null,
-      sourceSkillRunId: artifact.sourceSkillRunId || null,
-      sourceAiJobRunId: artifact.sourceAiJobRunId || null,
-    }));
-  const artifactRefs = artifacts.map((artifact) => `artifact://${artifact.runId}/${artifact.nodeId}/${artifact.artifactKey}@${artifact.version}`);
-  const currentArtifactRefs = artifacts.map((artifact) => `artifact://${artifact.runId}/${artifact.nodeId}/${artifact.artifactKey}@current`);
-  const parsedRunInputs = parseJson(run.inputs, {});
-  const runInputs = parsedRunInputs && typeof parsedRunInputs === "object" && !Array.isArray(parsedRunInputs)
-    ? trimContextValue(parsedRunInputs, maxStringLength) as Record<string, unknown>
-    : {};
-  return {
-    version: "1.0",
-    agentRunId: run.runId,
-    agentSlug: run.agentSlug,
-    projectId: run.projectId ?? null,
-    parentOutputs,
-    confirmedOutputs,
-    artifacts,
-    node: {
-      id: node.id,
-      label: node.label,
-      skillSlug: node.skillSlug,
-      skillVersion: node.skillVersion,
-      skillVersionRef: node.skillVersionRef,
-      skillVersionPolicy: node.skillVersionPolicy,
-      toolSlug: node.toolSlug,
-      outputKey: node.outputKey,
-      nodeType: node.nodeType,
-      params: node.toolParams ?? null,
-    },
-    runInputs,
-    provenance: {
-      parentNodeIds: parents,
-      confirmedNodeIds: checkpoints.filter((checkpoint) => isConfirmedStatus(checkpoint.status)).map((checkpoint) => checkpoint.nodeId),
-      artifactRefs,
-      currentArtifactRefs,
-      builtAt: new Date().toISOString(),
-    },
-  };
+  return new AgentContextPackageBuilder(input).build();
 }
 
 function buildNodeInput(run: any, dag: EmperorAgentDag, node: EmperorAgentNode, checkpoints: CheckpointRow[], artifacts?: any[]) {

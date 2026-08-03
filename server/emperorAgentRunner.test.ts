@@ -154,6 +154,11 @@ describe("Emperor Agent workflow kernel", () => {
     });
 
     expect(contextPackage.version).toBe("1.0");
+    expect(contextPackage.schema).toEqual({
+      name: "agent.context_package",
+      version: "1.1",
+      sections: ["runInputs", "parentOutputs", "confirmedOutputs", "artifacts", "resourceRefs", "contextBudget", "provenance"],
+    });
     expect((contextPackage.parentOutputs.alpha as any).product).toBe("Filter");
     expect((contextPackage.parentOutputs.alpha as any).notes.__truncated).toBe(true);
     expect((contextPackage.confirmedOutputs.alpha as any).product).toBe("Filter");
@@ -164,6 +169,74 @@ describe("Emperor Agent workflow kernel", () => {
     expect((contextPackage.artifacts[0].content as any).notes.__truncated).toBe(true);
     expect(contextPackage.provenance.artifactRefs).toContain("artifact://agent_1/A/alpha@2");
     expect(contextPackage.provenance.currentArtifactRefs).toContain("artifact://agent_1/A/alpha@current");
+    expect(contextPackage.provenance.sources.map((source) => source.sourceType)).toContain("artifact");
+    expect(contextPackage.contextBudget.estimatedTokens).toBeGreaterThan(0);
+    expect(contextPackage.contextBudget.truncatedFields).toContain("parentOutputs.alpha.notes");
+    expect(contextPackage.resourceRefs.table).toHaveLength(0);
+  });
+
+  it("should resolve resource Artifact refs and enforce Context Package budget", () => {
+    const rows = Array.from({ length: 30 }, (_, index) => ({ keyword: `keyword-${index}`, volume: index * 100 }));
+    const dag = {
+      nodes: [
+        { id: "N1", nodeType: "skill_node", label: "N1", outputKey: "competitorAnalysis", skillSlug: "listing.competitor.analyze" },
+        { id: "N3", nodeType: "input_node", label: "N3", outputKey: "productAttributes" },
+        { id: "G1", nodeType: "skill_node", label: "G1", outputKey: "sellingPoints", skillSlug: "listing.sellingpoints.generate" },
+      ],
+      edges: [{ source: "N1", target: "G1" }, { source: "N3", target: "G1" }],
+    };
+    const contextPackage = buildAgentContextPackage({
+      run: {
+        runId: "agent_2",
+        agentSlug: "listing.full.workflow",
+        projectId: 9,
+        inputs: {
+          brief: "z".repeat(800),
+          sheetRef: "artifact://agent_2/N3/productAttributes@current",
+        },
+      },
+      dag,
+      node: dag.nodes[2],
+      checkpoints: [
+        { runId: "agent_2", agentSlug: "listing.full.workflow", nodeId: "N1", nodeType: "skill_node", status: "confirmed", output: { items: rows } },
+        { runId: "agent_2", agentSlug: "listing.full.workflow", nodeId: "N3", nodeType: "input_node", status: "confirmed", output: { source: "checkpoint" } },
+      ] as any,
+      artifacts: [
+        {
+          id: 22,
+          runId: "agent_2",
+          nodeId: "N3",
+          artifactKey: "productAttributes",
+          artifactType: "table",
+          version: 1,
+          status: "final",
+          isCurrent: 1,
+          content: { table: { rows, columns: ["keyword", "volume"] } },
+          metadata: { mimeType: "text/csv", fileName: "attributes.csv", table: { rowCount: rows.length } },
+          mimeType: "text/csv",
+          fileName: "attributes.csv",
+          fileSizeBytes: 2048,
+          storageUri: "artifact-storage://agent_2/attributes.csv",
+          contentHash: "hash_table",
+        },
+      ],
+      options: {
+        maxStringLength: 200,
+        maxArrayItems: 10,
+        maxTokens: 3000,
+        sectionTokenBudgets: { runInputs: 700, parentOutputs: 1000, confirmedOutputs: 500, artifacts: 300 },
+      },
+    });
+
+    expect((contextPackage.runInputs.brief as any).__truncated).toBe(true);
+    expect((contextPackage.runInputs.sheetRef as any).__resolvedArtifactRef).toBe("artifact://agent_2/N3/productAttributes@current");
+    expect((contextPackage.parentOutputs.productAttributes as any).__artifactRef).toBe("artifact://agent_2/N3/productAttributes@current");
+    expect(contextPackage.resourceRefs.table).toHaveLength(1);
+    expect(contextPackage.resourceRefs.table[0].fileName).toBe("attributes.csv");
+    expect(contextPackage.contextBudget.maxTokens).toBe(3000);
+    expect(contextPackage.contextBudget.resolvedArtifactRefs).toContain("artifact://agent_2/N3/productAttributes@current");
+    expect(contextPackage.contextBudget.summarizedFields.some((path) => path.includes("competitorAnalysis.items"))).toBe(true);
+    expect(contextPackage.provenance.sources.some((source) => source.sourceType === "artifact_ref" && source.path === "runInputs.sheetRef")).toBe(true);
   });
 
   it("should preserve legacy Agent run inputs that contain a payload field", () => {
