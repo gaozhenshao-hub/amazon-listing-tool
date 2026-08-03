@@ -94,6 +94,14 @@ async function startServer() {
         }
       })
       .catch(err => console.error("[AI Job] Recovery failed:", err));
+    import("../services/emperorAgentRunner")
+      .then(m => m.recoverTimedOutAgentNodes())
+      .then(result => {
+        if (result.failed > 0 || result.skippedPaused > 0) {
+          console.log(`[Agent Runtime] Timeout recovery scanned=${result.scanned}, failed=${result.failed}, skippedPaused=${result.skippedPaused}`);
+        }
+      })
+      .catch(err => console.error("[Agent Runtime] Timeout recovery failed:", err));
   });
 }
 

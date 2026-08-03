@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import {
+  buildAgentContextPackage,
   buildStoredAgentRunInputs,
   canTransitionNodeStatus,
   canTransitionRunStatus,
@@ -14,6 +15,7 @@ import {
 import {
   getBuiltinToolDefinitions,
   invokeEmperorTool,
+  validateJsonSchemaValue,
 } from "./services/emperorToolGateway";
 
 describe("Emperor Agent workflow kernel", () => {
@@ -23,8 +25,16 @@ describe("Emperor Agent workflow kernel", () => {
     expect(schema.emperorAgents.scope).toBeDefined();
     expect(schema.emperorAgents.triggerType).toBeDefined();
     expect(schema.emperorAgents.maxExecutionSeconds).toBeDefined();
+    expect(schema.emperorAgentTemplateVersions).toBeDefined();
     expect(schema.emperorAgentRuns).toBeDefined();
+    expect(schema.emperorAgentRuns.templateVersionId).toBeDefined();
+    expect(schema.emperorAgentRuns.templateVersion).toBeDefined();
+    expect(schema.emperorAgentRuns.dagHash).toBeDefined();
     expect(schema.emperorAgentCheckpoints).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.maxAttempts).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.lockToken).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.lockedAt).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.timeoutAt).toBeDefined();
     expect(schema.emperorAgentEvents).toBeDefined();
     expect(schema.emperorAgentArtifacts).toBeDefined();
     expect(schema.emperorTools).toBeDefined();
@@ -96,8 +106,37 @@ describe("Emperor Agent workflow kernel", () => {
     const parsed = parseStoredAgentRunInputs(stored);
     expect(parsed.inputs).toEqual({ asin: "B0TEST123", locale: "en-US" });
     expect(parsed.runtime?.agentSlug).toBe(LISTING_AGENT_SLUG);
+    expect(parsed.runtime?.templateVersion).toBeNull();
     expect(parsed.runtime?.dagHash).toHaveLength(16);
     expect(parsed.runtime?.dagSnapshot.nodes.length).toBe(dag.nodes.length);
+  });
+
+  it("should build context packages from confirmed checkpoints and artifacts", () => {
+    const dag = {
+      nodes: [
+        { id: "A", nodeType: "input_node", label: "A", outputKey: "alpha" },
+        { id: "B", nodeType: "skill_node", label: "B", outputKey: "beta", skillSlug: "listing.title.generate" },
+      ],
+      edges: [{ source: "A", target: "B" }],
+    };
+    const contextPackage = buildAgentContextPackage({
+      run: { runId: "agent_1", agentSlug: "demo.agent", projectId: 9, inputs: { locale: "en-US" } },
+      dag,
+      node: dag.nodes[1],
+      checkpoints: [
+        { runId: "agent_1", agentSlug: "demo.agent", nodeId: "A", nodeType: "input_node", status: "confirmed", output: { product: "Filter" } },
+        { runId: "agent_1", agentSlug: "demo.agent", nodeId: "B", nodeType: "skill_node", status: "ready" },
+      ] as any,
+      artifacts: [
+        { id: 12, runId: "agent_1", nodeId: "A", artifactKey: "alpha", version: 2, status: "final", content: { product: "Filter" } },
+      ],
+    });
+
+    expect(contextPackage.version).toBe("1.0");
+    expect(contextPackage.parentOutputs.alpha).toEqual({ product: "Filter" });
+    expect(contextPackage.confirmedOutputs.alpha).toEqual({ product: "Filter" });
+    expect(contextPackage.artifacts[0].version).toBe(2);
+    expect(contextPackage.provenance.artifactRefs).toContain("artifact://agent_1/A/alpha@2");
   });
 
   it("should preserve legacy Agent run inputs that contain a payload field", () => {
@@ -116,6 +155,8 @@ describe("Emperor Agent workflow kernel", () => {
 
     expect(canTransitionRunStatus("waiting_human", "running")).toBe(true);
     expect(canTransitionRunStatus("running", "canceled")).toBe(true);
+    expect(canTransitionRunStatus("running", "paused")).toBe(true);
+    expect(canTransitionRunStatus("paused", "waiting_human")).toBe(true);
     expect(canTransitionRunStatus("failed", "running")).toBe(true);
     expect(canTransitionRunStatus("completed", "running")).toBe(false);
     expect(canTransitionRunStatus("canceled", "waiting_human")).toBe(false);
@@ -127,9 +168,13 @@ describe("Emperor Agent workflow kernel", () => {
     expect(procedures["emperor.agents.getRun"]).toBeDefined();
     expect(procedures["emperor.agents.validateDag"]).toBeDefined();
     expect(procedures["emperor.agents.listArtifacts"]).toBeDefined();
+    expect(procedures["emperor.agents.listTemplateVersions"]).toBeDefined();
     expect(procedures["emperor.agents.executeNode"]).toBeDefined();
     expect(procedures["emperor.agents.scheduleRun"]).toBeDefined();
     expect(procedures["emperor.agents.cancelRun"]).toBeDefined();
+    expect(procedures["emperor.agents.pauseRun"]).toBeDefined();
+    expect(procedures["emperor.agents.resumeRun"]).toBeDefined();
+    expect(procedures["emperor.agents.recoverTimedOutNodes"]).toBeDefined();
     expect(procedures["emperor.agents.rerunNode"]).toBeDefined();
     expect(procedures["emperor.agents.updateNodeDraft"]).toBeDefined();
     expect(procedures["emperor.agents.confirmNode"]).toBeDefined();
@@ -169,6 +214,24 @@ describe("Emperor Agent workflow kernel", () => {
     expect((result.output as any).bulletPoints).toEqual(["Fast install"]);
     expect(result.metadata.riskLevel).toBe("low");
     expect(result.metadata.toolRunId).toMatch(/^tool_\d+_[a-z0-9]+$/);
+  });
+
+  it("should validate Tool Gateway JSON schema contracts", () => {
+    const schema = {
+      type: "object",
+      required: ["url", "method"],
+      properties: {
+        url: { type: "string", minLength: 8 },
+        method: { type: "string", enum: ["GET", "POST"] },
+        retries: { type: "integer", minimum: 0 },
+      },
+      additionalProperties: false,
+    };
+
+    expect(validateJsonSchemaValue(schema, { url: "https://example.com", method: "GET", retries: 1 })).toEqual([]);
+    const errors = validateJsonSchemaValue(schema, { url: "bad", method: "DELETE", extra: true });
+    expect(errors.join("\n")).toMatch(/method/);
+    expect(errors.join("\n")).toMatch(/extra/);
   });
 
   it("should block HTTP tools from private network targets by default", async () => {

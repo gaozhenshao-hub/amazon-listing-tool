@@ -15,7 +15,7 @@ import { registerAiJobHandler, startRegisteredAiJob, type AiJobSnapshot } from "
 import { invokeEmperorTool } from "./emperorToolGateway";
 
 export type AgentNodeStatus = "pending" | "ready" | "running" | "waiting_human" | "confirmed" | "skipped" | "failed";
-export type AgentRunStatus = "running" | "waiting_human" | "completed" | "failed" | "canceled";
+export type AgentRunStatus = "running" | "waiting_human" | "paused" | "completed" | "failed" | "canceled";
 
 export type EmperorAgentNode = {
   id: string;
@@ -33,6 +33,8 @@ export type EmperorAgentNode = {
   autoConfirm?: boolean;
   scheduler?: "manual" | "auto";
   required?: boolean;
+  maxAttempts?: number;
+  timeoutSeconds?: number;
   inputRefs?: string[];
   outputKey?: string;
   reviewPrompt?: string;
@@ -86,9 +88,54 @@ export type AgentNodeSkillBinding = {
 export type StoredAgentRunRuntime = {
   agentSlug: string;
   agentName?: string | null;
+  templateVersionId?: number | null;
+  templateVersion?: string | null;
   dagSnapshot: EmperorAgentDag;
   dagHash: string;
   preparedAt: string;
+};
+
+export type AgentTemplateVersionStatus = "draft" | "released" | "deprecated";
+
+export type AgentContextArtifactRef = {
+  artifactId?: number;
+  runId: string;
+  nodeId: string;
+  artifactKey: string;
+  version: number;
+  status: string;
+  content: unknown;
+  sourceSkillRunId?: string | null;
+  sourceAiJobRunId?: string | null;
+};
+
+export type AgentContextPackage = {
+  version: "1.0";
+  agentRunId: string;
+  agentSlug: string;
+  projectId: number | null;
+  node: {
+    id: string;
+    label?: string;
+    nodeType: string;
+    skillSlug?: string;
+    skillVersion?: string | number;
+    skillVersionRef?: string;
+    skillVersionPolicy?: SkillVersionPolicy;
+    toolSlug?: string;
+    outputKey?: string;
+    params?: unknown;
+  };
+  runInputs: Record<string, unknown>;
+  parentOutputs: Record<string, unknown>;
+  confirmedOutputs: Record<string, unknown>;
+  artifacts: AgentContextArtifactRef[];
+  provenance: {
+    parentNodeIds: string[];
+    confirmedNodeIds: string[];
+    artifactRefs: string[];
+    builtAt: string;
+  };
 };
 
 type CheckpointRow = {
@@ -104,6 +151,9 @@ type CheckpointRow = {
   metadata?: unknown;
   skillRunId?: string | null;
   aiJobRunId?: string | null;
+  lockToken?: string | null;
+  lockedAt?: Date | null;
+  timeoutAt?: Date | null;
   errorMessage?: string | null;
 };
 
@@ -121,9 +171,10 @@ const NODE_STATUS_TRANSITIONS: Record<AgentNodeStatus, AgentNodeStatus[]> = {
 };
 
 const RUN_STATUS_TRANSITIONS: Record<AgentRunStatus, AgentRunStatus[]> = {
-  waiting_human: ["running", "completed", "failed", "canceled"],
-  running: ["waiting_human", "completed", "failed", "canceled"],
-  failed: ["waiting_human", "running", "canceled"],
+  waiting_human: ["running", "paused", "completed", "failed", "canceled"],
+  running: ["waiting_human", "paused", "completed", "failed", "canceled"],
+  paused: ["waiting_human", "running", "failed", "canceled"],
+  failed: ["waiting_human", "running", "paused", "canceled"],
   completed: [],
   canceled: [],
 };
@@ -155,12 +206,16 @@ export function buildStoredAgentRunInputs(input: {
   inputs: Record<string, unknown>;
   agentSlug: string;
   agentName?: string | null;
+  templateVersionId?: number | null;
+  templateVersion?: string | null;
   dag: EmperorAgentDag;
 }): Record<string, unknown> {
   return {
     __agentRun: {
       agentSlug: input.agentSlug,
       agentName: input.agentName ?? null,
+      templateVersionId: input.templateVersionId ?? null,
+      templateVersion: input.templateVersion ?? null,
       dagSnapshot: input.dag,
       dagHash: hashJson(input.dag),
       preparedAt: new Date().toISOString(),
@@ -211,7 +266,7 @@ function assertRunTransition(from: AgentRunStatus, to: AgentRunStatus, action: s
 }
 
 function assertRunMutable(run: { status?: string }, action: string) {
-  if (run.status === "canceled" || run.status === "completed") {
+  if (run.status === "canceled" || run.status === "completed" || run.status === "paused") {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message: `Run is ${run.status}; cannot ${action}`,
@@ -264,6 +319,17 @@ export function normalizeAgentDag(raw: unknown): EmperorAgentDag {
     nodes: Array.isArray(dag.nodes) ? dag.nodes.filter((node) => node?.id) as EmperorAgentNode[] : [],
     edges: Array.isArray(dag.edges) ? dag.edges as EmperorAgentEdge[] : [],
   };
+}
+
+function nodeMaxAttempts(node: EmperorAgentNode): number {
+  const value = Number(node.maxAttempts || 1);
+  return Number.isFinite(value) ? Math.min(Math.max(Math.floor(value), 1), 10) : 1;
+}
+
+function nodeTimeoutAt(node: EmperorAgentNode): Date {
+  const seconds = Number(node.timeoutSeconds || 600);
+  const boundedSeconds = Number.isFinite(seconds) ? Math.min(Math.max(Math.floor(seconds), 5), 7200) : 600;
+  return new Date(Date.now() + boundedSeconds * 1000);
 }
 
 const SUPPORTED_AGENT_NODE_TYPES = new Set([
@@ -602,6 +668,89 @@ export function getListingAgentDag(): EmperorAgentDag {
   };
 }
 
+function normalizeTemplateVersionRow(row: any) {
+  return {
+    ...row,
+    dagDefinition: normalizeAgentDag(row.dagDefinition),
+  };
+}
+
+export async function recordAgentTemplateVersion(input: {
+  agentSlug: string;
+  agentName?: string | null;
+  dag: EmperorAgentDag;
+  status?: AgentTemplateVersionStatus;
+  createdBy?: number | null;
+  releaseNotes?: string | null;
+}) {
+  const dag = assertValidAgentDag(input.dag, "record agent template version");
+  const status = input.status || "released";
+  const dagHash = hashJson(dag);
+  const existing = await rawExecute(
+    "SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND dagHash=? LIMIT 1",
+    [input.agentSlug, dagHash],
+  );
+  if (existing[0]) {
+    const nextStatus = existing[0].status === "released" && status === "draft" ? "released" : status;
+    await rawExecute(
+      "UPDATE emperor_agent_template_versions SET agentName=?,status=?,releaseNotes=COALESCE(?,releaseNotes),releasedAt=COALESCE(releasedAt,?),updatedAt=NOW() WHERE id=?",
+      [
+        input.agentName || null,
+        nextStatus,
+        input.releaseNotes || null,
+        nextStatus === "released" ? new Date() : null,
+        existing[0].id,
+      ],
+    );
+    const rows = await rawExecute("SELECT * FROM emperor_agent_template_versions WHERE id=? LIMIT 1", [existing[0].id]);
+    return normalizeTemplateVersionRow(rows[0] || existing[0]);
+  }
+
+  const latest = await rawExecute(
+    "SELECT versionNumber FROM emperor_agent_template_versions WHERE agentSlug=? ORDER BY versionNumber DESC LIMIT 1",
+    [input.agentSlug],
+  );
+  const versionNumber = Number(latest[0]?.versionNumber || 0) + 1;
+  const version = `v${versionNumber}`;
+  await rawExecute(
+    `INSERT INTO emperor_agent_template_versions
+     (agentSlug,agentName,versionNumber,version,dagHash,status,dagDefinition,releaseNotes,createdBy,releasedAt)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [
+      input.agentSlug,
+      input.agentName || null,
+      versionNumber,
+      version,
+      dagHash,
+      status,
+      stringifyJson(dag),
+      input.releaseNotes || null,
+      input.createdBy || null,
+      status === "released" ? new Date() : null,
+    ],
+  );
+  const rows = await rawExecute(
+    "SELECT * FROM emperor_agent_template_versions WHERE agentSlug=? AND dagHash=? LIMIT 1",
+    [input.agentSlug, dagHash],
+  );
+  return normalizeTemplateVersionRow(rows[0]);
+}
+
+export async function listAgentTemplateVersions(input: {
+  agentSlug: string;
+  limit?: number;
+}) {
+  const limit = Math.min(Math.max(input.limit || 20, 1), 100);
+  const rows = await rawExecute(
+    `SELECT * FROM emperor_agent_template_versions
+     WHERE agentSlug=?
+     ORDER BY versionNumber DESC, id DESC
+     LIMIT ${limit}`,
+    [input.agentSlug],
+  );
+  return rows.map(normalizeTemplateVersionRow);
+}
+
 export async function upsertListingAgentTemplate() {
   const dag = assertValidAgentDag(getListingAgentDag(), "install listing template");
   await rawExecute(
@@ -621,7 +770,14 @@ export async function upsertListingAgentTemplate() {
       "background",
     ],
   );
-  return { success: true, slug: LISTING_AGENT_SLUG, dag };
+  const templateVersion = await recordAgentTemplateVersion({
+    agentSlug: LISTING_AGENT_SLUG,
+    agentName: "智能 Listing 全链路 Agent",
+    dag,
+    status: "released",
+    releaseNotes: "Install Listing full workflow template",
+  });
+  return { success: true, slug: LISTING_AGENT_SLUG, dag, templateVersion };
 }
 
 async function getAgentBySlug(slug: string) {
@@ -775,6 +931,9 @@ async function refreshRunAfterCheckpoint(runId: string, dag: EmperorAgentDag) {
   if (runRow.status === "canceled") {
     return { checkpoints, status: "canceled" as AgentRunStatus, progress };
   }
+  if (runRow.status === "paused") {
+    return { checkpoints, status: "paused" as AgentRunStatus, progress };
+  }
 
   const allDone = checkpoints.length > 0 && checkpoints.every((checkpoint) => isConfirmedStatus(checkpoint.status));
   const failed = checkpoints.find((checkpoint) => checkpoint.status === "failed");
@@ -825,7 +984,14 @@ async function unlockChildren(runId: string, dag: EmperorAgentDag, nodeId: strin
   }
 }
 
-function buildNodeInput(run: any, dag: EmperorAgentDag, node: EmperorAgentNode, checkpoints: CheckpointRow[]) {
+export function buildAgentContextPackage(input: {
+  run: any;
+  dag: EmperorAgentDag;
+  node: EmperorAgentNode;
+  checkpoints: CheckpointRow[];
+  artifacts?: any[];
+}): AgentContextPackage {
+  const { run, dag, node, checkpoints } = input;
   const parents = parentIds(dag, node.id);
   const parentOutputs = checkpoints
     .filter((checkpoint) => parents.includes(checkpoint.nodeId))
@@ -841,10 +1007,32 @@ function buildNodeInput(run: any, dag: EmperorAgentDag, node: EmperorAgentNode, 
       acc[confirmedNode?.outputKey || checkpoint.nodeId] = effectiveCheckpointOutput(checkpoint);
       return acc;
     }, {});
+  const artifacts = (input.artifacts || [])
+    .filter((artifact) => artifact.status === "final" || parents.includes(artifact.nodeId))
+    .map((artifact) => ({
+      artifactId: artifact.id,
+      runId: artifact.runId,
+      nodeId: artifact.nodeId,
+      artifactKey: artifact.artifactKey,
+      version: Number(artifact.version || 1),
+      status: artifact.status,
+      content: artifact.content,
+      sourceSkillRunId: artifact.sourceSkillRunId || null,
+      sourceAiJobRunId: artifact.sourceAiJobRunId || null,
+    }));
+  const artifactRefs = artifacts.map((artifact) => `artifact://${artifact.runId}/${artifact.nodeId}/${artifact.artifactKey}@${artifact.version}`);
+  const parsedRunInputs = parseJson(run.inputs, {});
+  const runInputs = parsedRunInputs && typeof parsedRunInputs === "object" && !Array.isArray(parsedRunInputs)
+    ? parsedRunInputs as Record<string, unknown>
+    : {};
   return {
-    runInputs: parseJson(run.inputs, {}),
+    version: "1.0",
+    agentRunId: run.runId,
+    agentSlug: run.agentSlug,
+    projectId: run.projectId ?? null,
     parentOutputs,
     confirmedOutputs,
+    artifacts,
     node: {
       id: node.id,
       label: node.label,
@@ -857,6 +1045,21 @@ function buildNodeInput(run: any, dag: EmperorAgentDag, node: EmperorAgentNode, 
       nodeType: node.nodeType,
       params: node.toolParams ?? null,
     },
+    runInputs,
+    provenance: {
+      parentNodeIds: parents,
+      confirmedNodeIds: checkpoints.filter((checkpoint) => isConfirmedStatus(checkpoint.status)).map((checkpoint) => checkpoint.nodeId),
+      artifactRefs,
+      builtAt: new Date().toISOString(),
+    },
+  };
+}
+
+function buildNodeInput(run: any, dag: EmperorAgentDag, node: EmperorAgentNode, checkpoints: CheckpointRow[], artifacts?: any[]) {
+  const contextPackage = buildAgentContextPackage({ run, dag, node, checkpoints, artifacts });
+  return {
+    ...contextPackage,
+    contextPackage,
   };
 }
 
@@ -902,7 +1105,7 @@ async function finalizeNodeOutput(input: {
     ...(input.runtimeMetadata || {}),
   };
   await rawExecute(
-    "UPDATE emperor_agent_checkpoints SET status=?,output=?,metadata=?,skillRunId=COALESCE(?,skillRunId),reviewerUserId=?,completedAt=?,confirmedAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
+    "UPDATE emperor_agent_checkpoints SET status=?,output=?,metadata=?,skillRunId=COALESCE(?,skillRunId),reviewerUserId=?,completedAt=?,confirmedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,updatedAt=NOW() WHERE runId=? AND nodeId=?",
     [
       nextStatus,
       stringifyJson(input.output),
@@ -930,7 +1133,9 @@ async function finalizeNodeOutput(input: {
   });
 
   if (waitingForHuman) {
-    await rawExecute("UPDATE emperor_agent_runs SET status='waiting_human',currentNodeId=?,updatedAt=NOW() WHERE runId=?", [input.node.id, input.run.runId]);
+    if (latestRun.status !== "paused") {
+      await rawExecute("UPDATE emperor_agent_runs SET status='waiting_human',currentNodeId=?,updatedAt=NOW() WHERE runId=?", [input.node.id, input.run.runId]);
+    }
     await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.waiting_human", input.completedMessage || `节点 ${input.node.label || input.node.id} 已生成，等待人工确认`, {
       skillRunId: input.skillRunId || null,
     });
@@ -960,7 +1165,7 @@ async function failNodeExecution(input: {
   assertNodeTransition(checkpoint.status, "failed", "fail node");
   assertRunTransition(latestRun.status as AgentRunStatus, "failed", "fail run");
   await rawExecute(
-    "UPDATE emperor_agent_checkpoints SET status='failed',errorMessage=?,completedAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
+    "UPDATE emperor_agent_checkpoints SET status='failed',errorMessage=?,completedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,updatedAt=NOW() WHERE runId=? AND nodeId=?",
     [message, new Date(), input.run.runId, input.node.id],
   );
   await rawExecute("UPDATE emperor_agent_runs SET status='failed',errorMessage=?,currentNodeId=?,updatedAt=NOW() WHERE runId=?", [message, input.node.id, input.run.runId]);
@@ -1042,6 +1247,14 @@ export async function startAgentRun(input: {
 }) {
   const agent = await getAgentBySlug(input.slug);
   const dag = assertValidAgentDag(agent.dagDefinition, "start run");
+  const templateVersion = await recordAgentTemplateVersion({
+    agentSlug: agent.slug,
+    agentName: agent.name,
+    dag,
+    status: agent.status === "draft" ? "draft" : "released",
+    createdBy: input.userId,
+    releaseNotes: "Captured for Agent run",
+  });
   const nodeMetadata = new Map<string, Record<string, unknown>>();
   for (const node of dag.nodes) {
     nodeMetadata.set(node.id, await buildNodeRunMetadata(node));
@@ -1050,6 +1263,8 @@ export async function startAgentRun(input: {
     inputs: input.inputs,
     agentSlug: agent.slug,
     agentName: agent.name,
+    templateVersionId: templateVersion?.id ?? null,
+    templateVersion: templateVersion?.version ?? null,
     dag,
   });
   const runRuntime = parseStoredAgentRunInputs(storedInputs).runtime;
@@ -1059,21 +1274,37 @@ export async function startAgentRun(input: {
   const firstReady = rootNodeIds[0] || dag.nodes[0].id;
 
   await rawExecute(
-    "INSERT INTO emperor_agent_runs (runId,agentSlug,agentName,userId,projectId,status,currentNodeId,progress,inputs,startedAt) VALUES (?,?,?,?,?,?,?,?,?,?)",
-    [runId, agent.slug, agent.name, input.userId, input.projectId ?? null, "waiting_human", firstReady, 0, stringifyJson(storedInputs), new Date()],
+    "INSERT INTO emperor_agent_runs (runId,agentSlug,agentName,templateVersionId,templateVersion,dagHash,userId,projectId,status,currentNodeId,progress,inputs,startedAt) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    [
+      runId,
+      agent.slug,
+      agent.name,
+      templateVersion?.id ?? null,
+      templateVersion?.version ?? null,
+      runRuntime?.dagHash ?? templateVersion?.dagHash ?? null,
+      input.userId,
+      input.projectId ?? null,
+      "waiting_human",
+      firstReady,
+      0,
+      stringifyJson(storedInputs),
+      new Date(),
+    ],
   );
 
   for (const node of dag.nodes) {
     const status: AgentNodeStatus = rootNodeIds.includes(node.id) ? "ready" : "pending";
     await rawExecute(
-      "INSERT INTO emperor_agent_checkpoints (runId,agentSlug,nodeId,nodeLabel,nodeType,status,metadata) VALUES (?,?,?,?,?,?,?)",
-      [runId, agent.slug, node.id, node.label || node.id, node.nodeType || "skill_node", status, stringifyJson(nodeMetadata.get(node.id) || { node })],
+      "INSERT INTO emperor_agent_checkpoints (runId,agentSlug,nodeId,nodeLabel,nodeType,status,maxAttempts,metadata) VALUES (?,?,?,?,?,?,?,?)",
+      [runId, agent.slug, node.id, node.label || node.id, node.nodeType || "skill_node", status, nodeMaxAttempts(node), stringifyJson(nodeMetadata.get(node.id) || { node })],
     );
   }
 
   await addEvent(runId, agent.slug, null, "run.started", `Agent ${agent.name} 已启动`, {
     inputs: input.inputs,
     dagHash: runRuntime?.dagHash || null,
+    templateVersionId: templateVersion?.id ?? null,
+    templateVersion: templateVersion?.version ?? null,
     skillSnapshots: [...nodeMetadata.values()].filter((metadata) => metadata.skillSnapshot).map((metadata) => metadata.skillSnapshot),
   });
   return getAgentRun(runId, input.userId, true);
@@ -1218,7 +1449,7 @@ export async function rerunAgentNode(input: {
     const placeholders = descendants.map(() => "?").join(",");
     await rawExecute(
       `UPDATE emperor_agent_checkpoints
-       SET status='pending',input=NULL,output=NULL,userEdit=NULL,skillRunId=NULL,aiJobRunId=NULL,reviewerUserId=NULL,errorMessage=NULL,startedAt=NULL,completedAt=NULL,confirmedAt=NULL,updatedAt=NOW()
+       SET status='pending',input=NULL,output=NULL,userEdit=NULL,skillRunId=NULL,aiJobRunId=NULL,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,reviewerUserId=NULL,errorMessage=NULL,startedAt=NULL,completedAt=NULL,confirmedAt=NULL,updatedAt=NOW()
        WHERE runId=? AND nodeId IN (${placeholders})`,
       [input.runId, ...descendants],
     );
@@ -1226,7 +1457,7 @@ export async function rerunAgentNode(input: {
 
   await rawExecute(
     `UPDATE emperor_agent_checkpoints
-     SET status='ready',input=NULL,output=NULL,userEdit=NULL,skillRunId=NULL,aiJobRunId=NULL,reviewerUserId=NULL,errorMessage=NULL,startedAt=NULL,completedAt=NULL,confirmedAt=NULL,updatedAt=NOW()
+     SET status='ready',input=NULL,output=NULL,userEdit=NULL,skillRunId=NULL,aiJobRunId=NULL,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,reviewerUserId=NULL,errorMessage=NULL,startedAt=NULL,completedAt=NULL,confirmedAt=NULL,updatedAt=NOW()
      WHERE runId=? AND nodeId=?`,
     [input.runId, input.nodeId],
   );
@@ -1260,7 +1491,7 @@ export async function cancelAgentRun(input: {
   }
 
   await rawExecute(
-    "UPDATE emperor_agent_checkpoints SET status='failed',errorMessage=?,completedAt=?,updatedAt=NOW() WHERE runId=? AND status='running'",
+    "UPDATE emperor_agent_checkpoints SET status='failed',errorMessage=?,completedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,updatedAt=NOW() WHERE runId=? AND status='running'",
     [input.reason || "Agent run canceled", new Date(), input.runId],
   );
   await rawExecute(
@@ -1271,6 +1502,91 @@ export async function cancelAgentRun(input: {
     reason: input.reason || null,
   });
   return getAgentRun(input.runId, input.userId, true);
+}
+
+export async function pauseAgentRun(input: {
+  runId: string;
+  userId: number;
+  reason?: string;
+}) {
+  const detail = await getAgentRun(input.runId, input.userId);
+  const run = detail.run;
+  if (run.status === "paused") return detail;
+  assertRunTransition(run.status as AgentRunStatus, "paused", "pause run");
+  await rawExecute(
+    "UPDATE emperor_agent_runs SET status='paused',errorMessage=?,updatedAt=NOW() WHERE runId=?",
+    [input.reason || null, input.runId],
+  );
+  await addEvent(input.runId, run.agentSlug, null, "run.paused", "Agent Run 已暂停", {
+    reason: input.reason || null,
+  });
+  return getAgentRun(input.runId, input.userId, true);
+}
+
+export async function resumeAgentRun(input: {
+  runId: string;
+  userId: number;
+}) {
+  const detail = await getAgentRun(input.runId, input.userId);
+  const run = detail.run;
+  if (run.status !== "paused") return detail;
+  const dag = normalizeAgentDag(detail.dag);
+  const checkpoints = detail.checkpoints as CheckpointRow[];
+  const allDone = checkpoints.length > 0 && checkpoints.every((checkpoint) => isConfirmedStatus(checkpoint.status));
+  const anyRunning = checkpoints.some((checkpoint) => checkpoint.status === "running");
+  const nextStatus: AgentRunStatus = allDone ? "completed" : anyRunning ? "running" : "waiting_human";
+  assertRunTransition(run.status as AgentRunStatus, nextStatus, "resume run");
+  await rawExecute(
+    "UPDATE emperor_agent_runs SET status=?,errorMessage=NULL,updatedAt=NOW() WHERE runId=?",
+    [nextStatus, input.runId],
+  );
+  await addEvent(input.runId, run.agentSlug, null, "run.resumed", "Agent Run 已恢复", { nextStatus });
+  await unlockReadyNodes(input.runId, dag);
+  await refreshRunAfterCheckpoint(input.runId, dag);
+  return getAgentRun(input.runId, input.userId, true);
+}
+
+export async function recoverTimedOutAgentNodes(opts: { limit?: number } = {}) {
+  const limit = Math.min(Math.max(opts.limit || 50, 1), 200);
+  const rows = await rawExecute(
+    `SELECT * FROM emperor_agent_checkpoints
+     WHERE status='running' AND timeoutAt IS NOT NULL AND timeoutAt < NOW()
+     ORDER BY timeoutAt ASC LIMIT ${limit}`,
+  );
+  const result = { scanned: rows.length, failed: 0, skippedPaused: 0 };
+  for (const row of rows) {
+    const checkpoint = checkpointPayload(row);
+    const run = await getRunRow(checkpoint.runId).catch(() => null);
+    if (!run || run.status === "canceled" || run.status === "completed") continue;
+    if (run.status === "paused") {
+      result.skippedPaused += 1;
+      continue;
+    }
+
+    const message = `Node timed out at ${checkpoint.timeoutAt instanceof Date ? checkpoint.timeoutAt.toISOString() : checkpoint.timeoutAt}`;
+    await rawExecute(
+      "UPDATE emperor_agent_checkpoints SET status='failed',errorMessage=?,completedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,updatedAt=NOW() WHERE runId=? AND nodeId=? AND status='running'",
+      [message, new Date(), checkpoint.runId, checkpoint.nodeId],
+    );
+    if (checkpoint.aiJobRunId) {
+      await updateAiJobByRunId(checkpoint.aiJobRunId, {
+        status: "failed",
+        progress: 100,
+        errorMessage: message,
+        completedAt: new Date(),
+      });
+    }
+    await rawExecute(
+      "UPDATE emperor_agent_runs SET status='failed',errorMessage=?,currentNodeId=?,updatedAt=NOW() WHERE runId=?",
+      [message, checkpoint.nodeId, checkpoint.runId],
+    );
+    await addEvent(checkpoint.runId, checkpoint.agentSlug, checkpoint.nodeId, "node.timeout", `节点 ${checkpoint.nodeLabel || checkpoint.nodeId} 执行超时`, {
+      error: message,
+      aiJobRunId: checkpoint.aiJobRunId || null,
+    });
+    result.failed += 1;
+  }
+  return result;
 }
 
 export async function confirmAgentNode(input: {
@@ -1295,7 +1611,7 @@ export async function confirmAgentNode(input: {
   }
   assertNodeTransition(checkpoint.status, nextStatus, "confirm node");
   await rawExecute(
-    "UPDATE emperor_agent_checkpoints SET status=?,output=COALESCE(?,output),userEdit=?,reviewerUserId=?,confirmedAt=?,completedAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
+    "UPDATE emperor_agent_checkpoints SET status=?,output=COALESCE(?,output),userEdit=?,reviewerUserId=?,confirmedAt=?,completedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,updatedAt=NOW() WHERE runId=? AND nodeId=?",
     [
       nextStatus,
       input.output === undefined ? null : stringifyJson(input.output),
@@ -1359,16 +1675,24 @@ export async function executeAgentNode(input: {
   assertNodeTransition(checkpoint.status, "running", "execute node");
   assertRunTransition(run.status as AgentRunStatus, "running", "execute node");
 
-  const nodeInput = buildNodeInput(run, dag, node, detail.checkpoints);
+  const nodeInput = buildNodeInput(run, dag, node, detail.checkpoints, detail.artifacts);
   const metadata = checkpointMetadata(checkpoint);
   const binding = resolveAgentNodeSkillBinding(node);
   const skillSnapshot = metadata.skillSnapshot && typeof metadata.skillSnapshot === "object"
     ? metadata.skillSnapshot as SkillRuntimeSnapshot
     : null;
+  const lockToken = generateRunId("node_lock");
+  const lockedAt = new Date();
+  const timeoutAt = nodeTimeoutAt(node);
   await rawExecute(
-    "UPDATE emperor_agent_checkpoints SET status='running',attempt=attempt+1,input=?,errorMessage=NULL,startedAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
-    [stringifyJson(nodeInput), new Date(), input.runId, input.nodeId],
+    "UPDATE emperor_agent_checkpoints SET status='running',attempt=attempt+1,input=?,errorMessage=NULL,startedAt=?,lockToken=?,lockedAt=?,timeoutAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=? AND status=?",
+    [stringifyJson(nodeInput), lockedAt, lockToken, lockedAt, timeoutAt, input.runId, input.nodeId, checkpoint.status],
   );
+  const claimedCheckpoint = await getCheckpoint(input.runId, input.nodeId);
+  if (claimedCheckpoint.lockToken !== lockToken) {
+    await addEvent(input.runId, run.agentSlug, input.nodeId, "node.execution_deduped", `节点 ${node.label || node.id} 已被其他执行请求锁定`);
+    return getAgentRun(input.runId, input.userId, true);
+  }
   await rawExecute("UPDATE emperor_agent_runs SET status='running',currentNodeId=?,updatedAt=NOW() WHERE runId=?", [input.nodeId, input.runId]);
   await addEvent(input.runId, run.agentSlug, input.nodeId, "node.running", `节点 ${node.label || node.id} 开始执行`, { nodeInput });
 
@@ -1419,6 +1743,8 @@ export async function executeAgentNode(input: {
     userId: input.userId,
     projectId: run.projectId ?? null,
     skillSlug: node.skillSlug,
+    maxAttempts: nodeMaxAttempts(node),
+    timeoutSeconds: Number(node.timeoutSeconds || 600),
     input: {
       runId: input.runId,
       agentSlug: run.agentSlug,

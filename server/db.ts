@@ -1,4 +1,4 @@
-import { eq, desc, asc, and, or, inArray, sql } from "drizzle-orm";
+import { eq, desc, asc, and, or, inArray, sql, isNull, lt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
@@ -211,6 +211,91 @@ export async function updateAiJobByRunId(runId: string, data: Partial<InsertAiJo
   return rows[0] || null;
 }
 
+export async function claimAiJobByRunId(
+  runId: string,
+  opts: { workerId: string; leaseSeconds?: number; progress?: number },
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const leaseSeconds = Math.min(Math.max(opts.leaseSeconds || 900, 30), 7200);
+  const progress = Math.min(Math.max(opts.progress ?? 10, 0), 99);
+  await db.execute(sql`
+    UPDATE ai_jobs
+    SET
+      status = 'running',
+      progress = GREATEST(progress, ${progress}),
+      attempt = attempt + 1,
+      lockedBy = ${opts.workerId},
+      leaseUntil = DATE_ADD(NOW(), INTERVAL ${leaseSeconds} SECOND),
+      lastHeartbeatAt = NOW(),
+      startedAt = COALESCE(startedAt, NOW()),
+      completedAt = NULL,
+      errorMessage = NULL
+    WHERE runId = ${runId}
+      AND status IN ('queued', 'running')
+      AND (nextRunAt IS NULL OR nextRunAt <= NOW())
+      AND (lockedBy IS NULL OR lockedBy = ${opts.workerId} OR leaseUntil IS NULL OR leaseUntil < NOW())
+  `);
+  const rows = await db.select().from(aiJobs).where(eq(aiJobs.runId, runId)).limit(1);
+  const job = rows[0] || null;
+  return job && job.status === "running" && job.lockedBy === opts.workerId ? job : null;
+}
+
+export async function heartbeatAiJobLease(runId: string, workerId: string, leaseSeconds = 900) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const boundedLeaseSeconds = Math.min(Math.max(leaseSeconds, 30), 7200);
+  await db.execute(sql`
+    UPDATE ai_jobs
+    SET leaseUntil = DATE_ADD(NOW(), INTERVAL ${boundedLeaseSeconds} SECOND), lastHeartbeatAt = NOW()
+    WHERE runId = ${runId} AND lockedBy = ${workerId} AND status = 'running'
+  `);
+  const rows = await db.select().from(aiJobs).where(eq(aiJobs.runId, runId)).limit(1);
+  return rows[0] || null;
+}
+
+export async function releaseAiJobLease(runId: string, workerId?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (workerId) {
+    await db.execute(sql`
+      UPDATE ai_jobs
+      SET lockedBy = NULL, leaseUntil = NULL, lastHeartbeatAt = NULL
+      WHERE runId = ${runId} AND lockedBy = ${workerId}
+    `);
+  } else {
+    await db.execute(sql`
+      UPDATE ai_jobs
+      SET lockedBy = NULL, leaseUntil = NULL, lastHeartbeatAt = NULL
+      WHERE runId = ${runId}
+    `);
+  }
+  const rows = await db.select().from(aiJobs).where(eq(aiJobs.runId, runId)).limit(1);
+  return rows[0] || null;
+}
+
+export async function retryAiJobByRunId(
+  runId: string,
+  data: { errorMessage: string; nextRunAt: Date; progress?: number },
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(aiJobs)
+    .set({
+      status: "queued",
+      progress: data.progress ?? 0,
+      errorMessage: data.errorMessage,
+      nextRunAt: data.nextRunAt,
+      leaseUntil: null,
+      lockedBy: null,
+      lastHeartbeatAt: null,
+      completedAt: null,
+    })
+    .where(eq(aiJobs.runId, runId));
+  const rows = await db.select().from(aiJobs).where(eq(aiJobs.runId, runId)).limit(1);
+  return rows[0] || null;
+}
+
 export async function listAiJobsForUser(
   userId: number,
   opts: { module?: string; status?: InsertAiJob["status"]; limit?: number } = {},
@@ -233,9 +318,19 @@ export async function listAiJobsForUser(
 export async function listRecoverableAiJobs(opts: { limit?: number } = {}) {
   const db = await getDb();
   if (!db) return [];
+  const now = new Date();
   return db.select()
     .from(aiJobs)
-    .where(inArray(aiJobs.status, ["queued", "running"]))
+    .where(or(
+      and(
+        eq(aiJobs.status, "queued"),
+        or(isNull(aiJobs.nextRunAt), lt(aiJobs.nextRunAt, now)),
+      ),
+      and(
+        eq(aiJobs.status, "running"),
+        or(isNull(aiJobs.leaseUntil), lt(aiJobs.leaseUntil, now)),
+      ),
+    ))
     .orderBy(asc(aiJobs.createdAt))
     .limit(Math.min(Math.max(opts.limit || 50, 1), 200));
 }

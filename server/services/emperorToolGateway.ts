@@ -123,6 +123,125 @@ function parseArrayConfig(value: unknown): string[] {
   return [];
 }
 
+function schemaTypes(schema: Record<string, any>): string[] {
+  const type = schema.type;
+  if (Array.isArray(type)) return type.map(String);
+  if (typeof type === "string") return [type];
+  if (schema.properties || schema.required) return ["object"];
+  if (schema.items) return ["array"];
+  return [];
+}
+
+function matchesJsonSchemaType(type: string, value: unknown): boolean {
+  switch (type) {
+    case "null":
+      return value === null;
+    case "boolean":
+      return typeof value === "boolean";
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    case "integer":
+      return typeof value === "number" && Number.isInteger(value);
+    case "string":
+      return typeof value === "string";
+    case "array":
+      return Array.isArray(value);
+    case "object":
+      return Boolean(value && typeof value === "object" && !Array.isArray(value));
+    default:
+      return true;
+  }
+}
+
+function jsonSchemaPath(parent: string, key: string | number): string {
+  return typeof key === "number" ? `${parent}[${key}]` : `${parent}.${key}`;
+}
+
+export function validateJsonSchemaValue(schema: unknown, value: unknown, path = "$"): string[] {
+  if (schema === undefined || schema === null || schema === true) return [];
+  if (schema === false) return [`${path} is not allowed`];
+  if (typeof schema !== "object" || Array.isArray(schema)) return [];
+
+  const record = schema as Record<string, any>;
+  if (Array.isArray(record.anyOf) && !record.anyOf.some((item) => validateJsonSchemaValue(item, value, path).length === 0)) {
+    return [`${path} must match at least one allowed schema`];
+  }
+  if (Array.isArray(record.oneOf) && record.oneOf.filter((item) => validateJsonSchemaValue(item, value, path).length === 0).length !== 1) {
+    return [`${path} must match exactly one allowed schema`];
+  }
+  if (Array.isArray(record.allOf)) {
+    return record.allOf.flatMap((item) => validateJsonSchemaValue(item, value, path));
+  }
+
+  if (Array.isArray(record.enum) && !record.enum.some((item) => JSON.stringify(item) === JSON.stringify(value))) {
+    return [`${path} must be one of ${record.enum.map((item) => JSON.stringify(item)).join(", ")}`];
+  }
+
+  const types = schemaTypes(record);
+  if (types.length > 0 && !types.some((type) => matchesJsonSchemaType(type, value))) {
+    return [`${path} must be ${types.join(" or ")}`];
+  }
+
+  const errors: string[] = [];
+  if (matchesJsonSchemaType("object", value)) {
+    const objectValue = value as Record<string, unknown>;
+    const required = Array.isArray(record.required) ? record.required.map(String) : [];
+    for (const key of required) {
+      if (!Object.prototype.hasOwnProperty.call(objectValue, key) || objectValue[key] === undefined) {
+        errors.push(`${jsonSchemaPath(path, key)} is required`);
+      }
+    }
+    const properties = toRecord(record.properties);
+    for (const [key, propertySchema] of Object.entries(properties)) {
+      if (Object.prototype.hasOwnProperty.call(objectValue, key)) {
+        errors.push(...validateJsonSchemaValue(propertySchema, objectValue[key], jsonSchemaPath(path, key)));
+      }
+    }
+    if (record.additionalProperties === false) {
+      const allowed = new Set(Object.keys(properties));
+      for (const key of Object.keys(objectValue)) {
+        if (!allowed.has(key)) errors.push(`${jsonSchemaPath(path, key)} is not allowed`);
+      }
+    }
+  }
+
+  if (Array.isArray(value) && record.items) {
+    value.forEach((item, index) => {
+      errors.push(...validateJsonSchemaValue(record.items, item, jsonSchemaPath(path, index)));
+    });
+  }
+
+  if (typeof value === "string") {
+    if (typeof record.minLength === "number" && value.length < record.minLength) errors.push(`${path} is shorter than ${record.minLength}`);
+    if (typeof record.maxLength === "number" && value.length > record.maxLength) errors.push(`${path} is longer than ${record.maxLength}`);
+    if (record.pattern) {
+      try {
+        if (!new RegExp(String(record.pattern)).test(value)) errors.push(`${path} does not match pattern`);
+      } catch {
+        errors.push(`${path} has an invalid schema pattern`);
+      }
+    }
+  }
+
+  if (typeof value === "number") {
+    if (typeof record.minimum === "number" && value < record.minimum) errors.push(`${path} must be >= ${record.minimum}`);
+    if (typeof record.maximum === "number" && value > record.maximum) errors.push(`${path} must be <= ${record.maximum}`);
+  }
+
+  return errors;
+}
+
+function assertToolSchema(direction: "input" | "output", tool: EmperorToolDefinition, value: unknown) {
+  const schema = direction === "input" ? tool.inputSchema : tool.outputSchema;
+  if (!schema) return;
+  const errors = validateJsonSchemaValue(schema, value, "$");
+  if (errors.length === 0) return;
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: `Tool ${tool.slug} ${direction}Schema validation failed: ${errors.slice(0, 5).join("; ")}`,
+  });
+}
+
 function inferRequestUrl(params: unknown, config: unknown): URL | null {
   const request = toRecord(params);
   const toolConfig = toRecord(config);
@@ -587,6 +706,7 @@ async function invokeMcpConnector(tool: EmperorToolDefinition, params: unknown) 
 export async function invokeEmperorTool(input: EmperorToolInvocationInput): Promise<EmperorToolInvocationResult> {
   const startedAt = Date.now();
   const tool = await getToolDefinition(input.toolSlug);
+  assertToolSchema("input", tool, input.params ?? {});
   const toolRunId = generateToolRunId();
   const riskLevel = inferToolRisk(tool, input.params);
   const requestUrl = tool.type === "api" || tool.type === "mcp" || tool.slug === "internal.http.request"
@@ -624,6 +744,7 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
         message: "Code tools require an approved internal handler and cannot execute arbitrary code.",
       });
     }
+    assertToolSchema("output", tool, output);
 
     await finishToolRunRecord({
       toolRunId,

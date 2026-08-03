@@ -15,9 +15,14 @@ import {
   confirmAgentNode,
   executeAgentNode,
   getAgentRun,
+  listAgentTemplateVersions,
   listAgentArtifacts,
   normalizeAgentDag,
+  pauseAgentRun,
+  recordAgentTemplateVersion,
+  recoverTimedOutAgentNodes,
   rerunAgentNode,
+  resumeAgentRun,
   scheduleAgentRun,
   startAgentRun,
   updateAgentNodeDraft,
@@ -791,14 +796,16 @@ export const emperorAgentsRouter = router({
       triggerType: z.string().optional(),
       maxExecutionSeconds: z.number().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { slug, ...rest } = input;
       const sets: string[] = []; const vals: any[] = [];
+      let releasedDag: any = null;
       if (rest.status === "active") {
-        const rows = await rawExecute("SELECT dagDefinition FROM emperor_agents WHERE slug=? LIMIT 1", [slug]);
+        const rows = await rawExecute("SELECT name,dagDefinition FROM emperor_agents WHERE slug=? LIMIT 1", [slug]);
         if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
         const dag = normalizeAgentDag(rows[0].dagDefinition);
         assertValidAgentDag(dag, "activate agent");
+        releasedDag = { name: rows[0].name, dag };
       }
       if (rest.name !== undefined) { sets.push("name=?"); vals.push(rest.name); }
       if (rest.description !== undefined) { sets.push("description=?"); vals.push(rest.description); }
@@ -809,7 +816,17 @@ export const emperorAgentsRouter = router({
       sets.push("updatedAt=NOW()");
       vals.push(slug);
       await rawExecute(`UPDATE emperor_agents SET ${sets.join(",")} WHERE slug=?`, vals);
-      return { success: true };
+      const templateVersion = releasedDag
+        ? await recordAgentTemplateVersion({
+          agentSlug: slug,
+          agentName: rest.name ?? releasedDag.name,
+          dag: releasedDag.dag,
+          status: "released",
+          createdBy: ctx.user.id,
+          releaseNotes: "Agent activated",
+        })
+        : null;
+      return { success: true, templateVersion };
     }),
 
   saveWorkflow: adminProcedure
@@ -820,13 +837,31 @@ export const emperorAgentsRouter = router({
         edges: z.array(z.any()),
       }).passthrough(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const dag = assertValidAgentDag(input.workflow, "save workflow");
       await rawExecute(
         "UPDATE emperor_agents SET dagDefinition=?, updatedAt=NOW() WHERE slug=?",
         [JSON.stringify(dag), input.slug]
       );
-      return { success: true, validation: validateAgentDag(dag) };
+      const rows = await rawExecute("SELECT name,status FROM emperor_agents WHERE slug=? LIMIT 1", [input.slug]);
+      const templateVersion = await recordAgentTemplateVersion({
+        agentSlug: input.slug,
+        agentName: rows[0]?.name || null,
+        dag,
+        status: rows[0]?.status === "active" ? "released" : "draft",
+        createdBy: ctx.user.id,
+        releaseNotes: "Workflow saved",
+      });
+      return { success: true, validation: validateAgentDag(dag), templateVersion };
+    }),
+
+  listTemplateVersions: protectedProcedure
+    .input(z.object({
+      slug: z.string(),
+      limit: z.number().min(1).max(100).optional().default(20),
+    }))
+    .query(async ({ input }) => {
+      return listAgentTemplateVersions({ agentSlug: input.slug, limit: input.limit });
     }),
 
   getAvailableSkills: protectedProcedure.query(async () => {
@@ -885,8 +920,12 @@ export const emperorAgentsRouter = router({
 
   listRuns: protectedProcedure
     .input(z.object({ slug: z.string(), limit: z.number().optional().default(20) }))
-    .query(async ({ input }) => {
-      return rawExecute("SELECT * FROM emperor_agent_runs WHERE agentSlug=? ORDER BY createdAt DESC LIMIT ?", [input.slug, input.limit]);
+    .query(async ({ input, ctx }) => {
+      const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
+      if (isAdmin) {
+        return rawExecute("SELECT * FROM emperor_agent_runs WHERE agentSlug=? ORDER BY createdAt DESC LIMIT ?", [input.slug, input.limit]);
+      }
+      return rawExecute("SELECT * FROM emperor_agent_runs WHERE agentSlug=? AND userId=? ORDER BY createdAt DESC LIMIT ?", [input.slug, ctx.user.id, input.limit]);
     }),
 
   executeNode: protectedProcedure
@@ -911,6 +950,29 @@ export const emperorAgentsRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       return cancelAgentRun({ runId: input.runId, userId: ctx.user.id, reason: input.reason });
+    }),
+
+  pauseRun: protectedProcedure
+    .input(z.object({
+      runId: z.string(),
+      reason: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return pauseAgentRun({ runId: input.runId, userId: ctx.user.id, reason: input.reason });
+    }),
+
+  resumeRun: protectedProcedure
+    .input(z.object({
+      runId: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return resumeAgentRun({ runId: input.runId, userId: ctx.user.id });
+    }),
+
+  recoverTimedOutNodes: adminProcedure
+    .input(z.object({ limit: z.number().min(1).max(200).optional() }).optional())
+    .mutation(async ({ input }) => {
+      return recoverTimedOutAgentNodes({ limit: input?.limit });
     }),
 
   rerunNode: protectedProcedure
@@ -976,13 +1038,21 @@ export const emperorAgentsRouter = router({
       status: z.enum(["draft","active","deprecated"]).optional().default("draft"),
       dagDefinition: z.any(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const dag = assertValidAgentDag(input.dagDefinition, "upsert agent");
       await rawExecute(
         `INSERT INTO emperor_agents (slug,name,description,category,status,dagDefinition) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),description=VALUES(description),category=VALUES(category),status=VALUES(status),dagDefinition=VALUES(dagDefinition),updatedAt=NOW()`,
         [input.slug, input.name, input.description||null, input.category||"通用", input.status, JSON.stringify(dag)]
       );
-      return { success: true, validation: validateAgentDag(dag) };
+      const templateVersion = await recordAgentTemplateVersion({
+        agentSlug: input.slug,
+        agentName: input.name,
+        dag,
+        status: input.status === "active" ? "released" : "draft",
+        createdBy: ctx.user.id,
+        releaseNotes: "Agent upserted",
+      });
+      return { success: true, validation: validateAgentDag(dag), templateVersion };
     }),
 
   delete: adminProcedure
