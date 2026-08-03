@@ -14,7 +14,7 @@ import {
   releaseAiJobLease,
   retryAiJobByRunId,
   updateAiJobByRunId,
-} from "../db";
+} from "../repositories/ai_os";
 import { shouldStartWorkerTasks } from "../_core/runtime";
 import { recordAiOsMetric } from "./aiOsObservability";
 

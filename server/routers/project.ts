@@ -1,15 +1,23 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import * as db from "../db";
+import {
+  createProject,
+  deleteProject,
+  getAllProjects,
+  getProjectById,
+  getProjectByIdAdmin,
+  getProjectsByUser,
+  updateProject,
+} from "../repositories/project";
 
 export const projectRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     // super_admin, admin, and designer can see all projects with owner info
     // designer needs read-only access to all projects for image suggestions
     if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin' || ctx.user.role === 'designer') {
-      return db.getAllProjects();
+      return getAllProjects();
     }
-    return db.getProjectsByUser(ctx.user.id);
+    return getProjectsByUser(ctx.user.id);
   }),
 
   getById: protectedProcedure
@@ -17,11 +25,11 @@ export const projectRouter = router({
     .query(async ({ ctx, input }) => {
       // super_admin, admin, and designer can access any project (designer: read-only for image suggestions)
       if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin' || ctx.user.role === 'designer') {
-        const project = await db.getProjectByIdAdmin(input.id);
+        const project = await getProjectByIdAdmin(input.id);
         if (!project) throw new Error("Project not found");
         return project;
       }
-      const project = await db.getProjectById(input.id, ctx.user.id);
+      const project = await getProjectById(input.id, ctx.user.id);
       if (!project) throw new Error("Project not found");
       return project;
     }),
@@ -37,7 +45,7 @@ export const projectRouter = router({
       productSpecs: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      return db.createProject({
+      return createProject({
         userId: ctx.user.id,
         name: input.name,
         brand: input.brand ?? null,
@@ -65,11 +73,11 @@ export const projectRouter = router({
       const { id, ...data } = input;
       // Admin can update any project
       if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
-        const project = await db.getProjectByIdAdmin(id);
+        const project = await getProjectByIdAdmin(id);
         if (!project) throw new Error("Project not found");
-        return db.updateProject(id, project.userId, data);
+        return updateProject(id, project.userId, data);
       }
-      return db.updateProject(id, ctx.user.id, data);
+      return updateProject(id, ctx.user.id, data);
     }),
 
   delete: protectedProcedure
@@ -77,10 +85,10 @@ export const projectRouter = router({
     .mutation(async ({ ctx, input }) => {
       // Admin can delete any project
       if (ctx.user.role === 'super_admin' || ctx.user.role === 'admin') {
-        const project = await db.getProjectByIdAdmin(input.id);
+        const project = await getProjectByIdAdmin(input.id);
         if (!project) throw new Error("Project not found");
-        return db.deleteProject(input.id, project.userId);
+        return deleteProject(input.id, project.userId);
       }
-      return db.deleteProject(input.id, ctx.user.id);
+      return deleteProject(input.id, ctx.user.id);
     }),
 });

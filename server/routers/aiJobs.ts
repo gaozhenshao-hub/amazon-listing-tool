@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
-import { listAiJobsForUser } from "../db";
+import { listAiJobsForUser } from "../repositories/ai_os";
 import {
   buildAiJobSnapshot,
   cancelAiJob,

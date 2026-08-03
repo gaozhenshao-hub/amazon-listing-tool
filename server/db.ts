@@ -1,5 +1,4 @@
-import { eq, desc, asc, and, or, inArray, sql, isNull, lt } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { eq, desc, asc, and, or, sql, isNull, lt } from "drizzle-orm";
 import {
   InsertUser, users,
   InsertProject, projects,
@@ -24,20 +23,33 @@ import {
   aiJobWorkers, aiJobDeadLetters,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
-
-let _db: ReturnType<typeof drizzle> | null = null;
-
-export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
-    try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
-    }
-  }
-   return _db;
-}
+export { getDb, requireDb, withDbTransaction } from "./repositories/dbClient";
+import { getDb } from "./repositories/dbClient";
+export {
+  claimAiJobByRunId,
+  createAiJob,
+  createAiJobDeadLetter,
+  getAiJobByRunId,
+  heartbeatAiJobLease,
+  heartbeatAiJobWorker,
+  listAiJobDeadLetters,
+  listAiJobsForUser,
+  listAiJobWorkers,
+  listRecoverableAiJobs,
+  markAiJobWorkerStopped,
+  releaseAiJobLease,
+  retryAiJobByRunId,
+  updateAiJobByRunId,
+} from "./repositories/ai_os";
+export {
+  createProject,
+  deleteProject,
+  getAllProjects,
+  getProjectById,
+  getProjectByIdAdmin,
+  getProjectsByUser,
+  updateProject,
+} from "./repositories/project";
 
 // --- Review Import Helpers ---
 
@@ -185,291 +197,6 @@ export async function getLoginLogs(limit = 100) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(loginLogs).orderBy(desc(loginLogs.createdAt)).limit(limit);
-}
-
-// --- Generic AI Job Helpers ---------------------------------------
-
-export async function createAiJob(data: InsertAiJob) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const [result] = await db.insert(aiJobs).values(data);
-  const rows = await db.select().from(aiJobs).where(eq(aiJobs.id, result.insertId)).limit(1);
-  return rows[0];
-}
-
-export async function getAiJobByRunId(runId: string) {
-  const db = await getDb();
-  if (!db) return null;
-  const rows = await db.select().from(aiJobs).where(eq(aiJobs.runId, runId)).limit(1);
-  return rows[0] || null;
-}
-
-export async function updateAiJobByRunId(runId: string, data: Partial<InsertAiJob>) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.update(aiJobs).set(data).where(eq(aiJobs.runId, runId));
-  const rows = await db.select().from(aiJobs).where(eq(aiJobs.runId, runId)).limit(1);
-  return rows[0] || null;
-}
-
-export async function claimAiJobByRunId(
-  runId: string,
-  opts: { workerId: string; leaseSeconds?: number; progress?: number },
-) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const leaseSeconds = Math.min(Math.max(opts.leaseSeconds || 900, 30), 7200);
-  const progress = Math.min(Math.max(opts.progress ?? 10, 0), 99);
-  await db.execute(sql`
-    UPDATE ai_jobs
-    SET
-      status = 'running',
-      progress = GREATEST(progress, ${progress}),
-      attempt = attempt + 1,
-      lockedBy = ${opts.workerId},
-      leaseUntil = DATE_ADD(NOW(), INTERVAL ${leaseSeconds} SECOND),
-      claimedAt = NOW(),
-      lastHeartbeatAt = NOW(),
-      startedAt = COALESCE(startedAt, NOW()),
-      completedAt = NULL,
-      errorMessage = NULL
-    WHERE runId = ${runId}
-      AND status IN ('queued', 'running')
-      AND (nextRunAt IS NULL OR nextRunAt <= NOW())
-      AND (lockedBy IS NULL OR lockedBy = ${opts.workerId} OR leaseUntil IS NULL OR leaseUntil < NOW())
-  `);
-  const rows = await db.select().from(aiJobs).where(eq(aiJobs.runId, runId)).limit(1);
-  const job = rows[0] || null;
-  return job && job.status === "running" && job.lockedBy === opts.workerId ? job : null;
-}
-
-export async function heartbeatAiJobLease(runId: string, workerId: string, leaseSeconds = 900) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const boundedLeaseSeconds = Math.min(Math.max(leaseSeconds, 30), 7200);
-  await db.execute(sql`
-    UPDATE ai_jobs
-    SET leaseUntil = DATE_ADD(NOW(), INTERVAL ${boundedLeaseSeconds} SECOND), lastHeartbeatAt = NOW()
-    WHERE runId = ${runId} AND lockedBy = ${workerId} AND status = 'running'
-  `);
-  const rows = await db.select().from(aiJobs).where(eq(aiJobs.runId, runId)).limit(1);
-  return rows[0] || null;
-}
-
-export async function releaseAiJobLease(runId: string, workerId?: string) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  if (workerId) {
-    await db.execute(sql`
-      UPDATE ai_jobs
-      SET lockedBy = NULL, leaseUntil = NULL, lastHeartbeatAt = NULL
-      WHERE runId = ${runId} AND lockedBy = ${workerId}
-    `);
-  } else {
-    await db.execute(sql`
-      UPDATE ai_jobs
-      SET lockedBy = NULL, leaseUntil = NULL, lastHeartbeatAt = NULL
-      WHERE runId = ${runId}
-    `);
-  }
-  const rows = await db.select().from(aiJobs).where(eq(aiJobs.runId, runId)).limit(1);
-  return rows[0] || null;
-}
-
-export async function retryAiJobByRunId(
-  runId: string,
-  data: { errorMessage: string; nextRunAt: Date; progress?: number },
-) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.update(aiJobs)
-    .set({
-      status: "queued",
-      progress: data.progress ?? 0,
-      errorMessage: data.errorMessage,
-      nextRunAt: data.nextRunAt,
-      leaseUntil: null,
-      lockedBy: null,
-      claimedAt: null,
-      lastHeartbeatAt: null,
-      completedAt: null,
-    })
-    .where(eq(aiJobs.runId, runId));
-  const rows = await db.select().from(aiJobs).where(eq(aiJobs.runId, runId)).limit(1);
-  return rows[0] || null;
-}
-
-export async function listAiJobsForUser(
-  userId: number,
-  opts: { module?: string; status?: InsertAiJob["status"]; limit?: number } = {},
-) {
-  const db = await getDb();
-  if (!db) return [];
-  const conditions = [
-    eq(aiJobs.userId, userId),
-    opts.module ? eq(aiJobs.module, opts.module) : undefined,
-    opts.status ? eq(aiJobs.status, opts.status) : undefined,
-  ].filter(Boolean) as any[];
-  const where = conditions.length === 1 ? conditions[0] : and(...conditions);
-  return db.select()
-    .from(aiJobs)
-    .where(where)
-    .orderBy(desc(aiJobs.createdAt))
-    .limit(Math.min(Math.max(opts.limit || 20, 1), 100));
-}
-
-export async function listRecoverableAiJobs(opts: { limit?: number } = {}) {
-  const db = await getDb();
-  if (!db) return [];
-  const now = new Date();
-  return db.select()
-    .from(aiJobs)
-    .where(or(
-      and(
-        eq(aiJobs.status, "queued"),
-        or(isNull(aiJobs.nextRunAt), lt(aiJobs.nextRunAt, now)),
-      ),
-      and(
-        eq(aiJobs.status, "running"),
-        or(isNull(aiJobs.leaseUntil), lt(aiJobs.leaseUntil, now)),
-      ),
-    ))
-    .orderBy(desc(aiJobs.priority), asc(aiJobs.nextRunAt), asc(aiJobs.createdAt))
-    .limit(Math.min(Math.max(opts.limit || 50, 1), 200));
-}
-
-export async function heartbeatAiJobWorker(input: {
-  workerId: string;
-  hostname?: string | null;
-  pid?: number | null;
-  role?: string | null;
-  status?: "active" | "draining" | "stopped" | "unhealthy";
-  concurrency?: number;
-  runningCount?: number;
-  metadata?: unknown;
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const concurrency = Math.min(Math.max(Math.floor(input.concurrency || 1), 1), 100);
-  const runningCount = Math.min(Math.max(Math.floor(input.runningCount || 0), 0), 100);
-  const status = input.status || "active";
-  const metadata = JSON.stringify(input.metadata ?? {});
-  await db.execute(sql`
-    INSERT INTO ai_job_workers
-      (workerId, hostname, pid, role, status, concurrency, runningCount, lastHeartbeatAt, startedAt, metadata)
-    VALUES
-      (${input.workerId}, ${input.hostname || null}, ${input.pid || null}, ${input.role || "worker"}, ${status}, ${concurrency}, ${runningCount}, NOW(), NOW(), ${metadata})
-    ON DUPLICATE KEY UPDATE
-      hostname = VALUES(hostname),
-      pid = VALUES(pid),
-      role = VALUES(role),
-      status = VALUES(status),
-      concurrency = VALUES(concurrency),
-      runningCount = VALUES(runningCount),
-      lastHeartbeatAt = NOW(),
-      metadata = VALUES(metadata),
-      stoppedAt = CASE WHEN VALUES(status) IN ('stopped','unhealthy') THEN NOW() ELSE NULL END,
-      updatedAt = NOW()
-  `);
-}
-
-export async function markAiJobWorkerStopped(workerId: string, status: "draining" | "stopped" | "unhealthy" = "stopped") {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.execute(sql`
-    UPDATE ai_job_workers
-    SET status = ${status}, runningCount = 0, stoppedAt = NOW(), updatedAt = NOW()
-    WHERE workerId = ${workerId}
-  `);
-}
-
-export async function listAiJobWorkers(opts: { limit?: number } = {}) {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select()
-    .from(aiJobWorkers)
-    .orderBy(desc(aiJobWorkers.lastHeartbeatAt))
-    .limit(Math.min(Math.max(opts.limit || 50, 1), 200));
-}
-
-export async function createAiJobDeadLetter(input: {
-  job: typeof aiJobs.$inferSelect;
-  reason: string;
-  metadata?: unknown;
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const metadata = JSON.stringify(input.metadata ?? {});
-  await db.execute(sql`
-    INSERT INTO ai_job_dead_letters
-      (runId, kind, module, procedure, status, attempt, maxAttempts, userId, projectId, skillSlug, errorMessage, input, metadata)
-    VALUES
-      (${input.job.runId}, ${input.job.kind}, ${input.job.module}, ${input.job.procedure || null}, ${input.job.status},
-       ${input.job.attempt || 0}, ${input.job.maxAttempts || 1}, ${input.job.userId}, ${input.job.projectId || null},
-       ${input.job.skillSlug || null}, ${input.reason}, ${JSON.stringify(input.job.input ?? null)}, ${metadata})
-    ON DUPLICATE KEY UPDATE
-      status = VALUES(status),
-      attempt = VALUES(attempt),
-      maxAttempts = VALUES(maxAttempts),
-      errorMessage = VALUES(errorMessage),
-      metadata = VALUES(metadata)
-  `);
-  await db.update(aiJobs)
-    .set({
-      deadLetterAt: new Date(),
-      deadLetterReason: input.reason,
-    } as Partial<InsertAiJob>)
-    .where(eq(aiJobs.runId, input.job.runId));
-}
-
-export async function listAiJobDeadLetters(opts: { limit?: number } = {}) {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select()
-    .from(aiJobDeadLetters)
-    .orderBy(desc(aiJobDeadLetters.createdAt))
-    .limit(Math.min(Math.max(opts.limit || 50, 1), 200));
-}
-
-// --- Project Helpers ----------------------------------------------------
-
-export async function createProject(data: InsertProject) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const result = await db.insert(projects).values(data);
-  const insertId = result[0].insertId;
-  const rows = await db.select().from(projects).where(eq(projects.id, insertId)).limit(1);
-  return rows[0];
-}
-
-export async function getProjectsByUser(userId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  return db.select().from(projects).where(eq(projects.userId, userId)).orderBy(desc(projects.updatedAt));
-}
-
-export async function getProjectById(id: number, userId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const rows = await db.select().from(projects).where(and(eq(projects.id, id), eq(projects.userId, userId))).limit(1);
-  return rows[0] ?? null;
-}
-
-export async function updateProject(id: number, userId: number, data: Partial<InsertProject>) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.update(projects).set(data).where(and(eq(projects.id, id), eq(projects.userId, userId)));
-  return getProjectById(id, userId);
-}
-
-export async function deleteProject(id: number, userId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  // Delete related data first
-  await db.delete(competitorAnalyses).where(eq(competitorAnalyses.projectId, id));
-  await db.delete(listings).where(eq(listings.projectId, id));
-  await db.delete(projects).where(and(eq(projects.id, id), eq(projects.userId, userId)));
-  return { success: true };
 }
 
 // --- Competitor Analysis Helpers --------------------------------
@@ -1094,46 +821,6 @@ export async function getAdminUsers() {
       ),
       eq(users.status, "active")
     ));
-}
-
-// --- Admin: get all projects (for super_admin/admin) ---
-export async function getAllProjects() {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const rows = await db.select({
-    id: projects.id,
-    name: projects.name,
-    brand: projects.brand,
-    productName: projects.productName,
-    category: projects.category,
-    targetMarket: projects.targetMarket,
-    status: projects.status,
-    userId: projects.userId,
-    createdAt: projects.createdAt,
-    updatedAt: projects.updatedAt,
-  }).from(projects).orderBy(desc(projects.updatedAt));
-
-  // Enrich with user info
-  const userIds = Array.from(new Set(rows.map(r => r.userId)));
-  let userMap: Record<number, string> = {};
-  if (userIds.length > 0) {
-    const userRows = await db.select({ id: users.id, name: users.name })
-      .from(users)
-      .where(inArray(users.id, userIds));
-    userMap = Object.fromEntries(userRows.map(u => [u.id, u.name || '未知']));
-  }
-
-  return rows.map(r => ({
-    ...r,
-    ownerName: userMap[r.userId] || '未知用户',
-  }));
-}
-
-export async function getProjectByIdAdmin(id: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  const rows = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
-  return rows[0] ?? null;
 }
 
 // --- Delete User Helpers ---
