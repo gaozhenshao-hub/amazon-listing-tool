@@ -74,6 +74,8 @@ export const aiJobs = mysqlTable("ai_jobs", {
   procedure: varchar("procedure", { length: 128 }),
   status: mysqlEnum("status", ["queued", "running", "succeeded", "failed", "canceled"]).default("queued").notNull(),
   progress: int("progress").default(0).notNull(),
+  priority: int("priority").default(0).notNull(),
+  queueName: varchar("queueName", { length: 64 }).default("default").notNull(),
   attempt: int("attempt").default(0).notNull(),
   maxAttempts: int("maxAttempts").default(1).notNull(),
   timeoutSeconds: int("timeoutSeconds").default(600).notNull(),
@@ -86,7 +88,10 @@ export const aiJobs = mysqlTable("ai_jobs", {
   nextRunAt: timestamp("nextRunAt"),
   leaseUntil: timestamp("leaseUntil"),
   lockedBy: varchar("lockedBy", { length: 128 }),
+  claimedAt: timestamp("claimedAt"),
   lastHeartbeatAt: timestamp("lastHeartbeatAt"),
+  deadLetterAt: timestamp("deadLetterAt"),
+  deadLetterReason: text("deadLetterReason"),
   startedAt: timestamp("startedAt"),
   completedAt: timestamp("completedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -95,6 +100,45 @@ export const aiJobs = mysqlTable("ai_jobs", {
 
 export type AiJob = typeof aiJobs.$inferSelect;
 export type InsertAiJob = typeof aiJobs.$inferInsert;
+
+export const aiJobWorkers = mysqlTable("ai_job_workers", {
+  id: int("id").autoincrement().primaryKey(),
+  workerId: varchar("workerId", { length: 128 }).notNull().unique(),
+  hostname: varchar("hostname", { length: 255 }),
+  pid: int("pid"),
+  role: varchar("role", { length: 64 }).default("worker").notNull(),
+  status: mysqlEnum("status", ["active", "draining", "stopped", "unhealthy"]).default("active").notNull(),
+  concurrency: int("concurrency").default(1).notNull(),
+  runningCount: int("runningCount").default(0).notNull(),
+  lastHeartbeatAt: timestamp("lastHeartbeatAt"),
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  stoppedAt: timestamp("stoppedAt"),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AiJobWorker = typeof aiJobWorkers.$inferSelect;
+export type InsertAiJobWorker = typeof aiJobWorkers.$inferInsert;
+
+export const aiJobDeadLetters = mysqlTable("ai_job_dead_letters", {
+  id: int("id").autoincrement().primaryKey(),
+  runId: varchar("runId", { length: 80 }).notNull().unique(),
+  kind: varchar("kind", { length: 128 }).notNull(),
+  module: varchar("module", { length: 64 }).notNull(),
+  procedure: varchar("procedure", { length: 128 }),
+  status: varchar("status", { length: 40 }),
+  attempt: int("attempt").default(0).notNull(),
+  maxAttempts: int("maxAttempts").default(1).notNull(),
+  userId: int("userId"),
+  projectId: int("projectId"),
+  skillSlug: varchar("skillSlug", { length: 128 }),
+  errorMessage: text("errorMessage"),
+  input: json("input"),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AiJobDeadLetter = typeof aiJobDeadLetters.$inferSelect;
+export type InsertAiJobDeadLetter = typeof aiJobDeadLetters.$inferInsert;
 
 // Knowledge base sync logs (P2P bidirectional sync)
 export const kbSyncLogs = mysqlTable("kb_sync_logs", {

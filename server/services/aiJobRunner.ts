@@ -1,10 +1,16 @@
-import type { AiJob, InsertAiJob } from "../../drizzle/schema";
+import type { AiJob, AiJobDeadLetter, AiJobWorker, InsertAiJob } from "../../drizzle/schema";
+import os from "os";
 import {
   claimAiJobByRunId,
   createAiJob,
+  createAiJobDeadLetter,
   getAiJobByRunId,
+  heartbeatAiJobWorker,
   heartbeatAiJobLease,
+  listAiJobDeadLetters,
+  listAiJobWorkers,
   listRecoverableAiJobs,
+  markAiJobWorkerStopped,
   releaseAiJobLease,
   retryAiJobByRunId,
   updateAiJobByRunId,
@@ -20,6 +26,8 @@ export type AiJobSnapshot = {
   procedure: string | null;
   status: AiJobStatus;
   progress: number;
+  priority: number;
+  queueName: string;
   attempt: number;
   maxAttempts: number;
   timeoutSeconds: number;
@@ -32,7 +40,10 @@ export type AiJobSnapshot = {
   nextRunAt: Date | null;
   leaseUntil: Date | null;
   lockedBy: string | null;
+  claimedAt: Date | null;
   lastHeartbeatAt: Date | null;
+  deadLetterAt: Date | null;
+  deadLetterReason: string | null;
   startedAt: Date | null;
   completedAt: Date | null;
   createdAt: Date;
@@ -53,8 +64,12 @@ const handlerRegistrations = new Map<string, AiJobHandlerRegistration>();
 const runningRunIds = new Set<string>();
 const pendingScheduleRunIds = new Set<string>();
 const activeAbortControllers = new Map<string, AbortController>();
+let aiJobQueueDraining = false;
 const DEFAULT_WORKER_LEASE_SECONDS = 15 * 60;
 const DEFAULT_JOB_TIMEOUT_SECONDS = 10 * 60;
+const DEFAULT_WORKER_HEARTBEAT_MS = 30_000;
+const DEFAULT_WORKER_STALE_MS = 2 * 60_000;
+const DEFAULT_SHUTDOWN_GRACE_MS = 30_000;
 const WORKER_ID = `web_${process.pid}_${Math.random().toString(36).slice(2, 8)}`;
 
 export function isActiveAiJob(status?: string | null): boolean {
@@ -99,7 +114,7 @@ export function getAiJobWorkerId() {
 }
 
 export function isAiJobSchedulingEnabled() {
-  return process.env.AI_JOB_RUNNER_MODE !== "external" && process.env.AI_JOB_IN_PROCESS !== "false";
+  return !aiJobQueueDraining && process.env.AI_JOB_RUNNER_MODE !== "external" && process.env.AI_JOB_IN_PROCESS !== "false";
 }
 
 export function getMaxConcurrentAiJobs() {
@@ -107,17 +122,170 @@ export function getMaxConcurrentAiJobs() {
   return Number.isFinite(value) ? Math.min(Math.max(Math.floor(value), 1), 25) : 2;
 }
 
+export function getAvailableAiJobSlots() {
+  return Math.max(getMaxConcurrentAiJobs() - runningRunIds.size - pendingScheduleRunIds.size, 0);
+}
+
 export function getAiJobRuntimeStatus() {
   return {
     workerId: WORKER_ID,
+    role: process.env.AI_JOB_RUNNER_MODE === "worker" ? "worker" : "web",
     schedulingEnabled: isAiJobSchedulingEnabled(),
+    draining: aiJobQueueDraining,
     maxConcurrency: getMaxConcurrentAiJobs(),
+    availableSlots: getAvailableAiJobSlots(),
     runningCount: runningRunIds.size,
     pendingScheduleCount: pendingScheduleRunIds.size,
     runningRunIds: [...runningRunIds],
     pendingScheduleRunIds: [...pendingScheduleRunIds],
     registeredHandlers: listAiJobHandlerRegistrations(),
   };
+}
+
+function getWorkerHeartbeatMs() {
+  const value = Number(process.env.AI_JOB_WORKER_HEARTBEAT_MS || DEFAULT_WORKER_HEARTBEAT_MS);
+  return Number.isFinite(value) ? Math.min(Math.max(Math.floor(value), 5_000), 5 * 60_000) : DEFAULT_WORKER_HEARTBEAT_MS;
+}
+
+function getWorkerStaleMs() {
+  const value = Number(process.env.AI_JOB_WORKER_STALE_MS || DEFAULT_WORKER_STALE_MS);
+  return Number.isFinite(value) ? Math.min(Math.max(Math.floor(value), 15_000), 30 * 60_000) : DEFAULT_WORKER_STALE_MS;
+}
+
+function getWorkerRole() {
+  return process.env.AI_JOB_RUNNER_MODE === "worker" ? "worker" : "web";
+}
+
+export async function reportAiJobWorkerHeartbeat(input: {
+  status?: "active" | "draining" | "stopped" | "unhealthy";
+  metadata?: unknown;
+} = {}) {
+  await heartbeatAiJobWorker({
+    workerId: WORKER_ID,
+    hostname: os.hostname(),
+    pid: process.pid,
+    role: getWorkerRole(),
+    status: input.status || (aiJobQueueDraining ? "draining" : "active"),
+    concurrency: getMaxConcurrentAiJobs(),
+    runningCount: runningRunIds.size,
+    metadata: {
+      ...getAiJobRuntimeStatus(),
+      ...(input.metadata && typeof input.metadata === "object" ? input.metadata as Record<string, unknown> : { metadata: input.metadata }),
+    },
+  });
+}
+
+export function startAiJobWorkerHeartbeat(opts: { intervalMs?: number; metadata?: unknown } = {}) {
+  let stopped = false;
+  const intervalMs = Math.min(Math.max(Math.floor(opts.intervalMs || getWorkerHeartbeatMs()), 5_000), 5 * 60_000);
+  const beat = async () => {
+    if (stopped) return;
+    try {
+      await reportAiJobWorkerHeartbeat({ metadata: opts.metadata });
+    } catch (error) {
+      console.warn("[AI Job] worker heartbeat failed:", error);
+    }
+  };
+
+  void beat();
+  const interval = setInterval(() => {
+    void beat();
+  }, intervalMs);
+  (interval as any).unref?.();
+
+  return async (status: "stopped" | "unhealthy" = "stopped") => {
+    stopped = true;
+    clearInterval(interval);
+    try {
+      await markAiJobWorkerStopped(WORKER_ID, status);
+    } catch (error) {
+      console.warn("[AI Job] failed to mark worker stopped:", error);
+    }
+  };
+}
+
+export async function markAiJobWorkerDraining(metadata?: unknown) {
+  aiJobQueueDraining = true;
+  await reportAiJobWorkerHeartbeat({ status: "draining", metadata });
+  return getAiJobRuntimeStatus();
+}
+
+export async function markAiJobWorkerStoppedStatus(status: "stopped" | "unhealthy" = "stopped") {
+  aiJobQueueDraining = true;
+  await markAiJobWorkerStopped(WORKER_ID, status);
+  return getAiJobRuntimeStatus();
+}
+
+export async function waitForAiJobsToDrain(timeoutMs = DEFAULT_SHUTDOWN_GRACE_MS) {
+  const deadline = Date.now() + Math.min(Math.max(Math.floor(timeoutMs), 1_000), 10 * 60_000);
+  while (Date.now() < deadline) {
+    if (runningRunIds.size === 0 && pendingScheduleRunIds.size === 0) {
+      return {
+        drained: true,
+        runningRunIds: [] as string[],
+        pendingScheduleRunIds: [] as string[],
+      };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return {
+    drained: runningRunIds.size === 0 && pendingScheduleRunIds.size === 0,
+    runningRunIds: [...runningRunIds],
+    pendingScheduleRunIds: [...pendingScheduleRunIds],
+  };
+}
+
+function buildWorkerHealthSnapshot(row: AiJobWorker, checkedAt: Date, staleAfterMs: number) {
+  const lastHeartbeatAt = row.lastHeartbeatAt || null;
+  const heartbeatAgeMs = lastHeartbeatAt ? checkedAt.getTime() - lastHeartbeatAt.getTime() : null;
+  const stale = row.status !== "stopped" && (heartbeatAgeMs === null || heartbeatAgeMs > staleAfterMs);
+  return {
+    workerId: row.workerId,
+    hostname: row.hostname || null,
+    pid: row.pid ?? null,
+    role: row.role,
+    status: row.status,
+    effectiveStatus: stale ? "unhealthy" : row.status,
+    concurrency: Number(row.concurrency || 1),
+    runningCount: Number(row.runningCount || 0),
+    lastHeartbeatAt,
+    heartbeatAgeMs,
+    stale,
+    startedAt: row.startedAt,
+    stoppedAt: row.stoppedAt || null,
+    metadata: normalizeJsonValue(row.metadata),
+    updatedAt: row.updatedAt,
+  };
+}
+
+export async function getAiJobWorkerHealth(opts: { limit?: number; staleAfterMs?: number } = {}) {
+  const checkedAt = new Date();
+  const staleAfterMs = Math.min(Math.max(Math.floor(opts.staleAfterMs || getWorkerStaleMs()), 15_000), 30 * 60_000);
+  const workers = (await listAiJobWorkers({ limit: opts.limit })).map((row) => buildWorkerHealthSnapshot(row, checkedAt, staleAfterMs));
+  return {
+    checkedAt,
+    staleAfterMs,
+    workerId: WORKER_ID,
+    healthyCount: workers.filter((worker) => worker.effectiveStatus === "active").length,
+    staleCount: workers.filter((worker) => worker.stale).length,
+    unhealthyCount: workers.filter((worker) => worker.effectiveStatus === "unhealthy").length,
+    drainingCount: workers.filter((worker) => worker.effectiveStatus === "draining").length,
+    stoppedCount: workers.filter((worker) => worker.effectiveStatus === "stopped").length,
+    workers,
+  };
+}
+
+function buildDeadLetterSnapshot(row: AiJobDeadLetter) {
+  return {
+    ...row,
+    input: normalizeJsonValue(row.input),
+    metadata: normalizeJsonValue(row.metadata),
+  };
+}
+
+export async function listAiJobDeadLetterRuns(opts: { limit?: number } = {}) {
+  const rows = await listAiJobDeadLetters({ limit: opts.limit });
+  return rows.map(buildDeadLetterSnapshot);
 }
 
 export function calculateAiJobRetryDelayMs(attempt: number): number {
@@ -143,6 +311,8 @@ export function buildAiJobSnapshot(job: AiJob): AiJobSnapshot {
     procedure: job.procedure || null,
     status: job.status as AiJobStatus,
     progress: Number(job.progress || 0),
+    priority: Number((job as any).priority || 0),
+    queueName: String((job as any).queueName || "default"),
     attempt: Number((job as any).attempt || 0),
     maxAttempts: Number((job as any).maxAttempts || 1),
     timeoutSeconds: Number((job as any).timeoutSeconds || DEFAULT_JOB_TIMEOUT_SECONDS),
@@ -155,7 +325,10 @@ export function buildAiJobSnapshot(job: AiJob): AiJobSnapshot {
     nextRunAt: (job as any).nextRunAt || null,
     leaseUntil: (job as any).leaseUntil || null,
     lockedBy: (job as any).lockedBy || null,
+    claimedAt: (job as any).claimedAt || null,
     lastHeartbeatAt: (job as any).lastHeartbeatAt || null,
+    deadLetterAt: (job as any).deadLetterAt || null,
+    deadLetterReason: (job as any).deadLetterReason || null,
     startedAt: job.startedAt || null,
     completedAt: job.completedAt || null,
     createdAt: job.createdAt,
@@ -173,6 +346,8 @@ export async function createAiJobRun(input: {
   skillSlug?: string | null;
   input?: unknown;
   progress?: number;
+  priority?: number;
+  queueName?: string;
   maxAttempts?: number;
   timeoutSeconds?: number;
   nextRunAt?: Date | null;
@@ -185,6 +360,8 @@ export async function createAiJobRun(input: {
     procedure: input.procedure || null,
     status: "queued",
     progress: input.progress ?? 0,
+    priority: Math.min(Math.max(Math.floor(Number(input.priority || 0)), -1000), 1000),
+    queueName: String(input.queueName || "default").slice(0, 64) || "default",
     attempt: 0,
     maxAttempts: Math.min(Math.max(input.maxAttempts || 1, 1), 10),
     timeoutSeconds: Math.min(Math.max(input.timeoutSeconds || DEFAULT_JOB_TIMEOUT_SECONDS, 5), 7200),
@@ -247,14 +424,39 @@ export async function completeAiJob(runId: string, output: unknown) {
   return job ? buildAiJobSnapshot(job) : null;
 }
 
+async function recordAiJobDeadLetter(job: AiJob, reason: string, metadata?: unknown) {
+  try {
+    await createAiJobDeadLetter({
+      job,
+      reason,
+      metadata,
+    });
+    const snapshot = buildAiJobSnapshot(job);
+    void recordAiOsMetric({
+      entityType: "job",
+      entityId: snapshot.runId,
+      metricName: "job.dead_lettered",
+      metricValue: null,
+      status: snapshot.status,
+      userId: snapshot.userId,
+      projectId: snapshot.projectId,
+      skillSlug: snapshot.skillSlug,
+      metadata: { kind: snapshot.kind, module: snapshot.module, procedure: snapshot.procedure, reason },
+    });
+  } catch (deadLetterError) {
+    console.warn(`[AI Job] failed to record dead letter for ${job.runId}:`, deadLetterError);
+  }
+}
+
 export async function failAiJob(runId: string, error: unknown) {
   const existing = await getAiJobRun(runId);
   if (existing?.status === "canceled") return existing;
+  const errorMessage = serializeAiJobError(error);
 
   const job = await updateAiJobByRunId(runId, {
     status: "failed",
     progress: 100,
-    errorMessage: serializeAiJobError(error),
+    errorMessage,
     leaseUntil: null,
     lockedBy: null,
     lastHeartbeatAt: null,
@@ -272,6 +474,11 @@ export async function failAiJob(runId: string, error: unknown) {
       projectId: snapshot.projectId,
       skillSlug: snapshot.skillSlug,
       metadata: { kind: snapshot.kind, module: snapshot.module, procedure: snapshot.procedure, attempt: snapshot.attempt, error: snapshot.error },
+    });
+    await recordAiJobDeadLetter(job, errorMessage, {
+      attempt: snapshot.attempt,
+      maxAttempts: snapshot.maxAttempts,
+      workerId: WORKER_ID,
     });
   }
   return job ? buildAiJobSnapshot(job) : null;
@@ -334,8 +541,10 @@ export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<
   if (!existing) throw new Error(`AI job not found: ${runId}`);
   if (existing.status === "canceled") return existing;
   if (runningRunIds.has(runId)) return existing;
+  if (aiJobQueueDraining) return existing;
 
   runningRunIds.add(runId);
+  void reportAiJobWorkerHeartbeat().catch(() => null);
   let heartbeat: ReturnType<typeof setInterval> | null = null;
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
   const abortController = new AbortController();
@@ -370,6 +579,7 @@ export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<
     await releaseAiJobLease(runId, WORKER_ID).catch(() => null);
     activeAbortControllers.delete(runId);
     runningRunIds.delete(runId);
+    void reportAiJobWorkerHeartbeat().catch(() => null);
   }
 }
 
@@ -387,7 +597,12 @@ export async function scheduleAiJobRun(runId: string, handler?: AiJobHandler) {
     return existing;
   }
 
-  if (runningRunIds.size >= getMaxConcurrentAiJobs()) {
+  const delayMs = existing.nextRunAt ? Math.max(existing.nextRunAt.getTime() - Date.now(), 0) : 0;
+  if (delayMs > 0 && getWorkerRole() === "worker") {
+    return existing;
+  }
+
+  if (getAvailableAiJobSlots() <= 0) {
     if (!pendingScheduleRunIds.has(runId)) {
       pendingScheduleRunIds.add(runId);
       setTimeout(() => {
@@ -406,7 +621,7 @@ export async function scheduleAiJobRun(runId: string, handler?: AiJobHandler) {
     void runAiJobInProcess(runId, resolvedHandler).catch((error) => {
       console.error(`[AI Job] ${runId} failed:`, error);
     });
-  }, existing.nextRunAt ? Math.max(existing.nextRunAt.getTime() - Date.now(), 0) : 0);
+  }, delayMs);
 
   return existing;
 }
@@ -423,14 +638,36 @@ export async function startRegisteredAiJob(input: Parameters<typeof createAiJobR
 }
 
 export async function recoverActiveAiJobs(opts: { limit?: number } = {}) {
+  return drainAiJobQueue(opts);
+}
+
+export async function drainAiJobQueue(opts: { limit?: number } = {}) {
+  if (aiJobQueueDraining) {
+    return {
+      scanned: 0,
+      scheduled: 0,
+      skippedWithoutHandler: 0,
+      skippedNoCapacity: 0,
+      availableSlots: getAvailableAiJobSlots(),
+      draining: true,
+    };
+  }
+
   const rows = await listRecoverableAiJobs({ limit: opts.limit });
   const result = {
     scanned: rows.length,
     scheduled: 0,
     skippedWithoutHandler: 0,
+    skippedNoCapacity: 0,
+    availableSlots: getAvailableAiJobSlots(),
+    draining: false,
   };
 
   for (const row of rows) {
+    if (getAvailableAiJobSlots() <= 0) {
+      result.skippedNoCapacity += 1;
+      continue;
+    }
     const job = buildAiJobSnapshot(row);
     const handler = resolveAiJobHandler(job);
     if (!handler) {
@@ -441,6 +678,7 @@ export async function recoverActiveAiJobs(opts: { limit?: number } = {}) {
     result.scheduled += 1;
   }
 
+  result.availableSlots = getAvailableAiJobSlots();
   return result;
 }
 

@@ -1,12 +1,14 @@
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, protectedProcedure, router } from "../_core/trpc";
-import { getAiJobByRunId, listAiJobsForUser } from "../db";
+import { listAiJobsForUser } from "../db";
 import {
   buildAiJobSnapshot,
   cancelAiJob,
   getAiJobRun,
   getAiJobRuntimeStatus,
+  getAiJobWorkerHealth,
+  listAiJobDeadLetterRuns,
   registerAiJobHandler,
   startRegisteredAiJob,
 } from "../services/aiJobRunner";
@@ -27,13 +29,18 @@ const listingStepSchema = z.enum([
   "listing.qa.generate",
 ]);
 
+const jobQueueOptionsSchema = z.object({
+  jobPriority: z.number().int().min(-1000).max(1000).optional(),
+  queueName: z.string().trim().min(1).max(64).optional(),
+});
+
 const listingJobInput = z.object({
   context: z.string().min(1),
   emphasis: z.string().optional().default(""),
   variables: z.record(z.string(), z.unknown()).optional().default({}),
   modelOverride: z.string().optional(),
   projectId: z.number().optional(),
-});
+}).merge(jobQueueOptionsSchema);
 
 const listingStepJobInput = listingJobInput.extend({ skillSlug: listingStepSchema });
 
@@ -42,7 +49,7 @@ const adSearchTermJobInput = z.object({
   categoryId: z.number(),
   categoryLabel: z.string().optional(),
   campaignId: z.string().optional(),
-});
+}).merge(jobQueueOptionsSchema);
 
 const opsReplenishmentJobInput = z.object({
   skuData: z.array(z.object({
@@ -55,7 +62,7 @@ const opsReplenishmentJobInput = z.object({
     safety_stock_days: z.number().optional().default(14),
     moq: z.number().optional().default(100),
   })).max(20),
-});
+}).merge(jobQueueOptionsSchema);
 
 const jobStatusSchema = z.enum(["queued", "running", "succeeded", "failed", "canceled"]);
 
@@ -310,8 +317,27 @@ export const aiJobsRouter = router({
     }),
 
   runtimeStatus: adminProcedure
-    .query(() => {
-      return getAiJobRuntimeStatus();
+    .query(async () => {
+      return {
+        ...getAiJobRuntimeStatus(),
+        workerHealth: await getAiJobWorkerHealth({ limit: 100 }),
+      };
+    }),
+
+  workerHealth: adminProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(200).optional(),
+    }).optional())
+    .query(({ input }) => {
+      return getAiJobWorkerHealth({ limit: input?.limit });
+    }),
+
+  deadLetters: adminProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(200).optional(),
+    }).optional())
+    .query(({ input }) => {
+      return listAiJobDeadLetterRuns({ limit: input?.limit });
     }),
 
   list: protectedProcedure
@@ -349,6 +375,8 @@ export const aiJobsRouter = router({
         skillSlug: "listing.*",
         input,
         progress: 5,
+        priority: input.jobPriority ?? 0,
+        queueName: input.queueName,
       });
     }),
 
@@ -364,6 +392,8 @@ export const aiJobsRouter = router({
         skillSlug: input.skillSlug,
         input,
         progress: 5,
+        priority: input.jobPriority ?? 0,
+        queueName: input.queueName,
       });
     }),
 
@@ -378,6 +408,8 @@ export const aiJobsRouter = router({
         skillSlug: "ad.searchterm.advice",
         input,
         progress: 5,
+        priority: input.jobPriority ?? 0,
+        queueName: input.queueName,
       });
     }),
 
@@ -392,6 +424,8 @@ export const aiJobsRouter = router({
         skillSlug: "ops.inventory.analysis",
         input,
         progress: 5,
+        priority: input.jobPriority ?? 0,
+        queueName: input.queueName,
       });
     }),
 });

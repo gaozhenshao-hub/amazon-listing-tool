@@ -6,6 +6,7 @@ import {
   generateAiJobRunId,
   getAiJobRuntimeStatus,
   getAiJobWorkerId,
+  getAvailableAiJobSlots,
   getMaxConcurrentAiJobs,
   isActiveAiJob,
   isAiJobSchedulingEnabled,
@@ -23,6 +24,8 @@ describe("Generic AI Job infrastructure", () => {
     expect(schema.aiJobs.procedure).toBeDefined();
     expect(schema.aiJobs.status).toBeDefined();
     expect(schema.aiJobs.progress).toBeDefined();
+    expect(schema.aiJobs.priority).toBeDefined();
+    expect(schema.aiJobs.queueName).toBeDefined();
     expect(schema.aiJobs.attempt).toBeDefined();
     expect(schema.aiJobs.maxAttempts).toBeDefined();
     expect(schema.aiJobs.timeoutSeconds).toBeDefined();
@@ -33,7 +36,12 @@ describe("Generic AI Job infrastructure", () => {
     expect(schema.aiJobs.nextRunAt).toBeDefined();
     expect(schema.aiJobs.leaseUntil).toBeDefined();
     expect(schema.aiJobs.lockedBy).toBeDefined();
+    expect(schema.aiJobs.claimedAt).toBeDefined();
     expect(schema.aiJobs.lastHeartbeatAt).toBeDefined();
+    expect(schema.aiJobs.deadLetterAt).toBeDefined();
+    expect(schema.aiJobs.deadLetterReason).toBeDefined();
+    expect(schema.aiJobWorkers).toBeDefined();
+    expect(schema.aiJobDeadLetters).toBeDefined();
   });
 
   it("should normalize run ids and active statuses", () => {
@@ -43,6 +51,7 @@ describe("Generic AI Job infrastructure", () => {
     expect(isAiJobSchedulingEnabled()).toBe(true);
     expect(getMaxConcurrentAiJobs()).toBeGreaterThanOrEqual(1);
     expect(getMaxConcurrentAiJobs()).toBeLessThanOrEqual(25);
+    expect(getAvailableAiJobSlots()).toBeGreaterThanOrEqual(0);
     expect(calculateAiJobRetryDelayMs(1)).toBe(30000);
     expect(calculateAiJobRetryDelayMs(3)).toBe(120000);
     expect(calculateAiJobRetryDelayMs(9)).toBe(600000);
@@ -53,6 +62,9 @@ describe("Generic AI Job infrastructure", () => {
 
     const runtimeStatus = getAiJobRuntimeStatus();
     expect(runtimeStatus.workerId).toBe(getAiJobWorkerId());
+    expect(runtimeStatus.role).toMatch(/^(web|worker)$/);
+    expect(runtimeStatus.draining).toBe(false);
+    expect(runtimeStatus.availableSlots).toBe(getAvailableAiJobSlots());
     expect(runtimeStatus.runningRunIds).toEqual(expect.any(Array));
     expect(runtimeStatus.pendingScheduleRunIds).toEqual(expect.any(Array));
     expect(runtimeStatus.registeredHandlers).toEqual(expect.any(Array));
@@ -83,10 +95,15 @@ describe("Generic AI Job infrastructure", () => {
     expect(snapshot.input).toEqual({ context: "demo" });
     expect(snapshot.output).toEqual({ ok: true });
     expect(snapshot.status).toBe("succeeded");
+    expect(snapshot.priority).toBe(0);
+    expect(snapshot.queueName).toBe("default");
     expect(snapshot.attempt).toBe(0);
     expect(snapshot.maxAttempts).toBe(1);
     expect(snapshot.timeoutSeconds).toBe(600);
+    expect(snapshot.claimedAt).toBeNull();
     expect(snapshot.leaseUntil).toBeNull();
+    expect(snapshot.deadLetterAt).toBeNull();
+    expect(snapshot.deadLetterReason).toBeNull();
   });
 
   it("should register recoverable handlers for migrated long AI jobs", () => {
@@ -106,6 +123,8 @@ describe("Generic AI Job infrastructure", () => {
       procedure: "listingSkill.generateFiveSteps",
       status: "queued",
       progress: 5,
+      priority: 0,
+      queueName: "default",
       attempt: 0,
       maxAttempts: 1,
       timeoutSeconds: 600,
@@ -118,7 +137,10 @@ describe("Generic AI Job infrastructure", () => {
       nextRunAt: null,
       leaseUntil: null,
       lockedBy: null,
+      claimedAt: null,
       lastHeartbeatAt: null,
+      deadLetterAt: null,
+      deadLetterReason: null,
       startedAt: null,
       completedAt: null,
       createdAt: now,
@@ -131,6 +153,8 @@ describe("Generic AI Job infrastructure", () => {
     const procedures = (appRouter as any)._def.procedures;
     expect(procedures["aiJobs.get"]).toBeDefined();
     expect(procedures["aiJobs.runtimeStatus"]).toBeDefined();
+    expect(procedures["aiJobs.workerHealth"]).toBeDefined();
+    expect(procedures["aiJobs.deadLetters"]).toBeDefined();
     expect(procedures["aiJobs.cancel"]).toBeDefined();
     expect(procedures["aiJobs.startListingFiveSteps"]).toBeDefined();
     expect(procedures["aiJobs.startAdSearchTermAdvice"]).toBeDefined();
