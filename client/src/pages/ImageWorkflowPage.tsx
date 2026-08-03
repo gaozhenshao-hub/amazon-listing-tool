@@ -54,7 +54,7 @@ import {
 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { toast } from "sonner";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -3188,7 +3188,7 @@ function Step5FinalSuggestions({
   session: any;
   onConfirm: () => void;
 }) {
-  const generateMutation = trpc.imageWorkflow.generateStep5.useMutation();
+  const generateMutation = trpc.imageWorkflow.startStep5Generation.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep5.useMutation();
   const unlockMutation = trpc.imageWorkflow.unlockStep5.useMutation();
   const utils = trpc.useUtils();
@@ -3196,10 +3196,30 @@ function Step5FinalSuggestions({
   const [cnData, setCnData] = useState<any>(null);
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [isLocked, setIsLocked] = useState(!!session?.step5Confirmed);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const handledRunIdsRef = useRef<Set<string>>(new Set());
   // Per-section module style state: { [sectionIndex]: moduleTypeId }
   const [sectionModuleStyles, setSectionModuleStyles] = useState<Record<number, string>>({});
   const [optimizingSectionIdx, setOptimizingSectionIdx] = useState<number | null>(null);
   const singleModuleOptimizeMutation = trpc.imageWorkflow.optimizeSingleAplusModule.useMutation();
+  const sessionRunStatus = session?.step5RunStatus || "idle";
+  const sessionActiveRunId = session?.step5RunId || null;
+  const isRunActive = (status?: string | null) => status === "queued" || status === "running";
+  const hasActiveRun = isRunActive(sessionRunStatus) || !!activeRunId;
+  const step5RunQuery = trpc.imageWorkflow.getStep5Run.useQuery(
+    { projectId, runId: activeRunId || sessionActiveRunId || undefined },
+    {
+      enabled: hasActiveRun,
+      refetchInterval: (query) => {
+        const data = query.state.data as any;
+        const status = data?.status || sessionRunStatus;
+        return isRunActive(status) ? 2000 : false;
+      },
+    }
+  );
+  const runStatus = step5RunQuery.data?.status || sessionRunStatus;
+  const runProgress = Number(step5RunQuery.data?.progress ?? session?.step5RunProgress ?? 0);
+  const isGenerating = generateMutation.isPending || isRunActive(runStatus);
 
   // Amazon Premium A+ Module Types - comprehensive list matching backend prompt
   const APLUS_MODULES = [
@@ -3317,6 +3337,30 @@ function Step5FinalSuggestions({
     setIsLocked(!!session?.step5Confirmed);
   }, [session?.step5Confirmed]);
 
+  useEffect(() => {
+    if (sessionActiveRunId && isRunActive(sessionRunStatus)) {
+      setActiveRunId(sessionActiveRunId);
+    }
+  }, [sessionActiveRunId, sessionRunStatus]);
+
+  useEffect(() => {
+    const run = step5RunQuery.data as any;
+    if (!run?.runId || handledRunIdsRef.current.has(`${run.runId}:${run.status}`)) return;
+    if (run.status === "succeeded") {
+      handledRunIdsRef.current.add(`${run.runId}:${run.status}`);
+      if (run.en) setEnData(run.en);
+      if (run.cn) setCnData(run.cn);
+      setActiveRunId(null);
+      utils.imageWorkflow.getSession.invalidate({ projectId });
+      toast.success("图片建议生成完成");
+    } else if (run.status === "failed") {
+      handledRunIdsRef.current.add(`${run.runId}:${run.status}`);
+      setActiveRunId(null);
+      utils.imageWorkflow.getSession.invalidate({ projectId });
+      toast.error(run.error || "生成失败");
+    }
+  }, [projectId, step5RunQuery.data, utils.imageWorkflow.getSession]);
+
   const handleUnlock = async () => {
     try {
       await unlockMutation.mutateAsync({ projectId });
@@ -3350,16 +3394,24 @@ function Step5FinalSuggestions({
   const handleGenerate = async () => {
     try {
       const result = await generateMutation.mutateAsync({ projectId });
-      setEnData(result.en);
-      setCnData(result.cn);
+      if (result.runId) setActiveRunId(result.runId);
+      if (result.status === "succeeded") {
+        setEnData(result.en);
+        setCnData(result.cn);
+      }
       await utils.imageWorkflow.getSession.invalidate({ projectId });
-      toast.success("图片建议生成完成");
+      if (result.status === "succeeded") {
+        toast.success("图片建议生成完成");
+      } else {
+        toast.info("已开始后台生成，可以切换页面，回来后会自动恢复");
+      }
     } catch (err: any) {
       toast.error(err.message || "生成失败");
     }
   };
 
   const handleConfirm = async () => {
+    if (isGenerating) return;
     if (!enData) return;
     try {
       const finalData = applySectionModuleStyles(enData);
@@ -3512,8 +3564,8 @@ function Step5FinalSuggestions({
   };
 
   return (
-    <div className={`space-y-4 ${enData && !isConfirmed && !generateMutation.isPending ? "pb-24" : ""}`}>
-      {enData && !isConfirmed && !generateMutation.isPending && (
+    <div className={`space-y-4 ${enData && !isConfirmed && !isGenerating ? "pb-24" : ""}`}>
+      {enData && !isConfirmed && !isGenerating && (
         <div className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <div className="mx-auto flex max-w-5xl flex-col gap-3 px-6 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2 text-sm">
@@ -3524,7 +3576,7 @@ function Step5FinalSuggestions({
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" size="sm" onClick={handleGenerate} disabled={generateMutation.isPending}>
+              <Button variant="outline" size="sm" onClick={handleGenerate} disabled={isGenerating}>
                 <RotateCcw className="w-4 h-4 mr-2" /> 重新生成
               </Button>
               <Button variant="outline" size="sm" onClick={handleExportHtml}>
@@ -3533,7 +3585,7 @@ function Step5FinalSuggestions({
               <Button variant="outline" size="sm" onClick={handleExportPdf}>
                 <FileText className="w-4 h-4 mr-2" /> 导出PDF
               </Button>
-              <Button size="sm" onClick={handleConfirm} disabled={confirmMutation.isPending}>
+              <Button size="sm" onClick={handleConfirm} disabled={confirmMutation.isPending || isGenerating}>
                 {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
                 确认锁定
               </Button>
@@ -3553,15 +3605,16 @@ function Step5FinalSuggestions({
             </div>
             <div className="flex gap-2">
               {!enData && (
-                <Button onClick={handleGenerate} disabled={generateMutation.isPending}>
-                  {generateMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-                  生成最终建议
+                <Button onClick={handleGenerate} disabled={isGenerating}>
+                  {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                  {isGenerating ? "生成中..." : "生成最终建议"}
                 </Button>
               )}
               {enData && !isConfirmed && (
                 <>
-                  <Button variant="outline" onClick={handleGenerate} disabled={generateMutation.isPending}>
-                    <RotateCcw className="w-4 h-4 mr-2" /> 重新生成
+                  <Button variant="outline" onClick={handleGenerate} disabled={isGenerating}>
+                    {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RotateCcw className="w-4 h-4 mr-2" />}
+                    {isGenerating ? "生成中..." : "重新生成"}
                   </Button>
                   <Button variant="outline" onClick={handleExportHtml}>
                     <Download className="w-4 h-4 mr-2" /> 导出HTML
@@ -3569,7 +3622,7 @@ function Step5FinalSuggestions({
                   <Button variant="outline" onClick={handleExportPdf}>
                     <FileText className="w-4 h-4 mr-2" /> 导出PDF
                   </Button>
-                  <Button onClick={handleConfirm} disabled={confirmMutation.isPending}>
+                  <Button onClick={handleConfirm} disabled={confirmMutation.isPending || isGenerating}>
                     {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
                     确认锁定
                   </Button>
@@ -3597,17 +3650,27 @@ function Step5FinalSuggestions({
             </div>
           </div>
         </CardHeader>
-        {generateMutation.isPending && (
+        {isGenerating && (
           <CardContent>
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 animate-spin text-primary mr-3" />
-              <span className="text-muted-foreground">AI正在综合生成最终图片建议（含中文翻译）...</span>
+            <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+              <div>
+                <p className="text-sm font-medium">AI 正在后台生成最终图片建议</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  进度 {Math.max(5, Math.min(100, runProgress || 5))}% · 可以切换页面，回来后会自动恢复
+                </p>
+                {(activeRunId || sessionActiveRunId) && (
+                  <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+                    {activeRunId || sessionActiveRunId}
+                  </p>
+                )}
+              </div>
             </div>
           </CardContent>
         )}
       </Card>
 
-      {enData && !generateMutation.isPending && (
+      {enData && !isGenerating && (
         <>
           {/* Design Guidelines */}
           {enData.designGuidelines && (

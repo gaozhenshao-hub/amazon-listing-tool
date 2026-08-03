@@ -71,6 +71,8 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
   const [viewMode, setViewMode] = useState<"aggregate" | "compare">("aggregate");
   const [asinFilter, setAsinFilter] = useState<string | null>(null);
   const [showAiKeywordActions, setShowAiKeywordActions] = useState(false);
+  const [aiAdviceRunId, setAiAdviceRunId] = useState<string | null>(null);
+  const [aiAdviceResult, setAiAdviceResult] = useState<any>(null);
 
   // Sync adType when parent campaign selection changes
   useEffect(() => {
@@ -154,10 +156,41 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
       .sort((a, b) => b.count - a.count);
   }, [searchTerms, asinMapping]);
 
-  const aiAdvice = trpc.adAnalysis.aiSearchTermAdvice.useMutation({
-    onSuccess: () => toast.success("AI分析完成"),
+  const aiAdvice = trpc.aiJobs.startAdSearchTermAdvice.useMutation({
+    onSuccess: (job) => {
+      setAiAdviceRunId(job.runId);
+      toast.success("AI分析任务已开始");
+    },
     onError: (err) => toast.error("AI分析失败", { description: err.message }),
   });
+  const aiAdviceJob = trpc.aiJobs.get.useQuery(
+    { runId: aiAdviceRunId || "" },
+    {
+      enabled: !!aiAdviceRunId,
+      refetchInterval: (query) => {
+        const status = (query.state.data as any)?.status;
+        return status === "queued" || status === "running" ? 2000 : false;
+      },
+    }
+  );
+  const aiAdviceStatus = aiAdviceJob.data?.status;
+  const aiAdvicePending = aiAdvice.isPending || aiAdviceStatus === "queued" || aiAdviceStatus === "running";
+  const aiAdviceData = aiAdviceResult;
+
+  useEffect(() => {
+    const job = aiAdviceJob.data as any;
+    if (!job || !aiAdviceRunId) return;
+    if (job.status === "succeeded") {
+      const output = job.output?.parsed || job.output;
+      setAiAdviceResult(output);
+      setAiAdviceRunId(null);
+      toast.success("AI分析完成");
+    } else if (job.status === "failed") {
+      setAiAdviceRunId(null);
+      toast.error("AI分析失败", { description: job.error || "请稍后重试" });
+    }
+  }, [aiAdviceJob.data, aiAdviceRunId]);
+
   const categoryStats = data?.categoryStats || {};
   const categories = categoryDefs?.categories || [];
 
@@ -247,6 +280,7 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
     setAiCategoryId(catId);
     setShowAiDialog(true);
     setUserDecisions({});
+    setAiAdviceResult(null);
     aiAdvice.mutate({
       searchTerms: termsInCategory.map((t: any) => ({
         query: t.query, impressions: t.impressions, clicks: t.clicks,
@@ -254,6 +288,7 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
         acos: t.acos, ctr: t.ctr, convRate: t.convRate,
       })),
       categoryId: catId,
+      categoryLabel: CATEGORY_COLORS[catId]?.label || CATEGORY_COLORS[catId]?.shortLabel,
       campaignId: campaignId || undefined,
     });
   };
@@ -810,22 +845,23 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
               AI个性化建议 - {CATEGORY_COLORS[aiCategoryId]?.shortLabel}
             </DialogTitle>
           </DialogHeader>
-          {aiAdvice.isPending ? (
+          {aiAdvicePending ? (
             <div className="flex flex-col items-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-3" />
-              <p className="text-sm text-gray-500">AI正在分析该分类的搜索词数据...</p>
+              <p className="text-sm text-gray-500">AI正在后台分析该分类的搜索词数据...</p>
+              {aiAdviceRunId && <p className="text-xs text-gray-400 mt-2">任务ID: {aiAdviceRunId}</p>}
             </div>
-          ) : aiAdvice.data ? (
+          ) : aiAdviceData ? (
             <div className="space-y-4">
               <div className="p-4 bg-blue-50 rounded-lg">
                 <p className="text-sm text-blue-800 font-medium mb-2">分类总结</p>
-                <p className="text-sm text-blue-700">{(aiAdvice.data as any).category_summary}</p>
+                <p className="text-sm text-blue-700">{(aiAdviceData as any).category_summary}</p>
               </div>
-              {(aiAdvice.data as any).top_actions?.length > 0 && (
+              {(aiAdviceData as any).top_actions?.length > 0 && (
                 <div className="p-3 bg-emerald-50 rounded-lg">
                   <p className="text-xs font-medium text-emerald-700 mb-2">优先操作:</p>
                   <ul className="space-y-1">
-                    {(aiAdvice.data as any).top_actions.map((action: string, i: number) => (
+                    {(aiAdviceData as any).top_actions.map((action: string, i: number) => (
                       <li key={i} className="text-sm text-emerald-800 flex items-start gap-2">
                         <CheckCircle2 className="w-3 h-3 mt-1 shrink-0" />{action}
                       </li>
@@ -837,7 +873,7 @@ export default function SearchTermClassification({ campaignId, campaignIds, camp
               {/* Per-term advice with user interaction */}
               <div className="space-y-2">
                 <h4 className="text-sm font-medium">逐词建议（可接受/拒绝/修改）</h4>
-                {(aiAdvice.data as any).advice?.map((a: any, i: number) => {
+                {(aiAdviceData as any).advice?.map((a: any, i: number) => {
                   const decision = userDecisions[i];
                   return (
                     <div

@@ -42,6 +42,17 @@ describe("Image Workflow Enhancements", () => {
       const table = schema.imageWorkflowSessions;
       expect(table.step5OptimizedResult).toBeDefined();
     });
+
+    it("should have Step 5 async generation run fields", async () => {
+      const schema = await import("../drizzle/schema");
+      const table = schema.imageWorkflowSessions;
+      expect(table.step5RunId).toBeDefined();
+      expect(table.step5RunStatus).toBeDefined();
+      expect(table.step5RunProgress).toBeDefined();
+      expect(table.step5RunError).toBeDefined();
+      expect(table.step5RunStartedAt).toBeDefined();
+      expect(table.step5RunCompletedAt).toBeDefined();
+    });
   });
 
   // ─── Step Lock/Unlock Mechanism ──────────────────────────────────

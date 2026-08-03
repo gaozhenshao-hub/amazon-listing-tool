@@ -19,6 +19,12 @@ import {
 } from "../imageWorkflowPrompts";
 import { IMAGE_ADVICE_TRANSLATION_PROMPT } from "../prompts";
 import { storagePut } from "../storage";
+import {
+  completeAiJob,
+  createAiJobRun,
+  failAiJob,
+  markAiJobRunning,
+} from "../services/aiJobRunner";
 
 const APLUS_MODULE_STYLE_GUIDE = [
   "premium_full_image: 高级完整图片，单张全宽大图，1464x600px",
@@ -351,6 +357,132 @@ function ensureWriteAccess(project: { userId: number }, user: { id: number; role
   if (user.role === 'super_admin' || user.role === 'admin') return;
   if (user.role === 'designer' && project.userId !== user.id) {
     throw new Error("Designer角色只能查看他人项目的图片建议，不能修改");
+  }
+}
+
+type Step5RunStatus = "idle" | "queued" | "running" | "succeeded" | "failed" | "canceled";
+
+function generateStep5RunId(): string {
+  return `image_step5_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function isActiveStep5Run(status?: string | null): boolean {
+  return status === "queued" || status === "running";
+}
+
+function serializeStep5Error(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error || "生成失败");
+}
+
+function parseStoredJson(value?: string | null): unknown {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function buildStep5RunSnapshot(session: any) {
+  const status = (session?.step5RunStatus || "idle") as Step5RunStatus;
+  return {
+    runId: session?.step5RunId || null,
+    status,
+    progress: Number(session?.step5RunProgress || (status === "succeeded" ? 100 : 0)),
+    error: session?.step5RunError || null,
+    startedAt: session?.step5RunStartedAt || null,
+    completedAt: session?.step5RunCompletedAt || null,
+    en: parseStoredJson(session?.step5UserEdit || session?.step5OptimizedResult || session?.step5AiResult),
+    cn: parseStoredJson(session?.step5AiResultCn || session?.step5OptimizedResultCn),
+  };
+}
+
+async function buildStep5FinalSuggestion(project: any, session: any, userId: number) {
+  const truncate = (s: string | null, maxLen = 3000) => s ? s.substring(0, maxLen) : "";
+  const step1Content = truncate(session.step1UserEdit || session.step1AiResult, 4000);
+  const step2Content = truncate(session.step2UserEdit || session.step2AiResult, 4000);
+  const step3Content = truncate(session.step3UserEdit || session.step3AiResult, 3000);
+  const step4Content = truncate(session.step4UserEdit || session.step4AiResult, 3000);
+
+  const kbReference = await getKBReference(project.category || "", userId);
+  const response = await invokeLLM({
+    messages: [
+      { role: "system", content: STEP5_FINAL_SUGGESTION_PROMPT },
+      {
+        role: "user",
+        content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}${kbReference}\n\n请综合以上所有确认结果（包括知识库参考），输出每张图的完整图片建议。A+内容必须继承图片大纲里已选择的selectedModuleType/selectedModuleName/selectedModuleStructure；轮播、四图、比较表、热点等多图/多面板模块必须输出对应面板、子图、热点或表格布局，不要再退化成单张普通图片建议。`,
+      },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  return parseLLMJson(response);
+}
+
+async function persistStep5ListingAdvice(projectId: number, resultStr: string) {
+  try {
+    const existingListings = await db.getListingsByProject(projectId);
+    const activeListing = existingListings.find((l) => l.isActive === 1);
+    if (activeListing) {
+      await db.updateListing(activeListing.id, {
+        imageAdvice: resultStr,
+        imageAdviceCn: null,
+      });
+    }
+  } catch {}
+}
+
+async function runStep5GenerationJob(args: {
+  runId: string;
+  projectId: number;
+  sessionId: number;
+  userId: number;
+}) {
+  const { runId, projectId, sessionId, userId } = args;
+
+  const updateIfCurrent = async (data: Record<string, unknown>) => {
+    const latest = await db.getImageWorkflowSessionById(sessionId);
+    if (!latest || latest.step5RunId !== runId) return null;
+    return db.updateImageWorkflowSession(sessionId, data as any);
+  };
+
+  try {
+    await markAiJobRunning(runId, 20).catch(() => null);
+    const session = await updateIfCurrent({
+      step5RunStatus: "running",
+      step5RunProgress: 20,
+      step5RunError: null,
+    });
+    if (!session) return;
+
+    const project = await db.getProjectByIdAdmin(projectId);
+    if (!project) throw new Error("Project not found");
+
+    const result = await buildStep5FinalSuggestion(project, session, userId);
+    const resultStr = JSON.stringify(result);
+
+    const updated = await updateIfCurrent({
+      step5AiResult: resultStr,
+      step5AiResultCn: null,
+      step5RunStatus: "succeeded",
+      step5RunProgress: 100,
+      step5RunError: null,
+      step5RunCompletedAt: new Date(),
+      currentStep: 5,
+    });
+    if (!updated) return;
+
+    await persistStep5ListingAdvice(projectId, resultStr);
+    await completeAiJob(runId, buildStep5RunSnapshot(updated)).catch(() => null);
+  } catch (error) {
+    await updateIfCurrent({
+      step5RunStatus: "failed",
+      step5RunProgress: 100,
+      step5RunError: serializeStep5Error(error),
+      step5RunCompletedAt: new Date(),
+    });
+    await failAiJob(runId, error).catch(() => null);
   }
 }
 
@@ -812,6 +944,12 @@ export const imageWorkflowRouter = router({
         step5AiResultCn: null,
         step5UserEdit: null,
         step5Confirmed: 0,
+        step5RunId: null,
+        step5RunStatus: "idle",
+        step5RunProgress: 0,
+        step5RunError: null,
+        step5RunStartedAt: null,
+        step5RunCompletedAt: null,
         step5SelectedModule: null,
         step5OptimizedResult: null,
         step5OptimizedResultCn: null,
@@ -950,7 +1088,80 @@ export const imageWorkflowRouter = router({
       return { success: true };
     }),
 
-  // ─── Step 5: Generate final image suggestions ─────────────────
+  // ─── Step 5: Start async final image suggestions generation ───────
+  startStep5Generation: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
+
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      if (!session.step4Confirmed) throw new Error("Step 4 not confirmed yet");
+
+      if (session.step5RunId && isActiveStep5Run(session.step5RunStatus)) {
+        return buildStep5RunSnapshot(session);
+      }
+
+      const runId = generateStep5RunId();
+      const startedAt = new Date();
+      const queuedSession = await db.updateImageWorkflowSession(session.id, {
+        step5RunId: runId,
+        step5RunStatus: "queued",
+        step5RunProgress: 5,
+        step5RunError: null,
+        step5RunStartedAt: startedAt,
+        step5RunCompletedAt: null,
+        step5Confirmed: 0,
+        currentStep: 5,
+        status: "in_progress",
+      });
+      await createAiJobRun({
+        runId,
+        kind: "image.step5.finalSuggestion",
+        module: "imageWorkflow",
+        procedure: "imageWorkflow.startStep5Generation",
+        userId: ctx.user.id,
+        projectId: input.projectId,
+        skillSlug: "image.step5.final.suggestion",
+        input: {
+          projectId: input.projectId,
+          sessionId: session.id,
+        },
+        progress: 5,
+      }).catch((error) => {
+        console.warn("[ImageWorkflow] Failed to create AI job record:", error);
+      });
+
+      setTimeout(() => {
+        void runStep5GenerationJob({
+          runId,
+          projectId: input.projectId,
+          sessionId: session.id,
+          userId: ctx.user.id,
+        });
+      }, 0);
+
+      return buildStep5RunSnapshot(queuedSession);
+    }),
+
+  getStep5Run: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      runId: z.string().optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      await resolveProjectAccess(input.projectId, ctx.user);
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      return {
+        ...buildStep5RunSnapshot(session),
+        isCurrent: !input.runId || session.step5RunId === input.runId,
+      };
+    }),
+
+  // ─── Step 5: Generate final image suggestions (sync compatibility) ──
   generateStep5: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
@@ -962,48 +1173,45 @@ export const imageWorkflowRouter = router({
       if (!session) throw new Error("No workflow session found");
       if (!session.step4Confirmed) throw new Error("Step 4 not confirmed yet");
 
-      // Truncate step inputs to reduce token count and avoid LLM timeout
-      const truncate = (s: string | null, maxLen = 3000) => s ? s.substring(0, maxLen) : '';
-      const step1Content = truncate(session.step1UserEdit || session.step1AiResult, 4000);
-      const step2Content = truncate(session.step2UserEdit || session.step2AiResult, 4000);
-      const step3Content = truncate(session.step3UserEdit || session.step3AiResult, 3000);
-      const step4Content = truncate(session.step4UserEdit || session.step4AiResult, 3000);
-
-      // Phase 7: Get KB reference for same-category high-score images
-      const kbReference = await getKBReference(project.category || '', ctx.user.id);
-
-
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: STEP5_FINAL_SUGGESTION_PROMPT },
-          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}${kbReference}\n\n请综合以上所有确认结果（包括知识库参考），输出每张图的完整图片建议。A+内容必须继承图片大纲里已选择的selectedModuleType/selectedModuleName/selectedModuleStructure；轮播、四图、比较表、热点等多图/多面板模块必须输出对应面板、子图、热点或表格布局，不要再退化成单张普通图片建议。` },
-        ],
-        response_format: { type: "json_object" },
-      });
-
-      const result = parseLLMJson(response);
-      const resultStr = JSON.stringify(result);
-
-      // Save English result immediately so user sees it fast
+      const runId = generateStep5RunId();
       await db.updateImageWorkflowSession(session.id, {
-        step5AiResult: resultStr,
-        step5AiResultCn: null, // Will be filled by async translation
-        currentStep: 5,
+        step5RunId: runId,
+        step5RunStatus: "running",
+        step5RunProgress: 20,
+        step5RunError: null,
+        step5RunStartedAt: new Date(),
+        step5RunCompletedAt: null,
+        step5Confirmed: 0,
       });
 
-      // Also save to the active listing for backward compatibility
       try {
-        const existingListings = await db.getListingsByProject(input.projectId);
-        const activeListing = existingListings.find((l) => l.isActive === 1);
-        if (activeListing) {
-          await db.updateListing(activeListing.id, {
-            imageAdvice: resultStr,
-            imageAdviceCn: null,
-          });
-        }
-      } catch {}
+        const result = await buildStep5FinalSuggestion(project, session, ctx.user.id);
+        const resultStr = JSON.stringify(result);
 
-      return { en: result, cn: null };
+        // Save English result immediately so user sees it fast
+        await db.updateImageWorkflowSession(session.id, {
+          step5AiResult: resultStr,
+          step5AiResultCn: null, // Will be filled by async translation
+          step5RunStatus: "succeeded",
+          step5RunProgress: 100,
+          step5RunError: null,
+          step5RunCompletedAt: new Date(),
+          currentStep: 5,
+        });
+
+        // Also save to the active listing for backward compatibility
+        await persistStep5ListingAdvice(input.projectId, resultStr);
+
+        return { en: result, cn: null, runId, status: "succeeded" };
+      } catch (error) {
+        await db.updateImageWorkflowSession(session.id, {
+          step5RunStatus: "failed",
+          step5RunProgress: 100,
+          step5RunError: serializeStep5Error(error),
+          step5RunCompletedAt: new Date(),
+        });
+        throw error;
+      }
     }),
 
   // ─── Step 5: Save user edits and confirm ──────────────────────
@@ -1546,6 +1754,12 @@ ${session.step3UserEdit || session.step3AiResult}
         clearData.step5AiResultCn = null;
         clearData.step5UserEdit = null;
         clearData.step5Confirmed = 0;
+        clearData.step5RunId = null;
+        clearData.step5RunStatus = "idle";
+        clearData.step5RunProgress = 0;
+        clearData.step5RunError = null;
+        clearData.step5RunStartedAt = null;
+        clearData.step5RunCompletedAt = null;
         clearData.step5SelectedModule = null;
         clearData.step5OptimizedResult = null;
         clearData.step5OptimizedResultCn = null;

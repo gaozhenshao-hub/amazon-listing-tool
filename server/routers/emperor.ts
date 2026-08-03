@@ -9,6 +9,22 @@ import { invokeLLM } from "../_core/llm";
 import { renderSkillTemplate } from "../services/emperorSkillRunner";
 import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
+import {
+  confirmAgentNode,
+  executeAgentNode,
+  getAgentRun,
+  rerunAgentNode,
+  scheduleAgentRun,
+  startAgentRun,
+  updateAgentNodeDraft,
+  upsertListingAgentTemplate,
+} from "../services/emperorAgentRunner";
+import {
+  invokeEmperorTool,
+  listEmperorTools,
+  seedBuiltinTools,
+  upsertEmperorTool,
+} from "../services/emperorToolGateway";
 
 function generateRunId(): string {
   return `run_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -730,8 +746,17 @@ export const emperorAgentsRouter = router({
       const existing = await rawExecute("SELECT id FROM emperor_agents WHERE slug = ? LIMIT 1", [input.slug]);
       if (existing[0]) throw new TRPCError({ code: "CONFLICT", message: "Slug 已存在" });
       await rawExecute(
-        `INSERT INTO emperor_agents (slug,name,description,status,dagDefinition) VALUES (?,?,?,'draft','{}')`,
-        [input.slug, input.name, input.description||null]
+        `INSERT INTO emperor_agents (slug,name,description,status,scope,triggerType,maxExecutionSeconds,cronExpression,dagDefinition) VALUES (?,?,?,'draft',?,?,?,?,?)`,
+        [
+          input.slug,
+          input.name,
+          input.description||null,
+          input.scope,
+          input.triggerType,
+          input.maxExecutionSeconds,
+          input.cronExpression||null,
+          JSON.stringify({ nodes: [], edges: [] }),
+        ]
       );
       return { success: true, slug: input.slug };
     }),
@@ -751,6 +776,8 @@ export const emperorAgentsRouter = router({
       if (rest.name !== undefined) { sets.push("name=?"); vals.push(rest.name); }
       if (rest.description !== undefined) { sets.push("description=?"); vals.push(rest.description); }
       if (rest.status !== undefined) { sets.push("status=?"); vals.push(rest.status); }
+      if (rest.triggerType !== undefined) { sets.push("triggerType=?"); vals.push(rest.triggerType); }
+      if (rest.maxExecutionSeconds !== undefined) { sets.push("maxExecutionSeconds=?"); vals.push(rest.maxExecutionSeconds); }
       if (!sets.length) return { success: true };
       sets.push("updatedAt=NOW()");
       vals.push(slug);
@@ -787,34 +814,30 @@ export const emperorAgentsRouter = router({
     return rawExecute("SELECT slug,name,description,connectionType FROM emperor_mcp_connectors WHERE isActive=1 ORDER BY name");
   }),
 
+  getAvailableTools: protectedProcedure.query(async () => {
+    return listEmperorTools();
+  }),
+
   run: protectedProcedure
     .input(z.object({
       slug: z.string(),
       inputs: z.record(z.string(), z.any()).optional().default({}),
+      projectId: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const rows = await rawExecute("SELECT * FROM emperor_agents WHERE slug = ? LIMIT 1", [input.slug]);
-      if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
-      const runId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      await rawExecute(
-        "INSERT INTO emperor_agent_runs (runId,agentSlug,status,inputs,userId) VALUES (?,?,'running',?,?)",
-        [runId, input.slug, JSON.stringify(input.inputs), ctx.user.id]
-      );
-      // Async execution simulation
-      setTimeout(async () => {
-        try {
-          await rawExecute("UPDATE emperor_agent_runs SET status='completed',completedAt=NOW() WHERE runId=?", [runId]);
-        } catch {}
-      }, 2000);
-      return { runId, status: "running" };
+      return startAgentRun({
+        slug: input.slug,
+        inputs: input.inputs,
+        userId: ctx.user.id,
+        projectId: input.projectId ?? null,
+      });
     }),
 
   getRun: protectedProcedure
     .input(z.object({ runId: z.string() }))
-    .query(async ({ input }) => {
-      const rows = await rawExecute("SELECT * FROM emperor_agent_runs WHERE runId = ? LIMIT 1", [input.runId]);
-      if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
-      return rows[0];
+    .query(async ({ input, ctx }) => {
+      const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
+      return getAgentRun(input.runId, isAdmin ? undefined : ctx.user.id, isAdmin);
     }),
 
   listRuns: protectedProcedure
@@ -823,18 +846,87 @@ export const emperorAgentsRouter = router({
       return rawExecute("SELECT * FROM emperor_agent_runs WHERE agentSlug=? ORDER BY createdAt DESC LIMIT ?", [input.slug, input.limit]);
     }),
 
+  executeNode: protectedProcedure
+    .input(z.object({ runId: z.string(), nodeId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      return executeAgentNode({ runId: input.runId, nodeId: input.nodeId, userId: ctx.user.id });
+    }),
+
+  scheduleRun: protectedProcedure
+    .input(z.object({
+      runId: z.string(),
+      mode: z.enum(["unlock", "next", "all_ready"]).optional().default("unlock"),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return scheduleAgentRun({ runId: input.runId, userId: ctx.user.id, mode: input.mode });
+    }),
+
+  rerunNode: protectedProcedure
+    .input(z.object({
+      runId: z.string(),
+      nodeId: z.string(),
+      resetDescendants: z.boolean().optional().default(true),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return rerunAgentNode({
+        runId: input.runId,
+        nodeId: input.nodeId,
+        userId: ctx.user.id,
+        resetDescendants: input.resetDescendants,
+      });
+    }),
+
+  updateNodeDraft: protectedProcedure
+    .input(z.object({
+      runId: z.string(),
+      nodeId: z.string(),
+      userEdit: z.any(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return updateAgentNodeDraft({
+        runId: input.runId,
+        nodeId: input.nodeId,
+        userId: ctx.user.id,
+        userEdit: input.userEdit,
+      });
+    }),
+
+  confirmNode: protectedProcedure
+    .input(z.object({
+      runId: z.string(),
+      nodeId: z.string(),
+      output: z.any().optional(),
+      userEdit: z.any().optional(),
+      skip: z.boolean().optional().default(false),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return confirmAgentNode({
+        runId: input.runId,
+        nodeId: input.nodeId,
+        userId: ctx.user.id,
+        output: input.output,
+        userEdit: input.userEdit,
+        skip: input.skip,
+      });
+    }),
+
+  installListingTemplate: adminProcedure
+    .mutation(async () => {
+      return upsertListingAgentTemplate();
+    }),
+
   upsert: adminProcedure
     .input(z.object({
       slug: z.string(),
       name: z.string(),
       description: z.string().optional(),
       category: z.string().optional(),
-      status: z.enum(["Draft","Validated","Released","Deprecated"]).optional().default("Draft"),
+      status: z.enum(["draft","active","deprecated"]).optional().default("draft"),
       dagDefinition: z.any(),
     }))
     .mutation(async ({ input }) => {
       await rawExecute(
-        `INSERT INTO emperor_agents (slug,name,description,category,status,dagDefinition) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),description=VALUES(description),category=VALUES(category),status=VALUES(status),dagDefinition=VALUES(dagDefinition)`,
+        `INSERT INTO emperor_agents (slug,name,description,category,status,dagDefinition) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),description=VALUES(description),category=VALUES(category),status=VALUES(status),dagDefinition=VALUES(dagDefinition),updatedAt=NOW()`,
         [input.slug, input.name, input.description||null, input.category||"通用", input.status, JSON.stringify(input.dagDefinition)]
       );
       return { success: true };
@@ -889,6 +981,59 @@ export const emperorScheduledRouter = router({
       if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
       await rawExecute("UPDATE emperor_scheduled_tasks SET lastRunAt = NOW(), runCount = runCount + 1 WHERE slug = ?", [input.slug]);
       return { success: true, message: `Task '${rows[0].name}' triggered` };
+    }),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool Gateway Router
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const emperorToolsRouter = router({
+  list: protectedProcedure.query(async () => {
+    return listEmperorTools();
+  }),
+
+  seedBuiltins: adminProcedure.mutation(async () => {
+    return seedBuiltinTools();
+  }),
+
+  invoke: protectedProcedure
+    .input(z.object({
+      toolSlug: z.string(),
+      params: z.any().optional(),
+      runId: z.string().optional(),
+      nodeId: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return invokeEmperorTool({
+        toolSlug: input.toolSlug,
+        params: input.params,
+        userId: ctx.user.id,
+        runId: input.runId,
+        nodeId: input.nodeId,
+      });
+    }),
+
+  upsert: adminProcedure
+    .input(z.object({
+      slug: z.string(),
+      name: z.string(),
+      description: z.string().optional(),
+      type: z.enum(["mcp", "api", "internal", "code"]),
+      config: z.any().optional(),
+      inputSchema: z.any().optional(),
+      outputSchema: z.any().optional(),
+      isActive: z.boolean().optional().default(true),
+    }))
+    .mutation(async ({ input }) => {
+      return upsertEmperorTool(input);
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ slug: z.string() }))
+    .mutation(async ({ input }) => {
+      await rawExecute("DELETE FROM emperor_tools WHERE slug=?", [input.slug]);
+      return { success: true };
     }),
 });
 
@@ -1056,6 +1201,7 @@ export const emperorRouter = router({
   run: emperorRunRouter,
   models: emperorModelsRouter,
   mcp: emperorMcpRouter,
+  tools: emperorToolsRouter,
   agents: emperorAgentsRouter,
   scheduled: emperorScheduledRouter,
   diagnostics: emperorDiagnosticsRouter,
