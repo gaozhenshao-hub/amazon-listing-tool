@@ -71,15 +71,61 @@ describe("domain boundary v1", () => {
   });
 
   it("keeps business domains behind local repository and service facades", () => {
-    const listingRouter = readRepoFile("server/domains/listing/router.ts");
-    const imageRouter = readRepoFile("server/domains/image/router.ts");
-    const opsRouter = readRepoFile("server/domains/ops/router.ts");
+    const listingContext = readRepoFile("server/domains/listing/routerContext.ts");
+    const imageContext = readRepoFile("server/domains/image/routerContext.ts");
+    const opsContext = readRepoFile("server/domains/ops/routerContext.ts");
 
-    expect(listingRouter).toContain('import * as db from "./repository"');
-    expect(listingRouter).toContain('from "./service"');
-    expect(imageRouter).toContain('import * as db from "./repository"');
-    expect(imageRouter).toContain('from "./service"');
-    expect(opsRouter).toContain('from "./repository"');
-    expect(opsRouter).toContain('from "./service"');
+    expect(listingContext).toContain('import * as db from "./repository"');
+    expect(listingContext).toContain('from "./service"');
+    expect(imageContext).toContain('import * as db from "./repository"');
+    expect(imageContext).toContain('from "./service"');
+    expect(opsContext).toContain('from "./repository"');
+    expect(opsContext).toContain('from "./service"');
+  });
+
+  it("keeps business domain routers as thin procedure composition layers", () => {
+    const expectedProcedureFiles = [
+      "server/domains/listing/routers/read.ts",
+      "server/domains/listing/routers/generation.ts",
+      "server/domains/listing/routers/editing.ts",
+      "server/domains/listing/routers/abTesting.ts",
+      "server/domains/listing/routers/evaluation.ts",
+      "server/domains/listing/routers/versions.ts",
+      "server/domains/image/routers/sessions.ts",
+      "server/domains/image/routers/competitors.ts",
+      "server/domains/image/routers/expressionGroups.ts",
+      "server/domains/image/routers/workflowSteps.ts",
+      "server/domains/image/routers/step5.ts",
+      "server/domains/image/routers/references.ts",
+      "server/domains/image/routers/knowledgeExport.ts",
+      "server/domains/ops/routers/products.ts",
+      "server/domains/ops/routers/todosLogs.ts",
+      "server/domains/ops/routers/keywordMonitors.ts",
+      "server/domains/ops/routers/marketplaceSummaries.ts",
+      "server/domains/ops/routers/plans.ts",
+      "server/domains/ops/routers/conversion.ts",
+      "server/domains/ops/routers/executionReviews.ts",
+      "server/domains/ops/routers/teamTasks.ts",
+      "server/domains/ops/routers/sync.ts",
+      "server/domains/ops/routers/weeklyOps.ts",
+      "server/domains/ops/routers/imports.ts",
+    ];
+
+    for (const file of expectedProcedureFiles) {
+      expect(fs.existsSync(path.join(root, file))).toBe(true);
+      expect(readRepoFile(file)).toContain("export const ");
+    }
+
+    for (const file of [
+      "server/domains/listing/router.ts",
+      "server/domains/image/router.ts",
+      "server/domains/ops/router.ts",
+    ]) {
+      const content = readRepoFile(file);
+      const lines = content.trim().split("\n");
+      expect(lines.length).toBeLessThanOrEqual(30);
+      expect(content).toContain("router({");
+      expect(content).toContain("...");
+    }
   });
 });

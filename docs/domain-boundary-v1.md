@@ -48,6 +48,20 @@ AI OS services 也归入 `server/domains/ai_os/services`：
 - Tool Gateway
 - Observability
 
+## 业务 Router 拆分
+
+3.2 继续把 Listing、Image、Ops 的领域内巨型 router 拆成稳定的 procedure groups。顶层 `router.ts` 只做扁平合并，保证现有 tRPC API 路径不变：
+
+- Listing：`read`、`generation`、`editing`、`abTesting`、`evaluation`、`versions`
+- Image：`sessions`、`competitors`、`expressionGroups`、`workflowSteps`、`step5`、`references`、`knowledgeExport`
+- Ops：`products`、`todosLogs`、`keywordMonitors`、`marketplaceSummaries`、`plans`、`conversion`、`executionReviews`、`teamTasks`、`sync`、`weeklyOps`、`imports`
+
+每个业务 domain 现在都有：
+
+- `router.ts`：只组合本领域 procedure groups。
+- `routerContext.ts`：承接历史 helper、prompt、repository/service facade 依赖，作为继续拆 service 的过渡层。
+- `routers/*.ts`：按业务流程拆出的 procedure group。
+
 ## 依赖规则
 
 - AI OS 是平台层，只放 Skill、Agent、Tool、Job、Run、Checkpoint、Artifact、Event、Observability。
@@ -58,7 +72,7 @@ AI OS services 也归入 `server/domains/ai_os/services`：
 
 ## 已知迁移状态
 
-本轮完成的是边界成型和低风险移动。Listing/Image/Ops 的大 router 已经进入各自 domain，但内部还保留部分历史过程式逻辑。后续建议按业务流程继续拆：
+本轮完成的是边界成型和低风险移动。Listing/Image/Ops 的顶层 router 已经继续拆成领域内 procedure groups，但部分长过程内部仍保留历史过程式逻辑。后续建议继续拆 service：
 
 1. Listing：拆 `generationService`、`translationService`、`versionService`、`qaService`。
 2. Image：拆 `contextBuilder`、`step5JobService`、`aplusModuleService`、`referenceService`。
