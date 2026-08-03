@@ -29,10 +29,10 @@ async function tick() {
   try {
     const jobs = await drainAiJobQueue({ limit: jobLimit });
     const nodes = await recoverTimedOutAgentNodes({ limit: nodeLimit });
-    if (jobs.scheduled > 0 || jobs.skippedWithoutHandler > 0 || jobs.skippedNoCapacity > 0 || nodes.failed > 0 || nodes.skippedPaused > 0) {
+    if (jobs.scheduled > 0 || jobs.skippedWithoutHandler > 0 || jobs.skippedNoCapacity > 0 || nodes.failed > 0 || nodes.retried > 0 || nodes.skippedPaused > 0 || nodes.skippedStale > 0) {
       console.log(
         `[AI Worker] jobs scanned=${jobs.scanned}, scheduled=${jobs.scheduled}, skipped=${jobs.skippedWithoutHandler}, noCapacity=${jobs.skippedNoCapacity}; `
-        + `nodes scanned=${nodes.scanned}, failed=${nodes.failed}, skippedPaused=${nodes.skippedPaused}`,
+        + `nodes scanned=${nodes.scanned}, retried=${nodes.retried}, failed=${nodes.failed}, skippedPaused=${nodes.skippedPaused}, skippedStale=${nodes.skippedStale}`,
       );
     }
   } catch (error) {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import {
   buildAgentContextPackage,
+  buildAgentRetryEventPayload,
   buildStoredAgentRunInputs,
   canTransitionNodeStatus,
   canTransitionRunStatus,
@@ -36,6 +37,11 @@ describe("Emperor Agent workflow kernel", () => {
     expect(schema.emperorAgentCheckpoints.lockToken).toBeDefined();
     expect(schema.emperorAgentCheckpoints.lockedAt).toBeDefined();
     expect(schema.emperorAgentCheckpoints.timeoutAt).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.aiJobAttempt).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.aiJobClaimedAt).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.retryCount).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.retryScheduledAt).toBeDefined();
+    expect(schema.emperorAgentCheckpoints.lastFailureKind).toBeDefined();
     expect(schema.emperorAgentEvents).toBeDefined();
     expect(schema.emperorAgentArtifacts).toBeDefined();
     expect(schema.emperorTools).toBeDefined();
@@ -172,6 +178,57 @@ describe("Emperor Agent workflow kernel", () => {
     expect(canTransitionRunStatus("canceled", "waiting_human")).toBe(false);
     expect(() => AgentStateMachine.assertNodeTransition("pending", "confirmed", "unit test")).toThrow(/Invalid node transition/);
     expect(() => AgentStateMachine.assertRunTransition("completed", "running", "unit test")).toThrow(/Invalid run transition/);
+  });
+
+  it("should standardize Agent node retry events", () => {
+    const retryScheduledAt = new Date("2026-08-03T10:00:00.000Z");
+    const timeoutAt = new Date("2026-08-03T10:10:05.000Z");
+    const payload = buildAgentRetryEventPayload({
+      job: {
+        runId: "agent_job_1",
+        kind: "agent.node.G1",
+        module: "emperorAgent",
+        procedure: "emperor.agents.executeNode",
+        status: "running",
+        progress: 20,
+        priority: 0,
+        queueName: "default",
+        attempt: 1,
+        maxAttempts: 3,
+        timeoutSeconds: 600,
+        userId: 7,
+        projectId: 3,
+        skillSlug: "listing.sellingpoints.generate",
+        input: null,
+        output: null,
+        error: "timeout",
+        nextRunAt: null,
+        leaseUntil: null,
+        lockedBy: "worker_1",
+        claimedAt: retryScheduledAt,
+        lastHeartbeatAt: null,
+        deadLetterAt: null,
+        deadLetterReason: null,
+        startedAt: retryScheduledAt,
+        completedAt: null,
+        createdAt: retryScheduledAt,
+        updatedAt: retryScheduledAt,
+      },
+      retryDelayMs: 30000,
+      retryScheduledAt,
+      timeoutAt,
+      failureKind: "timeout",
+      error: "Node timed out",
+    });
+
+    expect(payload.schemaVersion).toBe("1.0");
+    expect(payload.failureKind).toBe("timeout");
+    expect(payload.aiJobRunId).toBe("agent_job_1");
+    expect(payload.attempt).toBe(1);
+    expect(payload.nextAttempt).toBe(2);
+    expect(payload.maxAttempts).toBe(3);
+    expect(payload.retryScheduledAt).toBe("2026-08-03T10:00:00.000Z");
+    expect(payload.timeoutAt).toBe("2026-08-03T10:10:05.000Z");
   });
 
   it("should register Agent runner routes", () => {

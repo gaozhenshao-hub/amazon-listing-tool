@@ -97,8 +97,8 @@ async function startServer() {
     import("../services/emperorAgentRunner")
       .then(m => m.recoverTimedOutAgentNodes())
       .then(result => {
-        if (result.failed > 0 || result.skippedPaused > 0) {
-          console.log(`[Agent Runtime] Timeout recovery scanned=${result.scanned}, failed=${result.failed}, skippedPaused=${result.skippedPaused}`);
+        if (result.failed > 0 || result.retried > 0 || result.skippedPaused > 0 || result.skippedStale > 0) {
+          console.log(`[Agent Runtime] Timeout recovery scanned=${result.scanned}, retried=${result.retried}, failed=${result.failed}, skippedPaused=${result.skippedPaused}, skippedStale=${result.skippedStale}`);
         }
       })
       .catch(err => console.error("[Agent Runtime] Timeout recovery failed:", err));

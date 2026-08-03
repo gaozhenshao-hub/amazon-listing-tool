@@ -52,6 +52,11 @@ export type AiJobSnapshot = {
 
 export type AiJobHandler<T = unknown> = (job: AiJobSnapshot) => Promise<T>;
 
+export type AiJobMutationGuard = {
+  expectedWorkerId?: string;
+  expectedAttempt?: number;
+};
+
 export type AiJobHandlerRegistration = {
   id: string;
   match: (job: AiJobSnapshot) => boolean;
@@ -107,6 +112,13 @@ export function serializeAiJobError(error: unknown): string {
   } catch {
     return "Unknown AI job error";
   }
+}
+
+function aiJobMutationAllowed(job: AiJobSnapshot | null, guard: AiJobMutationGuard = {}) {
+  if (!job) return false;
+  if (guard.expectedWorkerId && job.lockedBy !== guard.expectedWorkerId) return false;
+  if (guard.expectedAttempt !== undefined && guard.expectedAttempt !== null && job.attempt !== guard.expectedAttempt) return false;
+  return true;
 }
 
 export function getAiJobWorkerId() {
@@ -393,9 +405,11 @@ export async function markAiJobRunning(runId: string, progress = 10) {
   return job ? buildAiJobSnapshot(job) : null;
 }
 
-export async function completeAiJob(runId: string, output: unknown) {
+export async function completeAiJob(runId: string, output: unknown, guard: AiJobMutationGuard = {}) {
   const existing = await getAiJobRun(runId);
   if (existing?.status === "canceled") return existing;
+  if (!aiJobMutationAllowed(existing, guard)) return existing;
+  if (existing?.status !== "running") return existing;
 
   const job = await updateAiJobByRunId(runId, {
     status: "succeeded",
@@ -448,9 +462,11 @@ async function recordAiJobDeadLetter(job: AiJob, reason: string, metadata?: unkn
   }
 }
 
-export async function failAiJob(runId: string, error: unknown) {
+export async function failAiJob(runId: string, error: unknown, guard: AiJobMutationGuard = {}) {
   const existing = await getAiJobRun(runId);
   if (existing?.status === "canceled") return existing;
+  if (existing?.status === "succeeded") return existing;
+  if (!aiJobMutationAllowed(existing, guard)) return existing;
   const errorMessage = serializeAiJobError(error);
 
   const job = await updateAiJobByRunId(runId, {
@@ -484,10 +500,12 @@ export async function failAiJob(runId: string, error: unknown) {
   return job ? buildAiJobSnapshot(job) : null;
 }
 
-export async function retryAiJob(runId: string, error: unknown) {
+export async function retryAiJob(runId: string, error: unknown, guard: AiJobMutationGuard = {}) {
   const existing = await getAiJobRun(runId);
   if (!existing || existing.status === "canceled") return existing;
-  if (existing.attempt >= existing.maxAttempts) return failAiJob(runId, error);
+  if (!isActiveAiJob(existing.status)) return existing;
+  if (!aiJobMutationAllowed(existing, guard)) return existing;
+  if (existing.attempt >= existing.maxAttempts) return failAiJob(runId, error, guard);
 
   const delayMs = calculateAiJobRetryDelayMs(existing.attempt);
   const job = await retryAiJobByRunId(runId, {
@@ -547,12 +565,13 @@ export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<
   void reportAiJobWorkerHeartbeat().catch(() => null);
   let heartbeat: ReturnType<typeof setInterval> | null = null;
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  let current: AiJobSnapshot | null = null;
   const abortController = new AbortController();
   activeAbortControllers.set(runId, abortController);
   try {
     const running = await markAiJobRunning(runId, Math.max(existing.progress || 0, 10));
     if (!running) return existing;
-    const current = running;
+    current = running;
     if (current.status === "canceled") return current;
 
     const leaseSeconds = Math.min(Math.max(current.timeoutSeconds || DEFAULT_JOB_TIMEOUT_SECONDS, 5), 7200);
@@ -569,9 +588,9 @@ export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<
       abortController.signal.addEventListener("abort", () => reject(new Error(String(abortController.signal.reason || "AI job canceled"))), { once: true });
     });
     const output = await Promise.race([handler(current), timeout, canceled]);
-    return await completeAiJob(runId, output);
+    return await completeAiJob(runId, output, { expectedWorkerId: WORKER_ID, expectedAttempt: current.attempt });
   } catch (error) {
-    await retryAiJob(runId, error);
+    await retryAiJob(runId, error, { expectedWorkerId: WORKER_ID, expectedAttempt: current?.attempt });
     throw error;
   } finally {
     if (heartbeat) clearInterval(heartbeat);

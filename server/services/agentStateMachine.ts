@@ -34,6 +34,7 @@ type CheckpointMutationResult = {
   status: AgentNodeStatus;
   lockToken?: string | null;
   aiJobRunId?: string | null;
+  aiJobAttempt?: number | null;
 };
 
 function normalizeRows(result: unknown): any[] {
@@ -209,7 +210,8 @@ export class AgentStateMachine {
     await rawExecute(
       this.executor,
       `UPDATE emperor_agent_checkpoints
-       SET status='running',attempt=attempt+1,input=?,errorMessage=NULL,startedAt=?,lockToken=?,lockedAt=?,timeoutAt=?,updatedAt=NOW()
+       SET status='running',attempt=attempt+1,input=?,errorMessage=NULL,startedAt=?,lockToken=?,lockedAt=?,timeoutAt=?,
+           aiJobRunId=NULL,aiJobAttempt=0,aiJobClaimedAt=NULL,retryScheduledAt=NULL,lastFailureKind=NULL,updatedAt=NOW()
        WHERE runId=? AND nodeId=?`,
       [serializeJson(input.nodeInput), input.lockedAt, input.lockToken, input.lockedAt, input.timeoutAt, input.runId, input.nodeId],
     );
@@ -225,6 +227,7 @@ export class AgentStateMachine {
     runId: string;
     nodeId: string;
     aiJobRunId: string;
+    aiJobAttempt?: number | null;
     lockToken?: string | null;
   }) {
     const checkpoint = await this.getCheckpointForUpdate(input.runId, input.nodeId);
@@ -236,10 +239,55 @@ export class AgentStateMachine {
     }
     await rawExecute(
       this.executor,
-      "UPDATE emperor_agent_checkpoints SET aiJobRunId=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
-      [input.aiJobRunId, input.runId, input.nodeId],
+      "UPDATE emperor_agent_checkpoints SET aiJobRunId=?,aiJobAttempt=?,aiJobClaimedAt=NULL,updatedAt=NOW() WHERE runId=? AND nodeId=?",
+      [input.aiJobRunId, input.aiJobAttempt ?? 0, input.runId, input.nodeId],
     );
-    return { runId: input.runId, nodeId: input.nodeId, status: "running" as AgentNodeStatus, aiJobRunId: input.aiJobRunId };
+    return { runId: input.runId, nodeId: input.nodeId, status: "running" as AgentNodeStatus, aiJobRunId: input.aiJobRunId, aiJobAttempt: input.aiJobAttempt ?? 0 };
+  }
+
+  async recordNodeJobAttempt(input: {
+    runId: string;
+    nodeId: string;
+    aiJobRunId: string;
+    aiJobAttempt: number;
+    aiJobClaimedAt?: Date | null;
+    timeoutAt: Date;
+  }) {
+    const checkpoint = await this.getCheckpointForUpdate(input.runId, input.nodeId);
+    const from = String(checkpoint.status) as AgentNodeStatus;
+    if (from !== "running" || checkpoint.aiJobRunId !== input.aiJobRunId) {
+      return {
+        recorded: false,
+        stale: true,
+        status: from,
+        currentAiJobRunId: checkpoint.aiJobRunId || null,
+        currentAiJobAttempt: Number(checkpoint.aiJobAttempt || 0),
+      };
+    }
+    const currentAttempt = Number(checkpoint.aiJobAttempt || 0);
+    if (currentAttempt > input.aiJobAttempt) {
+      return {
+        recorded: false,
+        stale: true,
+        status: from,
+        currentAiJobRunId: checkpoint.aiJobRunId || null,
+        currentAiJobAttempt: currentAttempt,
+      };
+    }
+    await rawExecute(
+      this.executor,
+      `UPDATE emperor_agent_checkpoints
+       SET aiJobAttempt=?,aiJobClaimedAt=?,timeoutAt=?,errorMessage=NULL,retryScheduledAt=NULL,lastFailureKind=NULL,updatedAt=NOW()
+       WHERE runId=? AND nodeId=?`,
+      [input.aiJobAttempt, input.aiJobClaimedAt ?? null, input.timeoutAt, input.runId, input.nodeId],
+    );
+    return {
+      recorded: true,
+      stale: false,
+      status: "running" as AgentNodeStatus,
+      currentAiJobRunId: input.aiJobRunId,
+      currentAiJobAttempt: input.aiJobAttempt,
+    };
   }
 
   async completeNode(input: {
@@ -253,6 +301,7 @@ export class AgentStateMachine {
     completedAt: Date;
     confirmedAt?: Date | null;
     sourceAiJobRunId?: string | null;
+    sourceAiJobAttempt?: number | null;
     updateRunToWaitingHuman?: boolean;
   }) {
     const checkpoint = await this.getCheckpointForUpdate(input.runId, input.nodeId);
@@ -264,10 +313,13 @@ export class AgentStateMachine {
     if (input.sourceAiJobRunId && (from !== "running" || checkpoint.aiJobRunId !== input.sourceAiJobRunId)) {
       return { ignored: true, from, currentAiJobRunId: checkpoint.aiJobRunId || null };
     }
+    if (input.sourceAiJobAttempt !== undefined && input.sourceAiJobAttempt !== null && Number(checkpoint.aiJobAttempt || 0) !== input.sourceAiJobAttempt) {
+      return { ignored: true, from, currentAiJobRunId: checkpoint.aiJobRunId || null, currentAiJobAttempt: Number(checkpoint.aiJobAttempt || 0) };
+    }
     assertNodeTransition(from, input.to, "complete node");
     await rawExecute(
       this.executor,
-      "UPDATE emperor_agent_checkpoints SET status=?,output=?,metadata=?,skillRunId=COALESCE(?,skillRunId),reviewerUserId=?,completedAt=?,confirmedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,updatedAt=NOW() WHERE runId=? AND nodeId=?",
+      "UPDATE emperor_agent_checkpoints SET status=?,output=?,metadata=?,skillRunId=COALESCE(?,skillRunId),reviewerUserId=?,completedAt=?,confirmedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,retryScheduledAt=NULL,lastFailureKind=NULL,updatedAt=NOW() WHERE runId=? AND nodeId=?",
       [
         input.to,
         serializeJson(input.output),
@@ -299,14 +351,23 @@ export class AgentStateMachine {
     message: string;
     completedAt: Date;
     failRun?: boolean;
+    sourceAiJobRunId?: string | null;
+    sourceAiJobAttempt?: number | null;
+    failureKind?: string | null;
   }) {
     const checkpoint = await this.getCheckpointForUpdate(input.runId, input.nodeId);
     const from = String(checkpoint.status) as AgentNodeStatus;
+    if (input.sourceAiJobRunId && (from !== "running" || checkpoint.aiJobRunId !== input.sourceAiJobRunId)) {
+      return { ignored: true, from, currentAiJobRunId: checkpoint.aiJobRunId || null, currentAiJobAttempt: Number(checkpoint.aiJobAttempt || 0) };
+    }
+    if (input.sourceAiJobAttempt !== undefined && input.sourceAiJobAttempt !== null && Number(checkpoint.aiJobAttempt || 0) !== input.sourceAiJobAttempt) {
+      return { ignored: true, from, currentAiJobRunId: checkpoint.aiJobRunId || null, currentAiJobAttempt: Number(checkpoint.aiJobAttempt || 0) };
+    }
     assertNodeTransition(from, "failed", "fail node");
     await rawExecute(
       this.executor,
-      "UPDATE emperor_agent_checkpoints SET status='failed',errorMessage=?,completedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,updatedAt=NOW() WHERE runId=? AND nodeId=?",
-      [input.message, input.completedAt, input.runId, input.nodeId],
+      "UPDATE emperor_agent_checkpoints SET status='failed',errorMessage=?,completedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,retryScheduledAt=NULL,lastFailureKind=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
+      [input.message, input.completedAt, input.failureKind || "error", input.runId, input.nodeId],
     );
     if (input.failRun !== false) {
       const run = await this.getRunForUpdate(input.runId);
@@ -317,7 +378,7 @@ export class AgentStateMachine {
         [input.message, input.nodeId, input.runId],
       );
     }
-    return { from, to: "failed" as AgentNodeStatus };
+    return { ignored: false, from, to: "failed" as AgentNodeStatus };
   }
 
   async updateNodeRetry(input: {
@@ -325,17 +386,31 @@ export class AgentStateMachine {
     nodeId: string;
     message: string;
     timeoutAt: Date;
+    aiJobRunId: string;
+    aiJobAttempt: number;
+    retryCount: number;
+    retryScheduledAt: Date;
+    failureKind: string;
   }) {
     const checkpoint = await this.getCheckpointForUpdate(input.runId, input.nodeId);
     if (checkpoint.status !== "running") {
       return { updated: false, status: String(checkpoint.status) as AgentNodeStatus };
     }
+    if (checkpoint.aiJobRunId !== input.aiJobRunId || Number(checkpoint.aiJobAttempt || 0) !== input.aiJobAttempt) {
+      return {
+        updated: false,
+        stale: true,
+        status: String(checkpoint.status) as AgentNodeStatus,
+        currentAiJobRunId: checkpoint.aiJobRunId || null,
+        currentAiJobAttempt: Number(checkpoint.aiJobAttempt || 0),
+      };
+    }
     await rawExecute(
       this.executor,
-      "UPDATE emperor_agent_checkpoints SET errorMessage=?,timeoutAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
-      [input.message, input.timeoutAt, input.runId, input.nodeId],
+      "UPDATE emperor_agent_checkpoints SET errorMessage=?,timeoutAt=?,retryCount=?,retryScheduledAt=?,lastFailureKind=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
+      [input.message, input.timeoutAt, input.retryCount, input.retryScheduledAt, input.failureKind, input.runId, input.nodeId],
     );
-    return { updated: true, status: "running" as AgentNodeStatus };
+    return { updated: true, stale: false, status: "running" as AgentNodeStatus };
   }
 
   async confirmNode(input: {
@@ -352,7 +427,7 @@ export class AgentStateMachine {
     assertNodeTransition(from, input.to, "confirm node");
     await rawExecute(
       this.executor,
-      "UPDATE emperor_agent_checkpoints SET status=?,output=COALESCE(?,output),userEdit=?,reviewerUserId=?,confirmedAt=?,completedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,updatedAt=NOW() WHERE runId=? AND nodeId=?",
+      "UPDATE emperor_agent_checkpoints SET status=?,output=COALESCE(?,output),userEdit=?,reviewerUserId=?,confirmedAt=?,completedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,retryScheduledAt=NULL,lastFailureKind=NULL,updatedAt=NOW() WHERE runId=? AND nodeId=?",
       [
         input.to,
         input.output === undefined ? null : serializeJson(input.output),
@@ -377,7 +452,7 @@ export class AgentStateMachine {
     await rawExecute(
       this.executor,
       `UPDATE emperor_agent_checkpoints
-       SET status='ready',input=NULL,output=NULL,userEdit=NULL,skillRunId=NULL,aiJobRunId=NULL,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,reviewerUserId=NULL,errorMessage=NULL,startedAt=NULL,completedAt=NULL,confirmedAt=NULL,updatedAt=NOW()
+       SET status='ready',input=NULL,output=NULL,userEdit=NULL,skillRunId=NULL,aiJobRunId=NULL,aiJobAttempt=0,aiJobClaimedAt=NULL,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,retryCount=0,retryScheduledAt=NULL,lastFailureKind=NULL,reviewerUserId=NULL,errorMessage=NULL,startedAt=NULL,completedAt=NULL,confirmedAt=NULL,updatedAt=NOW()
        WHERE runId=? AND nodeId=?`,
       [input.runId, input.nodeId],
     );
@@ -404,7 +479,7 @@ export class AgentStateMachine {
     await rawExecute(
       this.executor,
       `UPDATE emperor_agent_checkpoints
-       SET status='pending',input=NULL,output=NULL,userEdit=NULL,skillRunId=NULL,aiJobRunId=NULL,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,reviewerUserId=NULL,errorMessage=NULL,startedAt=NULL,completedAt=NULL,confirmedAt=NULL,updatedAt=NOW()
+       SET status='pending',input=NULL,output=NULL,userEdit=NULL,skillRunId=NULL,aiJobRunId=NULL,aiJobAttempt=0,aiJobClaimedAt=NULL,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,retryCount=0,retryScheduledAt=NULL,lastFailureKind=NULL,reviewerUserId=NULL,errorMessage=NULL,startedAt=NULL,completedAt=NULL,confirmedAt=NULL,updatedAt=NOW()
        WHERE runId=? AND nodeId IN (${placeholders})`,
       [input.runId, ...input.nodeIds],
     );
@@ -420,7 +495,7 @@ export class AgentStateMachine {
     assertRunTransition(String(run.status) as AgentRunStatus, "canceled", "cancel run");
     await rawExecute(
       this.executor,
-      "UPDATE emperor_agent_checkpoints SET status='failed',errorMessage=?,completedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,updatedAt=NOW() WHERE runId=? AND status='running'",
+      "UPDATE emperor_agent_checkpoints SET status='failed',errorMessage=?,completedAt=?,lockToken=NULL,lockedAt=NULL,timeoutAt=NULL,retryScheduledAt=NULL,lastFailureKind='cancel',updatedAt=NOW() WHERE runId=? AND status='running'",
       [input.reason, input.completedAt, input.runId],
     );
     await rawExecute(

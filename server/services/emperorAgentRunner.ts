@@ -19,7 +19,7 @@ import {
   type SkillRuntimeSnapshot,
   type SkillVersionPolicy,
 } from "./emperorSkillRunner";
-import { calculateAiJobRetryDelayMs, cancelAiJob, failAiJob, registerAiJobHandler, startRegisteredAiJob, type AiJobSnapshot } from "./aiJobRunner";
+import { calculateAiJobRetryDelayMs, cancelAiJob, failAiJob, getAiJobRun, registerAiJobHandler, retryAiJob, startRegisteredAiJob, type AiJobSnapshot } from "./aiJobRunner";
 import { invokeEmperorTool } from "./emperorToolGateway";
 
 export { canTransitionNodeStatus, canTransitionRunStatus };
@@ -165,9 +165,14 @@ type CheckpointRow = {
   metadata?: unknown;
   skillRunId?: string | null;
   aiJobRunId?: string | null;
+  aiJobAttempt?: number | null;
+  aiJobClaimedAt?: Date | null;
   lockToken?: string | null;
   lockedAt?: Date | null;
   timeoutAt?: Date | null;
+  retryCount?: number | null;
+  retryScheduledAt?: Date | null;
+  lastFailureKind?: string | null;
   errorMessage?: string | null;
 };
 
@@ -1157,6 +1162,77 @@ function nodeRequiresHumanGate(node: EmperorAgentNode): boolean {
   return node.humanGate !== false;
 }
 
+type AgentNodeJobFailureKind = "error" | "timeout" | "cancel";
+
+function agentErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "Unknown Agent node error";
+  }
+}
+
+function agentNodeTimeoutAtForJob(job: Pick<AiJobSnapshot, "timeoutSeconds">, delayMs = 0): Date {
+  const timeoutMs = Math.min(Math.max(job.timeoutSeconds || 600, 5), 7200) * 1000;
+  return new Date(Date.now() + delayMs + timeoutMs + 5000);
+}
+
+export function buildAgentRetryEventPayload(input: {
+  job: AiJobSnapshot;
+  retryDelayMs: number;
+  retryScheduledAt: Date;
+  timeoutAt: Date;
+  failureKind: AgentNodeJobFailureKind;
+  error: string;
+}) {
+  return {
+    schemaVersion: "1.0",
+    failureKind: input.failureKind,
+    aiJobRunId: input.job.runId,
+    attempt: input.job.attempt,
+    maxAttempts: input.job.maxAttempts,
+    nextAttempt: input.job.attempt + 1,
+    retryDelayMs: input.retryDelayMs,
+    retryScheduledAt: input.retryScheduledAt.toISOString(),
+    timeoutAt: input.timeoutAt.toISOString(),
+    error: input.error,
+  };
+}
+
+async function recordAgentNodeJobAttempt(input: {
+  run: any;
+  node: EmperorAgentNode;
+  job: AiJobSnapshot;
+}) {
+  const timeoutAt = agentNodeTimeoutAtForJob(input.job);
+  const result = await withAgentStateMachine((stateMachine) => stateMachine.recordNodeJobAttempt({
+    runId: input.run.runId,
+    nodeId: input.node.id,
+    aiJobRunId: input.job.runId,
+    aiJobAttempt: input.job.attempt,
+    aiJobClaimedAt: input.job.claimedAt || null,
+    timeoutAt,
+  }));
+  if (!result.recorded) {
+    await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.job_attempt_ignored", `节点 ${input.node.label || input.node.id} 的 Job attempt 已忽略：Checkpoint 已变化`, {
+      aiJobRunId: input.job.runId,
+      aiJobAttempt: input.job.attempt,
+      checkpointStatus: result.status,
+      currentAiJobRunId: result.currentAiJobRunId || null,
+      currentAiJobAttempt: result.currentAiJobAttempt ?? null,
+    });
+  } else {
+    await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.job_attempt_claimed", `节点 ${input.node.label || input.node.id} 已绑定 Job attempt ${input.job.attempt}`, {
+      aiJobRunId: input.job.runId,
+      aiJobAttempt: input.job.attempt,
+      timeoutAt: timeoutAt.toISOString(),
+    });
+  }
+  return result;
+}
+
 async function finalizeNodeOutput(input: {
   run: any;
   dag: EmperorAgentDag;
@@ -1165,6 +1241,7 @@ async function finalizeNodeOutput(input: {
   output: unknown;
   skillRunId?: string | null;
   sourceAiJobRunId?: string | null;
+  sourceAiJobAttempt?: number | null;
   runtimeMetadata?: Record<string, unknown>;
   completedMessage?: string;
 }) {
@@ -1183,6 +1260,15 @@ async function finalizeNodeOutput(input: {
       sourceAiJobRunId: input.sourceAiJobRunId,
       checkpointStatus: checkpoint.status,
       currentAiJobRunId: checkpoint.aiJobRunId || null,
+    });
+    return;
+  }
+  if (input.sourceAiJobAttempt !== undefined && input.sourceAiJobAttempt !== null && Number(checkpoint.aiJobAttempt || 0) !== input.sourceAiJobAttempt) {
+    await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.output_ignored", `节点 ${input.node.label || input.node.id} 的结果已忽略：Job attempt 已过期`, {
+      skillRunId: input.skillRunId || null,
+      sourceAiJobRunId: input.sourceAiJobRunId || null,
+      sourceAiJobAttempt: input.sourceAiJobAttempt,
+      currentAiJobAttempt: Number(checkpoint.aiJobAttempt || 0),
     });
     return;
   }
@@ -1205,14 +1291,17 @@ async function finalizeNodeOutput(input: {
     completedAt,
     confirmedAt: waitingForHuman ? null : completedAt,
     sourceAiJobRunId: input.sourceAiJobRunId || null,
+    sourceAiJobAttempt: input.sourceAiJobAttempt ?? null,
     updateRunToWaitingHuman: waitingForHuman,
   }));
   if (transition.ignored) {
     await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.output_ignored", `节点 ${input.node.label || input.node.id} 的结果已忽略：Checkpoint 已变化`, {
       skillRunId: input.skillRunId || null,
       sourceAiJobRunId: input.sourceAiJobRunId || null,
+      sourceAiJobAttempt: input.sourceAiJobAttempt ?? null,
       checkpointStatus: transition.from,
       currentAiJobRunId: transition.currentAiJobRunId || null,
+      currentAiJobAttempt: (transition as any).currentAiJobAttempt ?? null,
     });
     return;
   }
@@ -1248,6 +1337,9 @@ async function failNodeExecution(input: {
   run: any;
   node: EmperorAgentNode;
   error: unknown;
+  sourceAiJobRunId?: string | null;
+  sourceAiJobAttempt?: number | null;
+  failureKind?: AgentNodeJobFailureKind;
 }) {
   const latestRun = await getRunRow(input.run.runId);
   if (latestRun.status === "canceled") {
@@ -1255,14 +1347,83 @@ async function failNodeExecution(input: {
     return;
   }
 
-  const message = input.error instanceof Error ? input.error.message : String(input.error);
-  await withAgentStateMachine((stateMachine) => stateMachine.failNode({
+  const message = agentErrorMessage(input.error);
+  const transition = await withAgentStateMachine((stateMachine) => stateMachine.failNode({
     runId: input.run.runId,
     nodeId: input.node.id,
     message,
     completedAt: new Date(),
+    sourceAiJobRunId: input.sourceAiJobRunId || null,
+    sourceAiJobAttempt: input.sourceAiJobAttempt ?? null,
+    failureKind: input.failureKind || "error",
   }));
+  if ((transition as any).ignored) {
+    await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.failure_ignored", `节点 ${input.node.label || input.node.id} 的失败已忽略：Job attempt 已过期`, {
+      error: message,
+      sourceAiJobRunId: input.sourceAiJobRunId || null,
+      sourceAiJobAttempt: input.sourceAiJobAttempt ?? null,
+      currentAiJobRunId: (transition as any).currentAiJobRunId || null,
+      currentAiJobAttempt: (transition as any).currentAiJobAttempt ?? null,
+      failureKind: input.failureKind || "error",
+    });
+    return;
+  }
   await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.failed", `节点 ${input.node.label || input.node.id} 执行失败`, { error: message });
+}
+
+async function recordAgentNodeJobFailure(input: {
+  run: any;
+  node: EmperorAgentNode;
+  job: AiJobSnapshot;
+  error: unknown;
+  failureKind: AgentNodeJobFailureKind;
+}) {
+  const message = agentErrorMessage(input.error);
+  if (input.job.attempt < input.job.maxAttempts) {
+    const retryDelayMs = calculateAiJobRetryDelayMs(input.job.attempt);
+    const retryScheduledAt = new Date(Date.now() + retryDelayMs);
+    const timeoutAt = agentNodeTimeoutAtForJob(input.job, retryDelayMs);
+    const transition = await withAgentStateMachine((stateMachine) => stateMachine.updateNodeRetry({
+      runId: input.run.runId,
+      nodeId: input.node.id,
+      message,
+      timeoutAt,
+      aiJobRunId: input.job.runId,
+      aiJobAttempt: input.job.attempt,
+      retryCount: Math.max(input.job.attempt, 1),
+      retryScheduledAt,
+      failureKind: input.failureKind,
+    }));
+    const payload = buildAgentRetryEventPayload({
+      job: input.job,
+      retryDelayMs,
+      retryScheduledAt,
+      timeoutAt,
+      failureKind: input.failureKind,
+      error: message,
+    });
+    if (transition.updated) {
+      await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.retry_scheduled", `节点 ${input.node.label || input.node.id} 失败，已等待第 ${input.job.attempt + 1}/${input.job.maxAttempts} 次重试`, payload);
+    } else {
+      await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.retry_ignored", `节点 ${input.node.label || input.node.id} 的重试事件已忽略：Checkpoint 已变化`, {
+        ...payload,
+        checkpointStatus: transition.status,
+        currentAiJobRunId: (transition as any).currentAiJobRunId || null,
+        currentAiJobAttempt: (transition as any).currentAiJobAttempt ?? null,
+      });
+    }
+    return { finalFailure: false, retryScheduled: transition.updated };
+  }
+
+  await failNodeExecution({
+    run: input.run,
+    node: input.node,
+    error: input.error,
+    sourceAiJobRunId: input.job.runId,
+    sourceAiJobAttempt: input.job.attempt,
+    failureKind: input.failureKind,
+  });
+  return { finalFailure: true, retryScheduled: false };
 }
 
 function resolveToolSlug(node: EmperorAgentNode): string | null {
@@ -1552,15 +1713,24 @@ export async function cancelAgentRun(input: {
   if (run.status === "canceled") return detail;
 
   const checkpoints = detail.checkpoints as CheckpointRow[];
-  const runningAiJobRunIds = checkpoints
+  const runningAiJobCheckpoints = checkpoints
     .filter((checkpoint) => checkpoint.status === "running" && checkpoint.aiJobRunId)
-    .map((checkpoint) => checkpoint.aiJobRunId as string);
+    .map((checkpoint) => ({ nodeId: checkpoint.nodeId, nodeLabel: checkpoint.nodeLabel || checkpoint.nodeId, aiJobRunId: checkpoint.aiJobRunId as string, aiJobAttempt: checkpoint.aiJobAttempt ?? null }));
   await withAgentStateMachine((stateMachine) => stateMachine.cancelRun({
     runId: input.runId,
     reason: input.reason || "Agent run canceled",
     completedAt: new Date(),
   }));
-  await Promise.all(runningAiJobRunIds.map((runId) => cancelAiJob(runId, input.reason || "Agent run canceled").catch(() => null)));
+  await Promise.all(runningAiJobCheckpoints.map(async (checkpoint) => {
+    await cancelAiJob(checkpoint.aiJobRunId, input.reason || "Agent run canceled").catch(() => null);
+    await addEvent(input.runId, run.agentSlug, checkpoint.nodeId, "node.job_canceled", `节点 ${checkpoint.nodeLabel} 的 Job 已取消`, {
+      schemaVersion: "1.0",
+      failureKind: "cancel",
+      aiJobRunId: checkpoint.aiJobRunId,
+      aiJobAttempt: checkpoint.aiJobAttempt,
+      reason: input.reason || null,
+    }).catch(() => null);
+  }));
   await addEvent(input.runId, run.agentSlug, null, "run.canceled", "Agent Run 已取消", {
     reason: input.reason || null,
   });
@@ -1618,7 +1788,7 @@ export async function recoverTimedOutAgentNodes(opts: { limit?: number } = {}) {
      WHERE status='running' AND timeoutAt IS NOT NULL AND timeoutAt < NOW()
      ORDER BY timeoutAt ASC LIMIT ${limit}`,
   );
-  const result = { scanned: rows.length, failed: 0, skippedPaused: 0 };
+  const result = { scanned: rows.length, failed: 0, retried: 0, skippedPaused: 0, skippedStale: 0 };
   for (const row of rows) {
     const checkpoint = checkpointPayload(row);
     const run = await getRunRow(checkpoint.runId).catch(() => null);
@@ -1628,20 +1798,54 @@ export async function recoverTimedOutAgentNodes(opts: { limit?: number } = {}) {
       continue;
     }
 
+    const detail = await getAgentRun(checkpoint.runId, run.userId, true).catch(() => null);
+    const dag = normalizeAgentDag(detail?.dag || { nodes: [], edges: [] });
+    const node = dag.nodes.find((item) => item.id === checkpoint.nodeId) || {
+      id: checkpoint.nodeId,
+      label: checkpoint.nodeLabel || checkpoint.nodeId,
+      nodeType: checkpoint.nodeType,
+    } as EmperorAgentNode;
     const message = `Node timed out at ${checkpoint.timeoutAt instanceof Date ? checkpoint.timeoutAt.toISOString() : checkpoint.timeoutAt}`;
-    await withAgentStateMachine((stateMachine) => stateMachine.failNode({
-      runId: checkpoint.runId,
-      nodeId: checkpoint.nodeId,
-      message,
-      completedAt: new Date(),
-    }));
-    if (checkpoint.aiJobRunId) {
-      await failAiJob(checkpoint.aiJobRunId, new Error(message));
-    }
+    const error = new Error(message);
+    const job = checkpoint.aiJobRunId ? await getAiJobRun(checkpoint.aiJobRunId).catch(() => null) : null;
+
     await addEvent(checkpoint.runId, checkpoint.agentSlug, checkpoint.nodeId, "node.timeout", `节点 ${checkpoint.nodeLabel || checkpoint.nodeId} 执行超时`, {
+      schemaVersion: "1.0",
+      failureKind: "timeout",
       error: message,
       aiJobRunId: checkpoint.aiJobRunId || null,
+      aiJobAttempt: checkpoint.aiJobAttempt ?? null,
     });
+
+    if (job && job.status === "succeeded") {
+      await addEvent(checkpoint.runId, checkpoint.agentSlug, checkpoint.nodeId, "node.timeout_ignored", `节点 ${checkpoint.nodeLabel || checkpoint.nodeId} 的超时已忽略：Job 已完成`, {
+        aiJobRunId: job.runId,
+        aiJobAttempt: job.attempt,
+        jobStatus: job.status,
+      });
+      result.skippedStale += 1;
+      continue;
+    }
+
+    if (job && job.attempt < job.maxAttempts) {
+      const retryRecord = await recordAgentNodeJobFailure({ run, node, job, error, failureKind: "timeout" });
+      const retryResult = await retryAiJob(job.runId, error);
+      if (retryRecord.retryScheduled && retryResult?.status === "queued") {
+        result.retried += 1;
+      } else if (retryResult?.status === "failed") {
+        result.failed += 1;
+      } else {
+        result.skippedStale += 1;
+      }
+      continue;
+    }
+
+    if (job) {
+      await failAiJob(job.runId, error);
+      await recordAgentNodeJobFailure({ run, node, job, error, failureKind: "timeout" });
+    } else {
+      await failNodeExecution({ run, node, error, failureKind: "timeout" });
+    }
     result.failed += 1;
   }
   return result;
@@ -1817,6 +2021,7 @@ export async function executeAgentNode(input: {
       runId: input.runId,
       nodeId: input.nodeId,
       aiJobRunId: createdJob.runId,
+      aiJobAttempt: createdJob.attempt,
       lockToken,
     }));
   } catch (error) {
@@ -1880,6 +2085,30 @@ async function runAgentNodeSkillJob(job: AiJobSnapshot) {
       output: effectiveCheckpointOutput(checkpoint),
     };
   }
+  if (checkpoint.status !== "running" || checkpoint.aiJobRunId !== job.runId) {
+    await addEvent(payload.runId, run.agentSlug, node.id, "node.job_stale_ignored", `节点 ${node.label || node.id} 的 Job 已忽略：Checkpoint 已变化`, {
+      aiJobRunId: job.runId,
+      aiJobAttempt: job.attempt,
+      checkpointStatus: checkpoint.status,
+      currentAiJobRunId: checkpoint.aiJobRunId || null,
+      currentAiJobAttempt: checkpoint.aiJobAttempt ?? null,
+    });
+    return {
+      deduped: true,
+      stale: true,
+      status: checkpoint.status,
+    };
+  }
+  const jobAttemptClaim = await recordAgentNodeJobAttempt({ run, node, job });
+  if (!jobAttemptClaim.recorded) {
+    return {
+      deduped: true,
+      stale: true,
+      status: jobAttemptClaim.status,
+      currentAiJobRunId: jobAttemptClaim.currentAiJobRunId || null,
+      currentAiJobAttempt: jobAttemptClaim.currentAiJobAttempt ?? null,
+    };
+  }
 
   try {
     const result = await runEmperorSkill({
@@ -1904,6 +2133,7 @@ async function runAgentNodeSkillJob(job: AiJobSnapshot) {
       output: result,
       skillRunId: result.runId,
       sourceAiJobRunId: job.runId,
+      sourceAiJobAttempt: job.attempt,
       runtimeMetadata: {
         skillVersionPolicy: payload.skillVersionPolicy,
         skillSnapshot: payload.skillSnapshot || null,
@@ -1925,26 +2155,7 @@ async function runAgentNodeSkillJob(job: AiJobSnapshot) {
     });
     return result;
   } catch (error) {
-    if (job.attempt < job.maxAttempts) {
-      const retryDelayMs = calculateAiJobRetryDelayMs(job.attempt);
-      const timeoutMs = Math.min(Math.max(job.timeoutSeconds || 600, 5), 7200) * 1000;
-      const nextTimeoutAt = new Date(Date.now() + retryDelayMs + timeoutMs + 5000);
-      await withAgentStateMachine((stateMachine) => stateMachine.updateNodeRetry({
-        runId: payload.runId,
-        nodeId: payload.nodeId,
-        message: error instanceof Error ? error.message : String(error),
-        timeoutAt: nextTimeoutAt,
-      }));
-      await addEvent(payload.runId, run.agentSlug, node.id, "node.retry_scheduled", `节点 ${node.label || node.id} 失败，已等待第 ${job.attempt + 1}/${job.maxAttempts} 次重试`, {
-        aiJobRunId: job.runId,
-        attempt: job.attempt,
-        maxAttempts: job.maxAttempts,
-        retryDelayMs,
-        timeoutAt: nextTimeoutAt.toISOString(),
-      });
-    } else {
-      await failNodeExecution({ run, node, error });
-    }
+    await recordAgentNodeJobFailure({ run, node, job, error, failureKind: "error" });
     throw error;
   }
 }
