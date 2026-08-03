@@ -241,6 +241,7 @@ const modules: ModuleDef[] = [
       { icon: Timer, label: "定时任务", path: "/emperor/scheduled" },
       { icon: BarChart3, label: "Token 用量", path: "/emperor/usage" },
       { icon: Wrench, label: "诊断中心", path: "/emperor/diagnostics" },
+      { icon: Activity, label: "AI 观测中心", path: "/emperor/observability" },
       { icon: Settings, label: "通用设置", path: "/emperor/settings" },
     ],
   },

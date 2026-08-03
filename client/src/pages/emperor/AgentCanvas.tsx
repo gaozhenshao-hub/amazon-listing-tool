@@ -15,7 +15,8 @@ import {
   Zap, Code2, GitBranch, RefreshCw, Wrench,
   BookOpen, LogOut, LogIn, Bot, RotateCcw,
   Globe, UserCheck, Loader2, CheckCircle2, Circle,
-  AlertTriangle, FileText, SkipForward, History
+  AlertTriangle, FileText, SkipForward, History,
+  GitCommit, Rocket, Undo2, SlidersHorizontal, GitCompare, ChevronRight
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -740,7 +741,9 @@ function AgentCanvasInner({ slug }: { slug: string }) {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [showRunPanel, setShowRunPanel] = useState(false);
+  const [showVersionPanel, setShowVersionPanel] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [diffVersions, setDiffVersions] = useState<{ a: number; b: number } | null>(null);
 
   const { data: agentData, isLoading } = trpc.emperor.agents.get.useQuery({ slug });
   const agent = agentData as any;
@@ -756,9 +759,36 @@ function AgentCanvasInner({ slug }: { slug: string }) {
   const tools = (toolsData as any[]) ?? [];
 
   const saveMutation = trpc.emperor.agents.saveWorkflow.useMutation({
-    onSuccess: () => { toast.success("工作流已保存"); setIsDirty(false); },
+    onSuccess: () => { toast.success("工作流已保存"); setIsDirty(false); versionsQuery.refetch(); },
     onError: (e) => toast.error("保存失败: " + e.message),
   });
+
+  // Version history queries & mutations
+  const versionsQuery = trpc.emperor.agents.listTemplateVersions.useQuery(
+    { slug },
+    { enabled: showVersionPanel }
+  );
+  const versions = (versionsQuery.data as any[]) ?? [];
+
+  const publishMutation = trpc.emperor.agents.publishTemplateVersion.useMutation({
+    onSuccess: () => { toast.success("版本已发布"); versionsQuery.refetch(); },
+    onError: (e) => toast.error("发布失败: " + e.message),
+  });
+
+  const rollbackMutation = trpc.emperor.agents.rollbackTemplateVersion.useMutation({
+    onSuccess: () => { toast.success("已回滚到该版本"); versionsQuery.refetch(); },
+    onError: (e) => toast.error("回滚失败: " + e.message),
+  });
+
+  const rolloutMutation = trpc.emperor.agents.setTemplateRollout.useMutation({
+    onSuccess: () => { toast.success("灰度比例已更新"); versionsQuery.refetch(); },
+    onError: (e) => toast.error("更新失败: " + e.message),
+  });
+
+  const diffQuery = trpc.emperor.agents.diffTemplateVersions.useQuery(
+    { slug, baseVersionId: diffVersions?.a ?? undefined, targetVersionId: diffVersions?.b ?? undefined },
+    { enabled: !!diffVersions }
+  );
 
   // Load existing workflow
   useEffect(() => {
@@ -880,7 +910,17 @@ function AgentCanvasInner({ slug }: { slug: string }) {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => { setShowRunPanel(v => !v); setSelectedNode(null); }}
+            onClick={() => { setShowVersionPanel(v => !v); setShowRunPanel(false); setSelectedNode(null); }}
+            className={`h-7 text-xs border-white/10 hover:bg-white/5 ${
+              showVersionPanel ? "text-violet-400 border-violet-500/40 bg-violet-500/10" : "text-slate-300"
+            }`}
+          >
+            <History size={12} className="mr-1.5" />版本历史
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => { setShowRunPanel(v => !v); setSelectedNode(null); setShowVersionPanel(false); }}
             className="h-7 text-xs border-white/10 text-slate-300 hover:bg-white/5"
           >
             <Play size={12} className="mr-1.5" />运行测试
@@ -974,8 +1014,129 @@ function AgentCanvasInner({ slug }: { slug: string }) {
             tools={tools}
           />
         )}
-        {showRunPanel && !selectedNode && (
+        {showRunPanel && !selectedNode && !showVersionPanel && (
           <RunPanel agentSlug={slug} onClose={() => setShowRunPanel(false)} />
+        )}
+        {showVersionPanel && (
+          <div className="w-80 flex-shrink-0 bg-[#0d1117] border-l border-white/8 flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/8">
+              <div className="flex items-center gap-2">
+                <History size={14} className="text-violet-400" />
+                <span className="text-sm font-semibold text-white">版本历史</span>
+              </div>
+              <button onClick={() => setShowVersionPanel(false)} className="text-slate-500 hover:text-white">
+                <X size={14} />
+              </button>
+            </div>
+
+            {/* Diff View */}
+            {diffVersions && (
+              <div className="px-3 py-2 bg-[#0a0f1a] border-b border-white/8">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] text-violet-400 font-semibold uppercase tracking-wider">版本对比</span>
+                  <button onClick={() => setDiffVersions(null)} className="text-slate-500 hover:text-white"><X size={10} /></button>
+                </div>
+                {diffQuery.isLoading ? (
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500"><Loader2 size={10} className="animate-spin" />加载中...</div>
+                ) : diffQuery.data ? (
+                  <div className="text-[10px] text-slate-400 space-y-1">
+                    <div className="flex gap-2">
+                      <span className="text-green-400">A: v{(diffQuery.data as any).baseVersionId ?? diffVersions?.a}</span>
+                      <GitCompare size={10} className="text-slate-600 mt-0.5" />
+                      <span className="text-blue-400">B: v{(diffQuery.data as any).targetVersionId ?? diffVersions?.b}</span>
+                    </div>
+                    <pre className="bg-black/30 rounded p-2 text-[9px] overflow-auto max-h-32 text-slate-300 whitespace-pre-wrap">
+                      {JSON.stringify((diffQuery.data as any).diff ?? {}, null, 2)}
+                    </pre>
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            {/* Version List */}
+            <div className="flex-1 overflow-auto">
+              {versionsQuery.isLoading ? (
+                <div className="flex items-center justify-center h-20">
+                  <Loader2 size={16} className="animate-spin text-slate-500" />
+                </div>
+              ) : versions.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-20 text-slate-600">
+                  <GitCommit size={20} className="mb-1" />
+                  <span className="text-xs">暂无版本记录</span>
+                </div>
+              ) : (
+                <div className="divide-y divide-white/5">
+                  {versions.map((v: any, idx: number) => (
+                    <div key={v.id ?? v.version} className="px-3 py-2.5 hover:bg-white/3 transition-colors">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className="text-[11px] font-mono font-semibold text-violet-300">v{v.version}</span>
+                            {v.isDefault && (
+                              <Badge className="text-[9px] h-4 px-1 bg-green-500/20 text-green-400 border-green-500/30">当前</Badge>
+                            )}
+                            {v.rolloutPercent != null && v.rolloutPercent < 100 && (
+                              <Badge className="text-[9px] h-4 px-1 bg-amber-500/20 text-amber-400 border-amber-500/30">
+                                {v.rolloutPercent}% 灰度
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-500 truncate">
+                            {v.releaseNotes || "无备注"}
+                          </div>
+                          <div className="text-[9px] text-slate-600 mt-0.5">
+                            {v.createdAt ? new Date(v.createdAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : ""}
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          {!v.isDefault && (
+                            <button
+                              onClick={() => publishMutation.mutate({ slug, versionId: v.id, rolloutPercent: 100 })}
+                              className="text-[9px] px-1.5 py-0.5 rounded bg-violet-600/20 text-violet-400 hover:bg-violet-600/40 border border-violet-500/20 flex items-center gap-0.5"
+                            >
+                              <Rocket size={8} />发布
+                            </button>
+                          )}
+                          {!v.isDefault && (
+                            <button
+                              onClick={() => rollbackMutation.mutate({ slug, targetVersion: v.version })}
+                              className="text-[9px] px-1.5 py-0.5 rounded bg-amber-600/20 text-amber-400 hover:bg-amber-600/40 border border-amber-500/20 flex items-center gap-0.5"
+                            >
+                              <Undo2 size={8} />回滚
+                            </button>
+                          )}
+                          {idx > 0 && (
+                            <button
+                              onClick={() => setDiffVersions({ a: Number(versions[idx - 1].version), b: Number(v.version) })}
+                              className="text-[9px] px-1.5 py-0.5 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/40 border border-blue-500/20 flex items-center gap-0.5"
+                            >
+                              <GitCompare size={8} />对比
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {/* Rollout slider for non-default versions */}
+                      {!v.isDefault && v.rolloutPercent != null && (
+                        <div className="mt-1.5">
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-[9px] text-slate-600">灰度流量</span>
+                            <span className="text-[9px] text-slate-400">{v.rolloutPercent ?? 0}%</span>
+                          </div>
+                          <input
+                            type="range" min={0} max={100} step={5}
+                            defaultValue={v.rolloutPercent ?? 0}
+                            onMouseUp={(e) => rolloutMutation.mutate({ slug, versionId: v.id, rolloutPercent: Number((e.target as HTMLInputElement).value) })}
+                            className="w-full h-1 accent-violet-500 cursor-pointer"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>
