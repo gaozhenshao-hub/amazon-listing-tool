@@ -8,11 +8,18 @@ import { appRouter } from "../routers";
 import { syncRouter } from "../syncRoutes";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { startUsageTracking } from "../usageTracking";
-import { intelScheduler } from "../intelAutoCollect";
+import { startUsageTracking, stopUsageTracking } from "../usageTracking";
 import { weeklyReportHandler, dataCleanupHandler } from "../scheduledHandlers";
 import { kbExternalApiRouter } from "../kbExternalApi";
 import { imageUploadRouter } from "../imageUploadRouter";
+import {
+  getRuntimeRole,
+  shouldStartSchedulerTasks,
+  shouldStartWebLocalTasks,
+  shouldStartWorkerTasks,
+} from "./runtime";
+import { assertStartupConfig } from "./startupValidation";
+import { registerRuntimeHealthRoutes } from "./runtimeHealth";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -34,8 +41,12 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  const role = getRuntimeRole();
+  assertStartupConfig({ entrypoint: "web", role });
+
   const app = express();
   const server = createServer(app);
+  registerRuntimeHealthRoutes(app, { service: "web" });
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -73,36 +84,94 @@ async function startServer() {
   }
 
   server.listen(port, () => {
-    console.log(`Server running on http://localhost:${port}/`);
+    console.log(`Server running on http://localhost:${port}/ role=${role}`);
     // Start usage tracking background flush
-    startUsageTracking();
-    // Start intel auto-collect scheduler
-    intelScheduler.start();
-    // Start todo reminder scheduler (check every hour)
-    import("../todoReminder").then(m => m.startTodoReminderScheduler()).catch(err => console.error("[TodoReminder] Failed to start:", err));
+    if (shouldStartWebLocalTasks(role)) {
+      startUsageTracking();
+    }
+    if (shouldStartSchedulerTasks(role)) {
+      import("../intelAutoCollect")
+        .then(m => m.intelScheduler.start())
+        .catch(err => console.error("[IntelScheduler] Failed to start:", err));
+      // Start todo reminder scheduler (check every hour)
+      import("../todoReminder")
+        .then(m => m.startTodoReminderScheduler())
+        .catch(err => console.error("[TodoReminder] Failed to start:", err));
+    } else {
+      console.log(
+        "[Scheduler] Not started in Web process; use pnpm start:scheduler for production timers."
+      );
+    }
     // Lingxing API adapter removed - data now imported via Excel uploads only
     // Initialize NextSLS logistics API adapter from DB settings
-    import("../nextsls/adapter").then(m => m.initNextSlsAdapterFromDb()).catch(err => console.error("[NextSLS] Failed to init:", err));
+    import("../nextsls/adapter")
+      .then(m => m.initNextSlsAdapterFromDb())
+      .catch(err => console.error("[NextSLS] Failed to init:", err));
     // Initialize weekly auto-sync cron job (every Monday 02:00 Asia/Shanghai)
-    import("../cronJobs").then(m => m.initCronJobs()).catch(err => console.error("[AutoSync] Failed to init:", err));
-    // Recover durable AI jobs that were queued/running before a restart.
-    import("../services/aiJobRunner")
-      .then(m => m.recoverActiveAiJobs())
-      .then(result => {
-        if (result.scheduled > 0 || result.skippedWithoutHandler > 0) {
-          console.log(`[AI Job] Recovery scanned=${result.scanned}, scheduled=${result.scheduled}, skippedWithoutHandler=${result.skippedWithoutHandler}`);
-        }
-      })
-      .catch(err => console.error("[AI Job] Recovery failed:", err));
-    import("../services/emperorAgentRunner")
-      .then(m => m.recoverTimedOutAgentNodes())
-      .then(result => {
-        if (result.failed > 0 || result.retried > 0 || result.skippedPaused > 0 || result.skippedStale > 0) {
-          console.log(`[Agent Runtime] Timeout recovery scanned=${result.scanned}, retried=${result.retried}, failed=${result.failed}, skippedPaused=${result.skippedPaused}, skippedStale=${result.skippedStale}`);
-        }
-      })
-      .catch(err => console.error("[Agent Runtime] Timeout recovery failed:", err));
+    import("../cronJobs")
+      .then(m => m.initCronJobs())
+      .catch(err => console.error("[AutoSync] Failed to init:", err));
+    if (shouldStartWorkerTasks(role)) {
+      // Recover durable AI jobs that were queued/running before a restart.
+      import("../services/aiJobRunner")
+        .then(m => m.recoverActiveAiJobs())
+        .then(result => {
+          if (result.scheduled > 0 || result.skippedWithoutHandler > 0) {
+            console.log(
+              `[AI Job] Recovery scanned=${result.scanned}, scheduled=${result.scheduled}, skippedWithoutHandler=${result.skippedWithoutHandler}`
+            );
+          }
+        })
+        .catch(err => console.error("[AI Job] Recovery failed:", err));
+      import("../services/emperorAgentRunner")
+        .then(m => m.recoverTimedOutAgentNodes())
+        .then(result => {
+          if (
+            result.failed > 0 ||
+            result.retried > 0 ||
+            result.skippedPaused > 0 ||
+            result.skippedStale > 0
+          ) {
+            console.log(
+              `[Agent Runtime] Timeout recovery scanned=${result.scanned}, retried=${result.retried}, failed=${result.failed}, skippedPaused=${result.skippedPaused}, skippedStale=${result.skippedStale}`
+            );
+          }
+        })
+        .catch(err =>
+          console.error("[Agent Runtime] Timeout recovery failed:", err)
+        );
+    } else {
+      console.log(
+        "[AI Job] Recovery not started in Web process; use pnpm start:worker:ai for production jobs."
+      );
+    }
   });
+
+  const shutdown = async (signal: string) => {
+    console.log(`[Server] received ${signal}, shutting down gracefully`);
+    await new Promise<void>(resolve => {
+      server.close(error => {
+        if (error) console.error("[Server] close failed:", error);
+        resolve();
+      });
+    });
+    if (shouldStartWebLocalTasks(role)) {
+      await stopUsageTracking().catch(error =>
+        console.error("[UsageTracking] Stop failed:", error)
+      );
+    }
+    if (shouldStartSchedulerTasks(role)) {
+      await import("../intelAutoCollect")
+        .then(m => m.intelScheduler.stop())
+        .catch(err => console.error("[IntelScheduler] Stop failed:", err));
+      await import("../todoReminder")
+        .then(m => m.stopTodoReminderScheduler())
+        .catch(err => console.error("[TodoReminder] Stop failed:", err));
+    }
+  };
+
+  process.once("SIGINT", () => void shutdown("SIGINT"));
+  process.once("SIGTERM", () => void shutdown("SIGTERM"));
 }
 
 startServer().catch(console.error);

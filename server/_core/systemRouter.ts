@@ -1,17 +1,24 @@
 import { z } from "zod";
 import { notifyOwner } from "./notification";
 import { adminProcedure, publicProcedure, router } from "./trpc";
+import { buildRuntimeHealth } from "./runtimeHealth";
 
 export const systemRouter = router({
   health: publicProcedure
     .input(
-      z.object({
-        timestamp: z.number().min(0, "timestamp cannot be negative"),
-      })
+      z
+        .object({
+          timestamp: z.number().min(0, "timestamp cannot be negative"),
+        })
+        .optional()
     )
-    .query(() => ({
-      ok: true,
-    })),
+    .query(() =>
+      buildRuntimeHealth({
+        service: "web",
+        entrypoint: "web",
+        includeQueue: true,
+      })
+    ),
 
   notifyOwner: adminProcedure
     .input(

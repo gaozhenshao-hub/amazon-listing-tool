@@ -193,7 +193,13 @@ function boundedToolAttempts(value: unknown): number {
 }
 
 function secretKeyMaterial(): Buffer {
-  const configured = process.env.TOOL_SECRET_KEY || process.env.EMPEROR_SECRET_KEY || process.env.JWT_SECRET || "development-tool-secret-key";
+  const configured = process.env.TOOL_SECRET_KEY || process.env.EMPEROR_SECRET_KEY || process.env.JWT_SECRET;
+  if (!configured) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("TOOL_SECRET_KEY is required in production for Tool secret encryption.");
+    }
+    return createHash("sha256").update("development-tool-secret-key").digest();
+  }
   return createHash("sha256").update(configured).digest();
 }
 
