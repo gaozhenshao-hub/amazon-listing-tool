@@ -6,6 +6,7 @@ import {
   getListingAgentDag,
   LISTING_AGENT_SLUG,
   normalizeAgentDag,
+  validateAgentDag,
 } from "./services/emperorAgentRunner";
 import {
   getBuiltinToolDefinitions,
@@ -48,6 +49,31 @@ describe("Emperor Agent workflow kernel", () => {
     expect(normalizeAgentDag('{"nodes":[{"id":"A"}],"edges":[{"source":"A","target":"B"}]}').edges).toHaveLength(1);
   });
 
+  it("should validate Agent DAG contracts before execution", () => {
+    const valid = validateAgentDag(getListingAgentDag());
+    expect(valid.valid).toBe(true);
+    expect(valid.errors).toHaveLength(0);
+    expect(valid.rootNodeIds).toContain("N0");
+
+    const invalid = validateAgentDag({
+      nodes: [
+        { id: "A", nodeType: "skill_node", label: "A" },
+        { id: "A", nodeType: "output_node", label: "Duplicate" },
+        { id: "B", nodeType: "output_node", label: "B" },
+      ],
+      edges: [
+        { source: "A", target: "B" },
+        { source: "B", target: "A" },
+        { source: "A", target: "MISSING" },
+      ],
+    });
+    expect(invalid.valid).toBe(false);
+    expect(invalid.errors.map((issue) => issue.code)).toContain("node.id_duplicate");
+    expect(invalid.errors.map((issue) => issue.code)).toContain("node.skill_missing");
+    expect(invalid.errors.map((issue) => issue.code)).toContain("edge.target_missing");
+    expect(invalid.errors.map((issue) => issue.code)).toContain("dag.cycle_detected");
+  });
+
   it("should enforce explicit Agent status transitions", () => {
     expect(canTransitionNodeStatus("pending", "ready")).toBe(true);
     expect(canTransitionNodeStatus("ready", "running")).toBe(true);
@@ -67,6 +93,7 @@ describe("Emperor Agent workflow kernel", () => {
     const procedures = (appRouter as any)._def.procedures;
     expect(procedures["emperor.agents.run"]).toBeDefined();
     expect(procedures["emperor.agents.getRun"]).toBeDefined();
+    expect(procedures["emperor.agents.validateDag"]).toBeDefined();
     expect(procedures["emperor.agents.listArtifacts"]).toBeDefined();
     expect(procedures["emperor.agents.executeNode"]).toBeDefined();
     expect(procedures["emperor.agents.scheduleRun"]).toBeDefined();

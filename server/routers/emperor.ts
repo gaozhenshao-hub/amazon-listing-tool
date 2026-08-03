@@ -10,16 +10,19 @@ import { renderSkillTemplate } from "../services/emperorSkillRunner";
 import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
 import {
+  assertValidAgentDag,
   cancelAgentRun,
   confirmAgentNode,
   executeAgentNode,
   getAgentRun,
   listAgentArtifacts,
+  normalizeAgentDag,
   rerunAgentNode,
   scheduleAgentRun,
   startAgentRun,
   updateAgentNodeDraft,
   upsertListingAgentTemplate,
+  validateAgentDag,
 } from "../services/emperorAgentRunner";
 import {
   invokeEmperorTool,
@@ -720,10 +723,14 @@ export const emperorAgentsRouter = router({
       if (where.length) sql += " WHERE " + where.join(" AND ");
       sql += " ORDER BY updatedAt DESC";
       const rows = await rawExecute(sql, params);
-      return rows.map((r: any) => ({
-        ...r,
-        dagDefinition: typeof r.dagDefinition === "string" ? JSON.parse(r.dagDefinition) : (r.dagDefinition ?? { nodes: [], edges: [] }),
-      }));
+      return rows.map((r: any) => {
+        const dag = normalizeAgentDag(r.dagDefinition);
+        return {
+          ...r,
+          dagDefinition: dag,
+          validation: validateAgentDag(dag),
+        };
+      });
     }),
 
   get: protectedProcedure
@@ -731,8 +738,14 @@ export const emperorAgentsRouter = router({
     .query(async ({ input }) => {
       const rows = await rawExecute("SELECT * FROM emperor_agents WHERE slug = ? LIMIT 1", [input.slug]);
       if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
-      const dag = typeof rows[0].dagDefinition === "string" ? JSON.parse(rows[0].dagDefinition) : (rows[0].dagDefinition ?? { nodes: [], edges: [] });
-      return { ...rows[0], dagDefinition: dag };
+      const dag = normalizeAgentDag(rows[0].dagDefinition);
+      return { ...rows[0], dagDefinition: dag, validation: validateAgentDag(dag) };
+    }),
+
+  validateDag: protectedProcedure
+    .input(z.object({ workflow: z.any() }))
+    .query(async ({ input }) => {
+      return validateAgentDag(input.workflow);
     }),
 
   create: adminProcedure
@@ -776,6 +789,12 @@ export const emperorAgentsRouter = router({
     .mutation(async ({ input }) => {
       const { slug, ...rest } = input;
       const sets: string[] = []; const vals: any[] = [];
+      if (rest.status === "active") {
+        const rows = await rawExecute("SELECT dagDefinition FROM emperor_agents WHERE slug=? LIMIT 1", [slug]);
+        if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+        const dag = normalizeAgentDag(rows[0].dagDefinition);
+        assertValidAgentDag(dag, "activate agent");
+      }
       if (rest.name !== undefined) { sets.push("name=?"); vals.push(rest.name); }
       if (rest.description !== undefined) { sets.push("description=?"); vals.push(rest.description); }
       if (rest.status !== undefined) { sets.push("status=?"); vals.push(rest.status); }
@@ -794,14 +813,15 @@ export const emperorAgentsRouter = router({
       workflow: z.object({
         nodes: z.array(z.any()),
         edges: z.array(z.any()),
-      }),
+      }).passthrough(),
     }))
     .mutation(async ({ input }) => {
+      const dag = assertValidAgentDag(input.workflow, "save workflow");
       await rawExecute(
         "UPDATE emperor_agents SET dagDefinition=?, updatedAt=NOW() WHERE slug=?",
-        [JSON.stringify(input.workflow), input.slug]
+        [JSON.stringify(dag), input.slug]
       );
-      return { success: true };
+      return { success: true, validation: validateAgentDag(dag) };
     }),
 
   getAvailableSkills: protectedProcedure.query(async () => {
@@ -952,11 +972,12 @@ export const emperorAgentsRouter = router({
       dagDefinition: z.any(),
     }))
     .mutation(async ({ input }) => {
+      const dag = assertValidAgentDag(input.dagDefinition, "upsert agent");
       await rawExecute(
         `INSERT INTO emperor_agents (slug,name,description,category,status,dagDefinition) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE name=VALUES(name),description=VALUES(description),category=VALUES(category),status=VALUES(status),dagDefinition=VALUES(dagDefinition),updatedAt=NOW()`,
-        [input.slug, input.name, input.description||null, input.category||"通用", input.status, JSON.stringify(input.dagDefinition)]
+        [input.slug, input.name, input.description||null, input.category||"通用", input.status, JSON.stringify(dag)]
       );
-      return { success: true };
+      return { success: true, validation: validateAgentDag(dag) };
     }),
 
   delete: adminProcedure

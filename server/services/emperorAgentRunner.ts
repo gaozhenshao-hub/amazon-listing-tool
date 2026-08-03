@@ -48,6 +48,23 @@ export type EmperorAgentDag = {
   edges: EmperorAgentEdge[];
 };
 
+export type AgentDagValidationIssue = {
+  severity: "error" | "warning";
+  code: string;
+  message: string;
+  nodeId?: string;
+  edgeId?: string;
+};
+
+export type AgentDagValidationResult = {
+  valid: boolean;
+  errors: AgentDagValidationIssue[];
+  warnings: AgentDagValidationIssue[];
+  rootNodeIds: string[];
+  terminalNodeIds: string[];
+  topologicalNodeIds: string[];
+};
+
 type CheckpointRow = {
   runId: string;
   agentSlug: string;
@@ -163,6 +180,180 @@ export function normalizeAgentDag(raw: unknown): EmperorAgentDag {
     nodes: Array.isArray(dag.nodes) ? dag.nodes.filter((node) => node?.id) as EmperorAgentNode[] : [],
     edges: Array.isArray(dag.edges) ? dag.edges as EmperorAgentEdge[] : [],
   };
+}
+
+const SUPPORTED_AGENT_NODE_TYPES = new Set([
+  "input_node",
+  "skill_node",
+  "llm_node",
+  "condition_node",
+  "loop_node",
+  "human_review",
+  "http_node",
+  "code_node",
+  "mcp_node",
+  "knowledge_node",
+  "output_node",
+]);
+
+function edgeId(edge: EmperorAgentEdge, index: number): string {
+  return String(edge.id || `${edgeSource(edge)}-${edgeTarget(edge)}` || `edge_${index}`);
+}
+
+function addDagIssue(
+  issues: AgentDagValidationIssue[],
+  severity: AgentDagValidationIssue["severity"],
+  code: string,
+  message: string,
+  extra: Pick<AgentDagValidationIssue, "nodeId" | "edgeId"> = {},
+) {
+  issues.push({ severity, code, message, ...extra });
+}
+
+function resolveNodeToolSlugForValidation(node: EmperorAgentNode): string {
+  if (node.toolSlug) return String(node.toolSlug);
+  if (node.nodeType === "mcp_node") {
+    const mcpSlug = String((node as any).mcpSlug || "");
+    return mcpSlug ? (mcpSlug.startsWith("mcp.") ? mcpSlug : `mcp.${mcpSlug}`) : "";
+  }
+  if (node.nodeType === "knowledge_node") return "internal.knowledge.query";
+  return "";
+}
+
+export function validateAgentDag(raw: unknown): AgentDagValidationResult {
+  const dag = normalizeAgentDag(raw);
+  const issues: AgentDagValidationIssue[] = [];
+  const seenNodeIds = new Set<string>();
+  const duplicateNodeIds = new Set<string>();
+  const nodeIds = new Set<string>();
+
+  if (!dag.nodes.length) {
+    addDagIssue(issues, "error", "dag.empty", "Agent DAG must contain at least one node.");
+  }
+
+  dag.nodes.forEach((node, index) => {
+    const nodeId = String(node.id || "");
+    if (!nodeId) {
+      addDagIssue(issues, "error", "node.id_missing", `Node at index ${index} is missing id.`);
+      return;
+    }
+    if (seenNodeIds.has(nodeId)) duplicateNodeIds.add(nodeId);
+    seenNodeIds.add(nodeId);
+    nodeIds.add(nodeId);
+
+    if (nodeId.length > 128) {
+      addDagIssue(issues, "error", "node.id_too_long", "Node id must be 128 characters or fewer.", { nodeId });
+    }
+    if (!node.label) {
+      addDagIssue(issues, "warning", "node.label_missing", "Node should have a human readable label.", { nodeId });
+    }
+    const nodeType = String(node.nodeType || "");
+    if (!SUPPORTED_AGENT_NODE_TYPES.has(nodeType)) {
+      addDagIssue(issues, "error", "node.type_unsupported", `Unsupported node type: ${nodeType || "(empty)"}.`, { nodeId });
+    }
+    if (nodeType === "skill_node" && !node.skillSlug) {
+      addDagIssue(issues, "error", "node.skill_missing", "Skill node must declare skillSlug.", { nodeId });
+    }
+    if (["mcp_node", "knowledge_node"].includes(nodeType) && !resolveNodeToolSlugForValidation(node)) {
+      addDagIssue(issues, "error", "node.tool_missing", `${nodeType} must resolve to a Tool slug.`, { nodeId });
+    }
+    if (nodeType === "http_node") {
+      const hasUrl = Boolean((node as any).url || (node as any).baseUrl || node.toolSlug);
+      if (!hasUrl) {
+        addDagIssue(issues, "warning", "node.http_target_missing", "HTTP node should declare url/baseUrl or an approved toolSlug.", { nodeId });
+      }
+    }
+    if (nodeType === "code_node" && !node.toolSlug) {
+      addDagIssue(issues, "error", "node.code_tool_missing", "Code nodes must use an approved Tool slug; arbitrary code execution is not allowed.", { nodeId });
+    }
+  });
+
+  duplicateNodeIds.forEach((nodeId) => {
+    addDagIssue(issues, "error", "node.id_duplicate", `Duplicate node id: ${nodeId}.`, { nodeId });
+  });
+
+  const incomingCount = new Map<string, number>();
+  const outgoing = new Map<string, string[]>();
+  dag.nodes.forEach((node) => {
+    incomingCount.set(node.id, 0);
+    outgoing.set(node.id, []);
+  });
+  const seenEdges = new Set<string>();
+
+  dag.edges.forEach((edge, index) => {
+    const source = edgeSource(edge);
+    const target = edgeTarget(edge);
+    const id = edgeId(edge, index);
+    if (!source || !target) {
+      addDagIssue(issues, "error", "edge.endpoint_missing", "Edge must declare source/from and target/to.", { edgeId: id });
+      return;
+    }
+    if (source === target) {
+      addDagIssue(issues, "error", "edge.self_loop", "Edge cannot point to the same node.", { edgeId: id });
+    }
+    if (!nodeIds.has(source)) {
+      addDagIssue(issues, "error", "edge.source_missing", `Edge source does not exist: ${source}.`, { edgeId: id });
+    }
+    if (!nodeIds.has(target)) {
+      addDagIssue(issues, "error", "edge.target_missing", `Edge target does not exist: ${target}.`, { edgeId: id });
+    }
+    const edgeKey = `${source}->${target}`;
+    if (seenEdges.has(edgeKey)) {
+      addDagIssue(issues, "warning", "edge.duplicate", `Duplicate edge: ${edgeKey}.`, { edgeId: id });
+    }
+    seenEdges.add(edgeKey);
+    if (nodeIds.has(source) && nodeIds.has(target) && source !== target) {
+      outgoing.get(source)?.push(target);
+      incomingCount.set(target, (incomingCount.get(target) || 0) + 1);
+    }
+  });
+
+  const rootNodeIds = [...incomingCount.entries()].filter(([, count]) => count === 0).map(([nodeId]) => nodeId);
+  const terminalNodeIds = [...outgoing.entries()].filter(([, children]) => children.length === 0).map(([nodeId]) => nodeId);
+  if (dag.nodes.length > 0 && rootNodeIds.length === 0) {
+    addDagIssue(issues, "error", "dag.root_missing", "Agent DAG must have at least one root node.");
+  }
+  if (dag.nodes.length > 0 && terminalNodeIds.length === 0) {
+    addDagIssue(issues, "error", "dag.terminal_missing", "Agent DAG must have at least one terminal node.");
+  }
+
+  const topologicalNodeIds: string[] = [];
+  const incomingForSort = new Map(incomingCount);
+  const queue = [...rootNodeIds];
+  while (queue.length > 0) {
+    const nodeId = queue.shift()!;
+    topologicalNodeIds.push(nodeId);
+    for (const childId of outgoing.get(nodeId) || []) {
+      const nextCount = (incomingForSort.get(childId) || 0) - 1;
+      incomingForSort.set(childId, nextCount);
+      if (nextCount === 0) queue.push(childId);
+    }
+  }
+  if (dag.nodes.length > 0 && topologicalNodeIds.length !== nodeIds.size) {
+    addDagIssue(issues, "error", "dag.cycle_detected", "Agent DAG must be acyclic; a cycle was detected.");
+  }
+
+  const errors = issues.filter((issue) => issue.severity === "error");
+  const warnings = issues.filter((issue) => issue.severity === "warning");
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    rootNodeIds,
+    terminalNodeIds,
+    topologicalNodeIds,
+  };
+}
+
+export function assertValidAgentDag(raw: unknown, action: string): EmperorAgentDag {
+  const dag = normalizeAgentDag(raw);
+  const validation = validateAgentDag(dag);
+  if (validation.valid) return dag;
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: `Invalid Agent DAG for ${action}: ${validation.errors.map((issue) => issue.message).join("; ")}`,
+    cause: validation,
+  });
 }
 
 function edgeSource(edge: EmperorAgentEdge): string {
@@ -282,7 +473,7 @@ export function getListingAgentDag(): EmperorAgentDag {
 }
 
 export async function upsertListingAgentTemplate() {
-  const dag = getListingAgentDag();
+  const dag = assertValidAgentDag(getListingAgentDag(), "install listing template");
   await rawExecute(
     `INSERT INTO emperor_agents (slug,name,description,category,status,scope,triggerType,maxExecutionSeconds,dagDefinition,execution_mode)
      VALUES (?,?,?,?,?,?,?,?,?,?)
@@ -710,8 +901,7 @@ export async function startAgentRun(input: {
   projectId?: number | null;
 }) {
   const agent = await getAgentBySlug(input.slug);
-  const dag = normalizeAgentDag(agent.dagDefinition);
-  if (!dag.nodes.length) throw new TRPCError({ code: "BAD_REQUEST", message: "Agent DAG has no nodes" });
+  const dag = assertValidAgentDag(agent.dagDefinition, "start run");
 
   const runId = generateRunId("agent");
   const rootNodeIds = dag.nodes.filter((node) => parentIds(dag, node.id).length === 0).map((node) => node.id);
