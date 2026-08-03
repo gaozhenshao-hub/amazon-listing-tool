@@ -689,6 +689,7 @@ async function executeToolBackedNode(input: {
       userId: input.userId,
       runId: input.run.runId,
       nodeId: input.node.id,
+      projectId: input.run.projectId ?? null,
     });
   }
 
@@ -698,6 +699,7 @@ async function executeToolBackedNode(input: {
     userId: input.userId,
     runId: input.run.runId,
     nodeId: input.node.id,
+    projectId: input.run.projectId ?? null,
   });
 }
 

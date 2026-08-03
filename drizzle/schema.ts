@@ -4910,6 +4910,33 @@ export const emperorTools = mysqlTable("emperor_tools", {
 export type EmperorTool = typeof emperorTools.$inferSelect;
 export type InsertEmperorTool = typeof emperorTools.$inferInsert;
 
+export const emperorToolRuns = mysqlTable("emperor_tool_runs", {
+  id: int("id").autoincrement().primaryKey(),
+  toolRunId: varchar("toolRunId", { length: 80 }).unique().notNull(),
+  toolSlug: varchar("toolSlug", { length: 128 }).notNull(),
+  toolName: varchar("toolName", { length: 255 }),
+  toolType: mysqlEnum("toolType", ["mcp", "api", "internal", "code"]).notNull(),
+  source: mysqlEnum("source", ["builtin", "emperor_tools", "mcp_connector"]).notNull(),
+  status: mysqlEnum("status", ["running", "succeeded", "failed", "blocked"]).default("running").notNull(),
+  riskLevel: mysqlEnum("riskLevel", ["low", "medium", "high", "critical"]).default("medium").notNull(),
+  userId: int("userId").notNull(),
+  agentRunId: varchar("agentRunId", { length: 80 }),
+  nodeId: varchar("nodeId", { length: 128 }),
+  projectId: int("projectId"),
+  input: json("input"),
+  output: json("output"),
+  errorMessage: text("errorMessage"),
+  durationMs: int("durationMs"),
+  httpStatus: int("httpStatus"),
+  requestHost: varchar("requestHost", { length: 255 }),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmperorToolRun = typeof emperorToolRuns.$inferSelect;
+export type InsertEmperorToolRun = typeof emperorToolRuns.$inferInsert;
+
 // Emperor 知识库（cc-haha 四分类记忆体系）
 export const emperorKnowledge = mysqlTable("emperor_knowledge", {
   id: int("id").autoincrement().primaryKey(),

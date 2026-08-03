@@ -24,6 +24,7 @@ describe("Emperor Agent workflow kernel", () => {
     expect(schema.emperorAgentEvents).toBeDefined();
     expect(schema.emperorAgentArtifacts).toBeDefined();
     expect(schema.emperorTools).toBeDefined();
+    expect(schema.emperorToolRuns).toBeDefined();
   });
 
   it("should define Listing as a human-in-the-loop DAG", () => {
@@ -76,6 +77,7 @@ describe("Emperor Agent workflow kernel", () => {
     expect(procedures["emperor.agents.installListingTemplate"]).toBeDefined();
     expect(procedures["emperor.agents.getAvailableTools"]).toBeDefined();
     expect(procedures["emperor.tools.list"]).toBeDefined();
+    expect(procedures["emperor.tools.listRuns"]).toBeDefined();
     expect(procedures["emperor.tools.invoke"]).toBeDefined();
     expect(procedures["emperor.tools.upsert"]).toBeDefined();
     expect(LISTING_AGENT_SLUG).toBe("listing.full.workflow");
@@ -106,5 +108,18 @@ describe("Emperor Agent workflow kernel", () => {
     expect(result.success).toBe(true);
     expect((result.output as any).title).toBe("Water Filter Replacement");
     expect((result.output as any).bulletPoints).toEqual(["Fast install"]);
+    expect(result.metadata.riskLevel).toBe("low");
+    expect(result.metadata.toolRunId).toMatch(/^tool_\d+_[a-z0-9]+$/);
+  });
+
+  it("should block HTTP tools from private network targets by default", async () => {
+    await expect(invokeEmperorTool({
+      toolSlug: "internal.http.request",
+      userId: 1,
+      params: {
+        url: "http://localhost:3000/private",
+        method: "GET",
+      },
+    })).rejects.toThrow(/private or local network/);
   });
 });

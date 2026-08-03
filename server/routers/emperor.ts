@@ -24,6 +24,7 @@ import {
 import {
   invokeEmperorTool,
   listEmperorTools,
+  listEmperorToolRuns,
   seedBuiltinTools,
   upsertEmperorTool,
 } from "../services/emperorToolGateway";
@@ -1018,6 +1019,27 @@ export const emperorToolsRouter = router({
   list: protectedProcedure.query(async () => {
     return listEmperorTools();
   }),
+
+  listRuns: protectedProcedure
+    .input(z.object({
+      toolSlug: z.string().optional(),
+      agentRunId: z.string().optional(),
+      nodeId: z.string().optional(),
+      status: z.enum(["running", "succeeded", "failed", "blocked"]).optional(),
+      limit: z.number().min(1).max(200).optional(),
+    }).optional())
+    .query(async ({ ctx, input }) => {
+      const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
+      return listEmperorToolRuns({
+        userId: ctx.user.id,
+        isAdmin,
+        toolSlug: input?.toolSlug,
+        agentRunId: input?.agentRunId,
+        nodeId: input?.nodeId,
+        status: input?.status,
+        limit: input?.limit,
+      });
+    }),
 
   seedBuiltins: adminProcedure.mutation(async () => {
     return seedBuiltinTools();

@@ -21,6 +21,7 @@ export type EmperorToolInvocationInput = {
   userId: number;
   runId?: string;
   nodeId?: string;
+  projectId?: number | null;
 };
 
 export type EmperorToolInvocationResult = {
@@ -29,11 +30,18 @@ export type EmperorToolInvocationResult = {
   success: boolean;
   output: unknown;
   metadata: {
+    toolRunId?: string | null;
     durationMs: number;
     status?: number;
+    requestHost?: string | null;
+    riskLevel?: ToolRiskLevel;
     source: "builtin" | "emperor_tools" | "mcp_connector";
   };
 };
+
+export type ToolRiskLevel = "low" | "medium" | "high" | "critical";
+type ToolRunStatus = "running" | "succeeded" | "failed" | "blocked";
+let toolRunStoreAvailable = true;
 
 async function rawExecute(sqlStr: string, params: unknown[] = []): Promise<any[]> {
   const db = await getDb();
@@ -68,6 +76,197 @@ function parseJson(value: unknown, fallback: unknown = null): unknown {
 
 function toRecord(value: unknown): Record<string, any> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {};
+}
+
+function stringifyJson(value: unknown): string {
+  return JSON.stringify(value ?? null);
+}
+
+function generateToolRunId(prefix = "tool"): string {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+const SENSITIVE_KEY_PATTERN = /(authorization|cookie|token|secret|password|api[-_]?key|access[-_]?key|refresh[-_]?token)/i;
+
+function sanitizeForAudit(value: unknown, depth = 0): unknown {
+  if (value === null || value === undefined) return null;
+  if (depth > 5) return "[Truncated]";
+  if (typeof value === "string") return value.length > 4000 ? `${value.slice(0, 4000)}...` : value;
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  if (Array.isArray(value)) return value.slice(0, 50).map((item) => sanitizeForAudit(item, depth + 1));
+  if (typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .slice(0, 80)
+        .map(([key, item]) => [
+          key,
+          SENSITIVE_KEY_PATTERN.test(key) ? "[REDACTED]" : sanitizeForAudit(item, depth + 1),
+        ]),
+    );
+  }
+  return String(value);
+}
+
+function serializeToolError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "Unknown tool invocation error";
+  }
+}
+
+function parseArrayConfig(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value === "string") return value.split(",").map((item) => item.trim()).filter(Boolean);
+  return [];
+}
+
+function inferRequestUrl(params: unknown, config: unknown): URL | null {
+  const request = toRecord(params);
+  const toolConfig = toRecord(config);
+  const baseUrl = String(request.baseUrl || toolConfig.baseUrl || "");
+  const path = String(request.path || toolConfig.path || "");
+  const rawUrl = request.url ? String(request.url) : baseUrl ? buildUrl(baseUrl, path) : "";
+  if (!rawUrl) return null;
+  try {
+    return new URL(rawUrl);
+  } catch {
+    return null;
+  }
+}
+
+function inferToolRisk(tool: EmperorToolDefinition & { source?: string }, params?: unknown): ToolRiskLevel {
+  const config = toRecord(tool.config);
+  if (["low", "medium", "high", "critical"].includes(String(config.riskLevel))) {
+    return String(config.riskLevel) as ToolRiskLevel;
+  }
+  if (tool.type === "code") return "critical";
+  if (tool.type === "api" || tool.type === "mcp" || tool.slug === "internal.http.request") {
+    const method = String(toRecord(params).method || config.method || "POST").toUpperCase();
+    if (["DELETE", "PATCH", "PUT"].includes(method)) return "high";
+    return "medium";
+  }
+  return "low";
+}
+
+function isPrivateHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) return true;
+  if (host === "::1" || host === "0.0.0.0") return true;
+  if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host)) return true;
+  const match172 = host.match(/^172\.(\d+)\./);
+  return Boolean(match172 && Number(match172[1]) >= 16 && Number(match172[1]) <= 31);
+}
+
+function assertHttpPolicy(tool: EmperorToolDefinition, url: URL, method: string, timeoutMs: number) {
+  const config = toRecord(tool.config);
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "HTTP tool only supports http/https URLs" });
+  }
+
+  const allowedMethods = parseArrayConfig(config.allowedMethods);
+  const configuredMethod = String(config.method || "").toUpperCase();
+  const effectiveAllowedMethods = allowedMethods.length > 0
+    ? allowedMethods.map((item) => item.toUpperCase())
+    : ["GET", "POST", configuredMethod].filter(Boolean);
+  if (!effectiveAllowedMethods.includes(method)) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `HTTP method ${method} is not allowed for this tool` });
+  }
+
+  const allowedHosts = parseArrayConfig(config.allowedHosts).map((item) => item.toLowerCase());
+  const allowedHostSuffixes = parseArrayConfig(config.allowedHostSuffixes).map((item) => item.toLowerCase().replace(/^\./, ""));
+  const hostname = url.hostname.toLowerCase();
+  if (allowedHosts.length > 0 && !allowedHosts.includes(hostname)) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `HTTP host ${hostname} is not in the tool allowlist` });
+  }
+  if (allowedHostSuffixes.length > 0 && !allowedHostSuffixes.some((suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`))) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `HTTP host ${hostname} is not in the tool allowlist` });
+  }
+  if (isPrivateHost(hostname) && config.allowPrivateNetwork !== true) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "HTTP tool blocked private or local network target" });
+  }
+
+  const maxTimeoutMs = Number(config.maxTimeoutMs || 30000);
+  if (timeoutMs > maxTimeoutMs) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `HTTP timeout exceeds maxTimeoutMs ${maxTimeoutMs}` });
+  }
+}
+
+async function createToolRunRecord(input: {
+  toolRunId: string;
+  tool: EmperorToolDefinition & { source: "builtin" | "emperor_tools" | "mcp_connector" };
+  invocation: EmperorToolInvocationInput;
+  riskLevel: ToolRiskLevel;
+  requestHost?: string | null;
+}) {
+  if (!toolRunStoreAvailable) return;
+  try {
+    await rawExecute(
+      `INSERT INTO emperor_tool_runs
+       (toolRunId,toolSlug,toolName,toolType,source,status,riskLevel,userId,agentRunId,nodeId,projectId,input,requestHost,startedAt)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        input.toolRunId,
+        input.tool.slug,
+        input.tool.name,
+        input.tool.type,
+        input.tool.source,
+        "running",
+        input.riskLevel,
+        input.invocation.userId,
+        input.invocation.runId || null,
+        input.invocation.nodeId || null,
+        input.invocation.projectId ?? null,
+        stringifyJson(sanitizeForAudit(input.invocation.params ?? {})),
+        input.requestHost || null,
+        new Date(),
+      ],
+    );
+  } catch (error) {
+    toolRunStoreAvailable = false;
+    if (!isMissingDatabase(error)) console.warn("[Tool Gateway] Failed to create tool run:", error);
+  }
+}
+
+async function finishToolRunRecord(input: {
+  toolRunId: string;
+  status: ToolRunStatus;
+  output?: unknown;
+  error?: unknown;
+  durationMs: number;
+  httpStatus?: number;
+}) {
+  if (!toolRunStoreAvailable) return;
+  try {
+    await rawExecute(
+      "UPDATE emperor_tool_runs SET status=?,output=?,errorMessage=?,durationMs=?,httpStatus=?,completedAt=?,updatedAt=NOW() WHERE toolRunId=?",
+      [
+        input.status,
+        input.output === undefined ? null : stringifyJson(sanitizeForAudit(input.output)),
+        input.error === undefined ? null : serializeToolError(input.error),
+        input.durationMs,
+        input.httpStatus || null,
+        new Date(),
+        input.toolRunId,
+      ],
+    );
+  } catch (error) {
+    toolRunStoreAvailable = false;
+    if (!isMissingDatabase(error)) console.warn("[Tool Gateway] Failed to finish tool run:", error);
+  }
+}
+
+function isPolicyBlock(error: unknown): boolean {
+  const message = serializeToolError(error);
+  return /(blocked|not allowed|allowlist|only supports|timeout exceeds|private or local network|invalid URL)/i.test(message);
+}
+
+function isMissingDatabase(error: unknown): boolean {
+  return error instanceof TRPCError
+    && error.code === "INTERNAL_SERVER_ERROR"
+    && /Database not available/i.test(error.message);
 }
 
 function unwrapSkillResult(value: unknown): unknown {
@@ -301,7 +500,7 @@ async function invokeInternalTool(slug: string, params: unknown) {
         slug,
         name: "HTTP API 请求",
         type: "api",
-        config: params,
+        config: {},
       }, params);
       return result;
     }
@@ -331,7 +530,15 @@ async function invokeHttpTool(tool: EmperorToolDefinition, params: unknown) {
     ...toRecord(config.headers),
     ...toRecord(request.headers),
   };
-  const timeoutMs = Number(request.timeoutMs || config.timeoutMs || 30000);
+  const rawTimeoutMs = Number(request.timeoutMs || config.timeoutMs || 30000);
+  const timeoutMs = Number.isFinite(rawTimeoutMs) && rawTimeoutMs > 0 ? rawTimeoutMs : 30000;
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "HTTP tool received an invalid URL" });
+  }
+  assertHttpPolicy(tool, parsedUrl, method, timeoutMs);
   const body = request.body ?? request.payload ?? params;
   const response = await fetch(url, {
     method,
@@ -348,7 +555,7 @@ async function invokeHttpTool(tool: EmperorToolDefinition, params: unknown) {
       cause: output,
     });
   }
-  return { status: response.status, output };
+  return { status: response.status, output, requestHost: parsedUrl.hostname };
 }
 
 async function invokeMcpConnector(tool: EmperorToolDefinition, params: unknown) {
@@ -380,23 +587,60 @@ async function invokeMcpConnector(tool: EmperorToolDefinition, params: unknown) 
 export async function invokeEmperorTool(input: EmperorToolInvocationInput): Promise<EmperorToolInvocationResult> {
   const startedAt = Date.now();
   const tool = await getToolDefinition(input.toolSlug);
+  const toolRunId = generateToolRunId();
+  const riskLevel = inferToolRisk(tool, input.params);
+  const requestUrl = tool.type === "api" || tool.type === "mcp" || tool.slug === "internal.http.request"
+    ? inferRequestUrl(input.params, tool.config)
+    : null;
+  await createToolRunRecord({
+    toolRunId,
+    tool,
+    invocation: input,
+    riskLevel,
+    requestHost: requestUrl?.hostname || null,
+  });
+
   let output: unknown;
   let status: number | undefined;
+  let requestHost: string | null = requestUrl?.hostname || null;
 
-  if (tool.type === "internal") {
-    output = await invokeInternalTool(tool.slug, input.params);
-  } else if (tool.type === "api") {
-    const result = await invokeHttpTool(tool, input.params);
-    status = result.status;
-    output = result.output;
-  } else if (tool.type === "mcp") {
-    output = await invokeMcpConnector(tool, input.params);
-    status = toRecord(output).status;
-  } else {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Code tools require an approved internal handler and cannot execute arbitrary code.",
+  try {
+    if (tool.type === "internal") {
+      output = await invokeInternalTool(tool.slug, input.params);
+      status = Number(toRecord(output).status) || undefined;
+      requestHost = toRecord(output).requestHost || requestHost;
+    } else if (tool.type === "api") {
+      const result = await invokeHttpTool(tool, input.params);
+      status = result.status;
+      requestHost = result.requestHost || requestHost;
+      output = result.output;
+    } else if (tool.type === "mcp") {
+      output = await invokeMcpConnector(tool, input.params);
+      status = Number(toRecord(output).status) || undefined;
+      requestHost = toRecord(output).requestHost || requestHost;
+    } else {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Code tools require an approved internal handler and cannot execute arbitrary code.",
+      });
+    }
+
+    await finishToolRunRecord({
+      toolRunId,
+      status: "succeeded",
+      output,
+      durationMs: Date.now() - startedAt,
+      httpStatus: status,
     });
+  } catch (error) {
+    await finishToolRunRecord({
+      toolRunId,
+      status: isPolicyBlock(error) ? "blocked" : "failed",
+      error,
+      durationMs: Date.now() - startedAt,
+      httpStatus: status,
+    });
+    throw error;
   }
 
   return {
@@ -405,11 +649,65 @@ export async function invokeEmperorTool(input: EmperorToolInvocationInput): Prom
     success: true,
     output,
     metadata: {
+      toolRunId,
       durationMs: Date.now() - startedAt,
       status,
+      requestHost,
+      riskLevel,
       source: tool.source,
     },
   };
+}
+
+export async function listEmperorToolRuns(input: {
+  userId?: number;
+  isAdmin?: boolean;
+  toolSlug?: string;
+  agentRunId?: string;
+  nodeId?: string;
+  status?: ToolRunStatus;
+  limit?: number;
+} = {}) {
+  if (!toolRunStoreAvailable) return [];
+  const params: unknown[] = [];
+  const clauses: string[] = [];
+  if (!input.isAdmin && input.userId) {
+    clauses.push("userId=?");
+    params.push(input.userId);
+  }
+  if (input.toolSlug) {
+    clauses.push("toolSlug=?");
+    params.push(input.toolSlug);
+  }
+  if (input.agentRunId) {
+    clauses.push("agentRunId=?");
+    params.push(input.agentRunId);
+  }
+  if (input.nodeId) {
+    clauses.push("nodeId=?");
+    params.push(input.nodeId);
+  }
+  if (input.status) {
+    clauses.push("status=?");
+    params.push(input.status);
+  }
+  params.push(Math.min(Math.max(input.limit || 50, 1), 200));
+  const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+  try {
+    const rows = await rawExecute(
+      `SELECT * FROM emperor_tool_runs ${where} ORDER BY createdAt DESC LIMIT ?`,
+      params,
+    );
+    return rows.map((row) => ({
+      ...row,
+      input: parseJson(row.input, null),
+      output: parseJson(row.output, null),
+    }));
+  } catch (error) {
+    toolRunStoreAvailable = false;
+    if (!isMissingDatabase(error)) console.warn("[Tool Gateway] Failed to list tool runs:", error);
+    return [];
+  }
 }
 
 export async function upsertEmperorTool(input: {
