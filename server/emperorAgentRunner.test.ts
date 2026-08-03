@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import {
+  buildAgentArtifactRef,
   buildAgentContextPackage,
   buildAgentRetryEventPayload,
   buildStoredAgentRunInputs,
   canTransitionNodeStatus,
   canTransitionRunStatus,
+  diffAgentArtifactContent,
   getListingAgentDag,
   LISTING_AGENT_SLUG,
   normalizeAgentDag,
@@ -44,6 +46,14 @@ describe("Emperor Agent workflow kernel", () => {
     expect(schema.emperorAgentCheckpoints.lastFailureKind).toBeDefined();
     expect(schema.emperorAgentEvents).toBeDefined();
     expect(schema.emperorAgentArtifacts).toBeDefined();
+    expect(schema.emperorAgentArtifacts.isCurrent).toBeDefined();
+    expect(schema.emperorAgentArtifacts.currentSince).toBeDefined();
+    expect(schema.emperorAgentArtifacts.selectedBy).toBeDefined();
+    expect(schema.emperorAgentArtifacts.contentHash).toBeDefined();
+    expect(schema.emperorAgentArtifacts.mimeType).toBeDefined();
+    expect(schema.emperorAgentArtifacts.fileName).toBeDefined();
+    expect(schema.emperorAgentArtifacts.fileSizeBytes).toBeDefined();
+    expect(schema.emperorAgentArtifacts.storageUri).toBeDefined();
     expect(schema.emperorTools).toBeDefined();
     expect(schema.emperorToolRuns).toBeDefined();
     expect(schema.emperorAiOsMetrics).toBeDefined();
@@ -133,11 +143,11 @@ describe("Emperor Agent workflow kernel", () => {
       dag,
       node: dag.nodes[1],
       checkpoints: [
-        { runId: "agent_1", agentSlug: "demo.agent", nodeId: "A", nodeType: "input_node", status: "confirmed", output: { product: "Filter", notes: longNotes } },
+        { runId: "agent_1", agentSlug: "demo.agent", nodeId: "A", nodeType: "input_node", status: "confirmed", output: { product: "Checkpoint", notes: longNotes } },
         { runId: "agent_1", agentSlug: "demo.agent", nodeId: "B", nodeType: "skill_node", status: "ready" },
       ] as any,
       artifacts: [
-        { id: 12, runId: "agent_1", nodeId: "A", artifactKey: "alpha", version: 2, status: "final", content: { product: "Filter", notes: longNotes } },
+        { id: 12, runId: "agent_1", nodeId: "A", artifactKey: "alpha", artifactType: "json", version: 2, status: "final", isCurrent: 1, content: { product: "Filter", notes: longNotes }, metadata: { source: "test" }, contentHash: "hash_2" },
         { id: 13, runId: "agent_1", nodeId: "A", artifactKey: "alpha", version: 3, status: "draft", content: { product: "Draft" } },
       ],
       options: { maxStringLength: 200, maxArtifactContentLength: 200 },
@@ -149,8 +159,11 @@ describe("Emperor Agent workflow kernel", () => {
     expect((contextPackage.confirmedOutputs.alpha as any).product).toBe("Filter");
     expect(contextPackage.artifacts).toHaveLength(1);
     expect(contextPackage.artifacts[0].version).toBe(2);
+    expect(contextPackage.artifacts[0].isCurrent).toBe(true);
+    expect(contextPackage.artifacts[0].currentRef).toBe("artifact://agent_1/A/alpha@current");
     expect((contextPackage.artifacts[0].content as any).notes.__truncated).toBe(true);
     expect(contextPackage.provenance.artifactRefs).toContain("artifact://agent_1/A/alpha@2");
+    expect(contextPackage.provenance.currentArtifactRefs).toContain("artifact://agent_1/A/alpha@current");
   });
 
   it("should preserve legacy Agent run inputs that contain a payload field", () => {
@@ -231,6 +244,23 @@ describe("Emperor Agent workflow kernel", () => {
     expect(payload.timeoutAt).toBe("2026-08-03T10:10:05.000Z");
   });
 
+  it("should build Artifact refs and JSON diffs", () => {
+    const ref = buildAgentArtifactRef({ runId: "agent_1", nodeId: "G1", artifactKey: "sellingPoints", version: 4 });
+    const currentRef = buildAgentArtifactRef({ runId: "agent_1", nodeId: "G1", artifactKey: "sellingPoints", version: 4 }, "current");
+    const diff = diffAgentArtifactContent(
+      { title: "Old", bullets: ["A", "B"], nested: { keep: true, remove: "x" } },
+      { title: "New", bullets: ["A", "C", "D"], nested: { keep: true }, added: 1 },
+    );
+
+    expect(ref).toBe("artifact://agent_1/G1/sellingPoints@4");
+    expect(currentRef).toBe("artifact://agent_1/G1/sellingPoints@current");
+    expect(diff.map((entry) => entry.path)).toContain("$.title");
+    expect(diff.map((entry) => entry.path)).toContain("$.bullets[1]");
+    expect(diff.map((entry) => entry.path)).toContain("$.bullets[2]");
+    expect(diff.map((entry) => entry.path)).toContain("$.nested.remove");
+    expect(diff.map((entry) => entry.path)).toContain("$.added");
+  });
+
   it("should register Agent runner routes", () => {
     const procedures = (appRouter as any)._def.procedures;
     expect(procedures["emperor.agents.run"]).toBeDefined();
@@ -239,6 +269,8 @@ describe("Emperor Agent workflow kernel", () => {
     expect(procedures["emperor.agents.listArtifacts"]).toBeDefined();
     expect(procedures["emperor.agents.getArtifactByRef"]).toBeDefined();
     expect(procedures["emperor.agents.selectArtifactVersion"]).toBeDefined();
+    expect(procedures["emperor.agents.rollbackArtifactVersion"]).toBeDefined();
+    expect(procedures["emperor.agents.diffArtifactVersions"]).toBeDefined();
     expect(procedures["emperor.agents.listTemplateVersions"]).toBeDefined();
     expect(procedures["emperor.agents.executeNode"]).toBeDefined();
     expect(procedures["emperor.agents.scheduleRun"]).toBeDefined();

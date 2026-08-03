@@ -14,6 +14,7 @@ import {
   cancelAgentRun,
   confirmAgentNode,
   executeAgentNode,
+  diffAgentArtifactVersions,
   getAgentRun,
   listAgentTemplateVersions,
   listAgentArtifacts,
@@ -24,6 +25,7 @@ import {
   rerunAgentNode,
   resolveAgentArtifactRef,
   resumeAgentRun,
+  rollbackAgentArtifactVersion,
   scheduleAgentRun,
   selectAgentArtifactVersion,
   startAgentRun,
@@ -910,12 +912,16 @@ export const emperorAgentsRouter = router({
     .input(z.object({
       runId: z.string(),
       nodeId: z.string().optional(),
+      artifactKey: z.string().optional(),
+      currentOnly: z.boolean().optional(),
     }))
     .query(async ({ input, ctx }) => {
       const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
       return listAgentArtifacts({
         runId: input.runId,
         nodeId: input.nodeId,
+        artifactKey: input.artifactKey,
+        currentOnly: input.currentOnly,
         userId: isAdmin ? undefined : ctx.user.id,
         skipOwnerCheck: isAdmin,
       });
@@ -946,6 +952,46 @@ export const emperorAgentsRouter = router({
         artifactKey: input.artifactKey,
         version: input.version,
         userId: ctx.user.id,
+      });
+    }),
+
+  rollbackArtifactVersion: protectedProcedure
+    .input(z.object({
+      runId: z.string(),
+      nodeId: z.string(),
+      artifactKey: z.string(),
+      targetVersion: z.number().int().min(1).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      return rollbackAgentArtifactVersion({
+        runId: input.runId,
+        nodeId: input.nodeId,
+        artifactKey: input.artifactKey,
+        targetVersion: input.targetVersion ?? null,
+        userId: ctx.user.id,
+      });
+    }),
+
+  diffArtifactVersions: protectedProcedure
+    .input(z.object({
+      runId: z.string(),
+      nodeId: z.string(),
+      artifactKey: z.string(),
+      baseVersion: z.number().int().min(1).optional(),
+      targetVersion: z.union([z.number().int().min(1), z.literal("current")]).optional(),
+      limit: z.number().int().min(1).max(1000).optional(),
+    }))
+    .query(async ({ input, ctx }) => {
+      const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
+      return diffAgentArtifactVersions({
+        runId: input.runId,
+        nodeId: input.nodeId,
+        artifactKey: input.artifactKey,
+        baseVersion: input.baseVersion ?? null,
+        targetVersion: input.targetVersion ?? "current",
+        limit: input.limit,
+        userId: isAdmin ? undefined : ctx.user.id,
+        skipOwnerCheck: isAdmin,
       });
     }),
 

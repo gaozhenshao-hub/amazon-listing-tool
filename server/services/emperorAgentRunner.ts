@@ -110,9 +110,19 @@ export type AgentContextArtifactRef = {
   runId: string;
   nodeId: string;
   artifactKey: string;
+  artifactType?: AgentArtifactType;
   version: number;
   status: string;
+  isCurrent?: boolean;
+  ref?: string;
+  currentRef?: string;
   content: unknown;
+  metadata?: unknown;
+  contentHash?: string | null;
+  mimeType?: string | null;
+  fileName?: string | null;
+  fileSizeBytes?: number | null;
+  storageUri?: string | null;
   sourceSkillRunId?: string | null;
   sourceAiJobRunId?: string | null;
 };
@@ -142,6 +152,7 @@ export type AgentContextPackage = {
     parentNodeIds: string[];
     confirmedNodeIds: string[];
     artifactRefs: string[];
+    currentArtifactRefs: string[];
     builtAt: string;
   };
 };
@@ -176,11 +187,17 @@ type CheckpointRow = {
   errorMessage?: string | null;
 };
 
+export type AgentArtifactType = "json" | "text" | "markdown" | "html" | "image" | "file" | "table" | "other";
+
 export const LISTING_AGENT_SLUG = "listing.full.workflow";
 let agentArtifactStoreAvailable = true;
 
 function hashJson(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value ?? null)).digest("hex").slice(0, 16);
+}
+
+function hashArtifactContent(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value ?? null)).digest("hex");
 }
 
 export function resolveAgentNodeSkillBinding(node: Pick<EmperorAgentNode, "skillVersion" | "skillVersionPolicy" | "skillVersionRef">): AgentNodeSkillBinding {
@@ -784,10 +801,80 @@ async function getCheckpoint(runId: string, nodeId: string): Promise<CheckpointR
   return checkpointPayload(rows[0]);
 }
 
-function inferArtifactType(content: unknown): "json" | "text" | "other" {
+const AGENT_ARTIFACT_TYPES = new Set<AgentArtifactType>(["json", "text", "markdown", "html", "image", "file", "table", "other"]);
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function normalizeArtifactType(value: unknown): AgentArtifactType | null {
+  const normalized = String(value || "").trim().toLowerCase();
+  return AGENT_ARTIFACT_TYPES.has(normalized as AgentArtifactType) ? normalized as AgentArtifactType : null;
+}
+
+function firstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function firstNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num >= 0) return Math.floor(num);
+  }
+  return null;
+}
+
+function inferArtifactType(content: unknown, metadata: Record<string, unknown> = {}): AgentArtifactType {
+  const declared = normalizeArtifactType(metadata.artifactType || metadata.type);
+  if (declared) return declared;
+  const mimeType = firstString(metadata.mimeType, metadata.contentType);
+  const fileName = firstString(metadata.fileName, metadata.name);
+  if (mimeType?.startsWith("image/")) return "image";
+  if (mimeType?.includes("spreadsheet") || mimeType === "text/csv" || mimeType?.includes("tab-separated-values")) return "table";
+  if (fileName && /\.(png|jpe?g|webp|gif|svg)$/i.test(fileName)) return "image";
+  if (fileName && /\.(csv|xlsx?|tsv)$/i.test(fileName)) return "table";
+  if (Object.keys(asRecord(metadata.image)).length > 0) return "image";
+  if (Object.keys(asRecord(metadata.table)).length > 0) return "table";
+  if (Object.keys(asRecord(metadata.file)).length > 0) return "file";
   if (typeof content === "string") return "text";
   if (content && typeof content === "object") return "json";
   return "other";
+}
+
+function normalizeArtifactMetadata(content: unknown, rawMetadata: unknown) {
+  const metadata = asRecord(rawMetadata);
+  const contentRecord = asRecord(content);
+  const file = asRecord(metadata.file || contentRecord.file);
+  const image = asRecord(metadata.image || contentRecord.image);
+  const table = asRecord(metadata.table || contentRecord.table);
+  const mimeType = firstString(metadata.mimeType, metadata.contentType, file.mimeType, file.contentType, image.mimeType, table.mimeType);
+  const fileName = firstString(metadata.fileName, metadata.name, file.fileName, file.name, image.fileName, table.fileName);
+  const fileSizeBytes = firstNumber(metadata.fileSizeBytes, metadata.sizeBytes, metadata.size, file.fileSizeBytes, file.sizeBytes, file.size, image.fileSizeBytes, table.fileSizeBytes);
+  const storageUri = firstString(metadata.storageUri, metadata.uri, metadata.url, file.storageUri, file.uri, file.url, image.storageUri, image.url, table.storageUri);
+  const artifactType = inferArtifactType(content, { ...metadata, mimeType, fileName });
+  return {
+    artifactType,
+    mimeType,
+    fileName,
+    fileSizeBytes,
+    storageUri,
+    metadata: {
+      ...metadata,
+      artifactType,
+      file: Object.keys(file).length > 0 ? file : undefined,
+      image: Object.keys(image).length > 0 ? image : undefined,
+      table: Object.keys(table).length > 0 ? table : undefined,
+      mimeType,
+      fileName,
+      fileSizeBytes,
+      storageUri,
+    },
+  };
 }
 
 function summarizeArtifactContent(content: unknown): string {
@@ -828,13 +915,16 @@ async function persistAgentArtifact(input: {
   sourceSkillRunId?: string | null;
   sourceAiJobRunId?: string | null;
   metadata?: unknown;
+  selectedBy?: number | null;
 }) {
   if (!agentArtifactStoreAvailable) return;
   const artifactKey = input.node.outputKey || input.node.id;
+  const artifactMetadata = normalizeArtifactMetadata(input.content, input.metadata);
+  const currentSince = input.status === "final" ? new Date() : null;
   try {
     if (input.status === "final") {
       await rawExecute(
-        "UPDATE emperor_agent_artifacts SET status='superseded',updatedAt=NOW() WHERE runId=? AND nodeId=? AND artifactKey=? AND status='final'",
+        "UPDATE emperor_agent_artifacts SET status='superseded',isCurrent=0,updatedAt=NOW() WHERE runId=? AND nodeId=? AND artifactKey=? AND isCurrent=1",
         [input.run.runId, input.node.id, artifactKey],
       );
     }
@@ -847,21 +937,29 @@ async function persistAgentArtifact(input: {
 
     await rawExecute(
       `INSERT INTO emperor_agent_artifacts
-       (runId,agentSlug,nodeId,artifactKey,artifactType,status,version,userId,projectId,content,summary,metadata,sourceSkillRunId,sourceAiJobRunId)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (runId,agentSlug,nodeId,artifactKey,artifactType,status,version,isCurrent,currentSince,selectedBy,userId,projectId,content,contentHash,summary,metadata,mimeType,fileName,fileSizeBytes,storageUri,sourceSkillRunId,sourceAiJobRunId)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         input.run.runId,
         input.run.agentSlug,
         input.node.id,
         artifactKey,
-        inferArtifactType(input.content),
+        artifactMetadata.artifactType,
         input.status,
         version,
+        input.status === "final" ? 1 : 0,
+        currentSince,
+        input.status === "final" ? input.selectedBy ?? input.run.userId ?? null : null,
         input.run.userId,
         input.run.projectId ?? null,
         stringifyJson(input.content),
+        hashArtifactContent(input.content),
         summarizeArtifactContent(input.content),
-        stringifyJson(input.metadata ?? {}),
+        stringifyJson(artifactMetadata.metadata),
+        artifactMetadata.mimeType,
+        artifactMetadata.fileName,
+        artifactMetadata.fileSizeBytes,
+        artifactMetadata.storageUri,
         input.sourceSkillRunId || null,
         input.sourceAiJobRunId || null,
       ],
@@ -876,6 +974,8 @@ export async function listAgentArtifacts(input: {
   runId: string;
   userId?: number;
   nodeId?: string;
+  artifactKey?: string;
+  currentOnly?: boolean;
   skipOwnerCheck?: boolean;
 }) {
   if (!agentArtifactStoreAvailable) return [];
@@ -889,14 +989,17 @@ export async function listAgentArtifacts(input: {
     sql += " AND nodeId=?";
     params.push(input.nodeId);
   }
+  if (input.artifactKey) {
+    sql += " AND artifactKey=?";
+    params.push(input.artifactKey);
+  }
+  if (input.currentOnly) {
+    sql += " AND (isCurrent=1 OR status='final')";
+  }
   sql += " ORDER BY createdAt DESC, id DESC LIMIT 200";
   try {
     const rows = await rawExecute(sql, params);
-    return rows.map((artifact) => ({
-      ...artifact,
-      content: parseJson(artifact.content),
-      metadata: parseJson(artifact.metadata, {}),
-    }));
+    return rows.map(parseAgentArtifactRow);
   } catch (error) {
     agentArtifactStoreAvailable = false;
     console.warn("[Agent Artifact] Failed to list artifacts:", error);
@@ -904,8 +1007,41 @@ export async function listAgentArtifacts(input: {
   }
 }
 
+function parseAgentArtifactRow(artifact: any) {
+  const metadata = parseJson(artifact.metadata, {}) as Record<string, unknown>;
+  const rawIsCurrent = artifact.isCurrent;
+  const isCurrent = rawIsCurrent === undefined || rawIsCurrent === null
+    ? artifact.status === "final"
+    : Number(rawIsCurrent || 0) === 1 || rawIsCurrent === true;
+  return {
+    ...artifact,
+    version: Number(artifact.version || 1),
+    isCurrent,
+    content: parseJson(artifact.content),
+    metadata,
+    contentHash: artifact.contentHash || hashArtifactContent(parseJson(artifact.content)),
+    mimeType: artifact.mimeType || (metadata.mimeType as string | undefined) || null,
+    fileName: artifact.fileName || (metadata.fileName as string | undefined) || null,
+    fileSizeBytes: artifact.fileSizeBytes === undefined || artifact.fileSizeBytes === null ? (metadata.fileSizeBytes as number | undefined) ?? null : Number(artifact.fileSizeBytes),
+    storageUri: artifact.storageUri || (metadata.storageUri as string | undefined) || null,
+    ref: buildAgentArtifactRef(artifact),
+    currentRef: buildAgentArtifactRef(artifact, "current"),
+  };
+}
+
+export function buildAgentArtifactRef(
+  artifact: Pick<AgentContextArtifactRef, "runId" | "nodeId" | "artifactKey"> & { version?: number | null },
+  version: number | "current" = Number(artifact.version || 1),
+) {
+  return `artifact://${artifact.runId}/${artifact.nodeId}/${artifact.artifactKey}@${version}`;
+}
+
+function isCurrentAgentArtifact(artifact: any): boolean {
+  return Number(artifact.isCurrent || 0) === 1 || (artifact.isCurrent === undefined && artifact.status === "final");
+}
+
 function parseAgentArtifactRef(ref: string) {
-  const match = ref.match(/^artifact:\/\/([^/]+)\/([^/]+)\/([^@]+)@(\d+)$/);
+  const match = ref.match(/^artifact:\/\/([^/]+)\/([^/]+)\/([^@/]+)(?:@(\d+|current))?$/);
   if (!match) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid artifact ref" });
   }
@@ -913,8 +1049,41 @@ function parseAgentArtifactRef(ref: string) {
     runId: match[1],
     nodeId: match[2],
     artifactKey: match[3],
-    version: Number(match[4]),
+    version: match[4] && match[4] !== "current" ? Number(match[4]) : null,
+    current: !match[4] || match[4] === "current",
   };
+}
+
+async function findAgentArtifact(input: {
+  runId: string;
+  nodeId: string;
+  artifactKey: string;
+  version?: number | null;
+  current?: boolean;
+}) {
+  const params: unknown[] = [input.runId, input.nodeId, input.artifactKey];
+  if (input.current || !input.version) {
+    let rows = await rawExecute(
+      `SELECT * FROM emperor_agent_artifacts
+       WHERE runId=? AND nodeId=? AND artifactKey=? AND isCurrent=1
+       ORDER BY version DESC LIMIT 1`,
+      params,
+    );
+    if (!rows[0]) {
+      rows = await rawExecute(
+        `SELECT * FROM emperor_agent_artifacts
+         WHERE runId=? AND nodeId=? AND artifactKey=? AND status='final'
+         ORDER BY version DESC LIMIT 1`,
+        params,
+      );
+    }
+    return rows[0] ? parseAgentArtifactRow(rows[0]) : null;
+  }
+  const rows = await rawExecute(
+    "SELECT * FROM emperor_agent_artifacts WHERE runId=? AND nodeId=? AND artifactKey=? AND version=? LIMIT 1",
+    [...params, input.version],
+  );
+  return rows[0] ? parseAgentArtifactRow(rows[0]) : null;
 }
 
 export async function resolveAgentArtifactRef(input: {
@@ -927,16 +1096,9 @@ export async function resolveAgentArtifactRef(input: {
   if (!input.skipOwnerCheck && input.userId && run.userId !== input.userId) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Cannot read this Artifact" });
   }
-  const rows = await rawExecute(
-    "SELECT * FROM emperor_agent_artifacts WHERE runId=? AND nodeId=? AND artifactKey=? AND version=? LIMIT 1",
-    [parsed.runId, parsed.nodeId, parsed.artifactKey, parsed.version],
-  );
-  if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Artifact not found" });
-  return {
-    ...rows[0],
-    content: parseJson(rows[0].content),
-    metadata: parseJson(rows[0].metadata, {}),
-  };
+  const artifact = await findAgentArtifact(parsed);
+  if (!artifact) throw new TRPCError({ code: "NOT_FOUND", message: "Artifact not found" });
+  return artifact;
 }
 
 export async function selectAgentArtifactVersion(input: {
@@ -950,23 +1112,15 @@ export async function selectAgentArtifactVersion(input: {
   if (run.userId !== input.userId) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Cannot select this Artifact" });
   }
-  const rows = await rawExecute(
-    "SELECT * FROM emperor_agent_artifacts WHERE runId=? AND nodeId=? AND artifactKey=? AND version=? LIMIT 1",
-    [input.runId, input.nodeId, input.artifactKey, input.version],
-  );
-  if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Artifact not found" });
-  const artifact = {
-    ...rows[0],
-    content: parseJson(rows[0].content),
-    metadata: parseJson(rows[0].metadata, {}),
-  };
+  const artifact = await findAgentArtifact({ ...input, current: false });
+  if (!artifact) throw new TRPCError({ code: "NOT_FOUND", message: "Artifact not found" });
   await rawExecute(
-    "UPDATE emperor_agent_artifacts SET status='superseded',updatedAt=NOW() WHERE runId=? AND nodeId=? AND artifactKey=? AND status='final'",
+    "UPDATE emperor_agent_artifacts SET status='superseded',isCurrent=0,updatedAt=NOW() WHERE runId=? AND nodeId=? AND artifactKey=? AND isCurrent=1",
     [input.runId, input.nodeId, input.artifactKey],
   );
   await rawExecute(
-    "UPDATE emperor_agent_artifacts SET status='final',updatedAt=NOW() WHERE runId=? AND nodeId=? AND artifactKey=? AND version=?",
-    [input.runId, input.nodeId, input.artifactKey, input.version],
+    "UPDATE emperor_agent_artifacts SET status='final',isCurrent=1,currentSince=NOW(),selectedBy=?,updatedAt=NOW() WHERE runId=? AND nodeId=? AND artifactKey=? AND version=?",
+    [input.userId, input.runId, input.nodeId, input.artifactKey, input.version],
   );
   await rawExecute(
     "UPDATE emperor_agent_checkpoints SET userEdit=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
@@ -979,6 +1133,164 @@ export async function selectAgentArtifactVersion(input: {
   return {
     ...artifact,
     status: "final",
+    isCurrent: true,
+  };
+}
+
+export async function rollbackAgentArtifactVersion(input: {
+  runId: string;
+  nodeId: string;
+  artifactKey: string;
+  targetVersion?: number | null;
+  userId: number;
+}) {
+  const run = await getRunRow(input.runId);
+  if (run.userId !== input.userId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Cannot rollback this Artifact" });
+  }
+  let targetVersion = input.targetVersion ?? null;
+  if (!targetVersion) {
+    const current = await findAgentArtifact({ runId: input.runId, nodeId: input.nodeId, artifactKey: input.artifactKey, current: true });
+    const rows = await rawExecute(
+      `SELECT * FROM emperor_agent_artifacts
+       WHERE runId=? AND nodeId=? AND artifactKey=? AND version < ? AND status IN ('final','superseded')
+       ORDER BY version DESC LIMIT 1`,
+      [input.runId, input.nodeId, input.artifactKey, Number(current?.version || Number.MAX_SAFE_INTEGER)],
+    );
+    if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "No previous Artifact version to rollback" });
+    targetVersion = Number(rows[0].version);
+  }
+  const selected = await selectAgentArtifactVersion({
+    runId: input.runId,
+    nodeId: input.nodeId,
+    artifactKey: input.artifactKey,
+    version: targetVersion,
+    userId: input.userId,
+  });
+  await addEvent(input.runId, run.agentSlug, input.nodeId, "artifact.rollback", `Artifact ${input.artifactKey} 已回滚到 v${targetVersion}`, {
+    artifactKey: input.artifactKey,
+    version: targetVersion,
+    ref: buildAgentArtifactRef(selected),
+    currentRef: buildAgentArtifactRef(selected, "current"),
+  });
+  return selected;
+}
+
+type ArtifactDiffEntry = {
+  path: string;
+  type: "added" | "removed" | "changed";
+  before?: unknown;
+  after?: unknown;
+};
+
+function previewDiffValue(value: unknown): unknown {
+  if (typeof value === "string") return value.length > 500 ? `${value.slice(0, 500)}...` : value;
+  if (value === null || value === undefined) return value ?? null;
+  if (typeof value !== "object") return value;
+  try {
+    const serialized = JSON.stringify(value);
+    return serialized.length > 500 ? { __preview: serialized.slice(0, 500), __truncated: true } : value;
+  } catch {
+    return String(value).slice(0, 500);
+  }
+}
+
+function diffValues(before: unknown, after: unknown, path = "$", entries: ArtifactDiffEntry[] = [], limit = 200) {
+  if (entries.length >= limit) return entries;
+  if (JSON.stringify(before) === JSON.stringify(after)) return entries;
+  const beforeIsObject = before && typeof before === "object" && !Array.isArray(before);
+  const afterIsObject = after && typeof after === "object" && !Array.isArray(after);
+  if (beforeIsObject && afterIsObject) {
+    const beforeRecord = before as Record<string, unknown>;
+    const afterRecord = after as Record<string, unknown>;
+    const keys = new Set([...Object.keys(beforeRecord), ...Object.keys(afterRecord)]);
+    for (const key of keys) {
+      if (entries.length >= limit) break;
+      const childPath = `${path}.${key}`;
+      if (!(key in beforeRecord)) {
+        entries.push({ path: childPath, type: "added", after: previewDiffValue(afterRecord[key]) });
+      } else if (!(key in afterRecord)) {
+        entries.push({ path: childPath, type: "removed", before: previewDiffValue(beforeRecord[key]) });
+      } else {
+        diffValues(beforeRecord[key], afterRecord[key], childPath, entries, limit);
+      }
+    }
+    return entries;
+  }
+  if (Array.isArray(before) && Array.isArray(after)) {
+    const maxLength = Math.max(before.length, after.length);
+    for (let index = 0; index < maxLength; index += 1) {
+      if (entries.length >= limit) break;
+      const childPath = `${path}[${index}]`;
+      if (index >= before.length) {
+        entries.push({ path: childPath, type: "added", after: previewDiffValue(after[index]) });
+      } else if (index >= after.length) {
+        entries.push({ path: childPath, type: "removed", before: previewDiffValue(before[index]) });
+      } else {
+        diffValues(before[index], after[index], childPath, entries, limit);
+      }
+    }
+    return entries;
+  }
+  entries.push({ path, type: "changed", before: previewDiffValue(before), after: previewDiffValue(after) });
+  return entries;
+}
+
+export function diffAgentArtifactContent(before: unknown, after: unknown, limit = 200) {
+  return diffValues(before, after, "$", [], Math.min(Math.max(Math.floor(limit), 1), 1000));
+}
+
+export async function diffAgentArtifactVersions(input: {
+  runId: string;
+  nodeId: string;
+  artifactKey: string;
+  baseVersion?: number | null;
+  targetVersion?: number | "current" | null;
+  userId?: number;
+  skipOwnerCheck?: boolean;
+  limit?: number;
+}) {
+  const run = await getRunRow(input.runId);
+  if (!input.skipOwnerCheck && input.userId && run.userId !== input.userId) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Cannot diff this Artifact" });
+  }
+  const target = input.targetVersion && input.targetVersion !== "current"
+    ? await findAgentArtifact({ runId: input.runId, nodeId: input.nodeId, artifactKey: input.artifactKey, version: input.targetVersion, current: false })
+    : await findAgentArtifact({ runId: input.runId, nodeId: input.nodeId, artifactKey: input.artifactKey, current: true });
+  if (!target) throw new TRPCError({ code: "NOT_FOUND", message: "Target Artifact not found" });
+
+  let base = input.baseVersion
+    ? await findAgentArtifact({ runId: input.runId, nodeId: input.nodeId, artifactKey: input.artifactKey, version: input.baseVersion, current: false })
+    : null;
+  if (!base) {
+    const rows = await rawExecute(
+      `SELECT * FROM emperor_agent_artifacts
+       WHERE runId=? AND nodeId=? AND artifactKey=? AND version < ?
+       ORDER BY version DESC LIMIT 1`,
+      [input.runId, input.nodeId, input.artifactKey, Number(target.version || 1)],
+    );
+    base = rows[0] ? parseAgentArtifactRow(rows[0]) : null;
+  }
+  if (!base) throw new TRPCError({ code: "NOT_FOUND", message: "Base Artifact not found" });
+
+  const entries = diffAgentArtifactContent(base.content, target.content, input.limit || 200);
+  return {
+    runId: input.runId,
+    nodeId: input.nodeId,
+    artifactKey: input.artifactKey,
+    base: {
+      version: base.version,
+      ref: buildAgentArtifactRef(base),
+      contentHash: base.contentHash,
+    },
+    target: {
+      version: target.version,
+      ref: buildAgentArtifactRef(target),
+      contentHash: target.contentHash,
+      isCurrent: target.isCurrent,
+    },
+    changed: entries.length > 0,
+    entries,
   };
 }
 
@@ -998,6 +1310,32 @@ function effectiveCheckpointOutput(checkpoint: CheckpointRow): unknown {
   return checkpoint.userEdit !== undefined && checkpoint.userEdit !== null
     ? checkpoint.userEdit
     : checkpoint.output;
+}
+
+function chooseCurrentAgentArtifacts(artifacts: any[]) {
+  const byKey = new Map<string, any>();
+  for (const rawArtifact of artifacts || []) {
+    const artifact = rawArtifact?.ref ? rawArtifact : parseAgentArtifactRow(rawArtifact);
+    if (!["final", "superseded"].includes(String(artifact.status))) continue;
+    const key = `${artifact.runId}:${artifact.nodeId}:${artifact.artifactKey}`;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, artifact);
+      continue;
+    }
+    const score = (item: any) => (isCurrentAgentArtifact(item) ? 1_000_000 : 0) + Number(item.version || 0);
+    if (score(artifact) > score(existing)) byKey.set(key, artifact);
+  }
+  return [...byKey.values()].filter(isCurrentAgentArtifact);
+}
+
+function artifactOutputForNode(currentArtifacts: any[], node: EmperorAgentNode | undefined, includeContent: boolean, maxLength: number) {
+  if (!node) return undefined;
+  const preferredKey = node.outputKey || node.id;
+  const artifact = currentArtifacts.find((item) => item.nodeId === node.id && item.artifactKey === preferredKey)
+    || currentArtifacts.find((item) => item.nodeId === node.id);
+  if (!artifact) return undefined;
+  return includeContent ? trimContextValue(artifact.content, maxLength) : null;
 }
 
 async function refreshRunAfterCheckpoint(runId: string, dag: EmperorAgentDag) {
@@ -1072,34 +1410,53 @@ export function buildAgentContextPackage(input: {
   const maxArtifactContentLength = contextStringLimit(input.options?.maxArtifactContentLength, 8000);
   const includeArtifactContent = input.options?.includeArtifactContent !== false;
   const parents = parentIds(dag, node.id);
+  const currentArtifacts = chooseCurrentAgentArtifacts(input.artifacts || []);
   const parentOutputs = checkpoints
     .filter((checkpoint) => parents.includes(checkpoint.nodeId))
     .reduce<Record<string, unknown>>((acc, checkpoint) => {
       const parentNode = dag.nodes.find((item) => item.id === checkpoint.nodeId);
-      acc[parentNode?.outputKey || checkpoint.nodeId] = trimContextValue(effectiveCheckpointOutput(checkpoint), maxStringLength);
+      const key = parentNode?.outputKey || checkpoint.nodeId;
+      const artifactOutput = artifactOutputForNode(currentArtifacts, parentNode, includeArtifactContent, maxArtifactContentLength);
+      acc[key] = artifactOutput !== undefined
+        ? artifactOutput
+        : trimContextValue(effectiveCheckpointOutput(checkpoint), maxStringLength);
       return acc;
     }, {});
   const confirmedOutputs = checkpoints
     .filter((checkpoint) => isConfirmedStatus(checkpoint.status))
     .reduce<Record<string, unknown>>((acc, checkpoint) => {
       const confirmedNode = dag.nodes.find((item) => item.id === checkpoint.nodeId);
-      acc[confirmedNode?.outputKey || checkpoint.nodeId] = trimContextValue(effectiveCheckpointOutput(checkpoint), maxStringLength);
+      const key = confirmedNode?.outputKey || checkpoint.nodeId;
+      const artifactOutput = artifactOutputForNode(currentArtifacts, confirmedNode, includeArtifactContent, maxArtifactContentLength);
+      acc[key] = artifactOutput !== undefined
+        ? artifactOutput
+        : trimContextValue(effectiveCheckpointOutput(checkpoint), maxStringLength);
       return acc;
     }, {});
-  const artifacts = (input.artifacts || [])
-    .filter((artifact) => artifact.status === "final")
+  const artifacts = currentArtifacts
     .map((artifact) => ({
       artifactId: artifact.id,
       runId: artifact.runId,
       nodeId: artifact.nodeId,
       artifactKey: artifact.artifactKey,
+      artifactType: artifact.artifactType,
       version: Number(artifact.version || 1),
       status: artifact.status,
+      isCurrent: isCurrentAgentArtifact(artifact),
+      ref: buildAgentArtifactRef(artifact),
+      currentRef: buildAgentArtifactRef(artifact, "current"),
       content: includeArtifactContent ? trimContextValue(artifact.content, maxArtifactContentLength) : null,
+      metadata: artifact.metadata || {},
+      contentHash: artifact.contentHash || null,
+      mimeType: artifact.mimeType || null,
+      fileName: artifact.fileName || null,
+      fileSizeBytes: artifact.fileSizeBytes ?? null,
+      storageUri: artifact.storageUri || null,
       sourceSkillRunId: artifact.sourceSkillRunId || null,
       sourceAiJobRunId: artifact.sourceAiJobRunId || null,
     }));
   const artifactRefs = artifacts.map((artifact) => `artifact://${artifact.runId}/${artifact.nodeId}/${artifact.artifactKey}@${artifact.version}`);
+  const currentArtifactRefs = artifacts.map((artifact) => `artifact://${artifact.runId}/${artifact.nodeId}/${artifact.artifactKey}@current`);
   const parsedRunInputs = parseJson(run.inputs, {});
   const runInputs = parsedRunInputs && typeof parsedRunInputs === "object" && !Array.isArray(parsedRunInputs)
     ? trimContextValue(parsedRunInputs, maxStringLength) as Record<string, unknown>
@@ -1129,6 +1486,7 @@ export function buildAgentContextPackage(input: {
       parentNodeIds: parents,
       confirmedNodeIds: checkpoints.filter((checkpoint) => isConfirmedStatus(checkpoint.status)).map((checkpoint) => checkpoint.nodeId),
       artifactRefs,
+      currentArtifactRefs,
       builtAt: new Date().toISOString(),
     },
   };
