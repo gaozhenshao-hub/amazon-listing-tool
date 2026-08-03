@@ -6,6 +6,7 @@ import {
   generateAiJobRunId,
   getAiJobWorkerId,
   isActiveAiJob,
+  isAiJobSchedulingEnabled,
   listAiJobHandlerRegistrations,
   resolveAiJobHandler,
 } from "./services/aiJobRunner";
@@ -37,6 +38,7 @@ describe("Generic AI Job infrastructure", () => {
     const runId = generateAiJobRunId("image.workflow");
     expect(runId).toMatch(/^image_workflow_\d+_[a-z0-9]+$/);
     expect(getAiJobWorkerId()).toMatch(/^web_\d+_[a-z0-9]+$/);
+    expect(isAiJobSchedulingEnabled()).toBe(true);
     expect(calculateAiJobRetryDelayMs(1)).toBe(30000);
     expect(calculateAiJobRetryDelayMs(3)).toBe(120000);
     expect(calculateAiJobRetryDelayMs(9)).toBe(600000);

@@ -95,6 +95,10 @@ export function getAiJobWorkerId() {
   return WORKER_ID;
 }
 
+export function isAiJobSchedulingEnabled() {
+  return process.env.AI_JOB_RUNNER_MODE !== "external" && process.env.AI_JOB_IN_PROCESS !== "false";
+}
+
 export function calculateAiJobRetryDelayMs(attempt: number): number {
   const boundedAttempt = Math.min(Math.max(attempt, 1), 6);
   return Math.min(30_000 * 2 ** (boundedAttempt - 1), 10 * 60_000);
@@ -286,6 +290,8 @@ export async function runAiJobInProcess<T>(runId: string, handler: AiJobHandler<
 }
 
 export async function scheduleAiJobRun(runId: string, handler?: AiJobHandler) {
+  if (!isAiJobSchedulingEnabled()) return getAiJobRun(runId);
+
   const existing = await getAiJobRun(runId);
   if (!existing) throw new Error(`AI job not found: ${runId}`);
   if (!isActiveAiJob(existing.status) || runningRunIds.has(runId)) return existing;

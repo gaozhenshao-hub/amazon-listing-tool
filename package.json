@@ -5,8 +5,10 @@
   "license": "MIT",
   "scripts": {
     "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
-    "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "worker:ai": "AI_JOB_RUNNER_MODE=worker tsx server/_core/aiWorker.ts",
+    "build": "vite build && esbuild server/_core/index.ts server/_core/aiWorker.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "NODE_ENV=production node dist/index.js",
+    "start:worker:ai": "AI_JOB_RUNNER_MODE=worker node dist/aiWorker.js",
     "check": "tsc --noEmit",
     "audit:emperor-prompts": "node scripts/audit-emperor-prompt-consistency.mjs",
     "format": "prettier --write .",
