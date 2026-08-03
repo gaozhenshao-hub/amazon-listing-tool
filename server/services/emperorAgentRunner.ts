@@ -3,6 +3,7 @@ import { sql as drizzleSql } from "drizzle-orm";
 import { getDb } from "../db";
 import { runEmperorSkill, safeParseSkillJSON } from "./emperorSkillRunner";
 import { startAiJobInProcess } from "./aiJobRunner";
+import { invokeEmperorTool } from "./emperorToolGateway";
 
 export type AgentNodeStatus = "pending" | "ready" | "running" | "waiting_human" | "confirmed" | "skipped" | "failed";
 export type AgentRunStatus = "running" | "waiting_human" | "completed" | "failed" | "canceled";
@@ -13,8 +14,12 @@ export type EmperorAgentNode = {
   label: string;
   subtitle?: string;
   skillSlug?: string;
+  toolSlug?: string;
+  toolParams?: unknown;
   executionMode?: "inline" | "fork" | "background";
   humanGate?: boolean;
+  autoConfirm?: boolean;
+  scheduler?: "manual" | "auto";
   required?: boolean;
   inputRefs?: string[];
   outputKey?: string;
@@ -124,6 +129,18 @@ function childIds(dag: EmperorAgentDag, nodeId: string): string[] {
   return dag.edges.filter((edge) => edgeSource(edge) === nodeId).map(edgeTarget).filter(Boolean);
 }
 
+function descendantIds(dag: EmperorAgentDag, nodeId: string): string[] {
+  const result = new Set<string>();
+  const queue = [...childIds(dag, nodeId)];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (result.has(current)) continue;
+    result.add(current);
+    queue.push(...childIds(dag, current));
+  }
+  return [...result];
+}
+
 function isConfirmedStatus(status: string): boolean {
   return status === "confirmed" || status === "skipped";
 }
@@ -175,7 +192,10 @@ export function getListingAgentDag(): EmperorAgentDag {
     workflowType: "human_in_loop_dag",
     description: "完整 Listing 长工作流：前置数据准备、生成主链、输出优化和扩展内容。",
     nodes: [
-      node("N0", "input_node", "N0 · 项目管理", "品牌/产品/市场基础信息", 520, 20, { outputKey: "project" }),
+      node("N0", "input_node", "N0 · 项目管理", "品牌/产品/市场基础信息", 520, 20, {
+        toolSlug: "internal.agent.capture_input",
+        outputKey: "project",
+      }),
       node("N1", "skill_node", "N1 · 竞品分析", "ASIN/竞品 Listing 分析", 110, 150, { skillSlug: "listing.competitor.analyze", outputKey: "competitorAnalysis" }),
       node("N2", "skill_node", "N2 · 竞品对比", "多竞品横向对比", -80, 350, { skillSlug: "analysis.competitor.multi", outputKey: "competitorComparison" }),
       node("N3", "skill_node", "N3 · 数据文件", "产品属性 / Rufus / 买家问题", 780, 350, { skillSlug: "analysis.rufus.attribute", outputKey: "productAttributes" }),
@@ -186,7 +206,10 @@ export function getListingAgentDag(): EmperorAgentDag {
       node("G3", "skill_node", "G3 · 产品描述", "长描述 + A+内容规划", 360, 1020, { skillSlug: "listing.description.generate", outputKey: "description" }),
       node("G4", "skill_node", "G4 · 搜索词", "后台关键词 250 字符", 360, 1220, { skillSlug: "listing.searchterms.generate", outputKey: "searchTerms" }),
       node("G5", "skill_node", "G5 · QA问答", "买家问题与专业解答", 360, 1420, { skillSlug: "listing.qa.generate", outputKey: "qaContent" }),
-      node("O1", "output_node", "O1 · 结果预览", "完整 Listing 中英文版本", 360, 1620, { outputKey: "listingPreview" }),
+      node("O1", "output_node", "O1 · 结果预览", "完整 Listing 中英文版本", 360, 1620, {
+        toolSlug: "internal.listing.compose_preview",
+        outputKey: "listingPreview",
+      }),
       node("O2", "skill_node", "O2 · Listing评分", "多维度质量评估", 190, 1820, { skillSlug: "listing.scoring.overall", outputKey: "listingScore", required: false }),
       node("O3", "skill_node", "O3 · 广告架构", "广告词 + 投放策略", 190, 2020, { skillSlug: "ad.structure.generate", outputKey: "adStructure", required: false }),
       node("E1", "skill_node", "E1 · 智能图片建议", "图片结构与构图建议", 560, 1820, { skillSlug: "listing.image.advice", outputKey: "imageAdvice", required: false }),
@@ -255,26 +278,43 @@ async function getCheckpoint(runId: string, nodeId: string): Promise<CheckpointR
   return checkpointPayload(rows[0]);
 }
 
+async function getRunRow(runId: string) {
+  const rows = await rawExecute("SELECT * FROM emperor_agent_runs WHERE runId=? LIMIT 1", [runId]);
+  if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Agent run not found" });
+  return rows[0];
+}
+
 function calculateProgress(checkpoints: CheckpointRow[]): number {
   if (!checkpoints.length) return 0;
   const done = checkpoints.filter((checkpoint) => isConfirmedStatus(checkpoint.status)).length;
   return Math.round((done / checkpoints.length) * 100);
 }
 
+function effectiveCheckpointOutput(checkpoint: CheckpointRow): unknown {
+  return checkpoint.userEdit !== undefined && checkpoint.userEdit !== null
+    ? checkpoint.userEdit
+    : checkpoint.output;
+}
+
 async function refreshRunAfterCheckpoint(runId: string, dag: EmperorAgentDag) {
   const checkpoints = await getCheckpoints(runId);
   const progress = calculateProgress(checkpoints);
   const allDone = checkpoints.length > 0 && checkpoints.every((checkpoint) => isConfirmedStatus(checkpoint.status));
+  const failed = checkpoints.find((checkpoint) => checkpoint.status === "failed");
+  const running = checkpoints.find((checkpoint) => checkpoint.status === "running");
+  const waiting = checkpoints.find((checkpoint) => checkpoint.status === "waiting_human");
   const nextReady = checkpoints.find((checkpoint) => checkpoint.status === "ready");
   const anyRunning = checkpoints.some((checkpoint) => checkpoint.status === "running");
   const anyWaiting = checkpoints.some((checkpoint) => checkpoint.status === "waiting_human");
-  const status: AgentRunStatus = allDone ? "completed" : anyRunning ? "running" : "waiting_human";
-  const currentNodeId = nextReady?.nodeId || checkpoints.find((checkpoint) => checkpoint.status === "waiting_human")?.nodeId || null;
+  const status: AgentRunStatus = allDone ? "completed" : anyRunning ? "running" : failed && !nextReady && !anyWaiting ? "failed" : "waiting_human";
+  const currentNodeId = running?.nodeId || waiting?.nodeId || nextReady?.nodeId || failed?.nodeId || null;
   const outputMap = checkpoints.reduce<Record<string, unknown>>((acc, checkpoint) => {
     const node = dag.nodes.find((item) => item.id === checkpoint.nodeId);
     const key = node?.outputKey || checkpoint.nodeId;
     if (checkpoint.output !== undefined && checkpoint.output !== null) acc[key] = checkpoint.output;
     if (checkpoint.userEdit !== undefined && checkpoint.userEdit !== null) acc[`${key}UserEdit`] = checkpoint.userEdit;
+    const effective = effectiveCheckpointOutput(checkpoint);
+    if (effective !== undefined && effective !== null) acc[`${key}Final`] = effective;
     return acc;
   }, {});
 
@@ -312,17 +352,28 @@ function buildNodeInput(run: any, dag: EmperorAgentDag, node: EmperorAgentNode, 
     .filter((checkpoint) => parents.includes(checkpoint.nodeId))
     .reduce<Record<string, unknown>>((acc, checkpoint) => {
       const parentNode = dag.nodes.find((item) => item.id === checkpoint.nodeId);
-      acc[parentNode?.outputKey || checkpoint.nodeId] = checkpoint.userEdit || checkpoint.output;
+      acc[parentNode?.outputKey || checkpoint.nodeId] = effectiveCheckpointOutput(checkpoint);
+      return acc;
+    }, {});
+  const confirmedOutputs = checkpoints
+    .filter((checkpoint) => isConfirmedStatus(checkpoint.status))
+    .reduce<Record<string, unknown>>((acc, checkpoint) => {
+      const confirmedNode = dag.nodes.find((item) => item.id === checkpoint.nodeId);
+      acc[confirmedNode?.outputKey || checkpoint.nodeId] = effectiveCheckpointOutput(checkpoint);
       return acc;
     }, {});
   return {
     runInputs: parseJson(run.inputs, {}),
     parentOutputs,
+    confirmedOutputs,
     node: {
       id: node.id,
       label: node.label,
       skillSlug: node.skillSlug,
+      toolSlug: node.toolSlug,
       outputKey: node.outputKey,
+      nodeType: node.nodeType,
+      params: node.toolParams ?? null,
     },
   };
 }
@@ -335,6 +386,130 @@ function buildSkillContext(node: EmperorAgentNode, nodeInput: unknown): string {
     "",
     JSON.stringify(nodeInput, null, 2),
   ].filter(Boolean).join("\n");
+}
+
+function nodeRequiresHumanGate(node: EmperorAgentNode): boolean {
+  if (node.autoConfirm === true) return false;
+  return node.humanGate !== false;
+}
+
+async function finalizeNodeOutput(input: {
+  run: any;
+  dag: EmperorAgentDag;
+  node: EmperorAgentNode;
+  userId: number;
+  output: unknown;
+  skillRunId?: string | null;
+  completedMessage?: string;
+}) {
+  const waitingForHuman = nodeRequiresHumanGate(input.node);
+  const nextStatus: AgentNodeStatus = waitingForHuman ? "waiting_human" : "confirmed";
+  await rawExecute(
+    "UPDATE emperor_agent_checkpoints SET status=?,output=?,skillRunId=COALESCE(?,skillRunId),reviewerUserId=?,completedAt=?,confirmedAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
+    [
+      nextStatus,
+      stringifyJson(input.output),
+      input.skillRunId || null,
+      waitingForHuman ? null : input.userId,
+      new Date(),
+      waitingForHuman ? null : new Date(),
+      input.run.runId,
+      input.node.id,
+    ],
+  );
+
+  if (waitingForHuman) {
+    await rawExecute("UPDATE emperor_agent_runs SET status='waiting_human',currentNodeId=?,updatedAt=NOW() WHERE runId=?", [input.node.id, input.run.runId]);
+    await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.waiting_human", input.completedMessage || `节点 ${input.node.label || input.node.id} 已生成，等待人工确认`, {
+      skillRunId: input.skillRunId || null,
+    });
+    await refreshRunAfterCheckpoint(input.run.runId, input.dag);
+  } else {
+    await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.auto_confirmed", input.completedMessage || `节点 ${input.node.label || input.node.id} 已自动确认`, {
+      skillRunId: input.skillRunId || null,
+    });
+    await unlockChildren(input.run.runId, input.dag, input.node.id);
+    await refreshRunAfterCheckpoint(input.run.runId, input.dag);
+  }
+}
+
+async function failNodeExecution(input: {
+  run: any;
+  node: EmperorAgentNode;
+  error: unknown;
+}) {
+  const message = input.error instanceof Error ? input.error.message : String(input.error);
+  await rawExecute(
+    "UPDATE emperor_agent_checkpoints SET status='failed',errorMessage=?,completedAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
+    [message, new Date(), input.run.runId, input.node.id],
+  );
+  await rawExecute("UPDATE emperor_agent_runs SET status='failed',errorMessage=?,currentNodeId=?,updatedAt=NOW() WHERE runId=?", [message, input.node.id, input.run.runId]);
+  await addEvent(input.run.runId, input.run.agentSlug, input.node.id, "node.failed", `节点 ${input.node.label || input.node.id} 执行失败`, { error: message });
+}
+
+function resolveToolSlug(node: EmperorAgentNode): string | null {
+  if (node.toolSlug) return node.toolSlug;
+  if (node.nodeType === "mcp_node") {
+    const slug = String((node as any).mcpSlug || "");
+    return slug ? (slug.startsWith("mcp.") ? slug : `mcp.${slug}`) : null;
+  }
+  if (node.nodeType === "knowledge_node") return "internal.knowledge.query";
+  return null;
+}
+
+async function executeToolBackedNode(input: {
+  run: any;
+  dag: EmperorAgentDag;
+  node: EmperorAgentNode;
+  nodeInput: unknown;
+  userId: number;
+}) {
+  const inlineHttpTool = input.node.nodeType === "http_node";
+  const toolSlug = inlineHttpTool ? "inline.http" : resolveToolSlug(input.node);
+  if (!toolSlug) return null;
+
+  const params = inlineHttpTool
+    ? {
+        nodeInput: input.nodeInput,
+        url: (input.node as any).url,
+        baseUrl: (input.node as any).baseUrl,
+        path: (input.node as any).path,
+        method: (input.node as any).method || "POST",
+        headers: (input.node as any).headers,
+        body: (input.node as any).body ?? input.nodeInput,
+        timeoutMs: (input.node as any).timeoutSeconds ? Number((input.node as any).timeoutSeconds) * 1000 : undefined,
+      }
+    : {
+        nodeInput: input.nodeInput,
+        ...(typeof input.node.toolParams === "object" && input.node.toolParams ? input.node.toolParams as Record<string, unknown> : {}),
+        ...(input.node.nodeType === "knowledge_node" ? { query: (input.node as any).query } : {}),
+      };
+
+  if (inlineHttpTool) {
+    return invokeEmperorTool({
+      toolSlug: "internal.http.request",
+      params: {
+        baseUrl: (input.node as any).baseUrl,
+        url: (input.node as any).url,
+        path: (input.node as any).path || "",
+        method: (input.node as any).method || "POST",
+        body: (input.node as any).body ?? input.nodeInput,
+        headers: (input.node as any).headers,
+        timeoutMs: (input.node as any).timeoutSeconds ? Number((input.node as any).timeoutSeconds) * 1000 : undefined,
+      },
+      userId: input.userId,
+      runId: input.run.runId,
+      nodeId: input.node.id,
+    });
+  }
+
+  return invokeEmperorTool({
+    toolSlug,
+    params,
+    userId: input.userId,
+    runId: input.run.runId,
+    nodeId: input.node.id,
+  });
 }
 
 export async function startAgentRun(input: {
@@ -369,9 +544,7 @@ export async function startAgentRun(input: {
 }
 
 export async function getAgentRun(runId: string, userId?: number, skipOwnerCheck = false) {
-  const rows = await rawExecute("SELECT * FROM emperor_agent_runs WHERE runId=? LIMIT 1", [runId]);
-  if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Agent run not found" });
-  const run = rows[0];
+  const run = await getRunRow(runId);
   if (!skipOwnerCheck && userId && run.userId !== userId) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Cannot read this Agent run" });
   }
@@ -390,6 +563,107 @@ export async function getAgentRun(runId: string, userId?: number, skipOwnerCheck
     checkpoints,
     events: events.map((event) => ({ ...event, payload: parseJson(event.payload) })),
   };
+}
+
+async function unlockReadyNodes(runId: string, dag: EmperorAgentDag) {
+  const checkpoints = await getCheckpoints(runId);
+  const byNode = new Map(checkpoints.map((checkpoint) => [checkpoint.nodeId, checkpoint]));
+  const newlyReady: string[] = [];
+  for (const node of dag.nodes) {
+    const checkpoint = byNode.get(node.id);
+    if (!checkpoint || checkpoint.status !== "pending") continue;
+    const parents = parentIds(dag, node.id);
+    const ready = parents.length === 0 || parents.every((parentId) => isConfirmedStatus(byNode.get(parentId)?.status || ""));
+    if (!ready) continue;
+    await rawExecute(
+      "UPDATE emperor_agent_checkpoints SET status='ready',updatedAt=NOW() WHERE runId=? AND nodeId=?",
+      [runId, node.id],
+    );
+    newlyReady.push(node.id);
+  }
+  return newlyReady;
+}
+
+export async function scheduleAgentRun(input: {
+  runId: string;
+  userId: number;
+  mode?: "unlock" | "next" | "all_ready";
+}) {
+  const detail = await getAgentRun(input.runId, input.userId);
+  const dag = normalizeAgentDag(detail.dag);
+  const unlocked = await unlockReadyNodes(input.runId, dag);
+  for (const nodeId of unlocked) {
+    const node = dag.nodes.find((item) => item.id === nodeId);
+    await addEvent(input.runId, detail.run.agentSlug, nodeId, "node.ready", `节点 ${node?.label || nodeId} 已就绪`);
+  }
+  await refreshRunAfterCheckpoint(input.runId, dag);
+
+  if (!input.mode || input.mode === "unlock") {
+    return getAgentRun(input.runId, input.userId, true);
+  }
+
+  const refreshed = await getAgentRun(input.runId, input.userId, true);
+  const readyNodes = (refreshed.checkpoints as CheckpointRow[])
+    .filter((checkpoint) => checkpoint.status === "ready")
+    .map((checkpoint) => checkpoint.nodeId);
+  const targetNodes = input.mode === "next" ? readyNodes.slice(0, 1) : readyNodes;
+  for (const nodeId of targetNodes) {
+    await executeAgentNode({ runId: input.runId, nodeId, userId: input.userId });
+  }
+  return getAgentRun(input.runId, input.userId, true);
+}
+
+export async function updateAgentNodeDraft(input: {
+  runId: string;
+  nodeId: string;
+  userId: number;
+  userEdit: unknown;
+}) {
+  const detail = await getAgentRun(input.runId, input.userId);
+  const checkpoint = await getCheckpoint(input.runId, input.nodeId);
+  if (!["waiting_human", "confirmed", "failed"].includes(checkpoint.status)) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: `Node draft is not editable: ${checkpoint.status}` });
+  }
+  await rawExecute(
+    "UPDATE emperor_agent_checkpoints SET userEdit=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
+    [stringifyJson(input.userEdit), input.runId, input.nodeId],
+  );
+  await addEvent(input.runId, detail.run.agentSlug, input.nodeId, "node.draft_saved", `节点 ${checkpoint.nodeLabel || input.nodeId} 草稿已保存`);
+  await refreshRunAfterCheckpoint(input.runId, normalizeAgentDag(detail.dag));
+  return getAgentRun(input.runId, input.userId, true);
+}
+
+export async function rerunAgentNode(input: {
+  runId: string;
+  nodeId: string;
+  userId: number;
+  resetDescendants?: boolean;
+}) {
+  const detail = await getAgentRun(input.runId, input.userId);
+  const dag = normalizeAgentDag(detail.dag);
+  const node = dag.nodes.find((item) => item.id === input.nodeId);
+  if (!node) throw new TRPCError({ code: "NOT_FOUND", message: "Agent node not found" });
+  const descendants = input.resetDescendants === false ? [] : descendantIds(dag, input.nodeId);
+
+  if (descendants.length > 0) {
+    const placeholders = descendants.map(() => "?").join(",");
+    await rawExecute(
+      `UPDATE emperor_agent_checkpoints
+       SET status='pending',input=NULL,output=NULL,userEdit=NULL,skillRunId=NULL,aiJobRunId=NULL,reviewerUserId=NULL,errorMessage=NULL,startedAt=NULL,completedAt=NULL,confirmedAt=NULL,updatedAt=NOW()
+       WHERE runId=? AND nodeId IN (${placeholders})`,
+      [input.runId, ...descendants],
+    );
+  }
+
+  await rawExecute(
+    `UPDATE emperor_agent_checkpoints
+     SET status='ready',input=NULL,output=NULL,userEdit=NULL,skillRunId=NULL,aiJobRunId=NULL,reviewerUserId=NULL,errorMessage=NULL,startedAt=NULL,completedAt=NULL,confirmedAt=NULL,updatedAt=NOW()
+     WHERE runId=? AND nodeId=?`,
+    [input.runId, input.nodeId],
+  );
+  await rawExecute("UPDATE emperor_agent_runs SET status='waiting_human',currentNodeId=?,errorMessage=NULL,completedAt=NULL,updatedAt=NOW() WHERE runId=?", [input.nodeId, input.runId]);
+  await addEvent(input.runId, detail.run.agentSlug, input.nodeId, "node.rerun_requested", `节点 ${node.label || input.nodeId} 已请求重跑`, { resetDescendants: descendants });
+  return executeAgentNode({ runId: input.runId, nodeId: input.nodeId, userId: input.userId });
 }
 
 export async function confirmAgentNode(input: {
@@ -419,6 +693,7 @@ export async function confirmAgentNode(input: {
   );
   await addEvent(input.runId, checkpoint.agentSlug, input.nodeId, input.skip ? "node.skipped" : "node.confirmed", `节点 ${checkpoint.nodeLabel || input.nodeId} 已${input.skip ? "跳过" : "确认"}`);
   await unlockChildren(input.runId, dag, input.nodeId);
+  await unlockReadyNodes(input.runId, dag);
   await refreshRunAfterCheckpoint(input.runId, dag);
   return getAgentRun(input.runId, input.userId, true);
 }
@@ -446,20 +721,44 @@ export async function executeAgentNode(input: {
   await rawExecute("UPDATE emperor_agent_runs SET status='running',currentNodeId=?,updatedAt=NOW() WHERE runId=?", [input.nodeId, input.runId]);
   await addEvent(input.runId, run.agentSlug, input.nodeId, "node.running", `节点 ${node.label || node.id} 开始执行`, { nodeInput });
 
-  if (node.nodeType !== "skill_node" || !node.skillSlug) {
-    const output = {
-      nodeId: node.id,
-      label: node.label,
-      input: nodeInput,
-      note: "非 Skill 节点已进入人工确认。",
-    };
-    await rawExecute(
-      "UPDATE emperor_agent_checkpoints SET status='waiting_human',output=?,completedAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
-      [stringifyJson(output), new Date(), input.runId, input.nodeId],
-    );
-    await rawExecute("UPDATE emperor_agent_runs SET status='waiting_human',currentNodeId=?,updatedAt=NOW() WHERE runId=?", [input.nodeId, input.runId]);
-    await addEvent(input.runId, run.agentSlug, input.nodeId, "node.waiting_human", `节点 ${node.label || node.id} 等待人工确认`);
-    return getAgentRun(input.runId, input.userId, true);
+  try {
+    const toolResult = await executeToolBackedNode({ run, dag, node, nodeInput, userId: input.userId });
+    if (toolResult) {
+      await addEvent(input.runId, run.agentSlug, input.nodeId, "tool.invoked", `Tool ${toolResult.toolSlug} 调用完成`, {
+        toolSlug: toolResult.toolSlug,
+        type: toolResult.type,
+        metadata: toolResult.metadata,
+      });
+      await finalizeNodeOutput({
+        run,
+        dag,
+        node,
+        userId: input.userId,
+        output: toolResult,
+        completedMessage: `节点 ${node.label || node.id} 已通过 Tool Gateway 生成，等待人工确认`,
+      });
+      return getAgentRun(input.runId, input.userId, true);
+    }
+
+    if (node.nodeType !== "skill_node" || !node.skillSlug) {
+      await finalizeNodeOutput({
+        run,
+        dag,
+        node,
+        userId: input.userId,
+        output: {
+          nodeId: node.id,
+          label: node.label,
+          input: nodeInput,
+          note: "此节点无需 AI/Tool 调用，已生成可编辑确认产物。",
+        },
+        completedMessage: `节点 ${node.label || node.id} 等待人工确认`,
+      });
+      return getAgentRun(input.runId, input.userId, true);
+    }
+  } catch (error) {
+    await failNodeExecution({ run, node, error });
+    throw error;
   }
 
   const job = await startAiJobInProcess({
@@ -490,21 +789,18 @@ export async function executeAgentNode(input: {
         },
         validate: (content) => safeParseSkillJSON(content),
       });
-      await rawExecute(
-        "UPDATE emperor_agent_checkpoints SET status='waiting_human',output=?,skillRunId=?,completedAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
-        [stringifyJson(result), result.runId, new Date(), input.runId, input.nodeId],
-      );
-      await rawExecute("UPDATE emperor_agent_runs SET status='waiting_human',currentNodeId=?,updatedAt=NOW() WHERE runId=?", [input.nodeId, input.runId]);
-      await addEvent(input.runId, run.agentSlug, input.nodeId, "node.waiting_human", `节点 ${node.label || node.id} 已生成，等待人工确认`, { skillRunId: result.runId });
+      await finalizeNodeOutput({
+        run,
+        dag,
+        node,
+        userId: input.userId,
+        output: result,
+        skillRunId: result.runId,
+        completedMessage: `节点 ${node.label || node.id} 已生成，等待人工确认`,
+      });
       return result;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      await rawExecute(
-        "UPDATE emperor_agent_checkpoints SET status='failed',errorMessage=?,completedAt=?,updatedAt=NOW() WHERE runId=? AND nodeId=?",
-        [message, new Date(), input.runId, input.nodeId],
-      );
-      await rawExecute("UPDATE emperor_agent_runs SET status='failed',errorMessage=?,currentNodeId=?,updatedAt=NOW() WHERE runId=?", [message, input.nodeId, input.runId]);
-      await addEvent(input.runId, run.agentSlug, input.nodeId, "node.failed", `节点 ${node.label || node.id} 执行失败`, { error: message });
+      await failNodeExecution({ run, node, error });
       throw error;
     }
   });

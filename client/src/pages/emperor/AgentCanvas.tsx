@@ -15,7 +15,7 @@ import {
   Zap, Code2, GitBranch, RefreshCw, Wrench,
   BookOpen, LogOut, LogIn, Bot, RotateCcw,
   Globe, UserCheck, Loader2, CheckCircle2, Circle,
-  AlertTriangle
+  AlertTriangle, FileText, SkipForward, History
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -112,7 +112,7 @@ const nodeTypes: NodeTypes = {
 // ─── Node Property Panel ──────────────────────────────────────────────────────
 
 function NodePropertyPanel({
-  node, onUpdate, onClose, skills, models, mcpTools,
+  node, onUpdate, onClose, skills, models, mcpTools, tools,
 }: {
   node: Node;
   onUpdate: (id: string, data: Partial<any>) => void;
@@ -120,6 +120,7 @@ function NodePropertyPanel({
   skills: any[];
   models: any[];
   mcpTools: any[];
+  tools: any[];
 }) {
   const palette = NODE_PALETTE.find(p => p.type === node.type) ?? NODE_PALETTE[1];
   const d = node.data as any;
@@ -324,6 +325,27 @@ function NodePropertyPanel({
           </div>
         )}
 
+        {["input_node", "output_node", "code_node"].includes(String(node.type)) && (
+          <div>
+            <Label className="text-slate-400 text-xs">绑定 Tool Gateway</Label>
+            <Select value={d.toolSlug || ""} onValueChange={(v) => {
+              const t = tools.find((tool: any) => tool.slug === v);
+              onUpdate(node.id, { toolSlug: v, subtitle: t?.name || v });
+            }}>
+              <SelectTrigger className="mt-1.5 bg-white/5 border-white/10 text-white h-8 text-sm">
+                <SelectValue placeholder="选择 Tool..." />
+              </SelectTrigger>
+              <SelectContent className="bg-[#0d1117] border-white/10">
+                {tools.map((t: any) => (
+                  <SelectItem key={t.slug} value={t.slug} className="text-slate-300 focus:bg-white/10 text-xs">
+                    {t.name || t.slug}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         {node.type === "knowledge_node" && (
           <div>
             <Label className="text-slate-400 text-xs">查询内容</Label>
@@ -368,9 +390,16 @@ function NodePropertyPanel({
 function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => void }) {
   const [runId, setRunId] = useState<string | null>(null);
   const [inputs, setInputs] = useState("{}");
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("{}");
 
   const runMutation = trpc.emperor.agents.run.useMutation({
-    onSuccess: (data: any) => { setRunId(data.runId); toast.success("已触发运行"); },
+    onSuccess: (data: any) => {
+      const nextRunId = data?.run?.runId || data?.runId;
+      setRunId(nextRunId);
+      setSelectedNodeId(data?.run?.currentNodeId || null);
+      toast.success("已触发运行");
+    },
     onError: (e) => toast.error("运行失败: " + e.message),
   });
 
@@ -381,7 +410,8 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
       refetchInterval: (query) => {
         const data = query.state.data as any;
         const status = data?.run?.status || data?.status;
-        return status === "running" ? 2000 : false;
+        const checkpoints = (data?.checkpoints as any[]) || [];
+        return status === "running" || checkpoints.some((c) => c.status === "running") ? 2000 : false;
       },
     }
   );
@@ -389,6 +419,18 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
   const executeNode = trpc.emperor.agents.executeNode.useMutation({
     onSuccess: () => { toast.success("节点已开始执行"); refetchRun(); },
     onError: (e) => toast.error("节点执行失败: " + e.message),
+  });
+  const scheduleRun = trpc.emperor.agents.scheduleRun.useMutation({
+    onSuccess: () => { toast.success("调度器已推进"); refetchRun(); },
+    onError: (e) => toast.error("调度失败: " + e.message),
+  });
+  const rerunNode = trpc.emperor.agents.rerunNode.useMutation({
+    onSuccess: () => { toast.success("节点已重跑"); refetchRun(); },
+    onError: (e) => toast.error("重跑失败: " + e.message),
+  });
+  const updateDraft = trpc.emperor.agents.updateNodeDraft.useMutation({
+    onSuccess: () => { toast.success("草稿已保存"); refetchRun(); },
+    onError: (e) => toast.error("保存失败: " + e.message),
   });
   const confirmNode = trpc.emperor.agents.confirmNode.useMutation({
     onSuccess: () => { toast.success("节点已确认"); refetchRun(); },
@@ -398,7 +440,14 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
   const detail = runData as any;
   const run = detail?.run || detail;
   const checkpoints = (detail?.checkpoints as any[]) || [];
-  const busyNodeId = executeNode.variables?.nodeId || confirmNode.variables?.nodeId;
+  const events = (detail?.events as any[]) || [];
+  const selectedCheckpoint = checkpoints.find((c) => c.nodeId === selectedNodeId)
+    || checkpoints.find((c) => c.nodeId === run?.currentNodeId)
+    || checkpoints.find((c) => c.status === "waiting_human")
+    || checkpoints.find((c) => c.status === "ready")
+    || checkpoints[0];
+  const busyNodeId = executeNode.variables?.nodeId || confirmNode.variables?.nodeId || rerunNode.variables?.nodeId || updateDraft.variables?.nodeId;
+  const hasReadyNodes = checkpoints.some((checkpoint) => checkpoint.status === "ready");
   const statusLabel: Record<string, string> = {
     pending: "待依赖",
     ready: "可执行",
@@ -417,12 +466,35 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
     skipped: "bg-slate-500/15 text-slate-400",
     failed: "bg-red-500/15 text-red-300",
   };
+  const parseDraft = () => {
+    try {
+      return JSON.parse(draft);
+    } catch {
+      return draft;
+    }
+  };
+  const formatJson = (value: unknown) => {
+    if (value === undefined || value === null) return "{}";
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  };
+  useEffect(() => {
+    if (!selectedCheckpoint) return;
+    setSelectedNodeId((current) => current || selectedCheckpoint.nodeId);
+    setDraft(formatJson(selectedCheckpoint.userEdit ?? selectedCheckpoint.output ?? {}));
+  }, [selectedCheckpoint?.nodeId, selectedCheckpoint?.output, selectedCheckpoint?.userEdit]);
+  const selectedEvents = selectedCheckpoint
+    ? events.filter((event) => !event.nodeId || event.nodeId === selectedCheckpoint.nodeId).slice(-12)
+    : events.slice(-12);
 
   return (
-    <div className="absolute right-0 top-0 bottom-0 w-72 bg-[#0d1117] border-l border-white/8 flex flex-col z-10">
+    <div className="absolute right-0 top-0 bottom-0 w-[520px] max-w-[58vw] bg-[#0d1117] border-l border-white/8 flex flex-col z-10">
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/8">
         <span className="text-sm font-semibold text-white flex items-center gap-2">
-          <Play size={14} className="text-emerald-400" />运行测试
+          <Play size={14} className="text-emerald-400" />Agent 运行台
         </span>
         <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={14} /></button>
       </div>
@@ -463,68 +535,180 @@ function RunPanel({ agentSlug, onClose }: { agentSlug: string; onClose: () => vo
             <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
               <div className="h-full bg-emerald-500" style={{ width: `${Number(run.progress || 0)}%` }} />
             </div>
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={scheduleRun.isPending}
+                onClick={() => runId && scheduleRun.mutate({ runId, mode: "unlock" })}
+                className="h-7 text-[10px] border-white/10 text-slate-300 hover:bg-white/5"
+              >
+                <GitBranch size={11} className="mr-1" />解锁
+              </Button>
+              <Button
+                size="sm"
+                disabled={!hasReadyNodes || scheduleRun.isPending}
+                onClick={() => runId && scheduleRun.mutate({ runId, mode: "next" })}
+                className="h-7 text-[10px] bg-blue-600 hover:bg-blue-500 text-white"
+              >
+                <Play size={11} className="mr-1" />下一步
+              </Button>
+              <Button
+                size="sm"
+                disabled={!hasReadyNodes || scheduleRun.isPending}
+                onClick={() => runId && scheduleRun.mutate({ runId, mode: "all_ready" })}
+                className="h-7 text-[10px] bg-violet-600 hover:bg-violet-500 text-white"
+              >
+                <SkipForward size={11} className="mr-1" />全部就绪
+              </Button>
+            </div>
           </div>
         )}
         {checkpoints.length > 0 && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-slate-400 text-xs">节点 Checkpoints</Label>
-              <button onClick={() => refetchRun()} className="text-slate-500 hover:text-white">
-                <RefreshCw size={12} />
-              </button>
-            </div>
+          <div className="grid grid-cols-[190px_1fr] gap-3 min-h-[480px]">
             <div className="space-y-2">
-              {checkpoints.map((checkpoint: any) => {
-                const isBusy = busyNodeId === checkpoint.nodeId && (executeNode.isPending || confirmNode.isPending);
-                return (
-                  <div key={checkpoint.nodeId} className="rounded-lg bg-white/5 border border-white/8 p-2.5">
-                    <div className="flex items-start gap-2">
-                      {checkpoint.status === "confirmed" ? (
-                        <CheckCircle2 size={14} className="mt-0.5 text-emerald-400" />
-                      ) : checkpoint.status === "failed" ? (
-                        <AlertTriangle size={14} className="mt-0.5 text-red-400" />
-                      ) : checkpoint.status === "running" ? (
-                        <Loader2 size={14} className="mt-0.5 text-amber-300 animate-spin" />
-                      ) : (
-                        <Circle size={14} className="mt-0.5 text-slate-500" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-medium text-slate-200 truncate">{checkpoint.nodeLabel || checkpoint.nodeId}</span>
-                          <Badge className={`text-[9px] px-1.5 py-0 ${statusClass[checkpoint.status] || statusClass.pending}`}>
+              <div className="flex items-center justify-between">
+                <Label className="text-slate-400 text-xs">节点</Label>
+                <button onClick={() => refetchRun()} className="text-slate-500 hover:text-white">
+                  <RefreshCw size={12} />
+                </button>
+              </div>
+              <div className="space-y-2">
+                {checkpoints.map((checkpoint: any) => {
+                  const isSelected = selectedCheckpoint?.nodeId === checkpoint.nodeId;
+                  return (
+                    <button
+                      key={checkpoint.nodeId}
+                      onClick={() => setSelectedNodeId(checkpoint.nodeId)}
+                      className={`w-full text-left rounded-lg border p-2 transition-colors ${isSelected ? "bg-violet-500/15 border-violet-400/50" : "bg-white/5 border-white/8 hover:bg-white/8"}`}
+                    >
+                      <div className="flex items-start gap-2">
+                        {checkpoint.status === "confirmed" ? (
+                          <CheckCircle2 size={13} className="mt-0.5 text-emerald-400" />
+                        ) : checkpoint.status === "failed" ? (
+                          <AlertTriangle size={13} className="mt-0.5 text-red-400" />
+                        ) : checkpoint.status === "running" ? (
+                          <Loader2 size={13} className="mt-0.5 text-amber-300 animate-spin" />
+                        ) : (
+                          <Circle size={13} className="mt-0.5 text-slate-500" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[11px] font-medium text-slate-200 truncate">{checkpoint.nodeLabel || checkpoint.nodeId}</div>
+                          <Badge className={`mt-1 text-[9px] px-1.5 py-0 ${statusClass[checkpoint.status] || statusClass.pending}`}>
                             {statusLabel[checkpoint.status] || checkpoint.status}
                           </Badge>
                         </div>
-                        {checkpoint.errorMessage && (
-                          <p className="text-[10px] text-red-300 mt-1 line-clamp-2">{checkpoint.errorMessage}</p>
-                        )}
-                        {(checkpoint.status === "ready" || checkpoint.status === "failed") && (
-                          <Button
-                            size="sm"
-                            disabled={isBusy}
-                            onClick={() => runId && executeNode.mutate({ runId, nodeId: checkpoint.nodeId })}
-                            className="mt-2 h-6 text-[10px] bg-blue-600 hover:bg-blue-500 text-white"
-                          >
-                            {isBusy ? <Loader2 size={10} className="animate-spin mr-1" /> : <Play size={10} className="mr-1" />}
-                            执行节点
-                          </Button>
-                        )}
-                        {checkpoint.status === "waiting_human" && (
-                          <Button
-                            size="sm"
-                            disabled={isBusy}
-                            onClick={() => runId && confirmNode.mutate({ runId, nodeId: checkpoint.nodeId })}
-                            className="mt-2 h-6 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white"
-                          >
-                            {isBusy ? <Loader2 size={10} className="animate-spin mr-1" /> : <CheckCircle2 size={10} className="mr-1" />}
-                            确认并解锁下游
-                          </Button>
-                        )}
                       </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="rounded-lg bg-white/5 border border-white/8 p-3 space-y-3 min-w-0">
+              {selectedCheckpoint ? (
+                <>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-white truncate">{selectedCheckpoint.nodeLabel || selectedCheckpoint.nodeId}</div>
+                      <div className="text-[10px] text-slate-500 font-mono">attempt {selectedCheckpoint.attempt || 0} · {selectedCheckpoint.nodeId}</div>
+                    </div>
+                    <Badge className={`text-[10px] ${statusClass[selectedCheckpoint.status] || statusClass.pending}`}>
+                      {statusLabel[selectedCheckpoint.status] || selectedCheckpoint.status}
+                    </Badge>
+                  </div>
+                  {selectedCheckpoint.errorMessage && (
+                    <div className="rounded-md border border-red-500/20 bg-red-500/10 p-2 text-[11px] text-red-200">
+                      {selectedCheckpoint.errorMessage}
+                    </div>
+                  )}
+                  <div>
+                    <Label className="text-slate-400 text-xs flex items-center gap-1">
+                      <FileText size={11} />节点产物 / 人工编辑
+                    </Label>
+                    <Textarea
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      rows={12}
+                      className="mt-1.5 bg-black/30 border-white/10 text-slate-100 text-[11px] font-mono resize-y"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(selectedCheckpoint.status === "ready" || selectedCheckpoint.status === "failed") && (
+                      <Button
+                        size="sm"
+                        disabled={busyNodeId === selectedCheckpoint.nodeId && executeNode.isPending}
+                        onClick={() => runId && executeNode.mutate({ runId, nodeId: selectedCheckpoint.nodeId })}
+                        className="h-8 text-xs bg-blue-600 hover:bg-blue-500 text-white"
+                      >
+                        <Play size={12} className="mr-1" />执行
+                      </Button>
+                    )}
+                    {["waiting_human", "confirmed", "failed"].includes(selectedCheckpoint.status) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busyNodeId === selectedCheckpoint.nodeId && updateDraft.isPending}
+                        onClick={() => runId && updateDraft.mutate({ runId, nodeId: selectedCheckpoint.nodeId, userEdit: parseDraft() })}
+                        className="h-8 text-xs border-white/10 text-slate-300 hover:bg-white/5"
+                      >
+                        <Save size={12} className="mr-1" />保存草稿
+                      </Button>
+                    )}
+                    {selectedCheckpoint.status === "waiting_human" && (
+                      <Button
+                        size="sm"
+                        disabled={busyNodeId === selectedCheckpoint.nodeId && confirmNode.isPending}
+                        onClick={() => runId && confirmNode.mutate({ runId, nodeId: selectedCheckpoint.nodeId, userEdit: parseDraft() })}
+                        className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white"
+                      >
+                        <CheckCircle2 size={12} className="mr-1" />确认并解锁
+                      </Button>
+                    )}
+                    {["waiting_human", "confirmed", "failed", "skipped"].includes(selectedCheckpoint.status) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busyNodeId === selectedCheckpoint.nodeId && rerunNode.isPending}
+                        onClick={() => runId && rerunNode.mutate({ runId, nodeId: selectedCheckpoint.nodeId, resetDescendants: true })}
+                        className="h-8 text-xs border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
+                      >
+                        <RotateCcw size={12} className="mr-1" />重跑并重置下游
+                      </Button>
+                    )}
+                    {selectedCheckpoint.status === "waiting_human" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busyNodeId === selectedCheckpoint.nodeId && confirmNode.isPending}
+                        onClick={() => runId && confirmNode.mutate({ runId, nodeId: selectedCheckpoint.nodeId, skip: true })}
+                        className="h-8 text-xs border-white/10 text-slate-400 hover:bg-white/5"
+                      >
+                        <SkipForward size={12} className="mr-1" />跳过
+                      </Button>
+                    )}
+                  </div>
+                  <div>
+                    <Label className="text-slate-400 text-xs flex items-center gap-1">
+                      <History size={11} />历史
+                    </Label>
+                    <div className="mt-1.5 max-h-40 overflow-auto space-y-1.5">
+                      {selectedEvents.length === 0 ? (
+                        <div className="text-[11px] text-slate-600">暂无历史事件</div>
+                      ) : selectedEvents.map((event: any) => (
+                        <div key={event.id} className="rounded-md bg-black/20 border border-white/5 px-2 py-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] text-slate-300">{event.eventType}</span>
+                            <span className="text-[9px] text-slate-600">{event.createdAt ? new Date(event.createdAt).toLocaleTimeString() : ""}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 line-clamp-2">{event.message}</div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                );
-              })}
+                </>
+              ) : (
+                <div className="text-xs text-slate-500">选择一个节点查看产物和历史。</div>
+              )}
             </div>
           </div>
         )}
@@ -550,10 +734,12 @@ function AgentCanvasInner({ slug }: { slug: string }) {
   const { data: skillsData } = trpc.emperor.agents.getAvailableSkills.useQuery();
   const { data: modelsData } = trpc.emperor.agents.getAvailableModels.useQuery();
   const { data: mcpToolsData } = trpc.emperor.agents.getAvailableMcpTools.useQuery();
+  const { data: toolsData } = trpc.emperor.agents.getAvailableTools.useQuery();
 
   const skills = (skillsData as any[]) ?? [];
   const models = (modelsData as any[]) ?? [];
   const mcpTools = (mcpToolsData as any[]) ?? [];
+  const tools = (toolsData as any[]) ?? [];
 
   const saveMutation = trpc.emperor.agents.saveWorkflow.useMutation({
     onSuccess: () => { toast.success("工作流已保存"); setIsDirty(false); },
@@ -771,6 +957,7 @@ function AgentCanvasInner({ slug }: { slug: string }) {
             skills={skills}
             models={models}
             mcpTools={mcpTools}
+            tools={tools}
           />
         )}
         {showRunPanel && !selectedNode && (

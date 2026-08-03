@@ -13,9 +13,18 @@ import {
   confirmAgentNode,
   executeAgentNode,
   getAgentRun,
+  rerunAgentNode,
+  scheduleAgentRun,
   startAgentRun,
+  updateAgentNodeDraft,
   upsertListingAgentTemplate,
 } from "../services/emperorAgentRunner";
+import {
+  invokeEmperorTool,
+  listEmperorTools,
+  seedBuiltinTools,
+  upsertEmperorTool,
+} from "../services/emperorToolGateway";
 
 function generateRunId(): string {
   return `run_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -805,6 +814,10 @@ export const emperorAgentsRouter = router({
     return rawExecute("SELECT slug,name,description,connectionType FROM emperor_mcp_connectors WHERE isActive=1 ORDER BY name");
   }),
 
+  getAvailableTools: protectedProcedure.query(async () => {
+    return listEmperorTools();
+  }),
+
   run: protectedProcedure
     .input(z.object({
       slug: z.string(),
@@ -837,6 +850,45 @@ export const emperorAgentsRouter = router({
     .input(z.object({ runId: z.string(), nodeId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       return executeAgentNode({ runId: input.runId, nodeId: input.nodeId, userId: ctx.user.id });
+    }),
+
+  scheduleRun: protectedProcedure
+    .input(z.object({
+      runId: z.string(),
+      mode: z.enum(["unlock", "next", "all_ready"]).optional().default("unlock"),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return scheduleAgentRun({ runId: input.runId, userId: ctx.user.id, mode: input.mode });
+    }),
+
+  rerunNode: protectedProcedure
+    .input(z.object({
+      runId: z.string(),
+      nodeId: z.string(),
+      resetDescendants: z.boolean().optional().default(true),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return rerunAgentNode({
+        runId: input.runId,
+        nodeId: input.nodeId,
+        userId: ctx.user.id,
+        resetDescendants: input.resetDescendants,
+      });
+    }),
+
+  updateNodeDraft: protectedProcedure
+    .input(z.object({
+      runId: z.string(),
+      nodeId: z.string(),
+      userEdit: z.any(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return updateAgentNodeDraft({
+        runId: input.runId,
+        nodeId: input.nodeId,
+        userId: ctx.user.id,
+        userEdit: input.userEdit,
+      });
     }),
 
   confirmNode: protectedProcedure
@@ -929,6 +981,59 @@ export const emperorScheduledRouter = router({
       if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
       await rawExecute("UPDATE emperor_scheduled_tasks SET lastRunAt = NOW(), runCount = runCount + 1 WHERE slug = ?", [input.slug]);
       return { success: true, message: `Task '${rows[0].name}' triggered` };
+    }),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool Gateway Router
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const emperorToolsRouter = router({
+  list: protectedProcedure.query(async () => {
+    return listEmperorTools();
+  }),
+
+  seedBuiltins: adminProcedure.mutation(async () => {
+    return seedBuiltinTools();
+  }),
+
+  invoke: protectedProcedure
+    .input(z.object({
+      toolSlug: z.string(),
+      params: z.any().optional(),
+      runId: z.string().optional(),
+      nodeId: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      return invokeEmperorTool({
+        toolSlug: input.toolSlug,
+        params: input.params,
+        userId: ctx.user.id,
+        runId: input.runId,
+        nodeId: input.nodeId,
+      });
+    }),
+
+  upsert: adminProcedure
+    .input(z.object({
+      slug: z.string(),
+      name: z.string(),
+      description: z.string().optional(),
+      type: z.enum(["mcp", "api", "internal", "code"]),
+      config: z.any().optional(),
+      inputSchema: z.any().optional(),
+      outputSchema: z.any().optional(),
+      isActive: z.boolean().optional().default(true),
+    }))
+    .mutation(async ({ input }) => {
+      return upsertEmperorTool(input);
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ slug: z.string() }))
+    .mutation(async ({ input }) => {
+      await rawExecute("DELETE FROM emperor_tools WHERE slug=?", [input.slug]);
+      return { success: true };
     }),
 });
 
@@ -1096,6 +1201,7 @@ export const emperorRouter = router({
   run: emperorRunRouter,
   models: emperorModelsRouter,
   mcp: emperorMcpRouter,
+  tools: emperorToolsRouter,
   agents: emperorAgentsRouter,
   scheduled: emperorScheduledRouter,
   diagnostics: emperorDiagnosticsRouter,
