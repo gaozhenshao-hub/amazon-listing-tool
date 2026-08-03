@@ -13,6 +13,8 @@ export {
   conversionComparisons,
   conversionScores,
   conversionSuggestions,
+  competitorMonitors,
+  competitorSnapshots,
   customDashboards,
   customerProfiles,
   dashboardWidgets,
@@ -59,4 +61,18 @@ export {
   stepTimeTemplates,
   systemSettings,
   teamTasks,
+  users,
+} from "../schema";
+
+export type {
+  ConversionComparison,
+  InsertConversionComparison,
+  InsertLingxingProductWeekly,
+  InsertOpsPlan,
+  InsertProductProfile,
+  InsertSaihuProductWeekly,
+  LingxingProductWeekly,
+  OpsPlan,
+  ProductProfile,
+  SaihuProductWeekly,
 } from "../schema";
