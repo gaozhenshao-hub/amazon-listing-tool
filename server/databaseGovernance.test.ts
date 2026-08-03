@@ -65,7 +65,11 @@ describe("database governance v1", () => {
         expect.objectContaining({ table: "emperor_agent_checkpoints", column: "runId", referencesTable: "emperor_agent_runs" }),
       ]),
     );
-    expect(buildSoftForeignKeyAuditSql(SOFT_FOREIGN_KEYS[0])).toContain("LEFT JOIN `users` parent");
+    const projectOwnerPolicy = SOFT_FOREIGN_KEYS.find(
+      (policy) => policy.table === "projects" && policy.column === "userId",
+    );
+    expect(projectOwnerPolicy).toBeDefined();
+    expect(buildSoftForeignKeyAuditSql(projectOwnerPolicy!)).toContain("LEFT JOIN `users` parent");
   });
 
   it("defines index baselines for ownership, status, and time filters", () => {

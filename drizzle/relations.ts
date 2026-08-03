@@ -2,8 +2,12 @@ import { relations } from "drizzle-orm";
 import {
   adStructures,
   aiJobDeadLetters,
+  aiArtifacts,
+  aiDataArchiveItems,
+  aiDataArchiveRuns,
   aiJobs,
   analysisVersions,
+  aiStorageObjects,
   competitorAnalyses,
   competitorImageAnalyses,
   emperorAgentArtifacts,
@@ -47,6 +51,9 @@ export const organizationsRelations = relations(organizations, ({ many, one }) =
 }));
 
 export const workspacesRelations = relations(workspaces, ({ many, one }) => ({
+  aiArtifacts: many(aiArtifacts),
+  aiStorageObjects: many(aiStorageObjects),
+  archiveRuns: many(aiDataArchiveRuns),
   memberships: many(workspaceMemberships),
   organization: one(organizations, {
     fields: [workspaces.organizationId],
@@ -97,7 +104,9 @@ export const securityAccessPoliciesRelations = relations(securityAccessPolicies,
 }));
 
 export const usersRelations = relations(users, ({ many, one }) => ({
+  aiArtifacts: many(aiArtifacts),
   aiJobs: many(aiJobs),
+  aiStorageObjects: many(aiStorageObjects),
   defaultWorkspace: one(workspaces, {
     fields: [users.defaultWorkspaceId],
     references: [workspaces.id],
@@ -123,6 +132,7 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   }),
   adStructures: many(adStructures),
   agentRuns: many(emperorAgentRuns),
+  aiArtifacts: many(aiArtifacts),
   artifacts: many(emperorAgentArtifacts),
   competitorAnalyses: many(competitorAnalyses),
   competitorImages: many(competitorImageAnalyses),
@@ -186,6 +196,10 @@ export const reviewImportsRelations = relations(reviewImports, ({ one }) => ({
 
 export const projectFilesRelations = relations(projectFiles, ({ one, many }) => ({
   analysisVersions: many(analysisVersions),
+  analysisArtifact: one(aiArtifacts, {
+    fields: [projectFiles.analysisArtifactId],
+    references: [aiArtifacts.artifactId],
+  }),
   project: one(projects, {
     fields: [projectFiles.projectId],
     references: [projects.id],
@@ -354,9 +368,79 @@ export const emperorAgentArtifactsRelations = relations(emperorAgentArtifacts, (
     fields: [emperorAgentArtifacts.runId],
     references: [emperorAgentRuns.runId],
   }),
+  unifiedArtifact: one(aiArtifacts, {
+    fields: [emperorAgentArtifacts.unifiedArtifactId],
+    references: [aiArtifacts.artifactId],
+  }),
   user: one(users, {
     fields: [emperorAgentArtifacts.userId],
     references: [users.id],
+  }),
+}));
+
+export const aiStorageObjectsRelations = relations(aiStorageObjects, ({ one, many }) => ({
+  artifacts: many(aiArtifacts),
+  createdByUser: one(users, {
+    fields: [aiStorageObjects.createdBy],
+    references: [users.id],
+  }),
+  workspace: one(workspaces, {
+    fields: [aiStorageObjects.workspaceId],
+    references: [workspaces.id],
+  }),
+}));
+
+export const aiArtifactsRelations = relations(aiArtifacts, ({ one }) => ({
+  project: one(projects, {
+    fields: [aiArtifacts.projectId],
+    references: [projects.id],
+  }),
+  run: one(emperorAgentRuns, {
+    fields: [aiArtifacts.runId],
+    references: [emperorAgentRuns.runId],
+  }),
+  storageObject: one(aiStorageObjects, {
+    fields: [aiArtifacts.storageObjectId],
+    references: [aiStorageObjects.id],
+  }),
+  user: one(users, {
+    fields: [aiArtifacts.userId],
+    references: [users.id],
+  }),
+  workspace: one(workspaces, {
+    fields: [aiArtifacts.workspaceId],
+    references: [workspaces.id],
+  }),
+}));
+
+export const aiDataArchiveRunsRelations = relations(aiDataArchiveRuns, ({ one, many }) => ({
+  items: many(aiDataArchiveItems),
+  storageObject: one(aiStorageObjects, {
+    fields: [aiDataArchiveRuns.storageObjectId],
+    references: [aiStorageObjects.id],
+  }),
+  user: one(users, {
+    fields: [aiDataArchiveRuns.createdBy],
+    references: [users.id],
+  }),
+  workspace: one(workspaces, {
+    fields: [aiDataArchiveRuns.workspaceId],
+    references: [workspaces.id],
+  }),
+}));
+
+export const aiDataArchiveItemsRelations = relations(aiDataArchiveItems, ({ one }) => ({
+  archiveRun: one(aiDataArchiveRuns, {
+    fields: [aiDataArchiveItems.archiveRunId],
+    references: [aiDataArchiveRuns.archiveRunId],
+  }),
+  storageObject: one(aiStorageObjects, {
+    fields: [aiDataArchiveItems.storageObjectId],
+    references: [aiStorageObjects.id],
+  }),
+  workspace: one(workspaces, {
+    fields: [aiDataArchiveItems.workspaceId],
+    references: [workspaces.id],
   }),
 }));
 

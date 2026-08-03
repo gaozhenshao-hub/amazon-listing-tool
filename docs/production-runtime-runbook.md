@@ -15,6 +15,7 @@ This application now separates runtime responsibilities explicitly.
 - `DATABASE_URL`
 - `JWT_SECRET`
 - `TOOL_SECRET_KEY` with at least 32 characters
+- `TOOL_SECRET_KEY_VERSION`, starting with `v1`
 
 Recommended production settings:
 
@@ -22,6 +23,7 @@ Recommended production settings:
 APP_PROCESS_ROLE=web
 AI_JOB_IN_PROCESS=false
 TOOL_SECRET_KEY=<stable-32+-character-secret>
+TOOL_SECRET_KEY_VERSION=v1
 ```
 
 ## Start commands
@@ -36,8 +38,8 @@ pnpm start:scheduler
 ## Deployment checklist
 
 1. Back up the production database.
-2. Run pending Drizzle/SQL migrations, including `0104_emperor_agent_artifacts.sql` through `0112_template_observability_qa.sql`.
-3. Configure stable `TOOL_SECRET_KEY` before starting any Web, Worker, or Scheduler process.
+2. Run pending Drizzle/SQL migrations, including `0104_emperor_agent_artifacts.sql` through `0115_data_lifecycle_artifacts_v1.sql`.
+3. Configure stable `TOOL_SECRET_KEY` and `TOOL_SECRET_KEY_VERSION` before starting any Web, Worker, or Scheduler process.
 4. Start Web with `APP_PROCESS_ROLE=web` and `AI_JOB_IN_PROCESS=false`.
 5. Start at least one Worker with `APP_PROCESS_ROLE=worker`.
 6. Start exactly one Scheduler process, or multiple Scheduler replicas sharing the same database and `SCHEDULER_LEADER_LOCK_NAME`.

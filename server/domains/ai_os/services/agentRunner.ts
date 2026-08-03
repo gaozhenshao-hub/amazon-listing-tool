@@ -23,6 +23,7 @@ import {
 import { calculateAiJobRetryDelayMs, cancelAiJob, failAiJob, getAiJobRun, registerAiJobHandler, retryAiJob, startRegisteredAiJob, type AiJobSnapshot } from "./jobRunner";
 import { invokeEmperorTool } from "./toolGateway";
 import { recordAiOsEvaluation, recordAiOsMetric } from "./observability";
+import { registerAgentArtifactLifecycleIndex } from "./artifactLifecycle";
 
 export { canTransitionNodeStatus, canTransitionRunStatus };
 export type { AgentNodeStatus, AgentRunStatus } from "./agentStateMachine";
@@ -1557,6 +1558,27 @@ async function persistAgentArtifact(input: {
         input.sourceAiJobRunId || null,
       ],
     );
+    void registerAgentArtifactLifecycleIndex({
+      workspaceId: input.run.workspaceId ?? null,
+      runId: input.run.runId,
+      agentSlug: input.run.agentSlug,
+      nodeId: input.node.id,
+      artifactKey,
+      artifactType: artifactMetadata.artifactType,
+      status: input.status,
+      version,
+      userId: input.run.userId,
+      projectId: input.run.projectId ?? null,
+      content: input.content,
+      summary: summarizeArtifactContent(input.content),
+      metadata: artifactMetadata.metadata,
+      mimeType: artifactMetadata.mimeType,
+      fileName: artifactMetadata.fileName,
+      fileSizeBytes: artifactMetadata.fileSizeBytes,
+      storageUri: artifactMetadata.storageUri,
+      sourceSkillRunId: input.sourceSkillRunId || null,
+      sourceAiJobRunId: input.sourceAiJobRunId || null,
+    });
   } catch (error) {
     agentArtifactStoreAvailable = false;
     console.warn("[Agent Artifact] Failed to persist artifact:", error);

@@ -3,6 +3,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import { storagePut } from "../storage";
 import * as db from "../db";
+import { createContentHash, registerProjectFileArtifactBundle, type ArtifactSourceType } from "../domains/ai_os/services/artifactLifecycle";
 import { actorFromContext, assertResourceAction, recordSecurityAuditLog, workspaceIdFromContext, type SecurityAction } from "../services/securityGovernance";
 import { parse as csvParse } from "csv-parse/sync";
 import {
@@ -65,6 +66,48 @@ function parseCsvContent(content: string): { headers: string[]; rows: Record<str
     } catch {
       throw new Error("Failed to parse CSV/TSV content");
     }
+  }
+}
+
+async function uploadProjectFileDerivedJson(input: {
+  projectId: number;
+  fileType: string;
+  filename: string;
+  suffix: string;
+  value: unknown;
+}) {
+  try {
+    const safeName = input.filename.replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 120);
+    const key = `project-files/${input.projectId}/artifacts/${input.fileType}-${input.suffix}-${Date.now()}-${safeName}.json`;
+    return await storagePut(key, JSON.stringify(input.value), "application/json");
+  } catch (error) {
+    console.warn("[ProjectFile] Failed to upload derived JSON artifact:", error);
+    return null;
+  }
+}
+
+async function registerProjectFileArtifacts(input: {
+  workspaceId?: number | null;
+  projectId: number;
+  userId: number;
+  projectFileId: number;
+  fileType: string;
+  filename: string;
+  fileSizeBytes?: number | null;
+  rawStorageUri?: string | null;
+  parsedStorageUri?: string | null;
+  fileUrl?: string | null;
+  rawContent?: string | null;
+  parsedData?: unknown;
+  analysisResult?: unknown;
+  analysisSourceType?: ArtifactSourceType;
+  changeNote?: string | null;
+}) {
+  try {
+    return await registerProjectFileArtifactBundle(input);
+  } catch (error) {
+    console.warn("[ProjectFile] Failed to register unified artifacts:", error);
+    return null;
   }
 }
 
@@ -280,9 +323,11 @@ export const projectFileRouter = router({
       const randomSuffix = Math.random().toString(36).substring(2, 8);
       const fileKey = `project-files/${input.projectId}/${input.fileType}-${randomSuffix}-${input.filename}`;
       let fileUrl = "";
+      let rawStorageUri = "";
       try {
         const uploadResult = await storagePut(fileKey, buffer, "application/octet-stream");
         fileUrl = uploadResult.url;
+        rawStorageUri = uploadResult.storageUri;
       } catch (err) {
         console.error("S3 upload failed, continuing without URL:", err);
       }
@@ -317,9 +362,24 @@ export const projectFileRouter = router({
           filename: input.filename,
           fileUrl,
           fileSize: buffer.length,
+          rawStorageUri: rawStorageUri || null,
+          rawContentHash: createContentHash(textContent),
           rawContent: textContent.substring(0, 65000), // Limit to 65KB for TEXT column
           status: "failed",
           errorMessage: err.message || "Parse failed",
+        });
+        await registerProjectFileArtifacts({
+          workspaceId,
+          projectId: input.projectId,
+          userId: ctx.user.id,
+          projectFileId: record.id,
+          fileType: input.fileType,
+          filename: input.filename,
+          fileSizeBytes: buffer.length,
+          rawStorageUri: rawStorageUri || null,
+          fileUrl,
+          rawContent: textContent,
+          changeNote: err.message || "Parse failed",
         });
         await recordSecurityAuditLog({
           ctx,
@@ -337,6 +397,14 @@ export const projectFileRouter = router({
         return record;
       }
 
+      const parsedUpload = await uploadProjectFileDerivedJson({
+        projectId: input.projectId,
+        fileType: input.fileType,
+        filename: input.filename,
+        suffix: "parsed",
+        value: parsedData,
+      });
+
       // Save to database
       const record = await db.createProjectFile({
         workspaceId,
@@ -346,9 +414,27 @@ export const projectFileRouter = router({
         filename: input.filename,
         fileUrl,
         fileSize: buffer.length,
+        rawStorageUri: rawStorageUri || null,
+        parsedStorageUri: parsedUpload?.storageUri || null,
+        rawContentHash: createContentHash(rawContent),
+        parsedDataHash: createContentHash(parsedData),
         rawContent: rawContent.substring(0, 65000),
         parsedData: JSON.stringify(parsedData),
         status: "parsed",
+      });
+      await registerProjectFileArtifacts({
+        workspaceId,
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        projectFileId: record.id,
+        fileType: input.fileType,
+        filename: input.filename,
+        fileSizeBytes: buffer.length,
+        rawStorageUri: rawStorageUri || null,
+        parsedStorageUri: parsedUpload?.storageUri || null,
+        fileUrl,
+        rawContent,
+        parsedData,
       });
       await recordSecurityAuditLog({
         ctx,
@@ -407,6 +493,21 @@ export const projectFileRouter = router({
           analysisResult: JSON.stringify(analysisResult),
           status: "completed",
         });
+        const artifactBundle = await registerProjectFileArtifacts({
+          workspaceId,
+          projectId: file.projectId,
+          userId: ctx.user.id,
+          projectFileId: file.id,
+          fileType: file.fileType,
+          filename: file.filename,
+          fileSizeBytes: file.fileSize || null,
+          rawStorageUri: file.rawStorageUri || null,
+          parsedStorageUri: file.parsedStorageUri || null,
+          fileUrl: file.fileUrl || null,
+          analysisResult,
+          analysisSourceType: "ai_output",
+          changeNote: "Re-analyzed by AI",
+        });
 
         // Save version history
         const latestVersion = await db.getLatestVersionNumber(file.id);
@@ -431,7 +532,9 @@ export const projectFileRouter = router({
           metadata: { fileType: file.fileType },
         });
 
-        return updated;
+        return artifactBundle?.analysisArtifact
+          ? { ...updated, analysisArtifactId: artifactBundle.analysisArtifact.artifactId }
+          : updated;
       } catch (err: any) {
         await db.updateProjectFile(file.id, {
           status: "failed",
@@ -473,9 +576,11 @@ export const projectFileRouter = router({
       const randomSuffix = Math.random().toString(36).substring(2, 8);
       const fileKey = `project-files/${input.projectId}/${input.fileType}-${randomSuffix}-${input.filename}`;
       let fileUrl = "";
+      let rawStorageUri = "";
       try {
         const uploadResult = await storagePut(fileKey, buffer, "application/octet-stream");
         fileUrl = uploadResult.url;
+        rawStorageUri = uploadResult.storageUri;
       } catch (err) {
         console.error("S3 upload failed:", err);
       }
@@ -498,6 +603,14 @@ export const projectFileRouter = router({
         };
       }
 
+      const parsedUpload = await uploadProjectFileDerivedJson({
+        projectId: input.projectId,
+        fileType: input.fileType,
+        filename: input.filename,
+        suffix: "parsed",
+        value: parsedData,
+      });
+
       // Save to database
       const record = await db.createProjectFile({
         workspaceId,
@@ -507,9 +620,27 @@ export const projectFileRouter = router({
         filename: input.filename,
         fileUrl,
         fileSize: buffer.length,
+        rawStorageUri: rawStorageUri || null,
+        parsedStorageUri: parsedUpload?.storageUri || null,
+        rawContentHash: createContentHash(rawContent),
+        parsedDataHash: createContentHash(parsedData),
         rawContent: rawContent.substring(0, 65000),
         parsedData: JSON.stringify(parsedData),
         status: "analyzing",
+      });
+      await registerProjectFileArtifacts({
+        workspaceId,
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        projectFileId: record.id,
+        fileType: input.fileType,
+        filename: input.filename,
+        fileSizeBytes: buffer.length,
+        rawStorageUri: rawStorageUri || null,
+        parsedStorageUri: parsedUpload?.storageUri || null,
+        fileUrl,
+        rawContent,
+        parsedData,
       });
 
       // Run AI analysis
@@ -535,6 +666,21 @@ export const projectFileRouter = router({
           analysisResult: JSON.stringify(analysisResult),
           status: "completed",
         });
+        const artifactBundle = await registerProjectFileArtifacts({
+          workspaceId,
+          projectId: input.projectId,
+          userId: ctx.user.id,
+          projectFileId: record.id,
+          fileType: input.fileType,
+          filename: input.filename,
+          fileSizeBytes: buffer.length,
+          rawStorageUri: rawStorageUri || null,
+          parsedStorageUri: parsedUpload?.storageUri || null,
+          fileUrl,
+          analysisResult,
+          analysisSourceType: "ai_output",
+          changeNote: "Initial AI analysis",
+        });
 
         // Save initial version history
         await db.createAnalysisVersion({
@@ -558,7 +704,9 @@ export const projectFileRouter = router({
           metadata: { fileType: input.fileType, fileSize: buffer.length },
         });
 
-        return updated;
+        return artifactBundle?.analysisArtifact
+          ? { ...updated, analysisArtifactId: artifactBundle.analysisArtifact.artifactId }
+          : updated;
       } catch (err: any) {
         await db.updateProjectFile(record.id, {
           status: "failed",
@@ -602,6 +750,21 @@ export const projectFileRouter = router({
         analysisResult: input.analysisResult,
         status: "completed",
       });
+      const artifactBundle = await registerProjectFileArtifacts({
+        workspaceId,
+        projectId: file.projectId,
+        userId: ctx.user.id,
+        projectFileId: file.id,
+        fileType: file.fileType,
+        filename: file.filename,
+        fileSizeBytes: file.fileSize || null,
+        rawStorageUri: file.rawStorageUri || null,
+        parsedStorageUri: file.parsedStorageUri || null,
+        fileUrl: file.fileUrl || null,
+        analysisResult: input.analysisResult,
+        analysisSourceType: "user_edit",
+        changeNote: input.changeNote || "Manual edit",
+      });
 
       // Save version history for manual edit
       const latestVersion = await db.getLatestVersionNumber(file.id);
@@ -625,7 +788,9 @@ export const projectFileRouter = router({
         riskLevel: "medium",
       });
 
-      return updated;
+      return artifactBundle?.analysisArtifact
+        ? { ...updated, analysisArtifactId: artifactBundle.analysisArtifact.artifactId }
+        : updated;
     }),
 
   // Get version history for a file
@@ -651,6 +816,21 @@ export const projectFileRouter = router({
         analysisResult: version.analysisResult,
         status: "completed",
       });
+      const artifactBundle = await registerProjectFileArtifacts({
+        workspaceId,
+        projectId: file.projectId,
+        userId: ctx.user.id,
+        projectFileId: file.id,
+        fileType: file.fileType,
+        filename: file.filename,
+        fileSizeBytes: file.fileSize || null,
+        rawStorageUri: file.rawStorageUri || null,
+        parsedStorageUri: file.parsedStorageUri || null,
+        fileUrl: file.fileUrl || null,
+        analysisResult: version.analysisResult,
+        analysisSourceType: "user_edit",
+        changeNote: `Restored from version ${version.version}`,
+      });
 
       // Create a new version entry for the restore action
       const latestVersion = await db.getLatestVersionNumber(file.id);
@@ -675,7 +855,9 @@ export const projectFileRouter = router({
         metadata: { versionId: input.versionId, restoredVersion: version.version },
       });
 
-      return updated;
+      return artifactBundle?.analysisArtifact
+        ? { ...updated, analysisArtifactId: artifactBundle.analysisArtifact.artifactId }
+        : updated;
     }),
 
   // Delete a file
@@ -793,6 +975,7 @@ export const projectFileRouter = router({
 
       // 6. Run Rufus attribute analysis on the profile text
       const analysisResult = await analyzeRufusAttributes(profileText);
+      const parsedProfileData = { type: "text", lineCount: profileText.split("\n").length, charCount: profileText.length, source: "product_profile_import" };
 
       // 7. Save as a projectFile record
       const record = await db.createProjectFile({
@@ -803,10 +986,26 @@ export const projectFileRouter = router({
         filename: `产品画像导入_${devProject[0].name}.txt`,
         fileUrl: "",
         fileSize: Buffer.byteLength(profileText, "utf-8"),
+        rawContentHash: createContentHash(profileText),
+        parsedDataHash: createContentHash(parsedProfileData),
         rawContent: profileText.substring(0, 65000),
-        parsedData: JSON.stringify({ type: "text", lineCount: profileText.split("\n").length, charCount: profileText.length, source: "product_profile_import" }),
+        parsedData: JSON.stringify(parsedProfileData),
         status: "completed",
         analysisResult: JSON.stringify(analysisResult),
+      });
+      await registerProjectFileArtifacts({
+        workspaceId,
+        projectId: input.listingProjectId,
+        userId: ctx.user.id,
+        projectFileId: record.id,
+        fileType: "product_attributes",
+        filename: record.filename,
+        fileSizeBytes: Buffer.byteLength(profileText, "utf-8"),
+        rawContent: profileText,
+        parsedData: parsedProfileData,
+        analysisResult,
+        analysisSourceType: "ai_output",
+        changeNote: `从产品画像导入 (${devProject[0].name})`,
       });
 
       // 8. Save initial version history

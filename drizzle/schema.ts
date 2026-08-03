@@ -177,6 +177,11 @@ export const aiJobs = mysqlTable("ai_jobs", {
   input: json("input"),
   output: json("output"),
   errorMessage: text("errorMessage"),
+  retentionClass: mysqlEnum("retentionClass", ["hot", "warm", "cold", "archive"]).default("hot").notNull(),
+  archiveAfter: timestamp("archiveAfter"),
+  deleteAfter: timestamp("deleteAfter"),
+  archivedAt: timestamp("archivedAt"),
+  archiveBatchId: varchar("archiveBatchId", { length: 80 }),
   nextRunAt: timestamp("nextRunAt"),
   leaseUntil: timestamp("leaseUntil"),
   lockedBy: varchar("lockedBy", { length: 128 }),
@@ -232,6 +237,123 @@ export const aiJobDeadLetters = mysqlTable("ai_job_dead_letters", {
 });
 export type AiJobDeadLetter = typeof aiJobDeadLetters.$inferSelect;
 export type InsertAiJobDeadLetter = typeof aiJobDeadLetters.$inferInsert;
+
+export const aiStorageObjects = mysqlTable("ai_storage_objects", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  storageId: varchar("storageId", { length: 80 }).unique().notNull(),
+  provider: mysqlEnum("provider", ["forge", "s3", "local", "external"]).default("forge").notNull(),
+  bucket: varchar("bucket", { length: 128 }),
+  objectKey: text("objectKey").notNull(),
+  storageUri: text("storageUri").notNull(),
+  publicUrl: text("publicUrl"),
+  mimeType: varchar("mimeType", { length: 128 }),
+  fileName: varchar("fileName", { length: 255 }),
+  sizeBytes: bigint("sizeBytes", { mode: "number" }),
+  contentHash: varchar("contentHash", { length: 64 }),
+  contentEncoding: varchar("contentEncoding", { length: 64 }),
+  sourceDomain: mysqlEnum("sourceDomain", ["listing", "image", "ads", "video", "agent", "project", "file", "ops", "tool", "other"]).default("other").notNull(),
+  sourceType: mysqlEnum("sourceType", ["upload", "ai_output", "user_edit", "import", "tool_output", "system", "archive"]).default("upload").notNull(),
+  sourceId: varchar("sourceId", { length: 128 }),
+  lifecycleState: mysqlEnum("lifecycleState", ["hot", "warm", "cold", "archived", "deleted"]).default("hot").notNull(),
+  retainUntil: timestamp("retainUntil"),
+  archiveAfter: timestamp("archiveAfter"),
+  deleteAfter: timestamp("deleteAfter"),
+  archivedAt: timestamp("archivedAt"),
+  metadata: json("metadata"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AiStorageObject = typeof aiStorageObjects.$inferSelect;
+export type InsertAiStorageObject = typeof aiStorageObjects.$inferInsert;
+
+export const aiArtifacts = mysqlTable("ai_artifacts", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  artifactId: varchar("artifactId", { length: 80 }).unique().notNull(),
+  domain: mysqlEnum("domain", ["listing", "image", "ads", "video", "agent", "project", "file", "ops", "tool", "other"]).default("other").notNull(),
+  artifactKey: varchar("artifactKey", { length: 128 }).notNull(),
+  artifactType: mysqlEnum("artifactType", ["json", "text", "markdown", "html", "image", "file", "table", "video", "audio", "other"]).default("json").notNull(),
+  sourceType: mysqlEnum("sourceType", ["upload", "ai_output", "user_edit", "import", "tool_output", "system", "archive"]).default("ai_output").notNull(),
+  sourceId: varchar("sourceId", { length: 128 }),
+  sourceTable: varchar("sourceTable", { length: 128 }),
+  sourceRowId: varchar("sourceRowId", { length: 128 }),
+  runId: varchar("runId", { length: 80 }),
+  agentSlug: varchar("agentSlug", { length: 128 }),
+  nodeId: varchar("nodeId", { length: 128 }),
+  projectId: int("projectId"),
+  userId: int("userId"),
+  status: mysqlEnum("status", ["draft", "final", "superseded", "archived", "deleted"]).default("draft").notNull(),
+  version: int("version").default(1).notNull(),
+  isCurrent: int("isCurrent").default(0).notNull(),
+  parentArtifactId: varchar("parentArtifactId", { length: 80 }),
+  selectedBy: int("selectedBy"),
+  currentSince: timestamp("currentSince"),
+  contentJson: json("contentJson"),
+  searchableText: text("searchableText"),
+  summary: text("summary"),
+  contentHash: varchar("contentHash", { length: 64 }),
+  storageObjectId: int("storageObjectId"),
+  storageUri: text("storageUri"),
+  mimeType: varchar("mimeType", { length: 128 }),
+  fileName: varchar("fileName", { length: 255 }),
+  fileSizeBytes: bigint("fileSizeBytes", { mode: "number" }),
+  retentionClass: mysqlEnum("retentionClass", ["hot", "warm", "cold", "archive"]).default("hot").notNull(),
+  retainUntil: timestamp("retainUntil"),
+  archiveAfter: timestamp("archiveAfter"),
+  deleteAfter: timestamp("deleteAfter"),
+  archivedAt: timestamp("archivedAt"),
+  metadata: json("metadata"),
+  sourceSkillRunId: varchar("sourceSkillRunId", { length: 80 }),
+  sourceAiJobRunId: varchar("sourceAiJobRunId", { length: 80 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AiArtifact = typeof aiArtifacts.$inferSelect;
+export type InsertAiArtifact = typeof aiArtifacts.$inferInsert;
+
+export const aiDataArchiveRuns = mysqlTable("ai_data_archive_runs", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  archiveRunId: varchar("archiveRunId", { length: 80 }).unique().notNull(),
+  policySlug: varchar("policySlug", { length: 128 }).notNull(),
+  tableName: varchar("tableName", { length: 128 }).notNull(),
+  status: mysqlEnum("status", ["planned", "running", "succeeded", "failed", "dry_run"]).default("planned").notNull(),
+  mode: mysqlEnum("mode", ["count", "archive", "delete"]).default("archive").notNull(),
+  cutoffAt: timestamp("cutoffAt"),
+  batchSize: int("batchSize").default(1000).notNull(),
+  candidateCount: int("candidateCount").default(0).notNull(),
+  archivedCount: int("archivedCount").default(0).notNull(),
+  deletedCount: int("deletedCount").default(0).notNull(),
+  storageObjectId: int("storageObjectId"),
+  storageUri: text("storageUri"),
+  errorMessage: text("errorMessage"),
+  metadata: json("metadata"),
+  createdBy: int("createdBy"),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AiDataArchiveRun = typeof aiDataArchiveRuns.$inferSelect;
+export type InsertAiDataArchiveRun = typeof aiDataArchiveRuns.$inferInsert;
+
+export const aiDataArchiveItems = mysqlTable("ai_data_archive_items", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  archiveRunId: varchar("archiveRunId", { length: 80 }).notNull(),
+  sourceTable: varchar("sourceTable", { length: 128 }).notNull(),
+  sourceId: varchar("sourceId", { length: 128 }).notNull(),
+  sourceCreatedAt: timestamp("sourceCreatedAt"),
+  storageObjectId: int("storageObjectId"),
+  contentHash: varchar("contentHash", { length: 64 }),
+  status: mysqlEnum("status", ["archived", "deleted", "failed"]).default("archived").notNull(),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AiDataArchiveItem = typeof aiDataArchiveItems.$inferSelect;
+export type InsertAiDataArchiveItem = typeof aiDataArchiveItems.$inferInsert;
 
 // Knowledge base sync logs (P2P bidirectional sync)
 export const kbSyncLogs = mysqlTable("kb_sync_logs", {
@@ -427,9 +549,18 @@ export const projectFiles = mysqlTable("projectFiles", {
   filename: varchar("filename", { length: 500 }).notNull(),
   fileUrl: text("fileUrl"),           // S3 URL
   fileSize: int("fileSize"),           // bytes
+  rawStorageUri: text("rawStorageUri"),
+  parsedStorageUri: text("parsedStorageUri"),
+  analysisArtifactId: varchar("analysisArtifactId", { length: 80 }),
+  rawContentHash: varchar("rawContentHash", { length: 64 }),
+  parsedDataHash: varchar("parsedDataHash", { length: 64 }),
   rawContent: text("rawContent"),      // parsed raw text/csv content
   parsedData: text("parsedData"),      // JSON: structured parsed result
   analysisResult: text("analysisResult"), // JSON: AI analysis result
+  lifecycleState: mysqlEnum("lifecycleState", ["hot", "warm", "cold", "archived", "deleted"]).default("hot").notNull(),
+  archiveAfter: timestamp("archiveAfter"),
+  deleteAfter: timestamp("deleteAfter"),
+  archivedAt: timestamp("archivedAt"),
   status: mysqlEnum("status", ["uploaded", "parsing", "parsed", "analyzing", "completed", "failed"]).default("uploaded").notNull(),
   errorMessage: text("errorMessage"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -5058,6 +5189,11 @@ export const emperorAgentEvents = mysqlTable("emperor_agent_events", {
   eventType: varchar("eventType", { length: 64 }).notNull(),
   message: text("message"),
   payload: json("payload"),
+  retentionClass: mysqlEnum("retentionClass", ["hot", "warm", "cold", "archive"]).default("hot").notNull(),
+  archiveAfter: timestamp("archiveAfter"),
+  deleteAfter: timestamp("deleteAfter"),
+  archivedAt: timestamp("archivedAt"),
+  archiveBatchId: varchar("archiveBatchId", { length: 80 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type EmperorAgentEvent = typeof emperorAgentEvents.$inferSelect;
@@ -5067,6 +5203,7 @@ export const emperorAgentArtifacts = mysqlTable("emperor_agent_artifacts", {
   id: int("id").autoincrement().primaryKey(),
   workspaceId: int("workspaceId"),
   runId: varchar("runId", { length: 80 }).notNull(),
+  unifiedArtifactId: varchar("unifiedArtifactId", { length: 80 }),
   agentSlug: varchar("agentSlug", { length: 128 }).notNull(),
   nodeId: varchar("nodeId", { length: 128 }).notNull(),
   artifactKey: varchar("artifactKey", { length: 128 }).notNull(),
@@ -5086,6 +5223,10 @@ export const emperorAgentArtifacts = mysqlTable("emperor_agent_artifacts", {
   fileName: varchar("fileName", { length: 255 }),
   fileSizeBytes: bigint("fileSizeBytes", { mode: "number" }),
   storageUri: text("storageUri"),
+  retentionClass: mysqlEnum("retentionClass", ["hot", "warm", "cold", "archive"]).default("hot").notNull(),
+  archiveAfter: timestamp("archiveAfter"),
+  deleteAfter: timestamp("deleteAfter"),
+  archivedAt: timestamp("archivedAt"),
   sourceSkillRunId: varchar("sourceSkillRunId", { length: 80 }),
   sourceAiJobRunId: varchar("sourceAiJobRunId", { length: 80 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -5135,6 +5276,11 @@ export const emperorToolRuns = mysqlTable("emperor_tool_runs", {
   output: json("output"),
   normalizedOutput: json("normalizedOutput"),
   errorMessage: text("errorMessage"),
+  retentionClass: mysqlEnum("retentionClass", ["hot", "warm", "cold", "archive"]).default("hot").notNull(),
+  archiveAfter: timestamp("archiveAfter"),
+  deleteAfter: timestamp("deleteAfter"),
+  archivedAt: timestamp("archivedAt"),
+  archiveBatchId: varchar("archiveBatchId", { length: 80 }),
   failureKind: mysqlEnum("failureKind", ["policy", "rate_limit", "circuit_open", "schema", "auth", "timeout", "network", "http", "executor", "unknown"]),
   retryable: int("retryable").default(0).notNull(),
   attemptCount: int("attemptCount").default(0).notNull(),
@@ -5205,6 +5351,11 @@ export const emperorAiOsMetrics = mysqlTable("emperor_ai_os_metrics", {
   skillSlug: varchar("skillSlug", { length: 128 }),
   toolSlug: varchar("toolSlug", { length: 128 }),
   metadata: json("metadata"),
+  retentionClass: mysqlEnum("retentionClass", ["hot", "warm", "cold", "archive"]).default("hot").notNull(),
+  archiveAfter: timestamp("archiveAfter"),
+  deleteAfter: timestamp("deleteAfter"),
+  archivedAt: timestamp("archivedAt"),
+  archiveBatchId: varchar("archiveBatchId", { length: 80 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type EmperorAiOsMetric = typeof emperorAiOsMetrics.$inferSelect;
