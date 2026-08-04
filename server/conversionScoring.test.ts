@@ -1,4 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
+import { readRepoSources } from "./testPaths";
+
+const productOpsSource = readRepoSources(
+  "server/domains/ops/routerContext.ts",
+  "server/domains/ops/routers/conversion.ts"
+);
 
 const realAiIt = process.env.RUN_REAL_DB_TESTS === "1" || process.env.RUN_REAL_LLM_TESTS === "1" ? it : it.skip;
 
@@ -238,14 +244,14 @@ describe("Check Items Definition - 129 items in 18 categories", () => {
     // Read the getDefault129CheckItems function output
     // We can't call it directly since it's not exported, but we can verify the count
     const fs = await import("fs");
-    const content = fs.readFileSync("server/routers/productOps.ts", "utf-8");
+    const content = productOpsSource;
     const pushCount = (content.match(/items\.push\(/g) || []).length;
     expect(pushCount).toBe(129);
   });
 
   it("should have 18 unique categories", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("server/routers/productOps.ts", "utf-8");
+    const content = productOpsSource;
     const categoryMatches = content.match(/categoryName: "([^"]+)"/g) || [];
     const categories = new Set(categoryMatches.map(m => m.replace('categoryName: "', '').replace('"', '')));
     expect(categories.size).toBe(18);
@@ -253,7 +259,7 @@ describe("Check Items Definition - 129 items in 18 categories", () => {
 
   it("should have separate 首图 and 辅图 sub-dimensions in 主图 category", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("server/routers/productOps.ts", "utf-8");
+    const content = productOpsSource;
     const mainImageItems = (content.match(/categoryName: "主图", subDimension: "首图"/g) || []).length;
     const secondaryImageItems = (content.match(/categoryName: "主图", subDimension: "辅图"/g) || []).length;
     expect(mainImageItems).toBeGreaterThanOrEqual(4); // At least 4 首图 items
@@ -262,7 +268,7 @@ describe("Check Items Definition - 129 items in 18 categories", () => {
 
   it("should include all expected category names", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("server/routers/productOps.ts", "utf-8");
+    const content = productOpsSource;
     const expectedCategories = [
       "标题", "五点", "标", "价格", "限购", "配送", "变体", "产品信息",
       "商品文档", "主图", "流量闭环", "品牌故事", "A+", "Video", "Q&A",
@@ -281,21 +287,21 @@ describe("Check Items Definition - 129 items in 18 categories", () => {
 describe("Integration - triggerAiScoring uses real modules", () => {
   it("productOps.ts should import conversionDataCollector", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("server/routers/productOps.ts", "utf-8");
+    const content = productOpsSource;
     expect(content).toContain('import { collectConversionData, collectMultipleAsins');
-    expect(content).toContain('from "./conversionDataCollector"');
+    expect(content).toContain('from "./service"');
   });
 
   it("productOps.ts should import conversionAiScorer", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("server/routers/productOps.ts", "utf-8");
+    const content = productOpsSource;
     expect(content).toContain('import { scoreAllCheckItems');
-    expect(content).toContain('from "./conversionAiScorer"');
+    expect(content).toContain('from "./service"');
   });
 
   it("triggerAiScoring should call collectMultipleAsins instead of generateMockCrawlData", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("server/routers/productOps.ts", "utf-8");
+    const content = productOpsSource;
     // Should use collectMultipleAsins
     expect(content).toContain("collectMultipleAsins(allAsins");
     // Should NOT use generateMockCrawlData in the scoring flow
@@ -309,7 +315,7 @@ describe("Integration - triggerAiScoring uses real modules", () => {
 
   it("triggerAiScoring should call scoreAllCheckItems", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("server/routers/productOps.ts", "utf-8");
+    const content = productOpsSource;
     const triggerSection = content.substring(
       content.indexOf("triggerAiScoring:"),
       content.indexOf("generateSuggestions:")
@@ -319,7 +325,7 @@ describe("Integration - triggerAiScoring uses real modules", () => {
 
   it("triggerAiScoring should handle locked scores correctly", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("server/routers/productOps.ts", "utf-8");
+    const content = productOpsSource;
     const triggerSection = content.substring(
       content.indexOf("triggerAiScoring:"),
       content.indexOf("generateSuggestions:")
@@ -333,7 +339,7 @@ describe("Integration - triggerAiScoring uses real modules", () => {
 
   it("triggerAiScoring should handle no-data case without fake scores", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("server/routers/productOps.ts", "utf-8");
+    const content = productOpsSource;
     const triggerSection = content.substring(
       content.indexOf("triggerAiScoring:"),
       content.indexOf("generateSuggestions:")
@@ -524,7 +530,7 @@ describe("No-Hallucination: No fake data when crawl fails", () => {
 
   it("productOps.ts should NOT contain default 3 score for no-data", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("server/routers/productOps.ts", "utf-8");
+    const content = productOpsSource;
     const triggerSection = content.substring(
       content.indexOf("triggerAiScoring:"),
       content.indexOf("generateSuggestions:")
@@ -620,7 +626,7 @@ describe("No-Hallucination: No fake data when crawl fails", () => {
 
   it("overall score calculation should exclude no-data items", async () => {
     const fs = await import("fs");
-    const content = fs.readFileSync("server/routers/productOps.ts", "utf-8");
+    const content = productOpsSource;
     const triggerSection = content.substring(
       content.indexOf("triggerAiScoring:"),
       content.indexOf("generateSuggestions:")

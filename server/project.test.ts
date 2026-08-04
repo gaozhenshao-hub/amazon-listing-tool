@@ -67,6 +67,75 @@ vi.mock("./db", () => ({
   getUserByOpenId: vi.fn(),
 }));
 
+vi.mock("./repositories/project", () => ({
+  getAllProjects: vi.fn().mockResolvedValue([]),
+  getProjectsByUser: vi.fn().mockResolvedValue([
+    {
+      id: 1,
+      userId: 1,
+      name: "Test Project",
+      brand: "TestBrand",
+      productName: "Test Product",
+      category: "Furniture",
+      targetMarket: "US",
+      productFeatures: "Feature 1\nFeature 2",
+      productSpecs: "Size: 100x50cm",
+      status: "draft",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+  ]),
+  getProjectById: vi.fn().mockImplementation(async (id: number, userId: number) => {
+    if (id === 1 && userId === 1) {
+      return {
+        id: 1,
+        userId: 1,
+        name: "Test Project",
+        brand: "TestBrand",
+        productName: "Test Product",
+        category: "Furniture",
+        targetMarket: "US",
+        productFeatures: "Feature 1\nFeature 2",
+        productSpecs: "Size: 100x50cm",
+        status: "draft",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+    }
+    return null;
+  }),
+  getProjectByIdAdmin: vi.fn().mockResolvedValue(null),
+  createProject: vi.fn().mockImplementation(async (data: any) => ({
+    id: 2,
+    ...data,
+    status: "draft",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })),
+  updateProject: vi.fn().mockImplementation(async (id: number, userId: number, data: any) => ({
+    id,
+    userId,
+    name: "Updated Project",
+    ...data,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })),
+  deleteProject: vi.fn().mockResolvedValue({ success: true }),
+}));
+
+vi.mock("./services/securityGovernance", async importOriginal => {
+  const actual = await importOriginal<
+    typeof import("./services/securityGovernance")
+  >();
+  return {
+    ...actual,
+    actorFromContext: vi.fn((ctx: TrpcContext) => ctx.user),
+    assertResourceAction: vi.fn().mockResolvedValue(undefined),
+    recordSecurityAuditLog: vi.fn().mockResolvedValue(undefined),
+    workspaceIdFromContext: vi.fn().mockReturnValue(null),
+  };
+});
+
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
 function createAuthContext(): TrpcContext {
@@ -221,4 +290,3 @@ describe("listing router", () => {
     ).rejects.toThrow("Project not found");
   });
 });
-

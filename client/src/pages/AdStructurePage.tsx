@@ -1,6 +1,8 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { WorkflowStepProgress } from "@/components/workflow";
+import { AD_STRUCTURE_WORKFLOW_STEPS } from "@/components/workflow/workflowDefinitions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -99,6 +101,26 @@ export default function AdStructurePage() {
   const structures = structuresQuery.data || [];
   const latestStructure = structures[0];
   const displayData = isEditing ? editData : latestStructure?.structureData;
+  const adWorkflowActiveStep = generateMutation.isPending
+    ? "generate"
+    : isEditing
+    ? "edit"
+    : latestStructure
+    ? "review"
+    : projectId
+    ? "data"
+    : "data";
+  const adWorkflowCompletedSteps = useMemo(() => {
+    const steps = new Set<string>();
+    if (projectId) steps.add("data");
+    if (latestStructure) {
+      steps.add("generate");
+      steps.add("review");
+      steps.add("export");
+    }
+    if (isEditing) steps.add("edit");
+    return steps;
+  }, [isEditing, latestStructure, projectId]);
 
   // Group campaigns by adGroupType for matrix view
   const campaignMatrix = useMemo(() => {
@@ -554,6 +576,18 @@ export default function AdStructurePage() {
           </p>
         </div>
       )}
+
+      <Card>
+        <CardContent className="pt-4 pb-4">
+          <WorkflowStepProgress
+            steps={AD_STRUCTURE_WORKFLOW_STEPS}
+            activeStepId={adWorkflowActiveStep}
+            completedStepIds={adWorkflowCompletedSteps}
+            disabledStepIds={!projectId ? ["generate", "review", "edit", "export"] : []}
+            compact
+          />
+        </CardContent>
+      </Card>
 
       {/* Project Selection & Generate */}
       <Card>

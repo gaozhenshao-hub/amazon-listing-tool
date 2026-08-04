@@ -1,0 +1,331 @@
+import * as shared from "../routerContext";
+import type { Step5RunStatus } from "../routerContext";
+
+const {
+  APLUS_MODULE_STYLE_GUIDE,
+  IMAGE_ADVICE_TRANSLATION_PROMPT,
+  STEP0_COMPETITOR_IMAGE_ANALYSIS_PROMPT,
+  STEP0_COMPETITOR_SUMMARY_PROMPT,
+  STEP1_SELLING_POINTS_PROMPT,
+  STEP2_IMAGE_OUTLINE_PROMPT,
+  STEP3_STYLE_PROMPT,
+  STEP4_REFERENCE_PROMPT,
+  STEP4_REOPTIMIZE_WITH_REFS_PROMPT,
+  STEP5_APLUS_COMBO_RECOMMEND_PROMPT,
+  STEP5_APLUS_MODULE_OPTIMIZE_PROMPT,
+  STEP5_FINAL_SUGGESTION_PROMPT,
+  STEP5_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT,
+  buildImageWorkflowContext,
+  buildStep5FinalSuggestion,
+  buildStep5RunSnapshot,
+  callLLMWithRetry,
+  db,
+  devDb,
+  ensureWriteAccess,
+  generateStep5RunId,
+  getKBReference,
+  invokeLLM,
+  isActiveStep5Run,
+  kbDb,
+  parseLLMJson,
+  parseStoredJson,
+  persistStep5ListingAdvice,
+  protectedProcedure,
+  registerAiJobHandler,
+  resolveProjectAccess,
+  resolveSessionAccess,
+  router,
+  runStep5GenerationJob,
+  serializeStep5Error,
+  startRegisteredAiJob,
+  step5JobInput,
+  storagePut,
+  z,
+} = shared;
+
+export const imageWorkflowStepProcedures = {
+
+
+  // ─── Step 1: Generate selling points ───────────────────────────
+  generateStep1: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
+
+      let session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) {
+        session = await db.createImageWorkflowSession({
+          projectId: input.projectId,
+          userId: ctx.user.id,
+          currentStep: 1,
+        });
+      }
+
+      const context = await buildImageWorkflowContext(input.projectId);
+      // If context is empty, add a fallback hint so LLM can still generate content
+      const contextHint = context.trim()
+        ? context
+        : "暂无竞品分析数据、评论数据或关键词数据。请根据产品名称、品牌和类目，结合你的亚马逊运营经验，自行推断并生成完整的卖点体系。";
+
+      const userMsg = `请为以下产品梳理卖点体系：\n\n产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n${contextHint}`;
+
+      let result = await callLLMWithRetry(STEP1_SELLING_POINTS_PROMPT, userMsg);
+      await db.updateImageWorkflowSession(session.id, {
+        step1AiResult: JSON.stringify(result),
+        currentStep: 1,
+      });
+      return result;
+    }),
+
+  // ─── Step 1: Save user edits and confirm ───────────────────────
+  confirmStep1: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      userEdit: z.string(), // JSON string of edited selling points
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
+
+      await db.updateImageWorkflowSession(session.id, {
+        step1UserEdit: input.userEdit,
+        step1Confirmed: 1,
+        currentStep: 2,
+      });
+
+      return { success: true };
+    }),
+
+
+  // ─── Step 2: Generate image outline ────────────────────────────
+  generateStep2: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
+
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      if (!session.step1Confirmed) throw new Error("Step 1 not confirmed yet");
+
+      const sellingPoints = session.step1UserEdit || session.step1AiResult;
+      const context = await buildImageWorkflowContext(input.projectId);
+
+
+      // Load Step0 competitor summary if available
+      const step0Summary = session.step0AiResult
+        ? `\n\n--- 竞品图片分析总结 ---\n${session.step0AiResult.substring(0, 2000)}`
+        : "";
+
+      const contextHint2 = context.trim()
+        ? context
+        : "暂无竞品分析数据。请根据产品名称、品牌和类目，结合亚马逊运营经验，自行推断并生成完整的图片大纲。";
+
+      const userMsg2 = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${sellingPoints}\n\n--- 产品背景信息 ---\n${contextHint2}${step0Summary}\n\n--- 可选亚马逊A+模块样式 ---\n${APLUS_MODULE_STYLE_GUIDE}\n\n请根据以上卖点体系和竞品分析，规划每张图片的内容大纲，并在辅图的referenceHighlights字段中引用竞品亮点。A+模块请优先推荐适合的selectedModuleType/selectedModuleName/selectedModuleStructure；如果是轮播、四图、比较表、热点等一个模块多张图或多面板的样式，请在contentBrief中明确每个面板/子图/热点的内容安排。`;
+
+      const result = await callLLMWithRetry(STEP2_IMAGE_OUTLINE_PROMPT, userMsg2);
+      await db.updateImageWorkflowSession(session.id, {
+        step2AiResult: JSON.stringify(result),
+        currentStep: 2,
+      });
+
+      return result;
+    }),
+
+
+  // ─── Step 2: Save user edits and confirm ───────────────────────
+  confirmStep2: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      userEdit: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
+
+      await db.updateImageWorkflowSession(session.id, {
+        step2UserEdit: input.userEdit,
+        step2Confirmed: 1,
+        currentStep: 3,
+      });
+
+      return { success: true };
+    }),
+
+
+  // ─── Step 2: Unlock outline without deleting the current draft ──
+  unlockStep2: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
+
+      await db.updateImageWorkflowSession(session.id, {
+        step2Confirmed: 0,
+        currentStep: 2,
+        step3AiResult: null,
+        step3UserEdit: null,
+        step3Confirmed: 0,
+        step4AiResult: null,
+        step4UserEdit: null,
+        step4Confirmed: 0,
+        step4CompositionRefs: null,
+        step4EffectRefs: null,
+        step5AiResult: null,
+        step5AiResultCn: null,
+        step5UserEdit: null,
+        step5Confirmed: 0,
+        step5RunId: null,
+        step5RunStatus: "idle",
+        step5RunProgress: 0,
+        step5RunError: null,
+        step5RunStartedAt: null,
+        step5RunCompletedAt: null,
+        step5SelectedModule: null,
+        step5OptimizedResult: null,
+        step5OptimizedResultCn: null,
+        status: "in_progress",
+      });
+
+      return { success: true };
+    }),
+
+
+  // ─── Step 3: Generate style recommendations ───────────────────
+  generateStep3: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
+
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      if (!session.step2Confirmed) throw new Error("Step 2 not confirmed yet");
+
+            // Load product profile for color info
+      const profile = await devDb.getDevProductProfile(input.projectId);
+      let colorInfo = "";
+      if (profile?.appearanceColors) {
+        try {
+          colorInfo = `产品外观颜色: ${profile.appearanceColors}`;
+        } catch {}
+      }
+      // Phase 7: Get KB reference for style recommendations
+      const kbReference = await getKBReference(project.category || '', ctx.user.id);
+
+      // 从知识库获取现有设计风格列表，用于约束 AI 只推荐已有风格
+      let kbStylesText = "";
+      try {
+        const allKbImages = await kbDb.listAllImages(ctx.user.id, "all", {});
+        const kbStyles = [...new Set(
+          (allKbImages as any[]).map((i: any) => i.tagDesignStyleV2 || i.tagDesignStyle).filter(Boolean)
+        )];
+        if (kbStyles.length > 0) {
+          kbStylesText = `\n\n--- 知识库现有设计风格（请优先从这些风格中推荐）---\n${kbStyles.join("、")}`;
+        }
+      } catch (e) { console.warn("[Step3] Failed to load KB styles:", e); }
+
+
+      const userMsg3 = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n${colorInfo}\n\n--- 已确认的卖点 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}${kbReference}${kbStylesText}\n\n请参考知识库中同类目高分图片的风格分布，推荐3-4个适合的视觉风格方案。`;
+
+      const result = await callLLMWithRetry(STEP3_STYLE_PROMPT, userMsg3);
+      await db.updateImageWorkflowSession(session.id, {
+        step3AiResult: JSON.stringify(result),
+        currentStep: 3,
+      });
+
+      return result;
+    }),
+
+
+  // ─── Step 3: Save user selection and confirm ──────────────────
+  confirmStep3: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      userEdit: z.string(), // JSON: selected style IDs and any modifications
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
+
+      await db.updateImageWorkflowSession(session.id, {
+        step3UserEdit: input.userEdit,
+        step3Confirmed: 1,
+        currentStep: 4,
+      });
+
+      return { success: true };
+    }),
+
+
+  // ─── Step 4: Generate reference image recommendations ─────────
+  generateStep4: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
+
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      if (!session.step3Confirmed) throw new Error("Step 3 not confirmed yet");
+
+      // Try to load knowledge base images for reference
+      let kbImageInfo = "";
+      try {
+        const kbImages = await kbDb.listAllImages(ctx.user.id, "mine", {});
+        if (kbImages.length > 0) {
+          kbImageInfo = "\n--- 知识库图片参考 ---\n";
+          kbImageInfo += kbImages.slice(0, 20).map((img: any) =>
+            `[${img.tagImageType || '未分类'}] ${img.tagCategory || ''} - ${img.tagDesignStyle || ''} (${img.imagePosition || ''})`
+          ).join("\n");
+        }
+      } catch {}
+
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: STEP4_REFERENCE_PROMPT },
+          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}\n\n--- 已确认的风格方案 ---\n${session.step3UserEdit || session.step3AiResult}\n${kbImageInfo}\n\n请为每张图推荐构图参考和效果图参考。若图片大纲中的A+模块包含selectedModuleType/selectedModuleName/selectedModuleStructure，必须按该模块结构生成参考：轮播模块拆成每个面板的构图/效果参考，四图模块拆成4张子图，热点模块包含底图和各热点位置，比较表模块包含产品列和特征行布局。` },
+        ],
+        response_format: { type: "json_object" },
+      });
+
+      const result = parseLLMJson(response);
+      await db.updateImageWorkflowSession(session.id, {
+        step4AiResult: JSON.stringify(result),
+        currentStep: 4,
+      });
+
+      return result;
+    }),
+
+
+  // ─── Step 4: Save user edits and confirm ──────────────────────
+  confirmStep4: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      userEdit: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      ensureWriteAccess({ userId: session.userId }, ctx.user);
+
+      await db.updateImageWorkflowSession(session.id, {
+        step4UserEdit: input.userEdit,
+        step4Confirmed: 1,
+        currentStep: 5,
+      });
+
+      return { success: true };
+    }),
+};

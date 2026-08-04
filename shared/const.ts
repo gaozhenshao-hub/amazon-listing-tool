@@ -140,6 +140,112 @@ export interface ModulePermission {
   }[];
 }
 
+// Security governance v1: resource/action permission model.
+export const SECURITY_RESOURCES = [
+  'project',
+  'file',
+  'tool',
+  'agent',
+  'ops_data',
+] as const;
+export type SecurityResource = typeof SECURITY_RESOURCES[number];
+
+export const SECURITY_ACTIONS = [
+  'read',
+  'create',
+  'update',
+  'delete',
+  'upload',
+  'import',
+  'export',
+  'invoke',
+  'run',
+  'confirm',
+  'cancel',
+  'manage_secret',
+  'rotate_secret',
+  'assign',
+  'sync',
+] as const;
+export type SecurityAction = typeof SECURITY_ACTIONS[number];
+
+export const SECURITY_RESOURCE_MODULES: Record<SecurityResource, { moduleId: string; subModuleId?: string }> = {
+  project: { moduleId: 'listing', subModuleId: 'listing_projects' },
+  file: { moduleId: 'listing', subModuleId: 'listing_data_files' },
+  tool: { moduleId: 'emperor', subModuleId: 'emperor_mcp' },
+  agent: { moduleId: 'emperor', subModuleId: 'emperor_agents' },
+  ops_data: { moduleId: 'ops', subModuleId: 'ops_dashboard' },
+};
+
+export const SECURITY_ACTION_OPERATION: Record<SecurityAction, PermissionOperation> = {
+  read: 'read',
+  export: 'read',
+  create: 'edit',
+  update: 'edit',
+  upload: 'edit',
+  import: 'edit',
+  invoke: 'edit',
+  run: 'edit',
+  confirm: 'edit',
+  cancel: 'edit',
+  assign: 'edit',
+  sync: 'edit',
+  delete: 'delete',
+  manage_secret: 'delete',
+  rotate_secret: 'delete',
+};
+
+export const SECURITY_PERMISSION_MATRIX: Record<string, Partial<Record<SecurityResource, SecurityAction[]>>> = {
+  super_admin: {
+    project: [...SECURITY_ACTIONS],
+    file: [...SECURITY_ACTIONS],
+    tool: [...SECURITY_ACTIONS],
+    agent: [...SECURITY_ACTIONS],
+    ops_data: [...SECURITY_ACTIONS],
+  },
+  admin: {
+    project: ['read', 'create', 'update', 'delete', 'assign'],
+    file: ['read', 'upload', 'update', 'delete', 'export'],
+    tool: ['read', 'create', 'update', 'delete', 'invoke', 'manage_secret', 'rotate_secret'],
+    agent: ['read', 'create', 'update', 'delete', 'run', 'confirm', 'cancel'],
+    ops_data: ['read', 'import', 'export', 'update', 'delete', 'sync'],
+  },
+  ops_manager: {
+    project: ['read', 'create', 'update', 'assign'],
+    file: ['read', 'upload', 'update', 'export'],
+    tool: ['read', 'invoke'],
+    agent: ['read', 'run', 'confirm', 'cancel'],
+    ops_data: ['read', 'import', 'export', 'update', 'sync'],
+  },
+  ops_specialist: {
+    project: ['read', 'create', 'update'],
+    file: ['read', 'upload', 'update', 'export'],
+    tool: ['read'],
+    agent: ['read', 'run', 'confirm'],
+    ops_data: ['read'],
+  },
+  product_dev: {
+    project: ['read', 'create', 'update'],
+    file: ['read', 'upload', 'update', 'export'],
+    tool: ['read'],
+    agent: ['read', 'run', 'confirm'],
+  },
+  finance: {
+    project: ['read'],
+    file: ['read', 'export'],
+    ops_data: ['read', 'export'],
+  },
+  purchaser: {
+    project: ['read'],
+    file: ['read', 'export'],
+  },
+  designer: {
+    project: ['read'],
+    file: ['read', 'upload', 'update', 'export'],
+    agent: ['read'],
+  },
+};
+
 // Password policy
 export const PASSWORD_MIN_LENGTH = 8;
 export const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;

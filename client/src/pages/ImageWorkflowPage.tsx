@@ -9,6 +9,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import ProjectSelector from "@/components/ProjectSelector";
 import { useProject } from "@/contexts/ProjectContext";
+import { WorkflowShell } from "@/components/workflow";
+import { IMAGE_SUGGESTION_WORKFLOW_STEPS } from "@/components/workflow/workflowDefinitions";
 import { trpc } from "@/lib/trpc";
 import {
   AlertTriangle,
@@ -4338,6 +4340,7 @@ function safeJsonParse(str: string | null | undefined): any {
 export default function ImageWorkflowPage() {
   const { selectedProjectId } = useProject();
   const [currentStep, setCurrentStep] = useState(1);
+  const agentRunId = useMemo(() => new URLSearchParams(window.location.search).get("agentRunId"), []);
 
   const sessionQuery = trpc.imageWorkflow.getSession.useQuery(
     { projectId: selectedProjectId! },
@@ -4347,6 +4350,26 @@ export default function ImageWorkflowPage() {
   const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
 
   const session = sessionQuery.data;
+  const confirmedStepIds = useMemo(() => {
+    if (!session) return new Set<number>();
+    return new Set(
+      [
+        session.step0Confirmed ? 0 : null,
+        session.step1Confirmed ? 1 : null,
+        session.step2Confirmed ? 2 : null,
+        session.step3Confirmed ? 3 : null,
+        session.step4Confirmed ? 4 : null,
+        session.step5Confirmed ? 5 : null,
+      ].filter((step): step is number => typeof step === "number"),
+    );
+  }, [
+    session?.step0Confirmed,
+    session?.step1Confirmed,
+    session?.step2Confirmed,
+    session?.step3Confirmed,
+    session?.step4Confirmed,
+    session?.step5Confirmed,
+  ]);
 
   // Sync current step from session
   useEffect(() => {
@@ -4416,16 +4439,19 @@ export default function ImageWorkflowPage() {
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Image className="w-6 h-6 text-primary" />
-            智能图片建议
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">6步工作流：竞品分析 → 卖点梳理 → 图片大纲 → 风格确认 → 参考图确认 → 图片建议</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <WorkflowShell
+      title="智能图片建议"
+      subtitle="6步工作流：竞品分析 → 卖点梳理 → 图片大纲 → 风格确认 → 参考图确认 → 图片建议"
+      kind="image"
+      steps={IMAGE_SUGGESTION_WORKFLOW_STEPS}
+      activeStepId={currentStep}
+      completedStepIds={confirmedStepIds}
+      lockedStepIds={confirmedStepIds}
+      runId={agentRunId}
+      onStepClick={(stepId) => handleStepClick(Number(stepId))}
+      className="max-w-6xl"
+      headerActions={
+        <>
           <ProjectSelector />
           {session && session.step5Confirmed && (
             <Button variant="outline" size="sm" onClick={() => {
@@ -4452,14 +4478,9 @@ export default function ImageWorkflowPage() {
               <RotateCcw className="w-3 h-3 mr-1" /> 重新开始
             </Button>
           )}
-        </div>
-      </div>
-
-      <StepProgressBar
-        currentStep={currentStep}
-        session={session}
-        onStepClick={handleStepClick}
-      />
+        </>
+      }
+    >
 
       {!session && (
         <Card>
@@ -4498,6 +4519,6 @@ export default function ImageWorkflowPage() {
         <Step5FinalSuggestions projectId={selectedProjectId} session={session} onConfirm={handleStepConfirm} />
       )}
 
-    </div>
+    </WorkflowShell>
   );
 }

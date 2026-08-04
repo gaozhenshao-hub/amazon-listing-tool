@@ -14,6 +14,8 @@ import {
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
+import { WorkflowStepProgress } from "@/components/workflow/WorkflowStepProgress";
+import { DEV_PRODUCT_WORKFLOW_STEPS } from "@/components/workflow/workflowDefinitions";
 import DevDataUpload from "./DevDataUpload";
 import PanoramaTable from "./PanoramaTable";
 import AttributeTagging from "./AttributeTagging";
@@ -38,6 +40,30 @@ const phaseLabel: Record<string, { text: string; color: string; icon: any }> = {
   project_execution: { text: "第二阶段：项目落地", color: "bg-emerald-500/10 text-emerald-700 border-emerald-200", icon: Target },
 };
 
+const DEV_PHASE2_STEP_IDS = new Set(["profile", "bom", "manual", "test", "profit", "download"]);
+const DEV_PROFILE_CONFIRMED_FIELDS = [
+  "appearanceConfirmed",
+  "functionsConfirmed",
+  "costConfirmed",
+  "packageConfirmed",
+  "packageDesignConfirmed",
+  "userPersonaConfirmed",
+  "usageScenariosConfirmed",
+  "productMapConfirmed",
+];
+
+function safeArrayFromJson(raw: unknown): any[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw !== "string") return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function DevProjectDetail() {
   const [, setLocation] = useLocation();
   const params = useParams<{ id: string }>();
@@ -53,6 +79,12 @@ export default function DevProjectDetail() {
   const { data: testReport } = trpc.devManual.getTestReport.useQuery({ projectId }) as any;
   const { data: linkageStatus } = trpc.devLinkage.getLinkageStatus.useQuery({ projectId });
   const { data: moduleLocks } = trpc.devModuleLock.getAll.useQuery({ projectId });
+  const { data: dataStatus } = trpc.devProject.getDataStatus.useQuery({ projectId });
+  const { data: tagStatus } = trpc.devProjectTags.getTagStatus.useQuery({ projectId });
+  const { data: taggingStatus } = trpc.devTagging.getTaggingStatus.useQuery({ projectId });
+  const { data: panoramaStatus } = trpc.devPanorama.getStatus.useQuery({ projectId });
+  const { data: analysisStages } = trpc.devAnalysis.getStages.useQuery({ projectId });
+  const { data: bomItems } = trpc.devBom.list.useQuery({ projectId }) as any;
   const toggleLockMutation = trpc.devModuleLock.toggle.useMutation({
     onSuccess: (data: any) => {
       toast.success(data.isLocked ? `${moduleNameLabels[data.moduleName as keyof typeof moduleNameLabels]}已锁定` : `${moduleNameLabels[data.moduleName as keyof typeof moduleNameLabels]}已解锁，可重新编辑`);
@@ -85,6 +117,78 @@ export default function DevProjectDetail() {
 
   const currentPhase = (project as any)?.phase || "market_analysis";
   const isPhase2 = currentPhase === "project_execution";
+  const confirmedDataCount = useMemo(() => {
+    if (!dataStatus) return 0;
+    return Object.values(dataStatus as Record<string, any>).filter((item) => item?.confirmed).length;
+  }, [dataStatus]);
+  const confirmedAnalysisCount = useMemo(() => {
+    return (analysisStages || []).filter((stage: any) => stage.status === "confirmed").length;
+  }, [analysisStages]);
+  const completedAnalysisCount = useMemo(() => {
+    return (analysisStages || []).filter((stage: any) => ["completed", "generated", "editing", "confirmed"].includes(stage.status)).length;
+  }, [analysisStages]);
+  const profileConfirmedCount = useMemo(() => {
+    return DEV_PROFILE_CONFIRMED_FIELDS.filter((field) => profile?.[field] === 1).length;
+  }, [profile]);
+  const manualChapters = useMemo(() => safeArrayFromJson(manual?.contentSections), [manual?.contentSections]);
+  const testItems = useMemo(() => safeArrayFromJson(testReport?.testItems), [testReport?.testItems]);
+  const manualConfirmedCount = useMemo(() => manualChapters.filter((chapter: any) => chapter?.confirmed).length, [manualChapters]);
+  const passedTestCount = useMemo(() => testItems.filter((item: any) => item?.testStatus === "pass").length, [testItems]);
+  const devWorkflowCompletedStepIds = useMemo(() => {
+    const ids = new Set<string>(["overview"]);
+    if (confirmedDataCount > 0) ids.add("data");
+    if (tagStatus?.allConfirmed) ids.add("tags");
+    if (taggingStatus?.confirmed) ids.add("tagging");
+    if (panoramaStatus?.confirmed) ids.add("panorama");
+    if (confirmedAnalysisCount >= 6) ids.add("analysis");
+    if (score) ids.add("scoring");
+    if (profileConfirmedCount > 0 || isModuleLocked("profile")) ids.add("profile");
+    if ((bomItems?.length ?? 0) > 0 || isModuleLocked("bom")) ids.add("bom");
+    if (manualChapters.length > 0 || isModuleLocked("manual")) ids.add("manual");
+    if (testItems.length > 0 || isModuleLocked("test")) ids.add("test");
+    if (linkageStatus?.profitSummary?.hasData || isModuleLocked("profit")) ids.add("profit");
+    if (isPhase2) ids.add("download");
+    return ids;
+  }, [
+    confirmedDataCount,
+    tagStatus?.allConfirmed,
+    taggingStatus?.confirmed,
+    panoramaStatus?.confirmed,
+    confirmedAnalysisCount,
+    score,
+    profileConfirmedCount,
+    moduleLocks,
+    bomItems?.length,
+    manualChapters.length,
+    testItems.length,
+    linkageStatus?.profitSummary?.hasData,
+    isPhase2,
+  ]);
+  const devWorkflowLockedStepIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (confirmedDataCount >= 4) ids.add("data");
+    if (tagStatus?.allConfirmed) ids.add("tags");
+    if (taggingStatus?.confirmed) ids.add("tagging");
+    if (panoramaStatus?.confirmed) ids.add("panorama");
+    if (confirmedAnalysisCount >= 6) ids.add("analysis");
+    if (isPhase2) ids.add("scoring");
+    for (const stepId of ["profile", "bom", "manual", "test", "profit"]) {
+      if (isModuleLocked(stepId)) ids.add(stepId);
+    }
+    return ids;
+  }, [confirmedDataCount, tagStatus?.allConfirmed, taggingStatus?.confirmed, panoramaStatus?.confirmed, confirmedAnalysisCount, isPhase2, moduleLocks]);
+  const devWorkflowDisabledStepIds = useMemo(() => {
+    if (isPhase2) return [];
+    return DEV_PRODUCT_WORKFLOW_STEPS.filter((step) => DEV_PHASE2_STEP_IDS.has(String(step.id))).map((step) => step.id);
+  }, [isPhase2]);
+  const handleDevWorkflowStepClick = (stepId: string | number) => {
+    const nextTab = String(stepId);
+    if (DEV_PHASE2_STEP_IDS.has(nextTab) && !isPhase2) {
+      toast.info("需要先完成评分立项，才能进入项目落地阶段");
+      return;
+    }
+    setActiveTab(nextTab);
+  };
 
   /* scoring mutations moved to ScoringEditor.tsx */
   const manualMutation = trpc.devManual.generateManual.useMutation({
@@ -189,9 +293,54 @@ export default function DevProjectDetail() {
         </Button>
       </div>
 
+      <Card className="border-slate-200">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Brain className="h-4 w-4 text-primary" />
+              智能产品开发流程
+            </CardTitle>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Badge variant="outline" className="text-[10px]">数据 {confirmedDataCount}/4</Badge>
+              <Badge variant="outline" className="text-[10px]">标签 {tagStatus?.confirmed ?? 0}/{tagStatus?.total ?? 0}</Badge>
+              <Badge variant="outline" className="text-[10px]">分析 {confirmedAnalysisCount}/6</Badge>
+              {isPhase2 && <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">已立项</Badge>}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <WorkflowStepProgress
+            steps={DEV_PRODUCT_WORKFLOW_STEPS}
+            activeStepId={activeTab}
+            completedStepIds={devWorkflowCompletedStepIds}
+            lockedStepIds={devWorkflowLockedStepIds}
+            disabledStepIds={devWorkflowDisabledStepIds}
+            onStepClick={handleDevWorkflowStepClick}
+          />
+          <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground md:grid-cols-4">
+            <div className="rounded-lg border bg-muted/20 px-3 py-2">
+              <p className="font-medium text-foreground">下游输入</p>
+              <p className="mt-0.5">{taggingStatus?.confirmed ? "属性标注已确认" : "等待标签/属性确认"}</p>
+            </div>
+            <div className="rounded-lg border bg-muted/20 px-3 py-2">
+              <p className="font-medium text-foreground">分析产物</p>
+              <p className="mt-0.5">已生成 {completedAnalysisCount}/6 · 已确认 {confirmedAnalysisCount}/6</p>
+            </div>
+            <div className="rounded-lg border bg-muted/20 px-3 py-2">
+              <p className="font-medium text-foreground">落地产物</p>
+              <p className="mt-0.5">画像 {profileConfirmedCount}/8 · BOM {bomItems?.length ?? 0} 项</p>
+            </div>
+            <div className="rounded-lg border bg-muted/20 px-3 py-2">
+              <p className="font-medium text-foreground">输出确认</p>
+              <p className="mt-0.5">说明书 {manualConfirmedCount}/{manualChapters.length || 0} · 测试通过 {passedTestCount}/{testItems.length || 0}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         {/* Dynamic Tab List */}
-        <TabsList className={`grid w-full ${isPhase2 && ["profile","bom","manual","test","profit","download"].includes(activeTab) ? "grid-cols-6" : "grid-cols-7"}`}>
+        <TabsList className={`grid w-full ${isPhase2 && ["profile","bom","manual","test","profit","download"].includes(activeTab) ? "grid-cols-6" : "grid-cols-8"}`}>
           {(isPhase2 && ["profile","bom","manual","test","profit","download"].includes(activeTab) ? phase2Tabs : phase1Tabs).map(tab => (
             <TabsTrigger key={tab.value} value={tab.value} className="text-xs gap-1 relative">
               <tab.icon className="h-3.5 w-3.5" />{tab.label}

@@ -4,6 +4,17 @@
 import { ENV } from './_core/env';
 
 type StorageConfig = { baseUrl: string; apiKey: string };
+export type StorageProvider = "forge" | "s3" | "local" | "external";
+
+export function buildStorageUri(key: string, provider: StorageProvider = "forge"): string {
+  return `storage://${provider}/${normalizeKey(key)}`;
+}
+
+export function parseStorageUri(uri: string): { provider: StorageProvider | string; key: string } | null {
+  const match = uri.match(/^storage:\/\/([^/]+)\/(.+)$/);
+  if (!match) return null;
+  return { provider: match[1], key: normalizeKey(match[2]) };
+}
 
 function getStorageConfig(): StorageConfig {
   const baseUrl = ENV.forgeApiUrl;
@@ -71,7 +82,7 @@ export async function storagePut(
   relKey: string,
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream"
-): Promise<{ key: string; url: string }> {
+): Promise<{ key: string; url: string; storageUri: string }> {
   const { baseUrl, apiKey } = getStorageConfig();
   const key = normalizeKey(relKey);
   const uploadUrl = buildUploadUrl(baseUrl, key);
@@ -89,7 +100,7 @@ export async function storagePut(
     );
   }
   const url = (await response.json()).url;
-  return { key, url };
+  return { key, url, storageUri: buildStorageUri(key, "forge") };
 }
 
 export async function storageGet(relKey: string): Promise<{ key: string; url: string; }> {

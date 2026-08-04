@@ -1,4 +1,10 @@
 import { describe, it, expect } from "vitest";
+import { readRepoSources } from "./testPaths";
+
+const listingSource = readRepoSources(
+  "server/domains/listing/routerContext.ts",
+  "server/domains/listing/routers/generation.ts"
+);
 
 // Test: DataFilesPage only supports product_attributes file type
 describe("DataFilesPage simplification", () => {
@@ -61,20 +67,20 @@ describe("Image advice bilingual support", () => {
 
   it("should have translateImageAdviceToChinese function in listing router", async () => {
     const fs = await import("fs");
-    const listing = fs.readFileSync("server/routers/listing.ts", "utf-8");
+    const listing = listingSource;
     expect(listing).toContain("translateImageAdviceToChinese");
     expect(listing).toContain("IMAGE_ADVICE_TRANSLATION_PROMPT");
   });
 
   it("should save imageAdviceCn in generateFull", async () => {
     const fs = await import("fs");
-    const listing = fs.readFileSync("server/routers/listing.ts", "utf-8");
+    const listing = listingSource;
     expect(listing).toContain("imageAdviceCn: imageAdviceCnStr");
   });
 
   it("should translate imageAdviceCn in translateToChinese", async () => {
     const fs = await import("fs");
-    const listing = fs.readFileSync("server/routers/listing.ts", "utf-8");
+    const listing = listingSource;
     expect(listing).toContain("imageAdviceCn: imageAdviceCnStr");
     // Check that translateToChinese calls translateImageAdviceToChinese
     const translateSection = listing.substring(

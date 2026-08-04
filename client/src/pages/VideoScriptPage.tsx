@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { WorkflowStepProgress } from "@/components/workflow";
+import { VIDEO_SCRIPT_WORKFLOW_STEPS } from "@/components/workflow/workflowDefinitions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -536,6 +538,11 @@ function VideoScriptEditor({ scriptId }: { scriptId: number }) {
   const videoType = script.data.videoType || "main_video";
   const spec = VIDEO_TYPE_SPECS[videoType] || VIDEO_TYPE_SPECS.other;
   const isStageConfirmed = stageStatus[STAGES[currentStageIdx]?.key] === "confirmed";
+  const completedStageIds = new Set(
+    STAGES
+      .filter((stage, index) => index < currentStageIdx || stageStatus[stage.key] === "confirmed")
+      .map((stage) => stage.key),
+  );
 
   return (
     <div className="space-y-6">
@@ -644,39 +651,13 @@ function VideoScriptEditor({ scriptId }: { scriptId: number }) {
       {/* Stage Progress Bar */}
       <Card>
         <CardContent className="py-4">
-          <div className="flex items-center justify-between">
-            {STAGES.map((stage, idx) => {
-              const isCompleted = idx < currentStageIdx;
-              const isCurrent = idx === currentStageIdx;
-              const isConfirmed = stageStatus[stage.key] === "confirmed";
-              const StageIcon = stage.icon;
-              return (
-                <div key={stage.key} className="flex items-center flex-1">
-                  <div className="flex flex-col items-center gap-1 flex-1">
-                    <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
-                        isConfirmed
-                          ? "bg-green-500 text-white"
-                          : isCompleted
-                          ? "bg-green-400 text-white"
-                          : isCurrent
-                          ? "bg-primary text-primary-foreground ring-2 ring-primary/30 ring-offset-2"
-                          : "bg-muted text-muted-foreground"
-                      }`}
-                    >
-                      {isConfirmed ? <CheckCircle className="w-5 h-5" /> : isCompleted ? <Check className="w-4 h-4" /> : <StageIcon className="w-4 h-4" />}
-                    </div>
-                    <span className={`text-xs text-center ${isCurrent ? "font-semibold text-primary" : "text-muted-foreground"}`}>
-                      {stage.label}
-                    </span>
-                  </div>
-                  {idx < STAGES.length - 1 && (
-                    <div className={`w-full h-0.5 mx-1 ${isCompleted || isConfirmed ? "bg-green-400" : "bg-muted"}`} />
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <WorkflowStepProgress
+            steps={VIDEO_SCRIPT_WORKFLOW_STEPS}
+            activeStepId={STAGES[currentStageIdx]?.key || "stage_0a"}
+            completedStepIds={completedStageIds}
+            lockedStepIds={Object.keys(stageStatus).filter((key) => stageStatus[key] === "confirmed")}
+            compact
+          />
         </CardContent>
       </Card>
 

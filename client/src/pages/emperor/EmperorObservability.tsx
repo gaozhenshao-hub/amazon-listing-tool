@@ -1,379 +1,514 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { trpc } from "@/lib/trpc";
-import {
-  Activity, Zap, Bot, Briefcase, Star, TrendingUp, TrendingDown,
-  AlertTriangle, CheckCircle2, Clock, Loader2, RefreshCw,
-  BarChart3, ChevronDown, ChevronUp
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
-} from "@/components/ui/select";
-import {
-  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend
-} from "recharts";
+  Activity,
+  AlertTriangle,
+  BarChart3,
+  CheckCircle2,
+  Clock,
+  Database,
+  Loader2,
+  RefreshCw,
+  Server,
+  ShieldCheck,
+  Timer,
+  Wrench,
+  XCircle,
+  Zap,
+} from "lucide-react";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+const PERIOD_OPTIONS = [
+  { label: "7天", value: 7 },
+  { label: "30天", value: 30 },
+  { label: "90天", value: 90 },
+];
 
-function fmtMs(ms: number | null | undefined): string {
-  if (ms == null) return "—";
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
+function formatNumber(value: unknown) {
+  return Number(value || 0).toLocaleString();
 }
 
-function fmtNum(n: number | null | undefined): string {
-  if (n == null) return "—";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(Math.round(n));
+function formatMs(value: unknown) {
+  const ms = Number(value || 0);
+  if (!Number.isFinite(ms) || ms <= 0) return "-";
+  if (ms >= 60_000) return `${(ms / 60_000).toFixed(1)}m`;
+  if (ms >= 1_000) return `${(ms / 1_000).toFixed(1)}s`;
+  return `${Math.round(ms)}ms`;
 }
 
-function pct(a: number, total: number): string {
-  if (!total) return "0%";
-  return `${((a / total) * 100).toFixed(1)}%`;
+function formatPercent(value: unknown) {
+  return `${Number(value || 0).toFixed(1)}%`;
 }
 
-const COLORS = ["#7c3aed", "#2563eb", "#0891b2", "#059669", "#d97706", "#dc2626"];
+function statusBadge(status: string) {
+  const normalized = status || "unknown";
+  if (["active", "ok", "succeeded", "completed"].includes(normalized)) {
+    return <Badge className="border border-emerald-200 bg-emerald-50 text-emerald-700">正常</Badge>;
+  }
+  if (["warning", "draining", "dry_run", "running", "queued"].includes(normalized)) {
+    return <Badge className="border border-amber-200 bg-amber-50 text-amber-700">关注</Badge>;
+  }
+  if (["failed", "unhealthy", "stopped", "canceled"].includes(normalized)) {
+    return <Badge className="border border-rose-200 bg-rose-50 text-rose-700">异常</Badge>;
+  }
+  return <Badge variant="outline">{normalized}</Badge>;
+}
 
-// ─── Stat Card ────────────────────────────────────────────────────────────────
-
-function StatCard({
-  icon: Icon, label, value, sub, color = "violet", trend
+function MetricCard({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  tone = "default",
 }: {
-  icon: any; label: string; value: string; sub?: string; color?: string; trend?: "up" | "down" | "neutral";
+  icon: typeof Activity;
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: "default" | "green" | "amber" | "red" | "blue";
 }) {
-  const colorMap: Record<string, string> = {
-    violet: "text-violet-400 bg-violet-500/10 border-violet-500/20",
-    blue: "text-blue-400 bg-blue-500/10 border-blue-500/20",
-    cyan: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20",
-    green: "text-green-400 bg-green-500/10 border-green-500/20",
-    amber: "text-amber-400 bg-amber-500/10 border-amber-500/20",
-    red: "text-red-400 bg-red-500/10 border-red-500/20",
-  };
-  const cls = colorMap[color] ?? colorMap.violet;
+  const toneClass = {
+    default: "bg-slate-100 text-slate-700",
+    green: "bg-emerald-50 text-emerald-700",
+    amber: "bg-amber-50 text-amber-700",
+    red: "bg-rose-50 text-rose-700",
+    blue: "bg-sky-50 text-sky-700",
+  }[tone];
+
   return (
-    <div className="bg-[#0d1117] border border-white/8 rounded-xl p-4">
-      <div className="flex items-start justify-between mb-3">
-        <div className={`p-2 rounded-lg border ${cls}`}>
-          <Icon size={16} />
-        </div>
-        {trend && (
-          <div className={`flex items-center gap-0.5 text-xs ${trend === "up" ? "text-green-400" : trend === "down" ? "text-red-400" : "text-slate-500"}`}>
-            {trend === "up" ? <TrendingUp size={12} /> : trend === "down" ? <TrendingDown size={12} /> : null}
+    <Card>
+      <CardContent className="pt-5">
+        <div className="flex items-center gap-3">
+          <div className={cn("flex h-10 w-10 items-center justify-center rounded-lg", toneClass)}>
+            <Icon className="h-5 w-5" />
           </div>
-        )}
-      </div>
-      <div className="text-2xl font-bold text-white mb-0.5">{value}</div>
-      <div className="text-xs text-slate-500">{label}</div>
-      {sub && <div className="text-[10px] text-slate-600 mt-0.5">{sub}</div>}
-    </div>
+          <div className="min-w-0">
+            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className="mt-1 text-xl font-semibold tabular-nums">{value}</p>
+            {sub && <p className="mt-1 text-xs text-muted-foreground">{sub}</p>}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
-
-// ─── Section Header ───────────────────────────────────────────────────────────
-
-function SectionHeader({ icon: Icon, title, color = "violet" }: { icon: any; title: string; color?: string }) {
-  const colorMap: Record<string, string> = {
-    violet: "text-violet-400", blue: "text-blue-400", cyan: "text-cyan-400",
-    green: "text-green-400", amber: "text-amber-400",
-  };
-  return (
-    <div className="flex items-center gap-2 mb-3">
-      <Icon size={14} className={colorMap[color] ?? "text-violet-400"} />
-      <span className="text-sm font-semibold text-white">{title}</span>
-    </div>
-  );
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function EmperorObservability() {
-  const [days, setDays] = useState(7);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-
-  const { data: dashData, isLoading, refetch, isFetching } = trpc.emperor.observability.dashboard.useQuery(
-    { days },
-    { refetchInterval: 60_000 }
-  );
-  const dash = dashData as any;
-
-  const { data: evalData } = trpc.emperor.observability.evaluations.useQuery(
-    { limit: 50 },
-    { refetchInterval: 60_000 }
-  );
-  const evals = (evalData as any[]) ?? [];
-
-  const { data: metricsData } = trpc.emperor.observability.metrics.useQuery(
-    { limit: 100 },
-    { refetchInterval: 60_000 }
-  );
-  const metrics = (metricsData as any[]) ?? [];
-
-  const skill = dash?.summary?.skill ?? {};
-  const agent = dash?.summary?.agent ?? {};
-  const node = dash?.summary?.node ?? {};
-  const job = dash?.summary?.job ?? {};
-  const quality = dash?.summary?.quality ?? {};
-
-  // Build chart data from metrics
-  const metricsByName: Record<string, any[]> = {};
-  metrics.forEach((m: any) => {
-    if (!metricsByName[m.metricName]) metricsByName[m.metricName] = [];
-    metricsByName[m.metricName].push(m);
+  const [days, setDays] = useState(30);
+  const utils = trpc.useUtils();
+  const { data, isLoading, isFetching, error } = trpc.emperor.observability.dashboard.useQuery({ days });
+  const snapshotMutation = trpc.emperor.observability.recordDatabaseBaselineSnapshot.useMutation({
+    onSuccess: (result) => {
+      toast.success(`数据库基线已记录：${result.rowCountSamples} 个表，${result.explainSamples} 个 EXPLAIN`);
+      utils.emperor.observability.dashboard.invalidate({ days });
+    },
+    onError: (mutationError) => toast.error(mutationError.message || "记录数据库基线失败"),
   });
 
-  // Pie data for skill success/fail
-  const skillPieData = skill.totalRuns ? [
-    { name: "成功", value: skill.succeededRuns ?? 0 },
-    { name: "失败", value: skill.failedRuns ?? 0 },
-    { name: "其他", value: Math.max(0, (skill.totalRuns ?? 0) - (skill.succeededRuns ?? 0) - (skill.failedRuns ?? 0)) },
-  ].filter(d => d.value > 0) : [];
+  const topRows = useMemo(() => {
+    const rows = data?.database?.rowCounts || [];
+    return [...rows]
+      .sort((a, b) => Number(b.rowCount || 0) - Number(a.rowCount || 0))
+      .slice(0, 10);
+  }, [data?.database?.rowCounts]);
 
-  // Eval bar data
-  const evalByType = evals.reduce((acc: Record<string, number[]>, e: any) => {
-    if (!acc[e.entityType]) acc[e.entityType] = [];
-    if (e.score != null) acc[e.entityType].push(Number(e.score));
-    return acc;
-  }, {});
-  const evalBarData = Object.entries(evalByType).map(([type, scores]) => ({
-    name: type,
-    avgScore: scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : 0,
-    count: scores.length,
-  }));
+  if (isLoading) {
+    return (
+      <div className="flex h-[calc(100vh-56px)] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <Card className="max-w-2xl border-rose-200 bg-rose-50">
+          <CardContent className="flex items-start gap-3 pt-6">
+            <XCircle className="mt-0.5 h-5 w-5 text-rose-600" />
+            <div>
+              <p className="font-medium text-rose-900">可观测数据读取失败</p>
+              <p className="mt-1 text-sm text-rose-700">{error.message}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const summary = data?.summary;
+  const worker = data?.workerQueue;
+  const database = data?.database;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+    <div className="h-[calc(100vh-56px)] overflow-auto bg-background p-6">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-xl font-bold text-white flex items-center gap-2">
-              <Activity size={20} className="text-violet-400" />
-              AI OS 观测中心
-            </h1>
-            <p className="text-sm text-slate-500 mt-0.5">实时监控 Skill、Agent、Job 的运行质量与性能</p>
+            <h1 className="text-xl font-semibold">可观测看板</h1>
+            <p className="mt-1 text-sm text-muted-foreground">AI OS、Worker 队列、数据库基线和 QA 运营指标</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Select value={String(days)} onValueChange={v => setDays(Number(v))}>
-              <SelectTrigger className="h-8 w-28 text-xs bg-[#0d1117] border-white/10 text-slate-300">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1">近 1 天</SelectItem>
-                <SelectItem value="7">近 7 天</SelectItem>
-                <SelectItem value="30">近 30 天</SelectItem>
-                <SelectItem value="90">近 90 天</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex flex-wrap items-center gap-2">
+            {PERIOD_OPTIONS.map((option) => (
+              <Button
+                key={option.value}
+                size="sm"
+                variant={days === option.value ? "default" : "outline"}
+                onClick={() => setDays(option.value)}
+              >
+                {option.label}
+              </Button>
+            ))}
             <Button
               size="sm"
               variant="outline"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              className="h-8 text-xs border-white/10 text-slate-300 hover:bg-white/5"
+              className="gap-2"
+              disabled={snapshotMutation.isPending}
+              onClick={() => snapshotMutation.mutate()}
             >
-              {isFetching ? <Loader2 size={12} className="animate-spin mr-1" /> : <RefreshCw size={12} className="mr-1" />}
-              刷新
+              {snapshotMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              记录DB基线
             </Button>
           </div>
         </div>
 
-        {isLoading ? (
-          <div className="flex items-center justify-center h-48">
-            <Loader2 size={24} className="animate-spin text-violet-400" />
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {/* ── Skill 统计 ── */}
-            <div>
-              <SectionHeader icon={Zap} title="Skill 运行统计" color="violet" />
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                <StatCard icon={Zap} label="总运行次数" value={fmtNum(skill.totalRuns)} color="violet" />
-                <StatCard icon={CheckCircle2} label="成功率" value={pct(skill.succeededRuns ?? 0, skill.totalRuns ?? 0)} color="green" />
-                <StatCard icon={Clock} label="平均耗时" value={fmtMs(skill.avgDurationMs)} color="cyan" />
-                <StatCard icon={BarChart3} label="总 Token" value={fmtNum((skill.inputTokens ?? 0) + (skill.outputTokens ?? 0))} sub={`输入 ${fmtNum(skill.inputTokens)} / 输出 ${fmtNum(skill.outputTokens)}`} color="blue" />
-              </div>
-              {skillPieData.length > 0 && (
-                <div className="bg-[#0d1117] border border-white/8 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 mb-3">运行结果分布</div>
-                  <ResponsiveContainer width="100%" height={160}>
-                    <PieChart>
-                      <Pie data={skillPieData} cx="50%" cy="50%" outerRadius={60} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
-                        {skillPieData.map((_, i) => <Cell key={i} fill={["#059669", "#dc2626", "#6b7280"][i] ?? COLORS[i]} />)}
-                      </Pie>
-                      <Tooltip contentStyle={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, fontSize: 11 }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <MetricCard
+            icon={Zap}
+            label="Skill 成本"
+            value={`${(Number(summary?.skill?.costCents || 0) / 100).toFixed(2)}`}
+            sub={`${formatNumber(summary?.skill?.totalTokens)} tokens / ${formatNumber(summary?.skill?.totalRuns)} 次`}
+            tone="blue"
+          />
+          <MetricCard
+            icon={Activity}
+            label="Agent 失败率"
+            value={formatPercent(summary?.agent?.failureRate)}
+            sub={`${formatNumber(summary?.agent?.failedRuns)} failed / ${formatNumber(summary?.agent?.totalRuns)} runs`}
+            tone={Number(summary?.agent?.failureRate || 0) > 10 ? "red" : "green"}
+          />
+          <MetricCard
+            icon={ShieldCheck}
+            label="人工确认率"
+            value={formatPercent(summary?.node?.confirmationRate)}
+            sub={`编辑率 ${formatPercent(summary?.node?.humanEditRate)} / 重试率 ${formatPercent(summary?.node?.retryRate)}`}
+            tone="green"
+          />
+          <MetricCard
+            icon={Wrench}
+            label="Tool 失败率"
+            value={formatPercent(summary?.tool?.failureRate)}
+            sub={`${formatNumber(summary?.tool?.failedRuns)} failed / ${formatNumber(summary?.tool?.totalRuns)} runs`}
+            tone={Number(summary?.tool?.failureRate || 0) > 10 ? "red" : "default"}
+          />
+          <MetricCard
+            icon={Timer}
+            label="Job 平均耗时"
+            value={formatMs(summary?.job?.avgDurationMs)}
+            sub={`失败率 ${formatPercent(summary?.job?.failureRate)} / 重试率 ${formatPercent(summary?.job?.retryRate)}`}
+            tone="amber"
+          />
+          <MetricCard
+            icon={CheckCircle2}
+            label="质量均分"
+            value={Number(summary?.quality?.avgScore || 0).toFixed(1)}
+            sub={`低分率 ${formatPercent(summary?.quality?.lowScoreRate)} / ${formatNumber(summary?.quality?.evaluationCount)} 样本`}
+            tone="green"
+          />
+          <MetricCard
+            icon={Server}
+            label="Worker 健康"
+            value={`${formatNumber(worker?.healthyCount)} / ${formatNumber(worker?.workers?.length)}`}
+            sub={`stale ${formatNumber(worker?.staleCount)} / unhealthy ${formatNumber(worker?.unhealthyCount)}`}
+            tone={Number(worker?.unhealthyCount || 0) > 0 ? "red" : "blue"}
+          />
+          <MetricCard
+            icon={Database}
+            label="DB EXPLAIN"
+            value={`${formatNumber(database?.explainSummary?.passedChecks)} / ${formatNumber(database?.explainSummary?.totalChecks)}`}
+            sub={`命中率 ${formatPercent(database?.explainSummary?.passRate)}`}
+            tone={Number(database?.explainSummary?.failedChecks || 0) > 0 ? "amber" : "green"}
+          />
+        </div>
 
-            {/* ── Agent 统计 ── */}
-            <div>
-              <SectionHeader icon={Bot} title="Agent 运行统计" color="blue" />
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <StatCard icon={Bot} label="总 Agent 运行" value={fmtNum(agent.totalRuns)} color="blue" />
-                <StatCard icon={CheckCircle2} label="完成率" value={pct(agent.completedRuns ?? 0, agent.totalRuns ?? 0)} color="green" />
-                <StatCard icon={Clock} label="平均耗时" value={fmtMs(agent.avgDurationMs)} color="cyan" />
-                <StatCard icon={AlertTriangle} label="人工审核节点" value={fmtNum(node.waitingHumanNodes)} sub={`人工编辑 ${fmtNum(node.humanEditedNodes)} 次`} color="amber" />
-              </div>
-            </div>
-
-            {/* ── Job 统计 ── */}
-            <div>
-              <SectionHeader icon={Briefcase} title="AI Job 队列统计" color="cyan" />
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <StatCard icon={Briefcase} label="总 Job 数" value={fmtNum(job.totalJobs)} color="cyan" />
-                <StatCard icon={CheckCircle2} label="成功率" value={pct(job.succeededJobs ?? 0, job.totalJobs ?? 0)} color="green" />
-                <StatCard icon={AlertTriangle} label="失败数" value={fmtNum(job.failedJobs)} color="red" />
-                <StatCard icon={Clock} label="平均耗时" value={fmtMs(job.avgDurationMs)} color="cyan" />
-              </div>
-            </div>
-
-            {/* ── 质量评分 ── */}
-            <div>
-              <SectionHeader icon={Star} title="AI 质量评分" color="amber" />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Eval bar chart */}
-                {evalBarData.length > 0 ? (
-                  <div className="bg-[#0d1117] border border-white/8 rounded-xl p-4">
-                    <div className="text-xs text-slate-500 mb-3">各类型平均质量分（满分 100）</div>
-                    <ResponsiveContainer width="100%" height={180}>
-                      <BarChart data={evalBarData} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                        <XAxis dataKey="name" tick={{ fill: "#64748b", fontSize: 10 }} />
-                        <YAxis domain={[0, 100]} tick={{ fill: "#64748b", fontSize: 10 }} />
-                        <Tooltip contentStyle={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, fontSize: 11 }} />
-                        <Bar dataKey="avgScore" fill="#7c3aed" radius={[4, 4, 0, 0]} name="平均分" />
-                      </BarChart>
-                    </ResponsiveContainer>
+        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Server className="h-4 w-4" />
+                Worker 队列健康
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid gap-3 md:grid-cols-3">
+                {(worker?.queue || []).slice(0, 6).map((item) => (
+                  <div key={`${item.status}-${item.queueName}`} className="rounded-lg border p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">{item.queueName}</span>
+                      {statusBadge(item.status)}
+                    </div>
+                    <p className="mt-3 text-2xl font-semibold tabular-nums">{formatNumber(item.jobCount)}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      max age {formatNumber(item.maxAgeSeconds)}s / stale lease {formatNumber(item.staleLeaseCount)}
+                    </p>
                   </div>
-                ) : (
-                  <div className="bg-[#0d1117] border border-white/8 rounded-xl p-4 flex items-center justify-center h-48">
-                    <div className="text-center text-slate-600">
-                      <Star size={24} className="mx-auto mb-2" />
-                      <div className="text-xs">暂无评测数据</div>
+                ))}
+                {(worker?.queue || []).length === 0 && (
+                  <p className="text-sm text-muted-foreground">暂无队列数据</p>
+                )}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px] text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-xs text-muted-foreground">
+                      <th className="py-2 font-medium">Worker</th>
+                      <th className="py-2 font-medium">状态</th>
+                      <th className="py-2 font-medium">并发</th>
+                      <th className="py-2 font-medium">运行中</th>
+                      <th className="py-2 font-medium">心跳延迟</th>
+                      <th className="py-2 font-medium">角色</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(worker?.workers || []).slice(0, 10).map((item) => (
+                      <tr key={item.workerId} className="border-b last:border-0">
+                        <td className="max-w-[240px] truncate py-2 font-mono text-xs">{item.workerId}</td>
+                        <td className="py-2">{statusBadge(item.effectiveStatus)}</td>
+                        <td className="py-2 tabular-nums">{formatNumber(item.concurrency)}</td>
+                        <td className="py-2 tabular-nums">{formatNumber(item.runningCount)}</td>
+                        <td className="py-2 tabular-nums">{item.heartbeatAgeMs === null ? "-" : `${formatNumber(Math.round(item.heartbeatAgeMs / 1000))}s`}</td>
+                        <td className="py-2">{item.role}</td>
+                      </tr>
+                    ))}
+                    {(worker?.workers || []).length === 0 && (
+                      <tr>
+                        <td className="py-6 text-center text-muted-foreground" colSpan={6}>暂无 Worker 心跳</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <AlertTriangle className="h-4 w-4" />
+                死信与失败分类
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="space-y-2">
+                {(data?.toolFailures || []).slice(0, 8).map((item) => (
+                  <div key={item.failureKind} className="flex items-center justify-between rounded-lg border px-3 py-2">
+                    <span className="text-sm">{item.failureKind}</span>
+                    <span className="font-mono text-sm tabular-nums">{formatNumber(item.count)}</span>
+                  </div>
+                ))}
+                {(data?.toolFailures || []).length === 0 && (
+                  <p className="py-4 text-sm text-muted-foreground">暂无 Tool 失败分类</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                {(worker?.deadLetters || []).slice(0, 6).map((item) => (
+                  <div key={item.runId} className="rounded-lg border p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate font-mono text-xs">{item.runId}</span>
+                      <Badge variant="outline">{item.module}</Badge>
+                    </div>
+                    <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{item.errorMessage || "无错误详情"}</p>
+                  </div>
+                ))}
+                {(worker?.deadLetters || []).length === 0 && (
+                  <p className="py-4 text-sm text-muted-foreground">暂无 Job 死信</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Database className="h-4 w-4" />
+                核心表行数
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[560px] text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-xs text-muted-foreground">
+                      <th className="py-2 font-medium">表</th>
+                      <th className="py-2 font-medium">域</th>
+                      <th className="py-2 text-right font-medium">行数</th>
+                      <th className="py-2 font-medium">增长</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {topRows.map((item) => (
+                      <tr key={item.table} className="border-b last:border-0">
+                        <td className="py-2 font-mono text-xs">{item.table}</td>
+                        <td className="py-2">{item.domain}</td>
+                        <td className="py-2 text-right font-mono tabular-nums">{formatNumber(item.rowCount)}</td>
+                        <td className="py-2">{item.highGrowth ? <Badge className="border border-amber-200 bg-amber-50 text-amber-700">高增长</Badge> : <Badge variant="outline">稳定</Badge>}</td>
+                      </tr>
+                    ))}
+                    {topRows.length === 0 && (
+                      <tr>
+                        <td className="py-6 text-center text-muted-foreground" colSpan={4}>暂无数据库行数基线</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <BarChart3 className="h-4 w-4" />
+                慢查询与 EXPLAIN 基线
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[760px] text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-xs text-muted-foreground">
+                      <th className="py-2 font-medium">检查项</th>
+                      <th className="py-2 font-medium">表</th>
+                      <th className="py-2 font-medium">预期索引</th>
+                      <th className="py-2 font-medium">实际命中</th>
+                      <th className="py-2 font-medium">风险</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(database?.explainAudits || []).map((item) => (
+                      <tr key={item.slug} className="border-b last:border-0">
+                        <td className="max-w-[220px] py-2">
+                          <p className="truncate font-medium">{item.slug}</p>
+                          <p className="truncate text-xs text-muted-foreground">{item.purpose}</p>
+                        </td>
+                        <td className="py-2 font-mono text-xs">{item.table}</td>
+                        <td className="max-w-[180px] truncate py-2 text-xs">{item.expectedIndexNames.join(", ")}</td>
+                        <td className="py-2">
+                          {item.usesExpectedIndex ? (
+                            <Badge className="border border-emerald-200 bg-emerald-50 text-emerald-700">已命中</Badge>
+                          ) : (
+                            <Badge className="border border-rose-200 bg-rose-50 text-rose-700">需审计</Badge>
+                          )}
+                        </td>
+                        <td className="py-2">{item.risk}</td>
+                      </tr>
+                    ))}
+                    {(database?.explainAudits || []).length === 0 && (
+                      <tr>
+                        <td className="py-6 text-center text-muted-foreground" colSpan={5}>暂无 EXPLAIN 基线</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-2">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Clock className="h-4 w-4" />
+                归档任务健康
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-4">
+                <div>
+                  <p className="text-xs text-muted-foreground">总运行</p>
+                  <p className="mt-1 text-xl font-semibold">{formatNumber(database?.archiveHealth?.totalRuns)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">成功率</p>
+                  <p className="mt-1 text-xl font-semibold">{formatPercent(database?.archiveHealth?.successRate)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">已归档</p>
+                  <p className="mt-1 text-xl font-semibold">{formatNumber(database?.archiveHealth?.archivedCount)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">已删除</p>
+                  <p className="mt-1 text-xl font-semibold">{formatNumber(database?.archiveHealth?.deletedCount)}</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {(database?.archiveHealth?.latestRuns || []).slice(0, 6).map((item) => (
+                  <div key={item.archiveRunId} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{item.policySlug}</p>
+                      <p className="truncate text-xs text-muted-foreground">{item.tableName} / {item.mode}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {statusBadge(item.status)}
+                      <span className="font-mono text-xs tabular-nums">{formatNumber(item.candidateCount)}</span>
                     </div>
                   </div>
-                )}
-
-                {/* Quality summary */}
-                <div className="bg-[#0d1117] border border-white/8 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 mb-3">质量综合指标</div>
-                  <div className="space-y-3">
-                    {[
-                      { label: "加权质量评分", value: quality.weightedQualityScore != null ? `${Number(quality.weightedQualityScore).toFixed(1)}` : "—", color: "text-violet-400" },
-                      { label: "低分评测占比", value: quality.lowScoreRate != null ? `${(Number(quality.lowScoreRate) * 100).toFixed(1)}%` : "—", color: "text-red-400" },
-                      { label: "人工编辑率", value: node.humanEditedNodes && node.totalNodes ? pct(node.humanEditedNodes, node.totalNodes) : "—", color: "text-amber-400" },
-                      { label: "节点重试率", value: node.retryCount && node.totalNodes ? pct(node.retryCount, node.totalNodes) : "—", color: "text-blue-400" },
-                    ].map(item => (
-                      <div key={item.label} className="flex items-center justify-between">
-                        <span className="text-xs text-slate-400">{item.label}</span>
-                        <span className={`text-sm font-semibold ${item.color}`}>{item.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* ── 最近评测记录 ── */}
-            {evals.length > 0 && (
-              <div>
-                <div
-                  className="flex items-center justify-between cursor-pointer mb-3"
-                  onClick={() => setExpanded(e => ({ ...e, evals: !e.evals }))}
-                >
-                  <SectionHeader icon={Star} title={`最近评测记录（${evals.length}）`} color="amber" />
-                  {expanded.evals ? <ChevronUp size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
-                </div>
-                {expanded.evals && (
-                  <div className="bg-[#0d1117] border border-white/8 rounded-xl overflow-hidden">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-white/8">
-                          {["类型", "实体", "评分", "评测者", "时间"].map(h => (
-                            <th key={h} className="px-3 py-2 text-left text-slate-500 font-medium">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {evals.slice(0, 20).map((e: any, i: number) => (
-                          <tr key={i} className="border-b border-white/5 hover:bg-white/3">
-                            <td className="px-3 py-2">
-                              <Badge className="text-[9px] bg-violet-500/20 text-violet-400 border-violet-500/30">{e.entityType}</Badge>
-                            </td>
-                            <td className="px-3 py-2 text-slate-400 font-mono truncate max-w-[120px]">{e.entityId}</td>
-                            <td className="px-3 py-2">
-                              <span className={`font-semibold ${Number(e.score) >= 80 ? "text-green-400" : Number(e.score) >= 60 ? "text-amber-400" : "text-red-400"}`}>
-                                {e.score ?? "—"}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-slate-500">{e.evaluatorType ?? "—"}</td>
-                            <td className="px-3 py-2 text-slate-600">
-                              {e.createdAt ? new Date(e.createdAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                ))}
+                {(database?.archiveHealth?.latestRuns || []).length === 0 && (
+                  <p className="py-4 text-sm text-muted-foreground">暂无归档任务记录</p>
                 )}
               </div>
-            )}
+            </CardContent>
+          </Card>
 
-            {/* ── 指标趋势 ── */}
-            {metrics.length > 0 && (
-              <div>
-                <div
-                  className="flex items-center justify-between cursor-pointer mb-3"
-                  onClick={() => setExpanded(e => ({ ...e, metrics: !e.metrics }))}
-                >
-                  <SectionHeader icon={Activity} title={`运行指标明细（${metrics.length}）`} color="cyan" />
-                  {expanded.metrics ? <ChevronUp size={14} className="text-slate-500" /> : <ChevronDown size={14} className="text-slate-500" />}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <CheckCircle2 className="h-4 w-4" />
+                迁移回归基线
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">迁移文件</p>
+                  <p className="mt-1 text-xl font-semibold">{formatNumber(database?.migrationRegression?.requiredMigrations?.length)}</p>
                 </div>
-                {expanded.metrics && (
-                  <div className="bg-[#0d1117] border border-white/8 rounded-xl overflow-hidden">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-white/8">
-                          {["指标名", "类型", "实体", "数值", "时间"].map(h => (
-                            <th key={h} className="px-3 py-2 text-left text-slate-500 font-medium">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {metrics.slice(0, 30).map((m: any, i: number) => (
-                          <tr key={i} className="border-b border-white/5 hover:bg-white/3">
-                            <td className="px-3 py-2 text-slate-300 font-mono">{m.metricName}</td>
-                            <td className="px-3 py-2">
-                              <Badge className="text-[9px] bg-blue-500/20 text-blue-400 border-blue-500/30">{m.entityType}</Badge>
-                            </td>
-                            <td className="px-3 py-2 text-slate-500 truncate max-w-[100px]">{m.entityId}</td>
-                            <td className="px-3 py-2 text-cyan-400 font-semibold">{m.value ?? "—"}</td>
-                            <td className="px-3 py-2 text-slate-600">
-                              {m.createdAt ? new Date(m.createdAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                <div>
+                  <p className="text-xs text-muted-foreground">核心表</p>
+                  <p className="mt-1 text-xl font-semibold">{formatNumber(database?.migrationRegression?.requiredTables?.length)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">索引基线</p>
+                  <p className="mt-1 text-xl font-semibold">{formatNumber(database?.migrationRegression?.requiredIndexes?.length)}</p>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {(database?.migrationRegression?.requiredChecks || []).map((item) => (
+                  <div key={item.slug} className="rounded-lg border px-3 py-2">
+                    <p className="text-sm font-medium">{item.slug}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
                   </div>
-                )}
+                ))}
               </div>
-            )}
+            </CardContent>
+          </Card>
+        </div>
 
-            {/* Empty state */}
-            {!skill.totalRuns && !agent.totalRuns && !job.totalJobs && (
-              <div className="flex flex-col items-center justify-center h-48 text-slate-600">
-                <Activity size={32} className="mb-3" />
-                <div className="text-sm">近 {days} 天内暂无运行数据</div>
-                <div className="text-xs mt-1">运行 Skill 或 Agent 后数据将自动出现</div>
-              </div>
-            )}
-          </div>
-        )}
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>生成时间：{data?.generatedAt ? new Date(data.generatedAt).toLocaleString() : "-"}</span>
+          <span>{isFetching ? "正在刷新" : "数据已同步"}</span>
+        </div>
+      </div>
     </div>
   );
 }
+

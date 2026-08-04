@@ -23,8 +23,20 @@ import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  WorkflowArtifactVersionPicker,
+  WorkflowCheckpointControls,
+  WorkflowStatusBadge,
+  WorkflowStepProgress,
+  useAgentWorkflowRun,
+} from "@/components/workflow";
+import type { WorkflowCheckpointLike, WorkflowStepDefinition } from "@/components/workflow";
+import { getWorkflowRunProgress, normalizeCheckpointStatus } from "@/components/workflow";
 import ProjectSelector from "@/components/ProjectSelector";
-import { useRef, useEffect, useState, useCallback } from "react";
+import { toast } from "sonner";
+import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import {
   Search,
   GitCompareArrows,
@@ -45,7 +57,17 @@ import {
   Layers,
   FileText,
   LayoutGrid,
+  ClipboardList,
+  Bot,
+  Play,
+  Loader2,
+  Settings2,
+  GitBranch,
+  MousePointer2,
 } from "lucide-react";
+
+const LISTING_AGENT_SLUG = "listing.full.workflow";
+const LISTING_AGENT_RUN_STORAGE_PREFIX = "listing-canvas-agent-run";
 
 // ─── 节点定义 ─────────────────────────────────────────────────────────────────
 
@@ -58,6 +80,8 @@ interface CanvasNode {
   icon: React.ComponentType<{ className?: string }>;
   path: string;
   layer: "prep" | "generate" | "output";
+  agentNodeId?: string;
+  artifactKey?: string;
   color: {
     bg: string;
     border: string;
@@ -74,12 +98,28 @@ interface CanvasNode {
 const NODES: CanvasNode[] = [
   // ── 前置准备层 ──
   {
+    id: "N0",
+    label: "项目管理",
+    sublabel: "品牌/产品/市场基础信息",
+    icon: ClipboardList,
+    path: "/listing",
+    layer: "prep",
+    agentNodeId: "N0",
+    artifactKey: "project",
+    color: { bg: "bg-sky-50", border: "border-sky-200", icon: "text-sky-600", badge: "bg-sky-100 text-sky-700" },
+    inputs: ["品牌", "产品名", "类目", "市场"],
+    outputs: ["项目基础上下文"],
+    aiLogic: "把项目基础资料打包为后续节点的统一上下文",
+  },
+  {
     id: "N1",
     label: "竞品分析",
     sublabel: "ASIN分析 + 竞品Listing文本",
     icon: Search,
     path: "/listing/analysis",
     layer: "prep",
+    agentNodeId: "N1",
+    artifactKey: "competitorAnalysis",
     color: { bg: "bg-blue-50", border: "border-blue-200", icon: "text-blue-600", badge: "bg-blue-100 text-blue-700" },
     inputs: ["竞品ASIN列表", "竞品Listing文本.xlsx"],
     outputs: ["竞品分析报告", "标题/五点/评论数据"],
@@ -93,6 +133,8 @@ const NODES: CanvasNode[] = [
     icon: GitCompareArrows,
     path: "/listing/comparison",
     layer: "prep",
+    agentNodeId: "N2",
+    artifactKey: "competitorComparison",
     color: { bg: "bg-indigo-50", border: "border-indigo-200", icon: "text-indigo-600", badge: "bg-indigo-100 text-indigo-700" },
     inputs: ["N1竞品分析结果"],
     outputs: ["差异化机会矩阵", "竞品对比表"],
@@ -105,6 +147,8 @@ const NODES: CanvasNode[] = [
     icon: Database,
     path: "/listing/data-files",
     layer: "prep",
+    agentNodeId: "N3",
+    artifactKey: "productAttributes",
     color: { bg: "bg-orange-50", border: "border-orange-200", icon: "text-orange-600", badge: "bg-orange-100 text-orange-700" },
     inputs: ["产品属性表.txt/.csv", "买家问题库.xlsx"],
     outputs: ["Rufus属性分析结果", "买家问题库数据"],
@@ -119,6 +163,8 @@ const NODES: CanvasNode[] = [
     icon: Key,
     path: "/listing/keywords",
     layer: "prep",
+    agentNodeId: "N4",
+    artifactKey: "keywordMatrix",
     color: { bg: "bg-violet-50", border: "border-violet-200", icon: "text-violet-600", badge: "bg-violet-100 text-violet-700" },
     inputs: ["场景词表.xlsx", "A9关键词表.xlsx", "亚马逊/领星关键词CSV"],
     outputs: ["关键词策略矩阵", "词根分析", "否词列表"],
@@ -132,6 +178,8 @@ const NODES: CanvasNode[] = [
     icon: MessageSquareText,
     path: "/listing/review-aggregation",
     layer: "prep",
+    agentNodeId: "N5",
+    artifactKey: "reviewAggregation",
     color: { bg: "bg-rose-50", border: "border-rose-200", icon: "text-rose-600", badge: "bg-rose-100 text-rose-700" },
     inputs: ["竞品评论数据（N1导入历史）"],
     outputs: ["痛点列表", "痒点列表", "爽点列表"],
@@ -145,6 +193,8 @@ const NODES: CanvasNode[] = [
     icon: Sparkles,
     path: "/listing/generate",
     layer: "generate",
+    agentNodeId: "G1",
+    artifactKey: "sellingPoints",
     color: { bg: "bg-amber-50", border: "border-amber-200", icon: "text-amber-600", badge: "bg-amber-100 text-amber-700" },
     inputs: ["N3产品属性（必须）", "N1竞品分析", "N4关键词策略", "N5评论聚合"],
     outputs: ["7-9条确认卖点", "Bullet Points"],
@@ -157,6 +207,8 @@ const NODES: CanvasNode[] = [
     icon: FileText,
     path: "/listing/generate",
     layer: "generate",
+    agentNodeId: "G2",
+    artifactKey: "title",
     color: { bg: "bg-amber-50", border: "border-amber-200", icon: "text-amber-600", badge: "bg-amber-100 text-amber-700" },
     inputs: ["G1确认卖点", "N4核心关键词"],
     outputs: ["标题候选方案", "A/B测试变体"],
@@ -169,6 +221,8 @@ const NODES: CanvasNode[] = [
     icon: FileText,
     path: "/listing/generate",
     layer: "generate",
+    agentNodeId: "G3",
+    artifactKey: "description",
     color: { bg: "bg-amber-50", border: "border-amber-200", icon: "text-amber-600", badge: "bg-amber-100 text-amber-700" },
     inputs: ["G1卖点", "G2标题", "N1竞品分析"],
     outputs: ["产品长描述", "A+内容框架"],
@@ -181,6 +235,8 @@ const NODES: CanvasNode[] = [
     icon: Key,
     path: "/listing/generate",
     layer: "generate",
+    agentNodeId: "G4",
+    artifactKey: "searchTerms",
     color: { bg: "bg-amber-50", border: "border-amber-200", icon: "text-amber-600", badge: "bg-amber-100 text-amber-700" },
     inputs: ["N4关键词策略矩阵", "G1-G3未覆盖词"],
     outputs: ["后台搜索词（250字节）"],
@@ -193,6 +249,8 @@ const NODES: CanvasNode[] = [
     icon: HelpCircle,
     path: "/listing/generate",
     layer: "generate",
+    agentNodeId: "G5",
+    artifactKey: "qaContent",
     color: { bg: "bg-amber-50", border: "border-amber-200", icon: "text-amber-600", badge: "bg-amber-100 text-amber-700" },
     inputs: ["N3买家问题库", "G1-G4生成内容"],
     outputs: ["QA问答对（5-10条）"],
@@ -200,12 +258,28 @@ const NODES: CanvasNode[] = [
   },
   // ── 输出层 ──
   {
+    id: "O1",
+    label: "结果预览",
+    sublabel: "完整Listing中英文版本",
+    icon: FileText,
+    path: "/listing/preview",
+    layer: "output",
+    agentNodeId: "O1",
+    artifactKey: "listingPreview",
+    color: { bg: "bg-emerald-50", border: "border-emerald-200", icon: "text-emerald-600", badge: "bg-emerald-100 text-emerald-700" },
+    inputs: ["G1-G5全部确认"],
+    outputs: ["完整Listing", "中英文版本"],
+    aiLogic: "把G1-G5的已确认产物组合为完整Listing预览",
+  },
+  {
     id: "E1",
     label: "智能图片建议",
     sublabel: "6步图片规划工作流",
     icon: Image,
     path: "/listing/image-workflow",
     layer: "output",
+    agentNodeId: "E1",
+    artifactKey: "imageAdvice",
     color: { bg: "bg-teal-50", border: "border-teal-200", icon: "text-teal-600", badge: "bg-teal-100 text-teal-700" },
     inputs: ["G1-G5 Listing内容", "N4关键词", "N1竞品图片"],
     outputs: ["主图建议", "辅图建议", "A+内容规划", "AI提示词"],
@@ -218,6 +292,8 @@ const NODES: CanvasNode[] = [
     icon: Gauge,
     path: "/listing/score",
     layer: "output",
+    agentNodeId: "O2",
+    artifactKey: "listingScore",
     color: { bg: "bg-green-50", border: "border-green-200", icon: "text-green-600", badge: "bg-green-100 text-green-700" },
     inputs: ["G1-G5 Listing内容"],
     outputs: ["综合评分", "优化建议"],
@@ -230,6 +306,8 @@ const NODES: CanvasNode[] = [
     icon: Video,
     path: "/listing/video-script",
     layer: "output",
+    agentNodeId: "E2",
+    artifactKey: "videoScript",
     color: { bg: "bg-purple-50", border: "border-purple-200", icon: "text-purple-600", badge: "bg-purple-100 text-purple-700" },
     inputs: ["G1-G5 Listing内容", "N5评论痛点"],
     outputs: ["视频脚本", "分镜建议"],
@@ -242,6 +320,8 @@ const NODES: CanvasNode[] = [
     icon: Target,
     path: "/listing/ad-structure",
     layer: "output",
+    agentNodeId: "O3",
+    artifactKey: "adStructure",
     color: { bg: "bg-pink-50", border: "border-pink-200", icon: "text-pink-600", badge: "bg-pink-100 text-pink-700" },
     inputs: ["N4关键词策略", "G1-G5 Listing内容"],
     outputs: ["广告词建议", "投放策略", "否词列表"],
@@ -261,6 +341,8 @@ interface FlowEdge {
 
 const FLOW_EDGES: FlowEdge[] = [
   // 强依赖（红色实线）
+  { from: "N0", to: "N1", type: "recommended", label: "项目信息" },
+  { from: "N0", to: "N3", type: "recommended", label: "项目信息" },
   { from: "N3", to: "G1", type: "required", label: "必须" },
   // 强烈建议（橙色虚线）
   { from: "N1", to: "G1", type: "recommended", label: "竞品格局" },
@@ -274,9 +356,15 @@ const FLOW_EDGES: FlowEdge[] = [
   { from: "G2", to: "G3", type: "recommended" },
   { from: "G1", to: "G4", type: "recommended" },
   { from: "G1", to: "G5", type: "recommended" },
+  { from: "G1", to: "O1", type: "recommended" },
+  { from: "G2", to: "O1", type: "recommended" },
+  { from: "G3", to: "O1", type: "recommended" },
+  { from: "G4", to: "O1", type: "recommended" },
+  { from: "G5", to: "O1", type: "recommended" },
   // 输出层依赖
+  { from: "O1", to: "E2", type: "optional" },
+  { from: "O1", to: "E4", type: "optional" },
   { from: "G1", to: "E1", type: "optional" },
-  { from: "G1", to: "E2", type: "optional" },
   { from: "G1", to: "E3", type: "optional" },
   { from: "N4", to: "E4", type: "optional" },
 ];
@@ -487,6 +575,10 @@ function useNodeStatuses(projectId: number | null) {
   const activeListing = listings?.find((l: any) => l.isActive === 1 || l.isActive === true);
 
   const statusMap: Record<string, { status: NodeStatus; summary: string }> = {
+    N0: {
+      status: projectId ? "done" : "ready",
+      summary: projectId ? "项目上下文已就绪" : "请选择项目",
+    },
     N1: {
       status: analyses && analyses.length > 0 ? "done" : "ready",
       summary: analyses && analyses.length > 0 ? `${analyses.length} 个竞品已分析` : "待上传竞品ASIN",
@@ -529,6 +621,10 @@ function useNodeStatuses(projectId: number | null) {
       status: activeListing?.qaContent ? "done" : activeListing?.title ? "ready" : "locked",
       summary: activeListing?.qaContent ? "QA已生成" : "待生成QA",
     },
+    O1: {
+      status: hasListing ? "done" : activeListing?.title ? "ready" : "locked",
+      summary: hasListing ? "可查看完整Listing预览" : "待完成Listing生成",
+    },
     E1: {
       status: imageSession ? "in_progress" : hasListing ? "ready" : "locked",
       summary: imageSession ? `图片建议进行中` : "待完成Listing生成",
@@ -567,18 +663,58 @@ function getStatusStyle(status: NodeStatus) {
   }
 }
 
+function agentCheckpointToNodeStatus(checkpoint?: WorkflowCheckpointLike): NodeStatus | null {
+  const status = normalizeCheckpointStatus(checkpoint?.status);
+  if (!checkpoint || status === "pending") return null;
+  if (status === "confirmed" || status === "skipped" || status === "locked") return "done";
+  if (status === "running" || status === "waiting_human") return "in_progress";
+  if (status === "ready") return "ready";
+  if (status === "failed" || status === "canceled") return "blocked";
+  return null;
+}
+
+function mergeNodeStatusWithAgent(localStatus: NodeStatus, checkpoint?: WorkflowCheckpointLike): NodeStatus {
+  const agentStatus = agentCheckpointToNodeStatus(checkpoint);
+  if (!agentStatus) return localStatus;
+  if (localStatus === "blocked" && agentStatus !== "done") return localStatus;
+  if (localStatus === "locked" && agentStatus === "ready") return localStatus;
+  return agentStatus;
+}
+
+function buildListingWorkflowSteps(nodes: CanvasNode[]): WorkflowStepDefinition[] {
+  return nodes.map((node) => ({
+    id: node.agentNodeId || node.id,
+    label: `${node.id} · ${node.label}`,
+    shortLabel: node.id,
+    description: node.sublabel,
+    icon: node.icon,
+    agentNodeId: node.agentNodeId,
+    artifactKey: node.artifactKey,
+  }));
+}
+
+function storageKeyForProject(projectId: number | null): string {
+  return `${LISTING_AGENT_RUN_STORAGE_PREFIX}:${projectId || "none"}`;
+}
+
 // ─── 节点卡片组件 ─────────────────────────────────────────────────────────────
 
 function NodeCard({
   node,
   status,
   summary,
+  agentCheckpoint,
+  selected,
   onClick,
+  onInspect,
 }: {
   node: CanvasNode;
   status: NodeStatus;
   summary: string;
+  agentCheckpoint?: WorkflowCheckpointLike;
+  selected?: boolean;
   onClick: () => void;
+  onInspect?: () => void;
 }) {
   const Icon = node.icon;
   const style = getStatusStyle(status);
@@ -593,6 +729,7 @@ function NodeCard({
         group relative w-full text-left rounded-xl p-4 transition-all duration-200
         ${node.color.bg} ${node.color.border} border
         ${style.ring}
+        ${selected ? "ring-2 ring-primary ring-offset-2" : ""}
         ${isClickable
           ? "cursor-pointer hover:shadow-md hover:-translate-y-0.5 active:translate-y-0"
           : "cursor-not-allowed opacity-60"
@@ -607,6 +744,12 @@ function NodeCard({
       <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold mb-2 ${node.color.badge}`}>
         {node.id}
       </span>
+
+      {agentCheckpoint && (
+        <span className="absolute right-3 top-7">
+          <WorkflowStatusBadge status={agentCheckpoint.status} />
+        </span>
+      )}
 
       {/* Icon + Label */}
       <div className="flex items-start gap-3">
@@ -645,6 +788,23 @@ function NodeCard({
         </p>
       )}
 
+      {agentCheckpoint && onInspect && (
+        <Button
+          type="button"
+          size="sm"
+          variant={selected ? "default" : "outline"}
+          className="mt-3 h-7 px-2 text-[11px]"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onInspect();
+          }}
+        >
+          <Bot className="h-3 w-3" />
+          AI OS
+        </Button>
+      )}
+
       {/* Arrow on hover */}
       {isClickable && (
         <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -679,13 +839,121 @@ function LayerHeader({ title, subtitle, icon: Icon, color }: {
 export default function WorkflowCanvasPage() {
   const { selectedProjectId } = useProject();
   const [, setLocation] = useLocation();
+  const [activeAgentRunId, setActiveAgentRunId] = useState<string | null>(null);
+  const [selectedAgentNodeId, setSelectedAgentNodeId] = useState<string | null>(null);
 
   const { data: project } = trpc.project.getById.useQuery(
     { id: selectedProjectId! },
     { enabled: !!selectedProjectId }
   );
 
+  const runListQuery = trpc.emperor.agents.listRuns.useQuery(
+    { slug: LISTING_AGENT_SLUG, limit: 12 },
+    { enabled: !!selectedProjectId }
+  );
+
+  const agentRun = useAgentWorkflowRun(activeAgentRunId);
+
+  const installListingTemplate = trpc.emperor.agents.installListingTemplate.useMutation({
+    onSuccess: () => {
+      toast.success("Listing Agent 模板已安装");
+      runListQuery.refetch();
+    },
+    onError: (error) => toast.error(`安装失败: ${error.message}`),
+  });
+
+  const startListingAgentRun = trpc.emperor.agents.run.useMutation({
+    onSuccess: (data: any) => {
+      const nextRunId = data?.run?.runId || data?.runId;
+      if (nextRunId) {
+        setActiveAgentRunId(nextRunId);
+        if (selectedProjectId) {
+          window.localStorage.setItem(storageKeyForProject(selectedProjectId), nextRunId);
+        }
+      }
+      runListQuery.refetch();
+      toast.success("Listing Agent 已启动");
+    },
+    onError: (error) => toast.error(`启动失败: ${error.message}`),
+  });
+
   const statusMap = useNodeStatuses(selectedProjectId);
+  const listingAgentRuns = useMemo(
+    () =>
+      ((runListQuery.data as any[]) || []).filter((run: any) =>
+        run.projectId == null || !selectedProjectId ? true : Number(run.projectId) === Number(selectedProjectId),
+      ),
+    [runListQuery.data, selectedProjectId],
+  );
+  const listingWorkflowSteps = useMemo(() => buildListingWorkflowSteps(NODES), []);
+  const checkpointByNodeId = useMemo(() => {
+    const map = new Map<string, WorkflowCheckpointLike>();
+    for (const checkpoint of agentRun.checkpoints) {
+      map.set(checkpoint.nodeId, checkpoint);
+    }
+    return map;
+  }, [agentRun.checkpoints]);
+  const selectedCheckpoint = selectedAgentNodeId ? checkpointByNodeId.get(selectedAgentNodeId) : undefined;
+  const selectedNode = NODES.find((node) => (node.agentNodeId || node.id) === selectedAgentNodeId);
+  const selectedArtifactKey = selectedNode?.artifactKey || null;
+  const agentProgress = getWorkflowRunProgress(agentRun.detail);
+  const agentCompletedNodeIds = useMemo(
+    () =>
+      new Set(
+        agentRun.checkpoints
+          .filter((checkpoint) => {
+            const status = normalizeCheckpointStatus(checkpoint.status);
+            return status === "confirmed" || status === "skipped" || status === "locked";
+          })
+          .map((checkpoint) => checkpoint.nodeId),
+      ),
+    [agentRun.checkpoints],
+  );
+
+  useEffect(() => {
+    if (!selectedProjectId) {
+      setActiveAgentRunId(null);
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get("agentRunId");
+    const stored = window.localStorage.getItem(storageKeyForProject(selectedProjectId));
+    setActiveAgentRunId(fromUrl || stored || null);
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    if (selectedAgentNodeId && checkpointByNodeId.has(selectedAgentNodeId)) return;
+    const next =
+      agentRun.checkpoints.find((checkpoint) => checkpoint.status === "waiting_human") ||
+      agentRun.checkpoints.find((checkpoint) => checkpoint.status === "ready") ||
+      agentRun.checkpoints.find((checkpoint) => checkpoint.status === "running") ||
+      agentRun.checkpoints[0];
+    setSelectedAgentNodeId(next?.nodeId || null);
+  }, [agentRun.checkpoints, checkpointByNodeId, selectedAgentNodeId]);
+
+  const persistActiveRunId = (runId: string) => {
+    setActiveAgentRunId(runId);
+    if (selectedProjectId) {
+      window.localStorage.setItem(storageKeyForProject(selectedProjectId), runId);
+    }
+  };
+
+  const handleStartListingAgent = () => {
+    if (!selectedProjectId) {
+      toast.error("请先选择项目");
+      return;
+    }
+    startListingAgentRun.mutate({
+      slug: LISTING_AGENT_SLUG,
+      projectId: selectedProjectId,
+      inputs: {
+        projectId: selectedProjectId,
+        projectName: project?.name || "",
+        startedFrom: "listing_canvas",
+        startedAt: new Date().toISOString(),
+      },
+    });
+  };
 
   const prepNodes = NODES.filter((n) => n.layer === "prep");
   const generateNodes = NODES.filter((n) => n.layer === "generate");
@@ -769,6 +1037,87 @@ export default function WorkflowCanvasPage() {
         </div>
         <ProjectSelector />
       </div>
+
+      {selectedProjectId && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="p-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Bot className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-semibold">Listing Agent Runtime</span>
+                  <Badge variant="outline" className="rounded-md text-xs">
+                    {LISTING_AGENT_SLUG}
+                  </Badge>
+                  {agentRun.run?.status && <WorkflowStatusBadge status={agentRun.run.status} />}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  画布仍保留原工作台跳转；Agent Run 用于统一执行记录、Checkpoint确认、Artifact版本治理。
+                </p>
+                {activeAgentRunId && (
+                  <div className="mt-3 flex items-center gap-3">
+                    <Progress value={agentProgress} className="h-1.5 max-w-md" />
+                    <span className="text-xs text-muted-foreground">{agentProgress}%</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Select
+                  value={activeAgentRunId || undefined}
+                  onValueChange={(value) => persistActiveRunId(value)}
+                  disabled={runListQuery.isLoading}
+                >
+                  <SelectTrigger className="w-[240px] bg-background">
+                    <SelectValue placeholder="选择历史 Agent Run" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {listingAgentRuns.map((run: any) => (
+                      <SelectItem key={run.runId} value={run.runId}>
+                        {run.runId} · {run.status}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  onClick={() => installListingTemplate.mutate()}
+                  disabled={installListingTemplate.isPending}
+                >
+                  {installListingTemplate.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Settings2 className="h-4 w-4" />}
+                  安装模板
+                </Button>
+                <Button onClick={handleStartListingAgent} disabled={startListingAgentRun.isPending}>
+                  {startListingAgentRun.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                  启动 Agent
+                </Button>
+                {activeAgentRunId && (
+                  <Button
+                    variant="outline"
+                    onClick={() => agentRun.actions.scheduleRun.mutate({ runId: activeAgentRunId, mode: "next" })}
+                    disabled={agentRun.actions.scheduleRun.isPending}
+                  >
+                    {agentRun.actions.scheduleRun.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitBranch className="h-4 w-4" />}
+                    推进
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {activeAgentRunId && (
+              <div className="mt-4">
+                <WorkflowStepProgress
+                  steps={listingWorkflowSteps}
+                  activeStepId={selectedAgentNodeId || agentRun.run?.currentNodeId || "N1"}
+                  completedStepIds={agentCompletedNodeIds}
+                  checkpoints={agentRun.checkpoints}
+                  onStepClick={(stepId) => setSelectedAgentNodeId(String(stepId))}
+                  compact
+                />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {!selectedProjectId ? (
         <Card className="border-dashed">
@@ -881,12 +1230,17 @@ export default function WorkflowCanvasPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
                   {prepNodes.map((node) => {
                     const s = statusMap[node.id] || { status: "ready" as NodeStatus, summary: "" };
+                    const agentCheckpoint = node.agentNodeId ? checkpointByNodeId.get(node.agentNodeId) : undefined;
+                    const displayStatus = mergeNodeStatusWithAgent(s.status, agentCheckpoint);
                     return (
                       <NodeCard
                         key={node.id}
                         node={node}
-                        status={s.status}
+                        status={displayStatus}
                         summary={s.summary}
+                        agentCheckpoint={agentCheckpoint}
+                        selected={!!node.agentNodeId && selectedAgentNodeId === node.agentNodeId}
+                        onInspect={node.agentNodeId ? () => setSelectedAgentNodeId(node.agentNodeId!) : undefined}
                         onClick={() => setLocation(node.path)}
                       />
                     );
@@ -908,12 +1262,17 @@ export default function WorkflowCanvasPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
                   {generateNodes.map((node) => {
                     const s = statusMap[node.id] || { status: "locked" as NodeStatus, summary: "" };
+                    const agentCheckpoint = node.agentNodeId ? checkpointByNodeId.get(node.agentNodeId) : undefined;
+                    const displayStatus = mergeNodeStatusWithAgent(s.status, agentCheckpoint);
                     return (
                       <NodeCard
                         key={node.id}
                         node={node}
-                        status={s.status}
+                        status={displayStatus}
                         summary={s.summary}
+                        agentCheckpoint={agentCheckpoint}
+                        selected={!!node.agentNodeId && selectedAgentNodeId === node.agentNodeId}
+                        onInspect={node.agentNodeId ? () => setSelectedAgentNodeId(node.agentNodeId!) : undefined}
                         onClick={() => setLocation(node.path)}
                       />
                     );
@@ -938,12 +1297,17 @@ export default function WorkflowCanvasPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   {outputNodes.map((node) => {
                     const s = statusMap[node.id] || { status: "locked" as NodeStatus, summary: "" };
+                    const agentCheckpoint = node.agentNodeId ? checkpointByNodeId.get(node.agentNodeId) : undefined;
+                    const displayStatus = mergeNodeStatusWithAgent(s.status, agentCheckpoint);
                     return (
                       <NodeCard
                         key={node.id}
                         node={node}
-                        status={s.status}
+                        status={displayStatus}
                         summary={s.summary}
+                        agentCheckpoint={agentCheckpoint}
+                        selected={!!node.agentNodeId && selectedAgentNodeId === node.agentNodeId}
+                        onInspect={node.agentNodeId ? () => setSelectedAgentNodeId(node.agentNodeId!) : undefined}
                         onClick={() => setLocation(node.path)}
                       />
                     );
@@ -952,6 +1316,76 @@ export default function WorkflowCanvasPage() {
               </div>
             </div>
           </div>
+
+          {activeAgentRunId && (
+            <Card className="border-primary/20">
+              <CardContent className="p-4">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <MousePointer2 className="h-4 w-4 text-primary" />
+                    <h3 className="text-sm font-semibold">当前 Agent 节点</h3>
+                    {selectedNode && (
+                      <Badge variant="secondary" className="rounded-md text-xs">
+                        {selectedNode.id} · {selectedNode.label}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {agentRun.run?.status === "paused" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => agentRun.actions.resumeRun.mutate({ runId: activeAgentRunId })}
+                        disabled={agentRun.actions.resumeRun.isPending}
+                      >
+                        <Play className="h-4 w-4" />
+                        恢复
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => agentRun.actions.pauseRun.mutate({ runId: activeAgentRunId, reason: "Paused from listing canvas" })}
+                        disabled={agentRun.actions.pauseRun.isPending}
+                      >
+                        暂停
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => agentRun.actions.cancelRun.mutate({ runId: activeAgentRunId, reason: "Canceled from listing canvas" })}
+                      disabled={agentRun.actions.cancelRun.isPending}
+                    >
+                      取消 Run
+                    </Button>
+                  </div>
+                </div>
+
+                {selectedCheckpoint ? (
+                  <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+                    <WorkflowCheckpointControls
+                      runId={activeAgentRunId}
+                      checkpoint={selectedCheckpoint}
+                      executeNode={agentRun.actions.executeNode}
+                      rerunNode={agentRun.actions.rerunNode}
+                      updateDraft={agentRun.actions.updateDraft}
+                      confirmNode={agentRun.actions.confirmNode}
+                    />
+                    <WorkflowArtifactVersionPicker
+                      runId={activeAgentRunId}
+                      nodeId={selectedCheckpoint.nodeId}
+                      artifactKey={selectedArtifactKey}
+                    />
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                    当前 Run 暂无可显示的 Checkpoint。启动或推进 Agent 后，这里会显示节点确认、重跑和版本操作。
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* ── 数据流说明 ── */}
           <Card className="bg-gray-50 border-gray-200">

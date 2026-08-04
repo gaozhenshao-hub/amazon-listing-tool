@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
+import { readRepoSources } from "./testPaths";
 
 // ─── Test: listingContext.ts Data Aggregation Layer ─────────────
 describe("listingContext.ts - Data Aggregation Layer", () => {
@@ -293,7 +294,10 @@ describe("Enhanced Prompts - Bullet Check List (15 dimensions)", () => {
 // ─── Test: QA Generation ────────────────────────────────────────
 describe("QA Generation", () => {
   const prompts = fs.readFileSync(path.join(__dirname, "prompts.ts"), "utf-8");
-  const routerCode = fs.readFileSync(path.join(__dirname, "routers/listing.ts"), "utf-8");
+  const routerCode = readRepoSources(
+    "server/domains/listing/routers/editing.ts",
+    "server/domains/listing/routers/read.ts"
+  );
 
   it("should export QA_GENERATION_PROMPT", () => {
     expect(prompts).toContain("QA_GENERATION_PROMPT");
@@ -344,7 +348,9 @@ describe("Database Schema - QA Fields", () => {
 
 // ─── Test: Listing Router - updateByProject ─────────────────────
 describe("Listing Router - updateByProject", () => {
-  const routerCode = fs.readFileSync(path.join(__dirname, "routers/listing.ts"), "utf-8");
+  const routerCode = readRepoSources(
+    "server/domains/listing/routers/editing.ts"
+  );
 
   it("should have updateByProject procedure", () => {
     expect(routerCode).toContain("updateByProject");
@@ -365,7 +371,10 @@ describe("Listing Router - updateByProject", () => {
 
 // ─── Test: Translation - QA Support ─────────────────────────────
 describe("Translation - QA Support", () => {
-  const routerCode = fs.readFileSync(path.join(__dirname, "routers/listing.ts"), "utf-8");
+  const routerCode = readRepoSources(
+    "server/domains/listing/routers/editing.ts",
+    "server/domains/listing/routers/generation.ts"
+  );
 
   it("translateToChinese should handle QA content", () => {
     expect(routerCode).toContain("qaContent");

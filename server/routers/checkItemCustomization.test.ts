@@ -1,13 +1,15 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
-import { repoPath } from "../testPaths";
+import { readRepoSources, repoPath } from "../testPaths";
 
-const SOURCE_PATH = repoPath("server/routers/productOps.ts");
 const SCHEMA_PATH = repoPath("drizzle/schema.ts");
 const FRONTEND_PATH = repoPath("client/src/pages/ops/OpsProductConversion.tsx");
 
 describe("Check Item Customization - Backend APIs", () => {
-  const source = fs.readFileSync(SOURCE_PATH, "utf-8");
+  const source = readRepoSources(
+    "server/domains/ops/routerContext.ts",
+    "server/domains/ops/routers/conversion.ts"
+  );
 
   it("editCheckItem mutation should exist and accept checkItemId, subDimension, standard", () => {
     expect(source).toContain("editCheckItem: protectedProcedure.input(z.object({");

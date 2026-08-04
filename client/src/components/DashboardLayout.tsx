@@ -147,7 +147,6 @@ const modules: ModuleDef[] = [
       { icon: HelpCircle, label: "买家问题库", path: "/listing/buyer-questions" },
       { icon: Image, label: "智能图片建议", path: "/listing/image-workflow" },
       { icon: Video, label: "视频脚本生成", path: "/listing/video-script" },
-      { icon: Layers, label: "智能Listing生成2.0", path: "/listing2" },
     ],
   },
   {
@@ -240,8 +239,8 @@ const modules: ModuleDef[] = [
       { icon: Plug, label: "MCP 连接器", path: "/emperor/mcp" },
       { icon: Timer, label: "定时任务", path: "/emperor/scheduled" },
       { icon: BarChart3, label: "Token 用量", path: "/emperor/usage" },
+      { icon: Activity, label: "可观测看板", path: "/emperor/observability" },
       { icon: Wrench, label: "诊断中心", path: "/emperor/diagnostics" },
-      { icon: Activity, label: "AI 观测中心", path: "/emperor/observability" },
       { icon: Settings, label: "通用设置", path: "/emperor/settings" },
     ],
   },
@@ -266,7 +265,6 @@ const modules: ModuleDef[] = [
 // ─── Helpers ───────────────────────────────────────────────────
 function detectActiveModule(location: string): ModuleId {
   if (location === "/") return "home";
-  if (location.startsWith("/listing2")) return "listing";
   if (location.startsWith("/listing") || location.startsWith("/project/")) return "listing";
   if (location.startsWith("/dev")) return "dev";
   if (location.startsWith("/ops")) return "ops";

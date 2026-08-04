@@ -3,6 +3,8 @@ import { bigint, boolean, decimal, int, json, mysqlEnum, mysqlTable, text, times
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
   openId: varchar("openId", { length: 64 }).unique(),
+  organizationId: int("organizationId"),
+  defaultWorkspaceId: int("defaultWorkspaceId"),
   name: text("name"),
   email: varchar("email", { length: 320 }),
   phone: varchar("phone", { length: 20 }),
@@ -30,6 +32,95 @@ export type InsertUser = typeof users.$inferInsert;
 
 // User role type for type-safe role checks
 export type UserRole = "super_admin" | "admin" | "ops_manager" | "ops_specialist" | "product_dev" | "finance" | "purchaser" | "designer";
+
+export const organizations = mysqlTable("organizations", {
+  id: int("id").autoincrement().primaryKey(),
+  slug: varchar("slug", { length: 128 }).unique().notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  status: mysqlEnum("status", ["active", "disabled"]).default("active").notNull(),
+  ownerUserId: int("ownerUserId"),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type Organization = typeof organizations.$inferSelect;
+export type InsertOrganization = typeof organizations.$inferInsert;
+
+export const workspaces = mysqlTable("workspaces", {
+  id: int("id").autoincrement().primaryKey(),
+  organizationId: int("organizationId"),
+  slug: varchar("slug", { length: 128 }).unique().notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  status: mysqlEnum("status", ["active", "archived", "disabled"]).default("active").notNull(),
+  ownerUserId: int("ownerUserId"),
+  defaultRole: varchar("defaultRole", { length: 64 }).default("ops_specialist"),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type Workspace = typeof workspaces.$inferSelect;
+export type InsertWorkspace = typeof workspaces.$inferInsert;
+
+export const workspaceMemberships = mysqlTable("workspace_memberships", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId").notNull(),
+  userId: int("userId").notNull(),
+  role: varchar("role", { length: 64 }).notNull(),
+  status: mysqlEnum("status", ["active", "disabled", "invited"]).default("active").notNull(),
+  permissions: json("permissions"),
+  invitedBy: int("invitedBy"),
+  joinedAt: timestamp("joinedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type WorkspaceMembership = typeof workspaceMemberships.$inferSelect;
+export type InsertWorkspaceMembership = typeof workspaceMemberships.$inferInsert;
+
+export const securityAccessPolicies = mysqlTable("security_access_policies", {
+  id: int("id").autoincrement().primaryKey(),
+  policyId: varchar("policyId", { length: 80 }).unique().notNull(),
+  workspaceId: int("workspaceId"),
+  resourceType: varchar("resourceType", { length: 64 }).notNull(),
+  resourceId: varchar("resourceId", { length: 128 }),
+  action: varchar("action", { length: 64 }).notNull(),
+  effect: mysqlEnum("effect", ["allow", "deny"]).default("allow").notNull(),
+  principalType: mysqlEnum("principalType", ["role", "user", "workspace_member"]).notNull(),
+  principalId: varchar("principalId", { length: 128 }).notNull(),
+  conditions: json("conditions"),
+  status: mysqlEnum("status", ["active", "disabled"]).default("active").notNull(),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type SecurityAccessPolicy = typeof securityAccessPolicies.$inferSelect;
+export type InsertSecurityAccessPolicy = typeof securityAccessPolicies.$inferInsert;
+
+export const securityAuditLogs = mysqlTable("security_audit_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  auditId: varchar("auditId", { length: 80 }).unique().notNull(),
+  workspaceId: int("workspaceId"),
+  actorUserId: int("actorUserId"),
+  actorRole: varchar("actorRole", { length: 64 }),
+  action: varchar("action", { length: 80 }).notNull(),
+  resourceType: varchar("resourceType", { length: 64 }).notNull(),
+  resourceId: varchar("resourceId", { length: 128 }),
+  resourceName: varchar("resourceName", { length: 255 }),
+  projectId: int("projectId"),
+  agentRunId: varchar("agentRunId", { length: 80 }),
+  toolSlug: varchar("toolSlug", { length: 128 }),
+  status: mysqlEnum("status", ["success", "denied", "failed"]).default("success").notNull(),
+  riskLevel: mysqlEnum("riskLevel", ["low", "medium", "high", "critical"]).default("medium").notNull(),
+  ipAddress: varchar("ipAddress", { length: 45 }),
+  userAgent: varchar("userAgent", { length: 512 }),
+  requestId: varchar("requestId", { length: 128 }),
+  reason: text("reason"),
+  beforeSnapshot: json("beforeSnapshot"),
+  afterSnapshot: json("afterSnapshot"),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type SecurityAuditLog = typeof securityAuditLogs.$inferSelect;
+export type InsertSecurityAuditLog = typeof securityAuditLogs.$inferInsert;
 
 // Login logs table
 export const loginLogs = mysqlTable("login_logs", {
@@ -68,6 +159,7 @@ export type InsertUsageStat = typeof usageStats.$inferInsert;
 // Generic AI job runs for long-running Emperor Skill / LLM tasks.
 export const aiJobs = mysqlTable("ai_jobs", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   runId: varchar("runId", { length: 80 }).notNull().unique(),
   kind: varchar("kind", { length: 128 }).notNull(),
   module: varchar("module", { length: 64 }).notNull(),
@@ -85,6 +177,11 @@ export const aiJobs = mysqlTable("ai_jobs", {
   input: json("input"),
   output: json("output"),
   errorMessage: text("errorMessage"),
+  retentionClass: mysqlEnum("retentionClass", ["hot", "warm", "cold", "archive"]).default("hot").notNull(),
+  archiveAfter: timestamp("archiveAfter"),
+  deleteAfter: timestamp("deleteAfter"),
+  archivedAt: timestamp("archivedAt"),
+  archiveBatchId: varchar("archiveBatchId", { length: 80 }),
   nextRunAt: timestamp("nextRunAt"),
   leaseUntil: timestamp("leaseUntil"),
   lockedBy: varchar("lockedBy", { length: 128 }),
@@ -122,6 +219,7 @@ export type InsertAiJobWorker = typeof aiJobWorkers.$inferInsert;
 
 export const aiJobDeadLetters = mysqlTable("ai_job_dead_letters", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   runId: varchar("runId", { length: 80 }).notNull().unique(),
   kind: varchar("kind", { length: 128 }).notNull(),
   module: varchar("module", { length: 64 }).notNull(),
@@ -139,6 +237,123 @@ export const aiJobDeadLetters = mysqlTable("ai_job_dead_letters", {
 });
 export type AiJobDeadLetter = typeof aiJobDeadLetters.$inferSelect;
 export type InsertAiJobDeadLetter = typeof aiJobDeadLetters.$inferInsert;
+
+export const aiStorageObjects = mysqlTable("ai_storage_objects", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  storageId: varchar("storageId", { length: 80 }).unique().notNull(),
+  provider: mysqlEnum("provider", ["forge", "s3", "local", "external"]).default("forge").notNull(),
+  bucket: varchar("bucket", { length: 128 }),
+  objectKey: text("objectKey").notNull(),
+  storageUri: text("storageUri").notNull(),
+  publicUrl: text("publicUrl"),
+  mimeType: varchar("mimeType", { length: 128 }),
+  fileName: varchar("fileName", { length: 255 }),
+  sizeBytes: bigint("sizeBytes", { mode: "number" }),
+  contentHash: varchar("contentHash", { length: 64 }),
+  contentEncoding: varchar("contentEncoding", { length: 64 }),
+  sourceDomain: mysqlEnum("sourceDomain", ["listing", "image", "ads", "video", "agent", "project", "file", "ops", "tool", "other"]).default("other").notNull(),
+  sourceType: mysqlEnum("sourceType", ["upload", "ai_output", "user_edit", "import", "tool_output", "system", "archive"]).default("upload").notNull(),
+  sourceId: varchar("sourceId", { length: 128 }),
+  lifecycleState: mysqlEnum("lifecycleState", ["hot", "warm", "cold", "archived", "deleted"]).default("hot").notNull(),
+  retainUntil: timestamp("retainUntil"),
+  archiveAfter: timestamp("archiveAfter"),
+  deleteAfter: timestamp("deleteAfter"),
+  archivedAt: timestamp("archivedAt"),
+  metadata: json("metadata"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AiStorageObject = typeof aiStorageObjects.$inferSelect;
+export type InsertAiStorageObject = typeof aiStorageObjects.$inferInsert;
+
+export const aiArtifacts = mysqlTable("ai_artifacts", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  artifactId: varchar("artifactId", { length: 80 }).unique().notNull(),
+  domain: mysqlEnum("domain", ["listing", "image", "ads", "video", "agent", "project", "file", "ops", "tool", "other"]).default("other").notNull(),
+  artifactKey: varchar("artifactKey", { length: 128 }).notNull(),
+  artifactType: mysqlEnum("artifactType", ["json", "text", "markdown", "html", "image", "file", "table", "video", "audio", "other"]).default("json").notNull(),
+  sourceType: mysqlEnum("sourceType", ["upload", "ai_output", "user_edit", "import", "tool_output", "system", "archive"]).default("ai_output").notNull(),
+  sourceId: varchar("sourceId", { length: 128 }),
+  sourceTable: varchar("sourceTable", { length: 128 }),
+  sourceRowId: varchar("sourceRowId", { length: 128 }),
+  runId: varchar("runId", { length: 80 }),
+  agentSlug: varchar("agentSlug", { length: 128 }),
+  nodeId: varchar("nodeId", { length: 128 }),
+  projectId: int("projectId"),
+  userId: int("userId"),
+  status: mysqlEnum("status", ["draft", "final", "superseded", "archived", "deleted"]).default("draft").notNull(),
+  version: int("version").default(1).notNull(),
+  isCurrent: int("isCurrent").default(0).notNull(),
+  parentArtifactId: varchar("parentArtifactId", { length: 80 }),
+  selectedBy: int("selectedBy"),
+  currentSince: timestamp("currentSince"),
+  contentJson: json("contentJson"),
+  searchableText: text("searchableText"),
+  summary: text("summary"),
+  contentHash: varchar("contentHash", { length: 64 }),
+  storageObjectId: int("storageObjectId"),
+  storageUri: text("storageUri"),
+  mimeType: varchar("mimeType", { length: 128 }),
+  fileName: varchar("fileName", { length: 255 }),
+  fileSizeBytes: bigint("fileSizeBytes", { mode: "number" }),
+  retentionClass: mysqlEnum("retentionClass", ["hot", "warm", "cold", "archive"]).default("hot").notNull(),
+  retainUntil: timestamp("retainUntil"),
+  archiveAfter: timestamp("archiveAfter"),
+  deleteAfter: timestamp("deleteAfter"),
+  archivedAt: timestamp("archivedAt"),
+  metadata: json("metadata"),
+  sourceSkillRunId: varchar("sourceSkillRunId", { length: 80 }),
+  sourceAiJobRunId: varchar("sourceAiJobRunId", { length: 80 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AiArtifact = typeof aiArtifacts.$inferSelect;
+export type InsertAiArtifact = typeof aiArtifacts.$inferInsert;
+
+export const aiDataArchiveRuns = mysqlTable("ai_data_archive_runs", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  archiveRunId: varchar("archiveRunId", { length: 80 }).unique().notNull(),
+  policySlug: varchar("policySlug", { length: 128 }).notNull(),
+  tableName: varchar("tableName", { length: 128 }).notNull(),
+  status: mysqlEnum("status", ["planned", "running", "succeeded", "failed", "dry_run"]).default("planned").notNull(),
+  mode: mysqlEnum("mode", ["count", "archive", "delete"]).default("archive").notNull(),
+  cutoffAt: timestamp("cutoffAt"),
+  batchSize: int("batchSize").default(1000).notNull(),
+  candidateCount: int("candidateCount").default(0).notNull(),
+  archivedCount: int("archivedCount").default(0).notNull(),
+  deletedCount: int("deletedCount").default(0).notNull(),
+  storageObjectId: int("storageObjectId"),
+  storageUri: text("storageUri"),
+  errorMessage: text("errorMessage"),
+  metadata: json("metadata"),
+  createdBy: int("createdBy"),
+  startedAt: timestamp("startedAt"),
+  completedAt: timestamp("completedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type AiDataArchiveRun = typeof aiDataArchiveRuns.$inferSelect;
+export type InsertAiDataArchiveRun = typeof aiDataArchiveRuns.$inferInsert;
+
+export const aiDataArchiveItems = mysqlTable("ai_data_archive_items", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  archiveRunId: varchar("archiveRunId", { length: 80 }).notNull(),
+  sourceTable: varchar("sourceTable", { length: 128 }).notNull(),
+  sourceId: varchar("sourceId", { length: 128 }).notNull(),
+  sourceCreatedAt: timestamp("sourceCreatedAt"),
+  storageObjectId: int("storageObjectId"),
+  contentHash: varchar("contentHash", { length: 64 }),
+  status: mysqlEnum("status", ["archived", "deleted", "failed"]).default("archived").notNull(),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type AiDataArchiveItem = typeof aiDataArchiveItems.$inferSelect;
+export type InsertAiDataArchiveItem = typeof aiDataArchiveItems.$inferInsert;
 
 // Knowledge base sync logs (P2P bidirectional sync)
 export const kbSyncLogs = mysqlTable("kb_sync_logs", {
@@ -162,6 +377,7 @@ export type InsertKbSyncLog = typeof kbSyncLogs.$inferInsert;
 // Role permissions configuration (dynamic, stored in DB)
 export const rolePermissions = mysqlTable("role_permissions", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   role: varchar("role", { length: 50 }).notNull().unique(),
   modules: text("modules").notNull(), // JSON array of module IDs
   detailedPermissions: text("detailedPermissions"), // JSON: ModulePermission[] with operations & sub-modules
@@ -177,6 +393,7 @@ export type InsertRolePermission = typeof rolePermissions.$inferInsert;
 // Project assignments (admin assigns projects to team members)
 export const projectAssignments = mysqlTable("project_assignments", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   projectType: mysqlEnum("projectType", ["dev_project", "listing_project"]).default("dev_project").notNull(),
   assignedUserId: int("assignedUserId").notNull(),
@@ -224,6 +441,7 @@ export type InsertRemoteUsageSnapshot = typeof remoteUsageSnapshots.$inferInsert
 // Projects table - each project represents one product listing task
 export const projects = mysqlTable("projects", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   userId: int("userId").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   brand: varchar("brand", { length: 255 }),
@@ -319,6 +537,7 @@ export type InsertReviewImport = typeof reviewImports.$inferInsert;
 // Project analysis files (属性表, 竞品Listing, 出单词报告, ABA关键词)
 export const projectFiles = mysqlTable("projectFiles", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   projectId: int("projectId").notNull(),
   userId: int("userId").notNull(),
   fileType: mysqlEnum("fileType", [
@@ -330,9 +549,18 @@ export const projectFiles = mysqlTable("projectFiles", {
   filename: varchar("filename", { length: 500 }).notNull(),
   fileUrl: text("fileUrl"),           // S3 URL
   fileSize: int("fileSize"),           // bytes
+  rawStorageUri: text("rawStorageUri"),
+  parsedStorageUri: text("parsedStorageUri"),
+  analysisArtifactId: varchar("analysisArtifactId", { length: 80 }),
+  rawContentHash: varchar("rawContentHash", { length: 64 }),
+  parsedDataHash: varchar("parsedDataHash", { length: 64 }),
   rawContent: text("rawContent"),      // parsed raw text/csv content
   parsedData: text("parsedData"),      // JSON: structured parsed result
   analysisResult: text("analysisResult"), // JSON: AI analysis result
+  lifecycleState: mysqlEnum("lifecycleState", ["hot", "warm", "cold", "archived", "deleted"]).default("hot").notNull(),
+  archiveAfter: timestamp("archiveAfter"),
+  deleteAfter: timestamp("deleteAfter"),
+  archivedAt: timestamp("archivedAt"),
   status: mysqlEnum("status", ["uploaded", "parsing", "parsed", "analyzing", "completed", "failed"]).default("uploaded").notNull(),
   errorMessage: text("errorMessage"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -4728,20 +4956,6 @@ export const kbTagDefinitions = mysqlTable("kb_tag_definitions", {
 export type KbTagDefinition = typeof kbTagDefinitions.$inferSelect;
 export type InsertKbTagDefinition = typeof kbTagDefinitions.$inferInsert;
 
-// ============ 智能 Listing 生成 2.0 ============
-export const listing2Products = mysqlTable("listing2_products", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
-  asin: varchar("asin", { length: 20 }),
-  title: varchar("title", { length: 500 }).notNull(),
-  status: varchar("status", { length: 50 }).default("active").notNull(), // active | archived
-  currentStep: int("currentStep").default(1).notNull(), // 1-10
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
-export type Listing2Product = typeof listing2Products.$inferSelect;
-export type InsertListing2Product = typeof listing2Products.$inferInsert;
-
 // ─── Step 0: Expression Direction Groups ─────────────────────────────────────
 // Each group represents one "卖点表达方向" (e.g. 场景使用图, 功能对比图).
 // A group holds 1-5 images from DIFFERENT competitors showing the same expression style.
@@ -4783,6 +4997,7 @@ export type InsertExpressionGroupImage = typeof expressionGroupImages.$inferInse
 // Skill 定义表（存储 110 个 Skill 的 manifest 和元数据）
 export const emperorSkills = mysqlTable("emperor_skills", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   slug: varchar("slug", { length: 128 }).unique().notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
@@ -4813,6 +5028,7 @@ export type InsertEmperorSkill = typeof emperorSkills.$inferInsert;
 // Skill 运行记录表
 export const emperorSkillRuns = mysqlTable("emperor_skill_runs", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   runId: varchar("runId", { length: 64 }).unique().notNull(),
   skillSlug: varchar("skillSlug", { length: 128 }).notNull(),
   skillName: varchar("skillName", { length: 255 }),
@@ -4841,6 +5057,7 @@ export type InsertEmperorSkillRun = typeof emperorSkillRuns.$inferInsert;
 // Agent 定义表
 export const emperorAgents = mysqlTable("emperor_agents", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   slug: varchar("slug", { length: 128 }).unique().notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
@@ -4864,6 +5081,7 @@ export type InsertEmperorAgent = typeof emperorAgents.$inferInsert;
 
 export const emperorAgentTemplateVersions = mysqlTable("emperor_agent_template_versions", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   agentSlug: varchar("agentSlug", { length: 128 }).notNull(),
   agentName: varchar("agentName", { length: 255 }),
   parentVersionId: int("parentVersionId"),
@@ -4889,6 +5107,7 @@ export type InsertEmperorAgentTemplateVersion = typeof emperorAgentTemplateVersi
 // Agent 运行实例。长流程不直接等 LLM 返回，而是以 run/checkpoint 推进。
 export const emperorAgentRuns = mysqlTable("emperor_agent_runs", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   runId: varchar("runId", { length: 80 }).unique().notNull(),
   agentSlug: varchar("agentSlug", { length: 128 }).notNull(),
   agentName: varchar("agentName", { length: 255 }),
@@ -4913,6 +5132,7 @@ export type InsertEmperorAgentRun = typeof emperorAgentRuns.$inferInsert;
 
 export const emperorAgentCheckpoints = mysqlTable("emperor_agent_checkpoints", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   runId: varchar("runId", { length: 80 }).notNull(),
   agentSlug: varchar("agentSlug", { length: 128 }).notNull(),
   nodeId: varchar("nodeId", { length: 128 }).notNull(),
@@ -4948,12 +5168,18 @@ export type InsertEmperorAgentCheckpoint = typeof emperorAgentCheckpoints.$infer
 
 export const emperorAgentEvents = mysqlTable("emperor_agent_events", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   runId: varchar("runId", { length: 80 }).notNull(),
   agentSlug: varchar("agentSlug", { length: 128 }).notNull(),
   nodeId: varchar("nodeId", { length: 128 }),
   eventType: varchar("eventType", { length: 64 }).notNull(),
   message: text("message"),
   payload: json("payload"),
+  retentionClass: mysqlEnum("retentionClass", ["hot", "warm", "cold", "archive"]).default("hot").notNull(),
+  archiveAfter: timestamp("archiveAfter"),
+  deleteAfter: timestamp("deleteAfter"),
+  archivedAt: timestamp("archivedAt"),
+  archiveBatchId: varchar("archiveBatchId", { length: 80 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type EmperorAgentEvent = typeof emperorAgentEvents.$inferSelect;
@@ -4961,7 +5187,9 @@ export type InsertEmperorAgentEvent = typeof emperorAgentEvents.$inferInsert;
 
 export const emperorAgentArtifacts = mysqlTable("emperor_agent_artifacts", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   runId: varchar("runId", { length: 80 }).notNull(),
+  unifiedArtifactId: varchar("unifiedArtifactId", { length: 80 }),
   agentSlug: varchar("agentSlug", { length: 128 }).notNull(),
   nodeId: varchar("nodeId", { length: 128 }).notNull(),
   artifactKey: varchar("artifactKey", { length: 128 }).notNull(),
@@ -4981,6 +5209,10 @@ export const emperorAgentArtifacts = mysqlTable("emperor_agent_artifacts", {
   fileName: varchar("fileName", { length: 255 }),
   fileSizeBytes: bigint("fileSizeBytes", { mode: "number" }),
   storageUri: text("storageUri"),
+  retentionClass: mysqlEnum("retentionClass", ["hot", "warm", "cold", "archive"]).default("hot").notNull(),
+  archiveAfter: timestamp("archiveAfter"),
+  deleteAfter: timestamp("deleteAfter"),
+  archivedAt: timestamp("archivedAt"),
   sourceSkillRunId: varchar("sourceSkillRunId", { length: 80 }),
   sourceAiJobRunId: varchar("sourceAiJobRunId", { length: 80 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -4991,6 +5223,7 @@ export type InsertEmperorAgentArtifact = typeof emperorAgentArtifacts.$inferInse
 
 export const emperorTools = mysqlTable("emperor_tools", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   slug: varchar("slug", { length: 128 }).unique().notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
@@ -5013,6 +5246,7 @@ export type InsertEmperorTool = typeof emperorTools.$inferInsert;
 
 export const emperorToolRuns = mysqlTable("emperor_tool_runs", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   toolRunId: varchar("toolRunId", { length: 80 }).unique().notNull(),
   toolSlug: varchar("toolSlug", { length: 128 }).notNull(),
   toolName: varchar("toolName", { length: 255 }),
@@ -5028,6 +5262,11 @@ export const emperorToolRuns = mysqlTable("emperor_tool_runs", {
   output: json("output"),
   normalizedOutput: json("normalizedOutput"),
   errorMessage: text("errorMessage"),
+  retentionClass: mysqlEnum("retentionClass", ["hot", "warm", "cold", "archive"]).default("hot").notNull(),
+  archiveAfter: timestamp("archiveAfter"),
+  deleteAfter: timestamp("deleteAfter"),
+  archivedAt: timestamp("archivedAt"),
+  archiveBatchId: varchar("archiveBatchId", { length: 80 }),
   failureKind: mysqlEnum("failureKind", ["policy", "rate_limit", "circuit_open", "schema", "auth", "timeout", "network", "http", "executor", "unknown"]),
   retryable: int("retryable").default(0).notNull(),
   attemptCount: int("attemptCount").default(0).notNull(),
@@ -5047,12 +5286,17 @@ export type InsertEmperorToolRun = typeof emperorToolRuns.$inferInsert;
 
 export const emperorToolSecrets = mysqlTable("emperor_tool_secrets", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   slug: varchar("slug", { length: 128 }).unique().notNull(),
   description: text("description"),
   encryptedValue: text("encryptedValue").notNull(),
   iv: varchar("iv", { length: 32 }).notNull(),
   authTag: varchar("authTag", { length: 32 }).notNull(),
   keyVersion: varchar("keyVersion", { length: 64 }).default("v1").notNull(),
+  previousKeyVersion: varchar("previousKeyVersion", { length: 64 }),
+  status: mysqlEnum("status", ["active", "rotating", "retired"]).default("active").notNull(),
+  rotatedAt: timestamp("rotatedAt"),
+  expiresAt: timestamp("expiresAt"),
   metadata: json("metadata"),
   createdBy: int("createdBy"),
   updatedBy: int("updatedBy"),
@@ -5062,8 +5306,25 @@ export const emperorToolSecrets = mysqlTable("emperor_tool_secrets", {
 export type EmperorToolSecret = typeof emperorToolSecrets.$inferSelect;
 export type InsertEmperorToolSecret = typeof emperorToolSecrets.$inferInsert;
 
+export const emperorSecretKeyVersions = mysqlTable("emperor_secret_key_versions", {
+  id: int("id").autoincrement().primaryKey(),
+  scope: mysqlEnum("scope", ["tool", "model", "system"]).default("tool").notNull(),
+  keyVersion: varchar("keyVersion", { length: 64 }).notNull(),
+  status: mysqlEnum("status", ["active", "deprecated", "retired"]).default("active").notNull(),
+  activatedAt: timestamp("activatedAt"),
+  deprecatedAt: timestamp("deprecatedAt"),
+  retiredAt: timestamp("retiredAt"),
+  metadata: json("metadata"),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type EmperorSecretKeyVersion = typeof emperorSecretKeyVersions.$inferSelect;
+export type InsertEmperorSecretKeyVersion = typeof emperorSecretKeyVersions.$inferInsert;
+
 export const emperorAiOsMetrics = mysqlTable("emperor_ai_os_metrics", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   entityType: varchar("entityType", { length: 40 }).notNull(),
   entityId: varchar("entityId", { length: 128 }).notNull(),
   metricName: varchar("metricName", { length: 80 }).notNull(),
@@ -5076,6 +5337,11 @@ export const emperorAiOsMetrics = mysqlTable("emperor_ai_os_metrics", {
   skillSlug: varchar("skillSlug", { length: 128 }),
   toolSlug: varchar("toolSlug", { length: 128 }),
   metadata: json("metadata"),
+  retentionClass: mysqlEnum("retentionClass", ["hot", "warm", "cold", "archive"]).default("hot").notNull(),
+  archiveAfter: timestamp("archiveAfter"),
+  deleteAfter: timestamp("deleteAfter"),
+  archivedAt: timestamp("archivedAt"),
+  archiveBatchId: varchar("archiveBatchId", { length: 80 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type EmperorAiOsMetric = typeof emperorAiOsMetrics.$inferSelect;
@@ -5083,6 +5349,7 @@ export type InsertEmperorAiOsMetric = typeof emperorAiOsMetrics.$inferInsert;
 
 export const emperorAiOsEvaluations = mysqlTable("emperor_ai_os_evaluations", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   evaluationId: varchar("evaluationId", { length: 80 }).unique().notNull(),
   entityType: varchar("entityType", { length: 40 }).notNull(),
   entityId: varchar("entityId", { length: 128 }).notNull(),
@@ -5107,6 +5374,7 @@ export type InsertEmperorAiOsEvaluation = typeof emperorAiOsEvaluations.$inferIn
 // Emperor 知识库（cc-haha 四分类记忆体系）
 export const emperorKnowledge = mysqlTable("emperor_knowledge", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   userId: int("user_id").notNull(),
   projectId: varchar("project_id", { length: 128 }),
   title: varchar("title", { length: 512 }).notNull(),
@@ -5126,6 +5394,7 @@ export type InsertEmperorKnowledgeItem = typeof emperorKnowledge.$inferInsert;
 // MCP 连接器配置表
 export const emperorMcpConnectors = mysqlTable("emperor_mcp_connectors", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   slug: varchar("slug", { length: 128 }).unique().notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
@@ -5144,6 +5413,7 @@ export type InsertEmperorMcpConnector = typeof emperorMcpConnectors.$inferInsert
 // 模型提供商配置表（多 LLM 路由）
 export const emperorModelProviders = mysqlTable("emperor_model_providers", {
   id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
   slug: varchar("slug", { length: 64 }).unique().notNull(),
   name: varchar("name", { length: 128 }).notNull(),
   provider: mysqlEnum("provider", ["manus_builtin", "openai", "deepseek", "anthropic", "custom"]).default("manus_builtin").notNull(),

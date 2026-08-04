@@ -98,8 +98,6 @@ import ProjectAssignmentPage from "./pages/ProjectAssignmentPage";
 import SyncManagement from "./pages/SyncManagement";
 import RoleManagement from "./pages/RoleManagement";
 import { PermissionGuard } from "./components/PermissionGuard";
-import Listing2Products from "./pages/listing2/Listing2Products";
-import Listing2Workflow from "./pages/listing2/Listing2Workflow";
 
 // ─── Module 7: Emperor AI 能力中台 ────────────────────────────────────────────────────────
 import EmperorSkillLibrary from "./pages/emperor/EmperorSkillLibrary";
@@ -237,10 +235,6 @@ function Router() {
         <Route path="/admin/sync">{() => <PermissionGuard><SyncManagement /></PermissionGuard>}</Route>
         <Route path="/admin/roles">{() => <PermissionGuard><RoleManagement /></PermissionGuard>}</Route>
         <Route path="/profile" component={ProfilePage} />
-
-        {/* ─── 智能Listing生成2.0 ─── */}
-        <Route path="/listing2">{() => <PermissionGuard><Listing2Products /></PermissionGuard>}</Route>
-        <Route path="/listing2/product/:id">{() => <PermissionGuard><Listing2Workflow /></PermissionGuard>}</Route>
 
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
