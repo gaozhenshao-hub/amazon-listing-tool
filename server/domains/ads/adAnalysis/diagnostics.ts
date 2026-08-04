@@ -1,3 +1,4 @@
+import { failUnavailableDataSource } from "@shared/_core/errors";
 import { z, invokeLLM, protectedProcedure, router, getDb, eq, desc, and, sql, budgetTracking, ClassificationThresholds, DEFAULT_THRESHOLDS, TWELVE_CATEGORIES, classifySearchTerm, anonymizeForAI, deAnonymizeResults, _queryCache, CACHE_TTL, getCached, setCache, parallelBatch, getDateNDaysAgo, getDatesInRange, resolveDateRange, getAllSellerSids, MARKETPLACE_MAP, filterSidsByMarketplace } from "./context";
 
 export const diagnosticsProcedures = {
@@ -22,7 +23,7 @@ export const diagnosticsProcedures = {
       for (const sid of sidsToQuery) {
         for (let d = 1; d <= Math.min(input.days || 30, 30); d++) {
           try {
-            const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+            const res = failUnavailableDataSource();
             const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
             for (const item of items) {
               totalImpressions += Number(item.impressions) || 0;
@@ -176,7 +177,7 @@ ${JSON.stringify(metrics)}
             offset: 0,
             length: 1000,
           };
-          return ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+          return failUnavailableDataSource();
         }));
         for (const result of results) {
           if (result.status !== 'fulfilled') continue;
@@ -265,7 +266,7 @@ ${JSON.stringify(metrics)}
             const body: any = { sid, report_date: getDateNDaysAgo(d), offset: 0, length: 500 };
             // For single campaign, pass campaign_id to API; for multi, fetch all and filter
             if (hasCampaignFilter_w && effectiveCampaignIds_w.length === 1) body.campaign_id = effectiveCampaignIds_w[0];
-            const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+            const res = failUnavailableDataSource();
             const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
             for (const item of items) {
               // Filter by campaign IDs when multiple selected
@@ -385,7 +386,7 @@ ${JSON.stringify(metrics)}
           try {
             const body: any = { sid, report_date: getDateNDaysAgo(d), offset: 0, length: 500 };
             if (hasCampaignFilter_e && effectiveCampaignIds_e.length === 1) body.campaign_id = effectiveCampaignIds_e[0];
-            const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+            const res = failUnavailableDataSource();
             const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
             for (const item of items) {
               // Filter by campaign IDs when multiple selected
@@ -410,7 +411,7 @@ ${JSON.stringify(metrics)}
       const targetedKeywords = new Set<string>();
       for (const sid of sidsToQuery) {
         try {
-          const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+          const res = failUnavailableDataSource();
           const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
           for (const item of items) {
             const kw = (item.keyword || item.keyword_text || '').toLowerCase().trim();

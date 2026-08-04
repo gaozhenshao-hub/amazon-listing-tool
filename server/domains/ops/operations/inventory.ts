@@ -1,3 +1,4 @@
+import { failUnavailableDataSource } from "@shared/_core/errors";
 import { z, TRPCError, protectedProcedure, router, getDb, invokeLLM, inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules, adAnalysisTasks, adAutomationRules, searchTermActions, competitorMonitors, competitorSnapshots, competitorReports, lingxingApiLogs, userSettings, asinStatusCache, asinPermissions, asinTagDefinitions, asinTagAssignments, productProfiles, productVariants, lingxingProductWeekly, operatorNameMappings, eq, desc, and, sql, gte, lte, or, MANAGER_ROLES, resolveDataUserId, CacheEntry, adCache, cacheGet, cacheSet, getCacheAge, getDateRange, MARKETPLACE_MAP, filterSidsByMarketplace, getAllSellerSids, getToday, getYesterday, getDateNDaysAgo } from "./context";
 import { opsWorkspaceCondition, withOpsWorkspace, workspaceIdFromContext } from "./context";
 
@@ -197,7 +198,7 @@ toggleMockMode: protectedProcedure
         const filteredSids = filterSidsByMarketplace(sellers, input.marketplace);
         sidStr = filteredSids.join(',');
       }
-      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+      const res = failUnavailableDataSource();
 
       // Normalize: FBA v2 API returns {records:[...]} or array
       const rawData = res.data || [];
@@ -315,7 +316,7 @@ getReplenishmentSuggestions: protectedProcedure
       // Get real SIDs
       const { sids } = await getAllSellerSids();
       const sidList = input.sid ? [input.sid] : sids.map(Number);
-      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+      const res = failUnavailableDataSource();
       // Normalize: may return {list:[...]} or array
       const rawItems = res.data || [];
       const items = Array.isArray(rawItems) ? rawItems : (rawItems as any).list || (rawItems as any).records || [];
@@ -469,7 +470,7 @@ ${JSON.stringify(input.skuData, null, 2)}
   getAwdInventory: protectedProcedure
     .input(z.object({ marketplace: z.string().optional().default("US") }))
     .query(async ({ input }) => {
-      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+      const res = failUnavailableDataSource();
       const rawData = res.data || [];
       const items = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
       return {
@@ -492,7 +493,7 @@ ${JSON.stringify(input.skuData, null, 2)}
   getLocalWarehouseInventory: protectedProcedure
     .input(z.object({ marketplace: z.string().optional().default("US") }))
     .query(async ({ input }) => {
-      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+      const res = failUnavailableDataSource();
       const rawData = res.data || [];
       const items = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
       return {
@@ -519,9 +520,9 @@ ${JSON.stringify(input.skuData, null, 2)}
     .query(async ({ input }) => {
       // 并行获取三个渠道的库存
       const [fbaRes, awdRes, localRes] = await Promise.all([
-        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
-        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
-        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
+        failUnavailableDataSource(),
+        failUnavailableDataSource(),
+        failUnavailableDataSource(),
       ]);
       
       const fbaItems = Array.isArray(fbaRes.data) ? fbaRes.data : ((fbaRes.data as any)?.records || []);
@@ -704,7 +705,7 @@ ${activeSkus.map((s, i) => `
   getReplenishChart: protectedProcedure
     .input(z.object({ sku: z.string().optional(), asin: z.string().optional() }))
     .query(async ({ input }) => {
-      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+      const res = failUnavailableDataSource();
       return { data: res.data, isMock: true };
     })
 };

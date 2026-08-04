@@ -51,7 +51,7 @@ describe("Optimization 1: DevAnalysisFlow attribute_tagging cleanup", () => {
 // Optimization 1b: Backend gating logic updated
 // ═══════════════════════════════════════════════════════════════
 describe("Optimization 1b: Backend gating uses areProductTagsConfirmed", () => {
-  const analysisPath = path.join(__dirname, "routers/devAnalysis.ts");
+  const analysisPath = path.join(__dirname, "domains/product_development/analysis/stageGating.ts");
   const analysisSrc = fs.readFileSync(analysisPath, "utf-8");
 
   it("should define areProductTagsConfirmed function", () => {

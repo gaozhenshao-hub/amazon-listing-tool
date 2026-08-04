@@ -1,5 +1,6 @@
-import { TRPCError, recordAiOsMetric, EmperorToolDefinition, EmperorToolInvocationInput, EmperorToolInvocationResult, EmperorToolNormalizedOutput, toRecord, generateToolRunId, sanitizeForAudit, serializeToolError, boundedToolAttempts, assertNoPlaintextSecrets, resolveSecretRefs, publicSecretRefs, assertToolPermission, assertToolRateLimit, incrementToolInFlight, buildToolGovernanceDecision, getToolCircuitState, assertToolCircuitClosed, recordToolCircuitSuccess, recordToolCircuitFailure, assertToolSchema, inferRequestUrl, inferToolRisk, assertHttpPolicy, createToolRunRecord, finishToolRunRecord, isPolicyBlock, classifyToolFailure, normalizeToolOutput } from "./governanceCore";
-import { getToolDefinition, invokeInternalTool } from "./registry";
+import { TRPCError, recordAiOsMetric, EmperorToolDefinition, EmperorToolInvocationInput, EmperorToolInvocationResult, EmperorToolNormalizedOutput, toRecord, buildUrl, generateToolRunId, sanitizeForAudit, serializeToolError, boundedToolAttempts, assertNoPlaintextSecrets, resolveSecretRefs, publicSecretRefs, assertToolPermission, assertToolRateLimit, incrementToolInFlight, buildToolGovernanceDecision, getToolCircuitState, assertToolCircuitClosed, recordToolCircuitSuccess, recordToolCircuitFailure, assertToolSchema, inferRequestUrl, inferToolRisk, assertHttpPolicy, createToolRunRecord, finishToolRunRecord, isPolicyBlock, classifyToolFailure, normalizeToolOutput, parseArrayConfig, captureInput, mergeOutputs, composeListingPreview, queryKnowledge } from "./governanceCore";
+import { getToolDefinition } from "./registry";
+import { safeHttpRequest } from "../../../../infrastructure/http/safeHttpClient";
 type ToolExecutorContext = {
   tool: EmperorToolDefinition & { source: "builtin" | "emperor_tools" | "mcp_connector" };
   params: unknown;
@@ -19,11 +20,6 @@ const emperorToolExecutors = new Map<string, EmperorToolExecutor>();
 
 export function registerEmperorToolExecutor(key: string, executor: EmperorToolExecutor) {
   emperorToolExecutors.set(key, executor);
-}
-
-function buildUrl(baseUrl: string, path = "") {
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return new URL(path.replace(/^\//, ""), normalizedBase).toString();
 }
 
 function mergeToolHeaders(...values: unknown[]) {
@@ -137,14 +133,20 @@ async function invokeHttpTool(tool: EmperorToolDefinition, params: unknown, reso
   applyToolAuth({ url: parsedUrl, headers, config, request });
   assertHttpPolicy(tool, parsedUrl, method, timeoutMs);
   const body = buildHttpRequestBody(request);
-  const response = await fetch(parsedUrl.toString(), {
+  const response = await safeHttpRequest(parsedUrl, {
     method,
     headers,
     body: ["GET", "HEAD"].includes(method) ? undefined : JSON.stringify(body ?? {}),
-    signal: AbortSignal.timeout(timeoutMs),
+    timeoutMs,
+    maxRedirects: Number(config.maxRedirects ?? 3),
+    maxResponseBytes: Number(config.maxResponseBytes ?? 5 * 1024 * 1024),
+    allowedHosts: parseArrayConfig(config.allowedHosts),
+    allowedHostSuffixes: parseArrayConfig(config.allowedHostSuffixes),
+    allowPrivateNetwork: config.allowPrivateNetwork === true,
+    auditContext: { workspaceId: workspaceId ?? tool.workspaceId ?? null, toolSlug: tool.slug, operation: "tool.http" },
   });
-  const contentType = response.headers.get("content-type") || "";
-  const output = contentType.includes("application/json") ? await response.json() : await response.text();
+  const contentType = response.headers["content-type"] || "";
+  const output = contentType.includes("application/json") ? response.json() : response.text();
   if (!response.ok) {
     throw new TRPCError({
       code: "BAD_REQUEST",
@@ -180,14 +182,21 @@ async function invokeMcpHttpTool(tool: EmperorToolDefinition, params: unknown, r
       arguments: request.arguments || request.params || request.payload || {},
     },
   };
-  const response = await fetch(url.toString(), {
+  const timeoutMs = Number(request.timeoutMs || connectorConfig.timeoutMs || 30000);
+  const response = await safeHttpRequest(url, {
     method: "POST",
     headers,
     body: JSON.stringify(request.rpcPayload || rpcPayload),
-    signal: AbortSignal.timeout(Number(request.timeoutMs || connectorConfig.timeoutMs || 30000)),
+    timeoutMs,
+    maxRedirects: Number(connectorConfig.maxRedirects ?? 3),
+    maxResponseBytes: Number(connectorConfig.maxResponseBytes ?? 5 * 1024 * 1024),
+    allowedHosts: parseArrayConfig(connectorConfig.allowedHosts),
+    allowedHostSuffixes: parseArrayConfig(connectorConfig.allowedHostSuffixes),
+    allowPrivateNetwork: connectorConfig.allowPrivateNetwork === true,
+    auditContext: { workspaceId: workspaceId ?? tool.workspaceId ?? null, toolSlug: tool.slug, operation: "tool.mcp_http" },
   });
-  const contentType = response.headers.get("content-type") || "";
-  const payload = contentType.includes("application/json") ? await response.json() : await response.text();
+  const contentType = response.headers["content-type"] || "";
+  const payload = contentType.includes("application/json") ? response.json() : response.text();
   if (!response.ok) {
     throw new TRPCError({ code: "BAD_REQUEST", message: `MCP HTTP executor failed: ${response.status}`, cause: payload });
   }
@@ -255,6 +264,28 @@ async function invokeMcpConnector(tool: EmperorToolDefinition, params: unknown, 
       message: "MCP Connector 已统一接入 Tool Gateway；请为该 connector 配置 executor=mcp_http、mcpEndpoint 或注册专用 executor。",
     },
   };
+}
+
+async function invokeInternalTool(slug: string, params: unknown, resolvedSecretRefs: string[] = [], workspaceId?: number | null) {
+  switch (slug) {
+    case "internal.agent.capture_input":
+      return captureInput(params);
+    case "internal.agent.merge_outputs":
+      return mergeOutputs(params);
+    case "internal.listing.compose_preview":
+      return composeListingPreview(params);
+    case "internal.knowledge.query":
+      return queryKnowledge(params);
+    case "internal.http.request":
+      return invokeHttpTool({
+        slug,
+        name: "HTTP API 请求",
+        type: "api",
+        config: {},
+      }, params, resolvedSecretRefs, workspaceId);
+    default:
+      throw new TRPCError({ code: "BAD_REQUEST", message: `Unsupported internal tool: ${slug}` });
+  }
 }
 
 registerEmperorToolExecutor("internal", async ({ tool, params, resolvedSecretRefs, invocation }) => {

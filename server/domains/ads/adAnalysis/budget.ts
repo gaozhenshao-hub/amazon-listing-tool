@@ -1,3 +1,4 @@
+import { failUnavailableDataSource } from "@shared/_core/errors";
 import { z, invokeLLM, protectedProcedure, router, getDb, eq, desc, and, sql, budgetTracking, ClassificationThresholds, DEFAULT_THRESHOLDS, TWELVE_CATEGORIES, classifySearchTerm, anonymizeForAI, deAnonymizeResults, _queryCache, CACHE_TTL, getCached, setCache, parallelBatch, getDateNDaysAgo, getDatesInRange, resolveDateRange, getAllSellerSids, MARKETPLACE_MAP, filterSidsByMarketplace } from "./context";
 import { opsWorkspaceCondition, withOpsWorkspace, workspaceIdFromContext } from "./context";
 
@@ -27,7 +28,7 @@ export const budgetProcedures = {
       const campaigns: any[] = [];
       for (const sid of sidsToQuery) {
         try {
-          const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+          const res = failUnavailableDataSource();
           const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
           campaigns.push(...items.map((c: any) => ({ ...c, sid })));
         } catch (err: any) {
@@ -72,7 +73,7 @@ export const budgetProcedures = {
         const results = await Promise.allSettled(
           batch.flatMap(cid =>
             datesToQuery.slice(0, 3).map(reportDate =>
-              Promise.resolve({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }).then(res => ({ cid, res })).catch(() => null)
+              Promise.resolve(failUnavailableDataSource()).then(res => ({ cid, res })).catch(() => null)
             )
           )
         );
@@ -203,7 +204,7 @@ export const budgetProcedures = {
           for (const reportDate of dates.slice(0, 7)) {
             tasks.push(async () => {
               try {
-                const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+                const res = failUnavailableDataSource();
                 return Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
               } catch { return []; }
             });
@@ -292,7 +293,7 @@ export const budgetProcedures = {
         for (const sid of sidsToQuery) {
           for (const { path: adPath, type: adType } of adPaths) {
             try {
-              const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+              const res = failUnavailableDataSource();
               const raw = res.data || [];
               const records = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
               records.forEach((r: any) => { r._adType = adType; r._sid = sid; });
@@ -429,7 +430,7 @@ export const budgetProcedures = {
         const results = await Promise.allSettled(
           batch.flatMap((cid: string) =>
             dates.slice(0, 3).map(reportDate =>
-              Promise.resolve({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }).then(res => ({ cid, res })).catch(() => null)
+              Promise.resolve(failUnavailableDataSource()).then(res => ({ cid, res })).catch(() => null)
             )
           )
         );

@@ -1,3 +1,4 @@
+import { failUnavailableDataSource } from "@shared/_core/errors";
 import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
 import { opsWorkspaceCondition } from "../repositories/ops";
 import { z } from "zod";
@@ -23,12 +24,12 @@ export const afterSalesRouter = router({
       // Use requestWithMockFallback for all after-sales APIs since many Lingxing
       // after-sales endpoints return "服务不存在" (service not found) for some accounts
       const [reviewRes, feedbackRes, returnRes, rmaRes, emailRes, perfRes] = await Promise.all([
-        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
-        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
-        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
-        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
-        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
-        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
+        failUnavailableDataSource(),
+        failUnavailableDataSource(),
+        failUnavailableDataSource(),
+        failUnavailableDataSource(),
+        failUnavailableDataSource(),
+        failUnavailableDataSource(),
       ]);
       return {
         reviews: {
@@ -70,10 +71,10 @@ export const afterSalesRouter = router({
     .input(z.object({ sid: z.number().optional() }))
     .mutation(async ({ input }) => {
       const [reviewRes, returnRes, emailRes, perfRes] = await Promise.all([
-        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
-        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
-        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
-        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
+        failUnavailableDataSource(),
+        failUnavailableDataSource(),
+        failUnavailableDataSource(),
+        failUnavailableDataSource(),
       ]);
       const prompt = `你是一位资深亚马逊售后运营专家。请根据以下售后数据生成今日售后简报。
 
@@ -135,7 +136,7 @@ export const afterSalesRouter = router({
       pageSize: z.number().default(20),
     }))
     .query(async ({ input }) => {
-      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+      const res = failUnavailableDataSource();
       let list = res.data?.list || res.data || [];
       if (Array.isArray(list) && input.starFilter) list = list.filter((r: any) => r.star_rating === input.starFilter);
       return { total: res.data?.total || (Array.isArray(list) ? list.length : 0), list, _dataSource: res._meta?.source || 'unknown' };
@@ -145,7 +146,7 @@ export const afterSalesRouter = router({
   getReviewStats: protectedProcedure
     .input(z.object({ sid: z.number().optional(), asin: z.string().optional() }))
     .query(async ({ input }) => {
-      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+      const res = failUnavailableDataSource();
       return { ...(res.data || {}), _dataSource: res._meta?.source || 'unknown' };
     }),
 
@@ -293,7 +294,7 @@ export const afterSalesRouter = router({
   getReturnAnalysis: protectedProcedure
     .input(z.object({ sid: z.number().optional(), asin: z.string().optional() }))
     .query(async ({ input }) => {
-      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+      const res = failUnavailableDataSource();
       const raw = res.data || {};
       // Normalize mock/real data to match frontend expected structure
       const totalReturns = raw.total_returns || 0;
@@ -326,14 +327,14 @@ export const afterSalesRouter = router({
   getRmaList: protectedProcedure
     .input(z.object({ sid: z.number().optional(), page: z.number().default(1), pageSize: z.number().default(20) }))
     .query(async ({ input }) => {
-      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+      const res = failUnavailableDataSource();
       return { ...(res.data || {}), _dataSource: res._meta?.source || 'unknown' };
     }),
 
   getVoiceOfBuyer: protectedProcedure
     .input(z.object({ sid: z.number().optional() }))
     .query(async ({ input }) => {
-      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+      const res = failUnavailableDataSource();
       return { ...(res.data || {}), _dataSource: res._meta?.source || 'unknown' };
     }),
 
@@ -429,14 +430,14 @@ ${input.voiceOfBuyerData ? JSON.stringify(input.voiceOfBuyerData, null, 2) : '�
   getEmails: protectedProcedure
     .input(z.object({ sid: z.number().optional(), page: z.number().default(1), pageSize: z.number().default(20) }))
     .query(async ({ input }) => {
-      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+      const res = failUnavailableDataSource();
       return { ...(res.data || {}), _dataSource: res._meta?.source || 'unknown' };
     }),
 
   getEmailDetail: protectedProcedure
     .input(z.object({ mailId: z.string() }))
     .query(async ({ input }) => {
-      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+      const res = failUnavailableDataSource();
       return { ...(res.data || {}), _dataSource: res._meta?.source || 'unknown' };
     }),
 
@@ -739,7 +740,7 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
   getFeedbackList: protectedProcedure
     .input(z.object({ sid: z.number().optional() }))
     .query(async ({ input }) => {
-      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+      const res = failUnavailableDataSource();
       return { ...(res.data || {}), _dataSource: res._meta?.source || 'unknown' };
     }),
 
@@ -747,7 +748,7 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
   getPerformanceNotices: protectedProcedure
     .input(z.object({ sid: z.number().optional() }))
     .query(async ({ input }) => {
-      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+      const res = failUnavailableDataSource();
       return { ...(res.data || {}), _dataSource: res._meta?.source || 'unknown' };
     }),
 });

@@ -1,19 +1,20 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
+import { APP_ERROR_CODES } from "@shared/_core/errors";
 
 // Test mock data functions in lingxingAdapter
 describe("Lingxing Adapter Stub for Product Detail APIs", () => {
-  it("stub should return empty data for product API calls", async () => {
+  it("rejects removed product API calls", async () => {
     const { getLingxingAdapter } = await import("../lingxingAdapter");
     const adapter = getLingxingAdapter();
-    const result = await adapter.request({ path: "/erp/sc/data/product" });
-    expect(result.code).toBe("200");
-    expect(result.data).toBeDefined();
+    await expect(adapter.request({ path: "/erp/sc/data/product" })).rejects.toMatchObject({
+      code: APP_ERROR_CODES.DATA_SOURCE_UNAVAILABLE,
+    });
   });
-  it("stub should return mock data for competitor paths", async () => {
+  it("rejects removed competitor API calls", async () => {
     const { getLingxingAdapter } = await import("../lingxingAdapter");
     const adapter = getLingxingAdapter();
-    const result = await adapter.request({ path: "/competitor/data" });
-    expect(result.code).toBe("200");
-    expect(result.data).toBeDefined();
+    await expect(adapter.request({ path: "/competitor/data" })).rejects.toMatchObject({
+      code: APP_ERROR_CODES.DATA_SOURCE_UNAVAILABLE,
+    });
   });
 });

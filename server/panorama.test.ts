@@ -98,7 +98,7 @@ describe("devProducts panorama fields", () => {
 
 // ─── Test: Stage gating includes panorama check ─────────────────
 describe("Stage gating panorama check", () => {
-  const analysisPath = path.join(__dirname, "routers/devAnalysis.ts");
+  const analysisPath = path.join(__dirname, "domains/product_development/analysis/stageGating.ts");
   const analysisSrc = fs.readFileSync(analysisPath, "utf-8");
 
   it("should have isPanoramaConfirmed helper", () => {

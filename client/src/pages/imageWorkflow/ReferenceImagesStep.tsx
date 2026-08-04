@@ -1,0 +1,580 @@
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { trpc } from "@/lib/trpc";
+import { AlertTriangle, Check, ChevronRight, Image, Loader2, Sparkles, Target, Layout, Palette, Eye, FileText, RotateCcw, Plus, Trash2, GripVertical, Download, Languages, Paintbrush, Camera, BarChart3, Layers, Lightbulb, Smartphone, TypeIcon, Copy, Search, ImageIcon, BookOpen, X, Filter, Wand2, Pencil, Send, Lock, Unlock, Upload, Zap, Grid3X3, LayoutGrid, RefreshCw } from "lucide-react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { toast } from "sonner";
+
+import { KbImagePickerDialog } from "./KnowledgeImagePickerDialog";
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── Step 4: Reference Images (含知识库图片选择) ─────────────────
+// ═══════════════════════════════════════════════════════════════════
+export function Step4References({
+  projectId,
+  session,
+  onConfirm,
+}: {
+  projectId: number;
+  session: any;
+  onConfirm: () => void;
+}) {
+  const generateMutation = trpc.imageWorkflow.generateStep4.useMutation();
+  const confirmMutation = trpc.imageWorkflow.confirmStep4.useMutation();
+  const resetMutation = trpc.imageWorkflow.resetToStep.useMutation();
+  const uploadRefMutation = trpc.imageWorkflow.uploadStep4RefImage.useMutation();
+  const reoptimizeMutation = trpc.imageWorkflow.reoptimizeStep4WithRefs.useMutation();
+  const regenerateAllMutation = trpc.imageWorkflow.regenerateAllFromReferences.useMutation();
+  const regenerateSingleMutation = trpc.imageWorkflow.regenerateSingleImageFromRef.useMutation();
+  const [regeneratingSingleIdx, setRegeneratingSingleIdx] = useState<number | null>(null);
+  const [editData, setEditData] = useState<any>(null);
+  const [isLocked, setIsLocked] = useState(!!session?.step4Confirmed);
+  const [kbPickerOpen, setKbPickerOpen] = useState(false);
+  const [kbPickerTargetIdx, setKbPickerTargetIdx] = useState<number | null>(null);
+  const [kbPickerTargetType, setKbPickerTargetType] = useState<string>("");
+  const [uploadingRef, setUploadingRef] = useState<{idx: number; type: 'composition'|'effect'} | null>(null);
+
+  useEffect(() => {
+    if (session?.step4UserEdit) {
+      try { setEditData(JSON.parse(session.step4UserEdit)); } catch {}
+    } else if (session?.step4AiResult) {
+      try { setEditData(JSON.parse(session.step4AiResult)); } catch {}
+    }
+    setIsLocked(!!session?.step4Confirmed);
+  }, [session?.step4AiResult, session?.step4UserEdit, session?.step4Confirmed]);
+
+  const handleUnlock = async () => {
+    try {
+      await resetMutation.mutateAsync({ projectId, step: 4 });
+      setIsLocked(false);
+      toast.success("已解锁，可编辑参考图");
+    } catch (err: any) {
+      toast.error(err.message || "解锁失败");
+    }
+  };
+
+  // Upload independent reference image (composition or effect)
+  const handleRefImageUpload = async (idx: number, refType: 'composition' | 'effect', file: File) => {
+    setUploadingRef({ idx, type: refType });
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = (reader.result as string).split(',')[1];
+        const result = await uploadRefMutation.mutateAsync({
+          projectId,
+          imageKey: `step4-ref-${idx}-${refType}`,
+          refType,
+          imageData: base64,
+          fileName: file.name,
+        });
+        // Update editData with the uploaded image URL
+        if (editData) {
+          const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
+          const ref = { ...newData.imageReferences[idx] };
+          if (refType === 'composition') {
+            ref.compositionRefImageUrl = result.url;
+          } else {
+            ref.effectRefImageUrl = result.url;
+          }
+          newData.imageReferences[idx] = ref;
+          setEditData(newData);
+        }
+        toast.success(`${refType === 'composition' ? '构图' : '效果'}参考图已上传`);
+        setUploadingRef(null);
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      toast.error(err.message || "上传失败");
+      setUploadingRef(null);
+    }
+  };
+
+  // Re-optimize Step 4 based on uploaded reference images
+  const handleReoptimize = async (idx: number) => {
+    if (!editData) return;
+    try {
+      const ref = editData.imageReferences[idx];
+      const result = await reoptimizeMutation.mutateAsync({
+        projectId,
+        imageKey: `step4-ref-${idx}`,
+        compositionRefUrl: ref.compositionRefImageUrl || '',
+        effectRefUrl: ref.effectRefImageUrl || '',
+      });
+      // Merge the re-optimized result into editData
+      const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
+      newData.imageReferences[idx] = { ...newData.imageReferences[idx], ...result };
+      setEditData(newData);
+      toast.success("已根据参考图重新优化");
+    } catch (err: any) {
+      toast.error(err.message || "优化失败");
+    }
+  };
+
+  const handleGenerate = async () => {
+    try {
+      const result = await generateMutation.mutateAsync({ projectId });
+      setEditData(result);
+      toast.success("参考图推荐完成");
+    } catch (err: any) {
+      toast.error(err.message || "生成失败");
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!editData) return;
+    try {
+      await confirmMutation.mutateAsync({ projectId, userEdit: JSON.stringify(editData) });
+      toast.success("参考图已确认");
+      onConfirm();
+    } catch (err: any) {
+      toast.error(err.message || "确认失败");
+    }
+  };
+
+  const isConfirmed = isLocked;
+
+  const updateRef = (idx: number, section: string, field: string, value: any) => {
+    if (!editData) return;
+    const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
+    newData.imageReferences[idx] = {
+      ...newData.imageReferences[idx],
+      [section]: { ...newData.imageReferences[idx][section], [field]: value },
+    };
+    setEditData(newData);
+  };
+
+  // Open KB picker for a specific image reference
+  const openKbPicker = (idx: number, imageType: string) => {
+    setKbPickerTargetIdx(idx);
+    setKbPickerTargetType(imageType);
+    setKbPickerOpen(true);
+  };
+
+  // Handle KB image selection - attach selected images to the reference
+  const handleKbImageSelect = (images: Array<{ id: number; imageUrl: string; imagePosition: string; tagCategory: string; tagImageType: string; tagDesignStyle: string; tagColorScheme: string }>) => {
+    if (kbPickerTargetIdx === null || !editData) return;
+    const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
+    const ref = { ...newData.imageReferences[kbPickerTargetIdx] };
+
+    // Attach selected KB images to this reference
+    const existingKbImages = ref.kbReferenceImages || [];
+    const newKbImages = [...existingKbImages, ...images.map(img => ({
+      id: img.id,
+      imageUrl: img.imageUrl,
+      position: img.imagePosition,
+      category: img.tagCategory,
+      imageType: img.tagImageType,
+      designStyle: img.tagDesignStyle,
+      colorScheme: img.tagColorScheme,
+    }))];
+    ref.kbReferenceImages = newKbImages;
+    newData.imageReferences[kbPickerTargetIdx] = ref;
+    setEditData(newData);
+    toast.success(`已添加 ${images.length} 张知识库参考图`);
+  };
+
+  // Regenerate ALL image references from all KB images + notes
+  const handleRegenerateAll = async () => {
+    if (!editData) return;
+    // Collect all KB reference images with notes across all refs
+    const allKbImages: Array<{ url: string; note?: string; position?: string }> = [];
+    (editData.imageReferences || []).forEach((ref: any) => {
+      (ref.kbReferenceImages || []).forEach((kbImg: any) => {
+        allKbImages.push({
+          url: kbImg.imageUrl,
+          note: kbImg.note || undefined,
+          position: kbImg.position || undefined,
+        });
+      });
+    });
+    if (allKbImages.length === 0) {
+      toast.error("请先为至少一张图添加知识库参考图");
+      return;
+    }
+    // Collect composition/effect ref URLs (from first ref that has them)
+    let compositionRefUrl: string | undefined;
+    let effectRefUrl: string | undefined;
+    for (const ref of (editData.imageReferences || [])) {
+      if (!compositionRefUrl && ref.compositionRefImageUrl) compositionRefUrl = ref.compositionRefImageUrl;
+      if (!effectRefUrl && ref.effectRefImageUrl) effectRefUrl = ref.effectRefImageUrl;
+    }
+    try {
+      const result = await regenerateAllMutation.mutateAsync({
+        projectId,
+        kbImages: allKbImages,
+        compositionRefUrl,
+        effectRefUrl,
+      });
+      setEditData(result);
+      toast.success("已根据参考图和备注重新生成方案");
+    } catch (err: any) {
+      toast.error(err.message || "重新生成失败");
+    }
+  };
+
+  // Regenerate a single image from its reference images
+  const handleRegenerateSingle = async (idx: number) => {
+    if (!editData) return;
+    const ref = editData.imageReferences?.[idx];
+    if (!ref) return;
+    const kbImages: Array<{ url: string; note?: string; position?: string }> = (ref.kbReferenceImages || []).map((kbImg: any) => ({
+      url: kbImg.imageUrl,
+      note: kbImg.note || undefined,
+      position: kbImg.position || undefined,
+    }));
+    if (kbImages.length === 0) {
+      toast.error("请先为这张图添加知识库参考图");
+      return;
+    }
+    setRegeneratingSingleIdx(idx);
+    try {
+      const result = await regenerateSingleMutation.mutateAsync({
+        projectId,
+        imageIndex: idx,
+        kbImages,
+        compositionRefUrl: ref.compositionRefImageUrl || undefined,
+        effectRefUrl: ref.effectRefImageUrl || undefined,
+      });
+      setEditData(result.updatedResult);
+      toast.success(`第${idx + 1}张图已根据参考图重新生成`);
+    } catch (err: any) {
+      toast.error(err.message || "重新生成失败");
+    } finally {
+      setRegeneratingSingleIdx(null);
+    }
+  };
+
+  // Remove a KB reference image
+  const removeKbImage = (refIdx: number, imgIdx: number) => {
+    if (!editData) return;
+    const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
+    const ref = { ...newData.imageReferences[refIdx] };
+    const imgs = [...(ref.kbReferenceImages || [])];
+    imgs.splice(imgIdx, 1);
+    ref.kbReferenceImages = imgs;
+    newData.imageReferences[refIdx] = ref;
+    setEditData(newData);
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Eye className="w-5 h-5 text-primary" />
+                Step 4: 参考图确认
+              </CardTitle>
+              <CardDescription>每张图的构图参考和效果图参考，可从知识库直接选择参考图片</CardDescription>
+            </div>
+            <div className="flex gap-2">
+              {!editData && (
+                <Button onClick={handleGenerate} disabled={generateMutation.isPending}>
+                  {generateMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
+                  AI推荐参考
+                </Button>
+              )}
+              {editData && !isConfirmed && (
+                <>
+                  <Button variant="outline" onClick={handleGenerate} disabled={generateMutation.isPending}>
+                    <RotateCcw className="w-4 h-4 mr-2" /> 重新推荐
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleRegenerateAll}
+                    disabled={regenerateAllMutation.isPending}
+                    className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    title="根据已选参考图和备注，重新生成所有图片的构图和效果方案"
+                  >
+                    {regenerateAllMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+                    根据参考图重新生成
+                  </Button>
+                  <Button onClick={handleConfirm} disabled={confirmMutation.isPending}>
+                    {confirmMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
+                    确认参考图
+                  </Button>
+                </>
+              )}
+              {isConfirmed && (
+                <div className="flex gap-2 items-center">
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                    <Lock className="w-3 h-3 mr-1" /> 已锁定
+                  </Badge>
+                  <Button variant="ghost" size="sm" className="text-xs text-amber-600 hover:text-amber-700" onClick={handleUnlock} disabled={resetMutation.isPending}>
+                    {resetMutation.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Unlock className="w-3 h-3 mr-1" />}
+                    解锁编辑
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        {generateMutation.isPending && (
+          <CardContent>
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-8 h-8 animate-spin text-primary mr-3" />
+              <span className="text-muted-foreground">AI正在推荐构图和效果参考...</span>
+            </div>
+          </CardContent>
+        )}
+      </Card>
+
+      {editData?.imageReferences && !generateMutation.isPending && editData.imageReferences.map((ref: any, idx: number) => (
+        <Card key={idx}>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                {ref.imageType === "主图" ? <Camera className="w-4 h-4 text-primary" /> : ref.imageType?.includes("A+") ? <Layers className="w-4 h-4 text-purple-500" /> : <Image className="w-4 h-4 text-blue-500" />}
+                {ref.imageType} {ref.imageNumber > 0 ? `#${ref.imageNumber}` : ""}
+                <span className="text-xs text-muted-foreground font-normal">— {ref.purpose}</span>
+              </CardTitle>
+              {!isConfirmed && (
+                <div className="flex gap-1.5">
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => openKbPicker(idx, ref.imageType)}>
+                    <BookOpen className="w-3.5 h-3.5 mr-1" /> 从知识库选图
+                  </Button>
+                  {(ref.kbReferenceImages?.length > 0 || ref.compositionRefImageUrl || ref.effectRefImageUrl) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                      onClick={() => handleRegenerateSingle(idx)}
+                      disabled={regeneratingSingleIdx === idx}
+                      title="根据此图的参考图单独重新生成方案"
+                    >
+                      {regeneratingSingleIdx === idx ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
+                      单独重新生成
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            {/* KB Reference Images Section */}
+            {(ref.kbReferenceImages?.length > 0) && (
+              <div className="mb-4 border rounded-lg p-3 bg-emerald-50/30">
+                <h4 className="text-sm font-medium text-emerald-700 mb-2 flex items-center gap-1">
+                  <BookOpen className="w-3.5 h-3.5" /> 知识库参考图 ({ref.kbReferenceImages.length})
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {ref.kbReferenceImages.map((kbImg: any, imgIdx: number) => (
+                    <div key={imgIdx} className="flex gap-2 items-start border rounded-lg p-2 bg-white">
+                      <div className="relative shrink-0">
+                        <div className="w-16 h-16 rounded-lg overflow-hidden border border-emerald-200">
+                          <img src={kbImg.imageUrl} alt={`KB ref ${imgIdx}`} className="w-full h-full object-cover" />
+                        </div>
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/50 px-1 py-0.5 rounded-b-lg">
+                          <span className="text-[8px] text-white">
+                            {kbImg.position === "主图" || kbImg.position === "main" ? "主图" : kbImg.position === "辅图" || kbImg.position === "secondary" ? "辅图" : "A+"}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-emerald-700 font-medium">参考图 {imgIdx + 1}</span>
+                          {!isConfirmed && (
+                            <button
+                              className="w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
+                              onClick={() => removeKbImage(idx, imgIdx)}
+                            >
+                              <X className="w-2.5 h-2.5" />
+                            </button>
+                          )}
+                        </div>
+                        {!isConfirmed ? (
+                          <Input
+                            value={kbImg.note || ""}
+                            onChange={(e) => {
+                              const newData = { ...editData, imageReferences: [...(editData.imageReferences || [])] };
+                              const ref2 = { ...newData.imageReferences[idx] };
+                              const imgs2 = [...(ref2.kbReferenceImages || [])];
+                              imgs2[imgIdx] = { ...imgs2[imgIdx], note: e.target.value };
+                              ref2.kbReferenceImages = imgs2;
+                              newData.imageReferences[idx] = ref2;
+                              setEditData(newData);
+                            }}
+                            placeholder="备注：参考哪个方面（如：构图方式、配色风格）"
+                            className="h-6 text-xs"
+                          />
+                        ) : (
+                          kbImg.note && <p className="text-xs text-muted-foreground">{kbImg.note}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Independent Reference Image Upload Section */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              {/* Composition Reference Image Upload */}
+              <div className="border-2 border-dashed border-blue-200 rounded-lg p-3 bg-blue-50/20">
+                <h4 className="text-sm font-medium text-blue-700 mb-2 flex items-center gap-1">
+                  <Upload className="w-3.5 h-3.5" /> 构图参考图
+                </h4>
+                {ref.compositionRefImageUrl ? (
+                  <div className="relative group">
+                    <img src={ref.compositionRefImageUrl} alt="构图参考" className="w-full h-32 object-cover rounded-lg border" />
+                    {!isConfirmed && (
+                      <div className="absolute top-1 right-1 flex gap-1">
+                        <label className="cursor-pointer bg-white/90 hover:bg-white rounded-full p-1 shadow-sm">
+                          <RotateCcw className="w-3.5 h-3.5 text-blue-600" />
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleRefImageUpload(idx, 'composition', f); }} />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <label className={`flex flex-col items-center justify-center h-28 rounded-lg border-2 border-dashed border-blue-300 cursor-pointer hover:bg-blue-50/50 transition-colors ${uploadingRef?.idx === idx && uploadingRef?.type === 'composition' ? 'opacity-50' : ''}`}>
+                    {uploadingRef?.idx === idx && uploadingRef?.type === 'composition' ? (
+                      <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
+                    ) : (
+                      <>
+                        <Upload className="w-6 h-6 text-blue-400 mb-1" />
+                        <span className="text-xs text-blue-500">上传构图参考图</span>
+                        <span className="text-[10px] text-muted-foreground">或从知识库选择</span>
+                      </>
+                    )}
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleRefImageUpload(idx, 'composition', f); }} disabled={!!uploadingRef} />
+                  </label>
+                )}
+              </div>
+
+              {/* Effect Reference Image Upload */}
+              <div className="border-2 border-dashed border-amber-200 rounded-lg p-3 bg-amber-50/20">
+                <h4 className="text-sm font-medium text-amber-700 mb-2 flex items-center gap-1">
+                  <Upload className="w-3.5 h-3.5" /> 效果参考图
+                </h4>
+                {ref.effectRefImageUrl ? (
+                  <div className="relative group">
+                    <img src={ref.effectRefImageUrl} alt="效果参考" className="w-full h-32 object-cover rounded-lg border" />
+                    {!isConfirmed && (
+                      <div className="absolute top-1 right-1 flex gap-1">
+                        <label className="cursor-pointer bg-white/90 hover:bg-white rounded-full p-1 shadow-sm">
+                          <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleRefImageUpload(idx, 'effect', f); }} />
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <label className={`flex flex-col items-center justify-center h-28 rounded-lg border-2 border-dashed border-amber-300 cursor-pointer hover:bg-amber-50/50 transition-colors ${uploadingRef?.idx === idx && uploadingRef?.type === 'effect' ? 'opacity-50' : ''}`}>
+                    {uploadingRef?.idx === idx && uploadingRef?.type === 'effect' ? (
+                      <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
+                    ) : (
+                      <>
+                        <Upload className="w-6 h-6 text-amber-400 mb-1" />
+                        <span className="text-xs text-amber-500">上传效果参考图</span>
+                        <span className="text-[10px] text-muted-foreground">或从知识库选择</span>
+                      </>
+                    )}
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleRefImageUpload(idx, 'effect', f); }} disabled={!!uploadingRef} />
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {/* AI Re-optimize button when both ref images are uploaded */}
+            {(ref.compositionRefImageUrl || ref.effectRefImageUrl) && !isConfirmed && (
+              <div className="mb-4 flex justify-center">
+                <Button variant="outline" size="sm" onClick={() => handleReoptimize(idx)} disabled={reoptimizeMutation.isPending} className="text-xs">
+                  {reoptimizeMutation.isPending ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1" />}
+                  根据参考图重新优化构图和效果方案
+                </Button>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Composition Reference */}
+              <div className="border rounded-lg p-3 bg-blue-50/30">
+                <h4 className="text-sm font-medium text-blue-700 mb-2 flex items-center gap-1">
+                  <Layout className="w-3.5 h-3.5" /> 构图方案
+                </h4>
+                {isConfirmed ? (
+                  <div className="space-y-1 text-xs">
+                    <p><strong>构图方式:</strong> {ref.compositionReference?.compositionType}</p>
+                    <p><strong>布局:</strong> {ref.compositionReference?.layout}</p>
+                    <p><strong>焦点:</strong> {ref.compositionReference?.focalPoint}</p>
+                    <p><strong>视线引导:</strong> {ref.compositionReference?.visualFlow}</p>
+                    <p><strong>比例:</strong> {ref.compositionReference?.proportions}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <Input value={ref.compositionReference?.compositionType || ""} onChange={(e) => updateRef(idx, "compositionReference", "compositionType", e.target.value)} placeholder="构图方式" className="h-7 text-xs" />
+                    <Textarea value={ref.compositionReference?.layout || ""} onChange={(e) => updateRef(idx, "compositionReference", "layout", e.target.value)} placeholder="具体布局" className="min-h-[40px] text-xs" />
+                    <Input value={ref.compositionReference?.focalPoint || ""} onChange={(e) => updateRef(idx, "compositionReference", "focalPoint", e.target.value)} placeholder="视觉焦点" className="h-7 text-xs" />
+                    <Input value={ref.compositionReference?.visualFlow || ""} onChange={(e) => updateRef(idx, "compositionReference", "visualFlow", e.target.value)} placeholder="视线引导" className="h-7 text-xs" />
+                    <Input value={ref.compositionReference?.proportions || ""} onChange={(e) => updateRef(idx, "compositionReference", "proportions", e.target.value)} placeholder="元素比例" className="h-7 text-xs" />
+                  </div>
+                )}
+              </div>
+
+              {/* Effect Reference */}
+              <div className="border rounded-lg p-3 bg-amber-50/30">
+                <h4 className="text-sm font-medium text-amber-700 mb-2 flex items-center gap-1">
+                  <Paintbrush className="w-3.5 h-3.5" /> 效果方案
+                </h4>
+                {isConfirmed ? (
+                  <div className="space-y-1 text-xs">
+                    <p><strong>配色应用:</strong> {ref.effectReference?.colorApplication}</p>
+                    <p><strong>字体应用:</strong> {ref.effectReference?.typographyApplication}</p>
+                    <p><strong>图标应用:</strong> {ref.effectReference?.iconApplication}</p>
+                    <p><strong>氛围:</strong> {ref.effectReference?.atmosphere}</p>
+                    <p><strong>光影:</strong> {ref.effectReference?.lightingStyle}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <Textarea value={ref.effectReference?.colorApplication || ""} onChange={(e) => updateRef(idx, "effectReference", "colorApplication", e.target.value)} placeholder="配色应用" className="min-h-[40px] text-xs" />
+                    <Input value={ref.effectReference?.typographyApplication || ""} onChange={(e) => updateRef(idx, "effectReference", "typographyApplication", e.target.value)} placeholder="字体应用" className="h-7 text-xs" />
+                    <Input value={ref.effectReference?.iconApplication || ""} onChange={(e) => updateRef(idx, "effectReference", "iconApplication", e.target.value)} placeholder="图标应用" className="h-7 text-xs" />
+                    <Input value={ref.effectReference?.atmosphere || ""} onChange={(e) => updateRef(idx, "effectReference", "atmosphere", e.target.value)} placeholder="视觉氛围" className="h-7 text-xs" />
+                    <Input value={ref.effectReference?.lightingStyle || ""} onChange={(e) => updateRef(idx, "effectReference", "lightingStyle", e.target.value)} placeholder="光影风格" className="h-7 text-xs" />
+                  </div>
+                )}
+              </div>
+            </div>
+            {ref.designNotes && (
+              <div className="mt-2 p-2 bg-gray-50 rounded text-xs text-muted-foreground">
+                <strong>设计师注意:</strong> {ref.designNotes}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ))}
+
+      {editData?.overallConsistency && (
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-sm text-muted-foreground">
+              <strong>整套一致性要求:</strong> {editData.overallConsistency}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* KB Image Picker Dialog */}
+      <KbImagePickerDialog
+        open={kbPickerOpen}
+        onOpenChange={setKbPickerOpen}
+        onSelect={handleKbImageSelect}
+        targetImageType={kbPickerTargetType}
+      />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ─── Step 5: Final Suggestions (reuse existing display) ──────────
+// ═══════════════════════════════════════════════════════════════════

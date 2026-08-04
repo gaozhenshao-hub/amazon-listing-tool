@@ -1,7 +1,14 @@
 /**
  * NextSLS Adapter & Transit Time Service Tests
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, describe, it, expect, beforeEach } from "vitest";
+
+afterEach(async () => {
+  const { nextSlsAdapter } = await import("./adapter");
+  nextSlsAdapter.configure({ baseUrl: "", token: "", enabled: false });
+  const { clearTransitTimeCache } = await import("./transitTimeService");
+  clearTransitTimeCache();
+});
 
 // ─── NextSLS Adapter Tests ───────────────────────────────────────
 
@@ -224,6 +231,8 @@ describe("Transit Time Service", () => {
 
   describe("getMappedStepDaysForRoute", () => {
     it("should return default step days when no data available", async () => {
+      const { nextSlsAdapter } = await import("./adapter");
+      nextSlsAdapter.configure({ baseUrl: "", token: "", enabled: false });
       const { getMappedStepDaysForRoute, clearTransitTimeCache } = await import("./transitTimeService");
       clearTransitTimeCache();
       const result = await getMappedStepDaysForRoute(undefined, "US");
@@ -233,7 +242,7 @@ describe("Transit Time Service", () => {
       } else {
         expect(result).toBeNull();
       }
-    }, 15000); // Increased timeout since it may attempt network calls
+    });
   });
 
   describe("getTransitTimeOverview", () => {

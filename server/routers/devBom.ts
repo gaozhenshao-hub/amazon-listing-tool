@@ -2,6 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import * as devDb from "../devDb";
+import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 
 
 // Helper: resolve dev project access based on user role
@@ -412,9 +413,14 @@ ${moldCosts.map(m => `${m.partName} | ${m.moldType || ""} | ${m.moldMaterial || 
   getExchangeRate: protectedProcedure
     .query(async () => {
       try {
-        const res = await fetch("https://open.er-api.com/v6/latest/CNY");
+        const res = await safeHttpRequest("https://open.er-api.com/v6/latest/CNY", {
+          timeoutMs: 10_000,
+          maxResponseBytes: 1024 * 1024,
+          allowedHosts: ["open.er-api.com"],
+          auditContext: { operation: "product_development.exchange_rate" },
+        });
         if (res.ok) {
-          const data = await res.json();
+          const data = res.json() as { rates?: { USD?: number } };
           if (data.rates?.USD) {
             return { rate: data.rates.USD, source: "er-api.com", updatedAt: Date.now() };
           }

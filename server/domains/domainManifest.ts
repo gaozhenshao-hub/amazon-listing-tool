@@ -1,5 +1,7 @@
 export type DomainLayer = "platform" | "business";
 
+export type DomainDependencySlug = DomainBoundary["slug"] | "ads" | "product_development";
+
 export type DomainBoundary = {
   slug: "ai_os" | "listing" | "image" | "ops";
   layer: DomainLayer;
@@ -58,6 +60,20 @@ export const DOMAIN_BOUNDARIES: DomainBoundary[] = [
     notes: "Product operations owns operational reports and actions; conversion helpers are exposed through the domain service facade.",
   },
 ];
+
+/**
+ * Directional domain dependencies. The platform must never depend on a
+ * business domain; business domains may consume AI OS through its public
+ * services, and ads may reuse the workspace boundary owned by ops.
+ */
+export const DOMAIN_DEPENDENCY_RULES: Record<DomainDependencySlug, readonly DomainDependencySlug[]> = {
+  ai_os: [],
+  listing: ["ai_os"],
+  image: ["ai_os"],
+  ops: ["ai_os"],
+  ads: ["ai_os", "ops"],
+  product_development: ["ai_os"],
+};
 
 export function getDomainBoundary(slug: DomainBoundary["slug"]) {
   return DOMAIN_BOUNDARIES.find((domain) => domain.slug === slug) ?? null;

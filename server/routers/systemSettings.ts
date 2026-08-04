@@ -4,6 +4,8 @@ import { TRPCError } from "@trpc/server";
 import { getDb } from "../repositories/dbClient";
 import { systemSettings } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
+import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
+import { retiredFeatureError } from "@shared/_core/errors";
 
 // ═══════════════════════════════════════════════════════════════════════
 // Scraper Proxy configuration helpers (existing - for crawler)
@@ -171,213 +173,35 @@ async function upsertSetting(db: any, key: string, value: string | null, categor
 export const systemSettingsRouter = router({
   // ═══════════════════ Lingxing API Config ═══════════════════
 
-  /** Get lingxing API configuration (masked) */
-  getLingxingConfig: protectedProcedure.query(async () => {
-    const config = { appId: "", appSecret: "", apiHost: "", useMock: true };
-
-    // Also get DB-stored config values
-    const db = await getDb();
-    let dbConfig: Record<string, string | null> = {};
-    if (db) {
-      const rows = await db.select().from(systemSettings).where(
-        eq(systemSettings.category, "lingxing")
-      );
-      for (const row of rows) {
-        if (row.settingKey === "lingxing_app_secret" && row.settingValue) {
-          dbConfig[row.settingKey] = "••••••••";
-        } else {
-          dbConfig[row.settingKey] = row.settingValue;
-        }
-      }
-    }
-
-    return {
-      currentConfig: config,
-      dbConfig,
-      envHasCredentials: !!(process.env.LINGXING_APP_ID && process.env.LINGXING_APP_SECRET),
-    };
+  getLingxingConfig: protectedProcedure.query(() => {
+    throw retiredFeatureError("领星 API 配置", "dataImport.uploadAndParse", { replacementProcedure: "dataImport.uploadAndParse" });
   }),
 
-  /** Update lingxing API configuration */
-  updateLingxingConfig: protectedProcedure
-    .input(z.object({
-      appId: z.string().optional(),
-      appSecret: z.string().optional(),
-      apiHost: z.string().optional(),
-      useMock: z.boolean().optional(),
-    }))
-    .mutation(async ({ input, ctx }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-
-      const userId = ctx.user.id;
-      const settingsToSave: Record<string, string | null> = {};
-
-      if (input.appId !== undefined) settingsToSave["lingxing_app_id"] = input.appId;
-      if (input.appSecret !== undefined && input.appSecret !== "••••••••") {
-        settingsToSave["lingxing_app_secret"] = input.appSecret;
-      }
-      if (input.apiHost !== undefined) settingsToSave["lingxing_api_host"] = input.apiHost;
-      if (input.useMock !== undefined) settingsToSave["lingxing_use_mock"] = input.useMock ? "true" : "false";
-
-      // Save to DB
-      for (const [key, value] of Object.entries(settingsToSave)) {
-        await upsertSetting(db, key, value, "lingxing", userId);
-      }
-
-      // Update the running (null as any) instance
-      // Read actual values from DB for the (null as any) update
-      const rows = await db.select().from(systemSettings).where(
-        eq(systemSettings.category, "lingxing")
-      );
-      const dbMap: Record<string, string | null> = {};
-      for (const row of rows) {
-        dbMap[row.settingKey] = row.settingValue;
-      }
-
-      /* lingxing deprecated */
-
-      return { success: true, isMock: true };
-    }),
-
-  /** Test lingxing API connection (supports proxy) */
-  testLingxingConnection: protectedProcedure.mutation(async () => {
-    if (true) {
-      return {
-        success: false,
-        message: "当前为Mock模式，请先关闭Mock模式并配置API凭证",
-        latency: null,
-        usedProxy: false,
-      };
-    }
-
-    return { success: false, message: "领星API已停用" };
+  updateLingxingConfig: protectedProcedure.mutation(() => {
+    throw retiredFeatureError("领星 API 集成", "dataImport.uploadAndParse", { replacementProcedure: "dataImport.uploadAndParse" });
+  }),
+  testLingxingConnection: protectedProcedure.mutation(() => {
+    throw retiredFeatureError("领星 API 集成", "dataImport.getHistory", { replacementProcedure: "dataImport.getHistory" });
   }),
 
-  // ═══════════════════ Lingxing API Proxy Config ═══════════════════
-
-  /** Get lingxing API proxy configuration */
-  getLingxingProxyConfig: protectedProcedure.query(async () => {
-    const db = await getDb();
-    if (!db) return { config: {} as Record<string, string | null> };
-
-    const rows = await db.select().from(systemSettings).where(
-      eq(systemSettings.category, "lingxing_proxy")
-    );
-    const config: Record<string, string | null> = {};
-    for (const row of rows) {
-      // Mask password
-      if (row.settingKey === LX_PROXY_KEYS.PASSWORD && row.settingValue) {
-        config[row.settingKey] = "••••••••";
-      } else {
-        config[row.settingKey] = row.settingValue;
-      }
-    }
-
-    // Also get current (null as any) proxy status
-    return {
-      config,
-      proxyEnabled: false,
-      adapterMock: true,
-    };
+  getLingxingProxyConfig: protectedProcedure.query(() => {
+    throw retiredFeatureError("领星专用代理配置", "systemSettings.getProxyConfig", { replacementProcedure: "systemSettings.getProxyConfig" });
   }),
 
-  /** Update lingxing API proxy configuration */
-  updateLingxingProxyConfig: protectedProcedure
-    .input(z.object({
-      settings: z.record(z.string(), z.string().nullable()),
-    }))
-    .mutation(async ({ input, ctx }) => {
-      const db = await getDb();
-      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database unavailable" });
-
-      const userId = ctx.user.id;
-      for (const [key, value] of Object.entries(input.settings)) {
-        // Don't overwrite password with masked value
-        if (key === LX_PROXY_KEYS.PASSWORD && value === "••••••••") continue;
-        await upsertSetting(db, key, value, "lingxing_proxy", userId);
-      }
-
-      // Reload proxy config into the (null as any)
-      const allRows = await db.select().from(systemSettings).where(
-        eq(systemSettings.category, "lingxing_proxy")
-      );
-      const pxMap: Record<string, string | null> = {};
-      for (const row of allRows) {
-        pxMap[row.settingKey] = row.settingValue;
-      }
-      /* lingxing deprecated */
-
-      return { success: true, proxyEnabled: false };
-    }),
-
-  /** Test lingxing API proxy connection only (check IP) */
-  testLingxingProxy: protectedProcedure.mutation(async () => {
-    return { success: false, message: "领星API已停用" };
+  updateLingxingProxyConfig: protectedProcedure.mutation(() => {
+    throw retiredFeatureError("领星 API 集成", "systemSettings.updateProxyConfig", { replacementProcedure: "systemSettings.updateProxyConfig" });
+  }),
+  testLingxingProxy: protectedProcedure.mutation(() => {
+    throw retiredFeatureError("领星 API 集成", "systemSettings.testProxy", { replacementProcedure: "systemSettings.testProxy" });
+  }),
+  testLingxingPaths: protectedProcedure.mutation(() => {
+    throw retiredFeatureError("领星 API 集成", "dataImport.getHistory", { replacementProcedure: "dataImport.getHistory" });
   }),
 
-  /** Temp: Test multiple API paths to find correct ones */
-  testLingxingPaths: protectedProcedure.mutation(async () => {
-    const pathsToTest = [
-      // Known working
-      { name: '卖家列表(已知OK)', path: '/erp/sc/data/seller/lists', body: {} },
-      // Profit - various possible paths
-      { name: '利润(旧代码)', path: '/erp/sc/data/profit/list', body: { start_date: '2025-03-01', end_date: '2025-03-20' } },
-      { name: '利润-MSKU(bd)', path: '/erp/sc/routing/data/profit/bd/profitMsku', body: { start_date: '2025-03-01', end_date: '2025-03-20', date_type: 2 } },
-      { name: '利润-MSKU(v2)', path: '/data/profit/bd/profitMsku', body: { start_date: '2025-03-01', end_date: '2025-03-20', date_type: 2 } },
-      { name: '利润-MSKU(v3)', path: '/erp/sc/data/profit/bd/profitMsku', body: { start_date: '2025-03-01', end_date: '2025-03-20', date_type: 2 } },
-      { name: '利润-ASIN(旧)', path: '/erp/sc/data/profit/profitAsin', body: { start_date: '2025-03-01', end_date: '2025-03-20' } },
-      // FBA Inventory
-      { name: 'FBA库存(旧代码)', path: '/erp/sc/routing/storage/fbaInventory', body: {} },
-      { name: 'FBA库存(v2)', path: '/erp/sc/routing/storage/fbaStock', body: {} },
-      { name: 'FBA库存(data)', path: '/erp/sc/data/fba_report/fbaStock', body: {} },
-      { name: 'FBA库存(inventoryAge)', path: '/erp/sc/data/fba_report/inventoryAge', body: {} },
-      // Ad campaigns
-      { name: '广告活动(旧代码)', path: '/erp/sc/data/ad_manage/campaign/list', body: {} },
-      { name: 'SP广告活动', path: '/erp/sc/routing/ad/spCampaigns', body: {} },
-      { name: 'SP广告活动(data)', path: '/erp/sc/data/ad/spCampaigns', body: {} },
-      // Search terms
-      { name: '搜索词(旧代码)', path: '/erp/sc/data/ad_manage/searchTerm/list', body: {} },
-      { name: 'SP搜索词', path: '/erp/sc/routing/ad/queryWordReports', body: { start_date: '2025-03-01', end_date: '2025-03-20' } },
-      // Products
-      { name: '产品列表(旧代码)', path: '/erp/sc/data/msku/list', body: {} },
-      { name: '产品列表(product)', path: '/erp/sc/data/product/list', body: {} },
-      // Exchange rate
-      { name: '汇率', path: '/erp/sc/data/exchange_rate', body: {} },
-    ];
-    
-    const results: Array<{name: string; path: string; code: string; msg: string; hasData: boolean; dataPreview?: string}> = [];
-    
-    for (const test of pathsToTest) {
-      try {
-        const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
-        results.push({
-          name: test.name,
-          path: test.path,
-          code: String(res.code),
-          msg: res as any || '',
-          hasData: res.data !== undefined && res.data !== null,
-          dataPreview: res.data ? JSON.stringify(res.data).substring(0, 100) : undefined,
-        });
-      } catch (e: any) {
-        results.push({
-          name: test.name,
-          path: test.path,
-          code: 'ERROR',
-          msg: e.message,
-          hasData: false,
-        });
-      }
-    }
-    
-    return results;
-  }),
-
-  /** Get recent API call logs */
   getLingxingApiLogs: protectedProcedure
     .input(z.object({ limit: z.number().optional() }).optional())
-    .query(async ({ input }) => {
-      return [];
+    .query(() => {
+      throw retiredFeatureError("领星 API 日志", "dataImport.getHistory", { replacementProcedure: "dataImport.getHistory" });
     }),
 
   // ═══════════════════ Scraper Proxy Config ═══════════════════
@@ -454,19 +278,17 @@ export const systemSettingsRouter = router({
       const { HttpsProxyAgent } = await import("https-proxy-agent");
       const agent = new HttpsProxyAgent(config.proxyUrl);
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-      const response = await fetch("https://httpbin.org/ip", {
-        agent: agent as any,
-        signal: controller.signal,
-      } as any);
-
-      clearTimeout(timeoutId);
+      const response = await safeHttpRequest("https://httpbin.org/ip", {
+        agent,
+        timeoutMs: 10_000,
+        maxResponseBytes: 1024 * 1024,
+        allowedHosts: ["httpbin.org"],
+        auditContext: { operation: "system_settings.proxy_test" },
+      });
       const latency = Date.now() - startTime;
 
       if (response.ok) {
-        const data = await response.json() as { origin?: string };
+        const data = response.json() as { origin?: string };
         return {
           success: true,
           message: `代理连接成功！出口IP: ${data.origin || "未知"}`,

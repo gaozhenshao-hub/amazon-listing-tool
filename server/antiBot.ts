@@ -10,6 +10,7 @@
  * 4. Amazon专用Cookie模拟
  * 5. 智能重试（CAPTCHA检测 → 切换指纹+代理 → 指数退避）
  */
+import { safeHttpRequest } from "./infrastructure/http/safeHttpClient";
 
 // ═══════════════════════════════════════════════════════════════════════
 // User-Agent Pool (50+ real browser UAs - 2025/2026 versions)
@@ -385,11 +386,7 @@ export async function smartFetch(url: string, config: SmartFetchConfig = {}): Pr
       }
 
       // Build fetch options
-      const fetchOpts: any = {
-        headers,
-        signal: AbortSignal.timeout(timeout),
-        redirect: "follow",
-      };
+      let proxyAgent: any;
 
       // Add proxy agent if needed
       if (proxyUrl) {
@@ -398,12 +395,12 @@ export async function smartFetch(url: string, config: SmartFetchConfig = {}): Pr
           const proxyUrlObj = new URL(proxyUrl);
           if (proxyUrlObj.protocol === "http:" || proxyUrlObj.protocol === "https:") {
             const { HttpsProxyAgent } = await import("https-proxy-agent");
-            fetchOpts.agent = new HttpsProxyAgent(proxyUrl);
+            proxyAgent = new HttpsProxyAgent(proxyUrl);
           } else {
             // SOCKS proxy
             try {
               const { SocksProxyAgent } = await import("socks-proxy-agent");
-              fetchOpts.agent = new SocksProxyAgent(proxyUrl);
+              proxyAgent = new SocksProxyAgent(proxyUrl);
             } catch {
               // socks-proxy-agent not available
             }
@@ -415,7 +412,14 @@ export async function smartFetch(url: string, config: SmartFetchConfig = {}): Pr
 
       console.log(`[AntiBot] Attempt ${attempt + 1}/${maxRetries} for ${url.substring(0, 80)}... (proxy: ${proxyUrl ? "yes" : "direct"}, UA: ${fingerprint.userAgent.substring(0, 40)}...)`);
 
-      const res = await fetch(url, fetchOpts);
+      const res = await safeHttpRequest(url, {
+        headers,
+        timeoutMs: timeout,
+        maxRedirects: 5,
+        maxResponseBytes: 20 * 1024 * 1024,
+        agent: proxyAgent,
+        auditContext: { operation: "crawler.smart_fetch" },
+      });
       
       if (res.status === 503 || res.status === 429) {
         console.warn(`[AntiBot] Rate limited (${res.status}) on attempt ${attempt + 1}`);
@@ -431,7 +435,7 @@ export async function smartFetch(url: string, config: SmartFetchConfig = {}): Pr
         throw new Error(`HTTP ${res.status}`);
       }
 
-      const html = await res.text();
+      const html = res.text();
 
       // Check for CAPTCHA/block
       const captchaCheck = checkForCaptcha(html);

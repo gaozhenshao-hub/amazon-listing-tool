@@ -5,6 +5,7 @@ import Handlebars from "handlebars";
 import { getDb } from "../../../repositories/dbClient";
 import { buildWorkspaceScopeFilter } from "../../../services/securityGovernance";
 import { invokeLLM, type Message, type MessageContent } from "../../../_core/llm";
+import { safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
 import { recordAiOsEvaluation, recordAiOsMetric } from "./observability";
 
 export type SkillRunErrorCode =
@@ -496,21 +497,29 @@ async function callModel(
     if (implementation.temperature !== undefined) payload.temperature = implementation.temperature;
     if (implementation.supportsJsonMode) payload.response_format = { type: "json_object" };
 
-    const response = await fetch(`${model.baseUrl.replace(/\/$/, "")}/chat/completions`, {
+    const apiUrl = `${model.baseUrl.replace(/\/$/, "")}/chat/completions`;
+    const response = await safeHttpRequest(apiUrl, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${model.apiKeyRef}`,
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(timeoutSeconds * 1000),
+      timeoutMs: timeoutSeconds * 1000,
+      maxResponseBytes: 20 * 1024 * 1024,
+      allowedHosts: [new URL(apiUrl).hostname],
+      allowPrivateNetwork: process.env.MODEL_PROVIDER_ALLOW_PRIVATE_NETWORK === "true",
+      auditContext: {
+        workspaceId: model.workspaceId ?? null,
+        operation: "ai_os.skill_runner.external_model",
+      },
     });
 
     if (!response.ok) {
       const text = await response.text();
       throw new Error(`Provider HTTP ${response.status}: ${text.slice(0, 120)}`);
     }
-    const result = await response.json() as any;
+    const result = response.json() as any;
     const content = result?.choices?.[0]?.message?.content;
     if (typeof content !== "string" || !content.trim()) {
       throw new SkillRunError("EMPTY_RESPONSE", "AI provider returned an empty response", true);

@@ -28,6 +28,7 @@ import {
   remoteUsageSnapshots,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { safeHttpRequest } from "./infrastructure/http/safeHttpClient";
 
 const syncRouter = Router();
 
@@ -338,15 +339,20 @@ syncRouter.post("/pull", authenticatePeer, async (req: Request, res: Response) =
     url.searchParams.set("since", since.toString());
     if (type) url.searchParams.set("type", type);
 
-    const peerResponse = await fetch(url.toString(), {
+    const peerResponse = await safeHttpRequest(url, {
       headers: { "x-sync-api-key": ENV.peerApiKey },
+      timeoutMs: 30_000,
+      maxResponseBytes: 20 * 1024 * 1024,
+      allowedHosts: [url.hostname],
+      allowPrivateNetwork: true,
+      auditContext: { operation: "knowledge_base.peer_sync_pull" },
     });
 
     if (!peerResponse.ok) {
       return res.status(502).json({ error: `Peer responded with ${peerResponse.status}` });
     }
 
-    const peerData = await peerResponse.json() as { changes: SyncChange[]; total: number };
+    const peerData = peerResponse.json() as { changes: SyncChange[]; total: number };
 
     if (!peerData.changes || peerData.changes.length === 0) {
       return res.json({ success: true, message: "No changes to pull", pulled: 0 });
@@ -466,14 +472,19 @@ syncRouter.post("/trigger", authenticatePeer, async (req: Request, res: Response
     const pullUrl = new URL("/api/sync/changes", ENV.peerApiUrl);
     pullUrl.searchParams.set("since", lastSyncTime.toString());
 
-    const pullResponse = await fetch(pullUrl.toString(), {
+    const pullResponse = await safeHttpRequest(pullUrl, {
       headers: { "x-sync-api-key": ENV.peerApiKey },
+      timeoutMs: 30_000,
+      maxResponseBytes: 20 * 1024 * 1024,
+      allowedHosts: [pullUrl.hostname],
+      allowPrivateNetwork: true,
+      auditContext: { operation: "knowledge_base.peer_sync_trigger_pull" },
     });
 
     let pullResults = { created: 0, updated: 0, skipped: 0, conflicts: 0, errors: 0 };
 
     if (pullResponse.ok) {
-      const pullData = await pullResponse.json() as { changes: SyncChange[] };
+      const pullData = pullResponse.json() as { changes: SyncChange[] };
       if (pullData.changes && pullData.changes.length > 0) {
         // Process pulled changes
         for (const change of pullData.changes) {
@@ -558,7 +569,8 @@ syncRouter.post("/trigger", authenticatePeer, async (req: Request, res: Response
 
     let pushResults = { created: 0, updated: 0, skipped: 0, errors: 0 };
     if (localChanges.length > 0) {
-      const pushResponse = await fetch(`${ENV.peerApiUrl}/api/sync/push`, {
+      const pushUrl = new URL("/api/sync/push", ENV.peerApiUrl);
+      const pushResponse = await safeHttpRequest(pushUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -569,10 +581,15 @@ syncRouter.post("/trigger", authenticatePeer, async (req: Request, res: Response
           instanceId: ENV.instanceId,
           changes: localChanges,
         }),
+        timeoutMs: 30_000,
+        maxResponseBytes: 20 * 1024 * 1024,
+        allowedHosts: [pushUrl.hostname],
+        allowPrivateNetwork: true,
+        auditContext: { operation: "knowledge_base.peer_sync_push" },
       });
 
       if (pushResponse.ok) {
-        const pushData = await pushResponse.json() as { results: typeof pushResults };
+        const pushData = pushResponse.json() as { results: typeof pushResults };
         pushResults = pushData.results;
       }
     }

@@ -6,8 +6,11 @@ on:
 
 jobs:
   unit-gate:
-    name: Typecheck and unit gate
+    name: Lint, typecheck, unit and coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      ALLOW_REAL_NETWORK_IN_TESTS: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,13 +19,20 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       - run: pnpm qa:gate
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage
+          if-no-files-found: warn
+          retention-days: 14
 
-  real-db-gate:
-    name: Real DB regression gate
+  frontend-gate:
+    name: Bundle budget and core workflow E2E
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     needs: unit-gate
-    env:
-      DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,7 +40,52 @@ jobs:
           node-version: 22
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
-      - if: ${{ env.DATABASE_URL != '' }}
-        run: pnpm test:real-db
-      - if: ${{ env.DATABASE_URL == '' }}
-        run: echo "CI_DATABASE_URL not configured; skipping real DB tests."
+      - name: Build client and compare bundle budget
+        run: pnpm build:client
+        env:
+          BUNDLE_REPORT_PATH: artifacts/bundle-report.json
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run core workflow E2E
+        run: pnpm test:e2e
+      - name: Upload bundle and E2E reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-qa-reports
+          path: |
+            artifacts/bundle-report.json
+            playwright-report
+            test-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  real-db-gate:
+    name: Real DB regression gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: unit-gate
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: amazon_listing_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/amazon_listing_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:migrate
+      - run: pnpm test:real-db

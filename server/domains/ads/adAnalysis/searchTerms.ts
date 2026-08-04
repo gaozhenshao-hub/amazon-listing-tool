@@ -1,3 +1,4 @@
+import { failUnavailableDataSource } from "@shared/_core/errors";
 import { z, invokeLLM, protectedProcedure, router, getDb, eq, desc, and, sql, budgetTracking, ClassificationThresholds, DEFAULT_THRESHOLDS, TWELVE_CATEGORIES, classifySearchTerm, anonymizeForAI, deAnonymizeResults, _queryCache, CACHE_TTL, getCached, setCache, parallelBatch, getDateNDaysAgo, getDatesInRange, resolveDateRange, getAllSellerSids, MARKETPLACE_MAP, filterSidsByMarketplace } from "./context";
 
 export const searchTermsProcedures = {
@@ -13,7 +14,7 @@ export const searchTermsProcedures = {
       for (const sid of sidsToQuery) {
         try {
           // Get product list with ASIN info
-          const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+          const res = failUnavailableDataSource();
           const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
           for (const item of items) {
             const asin = item.asin || item.asin1 || '';
@@ -107,7 +108,7 @@ export const searchTermsProcedures = {
           let offset = 0;
           let hasMore = true;
           while (hasMore && offset < 1000) {
-            const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+            const res = failUnavailableDataSource();
             const rawData = res.data || [];
             const batch = Array.isArray(rawData) ? rawData : (rawData as any).records || [];
             items.push(...batch);

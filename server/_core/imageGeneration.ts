@@ -17,6 +17,7 @@
  */
 import { storagePut } from "server/storage";
 import { ENV } from "./env";
+import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 
 export type GenerateImageOptions = {
   prompt: string;
@@ -50,7 +51,7 @@ export async function generateImage(
     baseUrl
   ).toString();
 
-  const response = await fetch(fullUrl, {
+  const response = await safeHttpRequest(fullUrl, {
     method: "POST",
     headers: {
       accept: "application/json",
@@ -62,21 +63,25 @@ export async function generateImage(
       prompt: options.prompt,
       original_images: options.originalImages || [],
     }),
+    timeoutMs: 120_000,
+    maxResponseBytes: 20 * 1024 * 1024,
+    allowedHosts: [new URL(fullUrl).hostname],
+    auditContext: { operation: "forge.image_generation" },
   });
 
   if (!response.ok) {
-    const detail = await response.text().catch(() => "");
+    const detail = response.text();
     throw new Error(
       `Image generation request failed (${response.status} ${response.statusText})${detail ? `: ${detail}` : ""}`
     );
   }
 
-  const result = (await response.json()) as {
+  const result = response.json<{
     image: {
       b64Json: string;
       mimeType: string;
     };
-  };
+  }>();
   const base64Data = result.image.b64Json;
   const buffer = Buffer.from(base64Data, "base64");
 

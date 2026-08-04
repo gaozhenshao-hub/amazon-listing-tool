@@ -72,13 +72,56 @@ TOOL_SECRET_KEY_VERSION=v2
 
 1. 备份生产数据库。
 2. 配置稳定的 `TOOL_SECRET_KEY` 和 `TOOL_SECRET_KEY_VERSION`。
-3. 按编号执行 `0114_security_tenant_governance_v1.sql`、`0115_data_lifecycle_artifacts_v1.sql`、`0116_ops_workspace_isolation.sql`、`0117_database_runtime_observability.sql`。
-4. `0116` 会为大量运营表补列和索引，应在维护窗口执行并观察元数据锁、复制延迟与磁盘空间。
-5. 重启 Web、AI Worker、Scheduler。
-6. 验证默认 `organizations/default`、`workspaces/default` 和 `workspace_memberships` 已生成，且 `0116` 回填后不存在意外的空 workspace。
-7. 确认 MySQL `performance_schema` 已启用，并仅授予应用账号读取 statement digest 汇总表的权限。
-8. 验证 Tool、MCP、Agent、Project、File、Ops mutation 会产生 `security_audit_logs`。
-9. 验证普通用户只能看到自己 workspace 范围内的项目、Agent、Tool/MCP 和运营数据。
+3. 禁止继续执行 `full_migrate.mjs` 或 `run_all_migrations.mjs`。迁移只能由独立的一次性部署任务执行，Web、Worker、Scheduler 启动过程不得自动改表。
+4. 首次切换到新迁移账本且生产库已手工执行至 `0117` 时，先核验数据库结构，再执行一次受控 baseline：
+
+```bash
+NODE_ENV=production \
+ALLOW_PRODUCTION_MIGRATIONS=true \
+ALLOW_PRODUCTION_MIGRATION_BASELINE=true \
+MIGRATION_BASELINE_CONFIRM=I_UNDERSTAND_SCHEMA_BASELINE \
+MIGRATION_BASELINE_THROUGH=0117_database_runtime_observability.sql \
+MIGRATION_BASELINE_REASON="verified production schema before controlled ledger cutover" \
+pnpm db:migrate:baseline
+```
+
+5. 后续版本先查看迁移计划，再由单个迁移任务执行：
+
+```bash
+pnpm db:migrate:plan
+NODE_ENV=production ALLOW_PRODUCTION_MIGRATIONS=true pnpm db:migrate
+```
+
+迁移入口会获取 MySQL advisory lock，并在 `app_schema_migrations` 中记录文件名、SHA-256、开始/完成时间、状态和错误。失败后必须检查数据库状态并采用向前修复；不得删除或伪造迁移记录。已执行迁移文件的校验和不可修改。
+
+6. 新环境由同一入口按受控清单执行全部迁移。已有环境不得在未核验结构时直接 baseline。
+7. `0114` 至 `0117` 包含租户、安全、生命周期和数据库观测结构。
+8. `0116` 会为大量运营表补列和索引，应在维护窗口执行并观察元数据锁、复制延迟与磁盘空间。
+9. 重启 Web、AI Worker、Scheduler。
+10. 验证默认 `organizations/default`、`workspaces/default` 和 `workspace_memberships` 已生成，且 `0116` 回填后不存在意外的空 workspace。
+11. 确认 MySQL `performance_schema` 已启用，并仅授予应用账号读取 statement digest 汇总表的权限。
+12. 验证 Tool、MCP、Agent、Project、File、Ops mutation 会产生 `security_audit_logs`。
+13. 验证普通用户只能看到自己 workspace 范围内的项目、Agent、Tool/MCP 和运营数据。
+
+## 缓存与外部请求
+
+- 广告分析、运营广告、店铺列表和评分进度缓存均由请求上下文强制注入 tenant/workspace/user 作用域；禁止业务模块新增模块级业务缓存 `Map`。
+- 当前进程内缓存具备 TTL、容量上限和 LRU 淘汰。多 Web 实例只把它作为可丢弃的读取加速层，不得依赖本机缓存维持业务正确性。
+- 多实例部署可将 Redis 客户端注入 `DistributedScopedCache`。缓存 key 同时包含 tenant/workspace/user/namespace，用户失效和 workspace 全量失效通过 Redis generation counter 跨实例传播，不依赖 `SCAN`。
+- Tool、MCP、Crawler、文件下载、Webhook、模型、OAuth、知识库导入和跨实例同步统一经过 Safe HTTP Client，逐次校验协议、凭据、域名允许列表、全部 A/AAAA 解析结果、重定向目标、超时和响应大小。
+- 生产环境建议配置 `SAFE_HTTP_MAX_CONCURRENCY`，并在云防火墙层禁止访问 metadata endpoint 与内部服务网段。
+- `allowPrivateNetwork` 只允许用于经过安全审查的内部 Tool；面向用户参数的 Tool 必须保持关闭，并优先配置 `allowedHosts` 或 `allowedHostSuffixes`。
+- 生产 OAuth 服务位于私网时必须显式配置 `OAUTH_ALLOW_PRIVATE_NETWORK=true`；公网 OAuth 不应开启该选项。
+- 自定义模型网关位于私网时必须显式配置 `MODEL_PROVIDER_ALLOW_PRIVATE_NETWORK=true`；公网模型不应开启该选项。
+- 单元测试默认禁止真实网络访问。仅真实集成测试可显式设置 `ALLOW_REAL_NETWORK_IN_TESTS=1`，CI 单元门禁不得设置该变量。
+- `networkEgressArchitecture.test.ts` 会阻止服务端重新引入裸 `fetch`、`axios`、`http.request`、`https.request` 或 shell `curl/wget`。
+
+## 迁移回归门禁
+
+- `loadMigrationPlan` 会扫描 `drizzle/*.sql`，任何未加入受控发布计划的新迁移都会直接失败，新增 `0118+` 时必须同步登记。
+- GitHub `real-db-gate` 会启动一次性 MySQL 8 服务，先从空库执行完整 `pnpm db:migrate`，再运行真实数据库回归测试。
+- 迁移 Runner 的真实用例覆盖空库、增量升级、失败留痕、禁止隐式重试、checksum 漂移、baseline 和并发 advisory lock。
+- 本地没有 MySQL 时可只运行单元门禁；合并前必须以 GitHub `real-db-gate` 通过为准。
 
 ## 回滚注意
 

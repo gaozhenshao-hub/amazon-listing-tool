@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { ENV } from "./env";
+import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 
 export function registerStorageProxy(app: Express) {
   app.get("/manus-storage/*", async (req, res) => {
@@ -21,18 +22,22 @@ export function registerStorageProxy(app: Express) {
       );
       forgeUrl.searchParams.set("path", key);
 
-      const forgeResp = await fetch(forgeUrl, {
+      const forgeResp = await safeHttpRequest(forgeUrl, {
         headers: { Authorization: `Bearer ${ENV.forgeApiKey}` },
+        timeoutMs: 30_000,
+        maxResponseBytes: 2 * 1024 * 1024,
+        allowedHosts: [forgeUrl.hostname],
+        auditContext: { operation: "storage.proxy_presign" },
       });
 
       if (!forgeResp.ok) {
-        const body = await forgeResp.text().catch(() => "");
+        const body = forgeResp.text();
         console.error(`[StorageProxy] forge error: ${forgeResp.status} ${body}`);
         res.status(502).send("Storage backend error");
         return;
       }
 
-      const { url } = (await forgeResp.json()) as { url: string };
+      const { url } = forgeResp.json<{ url: string }>();
       if (!url) {
         res.status(502).send("Empty signed URL from backend");
         return;

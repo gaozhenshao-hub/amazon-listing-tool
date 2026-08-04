@@ -1,3 +1,4 @@
+import { failUnavailableDataSource } from "@shared/_core/errors";
 import { z, TRPCError, protectedProcedure, router, getDb, invokeLLM, inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules, adAnalysisTasks, adAutomationRules, searchTermActions, competitorMonitors, competitorSnapshots, competitorReports, lingxingApiLogs, userSettings, asinStatusCache, asinPermissions, asinTagDefinitions, asinTagAssignments, productProfiles, productVariants, lingxingProductWeekly, operatorNameMappings, eq, desc, and, sql, gte, lte, or, MANAGER_ROLES, resolveDataUserId, CacheEntry, adCache, cacheGet, cacheSet, getCacheAge, getDateRange, MARKETPLACE_MAP, filterSidsByMarketplace, getAllSellerSids, getToday, getYesterday, getDateNDaysAgo } from "./context";
 import { opsWorkspaceCondition, withOpsWorkspace, workspaceIdFromContext } from "./context";
 
@@ -39,7 +40,7 @@ export const advertisingProcedures = {
           let offset = 0;
           let hasMore = true;
           while (hasMore) {
-            const portfolioRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+            const portfolioRes = failUnavailableDataSource();
             const rawPortfolios = portfolioRes.data || [];
             const portfolioList = Array.isArray(rawPortfolios) ? rawPortfolios : (rawPortfolios as any).records || (rawPortfolios as any).list || [];
             console.log(`[AdCampaigns] sid=${sid}: Got ${portfolioList.length} portfolios (offset=${offset})`);
@@ -78,7 +79,7 @@ export const advertisingProcedures = {
             let offset = 0;
             let hasMore = true;
             while (hasMore && offset < 2000) {
-              const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+              const res = failUnavailableDataSource();
               const rawCampaigns = res.data || [];
               const campaigns = Array.isArray(rawCampaigns) ? rawCampaigns : (rawCampaigns as any).records || (rawCampaigns as any).list || [];
               console.log(`[AdCampaigns] ${adType} sid=${sid}: Got ${campaigns.length} campaigns (offset=${offset})`);
@@ -230,7 +231,7 @@ export const advertisingProcedures = {
               debugCount++;
               console.log(`[AdCampaigns] DEBUG HourData request #${debugCount}: path=${apiPath}, body=${JSON.stringify(body)}`);
             }
-            return Promise.resolve({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }).then(res => {
+            return Promise.resolve(failUnavailableDataSource()).then(res => {
               return { campaignId, reportDate, res };
             }).catch(err => {
               console.error(`[AdCampaigns] HourData ERROR cid=${campaignId}: ${err.message}`);
@@ -340,7 +341,7 @@ export const advertisingProcedures = {
         for (const profileId of Array.from(missingProfileIds)) {
           try {
             console.log(`[AdCampaigns] Fetching campaigns by profile_id=${profileId} for ${missingCampaignIds.length} missing names`);
-            const profileRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+            const profileRes = failUnavailableDataSource();
             const profileCampaigns = profileRes.data || [];
             const campaigns2 = Array.isArray(profileCampaigns) ? profileCampaigns : (profileCampaigns as any).records || (profileCampaigns as any).list || [];
             console.log(`[AdCampaigns] profile_id=${profileId}: Got ${campaigns2.length} campaigns`);
@@ -513,7 +514,7 @@ getSearchTerms: protectedProcedure
       console.log(`[SearchTerms] Fetching ${termTasks.length} search term tasks in parallel (${sidsToQuery.length} sids x ${days} days)`);
       const termResults = await Promise.allSettled(
         termTasks.map(({ sid, reportDate }) =>
-          Promise.resolve({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }).then(res => ({ sid, reportDate, res }))
+          Promise.resolve(failUnavailableDataSource()).then(res => ({ sid, reportDate, res }))
         )
       );
       for (const result of termResults) {

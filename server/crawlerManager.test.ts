@@ -78,9 +78,9 @@ describe("Crawler Manager Frontend Page", () => {
 describe("Crawler Manager Route Registration", () => {
   const appPath = path.resolve(__dirname, "../client/src/App.tsx");
 
-  it("App.tsx imports OpsCrawlerManager", () => {
+  it("App.tsx lazily imports OpsCrawlerManager", () => {
     const content = fs.readFileSync(appPath, "utf-8");
-    expect(content).toContain('import OpsCrawlerManager from "./pages/ops/OpsCrawlerManager"');
+    expect(content).toContain('const OpsCrawlerManager = lazy(() => import("./pages/ops/OpsCrawlerManager"))');
   });
 
   it("App.tsx has /ops/crawler route", () => {

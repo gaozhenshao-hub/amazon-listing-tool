@@ -8,6 +8,7 @@ export type TrpcContext = {
   res: CreateExpressContextOptions["res"];
   user: User | null;
   workspaceId?: number | null;
+  requestId?: string;
 };
 
 export async function createContext(
@@ -53,5 +54,6 @@ export async function createContext(
     res: opts.res,
     user,
     workspaceId: (user as any)?.defaultWorkspaceId ?? null,
+    requestId: String(opts.res.locals.requestId || opts.req.header("x-request-id") || "internal"),
   };
 }

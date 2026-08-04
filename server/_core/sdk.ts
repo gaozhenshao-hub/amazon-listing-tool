@@ -1,12 +1,12 @@
 import { AXIOS_TIMEOUT_MS, COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { ForbiddenError } from "@shared/_core/errors";
-import axios, { type AxiosInstance } from "axios";
 import { parse as parseCookieHeader } from "cookie";
 import type { Request } from "express";
 import { SignJWT, jwtVerify } from "jose";
 import type { User } from "../../drizzle/schema";
 import * as db from "../repositories";
 import { ENV } from "./env";
+import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 import type {
   ExchangeTokenRequest,
   ExchangeTokenResponse,
@@ -28,8 +28,12 @@ const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
 const GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
 const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfoWithJwt`;
 
+type OAuthHttpClient = {
+  post<T>(path: string, payload: unknown): Promise<{ data: T }>;
+};
+
 class OAuthService {
-  constructor(private client: ReturnType<typeof axios.create>) {
+  constructor(private client: OAuthHttpClient) {
     console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
     if (!ENV.oAuthServerUrl) {
       console.error(
@@ -76,17 +80,31 @@ class OAuthService {
   }
 }
 
-const createOAuthHttpClient = (): AxiosInstance =>
-  axios.create({
-    baseURL: ENV.oAuthServerUrl,
-    timeout: AXIOS_TIMEOUT_MS,
-  });
+const createOAuthHttpClient = (): OAuthHttpClient => ({
+  async post<T>(path: string, payload: unknown) {
+    const target = new URL(path, ENV.oAuthServerUrl);
+    const response = await safeHttpRequest(target, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      timeoutMs: AXIOS_TIMEOUT_MS,
+      maxResponseBytes: 5 * 1024 * 1024,
+      allowedHosts: [target.hostname],
+      allowPrivateNetwork: process.env.OAUTH_ALLOW_PRIVATE_NETWORK === "true" || process.env.NODE_ENV !== "production",
+      auditContext: { operation: "authentication.oauth" },
+    });
+    if (!response.ok) {
+      throw new Error(`OAuth request failed with HTTP ${response.status}`);
+    }
+    return { data: response.json<T>() };
+  },
+});
 
 class SDKServer {
-  private readonly client: AxiosInstance;
+  private readonly client: OAuthHttpClient;
   private readonly oauthService: OAuthService;
 
-  constructor(client: AxiosInstance = createOAuthHttpClient()) {
+  constructor(client: OAuthHttpClient = createOAuthHttpClient()) {
     this.client = client;
     this.oauthService = new OAuthService(this.client);
   }

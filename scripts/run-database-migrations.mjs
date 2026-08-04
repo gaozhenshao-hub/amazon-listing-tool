@@ -1,0 +1,255 @@
+import "dotenv/config";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createConnection } from "mysql2/promise";
+
+const rootDir = join(dirname(fileURLToPath(import.meta.url)), "..");
+const drizzleDir = join(rootDir, "drizzle");
+const args = new Set(process.argv.slice(2));
+
+const supplementalMigrations = [
+  "0059_product_weekly_ops.sql",
+  "0099_budget_tracking.sql",
+  "0100_data_import_center.sql",
+  "ad_tracking_migration.sql",
+  "dsp_migration.sql",
+  "ops_plan_migration.sql",
+  "ops_plan_migration_fix.sql",
+  "review_migration.sql",
+  "video_script_migration.sql",
+  "video_script_v2_migration.sql",
+  "0101_image_workflow_step5_runs.sql",
+  "0102_ai_jobs.sql",
+  "0103_emperor_agent_workflow.sql",
+  "0104_emperor_agent_artifacts.sql",
+  "0105_emperor_tool_runs.sql",
+  "0106_ai_os_runtime_hardening.sql",
+  "0107_ai_os_observability.sql",
+  "0108_ai_job_queue_system.sql",
+  "0109_agent_job_retry_alignment.sql",
+  "0110_agent_artifacts_v1.sql",
+  "0111_tool_gateway_governance_v2.sql",
+  "0112_template_observability_qa.sql",
+  "0113_database_governance_v1.sql",
+  "0114_security_tenant_governance_v1.sql",
+  "0115_data_lifecycle_artifacts_v1.sql",
+  "0116_ops_workspace_isolation.sql",
+  "0117_database_runtime_observability.sql",
+];
+
+const retiredMigrationFiles = new Set([
+  "0000_aberrant_black_panther.sql",
+  "0006_chubby_hellion.sql",
+  "0007_wakeful_flatman.sql",
+  "0008_superb_blue_shield.sql",
+]);
+
+export function loadMigrationPlan() {
+  const journal = JSON.parse(readFileSync(join(drizzleDir, "meta/_journal.json"), "utf8"));
+  const files = [
+    ...journal.entries.map((entry) => `${entry.tag}.sql`),
+    ...supplementalMigrations,
+  ];
+  if (new Set(files).size !== files.length) throw new Error("Migration plan contains duplicate files");
+  const unmanagedFiles = readdirSync(drizzleDir)
+    .filter((fileName) => fileName.endsWith(".sql"))
+    .filter((fileName) => !files.includes(fileName) && !retiredMigrationFiles.has(fileName));
+  if (unmanagedFiles.length > 0) {
+    throw new Error(`Migration files are not registered in the release plan: ${unmanagedFiles.sort().join(", ")}`);
+  }
+  return files.map((fileName, order) => {
+    const filePath = join(drizzleDir, fileName);
+    if (!existsSync(filePath)) throw new Error(`Migration file is missing: ${fileName}`);
+    const sql = readFileSync(filePath, "utf8");
+    return {
+      order,
+      fileName,
+      filePath,
+      sql,
+      checksum: createHash("sha256").update(sql).digest("hex"),
+      official: order < journal.entries.length,
+    };
+  });
+}
+
+function printPlan(plan) {
+  for (const item of plan) {
+    console.log(`${String(item.order + 1).padStart(3, "0")}  ${item.fileName}  ${item.checksum.slice(0, 12)}`);
+  }
+  console.log(`\n${plan.length} migrations; no database changes were made.`);
+}
+
+function assertExecutionEnvironment() {
+  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_PRODUCTION_MIGRATIONS !== "true") {
+    throw new Error("Production migrations require ALLOW_PRODUCTION_MIGRATIONS=true in the one-off migration process");
+  }
+}
+
+export async function ensureLedger(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS app_schema_migrations (
+      migrationName varchar(255) NOT NULL,
+      checksum varchar(64) NOT NULL,
+      status enum('started','succeeded','failed','baselined') NOT NULL,
+      executionId varchar(80),
+      startedAt timestamp NULL,
+      finishedAt timestamp NULL,
+      error text,
+      metadata json,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updatedAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (migrationName),
+      KEY idx_app_schema_migrations_status (status, updatedAt)
+    )
+  `);
+}
+
+export async function importLegacyJournal(connection, plan) {
+  let legacyRows = [];
+  try {
+    [legacyRows] = await connection.query("SELECT hash FROM __drizzle_migrations");
+  } catch (error) {
+    if (!/doesn't exist|unknown table/i.test(String(error?.message))) throw error;
+  }
+  const hashes = new Set(legacyRows.map((row) => String(row.hash)));
+  for (const migration of plan.filter((item) => item.official && hashes.has(item.checksum))) {
+    await connection.execute(
+      `INSERT INTO app_schema_migrations
+         (migrationName,checksum,status,executionId,startedAt,finishedAt,metadata)
+       VALUES (?,?,'succeeded','legacy-drizzle-import',NOW(),NOW(),JSON_OBJECT('source','__drizzle_migrations'))
+       ON DUPLICATE KEY UPDATE migrationName=migrationName`,
+      [migration.fileName, migration.checksum],
+    );
+  }
+}
+
+export async function readLedger(connection) {
+  const [rows] = await connection.query(
+    "SELECT migrationName,checksum,status,error,updatedAt FROM app_schema_migrations ORDER BY createdAt",
+  );
+  return new Map(rows.map((row) => [String(row.migrationName), row]));
+}
+
+export async function baselineExistingSchema(connection, plan, options = {}) {
+  const confirm = options.confirm ?? process.env.MIGRATION_BASELINE_CONFIRM;
+  const allowProduction = options.allowProduction ?? process.env.ALLOW_PRODUCTION_MIGRATION_BASELINE === "true";
+  const through = String(options.through ?? process.env.MIGRATION_BASELINE_THROUGH ?? "").trim();
+  const reason = String(options.reason ?? process.env.MIGRATION_BASELINE_REASON ?? "").trim();
+  if (confirm !== "I_UNDERSTAND_SCHEMA_BASELINE") {
+    throw new Error("Baselining requires MIGRATION_BASELINE_CONFIRM=I_UNDERSTAND_SCHEMA_BASELINE");
+  }
+  if (process.env.NODE_ENV === "production" && !allowProduction) {
+    throw new Error("Production baselining additionally requires ALLOW_PRODUCTION_MIGRATION_BASELINE=true");
+  }
+  if (!through || !reason) throw new Error("MIGRATION_BASELINE_THROUGH and MIGRATION_BASELINE_REASON are required");
+  const endIndex = plan.findIndex((item) => item.fileName === through || item.fileName.replace(/\.sql$/, "") === through);
+  if (endIndex < 0) throw new Error(`Unknown baseline migration: ${through}`);
+  for (const migration of plan.slice(0, endIndex + 1)) {
+    await connection.execute(
+      `INSERT INTO app_schema_migrations
+         (migrationName,checksum,status,executionId,startedAt,finishedAt,metadata)
+       VALUES (?,?,'baselined',?,NOW(),NOW(),JSON_OBJECT('reason',?))
+       ON DUPLICATE KEY UPDATE
+         checksum=IF(status IN ('succeeded','baselined'),checksum,VALUES(checksum)),
+         status=IF(status='succeeded','succeeded','baselined'),
+         finishedAt=NOW(),error=NULL,metadata=VALUES(metadata)`,
+      [migration.fileName, migration.checksum, `baseline-${randomUUID()}`, reason],
+    );
+  }
+  console.log(`Baselined ${endIndex + 1} migrations through ${plan[endIndex].fileName}.`);
+}
+
+export async function applyMigrations(connection, plan, options = {}) {
+  const retryFailed = options.retryFailed ?? args.has("--retry-failed");
+  let ledger = await readLedger(connection);
+  let applied = 0;
+  for (const migration of plan) {
+    const existing = ledger.get(migration.fileName);
+    if (existing && existing.checksum !== migration.checksum) {
+      throw new Error(`Checksum mismatch for ${migration.fileName}; applied migrations are immutable`);
+    }
+    if (existing?.status === "succeeded" || existing?.status === "baselined") continue;
+    if (existing?.status === "started") {
+      throw new Error(`${migration.fileName} has an interrupted migration record; inspect the schema and create a forward repair`);
+    }
+    if (existing?.status === "failed" && !retryFailed) {
+      throw new Error(`${migration.fileName} previously failed; inspect the error and rerun with --retry-failed after repair`);
+    }
+
+    const executionId = `migration-${randomUUID()}`;
+    await connection.execute(
+      `INSERT INTO app_schema_migrations
+         (migrationName,checksum,status,executionId,startedAt,finishedAt,error,metadata)
+       VALUES (?,?,'started',?,NOW(),NULL,NULL,JSON_OBJECT('order',?))
+       ON DUPLICATE KEY UPDATE checksum=VALUES(checksum),status='started',executionId=VALUES(executionId),startedAt=NOW(),finishedAt=NULL,error=NULL`,
+      [migration.fileName, migration.checksum, executionId, migration.order],
+    );
+    try {
+      const executableSql = migration.sql.replaceAll("--> statement-breakpoint", "");
+      await connection.query(executableSql);
+      await connection.execute(
+        "UPDATE app_schema_migrations SET status='succeeded',finishedAt=NOW(),error=NULL WHERE migrationName=? AND executionId=?",
+        [migration.fileName, executionId],
+      );
+      console.log(`applied ${migration.fileName}`);
+      applied += 1;
+    } catch (error) {
+      const message = String(error?.message || error).slice(0, 8000);
+      await connection.execute(
+        "UPDATE app_schema_migrations SET status='failed',finishedAt=NOW(),error=? WHERE migrationName=? AND executionId=?",
+        [message, migration.fileName, executionId],
+      );
+      throw new Error(`Migration failed at ${migration.fileName}: ${message}`, { cause: error });
+    }
+    ledger = await readLedger(connection);
+  }
+  console.log(applied === 0 ? "Database is already up to date." : `Applied ${applied} migrations.`);
+}
+
+export async function acquireMigrationLock(
+  connection,
+  { lockName = "amazon_listing_tool_schema_migrations", timeoutSeconds = 30 } = {},
+) {
+  const [rows] = await connection.execute("SELECT GET_LOCK(?, ?) AS acquired", [lockName, timeoutSeconds]);
+  if (Number(rows?.[0]?.acquired) !== 1) {
+    throw new Error("Could not acquire the database migration advisory lock");
+  }
+  let released = false;
+  return async () => {
+    if (released) return;
+    released = true;
+    await connection.execute("SELECT RELEASE_LOCK(?)", [lockName]);
+  };
+}
+
+async function main() {
+  const plan = loadMigrationPlan();
+  if (args.has("--plan")) return printPlan(plan);
+  assertExecutionEnvironment();
+
+  const connection = await createConnection({
+    uri: process.env.DATABASE_URL,
+    multipleStatements: true,
+  });
+  let releaseLock;
+  try {
+    releaseLock = await acquireMigrationLock(connection);
+    await ensureLedger(connection);
+    await importLegacyJournal(connection, plan);
+    if (args.has("--baseline")) await baselineExistingSchema(connection, plan);
+    else await applyMigrations(connection, plan);
+  } finally {
+    if (releaseLock) await releaseLock().catch(() => undefined);
+    await connection.end();
+  }
+}
+
+if (fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });
+}

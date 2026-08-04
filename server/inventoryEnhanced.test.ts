@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
+import { APP_ERROR_CODES } from "@shared/_core/errors";
 
 // Mock the LingxingAdapter
 vi.mock("./lingxingAdapter", () => ({
@@ -98,43 +99,25 @@ const createCaller = () => {
 };
 
 describe("Inventory Enhanced APIs", () => {
-  it("should return AWD inventory data", async () => {
+  it("should reject AWD inventory when its retired connector is unavailable", async () => {
     const caller = createCaller();
-    const result = await caller.operations.getAwdInventory({ marketplace: "US" });
-    expect(result).toBeDefined();
-    expect(result.items).toBeDefined();
-    expect(Array.isArray(result.items)).toBe(true);
-    if (result.items.length > 0) {
-      const item = result.items[0];
-      expect(item).toHaveProperty("sku");
-      expect(item).toHaveProperty("awd_quantity");
-    }
+    await expect(caller.operations.getAwdInventory({ marketplace: "US" })).rejects.toMatchObject({
+      cause: { code: APP_ERROR_CODES.DATA_SOURCE_UNAVAILABLE },
+    });
   });
 
-  it("should return local warehouse inventory data", async () => {
+  it("should reject local warehouse inventory when its retired connector is unavailable", async () => {
     const caller = createCaller();
-    const result = await caller.operations.getLocalWarehouseInventory({ marketplace: "US" });
-    expect(result).toBeDefined();
-    expect(result.items).toBeDefined();
-    expect(Array.isArray(result.items)).toBe(true);
-    if (result.items.length > 0) {
-      const item = result.items[0];
-      expect(item).toHaveProperty("sku");
-      expect(item).toHaveProperty("warehouse_name");
-      expect(item).toHaveProperty("total_qty");
-    }
+    await expect(caller.operations.getLocalWarehouseInventory({ marketplace: "US" })).rejects.toMatchObject({
+      cause: { code: APP_ERROR_CODES.DATA_SOURCE_UNAVAILABLE },
+    });
   });
 
-  it("should return omni-channel inventory aggregation", async () => {
+  it("should reject omni-channel inventory when its retired connector is unavailable", async () => {
     const caller = createCaller();
-    const result = await caller.operations.getOmniChannelInventory({ marketplace: "US" });
-    expect(result).toBeDefined();
-    expect(result.items).toBeDefined();
-    expect(result.summary).toBeDefined();
-    expect(result.summary).toHaveProperty("total_skus");
-    expect(result.summary).toHaveProperty("total_fba");
-    expect(result.summary).toHaveProperty("total_awd");
-    expect(result.summary).toHaveProperty("total_local");
+    await expect(caller.operations.getOmniChannelInventory({ marketplace: "US" })).rejects.toMatchObject({
+      cause: { code: APP_ERROR_CODES.DATA_SOURCE_UNAVAILABLE },
+    });
   });
 });
 

@@ -8,6 +8,10 @@ import path from "path";
 describe("runAttributeTagging removal from devAnalysis.ts", () => {
   const routerPath = path.join(__dirname, "routers/devAnalysis.ts");
   const routerSrc = fs.readFileSync(routerPath, "utf-8");
+  const gatingSrc = fs.readFileSync(
+    path.join(__dirname, "domains/product_development/analysis/stageGating.ts"),
+    "utf-8",
+  );
 
   it("should NOT contain runAttributeTagging procedure", () => {
     expect(routerSrc).not.toContain("runAttributeTagging:");
@@ -55,7 +59,7 @@ describe("runAttributeTagging removal from devAnalysis.ts", () => {
   });
 
   it("should use areProductTagsConfirmed for gating (not attribute_tagging stage)", () => {
-    expect(routerSrc).toContain("areProductTagsConfirmed");
+    expect(gatingSrc).toContain("areProductTagsConfirmed");
   });
 });
 

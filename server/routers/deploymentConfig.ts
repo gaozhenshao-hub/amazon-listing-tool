@@ -11,6 +11,7 @@ import { getDb } from "../repositories/dbClient";
 import { kbSyncLogs, remoteUsageSnapshots, users, usageStats, systemSettings } from "../../drizzle/schema";
 import { eq, desc, sql, and, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 
 // Sync config setting keys
 const SYNC_SETTING_KEYS = {
@@ -97,20 +98,26 @@ export const deploymentConfigRouter = router({
     }
 
     try {
-      const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/sync/trigger`, {
+      const triggerUrl = new URL(`http://localhost:${process.env.PORT || 3000}/api/sync/trigger`);
+      const response = await safeHttpRequest(triggerUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-sync-api-key": ENV.peerApiKey,
         },
         body: JSON.stringify({ apiKey: ENV.peerApiKey }),
+        timeoutMs: 30_000,
+        maxResponseBytes: 2 * 1024 * 1024,
+        allowedHosts: [triggerUrl.hostname],
+        allowPrivateNetwork: true,
+        auditContext: { operation: "deployment.sync_trigger" },
       });
 
       if (!response.ok) {
         return { success: false, error: `同步请求失败: ${response.status}` };
       }
 
-      const result = await response.json();
+      const result = response.json();
       return { success: true, result };
     } catch (error) {
       return { success: false, error: `同步出错: ${(error as Error).message}` };
@@ -214,7 +221,8 @@ export const deploymentConfigRouter = router({
       .limit(1);
 
     try {
-      const response = await fetch(`${ENV.usageReportUrl}/api/sync/usage-report`, {
+      const reportUrl = new URL("/api/sync/usage-report", ENV.usageReportUrl);
+      const response = await safeHttpRequest(reportUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -234,6 +242,11 @@ export const deploymentConfigRouter = router({
             storageUsageMb: Math.round((todayStats[0]?.storageUsedBytes || 0) / 1024 / 1024),
           },
         }),
+        timeoutMs: 30_000,
+        maxResponseBytes: 2 * 1024 * 1024,
+        allowedHosts: [reportUrl.hostname],
+        allowPrivateNetwork: true,
+        auditContext: { operation: "deployment.usage_report" },
       });
 
       return { success: response.ok };
@@ -348,23 +361,23 @@ export const deploymentConfigRouter = router({
 
     try {
       const startTime = Date.now();
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-      const response = await fetch(`${peerApiUrl}/api/sync/status`, {
+      const statusUrl = new URL("/api/sync/status", peerApiUrl);
+      const response = await safeHttpRequest(statusUrl, {
         method: "GET",
         headers: {
           "x-sync-api-key": peerApiKey || "",
           "Content-Type": "application/json",
         },
-        signal: controller.signal,
+        timeoutMs: 10_000,
+        maxResponseBytes: 2 * 1024 * 1024,
+        allowedHosts: [statusUrl.hostname],
+        allowPrivateNetwork: true,
+        auditContext: { operation: "deployment.peer_health_check" },
       });
-
-      clearTimeout(timeoutId);
       const latency = Date.now() - startTime;
 
       if (response.ok) {
-        const data = await response.json() as any;
+        const data = response.json() as any;
         return {
           success: true,
           message: `连接成功！对端实例: ${data.instanceId || "未知"}, 公司: ${data.companyName || "未知"}`,

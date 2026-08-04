@@ -1,18 +1,19 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
+import { APP_ERROR_CODES } from "@shared/_core/errors";
 
 describe("LingxingAdapter stub behavior", () => {
-  it("stub should return mock data with _meta source", async () => {
+  it("rejects requests instead of returning fabricated success data", async () => {
     const { getLingxingAdapter } = await import("../lingxingAdapter");
     const adapter = getLingxingAdapter();
-    const result = await adapter.requestWithMockFallback({ path: "/test" });
-    expect(result.code).toBe("200");
-    // _meta is no longer returned by deprecated stub
-    expect(result.code).toBe("200");
+    await expect(adapter.requestWithMockFallback({ path: "/test" })).rejects.toMatchObject({
+      code: APP_ERROR_CODES.DATA_SOURCE_UNAVAILABLE,
+      statusCode: 503,
+    });
   });
-  it("stub should report isMockMode as true", async () => {
+  it("does not report a fake mock mode", async () => {
     const { getLingxingAdapter } = await import("../lingxingAdapter");
     const adapter = getLingxingAdapter();
-    expect(adapter.isMockMode()).toBe(true);
+    expect(adapter.isMockMode()).toBe(false);
   });
   it("stub should report isReady as false", async () => {
     const { getLingxingAdapter } = await import("../lingxingAdapter");

@@ -6,7 +6,8 @@ import { scrapeAmazonProduct, type ProductImage } from "../scraper";
 import { getScraperConfig } from "./systemSettings";
 import { invokeLLM } from "../_core/llm";
 import { storagePut } from "../storage";
-import axios from "axios";
+import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
+import { resourceConflictError } from "@shared/_core/errors";
 import {
   STYLE_NAME_OPTIONS, IMAGE_BELONG_OPTIONS, IMAGE_BELONG_HIERARCHY, IMAGE_TYPE_HIERARCHY,
   IMAGE_TYPE_MAIN_OPTIONS, SELLING_POINT_HIERARCHY, SELLING_POINT_MAIN_OPTIONS,
@@ -74,8 +75,13 @@ function buildSingleImageAnalysisPrompt(): string {
 
 async function downloadAndStoreImage(imageUrl: string, asin: string, index: number, prefix = "kb-images"): Promise<string> {
   try {
-    const response = await axios.get(imageUrl, { responseType: "arraybuffer", timeout: 15000 });
-    const buffer = Buffer.from(response.data);
+    const response = await safeHttpRequest(imageUrl, {
+      timeoutMs: 15_000,
+      maxResponseBytes: 25 * 1024 * 1024,
+      auditContext: { operation: "knowledge_base.image_import" },
+    });
+    if (!response.ok) throw new Error(`Image download failed with HTTP ${response.status}`);
+    const buffer = response.body;
     const ext = imageUrl.match(/\.(jpg|jpeg|png|webp|gif)/i)?.[1] || "jpg";
     const key = `${prefix}/${asin}/${Date.now()}-${index}.${ext}`;
     const { url } = await storagePut(key, buffer, `image/${ext}`);
@@ -530,7 +536,7 @@ export const kbImagesRouter = router({
       // ASIN dedup: prevent duplicate entries
       const dupSet = await kbDb.findImageSetByAsin(asin);
       if (dupSet) {
-        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于图片知识库中 [id:${dupSet.id}]` });
+        throw resourceConflictError(`ASIN ${asin} 已存在于图片知识库中`, { existingId: dupSet.id, resource: "kb_image_set", asin });
       }
       const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "crawling", visibility: "team" });
       // Fire-and-forget with full analysis
@@ -568,7 +574,7 @@ export const kbImagesRouter = router({
       // ASIN dedup: prevent duplicate entries
       const dupSet = await kbDb.findImageSetByAsin(asin);
       if (dupSet) {
-        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于图片知识库中 [id:${dupSet.id}]` });
+        throw resourceConflictError(`ASIN ${asin} 已存在于图片知识库中`, { existingId: dupSet.id, resource: "kb_image_set", asin });
       }
       const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, status: "crawling", visibility: "team" });
       // Fire-and-forget with full analysis
@@ -781,7 +787,7 @@ export const kbImagesRouter = router({
       // ASIN dedup: prevent duplicate entries
       const dupSet = await kbDb.findImageSetByAsin(asin);
       if (dupSet) {
-        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于图片知识库中 [id:${dupSet.id}]` });
+        throw resourceConflictError(`ASIN ${asin} 已存在于图片知识库中`, { existingId: dupSet.id, resource: "kb_image_set", asin });
       }
       const setId = await kbDb.createImageSet({ userId: ctx.user.id, asin, productTitle: input.title || undefined, status: "confirmed", visibility: "team" });
       const numericSetId = Number(setId);

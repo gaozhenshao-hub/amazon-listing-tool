@@ -5,6 +5,7 @@
  * Emperor 平台地址：http://104.196.50.157:4800
  * 所有 AI 调用通过此客户端路由，实现统一鉴权、限流、审计和 Prompt 管理
  */
+import { safeHttpRequest } from "./infrastructure/http/safeHttpClient";
 
 const EMPEROR_BASE_URL = process.env.EMPEROR_BASE_URL ?? "http://104.196.50.157:4800";
 const EMPEROR_API_KEY = process.env.EMPEROR_API_KEY ?? "dev-service-token";
@@ -32,7 +33,7 @@ export async function runSkill<T = unknown>(
   const url = `${EMPEROR_BASE_URL}/v1/skills/${slug}/run`;
 
   try {
-    const response = await fetch(url, {
+    const response = await safeHttpRequest(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -42,22 +43,26 @@ export async function runSkill<T = unknown>(
         projectId: EMPEROR_PROJECT_ID,
         input,
       }),
-      signal: AbortSignal.timeout(timeoutMs),
+      timeoutMs,
+      maxResponseBytes: 20 * 1024 * 1024,
+      allowedHosts: [new URL(url).hostname],
+      allowPrivateNetwork: process.env.EMPEROR_ALLOW_PRIVATE_NETWORK === "true",
+      auditContext: { operation: "emperor.skill_run" },
     });
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "Unknown error");
+      const errorText = response.text() || "Unknown error";
       return { success: false, error: `HTTP ${response.status}: ${errorText}` };
     }
 
-    const data = await response.json() as {
+    const data = response.json<{
       success: boolean;
       runId?: string;
       output?: T;
       usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
       durationMs?: number;
       error?: string;
-    };
+    }>();
 
     return data;
   } catch (err) {

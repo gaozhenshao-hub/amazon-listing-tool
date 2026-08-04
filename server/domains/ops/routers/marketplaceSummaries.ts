@@ -1,3 +1,4 @@
+import { failUnavailableDataSource } from "@shared/_core/errors";
 import { currentOpsWorkspaceId } from "../workspaceContext";
 import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
@@ -144,7 +145,7 @@ export const opsMarketplaceSummaryProcedures = {
       // Try ASIN-specific profit API first (more precise)
       // Use searchField + searchValue per Lingxing API docs, endDate = yesterday (today's data incomplete)
       try {
-        const asinRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+        const asinRes = failUnavailableDataSource();
         if (asinRes._meta) dataSourceMeta = asinRes._meta;
         const rawAsin = asinRes.data || [];
         actual30Items = Array.isArray(rawAsin) ? rawAsin : (rawAsin as any).records || (rawAsin as any).list || [];
@@ -156,7 +157,7 @@ export const opsMarketplaceSummaryProcedures = {
       // If ASIN API returned no data, try parent ASIN API, then fallback to MSKU
       if (actual30Items.length === 0 && parentAsin) {
         try {
-          const parentRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+          const parentRes = failUnavailableDataSource();
           if (parentRes._meta) dataSourceMeta = parentRes._meta;
           const rawParent = parentRes.data || [];
           actual30Items = Array.isArray(rawParent) ? rawParent : (rawParent as any).records || (rawParent as any).list || [];
@@ -166,7 +167,7 @@ export const opsMarketplaceSummaryProcedures = {
         }
       }
       if (actual30Items.length === 0) {
-        const profitRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+        const profitRes = failUnavailableDataSource();
         if (profitRes._meta && profitRes._meta.source !== 'real') dataSourceMeta = profitRes._meta;
         const rawProfit = profitRes.data || [];
         const allItems = Array.isArray(rawProfit) ? rawProfit : (rawProfit as any).records || (rawProfit as any).list || [];
@@ -179,14 +180,14 @@ export const opsMarketplaceSummaryProcedures = {
       let current = { revenue: 0, amazonFees: 0, referralFee: 0, fbaFee: 0, adSpend: 0, storageFee: 0, netRevenue: 0, fixedCosts: 0, productCost: 0, shippingCost: 0, tariff: 0, profit: 0, profitMargin: 0, orders: 0, units: 0 };
       try {
         // Try ASIN API for 7-day data
-        const asinRes7 = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+        const asinRes7 = failUnavailableDataSource();
         const raw7 = asinRes7.data || [];
         current7Items = Array.isArray(raw7) ? raw7 : (raw7 as any).records || (raw7 as any).list || [];
 
         // Try parent ASIN API if no data
         if (current7Items.length === 0 && parentAsin) {
           try {
-            const parentRes7 = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+            const parentRes7 = failUnavailableDataSource();
             const raw7p = parentRes7.data || [];
             current7Items = Array.isArray(raw7p) ? raw7p : (raw7p as any).records || (raw7p as any).list || [];
             console.log(`[ProfitSummary] Parent ASIN 7-day API returned ${current7Items.length} items`);
@@ -196,7 +197,7 @@ export const opsMarketplaceSummaryProcedures = {
         }
         if (current7Items.length === 0) {
           // Fallback to MSKU list
-          const recentRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+          const recentRes = failUnavailableDataSource();
           const rawRecent = recentRes.data || [];
           const allRecent = Array.isArray(rawRecent) ? rawRecent : (rawRecent as any).records || (rawRecent as any).list || [];
           current7Items = filterByProduct(allRecent);
@@ -209,7 +210,7 @@ export const opsMarketplaceSummaryProcedures = {
       // Fetch ASIN 360 hourly data for real-time sales/ranking trends
       let hourlyTrend: Array<{ hour: string; volume: number; orderItems: number; amount: number; price: number; salesRank: number }> = [];
       try {
-        const asin360Res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+        const asin360Res = failUnavailableDataSource();
         const rawHourly = asin360Res.data || [];
         const hourlyList = Array.isArray(rawHourly) ? rawHourly : (rawHourly as any).records || (rawHourly as any).list || [];
         hourlyTrend = hourlyList.map((h: any) => ({
@@ -265,7 +266,7 @@ export const opsMarketplaceSummaryProcedures = {
       // Try searching by ASIN first using v2 FBA Stock API
       for (const keyword of [product.parentAsin, ...searchKeywords.slice(0, 3)]) {
         try {
-          const invRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+          const invRes = failUnavailableDataSource();
           if (invRes._meta && invRes._meta.source !== 'real') dataSourceMeta = invRes._meta;
           const rawInv = invRes.data || [];
           const items = Array.isArray(rawInv) ? rawInv : (rawInv as any).records || (rawInv as any).list || [];
@@ -284,7 +285,7 @@ export const opsMarketplaceSummaryProcedures = {
       // If v2 search returned nothing, fallback to full list with filtering
       if (invList.length === 0) {
         try {
-          const invRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+          const invRes = failUnavailableDataSource();
           const rawInv = invRes.data || [];
           const allItems = Array.isArray(rawInv) ? rawInv : (rawInv as any).records || (rawInv as any).list || [];
           invList = allItems.filter((inv: any) =>
@@ -410,7 +411,7 @@ export const opsMarketplaceSummaryProcedures = {
           ];
           for (const { path: adPath, type: adType } of adPaths) {
             try {
-              const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+              const res = failUnavailableDataSource();
               if (res._meta && res._meta.source !== 'real') dataSourceMeta = res._meta;
               const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
               // Filter items that match any of our ASINs (parent or child)
@@ -440,7 +441,7 @@ export const opsMarketplaceSummaryProcedures = {
       const allCampaigns: any[] = [];
       for (const { path: campPath, type: campType } of campaignPaths) {
         try {
-          const adRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+          const adRes = failUnavailableDataSource();
           if (adRes._meta && adRes._meta.source !== 'real') dataSourceMeta = adRes._meta;
           const rawAd = adRes.data || [];
           const campaigns = Array.isArray(rawAd) ? rawAd : (rawAd as any).records || (rawAd as any).list || [];
@@ -495,7 +496,7 @@ export const opsMarketplaceSummaryProcedures = {
       try {
         // Fetch reports for each child ASIN (not just parent ASIN)
         for (const asin of allAsins) {
-          const productAdRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+          const productAdRes = failUnavailableDataSource();
           if (productAdRes._meta && productAdRes._meta.source !== 'real') dataSourceMeta = productAdRes._meta;
           const rawProductAd = productAdRes.data || [];
           const allProductAds = Array.isArray(rawProductAd) ? rawProductAd : (rawProductAd as any).records || (rawProductAd as any).list || [];
@@ -662,7 +663,7 @@ export const opsMarketplaceSummaryProcedures = {
       let profitData = { revenue: 0, cost: 0, profit: 0, profitMargin: 0, adSpend: 0, fbaFee: 0, orderCount: 0, unitCount: 0 };
       let prevProfitData = { revenue: 0, cost: 0, profit: 0, profitMargin: 0, adSpend: 0, fbaFee: 0, orderCount: 0, unitCount: 0 };
       try {
-        const profitRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+        const profitRes = failUnavailableDataSource();
         const profitRaw = profitRes.data || [];
         const profitList = Array.isArray(profitRaw) ? profitRaw : (profitRaw as any).records || (profitRaw as any).list || [];
         for (const item of profitList) {
@@ -677,7 +678,7 @@ export const opsMarketplaceSummaryProcedures = {
         profitData.profitMargin = profitData.revenue > 0 ? (profitData.profit / profitData.revenue) * 100 : 0;
 
         // Previous period
-        const prevProfitRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+        const prevProfitRes = failUnavailableDataSource();
         const prevProfitRaw = prevProfitRes.data || [];
         const prevProfitList = Array.isArray(prevProfitRaw) ? prevProfitRaw : (prevProfitRaw as any).records || (prevProfitRaw as any).list || [];
         for (const item of prevProfitList) {
@@ -697,7 +698,7 @@ export const opsMarketplaceSummaryProcedures = {
       // Fetch inventory data from Lingxing FBA v2 API
       let inventoryData = { totalStock: 0, inboundQty: 0, reservedQty: 0, totalValue: 0 };
       try {
-        const invRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+        const invRes = failUnavailableDataSource();
         const invRaw = invRes.data || [];
         const invList = Array.isArray(invRaw) ? invRaw : (invRaw as any).records || (invRaw as any).list || [];
         for (const item of invList) {
@@ -717,7 +718,7 @@ export const opsMarketplaceSummaryProcedures = {
       let adData = { totalSpend: 0, totalSales: 0, impressions: 0, clicks: 0, acos: 0, roas: 0, activeCampaigns: 0 };
       try {
         // Use SP广告商品小时数据 for per-ASIN ad metrics
-        const adRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+        const adRes = failUnavailableDataSource();
         const adRaw = adRes.data || [];
         const adList = Array.isArray(adRaw) ? adRaw : (adRaw as any).records || (adRaw as any).list || [];
         for (const item of adList) {
@@ -796,7 +797,7 @@ export const opsMarketplaceSummaryProcedures = {
           const opVariants = await (await getDb())!.select().from(productVariants)
             .where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.productId, input.productId)));
           const opChildAsins = opVariants.map(v => v.childAsin).filter(Boolean);
-          const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+          const res = failUnavailableDataSource();
           const rawData = res.data || [];
           let list = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
           console.log(`[OpsPlanComparison] ASIN API returned ${list.length} items for ${product.parentAsin} (${start}-${end})`);
@@ -804,7 +805,7 @@ export const opsMarketplaceSummaryProcedures = {
           // Try parent ASIN API if no data
           if (list.length === 0 && product.parentAsin) {
             try {
-              const parentRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+              const parentRes = failUnavailableDataSource();
               const rawParent = parentRes.data || [];
               list = Array.isArray(rawParent) ? rawParent : (rawParent as any).records || (rawParent as any).list || [];
               console.log(`[OpsPlanComparison] Parent ASIN API returned ${list.length} items`);
@@ -816,7 +817,7 @@ export const opsMarketplaceSummaryProcedures = {
           // Fallback to MSKU list if still no data
           if (list.length === 0) {
             try {
-              const mskuRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+              const mskuRes = failUnavailableDataSource();
               const rawMsku = mskuRes.data || [];
               const allItems = Array.isArray(rawMsku) ? rawMsku : (rawMsku as any).records || (rawMsku as any).list || [];
               // Get variants for filtering
