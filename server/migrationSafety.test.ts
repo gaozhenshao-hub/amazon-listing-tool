@@ -185,6 +185,19 @@ describe("database migration safety", () => {
     expect(executable).not.toContain("t.`userId`");
   });
 
+  it("qualifies ambiguous no-op upserts with their target table", async () => {
+    const module = await import("../scripts/run-database-migrations.mjs");
+    const sql = [
+      "INSERT INTO `workspaces` (`organizationId`, `slug`)",
+      "SELECT `id`, 'default' FROM `organizations`",
+      "ON DUPLICATE KEY UPDATE `updatedAt` = `updatedAt`;",
+    ].join(" ");
+
+    const executable = await module.prepareExecutableSql({ execute: vi.fn() }, sql);
+
+    expect(executable).toContain("`updatedAt` = `workspaces`.`updatedAt`");
+  });
+
   it("rejects future SQL migrations that are omitted from the release plan", () => {
     const source = fs.readFileSync(repoPath("scripts/run-database-migrations.mjs"), "utf8");
     expect(source).toContain("Migration files are not registered in the release plan");

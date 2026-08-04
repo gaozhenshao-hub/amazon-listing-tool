@@ -143,9 +143,15 @@ export async function readLedger(connection) {
 }
 
 export async function prepareExecutableSql(connection, sql) {
+  const ambiguousNoOpUpsertPattern =
+    /INSERT\s+INTO\s+`?([A-Za-z0-9_$]+)`?[\s\S]*?ON\s+DUPLICATE\s+KEY\s+UPDATE\s+`updatedAt`\s*=\s*`updatedAt`/gi;
+  const upsertSafeSql = sql.replace(ambiguousNoOpUpsertPattern, (statement, tableName) =>
+    statement.replace(/`updatedAt`\s*=\s*`updatedAt`$/i, `\`updatedAt\` = \`${tableName}\`.\`updatedAt\``),
+  );
+
   const workspaceBackfillPattern =
     /UPDATE\s+`?([A-Za-z0-9_$]+)`?\s+t\s+LEFT\s+JOIN\s+`?users`?\s+u\b[\s\S]*?;/gi;
-  const backfillMatches = [...sql.matchAll(workspaceBackfillPattern)];
+  const backfillMatches = [...upsertSafeSql.matchAll(workspaceBackfillPattern)];
   let normalizedSql = "";
   let backfillCursor = 0;
   for (const match of backfillMatches) {
@@ -164,10 +170,10 @@ export async function prepareExecutableSql(connection, sql) {
         normalizedStatement = statement.replaceAll(/t\.`?userId`?/g, "t.`user_id`");
       }
     }
-    normalizedSql += sql.slice(backfillCursor, statementIndex) + normalizedStatement;
+    normalizedSql += upsertSafeSql.slice(backfillCursor, statementIndex) + normalizedStatement;
     backfillCursor = statementIndex + statement.length;
   }
-  normalizedSql += sql.slice(backfillCursor);
+  normalizedSql += upsertSafeSql.slice(backfillCursor);
 
   const conditionalDropPattern =
     /ALTER\s+TABLE\s+`?([A-Za-z0-9_$]+)`?\s+DROP\s+COLUMN\s+IF\s+EXISTS\s+`?([A-Za-z0-9_$]+)`?\s*;/gi;
