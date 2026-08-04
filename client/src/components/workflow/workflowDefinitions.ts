@@ -1,14 +1,19 @@
 import {
   BookOpenCheck,
+  BarChart3,
+  Building2,
   Clapperboard,
   ClipboardList,
   Database,
+  DollarSign,
+  Download,
   Eye,
   FileCheck2,
   FileText,
   Film,
   Gauge,
   GitCompareArrows,
+  Globe,
   HelpCircle,
   Image,
   Key,
@@ -18,12 +23,18 @@ import {
   Lightbulb,
   MessageSquareText,
   Palette,
+  Package,
   PenLine,
   Search,
   Scissors,
   Sparkles,
+  Star,
+  Tag,
+  Tags,
   Target,
+  TrendingUp,
   Upload,
+  Users,
   Video,
 } from "lucide-react";
 import type { WorkflowStepDefinition } from "./types";
@@ -201,9 +212,37 @@ export const VIDEO_SCRIPT_WORKFLOW_STEPS: WorkflowStepDefinition[] = [
   { id: "stage_4", label: "剪辑脚本", icon: Scissors, description: "多版本剪辑方案", agentNodeId: "video.stage_4", artifactKey: "edit_script" },
 ];
 
+export const DEV_PRODUCT_WORKFLOW_STEPS: WorkflowStepDefinition[] = [
+  { id: "overview", label: "项目详情", shortLabel: "项目", icon: Target, description: "基础信息、阶段、下游依赖", artifactKey: "dev.project" },
+  { id: "data", label: "数据管理", shortLabel: "数据", icon: Database, description: "上传并确认销量、五点、评论、历史销量", artifactKey: "dev.data" },
+  { id: "tags", label: "标签确认", shortLabel: "标签", icon: Tags, description: "AI生成标签分类，人工确认锁定", artifactKey: "dev.tags" },
+  { id: "tagging", label: "属性标注", shortLabel: "标注", icon: Tag, description: "ASIN属性打标，确认后供分析使用", artifactKey: "dev.attribute_tags" },
+  { id: "panorama", label: "全景分析表", shortLabel: "全景", icon: LayoutGrid, description: "结构化竞品全景，确认后供分析使用", artifactKey: "dev.panorama" },
+  { id: "analysis", label: "分析流程", shortLabel: "分析", icon: BarChart3, description: "市场、交叉、价格、品牌、评论、决策", artifactKey: "dev.analysis" },
+  { id: "offsite", label: "站外分析", shortLabel: "站外", icon: Globe, description: "趋势、视频、社媒、独立站、众筹", artifactKey: "dev.offsite" },
+  { id: "scoring", label: "评分立项", shortLabel: "评分", icon: Star, description: "AI评分、人工确认、进入落地阶段", artifactKey: "dev.scoring" },
+  { id: "profile", label: "产品画像", shortLabel: "画像", icon: Users, description: "8子模块确认后供BOM/利润使用", artifactKey: "dev.profile" },
+  { id: "bom", label: "BOM", shortLabel: "BOM", icon: Package, description: "物料、模具、时间、成本", artifactKey: "dev.bom" },
+  { id: "manual", label: "说明书", shortLabel: "说明书", icon: FileText, description: "章节、素材、主题、HTML/PDF输出", artifactKey: "dev.manual" },
+  { id: "test", label: "测试报告", shortLabel: "测试", icon: ClipboardList, description: "8类测试项、结果确认、CSV导出", artifactKey: "dev.test_report" },
+  { id: "profit", label: "利润计算", shortLabel: "利润", icon: DollarSign, description: "BOM联动、方案模拟、敏感性分析", artifactKey: "dev.profit" },
+  { id: "download", label: "报告下载", shortLabel: "下载", icon: Download, description: "研发报告输出与归档", artifactKey: "dev.report" },
+];
+
+export const DEV_ANALYSIS_WORKFLOW_STEPS: WorkflowStepDefinition[] = [
+  { id: "market_overview", label: "市场大盘", shortLabel: "大盘", icon: TrendingUp, description: "市场容量、竞争格局、价格分布", artifactKey: "dev.analysis.market_overview" },
+  { id: "attribute_cross", label: "属性交叉", shortLabel: "交叉", icon: LayoutGrid, description: "多维属性交叉分析与蓝海识别", artifactKey: "dev.analysis.attribute_cross" },
+  { id: "price_analysis", label: "价格段分析", shortLabel: "价格", icon: DollarSign, description: "价格区间分布与利润空间", artifactKey: "dev.analysis.price_analysis" },
+  { id: "brand_competition", label: "品牌竞争", shortLabel: "品牌", icon: Building2, description: "品牌市占率与竞争格局", artifactKey: "dev.analysis.brand_competition" },
+  { id: "review_kano", label: "评论深度", shortLabel: "评论", icon: MessageSquareText, description: "评论卡洛模型与痛点挖掘", artifactKey: "dev.analysis.review_kano" },
+  { id: "decision_dashboard", label: "综合决策", shortLabel: "决策", icon: Gauge, description: "综合看板与立项建议", artifactKey: "dev.analysis.decision_dashboard" },
+];
+
 export const WORKFLOW_FRAMEWORK_MODULES = {
   listing: LISTING_AGENT_WORKFLOW_STEPS,
   image: IMAGE_SUGGESTION_WORKFLOW_STEPS,
   ads: AD_STRUCTURE_WORKFLOW_STEPS,
   video: VIDEO_SCRIPT_WORKFLOW_STEPS,
+  devProduct: DEV_PRODUCT_WORKFLOW_STEPS,
+  devAnalysis: DEV_ANALYSIS_WORKFLOW_STEPS,
 } as const;

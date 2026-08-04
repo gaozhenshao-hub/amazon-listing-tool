@@ -20,7 +20,7 @@
 - `WorkflowCheckpointControls`：统一执行、编辑、保存草稿、确认锁定、重跑、跳过操作。
 - `WorkflowArtifactVersionPicker`：统一 Artifact 版本选择、回滚、Diff、作为下游输入。
 - `useAgentWorkflowRun`：统一读取 Emperor Agent Run，并封装 execute / schedule / confirm / rerun / pause / resume / cancel。
-- `workflowDefinitions`：Listing、图片、广告、视频的统一步骤定义。
+- `workflowDefinitions`：Listing、图片、广告、视频、智能产品开发的统一步骤定义。
 
 ## 当前接入范围
 
@@ -30,6 +30,8 @@
 | 智能图片建议 | `WorkflowShell` | 6 步生成、编辑、确认、解锁、导出完整方案、重新开始 |
 | 广告架构 | `WorkflowStepProgress` | 项目选择、AI 生成、编辑架构、CSV/Bulk Sheet 导出、矩阵/预算/否定词等视图 |
 | 视频脚本生成 | `WorkflowStepProgress` | 6 阶段脚本生成、阶段确认、版本管理、回滚、Excel 导出 |
+| 智能产品开发项目详情 | `WorkflowStepProgress` + 研发流程总控台 | 项目详情、数据确认、标签确认、属性标注、全景分析、分析入口、站外入口、评分立项、画像、BOM、说明书、测试报告、利润、报告下载 |
+| 智能产品开发分析工作台 | `WorkflowStepProgress` + blocked 前置条件态 | 6 阶段分析、前置条件提示、AI 分析、编辑、确认锁定、解锁重跑、结果图表展示 |
 
 ## Agent Run 接入约定
 
@@ -55,6 +57,21 @@ Listing 主画布额外支持：
 - 选中节点后可以在画布页执行、重跑、编辑草稿、确认锁定、跳过。
 - 选中节点后可以进入 Artifact 版本选择、回滚、Diff、作为下游输入。
 - N0-N5、G1-G5、O1/O2/O3/E1/E2 与 Agent DAG 的节点 ID 保持一致。
+
+## 智能产品开发接入约定
+
+项目详情页作为智能产品开发的流程总控台：
+
+- 顶部统一展示“AI 生成 → 人工确认 → 锁定 → 下游使用”的整体进度。
+- 数据管理、标签管理、属性标注、全景分析、分析流程、评分立项继续使用原页面能力。
+- 第二阶段的产品画像、BOM、说明书、测试报告、利润计算继续使用原编辑器和模块锁。
+- 总控台只读取已有确认/锁定状态，不替换子页面里的生成、编辑、确认、导出能力。
+
+分析工作台额外使用 `blockedStepIds`：
+
+- 前置条件未满足的阶段显示为 blocked 状态。
+- blocked 阶段仍可点击查看原因，实际运行按钮继续由原 gating 逻辑禁用。
+- 这样保留原来的排查体验，同时把阶段导航统一到公共组件。
 
 ## Listing 2.0 下线范围
 

@@ -130,8 +130,8 @@ describe("Stage Gating Mechanism", () => {
   describe("Frontend: Gating UI Elements", () => {
     it("should show lock icon for gated stages in progress bar", () => {
       expect(devAnalysisFlow).toContain("isGated");
-      // Lock icon for gated stages
-      expect(devAnalysisFlow).toContain("text-muted-foreground/50 opacity-60");
+      expect(devAnalysisFlow).toContain("analysisBlockedStepIds");
+      expect(devAnalysisFlow).toContain("blockedStepIds={analysisBlockedStepIds}");
     });
 
     it("should show gating warning card in action area", () => {
@@ -158,7 +158,8 @@ describe("Stage Gating Mechanism", () => {
     });
 
     it("should show tooltip with gating reason on stage buttons", () => {
-      expect(devAnalysisFlow).toContain("title={isGated ? stageGating?.reason");
+      expect(devAnalysisFlow).toContain("analysisStepTitleById");
+      expect(devAnalysisFlow).toContain("stepTitleById={analysisStepTitleById}");
     });
   });
 

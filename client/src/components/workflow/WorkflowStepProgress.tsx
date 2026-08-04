@@ -58,7 +58,9 @@ export function WorkflowStepProgress({
   activeStepId,
   completedStepIds,
   lockedStepIds,
+  blockedStepIds,
   disabledStepIds,
+  stepTitleById,
   checkpoints,
   onStepClick,
   compact = false,
@@ -68,7 +70,9 @@ export function WorkflowStepProgress({
   activeStepId: WorkflowId;
   completedStepIds?: Iterable<WorkflowId>;
   lockedStepIds?: Iterable<WorkflowId>;
+  blockedStepIds?: Iterable<WorkflowId>;
   disabledStepIds?: Iterable<WorkflowId>;
+  stepTitleById?: Record<string, string>;
   checkpoints?: WorkflowCheckpointLike[];
   onStepClick?: (stepId: WorkflowId) => void;
   compact?: boolean;
@@ -76,6 +80,7 @@ export function WorkflowStepProgress({
 }) {
   const completed = toWorkflowIdSet(completedStepIds);
   const locked = toWorkflowIdSet(lockedStepIds);
+  const blocked = toWorkflowIdSet(blockedStepIds);
   const disabled = toWorkflowIdSet(disabledStepIds);
   const activeKey = workflowIdKey(activeStepId);
 
@@ -88,9 +93,10 @@ export function WorkflowStepProgress({
           const checkpointStatus = normalizeCheckpointStatus(checkpoint?.status);
           const isCompleted = completed.has(stepKey) || isWorkflowStepDone(checkpointStatus);
           const isLocked = locked.has(stepKey) || checkpointStatus === "locked";
+          const isBlocked = blocked.has(stepKey) && !isCompleted && !isLocked;
           const isDisabled = disabled.has(stepKey);
           const isActive = activeKey === stepKey;
-          const status = isLocked ? "locked" : isCompleted ? "confirmed" : checkpointStatus;
+          const status = isBlocked ? "locked" : isLocked ? "locked" : isCompleted ? "confirmed" : checkpointStatus;
           const StepIcon = step.icon;
 
           return (
@@ -99,6 +105,7 @@ export function WorkflowStepProgress({
               type="button"
               variant="outline"
               disabled={isDisabled}
+              title={stepTitleById?.[stepKey] || step.description || step.label}
               onClick={() => onStepClick?.(step.id)}
               className={cn(
                 "h-auto min-w-[148px] justify-start gap-2 rounded-lg border px-3 py-2 text-left",
@@ -106,6 +113,8 @@ export function WorkflowStepProgress({
                 isActive && "border-primary bg-primary/8 text-primary shadow-sm",
                 isCompleted && !isActive && "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50",
                 isLocked && "border-emerald-300 bg-emerald-50 text-emerald-700",
+                isBlocked && "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-50",
+                isBlocked && isActive && "border-amber-300 bg-amber-50 text-amber-800",
                 checkpointStatus === "failed" && "border-red-200 bg-red-50 text-red-700",
               )}
             >

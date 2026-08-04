@@ -14,8 +14,6 @@ import {
   BarChart3,
   Brain,
   Check,
-  CheckCircle2,
-  ChevronRight,
   Edit3,
   Loader2,
   Lock,
@@ -33,6 +31,8 @@ import {
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
+import { WorkflowStepProgress } from "@/components/workflow/WorkflowStepProgress";
+import { DEV_ANALYSIS_WORKFLOW_STEPS } from "@/components/workflow/workflowDefinitions";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
@@ -184,6 +184,34 @@ export default function DevAnalysisFlow() {
   const currentIdx = STAGES.findIndex(s => s.key === activeStage);
   const canGoNext = currentIdx < STAGES.length - 1;
   const canGoPrev = currentIdx > 0;
+  const analysisCompletedStepIds = useMemo(() => {
+    return STAGES
+      .filter((stage) => ["completed", "generated", "editing", "confirmed"].includes(stageMap[stage.key]?.status))
+      .map((stage) => stage.key);
+  }, [stageMap]);
+  const analysisLockedStepIds = useMemo(() => {
+    return STAGES.filter((stage) => stageMap[stage.key]?.status === "confirmed").map((stage) => stage.key);
+  }, [stageMap]);
+  const analysisBlockedStepIds = useMemo(() => {
+    return STAGES
+      .filter((stage) => {
+        const status = stageMap[stage.key]?.status || "pending";
+        const hasResult = status === "completed" || status === "generated" || status === "editing" || status === "confirmed";
+        const stageGating = gating?.[stage.key];
+        const isGated = stageGating && !stageGating.canRun && !hasResult;
+        return Boolean(isGated);
+      })
+      .map((stage) => stage.key);
+  }, [gating, stageMap]);
+  const analysisStepTitleById = useMemo(() => {
+    return Object.fromEntries(
+      STAGES.map((stage) => {
+        const stageGating = gating?.[stage.key];
+        const reason = stageGating && !stageGating.canRun ? stageGating.reason || "前置条件未满足" : stage.desc;
+        return [stage.key, reason];
+      }),
+    );
+  }, [gating]);
 
   if (projLoading || stagesLoading) {
     return (
@@ -231,50 +259,16 @@ export default function DevAnalysisFlow() {
       {/* Stage Progress Bar */}
       <Card>
         <CardContent className="p-3">
-          <div className="flex items-center gap-1">
-            {STAGES.map((stage, idx) => {
-              const stageData = stageMap[stage.key];
-              const status = stageData?.status || "pending";
-              const isActive = activeStage === stage.key;
-              const isConfirmed = status === "confirmed";
-              const isCompleted = status === "completed" || status === "generated";
-              const isRunning = status === "running" || status === "generating";
-              const stageGating = gating?.[stage.key];
-              const isGated = stageGating && !stageGating.canRun && status === "pending";
-              const Icon = stage.icon;
-
-              return (
-                <div key={stage.key} className="flex items-center flex-1">
-                  <button
-                    onClick={() => setActiveStage(stage.key)}
-                    title={isGated ? stageGating?.reason || "前置条件未满足" : stage.desc}
-                    className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all w-full
-                      ${isActive ? "bg-primary text-primary-foreground shadow-sm" : ""}
-                      ${!isActive && isConfirmed ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400" : ""}
-                      ${!isActive && isCompleted ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400" : ""}
-                      ${!isActive && isRunning ? "bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400" : ""}
-                      ${!isActive && isGated ? "text-muted-foreground/50 opacity-60" : ""}
-                      ${!isActive && !isConfirmed && !isCompleted && !isRunning && !isGated ? "text-muted-foreground hover:bg-muted/50" : ""}
-                    `}
-                  >
-                    {isConfirmed ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-                    ) : isRunning ? (
-                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
-                    ) : isGated ? (
-                      <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
-                    ) : (
-                      <Icon className="h-3.5 w-3.5 shrink-0" />
-                    )}
-                    <span className="truncate">{stage.label}</span>
-                  </button>
-                  {idx < STAGES.length - 1 && (
-                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0 mx-0.5" />
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          <WorkflowStepProgress
+            steps={DEV_ANALYSIS_WORKFLOW_STEPS}
+            activeStepId={activeStage}
+            completedStepIds={analysisCompletedStepIds}
+            lockedStepIds={analysisLockedStepIds}
+            blockedStepIds={analysisBlockedStepIds}
+            stepTitleById={analysisStepTitleById}
+            onStepClick={(stepId) => setActiveStage(stepId as StageKey)}
+            compact
+          />
         </CardContent>
       </Card>
 
