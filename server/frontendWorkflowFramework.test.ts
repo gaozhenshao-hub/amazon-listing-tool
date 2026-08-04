@@ -24,10 +24,24 @@ describe("frontend workflow framework", () => {
     }
   });
 
-  it("wires image, ads, and video pages to the common workflow components", () => {
+  it("wires listing canvas, image, ads, and video pages to the common workflow components", () => {
+    const canvas = read("client/src/pages/WorkflowCanvasPage.tsx");
+    expect(canvas).toContain("listing.full.workflow");
+    expect(canvas).toContain("useAgentWorkflowRun");
+    expect(canvas).toContain("WorkflowCheckpointControls");
+    expect(canvas).toContain("WorkflowArtifactVersionPicker");
+    expect(canvas).toContain("WorkflowStepProgress");
     expect(read("client/src/pages/ImageWorkflowPage.tsx")).toContain("WorkflowShell");
     expect(read("client/src/pages/AdStructurePage.tsx")).toContain("WorkflowStepProgress");
     expect(read("client/src/pages/VideoScriptPage.tsx")).toContain("WorkflowStepProgress");
+  });
+
+  it("keeps the Listing main flow aligned with the Agent DAG node ids", () => {
+    const definitions = read("client/src/components/workflow/workflowDefinitions.ts");
+    for (const nodeId of ["N0", "N1", "N2", "N3", "N4", "N5", "G1", "G2", "G3", "G4", "G5", "O1", "O2", "O3", "E1", "E2"]) {
+      expect(definitions).toContain(`id: "${nodeId}"`);
+      expect(definitions).toContain(`agentNodeId: "${nodeId}"`);
+    }
   });
 
   it("keeps Agent Run and Artifact operations centralized in the workflow layer", () => {

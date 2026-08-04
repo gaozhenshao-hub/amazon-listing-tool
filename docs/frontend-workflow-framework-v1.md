@@ -26,6 +26,7 @@
 
 | 页面 | 接入方式 | 保留能力 |
 | --- | --- | --- |
+| Listing 工作流画布 | Runtime 条 + `WorkflowStepProgress` + Checkpoint/Artifact 操作面板 | N0-N5、G1-G5、O/E 全部节点、原点击跳转、前置校验、SVG 连线、上传提示、数据流说明 |
 | 智能图片建议 | `WorkflowShell` | 6 步生成、编辑、确认、解锁、导出完整方案、重新开始 |
 | 广告架构 | `WorkflowStepProgress` | 项目选择、AI 生成、编辑架构、CSV/Bulk Sheet 导出、矩阵/预算/否定词等视图 |
 | 视频脚本生成 | `WorkflowStepProgress` | 6 阶段脚本生成、阶段确认、版本管理、回滚、Excel 导出 |
@@ -46,6 +47,14 @@
 - Artifact 版本选择 / 回滚 / Diff
 
 没有 `agentRunId` 时页面继续使用旧业务流程，不影响当前生产功能。
+
+Listing 主画布额外支持：
+
+- 使用 `listing.full.workflow` 选择或启动 Agent Run。
+- 画布节点保留原有点击跳转，并增加 `AI OS` 小按钮用于选中对应 Checkpoint。
+- 选中节点后可以在画布页执行、重跑、编辑草稿、确认锁定、跳过。
+- 选中节点后可以进入 Artifact 版本选择、回滚、Diff、作为下游输入。
+- N0-N5、G1-G5、O1/O2/O3/E1/E2 与 Agent DAG 的节点 ID 保持一致。
 
 ## Listing 2.0 下线范围
 
@@ -68,4 +77,4 @@
 1. 图片工作流先把 Step 产物写入统一 `ai_artifacts`。
 2. 广告架构生成接 Agent Run，让 AI 生成结果进入 Artifact，再保存最终广告架构。
 3. 视频脚本各阶段从业务版本表逐步镜像到 Artifact。
-4. 正式 Listing 长流程不要恢复 Listing 2.0 页面，应直接接 `listing.full.workflow` Agent。
+4. Listing 各业务工作台继续保留当前功能，同时逐步把中间产物镜像到 `listing.full.workflow` 的 Artifact。

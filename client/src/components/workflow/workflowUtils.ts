@@ -30,6 +30,8 @@ export function toWorkflowIdSet(ids?: Iterable<WorkflowId>): Set<string> {
 
 export function normalizeCheckpointStatus(status?: string | null): WorkflowCheckpointStatus {
   switch (status) {
+    case "completed":
+      return "confirmed";
     case "ready":
     case "running":
     case "waiting_human":
