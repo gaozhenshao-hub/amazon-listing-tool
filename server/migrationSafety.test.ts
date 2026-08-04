@@ -87,6 +87,72 @@ describe("database migration safety", () => {
     expect(missingDependencies).toEqual([]);
   });
 
+  it("only creates indexes over columns present at that migration point", async () => {
+    const module = await import("../scripts/run-database-migrations.mjs");
+    const tableColumns = new Map<string, Set<string>>();
+    const invalidIndexes: string[] = [];
+
+    for (const migration of module.loadMigrationPlan()) {
+      const operations: Array<{
+        type: "create" | "alter" | "index";
+        tableName: string;
+        index: number;
+        body: string;
+        indexName?: string;
+      }> = [];
+      for (const match of migration.sql.matchAll(
+        /CREATE TABLE(?: IF NOT EXISTS)?\s+`?([A-Za-z0-9_$]+)`?\s*\(([\s\S]*?)\);/gi,
+      )) {
+        operations.push({ type: "create", tableName: match[1], body: match[2], index: match.index ?? 0 });
+      }
+      for (const match of migration.sql.matchAll(
+        /ALTER TABLE\s+`?([A-Za-z0-9_$]+)`?([\s\S]*?);/gi,
+      )) {
+        operations.push({ type: "alter", tableName: match[1], body: match[2], index: match.index ?? 0 });
+      }
+      for (const match of migration.sql.matchAll(
+        /CREATE(?: UNIQUE)? INDEX\s+`?([A-Za-z0-9_$]+)`?\s+ON\s+`?([A-Za-z0-9_$]+)`?\s*\(([^)]*)\)/gi,
+      )) {
+        operations.push({
+          type: "index",
+          indexName: match[1],
+          tableName: match[2],
+          body: match[3],
+          index: match.index ?? 0,
+        });
+      }
+
+      for (const operation of operations.sort((left, right) => left.index - right.index)) {
+        if (operation.type === "create") {
+          tableColumns.set(
+            operation.tableName,
+            new Set([...operation.body.matchAll(/^\s*`([^`]+)`\s+/gm)].map((match) => match[1])),
+          );
+          continue;
+        }
+        const columns = tableColumns.get(operation.tableName);
+        if (!columns) continue;
+        if (operation.type === "alter") {
+          for (const match of operation.body.matchAll(/ADD(?:\s+COLUMN)?\s+`?([A-Za-z0-9_$]+)`?/gi)) columns.add(match[1]);
+          for (const match of operation.body.matchAll(/DROP(?:\s+COLUMN)?(?:\s+IF\s+EXISTS)?\s+`?([A-Za-z0-9_$]+)`?/gi)) {
+            columns.delete(match[1]);
+          }
+          continue;
+        }
+        const indexedColumns = [...operation.body.matchAll(/`([^`]+)`/g)].map((match) => match[1]);
+        for (const columnName of indexedColumns) {
+          if (!columns.has(columnName)) {
+            invalidIndexes.push(
+              `${migration.fileName}: ${operation.indexName} -> ${operation.tableName}.${columnName}`,
+            );
+          }
+        }
+      }
+    }
+
+    expect(invalidIndexes).toEqual([]);
+  });
+
   it("normalizes legacy conditional column drops for MySQL 8 without mutating migration files", async () => {
     const module = await import("../scripts/run-database-migrations.mjs");
     const execute = vi.fn(async (_query: string, values: string[]) => [

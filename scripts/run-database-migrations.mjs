@@ -34,6 +34,7 @@ const supplementalMigrations = [
   "0112_template_observability_qa.sql",
   "0112a_listing_image_support_tables.sql",
   "0112b_ops_ads_base_tables.sql",
+  "0112c_ad_dsp_product_link.sql",
   "0113_database_governance_v1.sql",
   "0114_security_tenant_governance_v1.sql",
   "0115_data_lifecycle_artifacts_v1.sql",
