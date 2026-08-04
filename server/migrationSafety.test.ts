@@ -49,7 +49,19 @@ describe("database migration safety", () => {
     }
   });
 
-  it("never alters a table before the governed plan creates it", async () => {
+  it("creates listing and image support tables before index governance", () => {
+    const sql = fs.readFileSync(repoPath("drizzle/0112a_listing_image_support_tables.sql"), "utf8");
+    for (const tableName of [
+      "buyer_questions",
+      "competitor_image_analyses",
+      "expression_groups",
+      "expression_group_images",
+    ]) {
+      expect(sql).toContain(`CREATE TABLE IF NOT EXISTS \`${tableName}\``);
+    }
+  });
+
+  it("never alters or indexes a table before the governed plan creates it", async () => {
     const module = await import("../scripts/run-database-migrations.mjs");
     const createdTables = new Set<string>();
     const missingDependencies: string[] = [];
@@ -59,7 +71,9 @@ describe("database migration safety", () => {
         ...[...migration.sql.matchAll(/CREATE TABLE(?: IF NOT EXISTS)?\s+`?([A-Za-z0-9_$]+)`?/gi)]
           .map((match) => ({ type: "create", tableName: match[1], index: match.index ?? 0 })),
         ...[...migration.sql.matchAll(/ALTER TABLE\s+`?([A-Za-z0-9_$]+)`?/gi)]
-          .map((match) => ({ type: "alter", tableName: match[1], index: match.index ?? 0 })),
+          .map((match) => ({ type: "reference", tableName: match[1], index: match.index ?? 0 })),
+        ...[...migration.sql.matchAll(/CREATE(?: UNIQUE)? INDEX\s+`?[A-Za-z0-9_$]+`?\s+ON\s+`?([A-Za-z0-9_$]+)`?/gi)]
+          .map((match) => ({ type: "reference", tableName: match[1], index: match.index ?? 0 })),
       ].sort((left, right) => left.index - right.index);
 
       for (const operation of operations) {
