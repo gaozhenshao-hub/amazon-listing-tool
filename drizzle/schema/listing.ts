@@ -2,7 +2,6 @@ export {
   adStructures,
   buyerQuestions,
   keywords,
-  listing2Products,
   listings,
   listingVersions,
   negativeKeywords,

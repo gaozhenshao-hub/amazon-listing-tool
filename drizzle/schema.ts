@@ -4956,20 +4956,6 @@ export const kbTagDefinitions = mysqlTable("kb_tag_definitions", {
 export type KbTagDefinition = typeof kbTagDefinitions.$inferSelect;
 export type InsertKbTagDefinition = typeof kbTagDefinitions.$inferInsert;
 
-// ============ 智能 Listing 生成 2.0 ============
-export const listing2Products = mysqlTable("listing2_products", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
-  asin: varchar("asin", { length: 20 }),
-  title: varchar("title", { length: 500 }).notNull(),
-  status: varchar("status", { length: 50 }).default("active").notNull(), // active | archived
-  currentStep: int("currentStep").default(1).notNull(), // 1-10
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
-export type Listing2Product = typeof listing2Products.$inferSelect;
-export type InsertListing2Product = typeof listing2Products.$inferInsert;
-
 // ─── Step 0: Expression Direction Groups ─────────────────────────────────────
 // Each group represents one "卖点表达方向" (e.g. 场景使用图, 功能对比图).
 // A group holds 1-5 images from DIFFERENT competitors showing the same expression style.

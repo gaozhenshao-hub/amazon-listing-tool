@@ -147,7 +147,6 @@ const modules: ModuleDef[] = [
       { icon: HelpCircle, label: "买家问题库", path: "/listing/buyer-questions" },
       { icon: Image, label: "智能图片建议", path: "/listing/image-workflow" },
       { icon: Video, label: "视频脚本生成", path: "/listing/video-script" },
-      { icon: Layers, label: "智能Listing生成2.0", path: "/listing2" },
     ],
   },
   {
@@ -265,7 +264,6 @@ const modules: ModuleDef[] = [
 // ─── Helpers ───────────────────────────────────────────────────
 function detectActiveModule(location: string): ModuleId {
   if (location === "/") return "home";
-  if (location.startsWith("/listing2")) return "listing";
   if (location.startsWith("/listing") || location.startsWith("/project/")) return "listing";
   if (location.startsWith("/dev")) return "dev";
   if (location.startsWith("/ops")) return "ops";
