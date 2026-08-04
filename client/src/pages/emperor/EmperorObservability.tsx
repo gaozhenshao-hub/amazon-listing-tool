@@ -511,3 +511,4 @@ export default function EmperorObservability() {
     </div>
   );
 }
+

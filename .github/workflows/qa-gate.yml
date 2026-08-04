@@ -1,0 +1,36 @@
+name: QA Gate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit-gate:
+    name: Typecheck and unit gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm qa:gate
+
+  real-db-gate:
+    name: Real DB regression gate
+    runs-on: ubuntu-latest
+    needs: unit-gate
+    env:
+      DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - if: ${{ env.DATABASE_URL != '' }}
+        run: pnpm test:real-db
+      - if: ${{ env.DATABASE_URL == '' }}
+        run: echo "CI_DATABASE_URL not configured; skipping real DB tests."

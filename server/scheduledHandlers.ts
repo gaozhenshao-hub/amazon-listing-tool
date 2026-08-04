@@ -185,3 +185,55 @@ export async function dataCleanupHandler(req: Request, res: Response) {
     });
   }
 }
+
+/**
+ * AI Worker Tick Handler
+ *
+ * Triggered by Heartbeat every minute to drain the AI Job queue and recover
+ * timed-out Agent nodes. This replaces the need for a separate always-on
+ * Worker process on Autoscale (serverless) hosting.
+ *
+ * When AI_JOB_IN_PROCESS=false, the Web process does NOT run the in-process
+ * poller, so this Heartbeat endpoint becomes the sole driver of job execution.
+ *
+ * Triggered: Every minute (0 * * * * *)
+ * Path: POST /api/scheduled/ai-worker-tick
+ */
+export async function aiWorkerTickHandler(req: Request, res: Response) {
+  const taskUid = req.headers["x-manus-cron-task-uid"] as string | undefined;
+  const startedAt = Date.now();
+  try {
+    const { isAiJobSchedulingEnabled, drainAiJobQueue } = await import("./services/aiJobRunner");
+    const { recoverTimedOutAgentNodes } = await import("./services/emperorAgentRunner");
+
+    if (!isAiJobSchedulingEnabled()) {
+      return res.json({ ok: true, skipped: true, reason: "scheduling_disabled" });
+    }
+
+    const [jobs, nodes] = await Promise.all([
+      drainAiJobQueue({ limit: 10 }),
+      recoverTimedOutAgentNodes({ limit: 20 }),
+    ]);
+
+    const elapsed = Date.now() - startedAt;
+    console.log(
+      `[AIWorkerTick] task_uid=${taskUid} elapsed=${elapsed}ms ` +
+      `jobs.scanned=${jobs.scanned} jobs.scheduled=${jobs.scheduled} ` +
+      `nodes.scanned=${nodes.scanned} nodes.retried=${nodes.retried} nodes.failed=${nodes.failed}`
+    );
+
+    return res.json({
+      ok: true,
+      elapsed,
+      jobs: { scanned: jobs.scanned, scheduled: jobs.scheduled, skipped: jobs.skippedWithoutHandler },
+      nodes: { scanned: nodes.scanned, retried: nodes.retried, failed: nodes.failed },
+    });
+  } catch (error: any) {
+    console.error(`[AIWorkerTick] Error:`, error);
+    return res.status(500).json({
+      error: error.message || "Unknown error",
+      context: { url: req.url, taskUid },
+      timestamp: new Date().toISOString(),
+    });
+  }
+}

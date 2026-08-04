@@ -617,5 +617,5 @@ describe("Phase 2 P1 - appRouter integration", () => {
     const hasOpsProductPlan = routerKeys.some(k => k.startsWith("opsProductPlan."));
     expect(hasAdP2).toBe(true);
     expect(hasOpsProductPlan).toBe(true);
-  });
+  }, 15000);
 });

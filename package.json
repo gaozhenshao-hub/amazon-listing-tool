@@ -17,7 +17,7 @@
     "test": "vitest run",
     "test:unit": "vitest run",
     "test:real-db": "RUN_REAL_DB_TESTS=1 vitest run --passWithNoTests \"server/**/*.real.test.ts\"",
-    "qa:gate": "pnpm check && vitest run server/emperorObservability.test.ts server/databaseGovernance.test.ts server/dataLifecycleArtifacts.test.ts server/runtimeBootstrap.test.ts",
+    "qa:gate": "pnpm check && pnpm test:unit",
     "db:push": "drizzle-kit generate && drizzle-kit migrate"
   },
   "dependencies": {

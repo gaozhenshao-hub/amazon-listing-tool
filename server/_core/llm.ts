@@ -67,6 +67,11 @@ export type InvokeParams = {
   responseFormat?: ResponseFormat;
   response_format?: ResponseFormat;
   /**
+   * AbortSignal to cancel the in-flight LLM request. Pass an AbortController's
+   * signal to propagate cancellation from Job/Agent layer all the way to fetch.
+   */
+  signal?: AbortSignal;
+  /**
    * Internal escape hatch used by the Emperor Skill runner. Regular business
    * code should not set this; it prevents Skill -> invokeLLM recursion.
    */
@@ -362,6 +367,7 @@ export async function invokeRawLLM(params: InvokeParams): Promise<InvokeResult> 
       authorization: `Bearer ${ENV.forgeApiKey}`,
     },
     body: JSON.stringify(payload),
+    signal: params.signal,
   });
 
   if (!response.ok) {

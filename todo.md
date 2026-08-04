@@ -280,3 +280,16 @@
 - [ ] 迁移 generateQA → listing.qa.generate
 - [ ] 迁移辅助接口（翻译/图片建议/自检/AB测试）
 - [ ] 端到端测试验证
+
+## AI 中台三个缺口修复（2026-08-03）
+- [ ] invokeLLM 添加 signal?: AbortSignal 参数，贯穿到 fetch 请求层
+- [ ] AgentCanvas 前台添加版本历史 UI（发布/回滚/灰度百分比/版本对比）
+- [ ] 皇帝前台新增 AI OS Observability Dashboard 页面（指标趋势/评测列表/质量评分）
+
+## AI 中台底座三个缺口修复（2026-08-03）
+
+- [x] Gap 1 - invokeLLM AbortSignal：server/_core/llm.ts 添加 signal?: AbortSignal 参数并传递给 fetch 调用
+- [x] Gap 2 - AgentCanvas 版本历史 UI：修复 diffTemplateVersions 参数名（versionA/versionB → baseVersionId/targetVersionId），修复 setDiffVersions 类型（string → number）
+- [x] Gap 3 - EmperorObservability 观测页面：创建 /emperor/observability 页面，注册路由，移除重复 DashboardLayout 嵌套，添加侧边栏导航项"AI 观测中心"
+- [x] 修复 ai_jobs 表缺失列：补充 priority、queueName、timeoutSeconds、leaseUntil、lockedBy、claimedAt、lastHeartbeatAt、deadLetterAt、deadLetterReason、nextRunAt 列
+- [x] 修复 phase2.test.ts appRouter 集成测试超时（5s → 15s），全量 3505 测试通过

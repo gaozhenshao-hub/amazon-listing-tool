@@ -217,11 +217,11 @@ function Router() {
         <Route path="/emperor/mcp">{() => <PermissionGuard><EmperorMCP /></PermissionGuard>}</Route>
         <Route path="/emperor/agents">{() => <PermissionGuard><EmperorAgents /></PermissionGuard>}</Route>
         <Route path="/emperor/usage">{() => <PermissionGuard><EmperorUsage /></PermissionGuard>}</Route>
-        <Route path="/emperor/observability">{() => <PermissionGuard><EmperorObservability /></PermissionGuard>}</Route>
         <Route path="/emperor/diagnostics">{() => <PermissionGuard><EmperorDiagnostics /></PermissionGuard>}</Route>
         <Route path="/emperor/settings">{() => <PermissionGuard><EmperorSettings /></PermissionGuard>}</Route>
         <Route path="/emperor/scheduled">{() => <PermissionGuard><EmperorScheduled /></PermissionGuard>}</Route>
         <Route path="/emperor/knowledge">{() => <PermissionGuard><EmperorKnowledge /></PermissionGuard>}</Route>
+        <Route path="/emperor/observability">{() => <PermissionGuard><EmperorObservability /></PermissionGuard>}</Route>
 
         {/* ─── System Settings ─── */}
         <Route path="/settings" component={SystemSettings} />
