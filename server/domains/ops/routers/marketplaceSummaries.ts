@@ -1,3 +1,5 @@
+import { currentOpsWorkspaceId } from "../workspaceContext";
+import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
 
@@ -73,11 +75,11 @@ export const opsMarketplaceSummaryProcedures = {
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       const [product] = await db!.select().from(productProfiles)
-        .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id))));
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
       // Get product variants (child ASINs and SKUs) for filtering
       const variants = await db!.select().from(productVariants)
-        .where(eq(productVariants.productId, input.productId));
+        .where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.productId, input.productId)));
       const childAsins = variants.map(v => v.childAsin).filter(Boolean);
       const skus = variants.map(v => v.sku).filter(Boolean) as string[];
       const parentAsin = product.parentAsin;
@@ -242,11 +244,11 @@ export const opsMarketplaceSummaryProcedures = {
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       const [product] = await db!.select().from(productProfiles)
-        .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id))));
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
 
       const variants = await db!.select().from(productVariants)
-        .where(eq(productVariants.productId, input.productId));
+        .where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.productId, input.productId)));
       // Get seller list (with cache) to find matching sid
       const { matchedSid } = await findMatchedSid(null as any, product);
       console.log(`[InventorySummary] Product ${product.parentAsin}, matchedSid=${matchedSid}`);
@@ -359,14 +361,14 @@ export const opsMarketplaceSummaryProcedures = {
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       const [product] = await db!.select().from(productProfiles)
-        .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id))));
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
       const { matchedSid } = await findMatchedSid(null as any, product);
       console.log(`[AdsSummary] Product ${product.parentAsin}, matchedSid=${matchedSid}`);
 
       // Get product variants for ASIN-based ad filtering
       const variants = await db!.select().from(productVariants)
-        .where(eq(productVariants.productId, input.productId));
+        .where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.productId, input.productId)));
       const childAsins = variants.map(v => v.childAsin).filter(Boolean);
       const allAsins = [product.parentAsin, ...childAsins];
       console.log(`[AdsSummary] allAsins (parent+children): ${allAsins.join(', ')}`);
@@ -594,21 +596,21 @@ export const opsMarketplaceSummaryProcedures = {
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       const [product] = await db!.select().from(productProfiles)
-        .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id))));
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
 
       // Get competitor monitors linked to this product's ASIN
       const monitors = await db!.select().from(competitorMonitors)
-        .where(and(
+        .where(opsWorkspaceCondition(competitorMonitors, currentOpsWorkspaceId(), and(
           eq(competitorMonitors.userId, ctx.user.id),
           eq(competitorMonitors.ownAsin, product.parentAsin)
-        ))
+        )))
         .orderBy(desc(competitorMonitors.createdAt));
 
       // Get latest snapshots for each monitor
       const enriched = await Promise.all(monitors.map(async (m) => {
         const snapshots = await db!.select().from(competitorSnapshots)
-          .where(eq(competitorSnapshots.monitorId, m.id))
+          .where(opsWorkspaceCondition(competitorSnapshots, currentOpsWorkspaceId(), eq(competitorSnapshots.monitorId, m.id)))
           .orderBy(desc(competitorSnapshots.snapshotDate))
           .limit(7);
         return { ...m, recentSnapshots: snapshots.reverse() };
@@ -630,7 +632,7 @@ export const opsMarketplaceSummaryProcedures = {
       const whereClause = input.marketplace
         ? and(eq(productProfiles.userId, ctx.user.id), eq(productProfiles.marketplace, input.marketplace))
         : eq(productProfiles.userId, ctx.user.id);
-      const products = await db!.select().from(productProfiles).where(whereClause);
+      const products = await db!.select().from(productProfiles).where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), whereClause));
 
       const totalProducts = products.length;
       const activeProducts = products.filter(p => p.status === 'active').length;
@@ -767,7 +769,7 @@ export const opsMarketplaceSummaryProcedures = {
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       const [product] = await db!.select().from(productProfiles)
-        .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id))));
       if (!product) throw new TRPCError({ code: 'NOT_FOUND', message: '产品不存在' });
 
       const now = new Date();
@@ -792,7 +794,7 @@ export const opsMarketplaceSummaryProcedures = {
         try {
           // Get child ASINs for searchValue
           const opVariants = await (await getDb())!.select().from(productVariants)
-            .where(eq(productVariants.productId, input.productId));
+            .where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.productId, input.productId)));
           const opChildAsins = opVariants.map(v => v.childAsin).filter(Boolean);
           const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
           const rawData = res.data || [];
@@ -819,7 +821,7 @@ export const opsMarketplaceSummaryProcedures = {
               const allItems = Array.isArray(rawMsku) ? rawMsku : (rawMsku as any).records || (rawMsku as any).list || [];
               // Get variants for filtering
               const variants = await (await getDb())!.select().from(productVariants)
-                .where(eq(productVariants.productId, input.productId));
+                .where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.productId, input.productId)));
               const childAsins = variants.map(v => v.childAsin).filter(Boolean);
               const skuList = variants.map(v => v.sku).filter(Boolean) as string[];
               list = allItems.filter((item: any) => {

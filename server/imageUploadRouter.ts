@@ -7,7 +7,7 @@ import { Router, Request, Response } from "express";
 import multer from "multer";
 import { parse as parseCookieHeader } from "cookie";
 import { storagePut } from "./storage";
-import { getUserById, getProjectById, getProjectByIdAdmin, insertCompetitorImage, countExpressionGroupImages } from "./db";
+import { getUserById, getProjectById, getProjectByIdAdmin, insertCompetitorImage, countExpressionGroupImages } from "./repositories";
 import { sdk } from "./_core/sdk";
 
 // Store file in memory (max 20MB per file)

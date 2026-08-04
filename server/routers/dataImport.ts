@@ -1,11 +1,14 @@
+import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
+import { opsWorkspaceCondition } from "../repositories/ops";
 /**
  * Data Import Center Router
  * Handles Excel file upload, parsing, preview, and import for
  * Lingxing (领星) and Saihu (赛狐) product data
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/ops/workspaceProcedure";
+import { getDb } from "../repositories/dbClient";
 import { dataImports, lingxingProductWeekly, saihuProductWeekly, operatorNameMappings, users, productionConfig } from "../../drizzle/schema";
 import { MANAGER_ROLES } from "../../shared/const";
 import { eq, desc, and, sql, or } from "drizzle-orm";
@@ -17,7 +20,12 @@ import { storagePut } from "../storage";
  * Non-admin/manager users need to query data imported by admins, not their own userId.
  * Returns the userId that should be used for querying imported data tables.
  */
-export async function resolveDataUserId(db: any, currentUser: { id: number; role: string; name: string | null }): Promise<number> {
+export async function resolveDataUserId(
+  db: any,
+  currentUser: { id: number; role: string; name: string | null; defaultWorkspaceId?: number | null },
+): Promise<number> {
+  const workspaceId = currentUser.defaultWorkspaceId;
+  if (!workspaceId) return currentUser.id;
   const isManagerOrAbove = (MANAGER_ROLES as readonly string[]).includes(currentUser.role);
   if (isManagerOrAbove) {
     return currentUser.id;
@@ -26,7 +34,7 @@ export async function resolveDataUserId(db: any, currentUser: { id: number; role
   // First check if the current user has their own imported data
   const [ownData] = await db.select({ count: sql<number>`count(*)` })
     .from(dataImports)
-    .where(eq(dataImports.userId, currentUser.id));
+    .where(and(eq(dataImports.userId, currentUser.id), eq(dataImports.workspaceId, workspaceId)));
   if (ownData?.count > 0) {
     return currentUser.id;
   }
@@ -39,13 +47,14 @@ export async function resolveDataUserId(db: any, currentUser: { id: number; role
         eq(users.role, "admin"),
         eq(users.role, "ops_manager")
       ),
-      eq(users.status, "active")
+      eq(users.status, "active"),
+      eq(users.defaultWorkspaceId, workspaceId)
     ));
   // Find the admin with the most recent import
   for (const admin of adminUsers) {
     const [adminData] = await db.select({ count: sql<number>`count(*)` })
       .from(dataImports)
-      .where(eq(dataImports.userId, admin.id));
+      .where(and(eq(dataImports.userId, admin.id), eq(dataImports.workspaceId, workspaceId)));
     if (adminData?.count > 0) {
       return admin.id;
     }
@@ -102,10 +111,10 @@ async function applyOperatorMappings(
 
   // Load all confirmed mappings for this user
   const allMappings = await db.select().from(operatorNameMappings)
-    .where(and(
+    .where(opsWorkspaceCondition(operatorNameMappings, currentOpsWorkspaceId(), and(
       eq(operatorNameMappings.userId, userId),
       eq(operatorNameMappings.isConfirmed, 1),
-    ));
+    )));
 
   // Build a lookup map: externalName -> systemUserName
   const mappingLookup = new Map<string, string>();
@@ -187,7 +196,7 @@ export const dataImportRouter = router({
       const db = await getDb();
       // Get import record
       const [importRecord] = await db!.select().from(dataImports)
-        .where(and(eq(dataImports.id, input.importId), eq(dataImports.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(dataImports, currentOpsWorkspaceId(), and(eq(dataImports.id, input.importId), eq(dataImports.userId, ctx.user.id))));
 
       if (!importRecord) throw new Error("导入记录不存在");
       if (importRecord.status === "completed") throw new Error("该文件已导入完成");
@@ -195,7 +204,7 @@ export const dataImportRouter = router({
       // Update status to importing
       await db!.update(dataImports)
         .set({ status: "importing" })
-        .where(eq(dataImports.id, input.importId));
+        .where(opsWorkspaceCondition(dataImports, currentOpsWorkspaceId(), eq(dataImports.id, input.importId)));
 
       try {
         // Re-parse the file from S3
@@ -210,19 +219,19 @@ export const dataImportRouter = router({
         // Delete existing data for same user + source + date range (upsert behavior)
         if (result.sourceType === "lingxing") {
           await db!.delete(lingxingProductWeekly).where(
-            and(
+            opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), and(
               eq(lingxingProductWeekly.userId, ctx.user.id),
               eq(lingxingProductWeekly.weekStartDate, result.dateRange.startDate),
               eq(lingxingProductWeekly.weekEndDate, result.dateRange.endDate),
-            )
+            ))
           );
         } else {
           await db!.delete(saihuProductWeekly).where(
-            and(
+            opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), and(
               eq(saihuProductWeekly.userId, ctx.user.id),
               eq(saihuProductWeekly.weekStartDate, result.dateRange.startDate),
               eq(saihuProductWeekly.weekEndDate, result.dateRange.endDate),
-            )
+            ))
           );
         }
 
@@ -261,7 +270,7 @@ export const dataImportRouter = router({
             importedRows,
             skippedRows,
           })
-          .where(eq(dataImports.id, input.importId));
+          .where(opsWorkspaceCondition(dataImports, currentOpsWorkspaceId(), eq(dataImports.id, input.importId)));
 
         return {
           success: true,
@@ -272,7 +281,7 @@ export const dataImportRouter = router({
       } catch (err: any) {
         await db!.update(dataImports)
           .set({ status: "failed", errorMessage: err.message })
-          .where(eq(dataImports.id, input.importId));
+          .where(opsWorkspaceCondition(dataImports, currentOpsWorkspaceId(), eq(dataImports.id, input.importId)));
         throw new Error(`导入失败: ${err.message}`);
       }
     }),
@@ -293,12 +302,12 @@ export const dataImportRouter = router({
 
       const [records, countResult] = await Promise.all([
         db!.select().from(dataImports)
-          .where(and(...conditions))
+          .where(opsWorkspaceCondition(dataImports, currentOpsWorkspaceId(), and(...conditions)))
           .orderBy(desc(dataImports.createdAt))
           .limit(input.pageSize)
           .offset((input.page - 1) * input.pageSize),
         db!.select({ count: sql<number>`count(*)` }).from(dataImports)
-          .where(and(...conditions)),
+          .where(opsWorkspaceCondition(dataImports, currentOpsWorkspaceId(), and(...conditions))),
       ]);
 
       return {
@@ -315,19 +324,19 @@ export const dataImportRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       const [record] = await db!.select().from(dataImports)
-        .where(and(eq(dataImports.id, input.importId), eq(dataImports.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(dataImports, currentOpsWorkspaceId(), and(eq(dataImports.id, input.importId), eq(dataImports.userId, ctx.user.id))));
 
       if (!record) throw new Error("记录不存在");
 
       // Delete associated data
       if (record.sourceType === "lingxing") {
-        await db!.delete(lingxingProductWeekly).where(eq(lingxingProductWeekly.importId, input.importId));
+        await db!.delete(lingxingProductWeekly).where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), eq(lingxingProductWeekly.importId, input.importId)));
       } else {
-        await db!.delete(saihuProductWeekly).where(eq(saihuProductWeekly.importId, input.importId));
+        await db!.delete(saihuProductWeekly).where(opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), eq(saihuProductWeekly.importId, input.importId)));
       }
 
       // Delete import record
-      await db!.delete(dataImports).where(eq(dataImports.id, input.importId));
+      await db!.delete(dataImports).where(opsWorkspaceCondition(dataImports, currentOpsWorkspaceId(), eq(dataImports.id, input.importId)));
 
       return { success: true };
     }),
@@ -349,7 +358,7 @@ export const dataImportRouter = router({
           weekEndDate: lingxingProductWeekly.weekEndDate,
         })
           .from(lingxingProductWeekly)
-          .where(eq(lingxingProductWeekly.userId, effectiveUserId))
+          .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), eq(lingxingProductWeekly.userId, effectiveUserId)))
           .orderBy(desc(lingxingProductWeekly.weekStartDate))
           .limit(input.weeks);
 
@@ -357,10 +366,10 @@ export const dataImportRouter = router({
 
         // Get all data for these weeks
         const data = await db!.select().from(lingxingProductWeekly)
-          .where(and(
+          .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), and(
             eq(lingxingProductWeekly.userId, effectiveUserId),
             sql`${lingxingProductWeekly.weekStartDate} IN (${sql.join(weekRanges.map((w: { weekStartDate: string }) => sql`${w.weekStartDate}`), sql`,`)})`
-          ))
+          )))
           .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
         return { weeks: weekRanges, data };
@@ -370,17 +379,17 @@ export const dataImportRouter = router({
           weekEndDate: saihuProductWeekly.weekEndDate,
         })
           .from(saihuProductWeekly)
-          .where(eq(saihuProductWeekly.userId, effectiveUserId))
+          .where(opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), eq(saihuProductWeekly.userId, effectiveUserId)))
           .orderBy(desc(saihuProductWeekly.weekStartDate))
           .limit(input.weeks);
 
         if (weekRanges.length === 0) return { weeks: [], data: [] };
 
         const data = await db!.select().from(saihuProductWeekly)
-          .where(and(
+          .where(opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), and(
             eq(saihuProductWeekly.userId, effectiveUserId),
             sql`${saihuProductWeekly.weekStartDate} IN (${sql.join(weekRanges.map((w: { weekStartDate: string }) => sql`${w.weekStartDate}`), sql`,`)})`
-          ))
+          )))
           .orderBy(desc(saihuProductWeekly.weekStartDate));
 
         return { weeks: weekRanges, data };
@@ -416,22 +425,22 @@ export const dataImportRouter = router({
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
       const [lingxingCount] = await db!.select({ count: sql<number>`count(DISTINCT week_start_date)` })
         .from(lingxingProductWeekly)
-        .where(eq(lingxingProductWeekly.userId, effectiveUserId));
+        .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), eq(lingxingProductWeekly.userId, effectiveUserId)));
 
       const [saihuCount] = await db!.select({ count: sql<number>`count(DISTINCT week_start_date)` })
         .from(saihuProductWeekly)
-        .where(eq(saihuProductWeekly.userId, effectiveUserId));
+        .where(opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), eq(saihuProductWeekly.userId, effectiveUserId)));
 
       const [lingxingProducts] = await db!.select({ count: sql<number>`count(DISTINCT parent_asin)` })
         .from(lingxingProductWeekly)
-        .where(eq(lingxingProductWeekly.userId, effectiveUserId));
+        .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), eq(lingxingProductWeekly.userId, effectiveUserId)));
 
       const [saihuProducts] = await db!.select({ count: sql<number>`count(DISTINCT parent_asin)` })
         .from(saihuProductWeekly)
-        .where(eq(saihuProductWeekly.userId, effectiveUserId));
+        .where(opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), eq(saihuProductWeekly.userId, effectiveUserId)));
 
       const [latestImport] = await db!.select().from(dataImports)
-        .where(and(eq(dataImports.userId, effectiveUserId), eq(dataImports.status, "completed")))
+        .where(opsWorkspaceCondition(dataImports, currentOpsWorkspaceId(), and(eq(dataImports.userId, effectiveUserId), eq(dataImports.status, "completed"))))
         .orderBy(desc(dataImports.createdAt))
         .limit(1);
 
@@ -482,10 +491,10 @@ export const dataImportRouter = router({
       const db = await getDb();
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
       const configs = await db!.select().from(productionConfig)
-        .where(and(
+        .where(opsWorkspaceCondition(productionConfig, currentOpsWorkspaceId(), and(
           eq(productionConfig.userId, effectiveUserId),
           eq(productionConfig.marketplace, input.marketplace)
-        ));
+        )));
       // Return as a map: parentAsin -> config
       const map: Record<string, { productionTimeDays: number; shippingTimeDays: number; notes: string | null }> = {};
       for (const c of configs) {
@@ -511,11 +520,11 @@ export const dataImportRouter = router({
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
       // Upsert
       const existing = await db!.select().from(productionConfig)
-        .where(and(
+        .where(opsWorkspaceCondition(productionConfig, currentOpsWorkspaceId(), and(
           eq(productionConfig.userId, effectiveUserId),
           eq(productionConfig.parentAsin, input.parentAsin),
           eq(productionConfig.marketplace, input.marketplace)
-        ))
+        )))
         .limit(1);
       if (existing.length > 0) {
         await db!.update(productionConfig)
@@ -524,7 +533,7 @@ export const dataImportRouter = router({
             shippingTimeDays: input.shippingTimeDays,
             notes: input.notes || null,
           })
-          .where(eq(productionConfig.id, existing[0].id));
+          .where(opsWorkspaceCondition(productionConfig, currentOpsWorkspaceId(), eq(productionConfig.id, existing[0].id)));
       } else {
         await db!.insert(productionConfig).values({
           userId: effectiveUserId,
@@ -635,7 +644,7 @@ async function buildOverviewFromLingxing(db: any, userId: number, weeksToShow: n
     weekEndDate: lingxingProductWeekly.weekEndDate,
   })
     .from(lingxingProductWeekly)
-    .where(eq(lingxingProductWeekly.userId, userId))
+    .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), eq(lingxingProductWeekly.userId, userId)))
     .orderBy(desc(lingxingProductWeekly.weekStartDate))
     .limit(weeksToShow + 1); // +1 for WoW comparison
 
@@ -643,10 +652,10 @@ async function buildOverviewFromLingxing(db: any, userId: number, weeksToShow: n
 
   // Get all data for these weeks
   const allData = await db.select().from(lingxingProductWeekly)
-    .where(and(
+    .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), and(
       eq(lingxingProductWeekly.userId, userId),
       sql`${lingxingProductWeekly.weekStartDate} IN (${sql.join(weekRanges.map((w: any) => sql`${w.weekStartDate}`), sql`,`)})`
-    ))
+    )))
     .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
   // Filter by marketplace (country field)
@@ -803,7 +812,7 @@ async function buildOverviewFromSaihu(db: any, userId: number, weeksToShow: numb
     weekEndDate: saihuProductWeekly.weekEndDate,
   })
     .from(saihuProductWeekly)
-    .where(eq(saihuProductWeekly.userId, userId))
+    .where(opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), eq(saihuProductWeekly.userId, userId)))
     .orderBy(desc(saihuProductWeekly.weekStartDate))
     .limit(weeksToShow + 1);
 
@@ -811,10 +820,10 @@ async function buildOverviewFromSaihu(db: any, userId: number, weeksToShow: numb
 
   // Get all data for these weeks
   const allData = await db.select().from(saihuProductWeekly)
-    .where(and(
+    .where(opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), and(
       eq(saihuProductWeekly.userId, userId),
       sql`${saihuProductWeekly.weekStartDate} IN (${sql.join(weekRanges.map((w: any) => sql`${w.weekStartDate}`), sql`,`)})`
-    ))
+    )))
     .orderBy(desc(saihuProductWeekly.weekStartDate));
 
   // Filter by marketplace (site field)
@@ -1011,10 +1020,10 @@ function calcChange(current: number, previous: number): { value: number; pct: nu
 async function buildProductDetailFromLingxing(db: any, userId: number, parentAsin: string, marketplace: string) {
   // Get all data for this parentAsin
   const allData = await db.select().from(lingxingProductWeekly)
-    .where(and(
+    .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), and(
       eq(lingxingProductWeekly.userId, userId),
       eq(lingxingProductWeekly.parentAsin, parentAsin),
-    ))
+    )))
     .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
   // Filter by marketplace if specified
@@ -1146,10 +1155,10 @@ async function buildProductDetailFromLingxing(db: any, userId: number, parentAsi
 async function buildProductDetailFromSaihu(db: any, userId: number, parentAsin: string, marketplace: string) {
   // Get all data for this parentAsin
   const allData = await db.select().from(saihuProductWeekly)
-    .where(and(
+    .where(opsWorkspaceCondition(saihuProductWeekly, currentOpsWorkspaceId(), and(
       eq(saihuProductWeekly.userId, userId),
       eq(saihuProductWeekly.parentAsin, parentAsin),
-    ))
+    )))
     .orderBy(desc(saihuProductWeekly.weekStartDate));
 
   // Filter by marketplace

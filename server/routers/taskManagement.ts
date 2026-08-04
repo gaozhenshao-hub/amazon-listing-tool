@@ -1,7 +1,10 @@
+import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
+import { opsWorkspaceCondition } from "../repositories/ops";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/ops/workspaceProcedure";
+import { getDb } from "../repositories/dbClient";
 import { teamTasks, meetingRecords, users, productProfiles } from "../../drizzle/schema";
 import { eq, desc, asc, and, inArray, like, or, sql, isNull } from "drizzle-orm";
 import { invokeLLM } from "../_core/llm";
@@ -87,7 +90,7 @@ export const taskManagementRouter = router({
         productMarketplace: productProfiles.marketplace,
       }).from(teamTasks)
         .leftJoin(productProfiles, eq(teamTasks.productProfileId, productProfiles.id))
-        .where(where)
+        .where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), where))
         .orderBy(desc(teamTasks.createdAt))
         .limit(input.limit)
         .offset(input.offset);
@@ -95,7 +98,7 @@ export const taskManagementRouter = router({
       // Get total count
       const [countResult] = await db.select({ count: sql<number>`count(*)` })
         .from(teamTasks)
-        .where(where);
+        .where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), where));
 
       return {
         tasks,
@@ -113,7 +116,7 @@ export const taskManagementRouter = router({
 
       const result = await db.selectDistinct({ assigneeName: teamTasks.assigneeName })
         .from(teamTasks)
-        .where(sql`${teamTasks.assigneeName} IS NOT NULL AND ${teamTasks.assigneeName} != ''`);
+        .where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), sql`${teamTasks.assigneeName} IS NOT NULL AND ${teamTasks.assigneeName} != ''`));
 
       return result.map(r => r.assigneeName).filter(Boolean) as string[];
     }),
@@ -126,7 +129,7 @@ export const taskManagementRouter = router({
 
       const result = await db.selectDistinct({ category: teamTasks.category })
         .from(teamTasks)
-        .where(sql`${teamTasks.category} IS NOT NULL AND ${teamTasks.category} != ''`);
+        .where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), sql`${teamTasks.category} IS NOT NULL AND ${teamTasks.category} != ''`));
 
       return result.map(r => r.category).filter(Boolean) as string[];
     }),
@@ -314,7 +317,7 @@ export const taskManagementRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
 
       const [record] = await db.select().from(meetingRecords)
-        .where(eq(meetingRecords.id, input.id));
+        .where(opsWorkspaceCondition(meetingRecords, currentOpsWorkspaceId(), eq(meetingRecords.id, input.id)));
 
       if (!record) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting record not found" });
       return record;
@@ -328,7 +331,7 @@ export const taskManagementRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
 
       const [record] = await db.select().from(meetingRecords)
-        .where(eq(meetingRecords.id, input.meetingId));
+        .where(opsWorkspaceCondition(meetingRecords, currentOpsWorkspaceId(), eq(meetingRecords.id, input.meetingId)));
 
       if (!record) throw new TRPCError({ code: "NOT_FOUND", message: "Meeting record not found" });
       if (!record.audioUrl) throw new TRPCError({ code: "BAD_REQUEST", message: "No audio URL" });
@@ -336,7 +339,7 @@ export const taskManagementRouter = router({
       // Update status to transcribing
       await db.update(meetingRecords)
         .set({ status: "transcribing" })
-        .where(eq(meetingRecords.id, input.meetingId));
+        .where(opsWorkspaceCondition(meetingRecords, currentOpsWorkspaceId(), eq(meetingRecords.id, input.meetingId)));
 
       try {
         const result = await transcribeAudio({
@@ -348,20 +351,20 @@ export const taskManagementRouter = router({
         if ("error" in result) {
           await db.update(meetingRecords)
             .set({ status: "error", errorMessage: result.error })
-            .where(eq(meetingRecords.id, input.meetingId));
+            .where(opsWorkspaceCondition(meetingRecords, currentOpsWorkspaceId(), eq(meetingRecords.id, input.meetingId)));
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: result.error });
         }
 
         await db.update(meetingRecords)
           .set({ transcript: result.text, status: "extracting" })
-          .where(eq(meetingRecords.id, input.meetingId));
+          .where(opsWorkspaceCondition(meetingRecords, currentOpsWorkspaceId(), eq(meetingRecords.id, input.meetingId)));
 
         return { transcript: result.text };
       } catch (err: any) {
         if (err instanceof TRPCError) throw err;
         await db.update(meetingRecords)
           .set({ status: "error", errorMessage: err.message })
-          .where(eq(meetingRecords.id, input.meetingId));
+          .where(opsWorkspaceCondition(meetingRecords, currentOpsWorkspaceId(), eq(meetingRecords.id, input.meetingId)));
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: err.message });
       }
     }),
@@ -462,7 +465,7 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
               extractedTasks: JSON.stringify(parsed),
               status: "done",
             })
-            .where(eq(meetingRecords.id, input.meetingId));
+            .where(opsWorkspaceCondition(meetingRecords, currentOpsWorkspaceId(), eq(meetingRecords.id, input.meetingId)));
         }
 
         return parsed as {
@@ -481,7 +484,7 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
         if (input.meetingId) {
           await db.update(meetingRecords)
             .set({ status: "error", errorMessage: err.message })
-            .where(eq(meetingRecords.id, input.meetingId));
+            .where(opsWorkspaceCondition(meetingRecords, currentOpsWorkspaceId(), eq(meetingRecords.id, input.meetingId)));
         }
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `AI extraction failed: ${err.message}` });
             }
@@ -579,13 +582,13 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
 
         await db.update(meetingRecords)
           .set({ extractedTasks: JSON.stringify(parsed), status: "done" })
-          .where(eq(meetingRecords.id, meetingId));
+          .where(opsWorkspaceCondition(meetingRecords, currentOpsWorkspaceId(), eq(meetingRecords.id, meetingId)));
 
         return { meetingId, ...parsed };
       } catch (err: any) {
         await db.update(meetingRecords)
           .set({ status: "error", errorMessage: err.message })
-          .where(eq(meetingRecords.id, meetingId));
+          .where(opsWorkspaceCondition(meetingRecords, currentOpsWorkspaceId(), eq(meetingRecords.id, meetingId)));
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `AI extraction failed: ${err.message}` });
             }
     }),
@@ -597,7 +600,7 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "DB not available" });
 
-      await db.delete(meetingRecords).where(eq(meetingRecords.id, input.id));
+      await db.delete(meetingRecords).where(opsWorkspaceCondition(meetingRecords, currentOpsWorkspaceId(), eq(meetingRecords.id, input.id)));
       return { deleted: true };
     }),
 
@@ -638,11 +641,11 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
         marketplace: productProfiles.marketplace,
       }).from(productProfiles)
         .where(
-          or(
+          opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), or(
             like(productProfiles.parentAsin, kw),
             like(productProfiles.title, kw),
             like(productProfiles.chineseName, kw),
-          )
+          ))
         )
         .orderBy(desc(productProfiles.createdAt))
         .limit(input.limit);
@@ -697,7 +700,7 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
       if (input.reminderDays) {
         updates.reminderDays = JSON.stringify(input.reminderDays);
       }
-      await db.update(teamTasks).set(updates).where(eq(teamTasks.id, input.taskId));
+      await db.update(teamTasks).set(updates).where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), eq(teamTasks.id, input.taskId)));
       return { updated: true };
     }),
 
@@ -712,31 +715,31 @@ ${teamMemberNames.length > 0 ? teamMemberNames.join("、") : "暂无已知成员
 
       // Overdue tasks (due date < today, not done)
       const overdueTasks = await db.select().from(teamTasks)
-        .where(and(
+        .where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), and(
           sql`${teamTasks.status} != 'done'`,
           sql`${teamTasks.dueDate} IS NOT NULL AND ${teamTasks.dueDate} != ''`,
           sql`${teamTasks.dueDate} < ${today}`,
-        ))
+        )))
         .orderBy(asc(sql`${teamTasks.dueDate}`));
 
       // Due within 3 days
       const dueSoonTasks = await db.select().from(teamTasks)
-        .where(and(
+        .where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), and(
           sql`${teamTasks.status} != 'done'`,
           sql`${teamTasks.dueDate} IS NOT NULL AND ${teamTasks.dueDate} != ''`,
           sql`${teamTasks.dueDate} >= ${today}`,
           sql`${teamTasks.dueDate} <= ${threeDaysLater}`,
-        ))
+        )))
         .orderBy(asc(sql`${teamTasks.dueDate}`));
 
       // Due within 7 days (but after 3 days)
       const dueThisWeekTasks = await db.select().from(teamTasks)
-        .where(and(
+        .where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), and(
           sql`${teamTasks.status} != 'done'`,
           sql`${teamTasks.dueDate} IS NOT NULL AND ${teamTasks.dueDate} != ''`,
           sql`${teamTasks.dueDate} > ${threeDaysLater}`,
           sql`${teamTasks.dueDate} <= ${sevenDaysLater}`,
-        ))
+        )))
         .orderBy(asc(sql`${teamTasks.dueDate}`));
 
       return {

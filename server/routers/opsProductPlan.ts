@@ -1,6 +1,9 @@
+import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
+import { opsWorkspaceCondition } from "../repositories/ops";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/ops/workspaceProcedure";
+import { getDb } from "../repositories/dbClient";
 import { productOpsPlans, productOpsDailyRecords, keywordTrackings, keywordDailyRecords, competitorAdBenchmarks, promotionPhases } from "../../drizzle/schema";
 import { eq, and, desc, asc } from "drizzle-orm";
 import { invokeLLM } from "../_core/llm";
@@ -15,7 +18,7 @@ export const opsProductPlanRouter = router({
       if (!db) return [];
       const conditions = [eq(productOpsPlans.userId, ctx.user.id)];
       if (input.asin) conditions.push(eq(productOpsPlans.asin, input.asin));
-      return db.select().from(productOpsPlans).where(and(...conditions)).orderBy(desc(productOpsPlans.createdAt));
+      return db.select().from(productOpsPlans).where(opsWorkspaceCondition(productOpsPlans, currentOpsWorkspaceId(), and(...conditions))).orderBy(desc(productOpsPlans.createdAt));
     }),
 
   getPlan: protectedProcedure
@@ -23,7 +26,7 @@ export const opsProductPlanRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return null;
-      const [plan] = await db.select().from(productOpsPlans).where(eq(productOpsPlans.id, input.planId));
+      const [plan] = await db.select().from(productOpsPlans).where(opsWorkspaceCondition(productOpsPlans, currentOpsWorkspaceId(), eq(productOpsPlans.id, input.planId)));
       return plan || null;
     }),
 
@@ -105,7 +108,7 @@ export const opsProductPlanRouter = router({
       if (input.endDate !== undefined) updates.endDate = input.endDate;
       if (input.status !== undefined) updates.status = input.status;
       if (input.notes !== undefined) updates.notes = input.notes;
-      await db.update(productOpsPlans).set(updates).where(eq(productOpsPlans.id, input.planId));
+      await db.update(productOpsPlans).set(updates).where(opsWorkspaceCondition(productOpsPlans, currentOpsWorkspaceId(), eq(productOpsPlans.id, input.planId)));
       return { success: true };
     }),
 
@@ -114,7 +117,7 @@ export const opsProductPlanRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database not available");
-      await db.delete(productOpsPlans).where(eq(productOpsPlans.id, input.planId));
+      await db.delete(productOpsPlans).where(opsWorkspaceCondition(productOpsPlans, currentOpsWorkspaceId(), eq(productOpsPlans.id, input.planId)));
       return { success: true };
     }),
 
@@ -125,7 +128,7 @@ export const opsProductPlanRouter = router({
       const db = await getDb();
       if (!db) return [];
       return db.select().from(productOpsDailyRecords)
-        .where(eq(productOpsDailyRecords.planId, input.planId))
+        .where(opsWorkspaceCondition(productOpsDailyRecords, currentOpsWorkspaceId(), eq(productOpsDailyRecords.planId, input.planId)))
         .orderBy(asc(productOpsDailyRecords.recordDate));
     }),
 
@@ -151,10 +154,10 @@ export const opsProductPlanRouter = router({
       const db = await getDb();
       if (!db) throw new Error("Database not available");
       const existing = await db.select().from(productOpsDailyRecords)
-        .where(and(
+        .where(opsWorkspaceCondition(productOpsDailyRecords, currentOpsWorkspaceId(), and(
           eq(productOpsDailyRecords.planId, input.planId),
           eq(productOpsDailyRecords.recordDate, input.recordDate),
-        ));
+        )));
 
       const values: any = {
         planId: input.planId,
@@ -175,7 +178,7 @@ export const opsProductPlanRouter = router({
       };
 
       if (existing.length > 0) {
-        await db.update(productOpsDailyRecords).set(values).where(eq(productOpsDailyRecords.id, existing[0].id));
+        await db.update(productOpsDailyRecords).set(values).where(opsWorkspaceCondition(productOpsDailyRecords, currentOpsWorkspaceId(), eq(productOpsDailyRecords.id, existing[0].id)));
         return { id: existing[0].id, updated: true };
       } else {
         const [result] = await db.insert(productOpsDailyRecords).values(values);
@@ -190,7 +193,7 @@ export const opsProductPlanRouter = router({
       const db = await getDb();
       if (!db) return [];
       return db.select().from(keywordTrackings)
-        .where(eq(keywordTrackings.planId, input.planId))
+        .where(opsWorkspaceCondition(keywordTrackings, currentOpsWorkspaceId(), eq(keywordTrackings.planId, input.planId)))
         .orderBy(desc(keywordTrackings.isCoreKeyword), asc(keywordTrackings.createdAt));
     }),
 
@@ -222,7 +225,7 @@ export const opsProductPlanRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database not available");
-      await db.delete(keywordTrackings).where(eq(keywordTrackings.id, input.keywordId));
+      await db.delete(keywordTrackings).where(opsWorkspaceCondition(keywordTrackings, currentOpsWorkspaceId(), eq(keywordTrackings.id, input.keywordId)));
       return { success: true };
     }),
 
@@ -232,7 +235,7 @@ export const opsProductPlanRouter = router({
       const db = await getDb();
       if (!db) return [];
       return db.select().from(keywordDailyRecords)
-        .where(eq(keywordDailyRecords.trackingId, input.trackingId))
+        .where(opsWorkspaceCondition(keywordDailyRecords, currentOpsWorkspaceId(), eq(keywordDailyRecords.trackingId, input.trackingId)))
         .orderBy(asc(keywordDailyRecords.recordDate));
     }),
 
@@ -250,10 +253,10 @@ export const opsProductPlanRouter = router({
       const db = await getDb();
       if (!db) throw new Error("Database not available");
       const existing = await db.select().from(keywordDailyRecords)
-        .where(and(
+        .where(opsWorkspaceCondition(keywordDailyRecords, currentOpsWorkspaceId(), and(
           eq(keywordDailyRecords.trackingId, input.trackingId),
           eq(keywordDailyRecords.recordDate, input.recordDate),
-        ));
+        )));
 
       const values: any = {
         trackingId: input.trackingId,
@@ -266,7 +269,7 @@ export const opsProductPlanRouter = router({
       };
 
       if (existing.length > 0) {
-        await db.update(keywordDailyRecords).set(values).where(eq(keywordDailyRecords.id, existing[0].id));
+        await db.update(keywordDailyRecords).set(values).where(opsWorkspaceCondition(keywordDailyRecords, currentOpsWorkspaceId(), eq(keywordDailyRecords.id, existing[0].id)));
         return { id: existing[0].id };
       } else {
         const [result] = await db.insert(keywordDailyRecords).values(values);
@@ -378,7 +381,7 @@ export const opsProductPlanRouter = router({
       const db = await getDb();
       if (!db) return [];
       return db.select().from(competitorAdBenchmarks)
-        .where(eq(competitorAdBenchmarks.planId, input.planId))
+        .where(opsWorkspaceCondition(competitorAdBenchmarks, currentOpsWorkspaceId(), eq(competitorAdBenchmarks.planId, input.planId)))
         .orderBy(asc(competitorAdBenchmarks.createdAt));
     }),
 
@@ -431,7 +434,7 @@ export const opsProductPlanRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB not available");
       const { benchmarkId, ...data } = input;
-      await db.update(competitorAdBenchmarks).set(data).where(eq(competitorAdBenchmarks.id, benchmarkId));
+      await db.update(competitorAdBenchmarks).set(data).where(opsWorkspaceCondition(competitorAdBenchmarks, currentOpsWorkspaceId(), eq(competitorAdBenchmarks.id, benchmarkId)));
       return { success: true };
     }),
 
@@ -440,7 +443,7 @@ export const opsProductPlanRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB not available");
-      await db.delete(competitorAdBenchmarks).where(eq(competitorAdBenchmarks.id, input.benchmarkId));
+      await db.delete(competitorAdBenchmarks).where(opsWorkspaceCondition(competitorAdBenchmarks, currentOpsWorkspaceId(), eq(competitorAdBenchmarks.id, input.benchmarkId)));
       return { success: true };
     }),
 
@@ -542,7 +545,7 @@ export const opsProductPlanRouter = router({
       const db = await getDb();
       if (!db) return [];
       return db.select().from(promotionPhases)
-        .where(eq(promotionPhases.planId, input.planId))
+        .where(opsWorkspaceCondition(promotionPhases, currentOpsWorkspaceId(), eq(promotionPhases.planId, input.planId)))
         .orderBy(asc(promotionPhases.sortOrder));
     }),
 
@@ -591,7 +594,7 @@ export const opsProductPlanRouter = router({
       const db = await getDb();
       if (!db) throw new Error("DB not available");
       const { phaseId, ...data } = input;
-      await db.update(promotionPhases).set(data).where(eq(promotionPhases.id, phaseId));
+      await db.update(promotionPhases).set(data).where(opsWorkspaceCondition(promotionPhases, currentOpsWorkspaceId(), eq(promotionPhases.id, phaseId)));
       return { success: true };
     }),
 
@@ -600,7 +603,7 @@ export const opsProductPlanRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("DB not available");
-      await db.delete(promotionPhases).where(eq(promotionPhases.id, input.phaseId));
+      await db.delete(promotionPhases).where(opsWorkspaceCondition(promotionPhases, currentOpsWorkspaceId(), eq(promotionPhases.id, input.phaseId)));
       return { success: true };
     }),
 
@@ -617,7 +620,7 @@ export const opsProductPlanRouter = router({
         { phaseName: "头部巩固期", phaseType: "maturity" as const, bsrRangeStart: 11, bsrRangeEnd: 30, durationDays: 70, keyStrategy: "防御性广告策略+品牌旗舰店优化+复购激励", sortOrder: 5 },
         { phaseName: "类目霸主期", phaseType: "maturity" as const, bsrRangeStart: 1, bsrRangeEnd: 10, durationDays: 90, keyStrategy: "品牌护城河+全渠道广告矩阵+新品线扩展", sortOrder: 6 },
       ];
-      await db.delete(promotionPhases).where(eq(promotionPhases.planId, input.planId));
+      await db.delete(promotionPhases).where(opsWorkspaceCondition(promotionPhases, currentOpsWorkspaceId(), eq(promotionPhases.planId, input.planId)));
       for (const phase of bsrPhases) {
         await db.insert(promotionPhases).values({
           planId: input.planId,

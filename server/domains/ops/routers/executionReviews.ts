@@ -1,3 +1,5 @@
+import { currentOpsWorkspaceId } from "../workspaceContext";
+import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
 
@@ -86,7 +88,7 @@ export const opsExecutionReviewProcedures = {
         conditions.push(eq(executionReviews.productProfileId, input.productProfileId));
       }
       return db!.select().from(executionReviews)
-        .where(and(...conditions))
+        .where(opsWorkspaceCondition(executionReviews, currentOpsWorkspaceId(), and(...conditions)))
         .orderBy(desc(executionReviews.createdAt));
     }),
 
@@ -130,12 +132,12 @@ export const opsExecutionReviewProcedures = {
         let allRows: any[] = [];
         for (const wk of effectiveBaselineWeeks) {
           const weeklyRows = await db!.select().from(lingxingProductWeekly)
-            .where(and(
+            .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), and(
               eq(lingxingProductWeekly.userId, effectiveUserId),
               eq(lingxingProductWeekly.parentAsin, input.parentAsin),
               eq(lingxingProductWeekly.weekStartDate, wk.weekStart),
               eq(lingxingProductWeekly.weekEndDate, wk.weekEnd),
-            ));
+            )));
           allRows.push(...weeklyRows);
         }
 
@@ -194,12 +196,12 @@ export const opsExecutionReviewProcedures = {
         let allTargetRows: any[] = [];
         for (const wk of effectiveTargetWeeks) {
           const targetRows = await db!.select().from(lingxingProductWeekly)
-            .where(and(
+            .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), and(
               eq(lingxingProductWeekly.userId, effectiveUserId2),
               eq(lingxingProductWeekly.parentAsin, input.parentAsin),
               eq(lingxingProductWeekly.weekStartDate, wk.weekStart),
               eq(lingxingProductWeekly.weekEndDate, wk.weekEnd),
-            ));
+            )));
           allTargetRows.push(...targetRows);
         }
 
@@ -280,7 +282,7 @@ export const opsExecutionReviewProcedures = {
       if (Object.keys(clean).length > 0) {
         const conds = [eq(executionReviews.id, reviewId)];
         if (!isManager) conds.push(eq(executionReviews.userId, ctx.user.id));
-        await db!.update(executionReviews).set(clean).where(and(...conds));
+        await db!.update(executionReviews).set(clean).where(opsWorkspaceCondition(executionReviews, currentOpsWorkspaceId(), and(...conds)));
       }
       return { updated: true };
     }),
@@ -294,7 +296,7 @@ export const opsExecutionReviewProcedures = {
       const isManager = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
       const conds = [eq(executionReviews.id, input.reviewId)];
       if (!isManager) conds.push(eq(executionReviews.userId, ctx.user.id));
-      await db!.delete(executionReviews).where(and(...conds));
+      await db!.delete(executionReviews).where(opsWorkspaceCondition(executionReviews, currentOpsWorkspaceId(), and(...conds)));
       return { deleted: true };
     }),
 
@@ -303,7 +305,7 @@ export const opsExecutionReviewProcedures = {
     .input(z.object({ reviewId: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      const [review] = await db!.select().from(executionReviews).where(eq(executionReviews.id, input.reviewId));
+      const [review] = await db!.select().from(executionReviews).where(opsWorkspaceCondition(executionReviews, currentOpsWorkspaceId(), eq(executionReviews.id, input.reviewId)));
       if (!review) throw new TRPCError({ code: "NOT_FOUND" });
       if (review.aiAnalysisLocked) return { analysis: review.aiAnalysis };
 
@@ -409,7 +411,7 @@ export const opsExecutionReviewProcedures = {
         }
       });
       const analysis = (resp.choices?.[0]?.message?.content as string) || '{"achievementSummary":"AI分析暂不可用","keyFindings":[],"problems":[],"recommendations":[],"nextPeriodFocus":[]}';
-      await db!.update(executionReviews).set({ aiAnalysis: analysis }).where(eq(executionReviews.id, input.reviewId));
+      await db!.update(executionReviews).set({ aiAnalysis: analysis }).where(opsWorkspaceCondition(executionReviews, currentOpsWorkspaceId(), eq(executionReviews.id, input.reviewId)));
       return { analysis };
     }),
 
@@ -426,7 +428,7 @@ export const opsExecutionReviewProcedures = {
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
 
-      const [review] = await db!.select().from(executionReviews).where(eq(executionReviews.id, input.reviewId));
+      const [review] = await db!.select().from(executionReviews).where(opsWorkspaceCondition(executionReviews, currentOpsWorkspaceId(), eq(executionReviews.id, input.reviewId)));
       if (!review) throw new TRPCError({ code: 'NOT_FOUND', message: '复盘记录不存在' });
 
       const updates: Record<string, any> = { parentAsin: input.parentAsin };
@@ -436,10 +438,10 @@ export const opsExecutionReviewProcedures = {
         // Use resolveDataUserId to handle non-admin users querying admin-imported data
         const effectiveUserId = await resolveDataUserId(db!, ctx.user);
         const weeklyRows = await db!.select().from(lingxingProductWeekly)
-          .where(and(
+          .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), and(
             eq(lingxingProductWeekly.userId, effectiveUserId),
             eq(lingxingProductWeekly.parentAsin, input.parentAsin),
-          ))
+          )))
           .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
         const weekMap = new Map<string, typeof weeklyRows>();
@@ -508,7 +510,7 @@ export const opsExecutionReviewProcedures = {
 
       // 从运营计划自动带入基线和目标数据
       if (input.planId && (input.syncTarget === 'baseline' || input.syncTarget === 'both')) {
-        const [plan] = await db!.select().from(opsPlans).where(eq(opsPlans.id, input.planId));
+        const [plan] = await db!.select().from(opsPlans).where(opsWorkspaceCondition(opsPlans, currentOpsWorkspaceId(), eq(opsPlans.id, input.planId)));
         if (plan) {
           updates.baselineSales = plan.baselineSales;
           updates.baselineProfitRate = plan.baselineProfitRate;
@@ -531,7 +533,7 @@ export const opsExecutionReviewProcedures = {
       }
 
       if (Object.keys(updates).length > 0) {
-        await db!.update(executionReviews).set(updates).where(eq(executionReviews.id, input.reviewId));
+        await db!.update(executionReviews).set(updates).where(opsWorkspaceCondition(executionReviews, currentOpsWorkspaceId(), eq(executionReviews.id, input.reviewId)));
       }
 
       return { synced: true, updates };
@@ -548,7 +550,7 @@ export const opsExecutionReviewProcedures = {
       const db = await getDb();
       // invokeLLM already imported at top of file
 
-      const [review] = await db!.select().from(executionReviews).where(eq(executionReviews.id, input.reviewId));
+      const [review] = await db!.select().from(executionReviews).where(opsWorkspaceCondition(executionReviews, currentOpsWorkspaceId(), eq(executionReviews.id, input.reviewId)));
       if (!review) throw new TRPCError({ code: 'NOT_FOUND', message: '复盘记录不存在' });
 
       const prompt = `你是一位资深亚马逊运营分析师。请基于以下数据进行运营复盘分析：
@@ -666,7 +668,7 @@ export const opsExecutionReviewProcedures = {
           aiAnalysis: JSON.stringify(aiResult),
           achievementSummary: aiResult.achievementSummary,
           updatedAt: new Date(),
-        }).where(eq(executionReviews.id, input.reviewId));
+        }).where(opsWorkspaceCondition(executionReviews, currentOpsWorkspaceId(), eq(executionReviews.id, input.reviewId)));
 
         return { success: true, analysis: aiResult };
       } catch (err: any) {

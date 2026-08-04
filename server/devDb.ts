@@ -23,7 +23,7 @@ import {
   devOffsiteAnalyses, InsertDevOffsiteAnalysis,
   devManualAssets, InsertDevManualAsset,
 } from "../drizzle/schema";
-import { getDb } from "./db";
+import { getDb } from "./repositories/dbClient";
 
 // ─── Dev Project Helpers ───────────────────────────────────────
 

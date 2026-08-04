@@ -103,7 +103,7 @@ export default function EmperorObservability() {
   const { data, isLoading, isFetching, error } = trpc.emperor.observability.dashboard.useQuery({ days });
   const snapshotMutation = trpc.emperor.observability.recordDatabaseBaselineSnapshot.useMutation({
     onSuccess: (result) => {
-      toast.success(`数据库基线已记录：${result.rowCountSamples} 个表，${result.explainSamples} 个 EXPLAIN`);
+      toast.success(`数据库基线已记录：${result.rowCountSamples} 个表，${result.explainSamples} 个 EXPLAIN，${result.slowQuerySampling.sampleCount} 个慢查询摘要`);
       utils.emperor.observability.dashboard.invalidate({ days });
     },
     onError: (mutationError) => toast.error(mutationError.message || "记录数据库基线失败"),
@@ -379,7 +379,36 @@ export default function EmperorObservability() {
                 慢查询与 EXPLAIN 基线
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-5">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[760px] text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-xs text-muted-foreground">
+                      <th className="py-2 font-medium">SQL 摘要</th>
+                      <th className="py-2 text-right font-medium">平均耗时</th>
+                      <th className="py-2 text-right font-medium">最大耗时</th>
+                      <th className="py-2 text-right font-medium">执行次数</th>
+                      <th className="py-2 font-medium">最近出现</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(database?.slowQueries || []).slice(0, 10).map((item) => (
+                      <tr key={item.sampleId} className="border-b last:border-0">
+                        <td className="max-w-[360px] truncate py-2 font-mono text-xs" title={item.digestText}>{item.digestText}</td>
+                        <td className="py-2 text-right font-mono tabular-nums">{formatMs(item.avgTimerWaitMs)}</td>
+                        <td className="py-2 text-right font-mono tabular-nums">{formatMs(item.maxTimerWaitMs)}</td>
+                        <td className="py-2 text-right font-mono tabular-nums">{formatNumber(item.executionCount)}</td>
+                        <td className="py-2 text-xs">{item.lastSeen ? new Date(item.lastSeen).toLocaleString() : "-"}</td>
+                      </tr>
+                    ))}
+                    {(database?.slowQueries || []).length === 0 && (
+                      <tr>
+                        <td className="py-6 text-center text-muted-foreground" colSpan={5}>暂无慢查询采样</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] text-sm">
                   <thead>
@@ -511,4 +540,3 @@ export default function EmperorObservability() {
     </div>
   );
 }
-

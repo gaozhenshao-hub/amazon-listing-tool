@@ -1,4 +1,4 @@
-import { getDb } from "./db";
+import { getDb } from "./repositories/dbClient";
 
 async function db() {
   const d = await getDb();

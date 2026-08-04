@@ -1,3 +1,5 @@
+import { currentOpsWorkspaceId } from "../workspaceContext";
+import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
 
@@ -73,13 +75,13 @@ export const opsKeywordMonitorProcedures = {
     .query(async ({ input }) => {
       const db = await getDb();
       const monitors = await db!.select().from(keywordMonitors)
-        .where(eq(keywordMonitors.productId, input.productId))
+        .where(opsWorkspaceCondition(keywordMonitors, currentOpsWorkspaceId(), eq(keywordMonitors.productId, input.productId)))
         .orderBy(desc(keywordMonitors.createdAt));
 
       // Get latest snapshot for each monitor
       const enriched = await Promise.all(monitors.map(async (m) => {
         const snapshots = await db!.select().from(keywordSnapshots)
-          .where(eq(keywordSnapshots.keywordMonitorId, m.id))
+          .where(opsWorkspaceCondition(keywordSnapshots, currentOpsWorkspaceId(), eq(keywordSnapshots.keywordMonitorId, m.id)))
           .orderBy(desc(keywordSnapshots.snapshotDate))
           .limit(7);
         return { ...m, recentSnapshots: snapshots.reverse() };
@@ -118,8 +120,8 @@ export const opsKeywordMonitorProcedures = {
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      await db!.delete(keywordSnapshots).where(eq(keywordSnapshots.keywordMonitorId, input.id));
-      await db!.delete(keywordMonitors).where(eq(keywordMonitors.id, input.id));
+      await db!.delete(keywordSnapshots).where(opsWorkspaceCondition(keywordSnapshots, currentOpsWorkspaceId(), eq(keywordSnapshots.keywordMonitorId, input.id)));
+      await db!.delete(keywordMonitors).where(opsWorkspaceCondition(keywordMonitors, currentOpsWorkspaceId(), eq(keywordMonitors.id, input.id)));
       return { deleted: true };
     }),
 

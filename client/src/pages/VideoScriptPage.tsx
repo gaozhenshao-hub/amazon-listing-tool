@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useRoute, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { WorkflowStepProgress } from "@/components/workflow";
+import { EmbeddedAgentRunPanel, WorkflowStepProgress } from "@/components/workflow";
 import { VIDEO_SCRIPT_WORKFLOW_STEPS } from "@/components/workflow/workflowDefinitions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -105,13 +105,9 @@ function parseJson(val: any): any {
 
 export default function VideoScriptPage() {
   const [, params] = useRoute("/listing/video-script/:id");
-  const [, navigate] = useLocation();
   const scriptId = params?.id ? parseInt(params.id) : null;
 
-  if (scriptId) {
-    return <VideoScriptEditor scriptId={scriptId} />;
-  }
-  return <VideoScriptList />;
+  return scriptId ? <VideoScriptEditor scriptId={scriptId} /> : <VideoScriptList />;
 }
 
 // ─── Script List ────────────────────────────────────────────────
@@ -159,6 +155,10 @@ function VideoScriptList() {
 
   return (
     <div className="space-y-6">
+      <EmbeddedAgentRunPanel
+        title="视频脚本 Agent Run / Checkpoint"
+        projectId={selectedProject}
+      />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">视频脚本生成</h1>
@@ -546,6 +546,10 @@ function VideoScriptEditor({ scriptId }: { scriptId: number }) {
 
   return (
     <div className="space-y-6">
+      <EmbeddedAgentRunPanel
+        title="视频脚本 Agent Run / Checkpoint"
+        projectId={script.data.projectId}
+      />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">

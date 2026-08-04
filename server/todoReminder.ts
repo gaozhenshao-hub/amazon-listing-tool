@@ -6,7 +6,7 @@
  * Runs periodically (every hour by default).
  */
 
-import { getDb } from "./db";
+import { getDb } from "./repositories/dbClient";
 import { productTodos, teamTasks, notifications, productProfiles } from "../drizzle/schema";
 import { eq, and, lte, gte, isNull, ne, sql } from "drizzle-orm";
 

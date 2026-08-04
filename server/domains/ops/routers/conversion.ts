@@ -1,3 +1,5 @@
+import { currentOpsWorkspaceId } from "../workspaceContext";
+import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
 
@@ -73,7 +75,7 @@ export const opsConversionProcedures = {
   listComparisons: protectedProcedure.input(z.object({ productProfileId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     return db!.select().from(conversionComparisons)
-      .where(and(eq(conversionComparisons.userId, ctx.user.id), eq(conversionComparisons.productProfileId, input.productProfileId)))
+      .where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), and(eq(conversionComparisons.userId, ctx.user.id), eq(conversionComparisons.productProfileId, input.productProfileId))))
       .orderBy(desc(conversionComparisons.updatedAt));
   }),
 
@@ -81,7 +83,7 @@ export const opsConversionProcedures = {
   getComparison: protectedProcedure.input(z.object({ comparisonId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     const [comp] = await db!.select().from(conversionComparisons)
-      .where(and(eq(conversionComparisons.id, input.comparisonId), eq(conversionComparisons.userId, ctx.user.id)));
+      .where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), and(eq(conversionComparisons.id, input.comparisonId), eq(conversionComparisons.userId, ctx.user.id))));
     if (!comp) throw new TRPCError({ code: "NOT_FOUND", message: "Comparison not found" });
     return comp;
   }),
@@ -107,9 +109,9 @@ export const opsConversionProcedures = {
 
   deleteComparison: protectedProcedure.input(z.object({ comparisonId: z.number() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    await db!.delete(conversionScores).where(eq(conversionScores.comparisonId, input.comparisonId));
-    await db!.delete(conversionSuggestions).where(eq(conversionSuggestions.comparisonId, input.comparisonId));
-    await db!.delete(conversionComparisons).where(and(eq(conversionComparisons.id, input.comparisonId), eq(conversionComparisons.userId, ctx.user.id)));
+    await db!.delete(conversionScores).where(opsWorkspaceCondition(conversionScores, currentOpsWorkspaceId(), eq(conversionScores.comparisonId, input.comparisonId)));
+    await db!.delete(conversionSuggestions).where(opsWorkspaceCondition(conversionSuggestions, currentOpsWorkspaceId(), eq(conversionSuggestions.comparisonId, input.comparisonId)));
+    await db!.delete(conversionComparisons).where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), and(eq(conversionComparisons.id, input.comparisonId), eq(conversionComparisons.userId, ctx.user.id))));
     return { success: true };
   }),
 
@@ -120,7 +122,7 @@ export const opsConversionProcedures = {
     const db = await getDb();
     // Auto-initialize default check items if none exist
     const existing = await db!.select({ count: sql<number>`count(*)` }).from(conversionCheckItems)
-      .where(isNull(conversionCheckItems.userId));
+      .where(opsWorkspaceCondition(conversionCheckItems, currentOpsWorkspaceId(), isNull(conversionCheckItems.userId)));
     if (Number(existing[0]?.count) === 0) {
       const defaultItems = getDefault129CheckItems();
       for (const item of defaultItems) {
@@ -129,11 +131,11 @@ export const opsConversionProcedures = {
     }
     // Get system defaults (userId IS NULL) + user custom items
     const items = await db!.select().from(conversionCheckItems)
-      .where(sql`${conversionCheckItems.userId} IS NULL OR ${conversionCheckItems.userId} = ${ctx.user.id}`)
+      .where(opsWorkspaceCondition(conversionCheckItems, currentOpsWorkspaceId(), sql`${conversionCheckItems.userId} IS NULL OR ${conversionCheckItems.userId} = ${ctx.user.id}`))
       .orderBy(asc(conversionCheckItems.categoryIndex), asc(conversionCheckItems.sortOrder));
     // Get user overrides
     const overrides = await db!.select().from(checkItemOverrides)
-      .where(eq(checkItemOverrides.userId, ctx.user.id));
+      .where(opsWorkspaceCondition(checkItemOverrides, currentOpsWorkspaceId(), eq(checkItemOverrides.userId, ctx.user.id)));
     const overrideMap = new Map(overrides.map(o => [o.checkItemId, o]));
     // Merge items with overrides
     const merged = items.map(item => {
@@ -159,7 +161,7 @@ export const opsConversionProcedures = {
   initDefaultCheckItems: protectedProcedure.mutation(async ({ ctx }) => {
     const db = await getDb();
     const existing = await db!.select({ count: sql<number>`count(*)` }).from(conversionCheckItems)
-      .where(isNull(conversionCheckItems.userId));
+      .where(opsWorkspaceCondition(conversionCheckItems, currentOpsWorkspaceId(), isNull(conversionCheckItems.userId)));
     if (Number(existing[0]?.count) > 0) return { message: "Default items already exist", count: Number(existing[0]?.count) };
     const defaultItems = getDefault129CheckItems();
     for (const item of defaultItems) {
@@ -173,9 +175,9 @@ export const opsConversionProcedures = {
   resetAndReinitCheckItems: protectedProcedure.mutation(async ({ ctx }) => {
     const db = await getDb();
     // 1. Delete all system default check items (userId IS NULL)
-    await db!.delete(conversionCheckItems).where(isNull(conversionCheckItems.userId));
+    await db!.delete(conversionCheckItems).where(opsWorkspaceCondition(conversionCheckItems, currentOpsWorkspaceId(), isNull(conversionCheckItems.userId)));
     // 2. Delete all user overrides (they reference old check item IDs)
-    await db!.delete(checkItemOverrides).where(eq(checkItemOverrides.userId, ctx.user.id));
+    await db!.delete(checkItemOverrides).where(opsWorkspaceCondition(checkItemOverrides, currentOpsWorkspaceId(), eq(checkItemOverrides.userId, ctx.user.id)));
     // 3. Re-insert new 129 items
     const defaultItems = getDefault129CheckItems();
     for (const item of defaultItems) {
@@ -211,7 +213,7 @@ export const opsConversionProcedures = {
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     // Check if item exists
-    const [item] = await db!.select().from(conversionCheckItems).where(eq(conversionCheckItems.id, input.checkItemId));
+    const [item] = await db!.select().from(conversionCheckItems).where(opsWorkspaceCondition(conversionCheckItems, currentOpsWorkspaceId(), eq(conversionCheckItems.id, input.checkItemId)));
     if (!item) throw new TRPCError({ code: 'NOT_FOUND', message: '检查项不存在' });
 
     // If it's user's own custom item, edit directly
@@ -219,20 +221,20 @@ export const opsConversionProcedures = {
       await db!.update(conversionCheckItems).set({
         ...(input.subDimension !== undefined ? { subDimension: input.subDimension } : {}),
         ...(input.standard !== undefined ? { standard: input.standard } : {}),
-      }).where(eq(conversionCheckItems.id, input.checkItemId));
+      }).where(opsWorkspaceCondition(conversionCheckItems, currentOpsWorkspaceId(), eq(conversionCheckItems.id, input.checkItemId)));
       return { success: true, type: 'direct_edit' as const };
     }
 
     // For system items, create/update user override
     const [existingOverride] = await db!.select().from(checkItemOverrides)
-      .where(and(eq(checkItemOverrides.userId, ctx.user.id), eq(checkItemOverrides.checkItemId, input.checkItemId)));
+      .where(opsWorkspaceCondition(checkItemOverrides, currentOpsWorkspaceId(), and(eq(checkItemOverrides.userId, ctx.user.id), eq(checkItemOverrides.checkItemId, input.checkItemId))));
 
     if (existingOverride) {
       await db!.update(checkItemOverrides).set({
         ...(input.subDimension !== undefined ? { customSubDimension: input.subDimension } : {}),
         ...(input.standard !== undefined ? { customStandard: input.standard } : {}),
         updatedAt: new Date(),
-      }).where(eq(checkItemOverrides.id, existingOverride.id));
+      }).where(opsWorkspaceCondition(checkItemOverrides, currentOpsWorkspaceId(), eq(checkItemOverrides.id, existingOverride.id)));
     } else {
       await db!.insert(checkItemOverrides).values({
         userId: ctx.user.id,
@@ -251,18 +253,18 @@ export const opsConversionProcedures = {
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     // Check if item exists
-    const [item] = await db!.select().from(conversionCheckItems).where(eq(conversionCheckItems.id, input.checkItemId));
+    const [item] = await db!.select().from(conversionCheckItems).where(opsWorkspaceCondition(conversionCheckItems, currentOpsWorkspaceId(), eq(conversionCheckItems.id, input.checkItemId)));
     if (!item) throw new TRPCError({ code: 'NOT_FOUND', message: '检查项不存在' });
 
     // Create/update user override
     const [existingOverride] = await db!.select().from(checkItemOverrides)
-      .where(and(eq(checkItemOverrides.userId, ctx.user.id), eq(checkItemOverrides.checkItemId, input.checkItemId)));
+      .where(opsWorkspaceCondition(checkItemOverrides, currentOpsWorkspaceId(), and(eq(checkItemOverrides.userId, ctx.user.id), eq(checkItemOverrides.checkItemId, input.checkItemId))));
 
     if (existingOverride) {
       await db!.update(checkItemOverrides).set({
         isHidden: input.isHidden ? 1 : 0,
         updatedAt: new Date(),
-      }).where(eq(checkItemOverrides.id, existingOverride.id));
+      }).where(opsWorkspaceCondition(checkItemOverrides, currentOpsWorkspaceId(), eq(checkItemOverrides.id, existingOverride.id)));
     } else {
       await db!.insert(checkItemOverrides).values({
         userId: ctx.user.id,
@@ -279,7 +281,7 @@ export const opsConversionProcedures = {
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     await db!.delete(checkItemOverrides)
-      .where(and(eq(checkItemOverrides.userId, ctx.user.id), eq(checkItemOverrides.checkItemId, input.checkItemId)));
+      .where(opsWorkspaceCondition(checkItemOverrides, currentOpsWorkspaceId(), and(eq(checkItemOverrides.userId, ctx.user.id), eq(checkItemOverrides.checkItemId, input.checkItemId))));
     return { success: true };
   }),
 
@@ -288,9 +290,9 @@ export const opsConversionProcedures = {
     const db = await getDb();
     // Also remove any overrides for this item
     await db!.delete(checkItemOverrides)
-      .where(and(eq(checkItemOverrides.userId, ctx.user.id), eq(checkItemOverrides.checkItemId, input.itemId)));
+      .where(opsWorkspaceCondition(checkItemOverrides, currentOpsWorkspaceId(), and(eq(checkItemOverrides.userId, ctx.user.id), eq(checkItemOverrides.checkItemId, input.itemId))));
     await db!.delete(conversionCheckItems)
-      .where(and(eq(conversionCheckItems.id, input.itemId), eq(conversionCheckItems.userId, ctx.user.id), eq(conversionCheckItems.isCustom, 1)));
+      .where(opsWorkspaceCondition(conversionCheckItems, currentOpsWorkspaceId(), and(eq(conversionCheckItems.id, input.itemId), eq(conversionCheckItems.userId, ctx.user.id), eq(conversionCheckItems.isCustom, 1))));
     return { success: true };
   }),
 
@@ -300,7 +302,7 @@ export const opsConversionProcedures = {
   getScores: protectedProcedure.input(z.object({ comparisonId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     return db!.select().from(conversionScores)
-      .where(eq(conversionScores.comparisonId, input.comparisonId));
+      .where(opsWorkspaceCondition(conversionScores, currentOpsWorkspaceId(), eq(conversionScores.comparisonId, input.comparisonId)));
   }),
 
 
@@ -318,7 +320,7 @@ export const opsConversionProcedures = {
     }
     if (input.reason !== undefined) updates.reason = input.reason;
     if (input.isLocked !== undefined) updates.isLocked = input.isLocked ? 1 : 0;
-    await db!.update(conversionScores).set(updates).where(eq(conversionScores.id, input.scoreId));
+    await db!.update(conversionScores).set(updates).where(opsWorkspaceCondition(conversionScores, currentOpsWorkspaceId(), eq(conversionScores.id, input.scoreId)));
     return { success: true };
   }),
 
@@ -340,7 +342,7 @@ export const opsConversionProcedures = {
       }
       if (s.reason !== undefined) updates.reason = s.reason;
       if (s.isLocked !== undefined) updates.isLocked = s.isLocked ? 1 : 0;
-      await db!.update(conversionScores).set(updates).where(eq(conversionScores.id, s.scoreId));
+      await db!.update(conversionScores).set(updates).where(opsWorkspaceCondition(conversionScores, currentOpsWorkspaceId(), eq(conversionScores.id, s.scoreId)));
     }
     return { success: true };
   }),
@@ -353,16 +355,16 @@ export const opsConversionProcedures = {
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     const [comp] = await db!.select().from(conversionComparisons)
-      .where(eq(conversionComparisons.id, input.comparisonId));
+      .where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), eq(conversionComparisons.id, input.comparisonId)));
     if (!comp) throw new TRPCError({ code: "NOT_FOUND" });
 
     // Update status to crawling
     await db!.update(conversionComparisons).set({ status: "crawling" as any })
-      .where(eq(conversionComparisons.id, input.comparisonId));
+      .where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), eq(conversionComparisons.id, input.comparisonId)));
 
     const allAsins = [comp.ownAsin, ...JSON.parse((comp.competitorAsins as string) || "[]")];
     const checkItems = await db!.select().from(conversionCheckItems)
-      .where(sql`${conversionCheckItems.userId} IS NULL OR ${conversionCheckItems.userId} = ${ctx.user.id}`)
+      .where(opsWorkspaceCondition(conversionCheckItems, currentOpsWorkspaceId(), sql`${conversionCheckItems.userId} IS NULL OR ${conversionCheckItems.userId} = ${ctx.user.id}`))
       .orderBy(asc(conversionCheckItems.categoryIndex), asc(conversionCheckItems.sortOrder));
 
     // ═══ Step 1: 真实数据采集（爬虫 + 领星API） ═══
@@ -380,20 +382,20 @@ export const opsConversionProcedures = {
       failedAsins.push(...allAsins);
     }
     await db!.update(conversionComparisons).set({ crawlData, status: "scoring" as any })
-      .where(eq(conversionComparisons.id, input.comparisonId));
+      .where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), eq(conversionComparisons.id, input.comparisonId)));
 
     // Delete existing unlocked scores for this comparison
     const lockedScores = await db!.select().from(conversionScores)
-      .where(and(
+      .where(opsWorkspaceCondition(conversionScores, currentOpsWorkspaceId(), and(
         eq(conversionScores.comparisonId, input.comparisonId),
         eq(conversionScores.isLocked, 1)
-      ));
+      )));
     const lockedKeys = new Set(lockedScores.map(s => `${s.checkItemId}:${s.asin}`));
     await db!.delete(conversionScores)
-      .where(and(
+      .where(opsWorkspaceCondition(conversionScores, currentOpsWorkspaceId(), and(
         eq(conversionScores.comparisonId, input.comparisonId),
         eq(conversionScores.isLocked, 0)
-      ));
+      )));
 
     // ═══ Step 2: AI + 程序化评分 ═══
     for (const asin of allAsins) {
@@ -450,7 +452,7 @@ export const opsConversionProcedures = {
 
     // Calculate overall score for own ASIN
     const ownScores = await db!.select().from(conversionScores)
-      .where(and(eq(conversionScores.comparisonId, input.comparisonId), eq(conversionScores.asin, comp.ownAsin)));
+      .where(opsWorkspaceCondition(conversionScores, currentOpsWorkspaceId(), and(eq(conversionScores.comparisonId, input.comparisonId), eq(conversionScores.asin, comp.ownAsin))));
     // 只计算有实际分数的项，跳过无数据的项
     const scoredItems = ownScores.filter(s => s.score !== null && s.score > 0);
     const noDataItems = ownScores.filter(s => s.score === null || s.source === 'no_data');
@@ -461,7 +463,7 @@ export const opsConversionProcedures = {
     await db!.update(conversionComparisons).set({
       overallOwnScore: String(avgScore),
       status: "completed" as any,
-    }).where(eq(conversionComparisons.id, input.comparisonId));
+    }).where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), eq(conversionComparisons.id, input.comparisonId)));
 
     return {
       success: true,
@@ -480,14 +482,14 @@ export const opsConversionProcedures = {
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     const [comp] = await db!.select().from(conversionComparisons)
-      .where(eq(conversionComparisons.id, input.comparisonId));
+      .where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), eq(conversionComparisons.id, input.comparisonId)));
     if (!comp) throw new TRPCError({ code: "NOT_FOUND" });
 
     const competitorAsins: string[] = JSON.parse((comp.competitorAsins as string) || "[]");
     const allScores = await db!.select().from(conversionScores)
-      .where(eq(conversionScores.comparisonId, input.comparisonId));
+      .where(opsWorkspaceCondition(conversionScores, currentOpsWorkspaceId(), eq(conversionScores.comparisonId, input.comparisonId)));
     const checkItems = await db!.select().from(conversionCheckItems)
-      .where(sql`${conversionCheckItems.userId} IS NULL OR ${conversionCheckItems.userId} = ${ctx.user.id}`);
+      .where(opsWorkspaceCondition(conversionCheckItems, currentOpsWorkspaceId(), sql`${conversionCheckItems.userId} IS NULL OR ${conversionCheckItems.userId} = ${ctx.user.id}`));
 
     // Group scores by category
     const categoryScores: Record<string, { own: number[]; competitors: number[] }> = {};
@@ -505,7 +507,7 @@ export const opsConversionProcedures = {
 
     // Delete existing unlocked suggestions
     await db!.delete(conversionSuggestions)
-      .where(and(eq(conversionSuggestions.comparisonId, input.comparisonId), eq(conversionSuggestions.isLocked, 0)));
+      .where(opsWorkspaceCondition(conversionSuggestions, currentOpsWorkspaceId(), and(eq(conversionSuggestions.comparisonId, input.comparisonId), eq(conversionSuggestions.isLocked, 0))));
 
     // Generate AI suggestions per category
     const categories = Object.keys(categoryScores);
@@ -518,11 +520,11 @@ export const opsConversionProcedures = {
 
       // Check if locked suggestion exists
       const locked = await db!.select().from(conversionSuggestions)
-        .where(and(
+        .where(opsWorkspaceCondition(conversionSuggestions, currentOpsWorkspaceId(), and(
           eq(conversionSuggestions.comparisonId, input.comparisonId),
           eq(conversionSuggestions.categoryName, cat),
           eq(conversionSuggestions.isLocked, 1)
-        ));
+        )));
       if (locked.length > 0) return null;
 
       let suggestion = "";
@@ -605,7 +607,7 @@ export const opsConversionProcedures = {
   getSuggestions: protectedProcedure.input(z.object({ comparisonId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     return db!.select().from(conversionSuggestions)
-      .where(eq(conversionSuggestions.comparisonId, input.comparisonId))
+      .where(opsWorkspaceCondition(conversionSuggestions, currentOpsWorkspaceId(), eq(conversionSuggestions.comparisonId, input.comparisonId)))
       .orderBy(asc(conversionSuggestions.categoryName));
   }),
 
@@ -627,7 +629,7 @@ export const opsConversionProcedures = {
         else cleanUpdates[k] = v;
       }
     }
-    await db!.update(conversionSuggestions).set(cleanUpdates).where(eq(conversionSuggestions.id, suggestionId));
+    await db!.update(conversionSuggestions).set(cleanUpdates).where(opsWorkspaceCondition(conversionSuggestions, currentOpsWorkspaceId(), eq(conversionSuggestions.id, suggestionId)));
     return { success: true };
   }),
 
@@ -648,32 +650,32 @@ export const opsConversionProcedures = {
     if (input.mode === "locked_low_score") {
       // Sync all locked suggestions where own score <= threshold
       suggestions = await db!.select().from(conversionSuggestions)
-        .where(and(
+        .where(opsWorkspaceCondition(conversionSuggestions, currentOpsWorkspaceId(), and(
           eq(conversionSuggestions.comparisonId, input.comparisonId),
           eq(conversionSuggestions.isLocked, 1),
           sql`CAST(${conversionSuggestions.ownScore} AS DECIMAL) <= ${input.scoreThreshold}`
-        ));
+        )));
     } else if (input.mode === "all_locked") {
       // Sync all locked suggestions
       suggestions = await db!.select().from(conversionSuggestions)
-        .where(and(
+        .where(opsWorkspaceCondition(conversionSuggestions, currentOpsWorkspaceId(), and(
           eq(conversionSuggestions.comparisonId, input.comparisonId),
           eq(conversionSuggestions.isLocked, 1)
-        ));
+        )));
     } else if (input.suggestionIds.length > 0) {
       // Sync specific selected suggestions
       suggestions = await db!.select().from(conversionSuggestions)
-        .where(and(
+        .where(opsWorkspaceCondition(conversionSuggestions, currentOpsWorkspaceId(), and(
           eq(conversionSuggestions.comparisonId, input.comparisonId),
           inArray(conversionSuggestions.id, input.suggestionIds)
-        ));
+        )));
     } else {
       // Fallback: sync all locked suggestions (backward compat)
       suggestions = await db!.select().from(conversionSuggestions)
-        .where(and(
+        .where(opsWorkspaceCondition(conversionSuggestions, currentOpsWorkspaceId(), and(
           eq(conversionSuggestions.comparisonId, input.comparisonId),
           eq(conversionSuggestions.isLocked, 1)
-        ));
+        )));
     }
 
     let created = 0;
@@ -703,11 +705,11 @@ export const opsConversionProcedures = {
 
       // Link action to todo
       await db!.update(opsPlanActions).set({ linkedTodoId: todoResult.insertId })
-        .where(eq(opsPlanActions.id, actionResult.insertId));
+        .where(opsWorkspaceCondition(opsPlanActions, currentOpsWorkspaceId(), eq(opsPlanActions.id, actionResult.insertId)));
 
       // Link suggestion to action
       await db!.update(conversionSuggestions).set({ linkedPlanActionId: actionResult.insertId })
-        .where(eq(conversionSuggestions.id, sug.id));
+        .where(opsWorkspaceCondition(conversionSuggestions, currentOpsWorkspaceId(), eq(conversionSuggestions.id, sug.id)));
 
       created++;
     }

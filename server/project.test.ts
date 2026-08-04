@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
-// Mock the database module
-vi.mock("./db", () => ({
+// Mock the repository barrel used by the analysis router.
+vi.mock("./repositories", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./repositories")>(),
   getProjectsByUser: vi.fn().mockResolvedValue([
     {
       id: 1,
@@ -65,6 +66,14 @@ vi.mock("./db", () => ({
   updateListing: vi.fn().mockResolvedValue({ id: 1 }),
   upsertUser: vi.fn(),
   getUserByOpenId: vi.fn(),
+}));
+
+vi.mock("./repositories/listing", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./repositories/listing")>(),
+  getActiveListingByProject: vi.fn().mockResolvedValue(null),
+  getListingsByProject: vi.fn().mockResolvedValue([]),
+  createListing: vi.fn().mockResolvedValue({ id: 1 }),
+  updateListing: vi.fn().mockResolvedValue({ id: 1 }),
 }));
 
 vi.mock("./repositories/project", () => ({

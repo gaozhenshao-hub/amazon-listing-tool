@@ -1,2 +1,2 @@
-export { getDb, requireDb, withDbTransaction } from "../../db";
+export { getDb, requireDb, withDbTransaction } from "../../repositories/dbClient";
 export * from "./schema";

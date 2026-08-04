@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "fs";
 import path from "path";
+import { readSchemaSources } from "./testPaths";
 
 // ─── AI Tag Accuracy: Anti-Hallucination Prompt Tests ─────────
 describe("AI Tag Generation - Anti-Hallucination Prompts", () => {
@@ -85,8 +86,7 @@ describe("AI Tag Generation - Anti-Hallucination Prompts", () => {
 
 // ─── Schema Tests ─────────────────────────────────────────────
 describe("AI Tag Accuracy - Schema", () => {
-  const schemaPath = path.join(__dirname, "../drizzle/schema.ts");
-  const schemaCode = fs.readFileSync(schemaPath, "utf-8");
+  const schemaCode = readSchemaSources();
 
   it("should have sourceEvidence field in devProjectTagItems", () => {
     expect(schemaCode).toContain('sourceEvidence');

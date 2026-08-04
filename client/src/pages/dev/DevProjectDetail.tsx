@@ -15,6 +15,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { WorkflowStepProgress } from "@/components/workflow/WorkflowStepProgress";
+import { EmbeddedAgentRunPanel } from "@/components/workflow/EmbeddedAgentRunPanel";
 import { DEV_PRODUCT_WORKFLOW_STEPS } from "@/components/workflow/workflowDefinitions";
 import DevDataUpload from "./DevDataUpload";
 import PanoramaTable from "./PanoramaTable";
@@ -246,6 +247,7 @@ export default function DevProjectDetail() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-5">
+      <EmbeddedAgentRunPanel title="产品开发 Agent Run / Checkpoint" projectId={projectId} />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">

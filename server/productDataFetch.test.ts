@@ -7,7 +7,7 @@ describe("Product Data Fetch - ASIN Filtering", () => {
   describe("findMatchedSid helper", () => {
     it("should match seller by storeName", async () => {
       // Import after mocks
-      vi.mock("./db", () => ({
+      vi.mock("./repositories/dbClient", () => ({
         getDb: vi.fn(() => Promise.resolve({
           select: vi.fn().mockReturnThis(),
           from: vi.fn().mockReturnThis(),

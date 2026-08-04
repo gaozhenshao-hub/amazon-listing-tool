@@ -10,9 +10,9 @@
 | 轮次 | 当前状态 | 仍需完成 |
 | --- | --- | --- |
 | 1. 生产底座 | 已完成 | 持续演练故障恢复；维护 Heartbeat UID/密钥配置 |
-| 2. 数据库治理 | 部分完成 | 真实拆分 `drizzle/schema.ts`；迁出 `server/db.ts` 剩余 helper；补核心事务边界；消除 schema/index 漂移 |
+| 2. 数据库治理 | 已完成本轮 | Schema 已物理分域；根级 DB helper 已删除；核心 repository 与迁移回归门禁已建立 |
 | 3. 领域边界 | 部分完成 | 拆分 `adAnalysis.ts`、`operations.ts`；继续拆分 Agent Runner、Tool Gateway 内部职责 |
-| 4. 租户权限安全 | 主体完成 | 运营域逐表补 workspace 过滤；扩大关键业务 audit 覆盖 |
+| 4. 租户权限安全 | 已完成本轮 | 运营/广告表已补 workspace 列、上下文写入和查询过滤；继续扩大关键业务 audit 覆盖 |
 | 5. 生命周期/Artifact | 主体完成 | Listing、图片、广告、视频的最终产物统一登记到 `ai_artifacts`；继续分流大 JSON/TEXT |
 | 6. 前端工作流 | 部分完成 | 广告、视频、产品开发页面从本地步骤状态切换到 Agent Run/Checkpoint/Artifact |
 | 7. 可观测/QA | 主体完成 | 增加真实慢查询采样；扩充真实数据库迁移回归套件 |
@@ -42,26 +42,26 @@
 
 ### P1 数据访问收口
 
-1. 将 `server/db.ts` 的 auth、project asset、listing、image helper 迁入领域 repository，保留临时兼容 re-export。
-2. 将 `drizzle/schema.ts` 的真实表定义迁入分域 schema；根文件只做兼容 re-export。
+1. Auth、project asset、listing、image helper 已迁入领域 repository，根级兼容文件已删除。
+2. 表定义已迁入分域 schema，统一由 `drizzle/schema/index.ts` 聚合导出。
 3. 把 migration 中已有的核心索引同步回 Drizzle schema，增加 schema drift 测试。
 4. 为 Listing 保存、文件与 Artifact 登记、Agent Run 创建等复合写入补 transaction。
 
-### P2 剩余领域拆分
+### P2 已完成领域拆分
 
-1. 拆 `server/routers/adAnalysis.ts` 为 dashboard/import/diagnosis/strategy。
-2. 拆 `server/routers/operations.ts` 为 dashboard/inventory/profit/automation。
-3. 将 Agent Runner 拆为 executor/checkpoint/artifact/event/scheduler 协作服务。
-4. 将 Tool Gateway 拆为 registry/secret/executor/policy/audit/circuit-breaker。
+1. `server/routers/adAnalysis.ts` 已变为领域路由组合入口。
+2. `server/routers/operations.ts` 已变为领域路由组合入口。
+3. Agent Runner 已拆为 executor/checkpoint/artifact/event/scheduler 协作服务。
+4. Tool Gateway 已拆为 registry/secret/executor/policy/audit/circuit-breaker 协作服务。
 
 ### P3 业务接入收口
 
-1. 运营域 repository 全量执行 workspace scope。
+1. 运营域 repository 与路由已全量执行 workspace scope，并由 AST 架构回归测试阻止未隔离查询进入主分支。
 2. Listing、图片、广告、视频最终结果统一注册 Artifact。
 3. 广告、视频、智能产品开发页面接入 Agent Run/Checkpoint/Artifact，保留现有业务操作和展示能力。
 
 ### P4 运营质量
 
-1. 采样慢查询耗时、query fingerprint 与 EXPLAIN 结果，不记录敏感参数。
-2. 建立专用 CI 数据库，覆盖 0113-0115 迁移、租户隔离、归档和回滚兼容性。
+1. 已从 MySQL `performance_schema` 采样参数归一化的慢查询 digest、耗时与扫描行数，不记录原始参数。
+2. CI 真实数据库门禁覆盖治理迁移、workspace 列与索引、慢查询采样落库；部署环境需配置专用 `CI_DATABASE_URL`。
 3. 对归档任务、Worker stale recovery、Agent retry 做定期故障演练。

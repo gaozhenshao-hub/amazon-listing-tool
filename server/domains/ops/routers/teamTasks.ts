@@ -1,3 +1,5 @@
+import { currentOpsWorkspaceId } from "../workspaceContext";
+import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
 
@@ -75,7 +77,7 @@ export const opsTeamTaskProcedures = {
     .query(async ({ input }) => {
       const db = await getDb();
       return db!.select().from(teamTasks)
-        .where(eq(teamTasks.productProfileId, input.productProfileId))
+        .where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), eq(teamTasks.productProfileId, input.productProfileId)))
         .orderBy(asc(teamTasks.sortOrder), desc(teamTasks.createdAt));
     }),
 
@@ -138,7 +140,7 @@ export const opsTeamTaskProcedures = {
         clean.completedAt = new Date();
       }
       if (Object.keys(clean).length > 0) {
-        await db!.update(teamTasks).set(clean).where(eq(teamTasks.id, taskId));
+        await db!.update(teamTasks).set(clean).where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), eq(teamTasks.id, taskId)));
       }
       return { updated: true };
     }),
@@ -148,7 +150,7 @@ export const opsTeamTaskProcedures = {
     .input(z.object({ taskId: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      await db!.delete(teamTasks).where(eq(teamTasks.id, input.taskId));
+      await db!.delete(teamTasks).where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), eq(teamTasks.id, input.taskId)));
       return { deleted: true };
     }),
 
@@ -162,7 +164,7 @@ export const opsTeamTaskProcedures = {
       const db = await getDb();
       const updates: Record<string, unknown> = { status: input.newStatus };
       if (input.newStatus === "done") updates.completedAt = new Date();
-      await db!.update(teamTasks).set(updates).where(eq(teamTasks.id, input.taskId));
+      await db!.update(teamTasks).set(updates).where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), eq(teamTasks.id, input.taskId)));
       return { moved: true };
     }),
 
@@ -172,7 +174,7 @@ export const opsTeamTaskProcedures = {
     .query(async ({ input }) => {
       const db = await getDb();
       const tasks = await db!.select().from(teamTasks)
-        .where(eq(teamTasks.productProfileId, input.productProfileId));
+        .where(opsWorkspaceCondition(teamTasks, currentOpsWorkspaceId(), eq(teamTasks.productProfileId, input.productProfileId)));
 
       const byStatus: Record<string, number> = { backlog: 0, todo: 0, in_progress: 0, review: 0, done: 0 };
       const byAssignee: Record<string, { total: number; done: number; inProgress: number }> = {};

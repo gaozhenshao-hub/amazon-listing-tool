@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "fs";
 import path from "path";
+import { readSchemaSources } from "./testPaths";
 
 const basePath = path.resolve(__dirname, "..");
 
@@ -105,7 +106,7 @@ describe("Platform - Module 2 route migration", () => {
 
 describe("Platform - Database schema completeness", () => {
   it("schema should have all module 2 tables (existing)", () => {
-    const schema = fs.readFileSync(path.join(basePath, "drizzle/schema.ts"), "utf-8");
+    const schema = readSchemaSources();
     expect(schema).toContain("users");
     expect(schema).toContain("projects");
     expect(schema).toContain("keywords");
@@ -113,7 +114,7 @@ describe("Platform - Database schema completeness", () => {
   });
 
   it("schema should have all module 1 tables (dev_*)", () => {
-    const schema = fs.readFileSync(path.join(basePath, "drizzle/schema.ts"), "utf-8");
+    const schema = readSchemaSources();
     const devTables = [
       "devProjects", "devUploadedFiles", "devProducts", "devReviews",
       "devTagDimensions", "devExternalData", "devAnalysisReports",
@@ -128,7 +129,7 @@ describe("Platform - Database schema completeness", () => {
   });
 
   it("schema should have all module 5 tables (kb_*)", () => {
-    const schema = fs.readFileSync(path.join(basePath, "drizzle/schema.ts"), "utf-8");
+    const schema = readSchemaSources();
     const kbTables = [
       "kbProductInnovations", "kbListingCopywriting", "kbImageSets",
       "kbImages", "kbOperationSkills",

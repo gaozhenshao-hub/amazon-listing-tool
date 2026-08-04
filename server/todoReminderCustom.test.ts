@@ -1,12 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { resolve } from "path";
-import { readRepoSources } from "./testPaths";
+import { readRepoSources, readSchemaSources } from "./testPaths";
 
 describe("Custom Todo Reminder Feature", () => {
   // ─── Schema Tests ───
   describe("Database Schema", () => {
-    const schema = readFileSync(resolve(__dirname, "../drizzle/schema.ts"), "utf-8");
+    const schema = readSchemaSources();
 
     it("productTodos table has reminderDays field", () => {
       expect(schema).toContain('reminderDays: varchar("reminder_days"');

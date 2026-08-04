@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock db
-vi.mock("./db", () => ({
+vi.mock("./repositories", () => ({
   getProjectById: vi.fn().mockResolvedValue({ id: 1, name: "Test", userId: "user1" }),
   getProjectFileById: vi.fn(),
   updateProjectFile: vi.fn(),
@@ -26,7 +26,7 @@ describe("Analysis Result Editing", () => {
 
   describe("updateAnalysisResult validation", () => {
     it("should accept valid JSON analysis result", async () => {
-      const db = await import("./db");
+      const db = await import("./repositories");
       const validResult = JSON.stringify({
         uniqueSellingPoints: ["USP1", "USP2"],
         coreSpecs: [{ attribute: "Weight", value: "500g" }],
@@ -258,7 +258,7 @@ describe("Analysis Result Editing", () => {
     });
 
     it("should update database with edited analysis result", async () => {
-      const db = await import("./db");
+      const db = await import("./repositories");
 
       const editedResult = {
         titleMustHaveKeywords: ["kw1", "kw2"],

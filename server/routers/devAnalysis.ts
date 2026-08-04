@@ -3,7 +3,7 @@ import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import { callDataApi } from "../_core/dataApi";
 import * as devDb from "../devDb";
-import { getDb } from "../db";
+import { getDb } from "../repositories/dbClient";
 import { devProjectTagCategories, devProjectTagItems, devPanoramaStatus } from "../../drizzle/schema";
 import { eq, and, asc } from "drizzle-orm";
 

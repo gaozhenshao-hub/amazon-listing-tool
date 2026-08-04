@@ -118,14 +118,13 @@ describe("SellerSprite Product Dedup", () => {
 });
 
 describe("upsertCompetitorAnalysis logic", () => {
-  it("should export upsertCompetitorAnalysis function from db module", async () => {
-    // This test verifies the function exists and is properly exported
-    const dbModule = await import("./db");
-    expect(typeof dbModule.upsertCompetitorAnalysis).toBe("function");
+  it("should export upsertCompetitorAnalysis from the project repository", async () => {
+    const repository = await import("./repositories/project");
+    expect(typeof repository.upsertCompetitorAnalysis).toBe("function");
   });
 
-  it("should export createCompetitorAnalysis function from db module (backward compat)", async () => {
-    const dbModule = await import("./db");
-    expect(typeof dbModule.createCompetitorAnalysis).toBe("function");
+  it("should export createCompetitorAnalysis from the project repository", async () => {
+    const repository = await import("./repositories/project");
+    expect(typeof repository.createCompetitorAnalysis).toBe("function");
   });
 });

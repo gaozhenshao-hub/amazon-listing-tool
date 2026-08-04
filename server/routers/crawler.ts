@@ -1,6 +1,9 @@
+import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
+import { opsWorkspaceCondition } from "../repositories/ops";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/ops/workspaceProcedure";
+import { getDb } from "../repositories/dbClient";
 import {
   competitorMonitors, competitorSnapshots,
   keywordMonitors, keywordSnapshots,
@@ -26,10 +29,10 @@ export const crawlerRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       const [monitor] = await db!.select().from(competitorMonitors)
-        .where(and(
+        .where(opsWorkspaceCondition(competitorMonitors, currentOpsWorkspaceId(), and(
           eq(competitorMonitors.id, input.monitorId),
           eq(competitorMonitors.userId, ctx.user.id)
-        ));
+        )));
       if (!monitor) return { success: false, error: "Monitor not found" };
 
       const result = await crawlCompetitorData(monitor.competitorAsin, monitor.marketplace || "US");
@@ -58,7 +61,7 @@ export const crawlerRouter = router({
             lastCheckedAt: new Date(),
             competitorTitle: d.title || monitor.competitorTitle,
           })
-          .where(eq(competitorMonitors.id, monitor.id));
+          .where(opsWorkspaceCondition(competitorMonitors, currentOpsWorkspaceId(), eq(competitorMonitors.id, monitor.id)));
       }
 
       return {
@@ -76,10 +79,10 @@ export const crawlerRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       const [monitor] = await db!.select().from(keywordMonitors)
-        .where(and(
+        .where(opsWorkspaceCondition(keywordMonitors, currentOpsWorkspaceId(), and(
           eq(keywordMonitors.id, input.keywordMonitorId),
           eq(keywordMonitors.userId, ctx.user.id)
-        ));
+        )));
       if (!monitor) return { success: false, error: "Keyword monitor not found" };
 
       const targetAsin = monitor.targetAsin || "";
@@ -98,7 +101,7 @@ export const crawlerRouter = router({
 
         await db!.update(keywordMonitors)
           .set({ lastCheckedAt: new Date() })
-          .where(eq(keywordMonitors.id, monitor.id));
+          .where(opsWorkspaceCondition(keywordMonitors, currentOpsWorkspaceId(), eq(keywordMonitors.id, monitor.id)));
       }
 
       return {
@@ -114,10 +117,10 @@ export const crawlerRouter = router({
   crawlAllCompetitors: protectedProcedure.mutation(async ({ ctx }) => {
     const db = await getDb();
     const monitors = await db!.select().from(competitorMonitors)
-      .where(and(
+      .where(opsWorkspaceCondition(competitorMonitors, currentOpsWorkspaceId(), and(
         eq(competitorMonitors.userId, ctx.user.id),
         eq(competitorMonitors.isActive, 1)
-      ));
+      )));
 
     if (monitors.length === 0) return { success: true, total: 0, results: [] };
 
@@ -151,7 +154,7 @@ export const crawlerRouter = router({
 
         await db!.update(competitorMonitors)
           .set({ lastCheckedAt: new Date(), competitorTitle: d.title || undefined })
-          .where(eq(competitorMonitors.id, jr.id));
+          .where(opsWorkspaceCondition(competitorMonitors, currentOpsWorkspaceId(), eq(competitorMonitors.id, jr.id)));
       }
     }
 
@@ -176,11 +179,11 @@ export const crawlerRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       const monitors = await db!.select().from(keywordMonitors)
-        .where(and(
+        .where(opsWorkspaceCondition(keywordMonitors, currentOpsWorkspaceId(), and(
           eq(keywordMonitors.userId, ctx.user.id),
           eq(keywordMonitors.productId, input.productId),
           eq(keywordMonitors.isActive, 1)
-        ));
+        )));
 
       if (monitors.length === 0) return { success: true, total: 0, results: [] };
 
@@ -209,7 +212,7 @@ export const crawlerRouter = router({
 
           await db!.update(keywordMonitors)
             .set({ lastCheckedAt: new Date() })
-            .where(eq(keywordMonitors.id, jr.id));
+            .where(opsWorkspaceCondition(keywordMonitors, currentOpsWorkspaceId(), eq(keywordMonitors.id, jr.id)));
         }
       }
 
@@ -244,11 +247,11 @@ export const crawlerRouter = router({
       startScheduler(intervalMs, async () => {
         // Get all active competitor monitors
         const compMonitors = await db!.select().from(competitorMonitors)
-          .where(eq(competitorMonitors.isActive, 1));
+          .where(opsWorkspaceCondition(competitorMonitors, currentOpsWorkspaceId(), eq(competitorMonitors.isActive, 1)));
 
         // Get all active keyword monitors
         const kwMonitors = await db!.select().from(keywordMonitors)
-          .where(eq(keywordMonitors.isActive, 1));
+          .where(opsWorkspaceCondition(keywordMonitors, currentOpsWorkspaceId(), eq(keywordMonitors.isActive, 1)));
 
         const jobs: CrawlJob[] = [
           ...compMonitors.map(m => ({
@@ -288,12 +291,12 @@ export const crawlerRouter = router({
       const db = await getDb();
       if (input.type === "competitor") {
         return db!.select().from(competitorSnapshots)
-          .where(eq(competitorSnapshots.monitorId, input.monitorId))
+          .where(opsWorkspaceCondition(competitorSnapshots, currentOpsWorkspaceId(), eq(competitorSnapshots.monitorId, input.monitorId)))
           .orderBy(desc(competitorSnapshots.snapshotDate))
           .limit(input.limit);
       } else {
         return db!.select().from(keywordSnapshots)
-          .where(eq(keywordSnapshots.keywordMonitorId, input.monitorId))
+          .where(opsWorkspaceCondition(keywordSnapshots, currentOpsWorkspaceId(), eq(keywordSnapshots.keywordMonitorId, input.monitorId)))
           .orderBy(desc(keywordSnapshots.snapshotDate))
           .limit(input.limit);
       }

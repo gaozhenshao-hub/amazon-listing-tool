@@ -2,7 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import { storagePut } from "../storage";
-import * as db from "../db";
+import * as db from "../repositories";
 import { createContentHash, registerProjectFileArtifactBundle, type ArtifactSourceType } from "../domains/ai_os/services/artifactLifecycle";
 import { actorFromContext, assertResourceAction, recordSecurityAuditLog, workspaceIdFromContext, type SecurityAction } from "../services/securityGovernance";
 import { parse as csvParse } from "csv-parse/sync";
@@ -14,7 +14,7 @@ import {
 } from "../analysisPrompts";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { projectAssignments, devProjects, devProductProfiles } from "../../drizzle/schema";
-import { getDb } from "../db";
+import { getDb } from "../repositories/dbClient";
 
 // ─── File Parsers ─────────────────────────────────────────────────
 

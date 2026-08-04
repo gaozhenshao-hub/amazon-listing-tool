@@ -16,7 +16,7 @@ const mockGetUserByEmailOrPhone = vi.fn();
 const mockUpdateUserById = vi.fn();
 const mockUpsertUser = vi.fn();
 
-vi.mock("./db", () => ({
+vi.mock("./repositories", () => ({
   getUserByOpenId: (...args: any[]) => mockGetUserByOpenId(...args),
   getUserByEmailOrPhone: (...args: any[]) => mockGetUserByEmailOrPhone(...args),
   updateUserById: (...args: any[]) => mockUpdateUserById(...args),

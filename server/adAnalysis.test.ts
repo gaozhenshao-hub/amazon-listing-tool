@@ -137,7 +137,8 @@ function createAuthContext(): TrpcContext {
       email: "test@example.com",
       name: "Test User",
       loginMethod: "manus",
-      role: "user",
+      role: "admin",
+      defaultWorkspaceId: 1,
       createdAt: new Date(),
       updatedAt: new Date(),
       lastSignedIn: new Date(),
@@ -149,6 +150,7 @@ function createAuthContext(): TrpcContext {
     res: {
       clearCookie: vi.fn(),
     } as unknown as TrpcContext["res"],
+    workspaceId: 1,
   };
 }
 

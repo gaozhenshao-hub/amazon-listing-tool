@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
-import { getDb } from "../../db";
+import { getDb } from "../../repositories/dbClient";
 
 export function generateRunId(): string {
   return `run_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;

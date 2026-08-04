@@ -1,10 +1,13 @@
+import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
+import { opsWorkspaceCondition } from "../repositories/ops";
 /**
  * Ad Report Upload Router - Upload, list, delete ad report files
  * Replaces Lingxing API calls with local database data from uploaded files
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/ops/workspaceProcedure";
+import { getDb } from "../repositories/dbClient";
 import {
   adReportUploads,
   adSearchTermReports,
@@ -43,10 +46,10 @@ async function resolveParentAsinFromPortfolio(
     .select()
     .from(adPortfolioMappings)
     .where(
-      and(
+      opsWorkspaceCondition(adPortfolioMappings, currentOpsWorkspaceId(), and(
         eq(adPortfolioMappings.userId, userId),
         eq(adPortfolioMappings.portfolioName, portfolioName)
-      )
+      ))
     )
     .limit(1);
   return mappings[0]?.parentAsin || null;
@@ -84,7 +87,7 @@ export const adReportUploadRouter = router({
       const uploads = await d
         .select()
         .from(adReportUploads)
-        .where(and(...conditions))
+        .where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), and(...conditions)))
         .orderBy(desc(adReportUploads.createdAt))
         .limit(input.limit)
         .offset(input.offset);
@@ -177,14 +180,14 @@ export const adReportUploadRouter = router({
         await d
           .update(adReportUploads)
           .set({ status: "completed", importedRows: parsedRows.length })
-          .where(eq(adReportUploads.id, uploadId));
+          .where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
 
         return { uploadId, totalRows: parsedRows.length, importedRows: parsedRows.length };
       } catch (err: any) {
         await d
           .update(adReportUploads)
           .set({ status: "failed", errorMessage: err.message })
-          .where(eq(adReportUploads.id, uploadId));
+          .where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
         throw err;
       }
     }),
@@ -288,14 +291,14 @@ export const adReportUploadRouter = router({
         await d
           .update(adReportUploads)
           .set({ status: "completed", importedRows: parsedRows.length })
-          .where(eq(adReportUploads.id, uploadId));
+          .where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
 
         return { uploadId, totalRows: parsedRows.length, importedRows: parsedRows.length };
       } catch (err: any) {
         await d
           .update(adReportUploads)
           .set({ status: "failed", errorMessage: err.message })
-          .where(eq(adReportUploads.id, uploadId));
+          .where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
         throw err;
       }
     }),
@@ -393,14 +396,14 @@ export const adReportUploadRouter = router({
         await d
           .update(adReportUploads)
           .set({ status: "completed", importedRows: parsedRows.length })
-          .where(eq(adReportUploads.id, uploadId));
+          .where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
 
         return { uploadId, totalRows: parsedRows.length, importedRows: parsedRows.length };
       } catch (err: any) {
         await d
           .update(adReportUploads)
           .set({ status: "failed", errorMessage: err.message })
-          .where(eq(adReportUploads.id, uploadId));
+          .where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
         throw err;
       }
     }),
@@ -476,14 +479,14 @@ export const adReportUploadRouter = router({
         await d
           .update(adReportUploads)
           .set({ status: "completed", importedRows: parsedRows.length })
-          .where(eq(adReportUploads.id, uploadId));
+          .where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
 
         return { uploadId, totalRows: parsedRows.length, importedRows: parsedRows.length };
       } catch (err: any) {
         await d
           .update(adReportUploads)
           .set({ status: "failed", errorMessage: err.message })
-          .where(eq(adReportUploads.id, uploadId));
+          .where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
         throw err;
       }
     }),
@@ -553,7 +556,7 @@ export const adReportUploadRouter = router({
         await d
           .update(adReportUploads)
           .set({ status: "completed", importedRows: parsedRows.length })
-          .where(eq(adReportUploads.id, uploadId));
+          .where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
 
         return {
           uploadId,
@@ -565,7 +568,7 @@ export const adReportUploadRouter = router({
         await d
           .update(adReportUploads)
           .set({ status: "failed", errorMessage: err.message })
-          .where(eq(adReportUploads.id, uploadId));
+          .where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
         throw err;
       }
     }),
@@ -580,7 +583,7 @@ export const adReportUploadRouter = router({
         .select()
         .from(adReportUploads)
         .where(
-          and(eq(adReportUploads.id, input.uploadId), eq(adReportUploads.userId, ctx.user.id))
+          opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), and(eq(adReportUploads.id, input.uploadId), eq(adReportUploads.userId, ctx.user.id)))
         );
       if (!upload) throw new Error("上传记录不存在");
 
@@ -599,7 +602,7 @@ export const adReportUploadRouter = router({
       }
 
       // Delete upload record
-      await d.delete(adReportUploads).where(eq(adReportUploads.id, input.uploadId));
+      await d.delete(adReportUploads).where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, input.uploadId)));
 
       return { success: true, deletedType: upload.reportType };
     }),
@@ -631,7 +634,7 @@ export const adReportUploadRouter = router({
       const data = await d
         .select()
         .from(adSearchTermReports)
-        .where(and(...conditions))
+        .where(opsWorkspaceCondition(adSearchTermReports, currentOpsWorkspaceId(), and(...conditions)))
         .limit(input.limit)
         .offset(input.offset);
 
@@ -663,7 +666,7 @@ export const adReportUploadRouter = router({
       return d
         .select()
         .from(adCampaignReports)
-        .where(and(...conditions))
+        .where(opsWorkspaceCondition(adCampaignReports, currentOpsWorkspaceId(), and(...conditions)))
         .limit(input.limit)
         .offset(input.offset);
     }),
@@ -695,7 +698,7 @@ export const adReportUploadRouter = router({
       return d
         .select()
         .from(adPlacementReports)
-        .where(and(...conditions))
+        .where(opsWorkspaceCondition(adPlacementReports, currentOpsWorkspaceId(), and(...conditions)))
         .limit(input.limit)
         .offset(input.offset);
     }),
@@ -723,7 +726,7 @@ export const adReportUploadRouter = router({
       return d
         .select()
         .from(adHourlyReports)
-        .where(and(...conditions))
+        .where(opsWorkspaceCondition(adHourlyReports, currentOpsWorkspaceId(), and(...conditions)))
         .limit(input.limit)
         .offset(input.offset);
     }),
@@ -751,7 +754,7 @@ export const adReportUploadRouter = router({
       return d
         .select()
         .from(adOrderHourly)
-        .where(and(...conditions))
+        .where(opsWorkspaceCondition(adOrderHourly, currentOpsWorkspaceId(), and(...conditions)))
         .limit(input.limit)
         .offset(input.offset);
     }),
@@ -828,14 +831,14 @@ export const adReportUploadRouter = router({
         await d
           .update(adReportUploads)
           .set({ status: "completed", importedRows: parsedRows.length })
-          .where(eq(adReportUploads.id, uploadId));
+          .where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
 
         return { uploadId, totalRows: parsedRows.length, importedRows: parsedRows.length };
       } catch (err: any) {
         await d
           .update(adReportUploads)
           .set({ status: "failed", errorMessage: err.message })
-          .where(eq(adReportUploads.id, uploadId));
+          .where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
         throw err;
       }
     }),
@@ -856,11 +859,11 @@ export const adReportUploadRouter = router({
         })
         .from(adReportUploads)
         .where(
-          and(
+          opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), and(
             eq(adReportUploads.userId, ctx.user.id),
             eq(adReportUploads.reportType, input.reportType),
             eq(adReportUploads.status, "completed")
-          )
+          ))
         )
         .orderBy(desc(adReportUploads.createdAt));
 

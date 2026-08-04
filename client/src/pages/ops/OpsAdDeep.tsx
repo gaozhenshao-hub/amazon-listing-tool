@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { EmbeddedAgentRunPanel } from "@/components/workflow";
 import {
   Activity, Upload, BarChart3, Target, Search, Layers,
   Stethoscope, ClipboardList, Calendar, Filter, Database,
@@ -26,6 +27,7 @@ export default function OpsAdDeep() {
 
   return (
     <div className="space-y-4">
+      <EmbeddedAgentRunPanel title="广告深度优化 Agent Run / Checkpoint" />
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>

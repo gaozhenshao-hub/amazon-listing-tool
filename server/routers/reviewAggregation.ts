@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
-import * as db from "../db";
+import * as db from "../repositories";
 
 const KANO_AGGREGATION_PROMPT = `You are an expert Amazon product analyst specializing in customer review analysis using the Kano Model framework.
 

@@ -68,7 +68,7 @@ AI OS services 也归入 `server/domains/ai_os/services`：
 - Listing/Image/Ops 是业务层，可以调用 AI OS 的平台能力，但不把业务状态塞进 AI OS 表。
 - 业务 domain 访问数据优先通过本领域 repository。
 - 跨领域引用优先保存 ID，由 service 层查询，不在 router 里随意 join。
-- `server/db.ts` 是历史兼容出口，不再作为新代码的默认数据访问入口。
+- 根级数据库兼容出口已删除，所有数据访问必须进入领域 repository。
 
 ## 已知迁移状态
 

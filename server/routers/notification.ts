@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import * as db from "../db";
+import * as db from "../repositories";
 
 export const notificationRouter = router({
   // Manually trigger todo reminder check

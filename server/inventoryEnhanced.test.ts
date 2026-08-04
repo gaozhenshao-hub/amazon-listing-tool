@@ -91,9 +91,9 @@ vi.mock("./_core/llm", () => ({
   }),
 }));
 
-const mockUser = { id: 1, openId: "test-user", name: "Test User", role: "admin" as const };
+const mockUser = { id: 1, openId: "test-user", name: "Test User", role: "admin" as const, defaultWorkspaceId: 1 };
 const createCaller = () => {
-  const ctx: TrpcContext = { user: mockUser };
+  const ctx: TrpcContext = { user: mockUser as any, workspaceId: 1 };
   return appRouter.createCaller(ctx);
 };
 

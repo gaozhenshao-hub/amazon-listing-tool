@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import fs from "fs";
 import path from "path";
+import { readSchemaSources } from "./testPaths";
 
 // ============================================================
 // Module 1: Product Development AI Analysis - Router Structure
@@ -121,7 +122,7 @@ describe("Module 1 - File structure", () => {
   });
 
   it("should have all dev_ tables in schema", () => {
-    const schema = fs.readFileSync(path.join(basePath, "drizzle/schema.ts"), "utf-8");
+    const schema = readSchemaSources();
     const requiredTables = [
       "devProjects", "devUploadedFiles", "devProducts", "devReviews",
       "devTagDimensions", "devExternalData", "devAnalysisReports",

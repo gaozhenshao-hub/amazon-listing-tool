@@ -10,3 +10,12 @@ export function readRepoSources(...relativePaths: string[]) {
     .map(relativePath => fs.readFileSync(repoPath(relativePath), "utf-8"))
     .join("\n");
 }
+
+export function readSchemaSources() {
+  const schemaDir = repoPath("drizzle/schema");
+  return fs.readdirSync(schemaDir)
+    .filter(fileName => fileName.endsWith(".ts") && fileName !== "index.ts")
+    .sort()
+    .map(fileName => fs.readFileSync(path.join(schemaDir, fileName), "utf-8"))
+    .join("\n");
+}

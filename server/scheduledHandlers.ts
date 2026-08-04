@@ -8,7 +8,7 @@
  * via the x-manus-cron-task-uid header (trusted by platform gateway).
  */
 import { Request, Response } from "express";
-import { getDb } from "./db";
+import { getDb } from "./repositories/dbClient";
 import { lingxingProductWeekly, saihuProductWeekly, productProfiles } from "../drizzle/schema";
 import { desc, eq, gte } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
@@ -237,6 +237,24 @@ export async function aiWorkerTickHandler(req: Request, res: Response) {
     return res.status(500).json({
       error: error.message || "Unknown error",
       context: { url: req.url, taskUid },
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+/** Samples database growth, EXPLAIN baselines, and normalized slow-query digests. */
+export async function databaseObservabilitySnapshotHandler(req: Request, res: Response) {
+  const taskUid = authorizeScheduledRequest(req, res);
+  if (!taskUid) return;
+  try {
+    const { recordDatabaseBaselineSnapshot } = await import("./domains/ai_os/services/observability");
+    const result = await recordDatabaseBaselineSnapshot();
+    return res.json({ ok: true, taskUid, ...result });
+  } catch (error) {
+    console.error("[DatabaseObservability] Snapshot failed:", error);
+    return res.status(500).json({
+      ok: false,
+      error: String((error as Error)?.message || error),
       timestamp: new Date().toISOString(),
     });
   }

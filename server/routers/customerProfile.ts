@@ -1,6 +1,9 @@
+import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
+import { opsWorkspaceCondition } from "../repositories/ops";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/ops/workspaceProcedure";
+import { getDb } from "../repositories/dbClient";
 import { customerProfiles } from "../../drizzle/schema";
 import { eq, desc, like, and, sql } from "drizzle-orm";
 import { invokeLLM } from "../_core/llm";
@@ -25,11 +28,11 @@ export const customerProfileRouter = router({
         conditions.push(eq(customerProfiles.aiValueTag, input.tag as any));
       }
       const list = await db.select().from(customerProfiles)
-        .where(and(...conditions))
+        .where(opsWorkspaceCondition(customerProfiles, currentOpsWorkspaceId(), and(...conditions)))
         .orderBy(desc(customerProfiles.totalSpent))
         .limit(input.limit).offset(input.offset);
       const countRes = await db.select({ count: sql<number>`count(*)` }).from(customerProfiles)
-        .where(and(...conditions));
+        .where(opsWorkspaceCondition(customerProfiles, currentOpsWorkspaceId(), and(...conditions)));
       return { list, total: countRes[0]?.count || 0 };
     }),
 
@@ -40,7 +43,7 @@ export const customerProfileRouter = router({
       const db = await getDb();
       if (!db) return null;
       const rows = await db.select().from(customerProfiles)
-        .where(and(eq(customerProfiles.id, input.id), eq(customerProfiles.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(customerProfiles, currentOpsWorkspaceId(), and(eq(customerProfiles.id, input.id), eq(customerProfiles.userId, ctx.user.id))));
       return rows[0] || null;
     }),
 
@@ -81,7 +84,7 @@ export const customerProfileRouter = router({
           returnCount: input.returnCount,
           returnRate: input.returnRate,
           communicationCount: input.communicationCount,
-        }).where(and(eq(customerProfiles.id, input.id), eq(customerProfiles.userId, ctx.user.id)));
+        }).where(opsWorkspaceCondition(customerProfiles, currentOpsWorkspaceId(), and(eq(customerProfiles.id, input.id), eq(customerProfiles.userId, ctx.user.id))));
         return { id: input.id };
       } else {
         const res = await db.insert(customerProfiles).values({
@@ -112,7 +115,7 @@ export const customerProfileRouter = router({
       const db = await getDb();
       if (!db) return { success: false };
       await db.delete(customerProfiles)
-        .where(and(eq(customerProfiles.id, input.id), eq(customerProfiles.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(customerProfiles, currentOpsWorkspaceId(), and(eq(customerProfiles.id, input.id), eq(customerProfiles.userId, ctx.user.id))));
       return { success: true };
     }),
 
@@ -148,7 +151,7 @@ export const customerProfileRouter = router({
 
       for (const [, buyer] of Array.from(buyerMap)) {
         const existing = await db.select().from(customerProfiles)
-          .where(and(eq(customerProfiles.userId, ctx.user.id), eq(customerProfiles.customerId, buyer.buyerId)));
+          .where(opsWorkspaceCondition(customerProfiles, currentOpsWorkspaceId(), and(eq(customerProfiles.userId, ctx.user.id), eq(customerProfiles.customerId, buyer.buyerId))));
 
         const orderDates = buyer.orders.map((o: any) => o.purchase_date || o.purchaseDate || '').filter(Boolean).sort();
         const avgVal = buyer.orders.length > 0 ? (buyer.totalAmount / buyer.orders.length).toFixed(2) : "0";
@@ -163,7 +166,7 @@ export const customerProfileRouter = router({
             lastOrderDate: orderDates[orderDates.length - 1] || null,
             avgOrderValue: avgVal,
             lastSyncAt: new Date(),
-          }).where(eq(customerProfiles.id, existing[0].id));
+          }).where(opsWorkspaceCondition(customerProfiles, currentOpsWorkspaceId(), eq(customerProfiles.id, existing[0].id)));
         } else {
           await db.insert(customerProfiles).values({
             userId: ctx.user.id,
@@ -195,7 +198,7 @@ export const customerProfileRouter = router({
         const db = await getDb();
         if (!db) return null;
         const rows = await db.select().from(customerProfiles)
-          .where(and(eq(customerProfiles.id, input.customerId), eq(customerProfiles.userId, ctx.user.id)));
+          .where(opsWorkspaceCondition(customerProfiles, currentOpsWorkspaceId(), and(eq(customerProfiles.id, input.customerId), eq(customerProfiles.userId, ctx.user.id))));
         data = rows[0];
       }
       if (!data) return null;
@@ -260,7 +263,7 @@ ${JSON.stringify(data, null, 2)}
             aiValueScore: String(result.valueScore),
             aiValueTag: result.riskLevel === 'high' ? 'risk' : result.valueScore >= 80 ? 'high_value' : result.customerType === '新客户' ? 'new' : 'normal',
             aiAnalysis: result,
-          }).where(eq(customerProfiles.id, input.customerId));
+          }).where(opsWorkspaceCondition(customerProfiles, currentOpsWorkspaceId(), eq(customerProfiles.id, input.customerId)));
         }
       }
 
@@ -272,7 +275,7 @@ ${JSON.stringify(data, null, 2)}
     const db = await getDb();
     if (!db) return { total: 0, highValue: 0, atRisk: 0, totalRevenue: 0, avgOrderValue: 0, repeatBuyers: 0, repeatRate: 0 };
     const all = await db.select().from(customerProfiles)
-      .where(eq(customerProfiles.userId, ctx.user.id));
+      .where(opsWorkspaceCondition(customerProfiles, currentOpsWorkspaceId(), eq(customerProfiles.userId, ctx.user.id)));
 
     const total = all.length;
     const highValue = all.filter(c => Number(c.aiValueScore || 0) >= 80).length;

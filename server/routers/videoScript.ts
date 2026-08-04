@@ -2,7 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import * as vsDb from "../videoScriptDb";
-import * as db from "../db";
+import * as db from "../repositories";
 import { generateVideoScriptExcel } from "../videoScriptExcel";
 import { storagePut } from "../storage";
 import { getL1Index, getL2Summary, formatForPrompt, logKbCallBatch } from "../kbContextEngine";

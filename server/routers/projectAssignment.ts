@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure, adminProcedure, managerProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { getDb } from "../repositories/dbClient";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import {
   projectAssignments,

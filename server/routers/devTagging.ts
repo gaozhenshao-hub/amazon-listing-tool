@@ -2,7 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
 import * as devDb from "../devDb";
-import { getDb } from "../db";
+import { getDb } from "../repositories/dbClient";
 import {
   devProjectTagCategories,
   devProjectTagItems,

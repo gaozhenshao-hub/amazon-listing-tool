@@ -22,7 +22,7 @@ vi.mock("./storage", () => ({
 }));
 
 // Mock db functions
-vi.mock("./db", () => ({
+vi.mock("./repositories", () => ({
   getProjectById: vi.fn().mockResolvedValue({ id: 1, name: "Test", userId: "user1" }),
   getProjectFilesByProject: vi.fn().mockResolvedValue([]),
   getProjectFilesByType: vi.fn().mockResolvedValue([]),
@@ -236,7 +236,7 @@ describe("ProjectFile Module", () => {
   describe("loadFileAnalyses", () => {
     it("should return empty object when no files exist", async () => {
       const { loadFileAnalyses } = await getLoadFileAnalysesFunction();
-      const db = await import("./db");
+      const db = await import("./repositories");
       (db.getProjectFilesByProject as any).mockResolvedValueOnce([]);
 
       const result = await loadFileAnalyses(999);
@@ -246,7 +246,7 @@ describe("ProjectFile Module", () => {
 
     it("should parse completed file analyses", async () => {
       const { loadFileAnalyses } = await getLoadFileAnalysesFunction();
-      const db = await import("./db");
+      const db = await import("./repositories");
 
       (db.getProjectFilesByProject as any).mockResolvedValueOnce([
         {
@@ -441,7 +441,7 @@ async function getBuildContextFunction() {
 
 async function getLoadFileAnalysesFunction() {
   // Import the actual db module (mocked)
-  const db = await import("./db");
+  const db = await import("./repositories");
 
   async function loadFileAnalyses(projectId: number) {
     const files = await db.getProjectFilesByProject(projectId);

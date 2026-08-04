@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock DB functions
-vi.mock("./db", () => ({
+vi.mock("./repositories", () => ({
   createAdStructure: vi.fn().mockResolvedValue({ id: 1 }),
   getAdStructuresByProject: vi.fn().mockResolvedValue([]),
   getAdStructureById: vi.fn().mockResolvedValue(null),

@@ -1,3 +1,5 @@
+import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
+import { opsWorkspaceCondition } from "../repositories/ops";
 /**
  * Operator Name Mapping Router
  * Maps external operator names (from Lingxing/Saihu exports) to system users
@@ -5,8 +7,9 @@
  */
 import { z } from "zod";
 import { eq, and, or, sql } from "drizzle-orm";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/ops/workspaceProcedure";
+import { getDb } from "../repositories/dbClient";
 import { operatorNameMappings, users } from "../../drizzle/schema";
 
 // ─── Fuzzy Matching Helpers ───
@@ -106,7 +109,7 @@ export const operatorMappingRouter = router({
   listMappings: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     const mappings = await db!.select().from(operatorNameMappings)
-      .where(eq(operatorNameMappings.userId, ctx.user.id))
+      .where(opsWorkspaceCondition(operatorNameMappings, currentOpsWorkspaceId(), eq(operatorNameMappings.userId, ctx.user.id)))
       .orderBy(operatorNameMappings.externalName);
     return mappings;
   }),
@@ -124,11 +127,11 @@ export const operatorMappingRouter = router({
       const db = await getDb();
       // Check if mapping already exists
       const existing = await db!.select().from(operatorNameMappings)
-        .where(and(
+        .where(opsWorkspaceCondition(operatorNameMappings, currentOpsWorkspaceId(), and(
           eq(operatorNameMappings.userId, ctx.user.id),
           eq(operatorNameMappings.externalName, input.externalName),
           eq(operatorNameMappings.sourceType, input.sourceType),
-        ))
+        )))
         .limit(1);
 
       if (existing.length > 0) {
@@ -139,7 +142,7 @@ export const operatorMappingRouter = router({
             systemUserId: input.systemUserId,
             isConfirmed: input.isConfirmed ? 1 : 0,
           })
-          .where(eq(operatorNameMappings.id, existing[0].id));
+          .where(opsWorkspaceCondition(operatorNameMappings, currentOpsWorkspaceId(), eq(operatorNameMappings.id, existing[0].id)));
         return { id: existing[0].id, action: "updated" };
       } else {
         // Insert new
@@ -172,14 +175,14 @@ export const operatorMappingRouter = router({
 
       for (const m of input.mappings) {
         const existing = await db!.select().from(operatorNameMappings)
-          .where(and(
+          .where(opsWorkspaceCondition(operatorNameMappings, currentOpsWorkspaceId(), and(
             eq(operatorNameMappings.userId, ctx.user.id),
             eq(operatorNameMappings.externalName, m.externalName),
             or(
               eq(operatorNameMappings.sourceType, m.sourceType),
               eq(operatorNameMappings.sourceType, "all"),
             ),
-          ))
+          )))
           .limit(1);
 
         if (existing.length > 0) {
@@ -189,7 +192,7 @@ export const operatorMappingRouter = router({
               systemUserId: m.systemUserId,
               isConfirmed: 1,
             })
-            .where(eq(operatorNameMappings.id, existing[0].id));
+            .where(opsWorkspaceCondition(operatorNameMappings, currentOpsWorkspaceId(), eq(operatorNameMappings.id, existing[0].id)));
           updated++;
         } else {
           await db!.insert(operatorNameMappings).values({
@@ -213,10 +216,10 @@ export const operatorMappingRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       await db!.delete(operatorNameMappings)
-        .where(and(
+        .where(opsWorkspaceCondition(operatorNameMappings, currentOpsWorkspaceId(), and(
           eq(operatorNameMappings.id, input.id),
           eq(operatorNameMappings.userId, ctx.user.id),
-        ));
+        )));
       return { deleted: true };
     }),
 
@@ -232,10 +235,10 @@ export const operatorMappingRouter = router({
 
       // 1. Load all existing confirmed mappings for this user
       const existingMappings = await db!.select().from(operatorNameMappings)
-        .where(and(
+        .where(opsWorkspaceCondition(operatorNameMappings, currentOpsWorkspaceId(), and(
           eq(operatorNameMappings.userId, ctx.user.id),
           eq(operatorNameMappings.isConfirmed, 1),
-        ));
+        )));
 
       // 2. Load all active system users
       const systemUsers = await db!.select({ id: users.id, name: users.name })
@@ -321,7 +324,7 @@ export const operatorMappingRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       const mapping = await db!.select().from(operatorNameMappings)
-        .where(and(
+        .where(opsWorkspaceCondition(operatorNameMappings, currentOpsWorkspaceId(), and(
           eq(operatorNameMappings.userId, ctx.user.id),
           eq(operatorNameMappings.externalName, input.externalName),
           or(
@@ -329,7 +332,7 @@ export const operatorMappingRouter = router({
             eq(operatorNameMappings.sourceType, "all"),
           ),
           eq(operatorNameMappings.isConfirmed, 1),
-        ))
+        )))
         .limit(1);
 
       if (mapping.length > 0) {
@@ -354,10 +357,10 @@ export const operatorMappingRouter = router({
       if (uniqueNames.length === 0) return {};
 
       const allMappings = await db!.select().from(operatorNameMappings)
-        .where(and(
+        .where(opsWorkspaceCondition(operatorNameMappings, currentOpsWorkspaceId(), and(
           eq(operatorNameMappings.userId, ctx.user.id),
           eq(operatorNameMappings.isConfirmed, 1),
-        ));
+        )));
 
       const result: Record<string, { systemUserName: string | null; systemUserId: number | null }> = {};
       for (const name of uniqueNames) {

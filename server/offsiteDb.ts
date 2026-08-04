@@ -1,4 +1,4 @@
-import { getDb } from "./db";
+import { getDb } from "./repositories/dbClient";
 import { eq, desc, and, sql, gte, lte, like } from "drizzle-orm";
 import {
   offInfluencers, offInfluencerScores, offCampaigns, offCollaborations,

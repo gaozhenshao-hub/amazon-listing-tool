@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
-import * as db from "../db";
+import * as db from "../repositories";
 import { COMPETITOR_ANALYSIS_PROMPT, REVIEW_ANALYSIS_PROMPT, COMPARISON_SUMMARY_PROMPT } from "../prompts";
 import { scrapeAmazonProduct, type AmazonProductData } from "../scraper";
 import { getScraperConfig } from "./systemSettings";

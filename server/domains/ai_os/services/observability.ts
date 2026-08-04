@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
-import { getDb } from "../../../db";
+import { getDb } from "../../../repositories/dbClient";
 import {
   auditDatabasePerformanceBaselines,
   collectCoreTableRowCounts,
@@ -8,6 +8,10 @@ import {
   type CoreTableRowCountResult,
   type DatabaseExplainAuditResult,
 } from "../../../repositories/dbGovernance";
+import {
+  listDatabaseSlowQuerySamples,
+  sampleDatabaseSlowQueries,
+} from "../../../repositories/database";
 
 const METRIC_STORE_RETRY_MS = 60_000;
 let aiOsMetricStoreUnavailableUntil = 0;
@@ -600,6 +604,11 @@ export async function buildDatabaseObservabilitySection(days = 30) {
   );
   const archiveHealth = await buildArchiveHealth(bounded);
   const rowCountTrends = await buildRowCountTrends(bounded);
+  const slowQueries = await safeObservabilitySection<any[]>(
+    "slow query samples",
+    [],
+    () => listDatabaseSlowQuerySamples({ days: bounded, limit: 100 }),
+  );
   const failedExplainCount = explainAudits.filter((item) => !item.usesExpectedIndex).length;
 
   return {
@@ -616,6 +625,7 @@ export async function buildDatabaseObservabilitySection(days = 30) {
       passRate: percentage(explainAudits.length - failedExplainCount, explainAudits.length),
     },
     archiveHealth,
+    slowQueries,
     migrationRegression: getMigrationRegressionBaseline(),
   };
 }
@@ -624,9 +634,10 @@ export async function recordDatabaseBaselineSnapshot(input: {
   workspaceId?: number | null;
   userId?: number | null;
 } = {}) {
-  const [rowCounts, explainAudits] = await Promise.all([
+  const [rowCounts, explainAudits, slowQuerySampling] = await Promise.all([
     collectCoreTableRowCounts(),
     auditDatabasePerformanceBaselines(),
+    sampleDatabaseSlowQueries(),
   ]);
 
   for (const item of rowCounts) {
@@ -673,8 +684,11 @@ export async function recordDatabaseBaselineSnapshot(input: {
     rowCountSamples: rowCounts.length,
     explainSamples: explainAudits.length,
     failedExplainChecks: explainAudits.filter((item) => !item.usesExpectedIndex).length,
+    slowQuerySampling,
   };
 }
+
+export { sampleDatabaseSlowQueries };
 
 export async function buildAiOsObservabilityDashboard(input: {
   days?: number;

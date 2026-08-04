@@ -7,7 +7,7 @@ import {
   createNegativeKeyword,
   getNegativeKeywordsByProject, deleteNegativeKeyword,
   deleteNegativeKeywordsByProject, getKeywordById,
-} from "../db";
+} from "../repositories";
 import { parse } from "csv-parse/sync";
 import * as XLSX from "xlsx";
 import { chunkArray } from "./keywordHelpers";

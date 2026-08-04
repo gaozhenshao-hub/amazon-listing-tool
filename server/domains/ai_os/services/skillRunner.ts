@@ -2,7 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
 import { createHash } from "crypto";
 import Handlebars from "handlebars";
-import { getDb } from "../../../db";
+import { getDb } from "../../../repositories/dbClient";
 import { buildWorkspaceScopeFilter } from "../../../services/securityGovernance";
 import { invokeLLM, type Message, type MessageContent } from "../../../_core/llm";
 import { recordAiOsEvaluation, recordAiOsMetric } from "./observability";

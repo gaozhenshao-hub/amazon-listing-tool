@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
-import * as db from "../db";
+import * as db from "../repositories";
 import { scoreListing } from "../scoringEngine";
 
 // Dimension-specific optimization prompts

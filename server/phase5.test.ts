@@ -23,27 +23,27 @@ describe("notification router", () => {
 // ─── Test 2: Notification DB helpers ───
 describe("notification db helpers", () => {
   it("should export createNotification", async () => {
-    const db = await import("./db");
+    const db = await import("./repositories/auth");
     expect(typeof db.createNotification).toBe("function");
   });
 
   it("should export getNotificationsByUser", async () => {
-    const db = await import("./db");
+    const db = await import("./repositories/auth");
     expect(typeof db.getNotificationsByUser).toBe("function");
   });
 
   it("should export getUnreadNotificationCount", async () => {
-    const db = await import("./db");
+    const db = await import("./repositories/auth");
     expect(typeof db.getUnreadNotificationCount).toBe("function");
   });
 
   it("should export markNotificationRead", async () => {
-    const db = await import("./db");
+    const db = await import("./repositories/auth");
     expect(typeof db.markNotificationRead).toBe("function");
   });
 
   it("should export markAllNotificationsRead", async () => {
-    const db = await import("./db");
+    const db = await import("./repositories/auth");
     expect(typeof db.markAllNotificationsRead).toBe("function");
   });
 });
@@ -127,12 +127,12 @@ describe("devProject router - admin access", () => {
 // ─── Test 7: Admin DB helpers ───
 describe("admin db helpers", () => {
   it("should export getAllProjects", async () => {
-    const db = await import("./db");
+    const db = await import("./repositories/project");
     expect(typeof db.getAllProjects).toBe("function");
   });
 
   it("should export getProjectByIdAdmin", async () => {
-    const db = await import("./db");
+    const db = await import("./repositories/project");
     expect(typeof db.getProjectByIdAdmin).toBe("function");
   });
 

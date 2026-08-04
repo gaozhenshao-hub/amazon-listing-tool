@@ -9,6 +9,7 @@ import {
   listAiOsEvaluations,
   listAiOsMetrics,
   recordDatabaseBaselineSnapshot,
+  sampleDatabaseSlowQueries,
 } from "../services/observability";
 
 export const emperorObservabilityRouter = router({
@@ -78,6 +79,31 @@ export const emperorObservabilityRouter = router({
         status: "success",
         riskLevel: "medium",
         metadata: result,
+      });
+      return result;
+    }),
+
+  sampleSlowQueries: adminProcedure
+    .input(z.object({
+      minimumAverageMs: z.number().min(1).max(3_600_000).optional(),
+      limit: z.number().int().min(1).max(200).optional(),
+    }).optional())
+    .mutation(async ({ ctx, input }) => {
+      const workspaceId = workspaceIdFromContext(ctx);
+      const result = await sampleDatabaseSlowQueries(input || {});
+      await recordSecurityAuditLog({
+        ctx,
+        workspaceId,
+        action: "database_slow_query.sample",
+        resourceType: "ai_os",
+        status: result.available ? "success" : "failed",
+        riskLevel: "medium",
+        metadata: {
+          available: result.available,
+          sampleCount: result.sampleCount,
+          reason: "reason" in result ? result.reason : null,
+          options: result.options,
+        },
       });
       return result;
     }),

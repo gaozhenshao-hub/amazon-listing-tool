@@ -1,6 +1,6 @@
 import type express from "express";
 import { sql as drizzleSql } from "drizzle-orm";
-import { getDb } from "../db";
+import { getDb } from "../repositories/dbClient";
 import {
   getAiJobRuntimeStatus,
   getAiJobWorkerHealth,

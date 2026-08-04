@@ -6,7 +6,7 @@
  * Module 3: COSMO Scenes (keywords.sceneTags + intentTag)
  * Module 4: A9 Keywords (keywords.strategyCategory + listingPlacement)
  */
-import * as db from "./db";
+import * as db from "./repositories";
 
 // ─── Type Definitions ────────────────────────────────────────────
 

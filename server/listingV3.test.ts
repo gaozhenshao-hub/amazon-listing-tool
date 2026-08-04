@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
-import { readRepoSources } from "./testPaths";
+import { readRepoSources, readSchemaSources } from "./testPaths";
 
 // ─── Test: listingContext.ts Data Aggregation Layer ─────────────
 describe("listingContext.ts - Data Aggregation Layer", () => {
@@ -334,8 +334,7 @@ describe("QA Generation", () => {
 
 // ─── Test: Database Schema - QA Fields ──────────────────────────
 describe("Database Schema - QA Fields", () => {
-  const schemaPath = path.join(__dirname, "../drizzle/schema.ts");
-  const schema = fs.readFileSync(schemaPath, "utf-8");
+  const schema = readSchemaSources();
 
   it("should have qaContent field in listings table", () => {
     expect(schema).toContain("qaContent");

@@ -11,8 +11,16 @@ const mockDb = {
   values: vi.fn().mockResolvedValue([{ insertId: 1 }]),
 };
 
-vi.mock("./db", () => ({
+vi.mock("./repositories/dbClient", () => ({
   getDb: vi.fn().mockResolvedValue(mockDb),
+}));
+
+vi.mock("./services/securityGovernance", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./services/securityGovernance")>(),
+  actorFromContext: vi.fn((ctx: any) => ctx.user),
+  assertResourceAction: vi.fn().mockResolvedValue(undefined),
+  recordSecurityAuditLog: vi.fn().mockResolvedValue(undefined),
+  workspaceIdFromContext: vi.fn((ctx: any) => ctx.workspaceId ?? ctx.user?.defaultWorkspaceId ?? null),
 }));
 
 vi.mock("drizzle-orm", () => ({
@@ -81,7 +89,8 @@ describe("ASIN Logistics API - Schema & Logic", () => {
     
     const { shippingBatchRouter } = await import("./routers/shippingBatch");
     const caller = shippingBatchRouter.createCaller({
-      user: { id: 999, name: "Test", role: "admin", openId: "test_999" },
+      user: { id: 999, name: "Test", role: "admin", openId: "test_999", defaultWorkspaceId: 1 },
+      workspaceId: 1,
     } as any);
     
     const result = await caller.getAsinBatches({ asin: "B0NONEXIST" });
@@ -93,7 +102,8 @@ describe("ASIN Logistics API - Schema & Logic", () => {
     
     const { shippingBatchRouter } = await import("./routers/shippingBatch");
     const caller = shippingBatchRouter.createCaller({
-      user: { id: 999, name: "Test", role: "admin", openId: "test_999" },
+      user: { id: 999, name: "Test", role: "admin", openId: "test_999", defaultWorkspaceId: 1 },
+      workspaceId: 1,
     } as any);
     
     const result = await caller.getAsinLogs({ asin: "B0TEST123" });
@@ -105,7 +115,8 @@ describe("ASIN Logistics API - Schema & Logic", () => {
     
     const { shippingBatchRouter } = await import("./routers/shippingBatch");
     const caller = shippingBatchRouter.createCaller({
-      user: { id: 999, name: "Test", role: "admin", openId: "test_999" },
+      user: { id: 999, name: "Test", role: "admin", openId: "test_999", defaultWorkspaceId: 1 },
+      workspaceId: 1,
     } as any);
     
     const result = await caller.addAsinLog({ 
@@ -120,7 +131,8 @@ describe("ASIN Logistics API - Schema & Logic", () => {
     
     const { shippingBatchRouter } = await import("./routers/shippingBatch");
     const caller = shippingBatchRouter.createCaller({
-      user: { id: 999, name: "Test", role: "admin", openId: "test_999" },
+      user: { id: 999, name: "Test", role: "admin", openId: "test_999", defaultWorkspaceId: 1 },
+      workspaceId: 1,
     } as any);
     
     const result = await caller.addAsinLog({ 

@@ -10,7 +10,7 @@ vi.mock("./_core/llm", () => ({
 }));
 
 // Mock db functions
-vi.mock("./db", () => ({
+vi.mock("./repositories", () => ({
   getProjectById: vi.fn(),
   getCompetitorAnalysesByProject: vi.fn(),
   getListingsByProject: vi.fn(),
@@ -24,7 +24,7 @@ vi.mock("./db", () => ({
 }));
 
 import { invokeLLM } from "./_core/llm";
-import * as db from "./db";
+import * as db from "./repositories";
 
 const mockedInvokeLLM = vi.mocked(invokeLLM);
 const mockedDb = vi.mocked(db);

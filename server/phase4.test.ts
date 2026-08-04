@@ -23,17 +23,17 @@ describe("roleManagement router", () => {
 // ─── Role Permissions DB Helpers Tests ────────────────────────
 describe("rolePermissions DB helpers", () => {
   it("should export getAllRolePermissions", async () => {
-    const db = await import("./db");
+    const db = await import("./repositories/auth");
     expect(typeof db.getAllRolePermissions).toBe("function");
   });
 
   it("should export getRolePermission", async () => {
-    const db = await import("./db");
+    const db = await import("./repositories/auth");
     expect(typeof db.getRolePermission).toBe("function");
   });
 
   it("should export upsertRolePermission", async () => {
-    const db = await import("./db");
+    const db = await import("./repositories/auth");
     expect(typeof db.upsertRolePermission).toBe("function");
   });
 });

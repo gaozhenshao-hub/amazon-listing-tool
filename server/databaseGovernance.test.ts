@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import fs from "node:fs";
 import * as aiOsSchema from "../drizzle/schema/ai_os";
 import * as authSchema from "../drizzle/schema/auth";
 import * as projectSchema from "../drizzle/schema/project";
 import * as relations from "../drizzle/relations";
-import * as dbCompat from "./db";
+import * as dbCompat from "./repositories";
 import {
   ARCHIVE_POLICIES,
   CORE_TABLE_ROW_COUNT_BASELINES,
@@ -23,6 +24,8 @@ import {
 } from "./repositories/dbGovernance";
 import * as aiJobRepository from "./repositories/ai_os";
 import * as projectRepository from "./repositories/project";
+import { buildSlowQuerySamplingSql, normalizeSlowQuerySampleOptions } from "./repositories/database";
+import { repoPath } from "./testPaths";
 
 describe("database governance v1", () => {
   it("defines the canonical database domains", () => {
@@ -33,13 +36,15 @@ describe("database governance v1", () => {
       "image",
       "ads",
       "ops",
+      "video",
+      "knowledge",
       "ai_os",
     ]);
     expect(listDomainTables("ai_os")).toContain("ai_jobs");
     expect(listDomainTables("project")).toContain("projects");
   });
 
-  it("keeps core repositories callable from direct and compatibility exports", () => {
+  it("keeps core repositories callable from direct and aggregate exports", () => {
     expect(typeof projectRepository.createProject).toBe("function");
     expect(typeof projectRepository.getAllProjects).toBe("function");
     expect(typeof projectRepository.deleteProject).toBe("function");
@@ -48,6 +53,13 @@ describe("database governance v1", () => {
     expect(typeof dbCompat.createProject).toBe("function");
     expect(typeof dbCompat.createAiJob).toBe("function");
     expect(typeof dbCompat.withDbTransaction).toBe("function");
+  });
+
+  it("removes the root database and schema compatibility files", () => {
+    expect(fs.existsSync(repoPath("server/db.ts"))).toBe(false);
+    expect(fs.existsSync(repoPath("drizzle/schema.ts"))).toBe(false);
+    expect(fs.readFileSync(repoPath("drizzle.config.ts"), "utf8")).toContain("./drizzle/schema/index.ts");
+    expect(DATABASE_DOMAINS.every((domain) => domain.writePolicy === "repository_required")).toBe(true);
   });
 
   it("exposes schema domain modules and relations", () => {
@@ -136,6 +148,8 @@ describe("database governance v1", () => {
         "0111_tool_gateway_governance_v2.sql",
         "0112_template_observability_qa.sql",
         "0115_data_lifecycle_artifacts_v1.sql",
+        "0116_ops_workspace_isolation.sql",
+        "0117_database_runtime_observability.sql",
       ]),
     );
     expect(MIGRATION_REGRESSION_BASELINE.requiredTables).toEqual(
@@ -145,10 +159,24 @@ describe("database governance v1", () => {
         "emperor_tool_runs",
         "emperor_ai_os_evaluations",
         "ai_data_archive_runs",
+        "database_slow_query_samples",
       ]),
     );
     expect(MIGRATION_REGRESSION_BASELINE.requiredIndexes).toContain("idx_ai_jobs_queue_due");
     expect(MIGRATION_REGRESSION_BASELINE.requiredChecks.map((item) => item.slug)).toContain("archive_health");
+    expect(MIGRATION_REGRESSION_BASELINE.requiredChecks.map((item) => item.slug)).toContain("slow_query_sampling");
+  });
+
+  it("builds bounded real performance_schema sampling SQL", () => {
+    expect(normalizeSlowQuerySampleOptions({ minimumAverageMs: -1, limit: 9999 })).toEqual({
+      minimumAverageMs: 1,
+      limit: 200,
+    });
+    const samplingSql = buildSlowQuerySamplingSql({ minimumAverageMs: 500, limit: 25 });
+    expect(samplingSql).toContain("performance_schema.events_statements_summary_by_digest");
+    expect(samplingSql).toContain("AVG_TIMER_WAIT / 1000000000 >= 500");
+    expect(samplingSql).toContain("LIMIT 25");
+    expect(samplingSql).toContain("DIGEST_TEXT NOT LIKE");
   });
 
   it("returns a complete governance snapshot", () => {

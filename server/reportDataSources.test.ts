@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-// Mock db module before importing router
-vi.mock("./db", () => ({
+// Mock the domain repository barrel before importing the report router.
+vi.mock("./repositories", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./repositories")>(),
   getProjectById: vi.fn().mockResolvedValue({
     id: 1,
     name: "Test Product",

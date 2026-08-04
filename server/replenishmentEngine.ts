@@ -8,7 +8,7 @@
  * - Generates structured replenishment suggestions via LLM
  */
 
-import { getDb } from "./db";
+import { getDb } from "./repositories/dbClient";
 import { shippingBatches, batchStepConfigs, stepTimeHistory, replenishmentPredictions, batchProducts } from "../drizzle/schema";
 import { eq, and, sql, desc, gte, isNotNull } from "drizzle-orm";
 // Lingxing API removed - inventory data now comes from Excel uploads

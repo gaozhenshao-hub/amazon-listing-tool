@@ -1,8 +1,7 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
-import { readRepoSources, repoPath } from "../testPaths";
+import { readRepoSources, readSchemaSources, repoPath } from "../testPaths";
 
-const SCHEMA_PATH = repoPath("drizzle/schema.ts");
 const FRONTEND_PATH = repoPath("client/src/pages/ops/OpsProductConversion.tsx");
 
 describe("Check Item Customization - Backend APIs", () => {
@@ -92,7 +91,7 @@ describe("Check Item Customization - Backend APIs", () => {
 });
 
 describe("Check Item Customization - Database Schema", () => {
-  const schema = fs.readFileSync(SCHEMA_PATH, "utf-8");
+  const schema = readSchemaSources();
 
   it("check_item_overrides table should exist with correct columns", () => {
     expect(schema).toContain("checkItemOverrides");

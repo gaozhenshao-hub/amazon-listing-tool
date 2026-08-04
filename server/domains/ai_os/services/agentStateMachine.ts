@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
-import { getDb } from "../../../db";
+import { getDb } from "../../../repositories/dbClient";
 
 export type AgentNodeStatus = "pending" | "ready" | "running" | "waiting_human" | "confirmed" | "skipped" | "failed";
 export type AgentRunStatus = "running" | "waiting_human" | "paused" | "completed" | "failed" | "canceled";
