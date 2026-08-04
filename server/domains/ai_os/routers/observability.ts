@@ -2,7 +2,14 @@ import { z } from "zod";
 import { adminProcedure, router } from "../../../_core/trpc";
 import { recordSecurityAuditLog, workspaceIdFromContext } from "../../../services/securityGovernance";
 import { listDataLifecyclePolicies, runDataLifecycleSweep } from "../services/artifactLifecycle";
-import { buildAiOsObservabilityDashboard, listAiOsEvaluations, listAiOsMetrics } from "../services/observability";
+import {
+  buildAiOsObservabilityDashboard,
+  buildDatabaseObservabilitySection,
+  buildWorkerQueueHealth,
+  listAiOsEvaluations,
+  listAiOsMetrics,
+  recordDatabaseBaselineSnapshot,
+} from "../services/observability";
 
 export const emperorObservabilityRouter = router({
   metrics: adminProcedure
@@ -38,6 +45,41 @@ export const emperorObservabilityRouter = router({
         days: input?.days,
         agentSlug: input?.agentSlug,
       });
+    }),
+
+  workerHealth: adminProcedure
+    .input(z.object({
+      days: z.number().int().min(1).max(365).optional().default(30),
+    }).optional())
+    .query(async ({ input }) => {
+      return buildWorkerQueueHealth(input?.days || 30);
+    }),
+
+  databaseBaseline: adminProcedure
+    .input(z.object({
+      days: z.number().int().min(1).max(365).optional().default(30),
+    }).optional())
+    .query(async ({ input }) => {
+      return buildDatabaseObservabilitySection(input?.days || 30);
+    }),
+
+  recordDatabaseBaselineSnapshot: adminProcedure
+    .mutation(async ({ ctx }) => {
+      const workspaceId = workspaceIdFromContext(ctx);
+      const result = await recordDatabaseBaselineSnapshot({
+        workspaceId,
+        userId: ctx.user.id,
+      });
+      await recordSecurityAuditLog({
+        ctx,
+        workspaceId,
+        action: "database_baseline.snapshot",
+        resourceType: "ai_os",
+        status: "success",
+        riskLevel: "medium",
+        metadata: result,
+      });
+      return result;
     }),
 
   lifecyclePolicies: adminProcedure.query(async () => {

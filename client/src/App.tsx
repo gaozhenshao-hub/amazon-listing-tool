@@ -111,6 +111,7 @@ import EmperorSettings from "./pages/emperor/EmperorSettings";
 import EmperorScheduled from "./pages/emperor/EmperorScheduled";
 import AgentCanvas from "./pages/emperor/AgentCanvas";
 import EmperorKnowledge from "./pages/emperor/EmperorKnowledge";
+import EmperorObservability from "./pages/emperor/EmperorObservability";
 
 function Router() {
   return (
@@ -216,6 +217,7 @@ function Router() {
         <Route path="/emperor/mcp">{() => <PermissionGuard><EmperorMCP /></PermissionGuard>}</Route>
         <Route path="/emperor/agents">{() => <PermissionGuard><EmperorAgents /></PermissionGuard>}</Route>
         <Route path="/emperor/usage">{() => <PermissionGuard><EmperorUsage /></PermissionGuard>}</Route>
+        <Route path="/emperor/observability">{() => <PermissionGuard><EmperorObservability /></PermissionGuard>}</Route>
         <Route path="/emperor/diagnostics">{() => <PermissionGuard><EmperorDiagnostics /></PermissionGuard>}</Route>
         <Route path="/emperor/settings">{() => <PermissionGuard><EmperorSettings /></PermissionGuard>}</Route>
         <Route path="/emperor/scheduled">{() => <PermissionGuard><EmperorScheduled /></PermissionGuard>}</Route>

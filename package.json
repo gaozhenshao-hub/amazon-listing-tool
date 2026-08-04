@@ -15,6 +15,9 @@
     "audit:emperor-prompts": "node scripts/audit-emperor-prompt-consistency.mjs",
     "format": "prettier --write .",
     "test": "vitest run",
+    "test:unit": "vitest run",
+    "test:real-db": "RUN_REAL_DB_TESTS=1 vitest run --passWithNoTests \"server/**/*.real.test.ts\"",
+    "qa:gate": "pnpm check && vitest run server/emperorObservability.test.ts server/databaseGovernance.test.ts server/dataLifecycleArtifacts.test.ts server/runtimeBootstrap.test.ts",
     "db:push": "drizzle-kit generate && drizzle-kit migrate"
   },
   "dependencies": {

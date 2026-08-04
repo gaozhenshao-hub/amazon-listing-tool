@@ -46,6 +46,47 @@ export type SoftForeignKeyAuditResult = SoftForeignKeyPolicy & {
   orphanCount: number;
 };
 
+export type CoreTableRowCountBaseline = {
+  domain: DatabaseDomainSlug;
+  table: string;
+  purpose: string;
+  highGrowth: boolean;
+};
+
+export type DatabasePerformanceBaseline = {
+  slug: string;
+  domain: DatabaseDomainSlug;
+  table: string;
+  purpose: string;
+  sql: string;
+  expectedIndexNames: string[];
+  migration: string;
+  risk: "low" | "medium" | "high";
+};
+
+export type CoreTableRowCountResult = CoreTableRowCountBaseline & {
+  rowCount: number;
+  checkedAt: string;
+};
+
+export type DatabaseExplainAuditResult = DatabasePerformanceBaseline & {
+  usesExpectedIndex: boolean;
+  observedKeys: string[];
+  possibleKeys: string[];
+  explainRows: unknown[];
+  checkedAt: string;
+};
+
+export type MigrationRegressionBaseline = {
+  requiredMigrations: string[];
+  requiredTables: string[];
+  requiredIndexes: string[];
+  requiredChecks: Array<{
+    slug: string;
+    description: string;
+  }>;
+};
+
 export const DATABASE_DOMAINS: DatabaseDomain[] = [
   {
     slug: "auth",
@@ -736,12 +777,253 @@ export const ARCHIVE_POLICIES: ArchivePolicy[] = [
   },
 ];
 
+export const CORE_TABLE_ROW_COUNT_BASELINES: CoreTableRowCountBaseline[] = [
+  {
+    domain: "ai_os",
+    table: "ai_jobs",
+    purpose: "AI Job 队列和执行记录增长趋势",
+    highGrowth: true,
+  },
+  {
+    domain: "ai_os",
+    table: "ai_job_workers",
+    purpose: "Worker 心跳和健康状态基数",
+    highGrowth: false,
+  },
+  {
+    domain: "ai_os",
+    table: "ai_job_dead_letters",
+    purpose: "不可恢复 Job 的死信积压趋势",
+    highGrowth: true,
+  },
+  {
+    domain: "ai_os",
+    table: "emperor_agent_runs",
+    purpose: "Agent Run 历史增长趋势",
+    highGrowth: true,
+  },
+  {
+    domain: "ai_os",
+    table: "emperor_agent_checkpoints",
+    purpose: "人工确认节点和中间状态增长趋势",
+    highGrowth: true,
+  },
+  {
+    domain: "ai_os",
+    table: "emperor_agent_events",
+    purpose: "Agent 事件流高增长趋势",
+    highGrowth: true,
+  },
+  {
+    domain: "ai_os",
+    table: "emperor_tool_runs",
+    purpose: "Tool 调用审计和失败率趋势",
+    highGrowth: true,
+  },
+  {
+    domain: "ai_os",
+    table: "emperor_ai_os_metrics",
+    purpose: "AI OS 可观测明细增长趋势",
+    highGrowth: true,
+  },
+  {
+    domain: "ai_os",
+    table: "emperor_ai_os_evaluations",
+    purpose: "Skill/Agent/Tool 质量评测样本趋势",
+    highGrowth: true,
+  },
+  {
+    domain: "ai_os",
+    table: "ai_artifacts",
+    purpose: "统一产物版本资产增长趋势",
+    highGrowth: true,
+  },
+  {
+    domain: "ai_os",
+    table: "ai_storage_objects",
+    purpose: "文件、图片和长文本 Storage 引用增长趋势",
+    highGrowth: true,
+  },
+  {
+    domain: "ai_os",
+    table: "ai_data_archive_runs",
+    purpose: "归档任务执行历史趋势",
+    highGrowth: false,
+  },
+  {
+    domain: "project",
+    table: "projectFiles",
+    purpose: "原始上传文件热表增长趋势",
+    highGrowth: true,
+  },
+  {
+    domain: "ads",
+    table: "ad_daily_search_term_reports",
+    purpose: "广告每日搜索词明细高增长趋势",
+    highGrowth: true,
+  },
+  {
+    domain: "ops",
+    table: "lingxing_product_weekly",
+    purpose: "领星运营周报增长趋势",
+    highGrowth: true,
+  },
+  {
+    domain: "ops",
+    table: "saihu_product_weekly",
+    purpose: "赛狐运营周报增长趋势",
+    highGrowth: true,
+  },
+];
+
+export const DATABASE_PERFORMANCE_BASELINES: DatabasePerformanceBaseline[] = [
+  {
+    slug: "ai_jobs_queue_due",
+    domain: "ai_os",
+    table: "ai_jobs",
+    purpose: "Worker 按状态、队列、优先级和到期时间领取 Job",
+    sql: "SELECT runId, status, queueName, priority, nextRunAt FROM ai_jobs WHERE status IN ('queued','running') AND queueName='default' ORDER BY priority DESC, nextRunAt ASC, createdAt ASC LIMIT 50",
+    expectedIndexNames: ["idx_ai_jobs_queue_due", "idx_ai_jobs_due"],
+    migration: "0108_ai_job_queue_system.sql",
+    risk: "high",
+  },
+  {
+    slug: "ai_jobs_project_history",
+    domain: "ai_os",
+    table: "ai_jobs",
+    purpose: "项目级长任务历史按 projectId/status/createdAt 查询",
+    sql: "SELECT runId, projectId, status, createdAt FROM ai_jobs WHERE projectId=0 AND status='succeeded' ORDER BY createdAt DESC LIMIT 100",
+    expectedIndexNames: ["idx_ai_jobs_project_status_created"],
+    migration: "0113_database_governance_v1.sql",
+    risk: "medium",
+  },
+  {
+    slug: "agent_runs_user_status",
+    domain: "ai_os",
+    table: "emperor_agent_runs",
+    purpose: "用户 Agent Run 历史和状态看板",
+    sql: "SELECT runId, userId, status, createdAt FROM emperor_agent_runs WHERE userId=0 AND status='running' ORDER BY createdAt DESC LIMIT 50",
+    expectedIndexNames: ["idx_agent_runs_user_status_created"],
+    migration: "0113_database_governance_v1.sql",
+    risk: "high",
+  },
+  {
+    slug: "agent_events_type_window",
+    domain: "ai_os",
+    table: "emperor_agent_events",
+    purpose: "Agent 事件流按类型和时间窗口排障",
+    sql: "SELECT id, runId, eventType, createdAt FROM emperor_agent_events WHERE eventType='node_completed' ORDER BY createdAt DESC LIMIT 100",
+    expectedIndexNames: ["idx_agent_events_type_created"],
+    migration: "0113_database_governance_v1.sql",
+    risk: "high",
+  },
+  {
+    slug: "tool_runs_workspace_tool",
+    domain: "ai_os",
+    table: "emperor_tool_runs",
+    purpose: "Tool 调用日志按工作区、工具和时间审计",
+    sql: "SELECT id, workspaceId, toolSlug, status, createdAt FROM emperor_tool_runs WHERE workspaceId=0 AND toolSlug='seller_sprite' ORDER BY createdAt DESC LIMIT 100",
+    expectedIndexNames: ["idx_tool_runs_workspace_tool_created"],
+    migration: "0114_security_tenant_governance_v1.sql",
+    risk: "high",
+  },
+  {
+    slug: "ai_os_metrics_entity",
+    domain: "ai_os",
+    table: "emperor_ai_os_metrics",
+    purpose: "观测指标按实体聚合和排障",
+    sql: "SELECT id, entityType, entityId, metricName, createdAt FROM emperor_ai_os_metrics WHERE entityType='job' AND entityId='sample' ORDER BY createdAt DESC LIMIT 100",
+    expectedIndexNames: ["idx_ai_os_metrics_entity_created", "idx_ai_os_metrics_entity"],
+    migration: "0113_database_governance_v1.sql",
+    risk: "medium",
+  },
+  {
+    slug: "archive_runs_policy_status",
+    domain: "ai_os",
+    table: "ai_data_archive_runs",
+    purpose: "归档任务按策略、状态和创建时间排障",
+    sql: "SELECT archiveRunId, policySlug, status, createdAt FROM ai_data_archive_runs WHERE policySlug='ai_jobs.completed' AND status='succeeded' ORDER BY createdAt DESC LIMIT 50",
+    expectedIndexNames: ["idx_ai_archive_runs_policy_status"],
+    migration: "0115_data_lifecycle_artifacts_v1.sql",
+    risk: "medium",
+  },
+  {
+    slug: "artifacts_current_source",
+    domain: "ai_os",
+    table: "ai_artifacts",
+    purpose: "下游节点按业务来源读取 current artifact",
+    sql: "SELECT artifactId, artifactKey, version, isCurrent FROM ai_artifacts WHERE workspaceId=0 AND domain='listing' AND sourceTable='listings' AND sourceRowId='0' AND artifactKey='title' AND isCurrent=1 LIMIT 50",
+    expectedIndexNames: ["idx_ai_artifacts_domain_source_current"],
+    migration: "0115_data_lifecycle_artifacts_v1.sql",
+    risk: "high",
+  },
+];
+
+export const MIGRATION_REGRESSION_BASELINE: MigrationRegressionBaseline = {
+  requiredMigrations: [
+    "0104_emperor_agent_artifacts.sql",
+    "0105_emperor_tool_runs.sql",
+    "0106_ai_os_runtime_hardening.sql",
+    "0107_ai_os_observability.sql",
+    "0108_ai_job_queue_system.sql",
+    "0109_agent_job_retry_alignment.sql",
+    "0110_agent_artifacts_v1.sql",
+    "0111_tool_gateway_governance_v2.sql",
+    "0112_template_observability_qa.sql",
+    "0113_database_governance_v1.sql",
+    "0114_security_tenant_governance_v1.sql",
+    "0115_data_lifecycle_artifacts_v1.sql",
+  ],
+  requiredTables: [
+    "ai_jobs",
+    "ai_job_workers",
+    "ai_job_dead_letters",
+    "emperor_agent_runs",
+    "emperor_agent_checkpoints",
+    "emperor_agent_events",
+    "emperor_agent_artifacts",
+    "emperor_tool_runs",
+    "emperor_tool_secrets",
+    "emperor_ai_os_metrics",
+    "emperor_ai_os_evaluations",
+    "ai_artifacts",
+    "ai_storage_objects",
+    "ai_data_archive_runs",
+  ],
+  requiredIndexes: DATABASE_PERFORMANCE_BASELINES.flatMap((baseline) => baseline.expectedIndexNames),
+  requiredChecks: [
+    {
+      slug: "worker_queue_indexes",
+      description: "AI Job 领取、锁续约和死信表必须具备可审计索引",
+    },
+    {
+      slug: "human_in_loop_metrics",
+      description: "Agent checkpoint 必须能统计确认率、编辑率、失败率和重试率",
+    },
+    {
+      slug: "tool_governance_fields",
+      description: "Tool Run 必须记录 failureKind、circuit 状态、workspace 和 lifecycle 字段",
+    },
+    {
+      slug: "artifact_current_pointer",
+      description: "Artifact 必须支持 current 版本指针和业务来源索引",
+    },
+    {
+      slug: "archive_health",
+      description: "高增长表必须有归档策略和归档 run 成功率监控",
+    },
+  ],
+};
+
 export function getDatabaseGovernanceSnapshot() {
   return {
     domains: DATABASE_DOMAINS,
     softForeignKeys: SOFT_FOREIGN_KEYS,
     indexBaselines: INDEX_BASELINES,
     archivePolicies: ARCHIVE_POLICIES,
+    coreTableRowCountBaselines: CORE_TABLE_ROW_COUNT_BASELINES,
+    performanceBaselines: DATABASE_PERFORMANCE_BASELINES,
+    migrationRegressionBaseline: MIGRATION_REGRESSION_BASELINE,
   };
 }
 
@@ -802,4 +1084,85 @@ export function buildArchiveCandidateSql(policy: ArchivePolicy, cutoffExpression
   const table = quoteIdentifier(policy.table);
   const timeField = quoteIdentifier(policy.timeField);
   return `SELECT COUNT(*) AS archiveCandidateCount FROM ${table} WHERE ${timeField} < ${cutoffExpression}`;
+}
+
+export function buildTableRowCountSql(baselineOrTable: CoreTableRowCountBaseline | string) {
+  const tableName = typeof baselineOrTable === "string" ? baselineOrTable : baselineOrTable.table;
+  return `SELECT COUNT(*) AS rowCount FROM ${quoteIdentifier(tableName)}`;
+}
+
+export function buildExplainAuditSql(baseline: DatabasePerformanceBaseline) {
+  const normalized = baseline.sql.trim();
+  if (!/^SELECT\s/i.test(normalized) || /;\s*\S/.test(normalized)) {
+    throw new Error(`Unsafe performance baseline SQL: ${baseline.slug}`);
+  }
+  return `EXPLAIN ${normalized.replace(/;$/, "")}`;
+}
+
+function normalizeDbRows(result: any): any[] {
+  if (Array.isArray(result)) {
+    if (Array.isArray(result[0])) return result[0];
+    return result;
+  }
+  if (Array.isArray(result?.rows)) return result.rows;
+  return [];
+}
+
+function splitExplainKeys(value: unknown) {
+  if (value === null || value === undefined) return [];
+  return String(value)
+    .split(",")
+    .map((key) => key.trim())
+    .filter(Boolean);
+}
+
+export async function collectCoreTableRowCounts(
+  baselines: CoreTableRowCountBaseline[] = CORE_TABLE_ROW_COUNT_BASELINES,
+): Promise<CoreTableRowCountResult[]> {
+  const db = await requireDb("Database row count baseline");
+  const checkedAt = new Date().toISOString();
+  const results: CoreTableRowCountResult[] = [];
+
+  for (const baseline of baselines) {
+    const queryResult = await db.execute(sql.raw(buildTableRowCountSql(baseline)));
+    const rows = normalizeDbRows(queryResult);
+    const firstRow = rows[0] || {};
+    results.push({
+      ...baseline,
+      rowCount: Number(firstRow.rowCount ?? firstRow["COUNT(*)"] ?? 0),
+      checkedAt,
+    });
+  }
+
+  return results;
+}
+
+export async function auditDatabasePerformanceBaselines(
+  baselines: DatabasePerformanceBaseline[] = DATABASE_PERFORMANCE_BASELINES,
+): Promise<DatabaseExplainAuditResult[]> {
+  const db = await requireDb("Database EXPLAIN baseline");
+  const checkedAt = new Date().toISOString();
+  const results: DatabaseExplainAuditResult[] = [];
+
+  for (const baseline of baselines) {
+    const queryResult = await db.execute(sql.raw(buildExplainAuditSql(baseline)));
+    const explainRows = normalizeDbRows(queryResult);
+    const observedKeys = Array.from(new Set(explainRows.flatMap((row) => splitExplainKeys(row.key ?? row.Key))));
+    const possibleKeys = Array.from(new Set(explainRows.flatMap((row) => splitExplainKeys(row.possible_keys ?? row.possibleKeys ?? row.Possible_keys))));
+    const knownKeys = new Set([...observedKeys, ...possibleKeys]);
+    results.push({
+      ...baseline,
+      usesExpectedIndex: baseline.expectedIndexNames.some((indexName) => knownKeys.has(indexName)),
+      observedKeys,
+      possibleKeys,
+      explainRows,
+      checkedAt,
+    });
+  }
+
+  return results;
+}
+
+export function getMigrationRegressionBaseline(): MigrationRegressionBaseline {
+  return MIGRATION_REGRESSION_BASELINE;
 }

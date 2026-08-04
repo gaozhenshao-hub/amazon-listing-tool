@@ -6,12 +6,17 @@ import * as relations from "../drizzle/relations";
 import * as dbCompat from "./db";
 import {
   ARCHIVE_POLICIES,
+  CORE_TABLE_ROW_COUNT_BASELINES,
   DATABASE_DOMAINS,
+  DATABASE_PERFORMANCE_BASELINES,
   INDEX_BASELINES,
+  MIGRATION_REGRESSION_BASELINE,
   SOFT_FOREIGN_KEYS,
   getDatabaseGovernanceSnapshot,
   buildArchiveCandidateSql,
+  buildExplainAuditSql,
   buildSoftForeignKeyAuditSql,
+  buildTableRowCountSql,
   listArchivePoliciesByDomain,
   listDomainTables,
   listIndexBaselinesByDomain,
@@ -96,12 +101,65 @@ describe("database governance v1", () => {
     expect(buildArchiveCandidateSql(ARCHIVE_POLICIES[0], "'2026-01-01'")).toContain("archiveCandidateCount");
   });
 
+  it("defines database observability baselines for row counts and EXPLAIN audits", () => {
+    expect(CORE_TABLE_ROW_COUNT_BASELINES).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ table: "ai_jobs", highGrowth: true }),
+        expect.objectContaining({ table: "emperor_agent_events", highGrowth: true }),
+        expect.objectContaining({ table: "emperor_ai_os_metrics", highGrowth: true }),
+        expect.objectContaining({ table: "ad_daily_search_term_reports", highGrowth: true }),
+      ]),
+    );
+    expect(buildTableRowCountSql("ai_jobs")).toBe("SELECT COUNT(*) AS rowCount FROM `ai_jobs`");
+
+    expect(DATABASE_PERFORMANCE_BASELINES.map((baseline) => baseline.slug)).toEqual(
+      expect.arrayContaining([
+        "ai_jobs_queue_due",
+        "agent_runs_user_status",
+        "agent_events_type_window",
+        "tool_runs_workspace_tool",
+        "ai_os_metrics_entity",
+        "archive_runs_policy_status",
+        "artifacts_current_source",
+      ]),
+    );
+    const queueBaseline = DATABASE_PERFORMANCE_BASELINES.find((baseline) => baseline.slug === "ai_jobs_queue_due")!;
+    expect(queueBaseline.expectedIndexNames).toContain("idx_ai_jobs_queue_due");
+    expect(buildExplainAuditSql(queueBaseline)).toContain("EXPLAIN SELECT");
+  });
+
+  it("tracks the AI OS migration regression baseline", () => {
+    expect(MIGRATION_REGRESSION_BASELINE.requiredMigrations).toEqual(
+      expect.arrayContaining([
+        "0104_emperor_agent_artifacts.sql",
+        "0108_ai_job_queue_system.sql",
+        "0111_tool_gateway_governance_v2.sql",
+        "0112_template_observability_qa.sql",
+        "0115_data_lifecycle_artifacts_v1.sql",
+      ]),
+    );
+    expect(MIGRATION_REGRESSION_BASELINE.requiredTables).toEqual(
+      expect.arrayContaining([
+        "ai_job_workers",
+        "emperor_agent_checkpoints",
+        "emperor_tool_runs",
+        "emperor_ai_os_evaluations",
+        "ai_data_archive_runs",
+      ]),
+    );
+    expect(MIGRATION_REGRESSION_BASELINE.requiredIndexes).toContain("idx_ai_jobs_queue_due");
+    expect(MIGRATION_REGRESSION_BASELINE.requiredChecks.map((item) => item.slug)).toContain("archive_health");
+  });
+
   it("returns a complete governance snapshot", () => {
     expect(getDatabaseGovernanceSnapshot()).toMatchObject({
       domains: DATABASE_DOMAINS,
       softForeignKeys: SOFT_FOREIGN_KEYS,
       indexBaselines: INDEX_BASELINES,
       archivePolicies: ARCHIVE_POLICIES,
+      coreTableRowCountBaselines: CORE_TABLE_ROW_COUNT_BASELINES,
+      performanceBaselines: DATABASE_PERFORMANCE_BASELINES,
+      migrationRegressionBaseline: MIGRATION_REGRESSION_BASELINE,
     });
   });
 });

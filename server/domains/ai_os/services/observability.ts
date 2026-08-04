@@ -1,6 +1,13 @@
 import { TRPCError } from "@trpc/server";
 import { sql as drizzleSql } from "drizzle-orm";
 import { getDb } from "../../../db";
+import {
+  auditDatabasePerformanceBaselines,
+  collectCoreTableRowCounts,
+  getMigrationRegressionBaseline,
+  type CoreTableRowCountResult,
+  type DatabaseExplainAuditResult,
+} from "../../../repositories/dbGovernance";
 
 const METRIC_STORE_RETRY_MS = 60_000;
 let aiOsMetricStoreUnavailableUntil = 0;
@@ -67,7 +74,7 @@ function markMetricStoreUnavailable(error: unknown) {
 }
 
 export async function recordAiOsMetric(input: {
-  entityType: "job" | "agent_run" | "agent_node" | "skill" | "tool";
+  entityType: "job" | "agent_run" | "agent_node" | "skill" | "tool" | "database";
   entityId: string;
   metricName: string;
   metricValue?: number | null;
@@ -387,6 +394,288 @@ function firstRow(rows: any[]): Record<string, any> {
   return rows[0] && typeof rows[0] === "object" ? rows[0] as Record<string, any> : {};
 }
 
+function isDatabaseUnavailableLike(error: unknown): boolean {
+  const message = String((error as Error)?.message || error || "");
+  return /database not available|database not set|DATABASE_URL/i.test(message);
+}
+
+async function safeObservabilitySection<T>(
+  label: string,
+  fallback: T,
+  producer: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await producer();
+  } catch (error) {
+    if (!isDatabaseUnavailableLike(error)) {
+      console.warn(`[AI OS Observability] ${label} unavailable:`, error);
+    }
+    return fallback;
+  }
+}
+
+function asDate(value: unknown): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getWorkerStaleAfterMs(): number {
+  const configured = Number(process.env.AI_JOB_WORKER_STALE_MS || process.env.AI_JOB_HEARTBEAT_STALE_MS || 120_000);
+  return Math.min(Math.max(Number.isFinite(configured) ? configured : 120_000, 15_000), 30 * 60_000);
+}
+
+export async function buildWorkerQueueHealth(days = 30) {
+  const checkedAt = new Date();
+  const staleAfterMs = getWorkerStaleAfterMs();
+  const workerRows = await queryRows(
+    `SELECT workerId, hostname, pid, role, status, concurrency, runningCount, lastHeartbeatAt, startedAt, stoppedAt, metadata, updatedAt
+     FROM ai_job_workers
+     ORDER BY lastHeartbeatAt DESC
+     LIMIT 100`,
+  );
+  const queueRows = await queryRows(
+    `SELECT status,
+            queueName,
+            COUNT(*) as jobCount,
+            AVG(TIMESTAMPDIFF(SECOND, createdAt, NOW())) as avgAgeSeconds,
+            MAX(TIMESTAMPDIFF(SECOND, createdAt, NOW())) as maxAgeSeconds,
+            SUM(CASE WHEN status='running' AND leaseUntil IS NOT NULL AND leaseUntil < NOW() THEN 1 ELSE 0 END) as staleLeaseCount
+     FROM ai_jobs
+     WHERE createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY) OR status IN ('queued','running')
+     GROUP BY status, queueName
+     ORDER BY status ASC, queueName ASC`,
+    [boundedDays(days)],
+  );
+  const deadLetterRows = await queryRows(
+    `SELECT runId, kind, module, procedure, status, attempt, maxAttempts, userId, projectId, skillSlug, errorMessage, createdAt
+     FROM ai_job_dead_letters
+     ORDER BY createdAt DESC
+     LIMIT 20`,
+  );
+
+  const workers = workerRows.map((row) => {
+    const lastHeartbeatAt = asDate(row.lastHeartbeatAt);
+    const heartbeatAgeMs = lastHeartbeatAt ? checkedAt.getTime() - lastHeartbeatAt.getTime() : null;
+    const status = String(row.status || "unknown");
+    const stale = heartbeatAgeMs === null || heartbeatAgeMs > staleAfterMs;
+    const effectiveStatus = stale && status === "active" ? "unhealthy" : status;
+    return {
+      workerId: String(row.workerId || ""),
+      hostname: row.hostname || null,
+      pid: row.pid ?? null,
+      role: String(row.role || "worker"),
+      status,
+      effectiveStatus,
+      concurrency: numeric(row.concurrency, 1),
+      runningCount: numeric(row.runningCount),
+      lastHeartbeatAt: lastHeartbeatAt ? lastHeartbeatAt.toISOString() : null,
+      heartbeatAgeMs,
+      stale,
+      startedAt: asDate(row.startedAt)?.toISOString() || null,
+      stoppedAt: asDate(row.stoppedAt)?.toISOString() || null,
+      metadata: parseJson(row.metadata, {}),
+      updatedAt: asDate(row.updatedAt)?.toISOString() || null,
+    };
+  });
+
+  const healthyCount = workers.filter((worker) => worker.effectiveStatus === "active").length;
+  const unhealthyCount = workers.filter((worker) => worker.effectiveStatus === "unhealthy").length;
+  const staleCount = workers.filter((worker) => worker.stale).length;
+  return {
+    checkedAt: checkedAt.toISOString(),
+    staleAfterMs,
+    healthyCount,
+    unhealthyCount,
+    staleCount,
+    drainingCount: workers.filter((worker) => worker.effectiveStatus === "draining").length,
+    stoppedCount: workers.filter((worker) => worker.effectiveStatus === "stopped").length,
+    queue: queueRows.map((row) => ({
+      status: String(row.status || "unknown"),
+      queueName: String(row.queueName || "default"),
+      jobCount: numeric(row.jobCount),
+      avgAgeSeconds: Math.round(numeric(row.avgAgeSeconds)),
+      maxAgeSeconds: Math.round(numeric(row.maxAgeSeconds)),
+      staleLeaseCount: numeric(row.staleLeaseCount),
+    })),
+    deadLetters: deadLetterRows.map((row) => ({
+      runId: String(row.runId || ""),
+      kind: String(row.kind || ""),
+      module: String(row.module || ""),
+      procedure: row.procedure || null,
+      status: String(row.status || ""),
+      attempt: numeric(row.attempt),
+      maxAttempts: numeric(row.maxAttempts, 1),
+      userId: row.userId ?? null,
+      projectId: row.projectId ?? null,
+      skillSlug: row.skillSlug || null,
+      errorMessage: row.errorMessage || null,
+      createdAt: asDate(row.createdAt)?.toISOString() || null,
+    })),
+    workers,
+  };
+}
+
+async function buildArchiveHealth(days: number) {
+  const rows = await queryRows(
+    `SELECT COUNT(*) as totalRuns,
+            SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END) as succeededRuns,
+            SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) as failedRuns,
+            SUM(CASE WHEN status='dry_run' THEN 1 ELSE 0 END) as dryRunCount,
+            SUM(candidateCount) as candidateCount,
+            SUM(archivedCount) as archivedCount,
+            SUM(deletedCount) as deletedCount,
+            AVG(CASE WHEN startedAt IS NOT NULL AND completedAt IS NOT NULL THEN TIMESTAMPDIFF(MICROSECOND, startedAt, completedAt) / 1000 ELSE NULL END) as avgDurationMs
+     FROM ai_data_archive_runs
+     WHERE createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY)`,
+    [days],
+  );
+  const latestRows = await queryRows(
+    `SELECT archiveRunId, policySlug, tableName, status, mode, candidateCount, archivedCount, deletedCount, errorMessage, createdAt, completedAt
+     FROM ai_data_archive_runs
+     ORDER BY createdAt DESC
+     LIMIT 20`,
+  );
+  const archive = firstRow(rows);
+  const totalRuns = numeric(archive.totalRuns);
+  const terminalRuns = numeric(archive.succeededRuns) + numeric(archive.failedRuns);
+  return {
+    totalRuns,
+    succeededRuns: numeric(archive.succeededRuns),
+    failedRuns: numeric(archive.failedRuns),
+    dryRunCount: numeric(archive.dryRunCount),
+    successRate: percentage(numeric(archive.succeededRuns), terminalRuns),
+    candidateCount: numeric(archive.candidateCount),
+    archivedCount: numeric(archive.archivedCount),
+    deletedCount: numeric(archive.deletedCount),
+    avgDurationMs: Math.round(numeric(archive.avgDurationMs)),
+    latestRuns: latestRows.map((row) => ({
+      archiveRunId: String(row.archiveRunId || ""),
+      policySlug: String(row.policySlug || ""),
+      tableName: String(row.tableName || ""),
+      status: String(row.status || ""),
+      mode: String(row.mode || ""),
+      candidateCount: numeric(row.candidateCount),
+      archivedCount: numeric(row.archivedCount),
+      deletedCount: numeric(row.deletedCount),
+      errorMessage: row.errorMessage || null,
+      createdAt: asDate(row.createdAt)?.toISOString() || null,
+      completedAt: asDate(row.completedAt)?.toISOString() || null,
+    })),
+  };
+}
+
+async function buildRowCountTrends(days: number) {
+  const rows = await queryRows(
+    `SELECT entityId as tableName,
+            DATE(createdAt) as sampleDate,
+            MAX(metricValue) as rowCount
+     FROM emperor_ai_os_metrics
+     WHERE entityType='database'
+       AND metricName='db.table.row_count'
+       AND createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY)
+     GROUP BY entityId, DATE(createdAt)
+     ORDER BY sampleDate ASC, entityId ASC`,
+    [days],
+  );
+  return rows.map((row) => ({
+    tableName: String(row.tableName || ""),
+    sampleDate: String(row.sampleDate || ""),
+    rowCount: numeric(row.rowCount),
+  }));
+}
+
+export async function buildDatabaseObservabilitySection(days = 30) {
+  const bounded = boundedDays(days);
+  const rowCounts = await safeObservabilitySection<CoreTableRowCountResult[]>(
+    "row count baseline",
+    [],
+    () => collectCoreTableRowCounts(),
+  );
+  const explainAudits = await safeObservabilitySection<DatabaseExplainAuditResult[]>(
+    "EXPLAIN baseline",
+    [],
+    () => auditDatabasePerformanceBaselines(),
+  );
+  const archiveHealth = await buildArchiveHealth(bounded);
+  const rowCountTrends = await buildRowCountTrends(bounded);
+  const failedExplainCount = explainAudits.filter((item) => !item.usesExpectedIndex).length;
+
+  return {
+    rowCounts,
+    rowCountTrends,
+    explainAudits: explainAudits.map((item) => ({
+      ...item,
+      explainRows: item.explainRows.slice(0, 8),
+    })),
+    explainSummary: {
+      totalChecks: explainAudits.length,
+      passedChecks: explainAudits.length - failedExplainCount,
+      failedChecks: failedExplainCount,
+      passRate: percentage(explainAudits.length - failedExplainCount, explainAudits.length),
+    },
+    archiveHealth,
+    migrationRegression: getMigrationRegressionBaseline(),
+  };
+}
+
+export async function recordDatabaseBaselineSnapshot(input: {
+  workspaceId?: number | null;
+  userId?: number | null;
+} = {}) {
+  const [rowCounts, explainAudits] = await Promise.all([
+    collectCoreTableRowCounts(),
+    auditDatabasePerformanceBaselines(),
+  ]);
+
+  for (const item of rowCounts) {
+    await recordAiOsMetric({
+      entityType: "database",
+      entityId: item.table,
+      metricName: "db.table.row_count",
+      metricValue: item.rowCount,
+      status: "ok",
+      workspaceId: input.workspaceId ?? null,
+      userId: input.userId ?? null,
+      metadata: {
+        domain: item.domain,
+        purpose: item.purpose,
+        highGrowth: item.highGrowth,
+        checkedAt: item.checkedAt,
+      },
+    });
+  }
+
+  for (const item of explainAudits) {
+    await recordAiOsMetric({
+      entityType: "database",
+      entityId: item.slug,
+      metricName: "db.explain.expected_index",
+      metricValue: item.usesExpectedIndex ? 1 : 0,
+      status: item.usesExpectedIndex ? "ok" : "warning",
+      workspaceId: input.workspaceId ?? null,
+      userId: input.userId ?? null,
+      metadata: {
+        domain: item.domain,
+        table: item.table,
+        purpose: item.purpose,
+        expectedIndexNames: item.expectedIndexNames,
+        observedKeys: item.observedKeys,
+        possibleKeys: item.possibleKeys,
+        checkedAt: item.checkedAt,
+      },
+    });
+  }
+
+  return {
+    recordedAt: new Date().toISOString(),
+    rowCountSamples: rowCounts.length,
+    explainSamples: explainAudits.length,
+    failedExplainChecks: explainAudits.filter((item) => !item.usesExpectedIndex).length,
+  };
+}
+
 export async function buildAiOsObservabilityDashboard(input: {
   days?: number;
   agentSlug?: string;
@@ -471,17 +760,34 @@ export async function buildAiOsObservabilityDashboard(input: {
      ORDER BY count DESC`,
     [days],
   );
+  const toolRows = await queryRows(
+    `SELECT COUNT(*) as totalRuns,
+            SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END) as succeededRuns,
+            SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) as failedRuns,
+            SUM(CASE WHEN status='blocked' THEN 1 ELSE 0 END) as blockedRuns,
+            SUM(CASE WHEN retryable=1 THEN 1 ELSE 0 END) as retryableRuns,
+            SUM(attemptCount) as attemptCount,
+            AVG(durationMs) as avgDurationMs
+     FROM emperor_tool_runs
+     WHERE createdAt >= DATE_SUB(NOW(), INTERVAL ? DAY)`,
+    [days],
+  );
 
   const skill = firstRow(skillRows);
   const agent = firstRow(agentRows);
   const checkpoint = firstRow(checkpointRows);
   const job = firstRow(jobRows);
+  const tool = firstRow(toolRows);
   const totalSkillRuns = numeric(skill.totalRuns);
   const totalAgentRuns = numeric(agent.totalRuns);
   const totalNodes = numeric(checkpoint.totalNodes);
   const totalJobs = numeric(job.totalJobs);
+  const totalToolRuns = numeric(tool.totalRuns);
   const totalQualitySamples = evaluationRows.reduce((sum, row) => sum + numeric(row.evaluationCount), 0);
   const weightedScore = evaluationRows.reduce((sum, row) => sum + numeric(row.avgScore) * numeric(row.evaluationCount), 0);
+  const lowQualitySamples = evaluationRows.reduce((sum, row) => sum + numeric(row.lowScoreCount), 0);
+  const workerQueue = await buildWorkerQueueHealth(days);
+  const database = await buildDatabaseObservabilitySection(days);
 
   return {
     window: { days, agentSlug: input.agentSlug || null },
@@ -511,6 +817,7 @@ export async function buildAiOsObservabilityDashboard(input: {
         failedNodes: numeric(checkpoint.failedNodes),
         waitingHumanNodes: numeric(checkpoint.waitingHumanNodes),
         humanEditedNodes: numeric(checkpoint.humanEditedNodes),
+        confirmationRate: percentage(numeric(checkpoint.confirmedNodes), totalNodes),
         humanEditRate: percentage(numeric(checkpoint.humanEditedNodes), totalNodes),
         retryCount: numeric(checkpoint.retryCount),
         retryRate: percentage(numeric(checkpoint.retryCount), totalNodes),
@@ -525,9 +832,21 @@ export async function buildAiOsObservabilityDashboard(input: {
         retryRate: percentage(numeric(job.attemptCount), totalJobs),
         avgDurationMs: Math.round(numeric(job.avgDurationMs)),
       },
+      tool: {
+        totalRuns: totalToolRuns,
+        succeededRuns: numeric(tool.succeededRuns),
+        failedRuns: numeric(tool.failedRuns),
+        blockedRuns: numeric(tool.blockedRuns),
+        retryableRuns: numeric(tool.retryableRuns),
+        failureRate: percentage(numeric(tool.failedRuns), totalToolRuns),
+        retryRate: percentage(numeric(tool.attemptCount), totalToolRuns),
+        avgDurationMs: Math.round(numeric(tool.avgDurationMs)),
+      },
       quality: {
         evaluationCount: totalQualitySamples,
         avgScore: totalQualitySamples > 0 ? Math.round((weightedScore / totalQualitySamples) * 100) / 100 : 0,
+        lowScoreCount: lowQualitySamples,
+        lowScoreRate: percentage(lowQualitySamples, totalQualitySamples),
       },
     },
     evaluations: evaluationRows.map((row) => ({
@@ -547,6 +866,8 @@ export async function buildAiOsObservabilityDashboard(input: {
       failureKind: String(row.failureKind || "unknown"),
       count: numeric(row.count),
     })),
+    workerQueue,
+    database,
     generatedAt: new Date().toISOString(),
   };
 }

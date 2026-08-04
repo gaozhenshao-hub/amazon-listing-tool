@@ -239,6 +239,7 @@ const modules: ModuleDef[] = [
       { icon: Plug, label: "MCP 连接器", path: "/emperor/mcp" },
       { icon: Timer, label: "定时任务", path: "/emperor/scheduled" },
       { icon: BarChart3, label: "Token 用量", path: "/emperor/usage" },
+      { icon: Activity, label: "可观测看板", path: "/emperor/observability" },
       { icon: Wrench, label: "诊断中心", path: "/emperor/diagnostics" },
       { icon: Settings, label: "通用设置", path: "/emperor/settings" },
     ],
