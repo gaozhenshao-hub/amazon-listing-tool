@@ -10,6 +10,8 @@
     "start": "NODE_ENV=production node dist/index.js",
     "start:worker:ai": "AI_JOB_RUNNER_MODE=worker node dist/aiWorker.js",
     "check": "tsc --noEmit",
+    "qa:gate": "tsc --noEmit && vitest run",
+    "test:real-db": "RUN_REAL_DB_TESTS=1 vitest run",
     "audit:emperor-prompts": "node scripts/audit-emperor-prompt-consistency.mjs",
     "format": "prettier --write .",
     "test": "vitest run",

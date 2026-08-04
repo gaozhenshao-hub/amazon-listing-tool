@@ -10,7 +10,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { startUsageTracking } from "../usageTracking";
 import { intelScheduler } from "../intelAutoCollect";
-import { weeklyReportHandler, dataCleanupHandler } from "../scheduledHandlers";
+import { weeklyReportHandler, dataCleanupHandler, aiWorkerTickHandler } from "../scheduledHandlers";
 import { kbExternalApiRouter } from "../kbExternalApi";
 import { imageUploadRouter } from "../imageUploadRouter";
 
@@ -50,6 +50,8 @@ async function startServer() {
   // Scheduled task handlers (Heartbeat HTTP cron)
   app.post("/api/scheduled/weekly-report", weeklyReportHandler);
   app.post("/api/scheduled/data-cleanup", dataCleanupHandler);
+  // AI Worker Tick: drains AI Job queue every minute (Heartbeat HTTP cron, replaces always-on Worker process)
+  app.post("/api/scheduled/ai-worker-tick", aiWorkerTickHandler);
   // tRPC API
   app.use(
     "/api/trpc",
