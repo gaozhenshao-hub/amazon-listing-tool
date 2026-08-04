@@ -1,6 +1,17 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "../dbClient";
-import { InsertAnalysisVersion, InsertCompetitorAnalysis, InsertProjectFile, InsertReviewImport, analysisVersions, competitorAnalyses, projectFiles, reviewImports } from "../../../drizzle/schema/project";
+import {
+  InsertAnalysisVersion,
+  InsertCompetitorAnalysis,
+  InsertCompetitorComparisonReport,
+  InsertProjectFile,
+  InsertReviewImport,
+  analysisVersions,
+  competitorAnalyses,
+  competitorComparisonReports,
+  projectFiles,
+  reviewImports,
+} from "../../../drizzle/schema/project";
 
 // --- Competitor Analysis Helpers --------------------------------
 
@@ -21,7 +32,10 @@ export async function upsertCompetitorAnalysis(data: InsertCompetitorAnalysis) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   // Check if an entry with same projectId + asin already exists
-  const existing = await db.select({ id: competitorAnalyses.id })
+  const existing = await db.select({
+    id: competitorAnalyses.id,
+    summaryStatus: competitorAnalyses.summaryStatus,
+  })
     .from(competitorAnalyses)
     .where(and(
       eq(competitorAnalyses.projectId, data.projectId),
@@ -31,7 +45,16 @@ export async function upsertCompetitorAnalysis(data: InsertCompetitorAnalysis) {
   
   if (existing.length > 0) {
     // Update existing record
-    const { projectId, asin, ...updateData } = data;
+    const { projectId, asin, ...candidateUpdateData } = data;
+    const updateData = { ...candidateUpdateData };
+    // A fresh AI run must never overwrite a human-confirmed summary.
+    if (existing[0].summaryStatus === "confirmed") {
+      delete updateData.summary;
+      delete updateData.summaryStatus;
+      delete updateData.summaryVersion;
+      delete updateData.summaryConfirmedBy;
+      delete updateData.summaryConfirmedAt;
+    }
     await db.update(competitorAnalyses)
       .set(updateData)
       .where(eq(competitorAnalyses.id, existing[0].id));
@@ -50,6 +73,94 @@ export async function getCompetitorAnalysesByProject(projectId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   return db.select().from(competitorAnalyses).where(eq(competitorAnalyses.projectId, projectId)).orderBy(desc(competitorAnalyses.createdAt));
+}
+
+export async function getCompetitorAnalysisById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(competitorAnalyses).where(eq(competitorAnalyses.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateCompetitorAnalysisSummary(
+  id: number,
+  data: {
+    aiSummary?: string | null;
+    summary?: string | null;
+    summaryStatus?: "draft" | "confirmed";
+    summaryConfirmedBy?: number | null;
+    summaryConfirmedAt?: Date | null;
+    incrementVersion?: boolean;
+  },
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const { incrementVersion, ...values } = data;
+  await db.update(competitorAnalyses)
+    .set({
+      ...values,
+      ...(incrementVersion ? { summaryVersion: sql`${competitorAnalyses.summaryVersion} + 1` } : {}),
+    })
+    .where(eq(competitorAnalyses.id, id));
+  return getCompetitorAnalysisById(id);
+}
+
+export async function createCompetitorComparisonReport(data: InsertCompetitorComparisonReport) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(competitorComparisonReports).values(data);
+  return getCompetitorComparisonReportById(result[0].insertId);
+}
+
+export async function getLatestCompetitorComparisonReport(projectId: number, selectionKey: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(competitorComparisonReports)
+    .where(and(
+      eq(competitorComparisonReports.projectId, projectId),
+      eq(competitorComparisonReports.selectionKey, selectionKey),
+    ))
+    .orderBy(desc(competitorComparisonReports.createdAt), desc(competitorComparisonReports.id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getLatestConfirmedCompetitorComparisonReport(projectId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(competitorComparisonReports)
+    .where(and(
+      eq(competitorComparisonReports.projectId, projectId),
+      eq(competitorComparisonReports.status, "confirmed"),
+    ))
+    .orderBy(desc(competitorComparisonReports.updatedAt), desc(competitorComparisonReports.id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getCompetitorComparisonReportById(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(competitorComparisonReports)
+    .where(eq(competitorComparisonReports.id, id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function updateCompetitorComparisonReport(
+  id: number,
+  data: Partial<InsertCompetitorComparisonReport> & { incrementVersion?: boolean },
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const { incrementVersion, ...values } = data;
+  await db.update(competitorComparisonReports)
+    .set({
+      ...values,
+      ...(incrementVersion ? { version: sql`${competitorComparisonReports.version} + 1` } : {}),
+    })
+    .where(eq(competitorComparisonReports.id, id));
+  return getCompetitorComparisonReportById(id);
 }
 
 export async function updateCompetitorAnalysisReviews(id: number, data: { reviewCount?: string; reviewAnalysis?: string; rawData?: string }) {

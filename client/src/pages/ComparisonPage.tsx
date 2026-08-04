@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
@@ -25,9 +27,15 @@ import {
   Loader2,
   Copy,
   Check,
+  FilePenLine,
+  LockKeyhole,
+  Save,
+  UnlockKeyhole,
+  X,
 } from "lucide-react";
 import { Streamdown } from "streamdown";
-import { useState, useMemo } from "react";
+import { useCallback, useEffect, useState, useMemo } from "react";
+import { toast } from "sonner";
 
 // Type for parsed analysis data
 interface ParsedAnalysis {
@@ -51,6 +59,34 @@ interface ParsedAnalysis {
   } | null;
   rawData: any;
   isManual: boolean;
+}
+
+interface ComparisonSellingPointRow {
+  id: string;
+  theme: string;
+  competitorPoints: Array<{
+    analysisId: number;
+    asin: string;
+    bulletIndex: number;
+    text: string;
+  }>;
+  aiRecommendation: string;
+  humanNote: string;
+  selected: boolean;
+}
+
+interface ComparisonReport {
+  id: number;
+  projectId: number;
+  selectionKey: string;
+  analysisIds: number[];
+  analyzedAsins: string[];
+  aiSummary: string;
+  summary: string;
+  sellingPointRows: ComparisonSellingPointRow[];
+  status: "draft" | "confirmed";
+  version: number;
+  confirmedAt: Date | string | null;
 }
 
 function parseJson(str: string | null): any {
@@ -101,24 +137,31 @@ function AISummarySection({
   projectId,
   selectedIds,
   selectedAnalyses,
-  aiSummary,
-  setAiSummary,
+  report,
+  summaryDraft,
+  isEditing,
+  onSummaryChange,
+  onReportGenerated,
 }: {
   projectId: number;
   selectedIds: Set<number>;
   selectedAnalyses: ParsedAnalysis[];
-  aiSummary: string | null;
-  setAiSummary: (s: string | null) => void;
+  report: ComparisonReport | null;
+  summaryDraft: string;
+  isEditing: boolean;
+  onSummaryChange: (summary: string) => void;
+  onReportGenerated: (report: ComparisonReport) => void;
 }) {
   const [isCopied, setIsCopied] = useState(false);
   const summaryMutation = trpc.analysis.comparisonSummary.useMutation({
     onSuccess: (data) => {
-      setAiSummary(data.summary);
+      onReportGenerated(data.report as ComparisonReport);
+      toast.success("结构化竞品对比已生成");
     },
+    onError: error => toast.error("生成失败", { description: error.message }),
   });
 
   const handleGenerate = () => {
-    setAiSummary(null);
     summaryMutation.mutate({
       projectId,
       analysisIds: Array.from(selectedIds),
@@ -126,9 +169,9 @@ function AISummarySection({
   };
 
   const handleCopy = async () => {
-    if (!aiSummary) return;
+    if (!summaryDraft) return;
     try {
-      await navigator.clipboard.writeText(aiSummary);
+      await navigator.clipboard.writeText(summaryDraft);
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
     } catch {
@@ -153,7 +196,7 @@ function AISummarySection({
             </div>
             <Button
               onClick={handleGenerate}
-              disabled={summaryMutation.isPending || selectedAnalyses.length < 2}
+              disabled={summaryMutation.isPending || selectedAnalyses.length < 2 || report?.status === "confirmed"}
               className="shrink-0"
             >
               {summaryMutation.isPending ? (
@@ -164,7 +207,7 @@ function AISummarySection({
               ) : (
                 <>
                   <Sparkles className="h-4 w-4 mr-2" />
-                  {aiSummary ? "重新生成" : "生成AI总结"}
+                  {report ? "重新生成结构化对比" : "生成结构化对比"}
                 </>
               )}
             </Button>
@@ -194,19 +237,8 @@ function AISummarySection({
       </Card>
 
       {/* Error Display */}
-      {summaryMutation.isError && (
-        <Card className="border-red-200 bg-red-50/50">
-          <CardContent className="py-4">
-            <div className="flex items-center gap-2 text-sm text-red-700">
-              <XCircle className="h-4 w-4 shrink-0" />
-              <span>生成失败：{summaryMutation.error?.message || "未知错误，请重试"}</span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Summary Result */}
-      {aiSummary && (
+      {report && (
         <Card className="border-primary/20">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
@@ -216,7 +248,7 @@ function AISummarySection({
               </CardTitle>
               <div className="flex items-center gap-2">
                 <Badge variant="secondary" className="text-xs">
-                  已分析 {selectedAnalyses.map(a => a.asin).join(", ")}
+                  {report.status === "confirmed" ? "已确认" : "待确认"} · 已分析 {selectedAnalyses.map(a => a.asin).join(", ")}
                 </Badge>
                 <Button
                   variant="outline"
@@ -235,15 +267,25 @@ function AISummarySection({
           </CardHeader>
           <Separator />
           <CardContent className="pt-4">
-            <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:text-foreground prose-p:text-foreground/90 prose-strong:text-foreground prose-li:text-foreground/90 prose-table:text-sm">
-              <Streamdown>{aiSummary}</Streamdown>
-            </div>
+            {isEditing ? (
+              <Textarea
+                value={summaryDraft}
+                onChange={event => onSummaryChange(event.target.value)}
+                rows={18}
+                className="min-h-[360px] resize-y font-mono text-sm leading-6"
+                placeholder="编辑市场概览、关键差异、关键词机会、用户机会、卖点策略和行动清单"
+              />
+            ) : (
+              <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:text-foreground prose-p:text-foreground/90 prose-strong:text-foreground prose-li:text-foreground/90 prose-table:text-sm">
+                <Streamdown>{summaryDraft}</Streamdown>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
 
       {/* Empty State */}
-      {!aiSummary && !summaryMutation.isPending && !summaryMutation.isError && (
+      {!report && !summaryMutation.isPending && (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <Sparkles className="h-8 w-8 text-muted-foreground mb-4" />
@@ -256,15 +298,245 @@ function AISummarySection({
   );
 }
 
+function SellingPointMatrix({
+  selectedAnalyses,
+  rows,
+  isEditing,
+  onChange,
+  colorIndexFor,
+}: {
+  selectedAnalyses: ParsedAnalysis[];
+  rows: ComparisonSellingPointRow[];
+  isEditing: boolean;
+  onChange: (rows: ComparisonSellingPointRow[]) => void;
+  colorIndexFor: (analysisId: number) => number;
+}) {
+  const updateRow = (rowIndex: number, patch: Partial<ComparisonSellingPointRow>) => {
+    onChange(rows.map((row, index) => index === rowIndex ? { ...row, ...patch } : row));
+  };
+
+  const updatePoint = (rowIndex: number, analysisId: number, text: string) => {
+    onChange(rows.map((row, index) => index !== rowIndex ? row : {
+      ...row,
+      competitorPoints: row.competitorPoints.map(point => (
+        point.analysisId === analysisId ? { ...point, text } : point
+      )),
+    }));
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">同卖点语义对比</CardTitle>
+        <CardDescription>
+          AI 按卖点含义归并到同一行；在最右侧补充人工判断，并勾选需要传给 Listing 与图片建议的优秀点
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ScrollArea className="w-full">
+          <div style={{ minWidth: `${260 + selectedAnalyses.length * 300 + 320}px` }}>
+            <table className="w-full table-fixed text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="sticky left-0 z-20 w-[260px] bg-card px-4 py-3 text-left font-medium text-muted-foreground">
+                    卖点主题 / AI判断
+                  </th>
+                  {selectedAnalyses.map(analysis => (
+                    <th key={analysis.id} className="w-[300px] px-4 py-3 text-left font-medium">
+                      <Badge className={`border font-mono text-xs ${ASIN_COLORS[colorIndexFor(analysis.id) % ASIN_COLORS.length]}`}>
+                        {analysis.asin}
+                      </Badge>
+                    </th>
+                  ))}
+                  <th className="sticky right-0 z-20 w-[320px] border-l bg-card px-4 py-3 text-left font-medium text-muted-foreground">
+                    人工备注 / 优秀点确认
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, rowIndex) => (
+                  <tr key={row.id} className="border-b align-top hover:bg-muted/20">
+                    <td className="sticky left-0 z-10 bg-card px-4 py-4">
+                      {isEditing ? (
+                        <div className="space-y-2">
+                          <Input
+                            value={row.theme}
+                            onChange={event => updateRow(rowIndex, { theme: event.target.value })}
+                            aria-label={`第 ${rowIndex + 1} 行卖点主题`}
+                          />
+                          <Textarea
+                            value={row.aiRecommendation}
+                            onChange={event => updateRow(rowIndex, { aiRecommendation: event.target.value })}
+                            rows={4}
+                            className="resize-y text-xs"
+                            placeholder="AI判断与表达建议"
+                          />
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="font-semibold">{row.theme}</p>
+                          <p className="text-xs leading-relaxed text-muted-foreground">{row.aiRecommendation || "暂无 AI 建议"}</p>
+                        </div>
+                      )}
+                    </td>
+                    {selectedAnalyses.map(analysis => {
+                      const point = row.competitorPoints.find(item => item.analysisId === analysis.id);
+                      return (
+                        <td key={analysis.id} className="px-4 py-4">
+                          {!point ? (
+                            <span className="text-xs italic text-muted-foreground">该竞品未表达此卖点</span>
+                          ) : isEditing ? (
+                            <Textarea
+                              value={point.text}
+                              onChange={event => updatePoint(rowIndex, analysis.id, event.target.value)}
+                              rows={7}
+                              className="resize-y text-xs leading-5"
+                              aria-label={`${analysis.asin} 的 ${row.theme}`}
+                            />
+                          ) : (
+                            <div>
+                              <p className="text-xs leading-relaxed">{point.text}</p>
+                              <span className="mt-2 inline-block text-[10px] text-muted-foreground">
+                                原五点第 {point.bulletIndex + 1} 条 · {point.text.length} 字符
+                              </span>
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+                    <td className="sticky right-0 z-10 border-l bg-card px-4 py-4">
+                      <div className="space-y-3">
+                        <label className="flex items-center gap-2 text-xs font-medium">
+                          <Checkbox
+                            checked={row.selected}
+                            disabled={!isEditing}
+                            onCheckedChange={checked => updateRow(rowIndex, { selected: checked === true })}
+                          />
+                          提取为优秀点
+                        </label>
+                        {isEditing ? (
+                          <Textarea
+                            value={row.humanNote}
+                            onChange={event => updateRow(rowIndex, { humanNote: event.target.value })}
+                            rows={6}
+                            className="resize-y text-xs leading-5"
+                            placeholder="写下值得借鉴的表达、数据证据、需规避的问题或本品差异化方向"
+                          />
+                        ) : (
+                          <p className="min-h-16 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
+                            {row.humanNote || "暂无人工备注"}
+                          </p>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <ScrollBar orientation="horizontal" />
+        </ScrollArea>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ComparisonPage() {
   const { selectedProjectId } = useProject();
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [report, setReport] = useState<ComparisonReport | null>(null);
+  const [summaryDraft, setSummaryDraft] = useState("");
+  const [sellingPointRows, setSellingPointRows] = useState<ComparisonSellingPointRow[]>([]);
+  const [isEditingReport, setIsEditingReport] = useState(false);
+  const utils = trpc.useUtils();
 
   const { data: analyses, isLoading } = trpc.analysis.listByProject.useQuery(
     { projectId: selectedProjectId! },
     { enabled: !!selectedProjectId }
   );
+
+  const selectedAnalysisIds = useMemo(
+    () => Array.from(selectedIds).sort((a, b) => a - b),
+    [selectedIds],
+  );
+  const selectionKey = selectedAnalysisIds.join("-");
+  const comparisonReportQuery = trpc.analysis.getComparisonReport.useQuery(
+    { projectId: selectedProjectId!, analysisIds: selectedAnalysisIds },
+    { enabled: !!selectedProjectId && selectedAnalysisIds.length >= 2 },
+  );
+
+  const applyReport = useCallback((nextReport: ComparisonReport | null, editing = false) => {
+    setReport(nextReport);
+    setSummaryDraft(nextReport?.summary || "");
+    setSellingPointRows(nextReport?.sellingPointRows || []);
+    setIsEditingReport(editing);
+  }, []);
+
+  useEffect(() => {
+    applyReport(null);
+  }, [applyReport, selectionKey, selectedProjectId]);
+
+  useEffect(() => {
+    if (comparisonReportQuery.data) {
+      applyReport(comparisonReportQuery.data as ComparisonReport);
+    }
+  }, [applyReport, comparisonReportQuery.data]);
+
+  const refreshComparisonReport = async () => {
+    if (!selectedProjectId || selectedAnalysisIds.length < 2) return;
+    await utils.analysis.getComparisonReport.invalidate({
+      projectId: selectedProjectId,
+      analysisIds: selectedAnalysisIds,
+    });
+  };
+
+  const updateReportMutation = trpc.analysis.updateComparisonReport.useMutation({
+    onSuccess: async data => {
+      applyReport(data as ComparisonReport);
+      await refreshComparisonReport();
+      toast.success("竞品对比草稿已保存");
+    },
+    onError: error => toast.error("保存失败", { description: error.message }),
+  });
+  const confirmReportMutation = trpc.analysis.confirmComparisonReport.useMutation({
+    onSuccess: async data => {
+      applyReport(data as ComparisonReport);
+      await refreshComparisonReport();
+      toast.success("竞品对比已确认并锁定");
+    },
+    onError: error => toast.error("确认失败", { description: error.message }),
+  });
+  const unlockReportMutation = trpc.analysis.unlockComparisonReport.useMutation({
+    onSuccess: async data => {
+      applyReport(data as ComparisonReport, true);
+      await refreshComparisonReport();
+      toast.success("竞品对比已解锁");
+    },
+    onError: error => toast.error("解锁失败", { description: error.message }),
+  });
+  const reportMutationPending = updateReportMutation.isPending
+    || confirmReportMutation.isPending
+    || unlockReportMutation.isPending;
+
+  const saveReport = () => {
+    if (!selectedProjectId || !report) return;
+    updateReportMutation.mutate({
+      projectId: selectedProjectId,
+      reportId: report.id,
+      summary: summaryDraft,
+      sellingPointRows,
+    });
+  };
+
+  const confirmReport = () => {
+    if (!selectedProjectId || !report) return;
+    confirmReportMutation.mutate({
+      projectId: selectedProjectId,
+      reportId: report.id,
+      summary: summaryDraft,
+      sellingPointRows,
+    });
+  };
 
   // Parse selected analyses
   const selectedAnalyses = useMemo(() => {
@@ -480,6 +752,85 @@ export default function ComparisonPage() {
           {/* Comparison Results */}
           {selectedAnalyses.length >= 2 && (
             <Tabs defaultValue="overview" className="space-y-4">
+              {report && (
+                <div className="flex flex-wrap items-center justify-between gap-3 border bg-card px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <Badge variant={report.status === "confirmed" ? "default" : "secondary"} className="gap-1">
+                      {report.status === "confirmed"
+                        ? <LockKeyhole className="h-3 w-3" />
+                        : <FilePenLine className="h-3 w-3" />}
+                      {report.status === "confirmed" ? "已确认" : "待确认"} · v{report.version}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      已提取 {sellingPointRows.filter(row => row.selected).length} 个优秀点
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {report.status === "confirmed" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={reportMutationPending}
+                        onClick={() => selectedProjectId && unlockReportMutation.mutate({
+                          projectId: selectedProjectId,
+                          reportId: report.id,
+                        })}
+                      >
+                        {unlockReportMutation.isPending
+                          ? <Loader2 className="h-4 w-4 animate-spin" />
+                          : <UnlockKeyhole className="h-4 w-4" />}
+                        解锁编辑
+                      </Button>
+                    ) : isEditingReport ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={reportMutationPending}
+                          onClick={() => applyReport(report)}
+                        >
+                          <X className="h-4 w-4" />
+                          取消
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={reportMutationPending || !summaryDraft.trim()}
+                          onClick={saveReport}
+                        >
+                          {updateReportMutation.isPending
+                            ? <Loader2 className="h-4 w-4 animate-spin" />
+                            : <Save className="h-4 w-4" />}
+                          保存草稿
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={reportMutationPending || !summaryDraft.trim()}
+                          onClick={confirmReport}
+                        >
+                          {confirmReportMutation.isPending
+                            ? <Loader2 className="h-4 w-4 animate-spin" />
+                            : <Check className="h-4 w-4" />}
+                          确认并锁定
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button size="sm" variant="outline" onClick={() => setIsEditingReport(true)}>
+                          <FilePenLine className="h-4 w-4" />
+                          编辑
+                        </Button>
+                        <Button size="sm" disabled={reportMutationPending} onClick={confirmReport}>
+                          {confirmReportMutation.isPending
+                            ? <Loader2 className="h-4 w-4 animate-spin" />
+                            : <CheckCircle2 className="h-4 w-4" />}
+                          确认结果
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
               <TabsList>
                 <TabsTrigger value="overview">
                   <Package className="h-3.5 w-3.5 mr-1.5" />
@@ -991,66 +1342,29 @@ export default function ComparisonPage() {
 
               {/* Bullet Points Tab */}
               <TabsContent value="bullets">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-base">五点描述对比</CardTitle>
-                    <CardDescription>
-                      并排展示各竞品的五点描述，分析卖点差异和表达方式
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ScrollArea className="w-full">
-                      <div className="min-w-[600px]">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b">
-                              <th className="text-left py-3 px-4 font-medium text-muted-foreground w-[60px] sticky left-0 bg-card z-10">
-                                #
-                              </th>
-                              {selectedAnalyses.map((a, idx) => (
-                                <th key={a.id} className="text-left py-3 px-4 font-medium min-w-[250px]">
-                                  <Badge className={`font-mono text-xs border ${ASIN_COLORS[analyses?.findIndex(x => x.id === a.id) ?? idx % ASIN_COLORS.length]}`}>
-                                    {a.asin}
-                                  </Badge>
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {[0, 1, 2, 3, 4].map(bulletIdx => (
-                              <tr key={bulletIdx} className="border-b hover:bg-muted/30 align-top">
-                                <td className="py-3 px-4 font-bold text-muted-foreground sticky left-0 bg-card z-10">
-                                  {bulletIdx + 1}
-                                </td>
-                                {selectedAnalyses.map(a => (
-                                  <td key={a.id} className="py-3 px-4">
-                                    {a.bulletPoints[bulletIdx] ? (
-                                      <div>
-                                        <p className="text-xs leading-relaxed">{a.bulletPoints[bulletIdx]}</p>
-                                        <span className={`text-[10px] mt-1 inline-block ${
-                                          a.bulletPoints[bulletIdx].length >= 250 && a.bulletPoints[bulletIdx].length <= 300
-                                            ? "text-green-600"
-                                            : a.bulletPoints[bulletIdx].length > 300
-                                              ? "text-red-600"
-                                              : "text-amber-600"
-                                        }`}>
-                                          {a.bulletPoints[bulletIdx].length} 字符
-                                        </span>
-                                      </div>
-                                    ) : (
-                                      <span className="text-xs text-muted-foreground italic">无</span>
-                                    )}
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      <ScrollBar orientation="horizontal" />
-                    </ScrollArea>
-                  </CardContent>
-                </Card>
+                {report ? (
+                  <SellingPointMatrix
+                    selectedAnalyses={selectedAnalyses}
+                    rows={sellingPointRows}
+                    isEditing={isEditingReport}
+                    onChange={setSellingPointRows}
+                    colorIndexFor={analysisId => Math.max(0, analyses?.findIndex(item => item.id === analysisId) ?? 0)}
+                  />
+                ) : (
+                  <Card className="border-dashed">
+                    <CardContent className="flex flex-col items-center justify-center py-14 text-center">
+                      {comparisonReportQuery.isFetching
+                        ? <Loader2 className="mb-3 h-7 w-7 animate-spin text-primary" />
+                        : <Sparkles className="mb-3 h-7 w-7 text-muted-foreground" />}
+                      <p className="text-sm font-medium">
+                        {comparisonReportQuery.isFetching ? "正在读取历史对比报告" : "请先生成结构化竞品对比"}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        AI 会按卖点语义归并同行，生成后可在本页填写人工备注并提取优秀点
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
               </TabsContent>
 
               {/* AI Summary Tab */}
@@ -1059,8 +1373,14 @@ export default function ComparisonPage() {
                   projectId={selectedProjectId!}
                   selectedIds={selectedIds}
                   selectedAnalyses={selectedAnalyses}
-                  aiSummary={aiSummary}
-                  setAiSummary={setAiSummary}
+                  report={report}
+                  summaryDraft={summaryDraft}
+                  isEditing={isEditingReport}
+                  onSummaryChange={setSummaryDraft}
+                  onReportGenerated={nextReport => {
+                    applyReport(nextReport);
+                    void refreshComparisonReport();
+                  }}
                 />
               </TabsContent>
             </Tabs>

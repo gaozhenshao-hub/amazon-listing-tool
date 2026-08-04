@@ -14,7 +14,7 @@ import { AlertTriangle, Check, ChevronRight, Image, Loader2, Sparkles, Target, L
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { toast } from "sonner";
 
-import { OUTLINE_APLUS_CATEGORIES, OUTLINE_APLUS_MODULES, findOutlineAplusModule, normalizeAplusModuleStyle } from "./aplusModules";
+import { OUTLINE_APLUS_CATEGORIES, OUTLINE_APLUS_MODULES, findOutlineAplusModule, normalizeImageOutline } from "./aplusModules";
 
 export function Step2ImageOutline({
   projectId,
@@ -28,15 +28,17 @@ export function Step2ImageOutline({
   const generateMutation = trpc.imageWorkflow.generateStep2.useMutation();
   const confirmMutation = trpc.imageWorkflow.confirmStep2.useMutation();
   const unlockMutation = trpc.imageWorkflow.unlockStep2.useMutation();
+  const optimizeAplusMutation = trpc.imageWorkflow.optimizeStep2AplusModule.useMutation();
   const utils = trpc.useUtils();
   const [editData, setEditData] = useState<any>(null);
   const [isLocked, setIsLocked] = useState(!!session?.step2Confirmed);
+  const [optimizingModuleIndex, setOptimizingModuleIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (session?.step2UserEdit) {
-      try { setEditData(JSON.parse(session.step2UserEdit)); } catch {}
+      try { setEditData(normalizeImageOutline(JSON.parse(session.step2UserEdit))); } catch {}
     } else if (session?.step2AiResult) {
-      try { setEditData(JSON.parse(session.step2AiResult)); } catch {}
+      try { setEditData(normalizeImageOutline(JSON.parse(session.step2AiResult), { forceDefaultAplus: true })); } catch {}
     }
     setIsLocked(!!session?.step2Confirmed);
   }, [session?.step2AiResult, session?.step2UserEdit, session?.step2Confirmed]);
@@ -55,7 +57,7 @@ export function Step2ImageOutline({
   const handleGenerate = async () => {
     try {
       const result = await generateMutation.mutateAsync({ projectId });
-      setEditData(result);
+      setEditData(normalizeImageOutline(result, { forceDefaultAplus: true }));
       toast.success("图片大纲生成完成");
     } catch (err: any) {
       toast.error(err.message || "生成失败");
@@ -65,10 +67,7 @@ export function Step2ImageOutline({
   const handleConfirm = async () => {
     if (!editData) return;
     try {
-      const normalizedData = {
-        ...editData,
-        aPlusModules: (editData.aPlusModules || []).map(normalizeAplusModuleStyle),
-      };
+      const normalizedData = normalizeImageOutline(editData);
       setEditData(normalizedData);
       await confirmMutation.mutateAsync({ projectId, userEdit: JSON.stringify(normalizedData) });
       toast.success("图片大纲已确认");
@@ -94,19 +93,25 @@ export function Step2ImageOutline({
     setEditData(newData);
   };
 
-  const updateAPlusModuleStyle = (idx: number, moduleType: string) => {
+  const updateAPlusModuleStyle = async (idx: number, moduleType: string) => {
     const selected = OUTLINE_APLUS_MODULES.find((m) => m.id === moduleType);
     if (!selected || !editData) return;
-    const newData = { ...editData, aPlusModules: [...(editData.aPlusModules || [])] };
-    newData.aPlusModules[idx] = {
-      ...newData.aPlusModules[idx],
-      selectedModuleType: selected.id,
-      selectedModuleName: selected.name,
-      selectedModuleCategory: selected.category,
-      selectedModuleSpecs: selected.specs,
-      selectedModuleStructure: selected.structure,
-    };
-    setEditData(newData);
+    if (editData.aPlusModules?.[idx]?.selectedModuleType === selected.id) return;
+
+    setOptimizingModuleIndex(idx);
+    try {
+      const result = await optimizeAplusMutation.mutateAsync({
+        projectId,
+        moduleIndex: idx,
+        moduleType: selected.id,
+      });
+      setEditData(normalizeImageOutline(result.outline));
+      toast.success(`已按“${selected.name}”重新优化此A+模块`);
+    } catch (err: any) {
+      toast.error(err.message || "A+模块重新优化失败");
+    } finally {
+      setOptimizingModuleIndex(null);
+    }
   };
 
   return (
@@ -358,7 +363,11 @@ export function Step2ImageOutline({
                           <Layers className="w-3.5 h-3.5 text-purple-500" />
                           <span className="text-xs font-medium text-purple-700">超级A+模块样式</span>
                         </div>
-                        <Select value={selectedStyle} onValueChange={(val) => updateAPlusModuleStyle(idx, val)}>
+                        <Select
+                          value={selectedStyle}
+                          onValueChange={(val) => void updateAPlusModuleStyle(idx, val)}
+                          disabled={optimizeAplusMutation.isPending}
+                        >
                           <SelectTrigger className="h-8 text-xs bg-white">
                             <SelectValue placeholder="选择A+模块样式，后续构图/效果图将按此结构生成" />
                           </SelectTrigger>
@@ -382,6 +391,12 @@ export function Step2ImageOutline({
                           <p className="mt-2 text-[10px] text-purple-600">
                             {selectedModule.name}: {selectedModule.specs}；{selectedModule.structure}
                           </p>
+                        )}
+                        {optimizingModuleIndex === idx && (
+                          <div className="mt-2 flex items-center gap-1.5 text-[10px] text-purple-700">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            皇帝 Skill 正在按新模块结构重新优化...
+                          </div>
                         )}
                       </div>
                       <Input value={mod.moduleType || ""} onChange={(e) => updateAPlusModule(idx, "moduleType", e.target.value)} placeholder="模块类型" className="h-8 text-sm" />

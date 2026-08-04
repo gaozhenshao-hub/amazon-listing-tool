@@ -37,6 +37,9 @@ const supplementalMigrations = [
   "0115_data_lifecycle_artifacts_v1.sql",
   "0116_ops_workspace_isolation.sql",
   "0117_database_runtime_observability.sql",
+  "0118_listing_competitor_human_review.sql",
+  "0119_listing_competitor_emperor_skills.sql",
+  "0120_image_workflow_outline_contract.sql",
 ];
 
 const retiredMigrationFiles = new Set([

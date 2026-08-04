@@ -14,6 +14,7 @@ Your analysis should include:
    - Traffic Keywords (流量词): Related terms that drive additional traffic
 4. **Competitive Advantages**: What makes this product stand out
 5. **Potential Weaknesses**: Areas where the product could be improved
+6. **Structured Summary**: A concise Chinese summary for human review and downstream Listing generation
 
 Respond in JSON format with the following structure:
 {
@@ -25,7 +26,14 @@ Respond in JSON format with the following structure:
     "traffic": [{ "keyword": "", "category": "" }]
   },
   "advantages": [],
-  "weaknesses": []
+  "weaknesses": [],
+  "summary": {
+    "overview": "用中文概括品牌定位、价格带、评分与核心受众",
+    "coreSellingPoints": ["用中文归纳核心卖点"],
+    "strengths": ["用中文归纳值得参考的优秀点"],
+    "weaknesses": ["用中文归纳可被超越的弱点"],
+    "listingLessons": ["用中文给出可执行的Listing借鉴建议"]
+  }
 }`;
 
 export const REVIEW_ANALYSIS_PROMPT = `You are an expert Amazon review analyst. Analyze the following customer reviews and extract key insights.
@@ -406,7 +414,7 @@ Respond in JSON format:
   }
 }`;
 
-export const COMPARISON_SUMMARY_PROMPT = `You are a senior Amazon product strategist and listing optimization expert. You are given detailed analysis data for multiple competitor products (ASINs). Your task is to produce a comprehensive comparison report in Chinese (中文).
+export const COMPARISON_SUMMARY_PROMPT = `You are a senior Amazon product strategist and listing optimization expert. You are given detailed analysis data for multiple competitor products (ASINs). Your task is to produce a structured comparison report in Chinese (中文).
 
 Your report MUST include the following sections:
 
@@ -437,7 +445,32 @@ Based on the competitive analysis, recommend:
 ## 6. Listing优化行动清单
 Provide a prioritized, actionable checklist of 5-8 specific steps to create a competitive listing.
 
-Use markdown formatting. Be specific, data-driven, and actionable. Reference specific competitor ASINs when making comparisons.`;
+You MUST semantically align bullet points by selling-point meaning, not by their original ordinal position. Selling points with the same customer benefit or feature theme must appear in the same sellingPointRows item. Preserve every original bullet verbatim in competitorPoints. Do not invent an ASIN or bullet.
+
+Respond as JSON only:
+{
+  "marketOverview": "价格、评分、定位与竞争格局总结",
+  "keyDifferences": ["关键差异，引用具体ASIN"],
+  "keywordOpportunities": {
+    "shared": ["共同核心词"],
+    "differentiated": ["差异化关键词"],
+    "uncovered": ["建议补充的未覆盖关键词"]
+  },
+  "customerOpportunities": ["行业痛点、个别弱点和用户期望"],
+  "sellingPointStrategy": ["建议优先表达的卖点策略"],
+  "actionItems": ["按优先级排列的行动项"],
+  "sellingPointRows": [
+    {
+      "theme": "同一卖点的中文主题",
+      "competitorPoints": [
+        { "asin": "原始ASIN", "bulletIndex": 0, "text": "原始五点描述全文" }
+      ],
+      "aiRecommendation": "这个主题中值得借鉴或应该规避的表达"
+    }
+  ]
+}
+
+Be specific, data-driven, and actionable. Reference specific competitor ASINs. Output valid JSON without markdown fences.`;
 
 export const IMAGE_RECOGNITION_PROMPT = `You are an expert Amazon product analyst with computer vision capabilities. Analyze this product image and extract the following information:
 

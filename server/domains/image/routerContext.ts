@@ -7,6 +7,7 @@ import {
   STEP0_COMPETITOR_SUMMARY_PROMPT,
   STEP1_SELLING_POINTS_PROMPT,
   STEP2_IMAGE_OUTLINE_PROMPT,
+  STEP2_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT,
   STEP3_STYLE_PROMPT,
   STEP4_REFERENCE_PROMPT,
   STEP5_FINAL_SUGGESTION_PROMPT,
@@ -17,6 +18,13 @@ import {
 } from "../../imageWorkflowPrompts";
 import { IMAGE_ADVICE_TRANSLATION_PROMPT } from "../../prompts";
 import { invokeLLM, storagePut } from "./service";
+import { runEmperorSkill, safeParseSkillJSON } from "../ai_os/services/skillRunner";
+import {
+  applyImageWorkflowAplusStyle,
+  findImageWorkflowAplusModule,
+  normalizeImageOutline,
+  normalizeSecondaryImageSlots,
+} from "@shared/imageWorkflow";
 import {
   registerAiJobHandler,
   startRegisteredAiJob,
@@ -27,6 +35,7 @@ export {
   STEP0_COMPETITOR_SUMMARY_PROMPT,
   STEP1_SELLING_POINTS_PROMPT,
   STEP2_IMAGE_OUTLINE_PROMPT,
+  STEP2_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT,
   STEP3_STYLE_PROMPT,
   STEP4_REFERENCE_PROMPT,
   STEP4_REOPTIMIZE_WITH_REFS_PROMPT,
@@ -43,6 +52,10 @@ export {
   router,
   startRegisteredAiJob,
   storagePut,
+  applyImageWorkflowAplusStyle,
+  findImageWorkflowAplusModule,
+  normalizeImageOutline,
+  normalizeSecondaryImageSlots,
   z,
 };
 
@@ -324,6 +337,35 @@ export function parseLLMJson(response: any): any {
   }
 }
 
+export async function callImageWorkflowSkill<T = any>(input: {
+  skillSlug: string;
+  userId: number;
+  workspaceId?: number | null;
+  systemPrompt: string;
+  context: string;
+  attachments?: any[];
+  validate?: (value: any) => T;
+}): Promise<T> {
+  const result = await runEmperorSkill<T>({
+    skillSlug: input.skillSlug,
+    userId: input.userId,
+    workspaceId: input.workspaceId ?? null,
+    context: input.context,
+    variables: {},
+    attachments: input.attachments,
+    legacySystemPrompt: input.systemPrompt,
+    migrationSource: "drizzle/0120_image_workflow_outline_contract.sql",
+    validate: (content) => {
+      const parsed = safeParseSkillJSON<any>(content);
+      if (parsed && typeof parsed === "object" && "raw" in parsed) {
+        throw new Error("皇帝 Skill 未返回有效 JSON");
+      }
+      return input.validate ? input.validate(parsed) : parsed as T;
+    },
+  });
+  return result.parsed;
+}
+
 // ─── Helper: Call LLM with automatic retry on empty/invalid response ─────
 export async function callLLMWithRetry(systemPrompt: string, userMessage: string, maxRetries = 2): Promise<any> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -422,7 +464,7 @@ export function buildStep5RunSnapshot(session: any) {
   };
 }
 
-export async function buildStep5FinalSuggestion(project: any, session: any, userId: number) {
+export async function buildStep5FinalSuggestion(project: any, session: any, userId: number, workspaceId?: number | null) {
   const truncate = (s: string | null, maxLen = 3000) => s ? s.substring(0, maxLen) : "";
   const step1Content = truncate(session.step1UserEdit || session.step1AiResult, 4000);
   const step2Content = truncate(session.step2UserEdit || session.step2AiResult, 4000);
@@ -430,18 +472,24 @@ export async function buildStep5FinalSuggestion(project: any, session: any, user
   const step4Content = truncate(session.step4UserEdit || session.step4AiResult, 3000);
 
   const kbReference = await getKBReference(project.category || "", userId);
-  const response = await invokeLLM({
-    messages: [
-      { role: "system", content: STEP5_FINAL_SUGGESTION_PROMPT },
-      {
-        role: "user",
-        content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}${kbReference}\n\n请综合以上所有确认结果（包括知识库参考），输出每张图的完整图片建议。A+内容必须继承图片大纲里已选择的selectedModuleType/selectedModuleName/selectedModuleStructure；轮播、四图、比较表、热点等多图/多面板模块必须输出对应面板、子图、热点或表格布局，不要再退化成单张普通图片建议。`,
-      },
-    ],
-    response_format: { type: "json_object" },
-  });
+  const context = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}\n\n--- 已确认的风格方案 ---\n${step3Content}\n\n--- 已确认的参考图 ---\n${step4Content}${kbReference}\n\n请综合以上所有确认结果（包括知识库参考），输出每张图的完整图片建议。secondaryImages必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7，不得遗漏辅图7。A+内容必须继承图片大纲里已选择的selectedModuleType/selectedModuleName/selectedModuleStructure；轮播、四图、比较表、热点等多图/多面板模块必须输出对应面板、子图、热点或表格布局，不要再退化成单张普通图片建议。`;
 
-  return parseLLMJson(response);
+  return callImageWorkflowSkill({
+    skillSlug: "image.step5.final.suggestion",
+    userId,
+    workspaceId: workspaceId ?? project?.workspaceId ?? null,
+    systemPrompt: STEP5_FINAL_SUGGESTION_PROMPT,
+    context,
+    validate: (value) => {
+      const imageNumbers = Array.isArray(value?.secondaryImages)
+        ? value.secondaryImages.map((image: any) => Number(image?.imageNumber))
+        : [];
+      if (imageNumbers.length !== 6 || imageNumbers.some((imageNumber: number, index: number) => imageNumber !== index + 2)) {
+        throw new Error("最终图片建议必须完整包含辅图2-7");
+      }
+      return value;
+    },
+  });
 }
 
 export async function persistStep5ListingAdvice(projectId: number, resultStr: string) {

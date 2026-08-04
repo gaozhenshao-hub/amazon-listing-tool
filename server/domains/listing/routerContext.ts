@@ -432,6 +432,7 @@ export function buildProductContext(project: any, analyses: any[], enrichedData?
   keywordSceneTags?: any;
   keywordStrategyMatrix?: any;
   reviewAggregation?: any;
+  confirmedComparisonReport?: any;
 }) {
   const parts: string[] = [];
   parts.push(`Product: ${project.productName || project.name}`);
@@ -648,6 +649,9 @@ export function buildProductContext(project: any, analyses: any[], enrichedData?
       if (analysis.price) parts.push(`  Price: ${analysis.price}`);
       if (analysis.rating) parts.push(`  Rating: ${analysis.rating}`);
       if (analysis.reviewCount) parts.push(`  Review Count: ${analysis.reviewCount}`);
+      if (analysis.summaryStatus === "confirmed" && analysis.summary) {
+        parts.push(`  Human-confirmed Competitor Summary:\n${analysis.summary}`);
+      }
       // Extract brand from rawData
       if (analysis.rawData) {
         try {
@@ -674,6 +678,26 @@ export function buildProductContext(project: any, analyses: any[], enrichedData?
         } catch {}
       }
     }
+  }
+
+  if (enrichedData?.confirmedComparisonReport) {
+    const report = enrichedData.confirmedComparisonReport;
+    parts.push("\n--- [Module 2 Confirmed Output] Human-confirmed Competitor Comparison ---");
+    parts.push(report.summary || "");
+    try {
+      const sellingPointRows = typeof report.sellingPointRows === "string"
+        ? JSON.parse(report.sellingPointRows)
+        : report.sellingPointRows;
+      const selectedRows = Array.isArray(sellingPointRows)
+        ? sellingPointRows.filter((row: any) => row.selected || row.humanNote)
+        : [];
+      if (selectedRows.length > 0) {
+        parts.push("Human-selected Excellent Selling Points:");
+        selectedRows.forEach((row: any) => {
+          parts.push(`  - ${row.theme}: ${row.humanNote || row.aiRecommendation || "confirmed"}`);
+        });
+      }
+    } catch {}
   }
 
   // Also include file-based competitor analysis if available (legacy support)
@@ -825,6 +849,7 @@ export async function loadEnrichedData(projectId: number) {
     keywordSceneTags?: any;
     keywordStrategyMatrix?: any;
     reviewAggregation?: any;
+    confirmedComparisonReport?: any;
   } = {};
 
   // Module 1: Load product attributes from file analysis (unchanged)
@@ -925,6 +950,11 @@ export async function loadEnrichedData(projectId: number) {
   const reviewAgg = await db.getReviewAggregationByProject(projectId);
   if (reviewAgg && reviewAgg.status === "completed") {
     result.reviewAggregation = reviewAgg;
+  }
+
+  const confirmedComparisonReport = await db.getLatestConfirmedCompetitorComparisonReport(projectId);
+  if (confirmedComparisonReport) {
+    result.confirmedComparisonReport = confirmedComparisonReport;
   }
 
   return result;

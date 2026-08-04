@@ -66,6 +66,7 @@ import { Step3StyleConfirm } from "./imageWorkflow/StyleConfirmationStep";
 import { Step4References } from "./imageWorkflow/ReferenceImagesStep";
 import { OUTLINE_APLUS_CATEGORIES, OUTLINE_APLUS_MODULES, findOutlineAplusModule, normalizeAplusModuleStyle } from "./imageWorkflow/aplusModules";
 import { buildFullPlanContent, buildPdfContent, safeJsonParse } from "./imageWorkflow/exportContent";
+import { normalizeSecondaryImageSlots } from "@shared/imageWorkflow";
 
 // ═══════════════════════════════════════════════════════════════════
 // ─── Step Progress Bar ───────────────────────────────────────────
@@ -86,6 +87,30 @@ function ColorSwatch({ color, label }: { color: any; label: string }) {
       <span className="text-xs">{label}: {colorStr}</span>
     </div>
   );
+}
+
+function normalizeFinalImageSuggestions(data: any) {
+  if (!data) return data;
+  return {
+    ...data,
+    secondaryImages: normalizeSecondaryImageSlots(
+      data.secondaryImages,
+      (imageNumber) => ({
+        imageNumber,
+        title: `辅图${imageNumber}`,
+        focus: "待补充",
+        fabe: { feature: "", advantage: "", benefit: "", evidence: "" },
+        expressionMethod: "",
+        composition: "",
+        colorScheme: { primary: "", secondary: "", accent: "" },
+        textOverlay: "",
+        dataVisualization: "",
+        icons: [],
+        keyElements: [],
+        tips: [],
+      }),
+    ),
+  };
 }
 
 function FABEDisplay({ fabe, variant = "en" }: { fabe: any; variant?: "en" | "cn" }) {
@@ -611,8 +636,8 @@ function Step5FinalSuggestions({
     if (!run?.runId || handledRunIdsRef.current.has(`${run.runId}:${run.status}`)) return;
     if (run.status === "succeeded") {
       handledRunIdsRef.current.add(`${run.runId}:${run.status}`);
-      if (run.en) setEnData(run.en);
-      if (run.cn) setCnData(run.cn);
+      if (run.en) setEnData(normalizeFinalImageSuggestions(run.en));
+      if (run.cn) setCnData(normalizeFinalImageSuggestions(run.cn));
       setActiveRunId(null);
       utils.imageWorkflow.getSession.invalidate({ projectId });
       toast.success("图片建议生成完成");
@@ -638,11 +663,11 @@ function Step5FinalSuggestions({
   useEffect(() => {
     const savedStep5Result = session?.step5UserEdit || session?.step5OptimizedResult || session?.step5AiResult;
     if (savedStep5Result) {
-      try { setEnData(JSON.parse(savedStep5Result)); } catch {}
+      try { setEnData(normalizeFinalImageSuggestions(JSON.parse(savedStep5Result))); } catch {}
     }
     const savedStep5CnResult = session?.step5AiResultCn || session?.step5OptimizedResultCn;
     if (savedStep5CnResult) {
-      try { setCnData(JSON.parse(savedStep5CnResult)); } catch { setCnData(null); }
+      try { setCnData(normalizeFinalImageSuggestions(JSON.parse(savedStep5CnResult))); } catch { setCnData(null); }
     } else {
       setCnData(null);
     }
@@ -659,8 +684,8 @@ function Step5FinalSuggestions({
       const result = await generateMutation.mutateAsync({ projectId });
       if (result.runId) setActiveRunId(result.runId);
       if (result.status === "succeeded") {
-        setEnData(result.en);
-        setCnData(result.cn);
+        setEnData(normalizeFinalImageSuggestions(result.en));
+        setCnData(normalizeFinalImageSuggestions(result.cn));
       }
       await utils.imageWorkflow.getSession.invalidate({ projectId });
       if (result.status === "succeeded") {

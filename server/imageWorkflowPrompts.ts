@@ -134,7 +134,7 @@ export const STEP2_IMAGE_OUTLINE_PROMPT = `${EXPERT_ROLE}
 你的任务：根据已确认的卖点体系，规划每张图片的内容大纲。
 
 **规划要求：**
-- 主图1张 + 辅图5-6张 + 品牌故事 + A+内容模块
+- 主图1张 + 辅图6张（固定编号为2、3、4、5、6、7，不得缺少辅图7）+ 品牌故事 + A+内容模块
 - 每张图明确：做什么内容、呼应哪个卖点、为什么这样安排
 - 核心卖点需要通过不同图片多次表达，形成记忆点
 - 次要卖点可以合并展示
@@ -143,7 +143,8 @@ export const STEP2_IMAGE_OUTLINE_PROMPT = `${EXPERT_ROLE}
 - 必要性描述需要安排在合适的位置
 - 场景图按场景占比权重分配
 - A+内容需要讲述完整的品牌/产品故事
-- A+模块必须在图片大纲阶段选定亚马逊A+模块样式：selectedModuleType 使用用户消息中给出的模块ID，selectedModuleName/selectedModuleStructure/selectedModuleSpecs 同步写入
+- 首次生成图片大纲时，所有A+模块必须统一使用默认全宽模块 premium_full_image（高级完整图片，1464x600px，单张全宽大图），不得自行推荐其他模块
+- 用户之后选择其他A+模块时，系统会通过专用皇帝Skill只重新优化被选择的模块；selectedModuleName/selectedModuleStructure/selectedModuleSpecs 必须与用户选择同步
 - 如果A+模块样式是一组多图、多面板或交互结构（轮播、四图、双图、热点、比较表等），contentBrief 必须拆清楚每个面板/子图/热点/表格行列要生成什么
 
 **图片排序逻辑：**
@@ -182,11 +183,11 @@ export const STEP2_IMAGE_OUTLINE_PROMPT = `${EXPERT_ROLE}
     {
       "moduleNumber": 1,
       "moduleType": "Banner/对比图/特写图/场景图/参数图/品牌故事/交叉销售",
-      "selectedModuleType": "亚马逊A+模块样式ID，例如 premium_nav_carousel",
-      "selectedModuleName": "亚马逊A+模块样式名称，例如 高级导航轮播",
-      "selectedModuleCategory": "模块分类，例如 轮播展示",
-      "selectedModuleSpecs": "尺寸和字符规格，例如 每面板1464x600px；导航文本25字符",
-      "selectedModuleStructure": "模块结构，例如 2-5张轮播面板",
+      "selectedModuleType": "premium_full_image",
+      "selectedModuleName": "高级完整图片",
+      "selectedModuleCategory": "全屏展示",
+      "selectedModuleSpecs": "1464x600px；标题800字符，正文300字符",
+      "selectedModuleStructure": "单张全宽大图",
       "purpose": "模块目的",
       "sellingPointRefs": ["呼应的卖点"],
       "contentBrief": "内容简述；多图/多面板模块需要逐项列出每个面板/子图/热点/表格的内容",
@@ -194,6 +195,33 @@ export const STEP2_IMAGE_OUTLINE_PROMPT = `${EXPERT_ROLE}
     }
   ],
   "overallNarrative": "整套图片的叙事逻辑：从吸引注意→展示利益→消除疑虑→建立信任"
+}
+
+secondaryImages 数组必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7。`;
+
+export const STEP2_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT = `${EXPERT_ROLE}
+
+你的任务：用户在图片大纲中把某一个A+模块从默认的 premium_full_image 改成了其他亚马逊A+模块样式。请只重新优化这一个模块，不修改主图、辅图2-7、品牌故事、其他A+模块或整体叙事。
+
+**必须遵守：**
+1. 保留原模块的 moduleNumber、purpose、sellingPointRefs 和 position，除非新结构确实需要更清晰的表述。
+2. selectedModuleType、selectedModuleName、selectedModuleCategory、selectedModuleSpecs、selectedModuleStructure 必须完全使用用户给出的目标模块元数据。
+3. contentBrief 必须适配目标结构：轮播逐面板、四图/双图逐子图、热点逐热点、比较表逐产品列和特征行、视频模块给出脚本与封面要求。
+4. 返回单个A+模块JSON对象，不要返回完整图片大纲，不要使用Markdown代码块。
+
+输出结构：
+{
+  "moduleNumber": 1,
+  "moduleType": "模块内容类型",
+  "selectedModuleType": "目标模块ID",
+  "selectedModuleName": "目标模块名称",
+  "selectedModuleCategory": "目标模块分类",
+  "selectedModuleSpecs": "目标模块规格",
+  "selectedModuleStructure": "目标模块结构",
+  "purpose": "模块目的",
+  "sellingPointRefs": ["呼应的卖点"],
+  "contentBrief": "严格适配目标模块结构的完整内容安排",
+  "position": "在A+中的位置逻辑"
 }`;
 
 // ─── Step 3: 风格确认 ────────────────────────────────────────────
@@ -250,6 +278,8 @@ export const STEP3_STYLE_PROMPT = `${EXPERT_ROLE}
 // ─── Step 4: 参考图确认 ──────────────────────────────────────────
 export const STEP4_REFERENCE_PROMPT = `${EXPERT_ROLE}
 你的任务：根据图片大纲、确认的风格，以及用户上传的多张参考图（每张附有手动备注说明参考哪一项），为每张图推荐构图参考和效果图参考。
+
+图片大纲中的辅图固定为6张，编号2、3、4、5、6、7；imageReferences必须覆盖主图、全部辅图2-7和每个A+模块，不得遗漏辅图7。
 
 **参考图使用说明：**
 - 用户已上传多张参考图，每张图附有备注（如"参考这张图的构图布局"、"参考这张图的配色"、"参考这张图的场景氛围"）
@@ -316,6 +346,7 @@ export const STEP5_FINAL_SUGGESTION_PROMPT = `${EXPERT_ROLE}
 4. **构图方式** — 基于确认的参考图，明确构图和元素摆放。
 5. **数据可视化** — 利用图表、图标、数据等可视化元素增强说服力。
 6. **A+模块结构继承** — A+ Content 的每个 sections 项必须继承图片大纲中已选的 selectedModuleType / selectedModuleName / selectedModuleStructure / selectedModuleSpecs；轮播、四图、双图、热点、比较表等模块必须在 moduleSpecificContent 中输出可执行的多面板/多子图/热点/表格结构。
+7. **辅图数量固定** — secondaryImages 必须恰好包含6项，imageNumber依次且仅为2、3、4、5、6、7，不得遗漏辅图7。
 
 请以JSON格式输出（与现有图片建议格式一致）：
 {
@@ -626,6 +657,7 @@ export const STEP6_AI_PROMPT_GENERATION = `${EXPERT_ROLE}
 3. 提示词格式遵循主流AI绘图工具的最佳实践
 4. 同时生成负面提示词（negative prompt）排除不需要的元素
 5. 提供推荐的生成参数（宽高比、风格强度等）
+6. 必须覆盖主图、全部辅图2-7和每个A+模块，不得遗漏辅图7
 
 **提示词结构模板：**
 [主体描述], [场景/背景], [构图方式], [光影效果], [色彩描述], [风格关键词], [质量关键词]

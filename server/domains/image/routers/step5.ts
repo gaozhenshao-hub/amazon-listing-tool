@@ -29,6 +29,7 @@ const {
   kbDb,
   parseLLMJson,
   parseStoredJson,
+  normalizeSecondaryImageSlots,
   persistStep5ListingAdvice,
   protectedProcedure,
   registerAiJobHandler,
@@ -134,7 +135,7 @@ export const imageStep5Procedures = {
       });
 
       try {
-        const result = await buildStep5FinalSuggestion(project, session, ctx.user.id);
+        const result = await buildStep5FinalSuggestion(project, session, ctx.user.id, ctx.workspaceId);
         const resultStr = JSON.stringify(result);
 
         // Save English result immediately so user sees it fast
@@ -175,8 +176,30 @@ export const imageStep5Procedures = {
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
 
+      let parsed: any;
+      try {
+        parsed = JSON.parse(input.userEdit);
+      } catch {
+        throw new Error("图片建议不是有效JSON");
+      }
+      const imageNumbers = Array.isArray(parsed?.secondaryImages)
+        ? parsed.secondaryImages.map((image: any) => Number(image?.imageNumber))
+        : [];
+      if (imageNumbers.length !== 6 || imageNumbers.some((imageNumber: number, index: number) => imageNumber !== index + 2)) {
+        throw new Error("图片建议必须完整包含辅图2-7，请重新生成后再确认");
+      }
+      const incompleteImage = parsed.secondaryImages.find((image: any) =>
+        !String(image?.title || "").trim() ||
+        !String(image?.focus || "").trim() ||
+        String(image?.focus || "").trim() === "待补充",
+      );
+      if (incompleteImage) {
+        throw new Error(`辅图${incompleteImage.imageNumber}内容不完整，请重新生成或补充后再确认`);
+      }
+      parsed.secondaryImages = normalizeSecondaryImageSlots(parsed.secondaryImages, (imageNumber: number) => ({ imageNumber }));
+
       await db.updateImageWorkflowSession(session.id, {
-        step5UserEdit: input.userEdit,
+        step5UserEdit: JSON.stringify(parsed),
         step5Confirmed: 1,
         status: "completed",
       });

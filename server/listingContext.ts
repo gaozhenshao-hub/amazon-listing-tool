@@ -31,6 +31,7 @@ export interface CompetitorInsights {
     reviewCount: string;
     keywords: { core: string[]; longTail: string[]; traffic: string[] };
     reviewAnalysis: any;
+    confirmedSummary: string | null;
   }>;
   aggregatedReviews: {
     painPoints: Array<{ point: string; frequency: number; severity: string; sourceAsins?: string[]; listingAdvice?: string }>;
@@ -131,6 +132,7 @@ async function buildModule2(projectId: number): Promise<CompetitorInsights | nul
       };
     })(),
     reviewAnalysis: safeParseJSON(a.reviewAnalysis),
+    confirmedSummary: a.summaryStatus === "confirmed" ? a.summary : null,
   }));
 
   // Build aggregated reviews from Kano model

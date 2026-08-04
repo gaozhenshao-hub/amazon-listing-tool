@@ -44,7 +44,7 @@ pnpm start:scheduler
 ## Deployment checklist
 
 1. Back up the production database.
-2. Run pending Drizzle/SQL migrations, including `0104_emperor_agent_artifacts.sql` through `0115_data_lifecycle_artifacts_v1.sql`.
+2. Run pending Drizzle/SQL migrations, including `0104_emperor_agent_artifacts.sql` through `0120_image_workflow_outline_contract.sql`.
 3. Configure stable `TOOL_SECRET_KEY` and `TOOL_SECRET_KEY_VERSION` before starting any Web, Worker, or Scheduler process.
 4. Start Web with `APP_PROCESS_ROLE=web` and `AI_JOB_IN_PROCESS=false`.
 5. Start at least one Worker with `APP_PROCESS_ROLE=worker`.

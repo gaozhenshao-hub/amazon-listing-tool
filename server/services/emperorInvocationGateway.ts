@@ -158,7 +158,9 @@ function inferSkillSlug(params: InvokeParams, callerFile: string, text: string):
   const source = callerFile.replace(/^.*\/server\//, "server/");
   if (!source) return null;
 
-  if (callerFile.endsWith("imageWorkflow.ts")) return { slug: inferImageWorkflowSkill(text), source };
+  if (callerFile.endsWith("imageWorkflow.ts") || callerFile.includes("/domains/image/")) {
+    return { slug: inferImageWorkflowSkill(text), source };
+  }
   if (callerFile.endsWith("listing.ts")) return { slug: inferListingSkill(text), source };
   if (callerFile.endsWith("keywordAi.ts")) return { slug: inferKeywordSkill(text), source };
   if (callerFile.includes("/routers/ad") || callerFile.endsWith("adStructure.ts")) return { slug: inferAdSkill(callerFile, text), source };

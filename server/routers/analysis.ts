@@ -1,16 +1,70 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
-import { invokeLLM } from "../_core/llm";
 import * as db from "../repositories";
 import { COMPETITOR_ANALYSIS_PROMPT, REVIEW_ANALYSIS_PROMPT, COMPARISON_SUMMARY_PROMPT } from "../prompts";
 import { scrapeAmazonProduct, type AmazonProductData } from "../scraper";
 import { getScraperConfig } from "./systemSettings";
 import { parseReviewFile, reviewsToText, type ParseResult } from "../reviewParser";
+import {
+  registerCompetitorAnalysisArtifact,
+  registerCompetitorComparisonArtifact,
+} from "../domains/ai_os/services/businessArtifactRegistry";
+import {
+  comparisonSelectionKey,
+  comparisonSellingPointRowsSchema,
+  formatComparisonSummary,
+  formatCompetitorAnalysisSummary,
+  normalizeSellingPointRows,
+  serializeComparisonReport,
+} from "../domains/listing/competitorHumanReview";
+import {
+  runEmperorSkill,
+  safeParseSkillJSON,
+} from "../domains/ai_os/services/skillRunner";
+
+type AnalysisSkillSlug =
+  | "listing.competitor.analyze"
+  | "analysis.competitor.multi"
+  | "analysis.review.extract";
+
+async function runAnalysisSkill<T>(input: {
+  skillSlug: AnalysisSkillSlug;
+  userId: number;
+  workspaceId?: number | null;
+  context: string;
+  legacySystemPrompt: string;
+}): Promise<T> {
+  const result = await runEmperorSkill<T>({
+    skillSlug: input.skillSlug,
+    userId: input.userId,
+    workspaceId: input.workspaceId,
+    context: input.context,
+    variables: { context: input.context },
+    legacySystemPrompt: input.legacySystemPrompt,
+    migrationSource: "server/routers/analysis.ts",
+    validate: (content) => {
+      const parsed = safeParseSkillJSON<T>(content);
+      if (
+        parsed
+        && typeof parsed === "object"
+        && !Array.isArray(parsed)
+        && Object.keys(parsed).length === 1
+        && "raw" in parsed
+      ) {
+        throw new Error("皇帝 Skill 返回内容不是有效 JSON");
+      }
+      return parsed as T;
+    },
+  });
+  return result.parsed;
+}
 
 // Helper: run a single ASIN analysis (scrape + LLM)
 async function analyzeSingleAsin(
   projectId: number,
   asin: string,
+  userId: number,
+  workspaceId?: number | null,
 ): Promise<{
   asin: string;
   status: "success" | "partial" | "failed";
@@ -45,46 +99,26 @@ async function analyzeSingleAsin(
   }
 
   // Step 3: Analyze competitor data with LLM
-  const analysisResponse = await invokeLLM({
-    messages: [
-      { role: "system", content: COMPETITOR_ANALYSIS_PROMPT },
-      { role: "user", content: `Analyze this competitor product:\n\n${contextParts.join("\n\n")}` },
-    ],
-    response_format: { type: "json_object" },
+  const analysisData = await runAnalysisSkill<any>({
+    skillSlug: "listing.competitor.analyze",
+    userId,
+    workspaceId,
+    context: `Analyze this competitor product:\n\n${contextParts.join("\n\n")}`,
+    legacySystemPrompt: COMPETITOR_ANALYSIS_PROMPT,
   });
-
-  const analysisContent = typeof analysisResponse.choices[0].message.content === "string"
-    ? analysisResponse.choices[0].message.content
-    : JSON.stringify(analysisResponse.choices[0].message.content);
-
-  let analysisData: any = {};
-  try {
-    analysisData = JSON.parse(analysisContent);
-  } catch {
-    analysisData = { raw: analysisContent };
-  }
+  const structuredSummary = formatCompetitorAnalysisSummary(analysisData);
 
   // Step 4: Analyze reviews if available
   let reviewAnalysis: any = null;
   const reviewTexts = scrapedData?.reviews || [];
   if (reviewTexts.length > 0) {
-    const reviewResponse = await invokeLLM({
-      messages: [
-        { role: "system", content: REVIEW_ANALYSIS_PROMPT },
-        { role: "user", content: `Analyze these customer reviews:\n\n${reviewTexts.join("\n\n---\n\n")}` },
-      ],
-      response_format: { type: "json_object" },
+    reviewAnalysis = await runAnalysisSkill<any>({
+      skillSlug: "analysis.review.extract",
+      userId,
+      workspaceId,
+      context: `Analyze these customer reviews:\n\n${reviewTexts.join("\n\n---\n\n")}`,
+      legacySystemPrompt: REVIEW_ANALYSIS_PROMPT,
     });
-
-    const reviewContent = typeof reviewResponse.choices[0].message.content === "string"
-      ? reviewResponse.choices[0].message.content
-      : JSON.stringify(reviewResponse.choices[0].message.content);
-
-    try {
-      reviewAnalysis = JSON.parse(reviewContent);
-    } catch {
-      reviewAnalysis = { raw: reviewContent };
-    }
   }
 
   // Step 5: Save analysis to database (upsert to prevent duplicates)
@@ -112,6 +146,12 @@ async function analyzeSingleAsin(
         category: scrapedData.category,
       } : null,
     }),
+    aiSummary: structuredSummary,
+    summary: structuredSummary,
+    summaryStatus: "draft",
+  });
+  await registerCompetitorAnalysisArtifact(saved.id, "ai_output").catch(error => {
+    console.warn("[Analysis] Failed to register competitor artifact", error);
   });
 
   return {
@@ -130,6 +170,165 @@ export const analysisRouter = router({
       const project = await db.getProjectById(input.projectId, ctx.user.id);
       if (!project) throw new Error("Project not found");
       return db.getCompetitorAnalysesByProject(input.projectId);
+    }),
+
+  updateSummary: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      analysisId: z.number(),
+      summary: z.string().trim().min(1).max(20000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      const analysis = await db.getCompetitorAnalysisById(input.analysisId);
+      if (!analysis || analysis.projectId !== input.projectId) throw new Error("Competitor analysis not found");
+      if (analysis.summaryStatus === "confirmed") throw new Error("已确认的竞品分析需要先解锁才能编辑");
+      const updated = await db.updateCompetitorAnalysisSummary(input.analysisId, {
+        summary: input.summary,
+        incrementVersion: true,
+      });
+      await registerCompetitorAnalysisArtifact(input.analysisId, "user_edit").catch(error => {
+        console.warn("[Analysis] Failed to register analysis draft artifact", error);
+      });
+      return updated;
+    }),
+
+  confirmSummary: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      analysisId: z.number(),
+      summary: z.string().trim().min(1).max(20000),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      const analysis = await db.getCompetitorAnalysisById(input.analysisId);
+      if (!analysis || analysis.projectId !== input.projectId) throw new Error("Competitor analysis not found");
+      if (analysis.summaryStatus === "confirmed" && analysis.summary !== input.summary) {
+        throw new Error("已确认的竞品分析需要先解锁才能修改");
+      }
+      const updated = await db.updateCompetitorAnalysisSummary(input.analysisId, {
+        summary: input.summary,
+        summaryStatus: "confirmed",
+        summaryConfirmedBy: ctx.user.id,
+        summaryConfirmedAt: new Date(),
+        incrementVersion: analysis.summaryStatus !== "confirmed" || analysis.summary !== input.summary,
+      });
+      await registerCompetitorAnalysisArtifact(input.analysisId, analysis.summary === input.summary ? "system" : "user_edit").catch(error => {
+        console.warn("[Analysis] Failed to register confirmed analysis artifact", error);
+      });
+      return updated;
+    }),
+
+  unlockSummary: protectedProcedure
+    .input(z.object({ projectId: z.number(), analysisId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      const analysis = await db.getCompetitorAnalysisById(input.analysisId);
+      if (!analysis || analysis.projectId !== input.projectId) throw new Error("Competitor analysis not found");
+      const updated = await db.updateCompetitorAnalysisSummary(input.analysisId, {
+        summaryStatus: "draft",
+        summaryConfirmedBy: null,
+        summaryConfirmedAt: null,
+      });
+      await registerCompetitorAnalysisArtifact(input.analysisId, "user_edit").catch(error => {
+        console.warn("[Analysis] Failed to register unlocked analysis artifact", error);
+      });
+      return updated;
+    }),
+
+  getComparisonReport: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      analysisIds: z.array(z.number()).min(2).max(8),
+    }))
+    .query(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      const report = await db.getLatestCompetitorComparisonReport(
+        input.projectId,
+        comparisonSelectionKey(input.analysisIds),
+      );
+      return serializeComparisonReport(report);
+    }),
+
+  updateComparisonReport: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      reportId: z.number(),
+      summary: z.string().trim().min(1).max(30000),
+      sellingPointRows: comparisonSellingPointRowsSchema,
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      const report = await db.getCompetitorComparisonReportById(input.reportId);
+      if (!report || report.projectId !== input.projectId) throw new Error("Competitor comparison report not found");
+      if (report.status === "confirmed") throw new Error("已确认的竞品对比需要先解锁才能编辑");
+      const updated = await db.updateCompetitorComparisonReport(input.reportId, {
+        summary: input.summary,
+        sellingPointRows: JSON.stringify(input.sellingPointRows),
+        incrementVersion: true,
+      });
+      await registerCompetitorComparisonArtifact(input.reportId, "user_edit").catch(error => {
+        console.warn("[Analysis] Failed to register comparison draft artifact", error);
+      });
+      return serializeComparisonReport(updated);
+    }),
+
+  confirmComparisonReport: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      reportId: z.number(),
+      summary: z.string().trim().min(1).max(30000),
+      sellingPointRows: comparisonSellingPointRowsSchema,
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      const report = await db.getCompetitorComparisonReportById(input.reportId);
+      if (!report || report.projectId !== input.projectId) throw new Error("Competitor comparison report not found");
+      const serializedRows = JSON.stringify(input.sellingPointRows);
+      if (
+        report.status === "confirmed"
+        && (report.summary !== input.summary || report.sellingPointRows !== serializedRows)
+      ) {
+        throw new Error("已确认的竞品对比需要先解锁才能修改");
+      }
+      const updated = await db.updateCompetitorComparisonReport(input.reportId, {
+        summary: input.summary,
+        sellingPointRows: serializedRows,
+        status: "confirmed",
+        confirmedBy: ctx.user.id,
+        confirmedAt: new Date(),
+        incrementVersion: report.status !== "confirmed"
+          || report.summary !== input.summary
+          || report.sellingPointRows !== serializedRows,
+      });
+      await registerCompetitorComparisonArtifact(input.reportId, "user_edit").catch(error => {
+        console.warn("[Analysis] Failed to register confirmed comparison artifact", error);
+      });
+      return serializeComparisonReport(updated);
+    }),
+
+  unlockComparisonReport: protectedProcedure
+    .input(z.object({ projectId: z.number(), reportId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await db.getProjectById(input.projectId, ctx.user.id);
+      if (!project) throw new Error("Project not found");
+      const report = await db.getCompetitorComparisonReportById(input.reportId);
+      if (!report || report.projectId !== input.projectId) throw new Error("Competitor comparison report not found");
+      const updated = await db.updateCompetitorComparisonReport(input.reportId, {
+        status: "draft",
+        confirmedBy: null,
+        confirmedAt: null,
+      });
+      await registerCompetitorComparisonArtifact(input.reportId, "user_edit").catch(error => {
+        console.warn("[Analysis] Failed to register unlocked comparison artifact", error);
+      });
+      return serializeComparisonReport(updated);
     }),
 
   // Scrape Amazon product data by ASIN (preview only, no save)
@@ -155,7 +354,12 @@ export const analysisRouter = router({
 
       await db.updateProject(input.projectId, ctx.user.id, { status: "analyzing" });
 
-      const result = await analyzeSingleAsin(input.projectId, input.asin);
+      const result = await analyzeSingleAsin(
+        input.projectId,
+        input.asin,
+        ctx.user.id,
+        project.workspaceId,
+      );
       return result;
     }),
 
@@ -185,7 +389,12 @@ export const analysisRouter = router({
       // Process each ASIN sequentially to avoid rate limiting
       for (const asin of uniqueAsins) {
         try {
-          const result = await analyzeSingleAsin(input.projectId, asin);
+          const result = await analyzeSingleAsin(
+            input.projectId,
+            asin,
+            ctx.user.id,
+            project.workspaceId,
+          );
           results.push(result);
         } catch (error: any) {
           console.error(`[BatchAnalysis] Failed for ${asin}: ${error.message}`);
@@ -244,46 +453,25 @@ export const analysisRouter = router({
       if (input.rating) contextParts.push(`Rating: ${input.rating}/5`);
       if (input.description) contextParts.push(`Description: ${input.description}`);
 
-      // Analyze competitor data with LLM
-      const analysisResponse = await invokeLLM({
-        messages: [
-          { role: "system", content: COMPETITOR_ANALYSIS_PROMPT },
-          { role: "user", content: `Analyze this competitor product:\n\n${contextParts.join("\n\n")}` },
-        ],
-        response_format: { type: "json_object" },
+      const analysisData = await runAnalysisSkill<any>({
+        skillSlug: "listing.competitor.analyze",
+        userId: ctx.user.id,
+        workspaceId: project.workspaceId,
+        context: `Analyze this competitor product:\n\n${contextParts.join("\n\n")}`,
+        legacySystemPrompt: COMPETITOR_ANALYSIS_PROMPT,
       });
-
-      const analysisContent = typeof analysisResponse.choices[0].message.content === "string"
-        ? analysisResponse.choices[0].message.content
-        : JSON.stringify(analysisResponse.choices[0].message.content);
-
-      let analysisData: any = {};
-      try {
-        analysisData = JSON.parse(analysisContent);
-      } catch {
-        analysisData = { raw: analysisContent };
-      }
+      const structuredSummary = formatCompetitorAnalysisSummary(analysisData);
 
       // Analyze reviews if provided
       let reviewAnalysis: any = null;
       if (input.reviews && input.reviews.trim().length > 0) {
-        const reviewResponse = await invokeLLM({
-          messages: [
-            { role: "system", content: REVIEW_ANALYSIS_PROMPT },
-            { role: "user", content: `Analyze these customer reviews:\n\n${input.reviews}` },
-          ],
-          response_format: { type: "json_object" },
+        reviewAnalysis = await runAnalysisSkill<any>({
+          skillSlug: "analysis.review.extract",
+          userId: ctx.user.id,
+          workspaceId: project.workspaceId,
+          context: `Analyze these customer reviews:\n\n${input.reviews}`,
+          legacySystemPrompt: REVIEW_ANALYSIS_PROMPT,
         });
-
-        const reviewContent = typeof reviewResponse.choices[0].message.content === "string"
-          ? reviewResponse.choices[0].message.content
-          : JSON.stringify(reviewResponse.choices[0].message.content);
-
-        try {
-          reviewAnalysis = JSON.parse(reviewContent);
-        } catch {
-          reviewAnalysis = { raw: reviewContent };
-        }
       }
 
       // Parse bullet points into array
@@ -307,6 +495,12 @@ export const analysisRouter = router({
           ...analysisData,
           manualInput: true,
         }),
+        aiSummary: structuredSummary,
+        summary: structuredSummary,
+        summaryStatus: "draft",
+      });
+      await registerCompetitorAnalysisArtifact(saved.id, "ai_output").catch(error => {
+        console.warn("[Analysis] Failed to register manual competitor artifact", error);
       });
 
       return {
@@ -330,10 +524,11 @@ export const analysisRouter = router({
 
       // Fetch all selected analyses
       const allAnalyses = await db.getCompetitorAnalysesByProject(input.projectId);
-      const selectedAnalyses = allAnalyses.filter(a => input.analysisIds.includes(a.id));
+      const requestedAnalysisIds = [...new Set(input.analysisIds)].sort((a, b) => a - b);
+      const selectedAnalyses = allAnalyses.filter(a => requestedAnalysisIds.includes(a.id));
 
-      if (selectedAnalyses.length < 2) {
-        throw new Error("At least 2 analyses are required for comparison");
+      if (selectedAnalyses.length !== requestedAnalysisIds.length) {
+        throw new Error("部分竞品分析不存在或不属于当前项目");
       }
 
       // Build comprehensive context for LLM
@@ -391,25 +586,41 @@ export const analysisRouter = router({
 
       const userMessage = `Please analyze and compare the following ${selectedAnalyses.length} competitor products and generate a comprehensive comparison report with optimization suggestions:\n\n${competitorSummaries.join("\n\n---\n\n")}`;
 
-      // [Emperor] 优先调用 Emperor Skill: analysis.comparison.summary
-
-
-
-
-
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: COMPARISON_SUMMARY_PROMPT },
-          { role: "user", content: userMessage },
-        ],
+      const comparisonData = await runAnalysisSkill<any>({
+        skillSlug: "analysis.competitor.multi",
+        userId: ctx.user.id,
+        workspaceId: project.workspaceId,
+        context: userMessage,
+        legacySystemPrompt: COMPARISON_SUMMARY_PROMPT,
       });
 
-      const summaryContent = typeof response.choices[0].message.content === "string"
-        ? response.choices[0].message.content
-        : JSON.stringify(response.choices[0].message.content);
+      const summary = formatComparisonSummary(comparisonData);
+      const sellingPointRows = normalizeSellingPointRows(comparisonData, selectedAnalyses);
+      const selectionKey = comparisonSelectionKey(requestedAnalysisIds);
+      const previousReport = await db.getLatestCompetitorComparisonReport(input.projectId, selectionKey);
+      const report = await db.createCompetitorComparisonReport({
+        workspaceId: project.workspaceId ?? null,
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        selectionKey,
+        analysisIds: JSON.stringify(requestedAnalysisIds),
+        analyzedAsins: JSON.stringify(selectedAnalyses.map(a => a.asin)),
+        aiSummary: summary,
+        summary,
+        sellingPointRows: JSON.stringify(sellingPointRows),
+        status: "draft",
+        version: (previousReport?.version || 0) + 1,
+      });
+
+      if (!report) throw new Error("Failed to save competitor comparison report");
+      await registerCompetitorComparisonArtifact(report.id, "ai_output").catch(error => {
+        console.warn("[Analysis] Failed to register comparison artifact", error);
+      });
 
       return {
-        summary: summaryContent,
+        report: serializeComparisonReport(report),
+        summary,
+        sellingPointRows,
         analyzedAsins: selectedAnalyses.map(a => a.asin),
         analyzedCount: selectedAnalyses.length,
       };
@@ -492,25 +703,13 @@ export const analysisRouter = router({
           const reviewText = reviewsToText(reviews);
           const existingAnalysis = existingAsinMap.get(asin);
 
-          // Run review analysis LLM
-          const reviewResponse = await invokeLLM({
-            messages: [
-              { role: "system", content: REVIEW_ANALYSIS_PROMPT },
-              { role: "user", content: `Analyze these ${reviews.length} customer reviews for ASIN ${asin} imported from a seller tool (\u5356\u5bb6\u7cbe\u7075/SellerSprite):\n\n${reviewText.substring(0, 12000)}` },
-            ],
-            response_format: { type: "json_object" },
+          const reviewAnalysis = await runAnalysisSkill<any>({
+            skillSlug: "analysis.review.extract",
+            userId: ctx.user.id,
+            workspaceId: project.workspaceId,
+            context: `Analyze these ${reviews.length} customer reviews for ASIN ${asin} imported from a seller tool (\u5356\u5bb6\u7cbe\u7075/SellerSprite):\n\n${reviewText.substring(0, 12000)}`,
+            legacySystemPrompt: REVIEW_ANALYSIS_PROMPT,
           });
-
-          const reviewContent = typeof reviewResponse.choices[0].message.content === "string"
-            ? reviewResponse.choices[0].message.content
-            : JSON.stringify(reviewResponse.choices[0].message.content);
-
-          let reviewAnalysis: any = null;
-          try {
-            reviewAnalysis = JSON.parse(reviewContent);
-          } catch {
-            reviewAnalysis = { raw: reviewContent };
-          }
 
           let analysisId: number;
 
@@ -538,24 +737,14 @@ export const analysisRouter = router({
             results.push({ asin, status: "matched", reviewCount: reviews.length, analysisId });
           } else {
             // No existing analysis for this ASIN -> run full competitor analysis and create new
-            const analysisResponse = await invokeLLM({
-              messages: [
-                { role: "system", content: COMPETITOR_ANALYSIS_PROMPT },
-                { role: "user", content: `Analyze this competitor product:\n\nASIN: ${asin}\n\nCustomer Reviews Summary (${reviews.length} reviews imported from file):\n${reviewText.substring(0, 8000)}` },
-              ],
-              response_format: { type: "json_object" },
+            const analysisData = await runAnalysisSkill<any>({
+              skillSlug: "listing.competitor.analyze",
+              userId: ctx.user.id,
+              workspaceId: project.workspaceId,
+              context: `Analyze this competitor product:\n\nASIN: ${asin}\n\nCustomer Reviews Summary (${reviews.length} reviews imported from file):\n${reviewText.substring(0, 8000)}`,
+              legacySystemPrompt: COMPETITOR_ANALYSIS_PROMPT,
             });
-
-            const analysisContent = typeof analysisResponse.choices[0].message.content === "string"
-              ? analysisResponse.choices[0].message.content
-              : JSON.stringify(analysisResponse.choices[0].message.content);
-
-            let analysisData: any = {};
-            try {
-              analysisData = JSON.parse(analysisContent);
-            } catch {
-              analysisData = { raw: analysisContent };
-            }
+            const structuredSummary = formatCompetitorAnalysisSummary(analysisData);
 
             const saved = await db.upsertCompetitorAnalysis({
               projectId: input.projectId,
@@ -581,6 +770,12 @@ export const analysisRouter = router({
                   columns: parseResult.columns,
                 },
               }),
+              aiSummary: structuredSummary,
+              summary: structuredSummary,
+              summaryStatus: "draft",
+            });
+            await registerCompetitorAnalysisArtifact(saved.id, "ai_output").catch(error => {
+              console.warn("[Analysis] Failed to register imported competitor artifact", error);
             });
             analysisId = saved.id;
 
@@ -723,25 +918,13 @@ export const analysisRouter = router({
       if (linkedAnalysis.price) contextParts.push(`Price: ${linkedAnalysis.price}`);
       if (linkedAnalysis.rating) contextParts.push(`Rating: ${linkedAnalysis.rating}`);
 
-      // Re-run the competitor analysis
-      const analysisResponse = await invokeLLM({
-        messages: [
-          { role: "system", content: COMPETITOR_ANALYSIS_PROMPT },
-          { role: "user", content: `Re-analyze this competitor product with updated insights:\n\n${contextParts.join("\n\n")}` },
-        ],
-        response_format: { type: "json_object" },
+      await runAnalysisSkill<any>({
+        skillSlug: "listing.competitor.analyze",
+        userId: ctx.user.id,
+        workspaceId: project.workspaceId,
+        context: `Re-analyze this competitor product with updated insights:\n\n${contextParts.join("\n\n")}`,
+        legacySystemPrompt: COMPETITOR_ANALYSIS_PROMPT,
       });
-
-      const analysisContent = typeof analysisResponse.choices[0].message.content === "string"
-        ? analysisResponse.choices[0].message.content
-        : JSON.stringify(analysisResponse.choices[0].message.content);
-
-      let analysisData: any = {};
-      try {
-        analysisData = JSON.parse(analysisContent);
-      } catch {
-        analysisData = { raw: analysisContent };
-      }
 
        // Update the review import status
       await db.updateReviewImport(input.id, { status: "completed" });
@@ -829,20 +1012,14 @@ export const analysisRouter = router({
           if (product.hasAmazonChoice) contextParts.push(`Badge: Amazon's Choice`);
           if (product.imageCount) contextParts.push(`Image Count: ${product.imageCount}`);
 
-          const analysisResponse = await invokeLLM({
-            messages: [
-              { role: "system", content: COMPETITOR_ANALYSIS_PROMPT },
-              { role: "user", content: `Analyze this competitor product from SellerSprite data:\n\n${contextParts.join("\n\n")}` },
-            ],
-            response_format: { type: "json_object" },
+          const analysisData = await runAnalysisSkill<any>({
+            skillSlug: "listing.competitor.analyze",
+            userId: ctx.user.id,
+            workspaceId: project.workspaceId,
+            context: `Analyze this competitor product from SellerSprite data:\n\n${contextParts.join("\n\n")}`,
+            legacySystemPrompt: COMPETITOR_ANALYSIS_PROMPT,
           });
-
-          const analysisContent = typeof analysisResponse.choices[0].message.content === "string"
-            ? analysisResponse.choices[0].message.content
-            : JSON.stringify(analysisResponse.choices[0].message.content);
-
-          let analysisData: any = {};
-          try { analysisData = JSON.parse(analysisContent); } catch { analysisData = { raw: analysisContent }; }
+          const structuredSummary = formatCompetitorAnalysisSummary(analysisData);
 
           const bulletPointsArray = product.bulletPoints || [];
 
@@ -881,6 +1058,12 @@ export const analysisRouter = router({
               },
               importSource: "sellersprite_search",
             }),
+            aiSummary: structuredSummary,
+            summary: structuredSummary,
+            summaryStatus: "draft",
+          });
+          await registerCompetitorAnalysisArtifact(saved.id, "ai_output").catch(error => {
+            console.warn("[Analysis] Failed to register SellerSprite competitor artifact", error);
           });
 
           results.push({ asin: product.asin, status: "success", analysisId: saved.id, title: product.title });

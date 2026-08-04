@@ -1,4 +1,4 @@
-import { bigint, boolean, decimal, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { bigint, boolean, decimal, index, int, json, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 // Projects table - each project represents one product listing task
 export const projects = mysqlTable("projects", {
@@ -35,12 +35,46 @@ export const competitorAnalyses = mysqlTable("competitorAnalyses", {
   reviewAnalysis: text("reviewAnalysis"), // JSON: pain points, itch points, delight points
   keywords: text("keywords"), // JSON: core, long-tail, traffic
   rawData: text("rawData"), // Full raw data for reference
+  aiSummary: text("aiSummary"), // Original AI-generated structured markdown summary
+  summary: text("summary"), // Current user-editable structured markdown summary
+  summaryStatus: mysqlEnum("summaryStatus", ["draft", "confirmed"]).default("draft").notNull(),
+  summaryVersion: int("summaryVersion").default(1).notNull(),
+  summaryConfirmedBy: int("summaryConfirmedBy"),
+  summaryConfirmedAt: timestamp("summaryConfirmedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 export type CompetitorAnalysis = typeof competitorAnalyses.$inferSelect;
 
 export type InsertCompetitorAnalysis = typeof competitorAnalyses.$inferInsert;
+
+// Project-level multi-competitor comparison report with human review state.
+export const competitorComparisonReports = mysqlTable("competitorComparisonReports", {
+  id: int("id").autoincrement().primaryKey(),
+  workspaceId: int("workspaceId"),
+  projectId: int("projectId").notNull(),
+  userId: int("userId").notNull(),
+  selectionKey: varchar("selectionKey", { length: 500 }).notNull(),
+  analysisIds: text("analysisIds").notNull(), // Sorted JSON array of competitorAnalyses IDs
+  analyzedAsins: text("analyzedAsins").notNull(), // JSON array
+  aiSummary: text("aiSummary").notNull(), // Original AI-generated structured markdown
+  summary: text("summary").notNull(), // Current user-editable structured markdown
+  sellingPointRows: text("sellingPointRows").notNull(), // JSON semantic rows + human notes
+  status: mysqlEnum("status", ["draft", "confirmed"]).default("draft").notNull(),
+  version: int("version").default(1).notNull(),
+  confirmedBy: int("confirmedBy"),
+  confirmedAt: timestamp("confirmedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  projectSelectionIdx: index("idx_competitor_comparison_project_selection").on(table.projectId, table.selectionKey),
+  workspaceStatusIdx: index("idx_competitor_comparison_workspace_status").on(table.workspaceId, table.status, table.updatedAt),
+}));
+
+export type CompetitorComparisonReport = typeof competitorComparisonReports.$inferSelect;
+
+export type InsertCompetitorComparisonReport = typeof competitorComparisonReports.$inferInsert;
 
 // Review import history
 export const reviewImports = mysqlTable("reviewImports", {

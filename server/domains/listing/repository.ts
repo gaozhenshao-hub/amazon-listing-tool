@@ -1,6 +1,7 @@
 export * from "../../repositories/listing";
 export {
   getCompetitorAnalysesByProject,
+  getLatestConfirmedCompetitorComparisonReport,
   getProjectFilesByProject,
 } from "../../repositories/project";
 export {

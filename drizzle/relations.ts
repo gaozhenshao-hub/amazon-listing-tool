@@ -9,6 +9,7 @@ import {
   analysisVersions,
   aiStorageObjects,
   competitorAnalyses,
+  competitorComparisonReports,
   competitorImageAnalyses,
   emperorAgentArtifacts,
   emperorAgentCheckpoints,
@@ -135,6 +136,7 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   aiArtifacts: many(aiArtifacts),
   artifacts: many(emperorAgentArtifacts),
   competitorAnalyses: many(competitorAnalyses),
+  competitorComparisonReports: many(competitorComparisonReports),
   competitorImages: many(competitorImageAnalyses),
   expressionGroups: many(expressionGroups),
   imageWorkflowSessions: many(imageWorkflowSessions),
@@ -165,6 +167,21 @@ export const competitorAnalysesRelations = relations(competitorAnalyses, ({ one 
   project: one(projects, {
     fields: [competitorAnalyses.projectId],
     references: [projects.id],
+  }),
+}));
+
+export const competitorComparisonReportsRelations = relations(competitorComparisonReports, ({ one }) => ({
+  project: one(projects, {
+    fields: [competitorComparisonReports.projectId],
+    references: [projects.id],
+  }),
+  user: one(users, {
+    fields: [competitorComparisonReports.userId],
+    references: [users.id],
+  }),
+  workspace: one(workspaces, {
+    fields: [competitorComparisonReports.workspaceId],
+    references: [workspaces.id],
   }),
 }));
 

@@ -8,6 +8,7 @@ const {
   STEP0_COMPETITOR_SUMMARY_PROMPT,
   STEP1_SELLING_POINTS_PROMPT,
   STEP2_IMAGE_OUTLINE_PROMPT,
+  STEP2_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT,
   STEP3_STYLE_PROMPT,
   STEP4_REFERENCE_PROMPT,
   STEP4_REOPTIMIZE_WITH_REFS_PROMPT,
@@ -18,17 +19,19 @@ const {
   buildImageWorkflowContext,
   buildStep5FinalSuggestion,
   buildStep5RunSnapshot,
+  callImageWorkflowSkill,
   callLLMWithRetry,
   db,
   devDb,
   ensureWriteAccess,
   generateStep5RunId,
   getKBReference,
-  invokeLLM,
   isActiveStep5Run,
   kbDb,
-  parseLLMJson,
   parseStoredJson,
+  applyImageWorkflowAplusStyle,
+  findImageWorkflowAplusModule,
+  normalizeImageOutline,
   persistStep5ListingAdvice,
   protectedProcedure,
   registerAiJobHandler,
@@ -125,9 +128,24 @@ export const imageWorkflowStepProcedures = {
         ? context
         : "暂无竞品分析数据。请根据产品名称、品牌和类目，结合亚马逊运营经验，自行推断并生成完整的图片大纲。";
 
-      const userMsg2 = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${sellingPoints}\n\n--- 产品背景信息 ---\n${contextHint2}${step0Summary}\n\n--- 可选亚马逊A+模块样式 ---\n${APLUS_MODULE_STYLE_GUIDE}\n\n请根据以上卖点体系和竞品分析，规划每张图片的内容大纲，并在辅图的referenceHighlights字段中引用竞品亮点。A+模块请优先推荐适合的selectedModuleType/selectedModuleName/selectedModuleStructure；如果是轮播、四图、比较表、热点等一个模块多张图或多面板的样式，请在contentBrief中明确每个面板/子图/热点的内容安排。`;
+      const userMsg2 = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的卖点体系 ---\n${sellingPoints}\n\n--- 产品背景信息 ---\n${contextHint2}${step0Summary}\n\n--- 可选亚马逊A+模块样式 ---\n${APLUS_MODULE_STYLE_GUIDE}\n\n请根据以上卖点体系和竞品分析规划图片大纲。secondaryImages必须恰好生成6项，imageNumber依次为2、3、4、5、6、7，并在referenceHighlights中引用竞品亮点。首次生成时所有A+模块一律使用premium_full_image（高级完整图片、1464x600px、单张全宽大图），不要自行选择其他模块；用户改选后会通过专用皇帝Skill单独重新优化。`;
 
-      const result = await callLLMWithRetry(STEP2_IMAGE_OUTLINE_PROMPT, userMsg2);
+      const result = await callImageWorkflowSkill({
+        skillSlug: "image.step2.outline",
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId,
+        systemPrompt: STEP2_IMAGE_OUTLINE_PROMPT,
+        context: userMsg2,
+        validate: (value) => {
+          const imageNumbers = Array.isArray(value?.secondaryImages)
+            ? value.secondaryImages.map((image: any) => Number(image?.imageNumber))
+            : [];
+          if (imageNumbers.length !== 6 || imageNumbers.some((imageNumber: number, index: number) => imageNumber !== index + 2)) {
+            throw new Error("图片大纲必须完整包含辅图2-7");
+          }
+          return normalizeImageOutline(value, { forceDefaultAplus: true });
+        },
+      });
       await db.updateImageWorkflowSession(session.id, {
         step2AiResult: JSON.stringify(result),
         currentStep: 2,
@@ -148,13 +166,88 @@ export const imageWorkflowStepProcedures = {
       if (!session) throw new Error("No workflow session found");
       ensureWriteAccess({ userId: session.userId }, ctx.user);
 
+      let parsed: any;
+      try {
+        parsed = JSON.parse(input.userEdit);
+      } catch {
+        throw new Error("图片大纲不是有效JSON");
+      }
+      const normalized = normalizeImageOutline(parsed);
+      const incompleteImage = normalized.secondaryImages.find((image: any) =>
+        !String(image?.purpose || "").trim() || !String(image?.contentBrief || "").trim(),
+      );
+      if (incompleteImage) {
+        throw new Error(`请补全辅图${incompleteImage.imageNumber}的目的和内容后再确认`);
+      }
+
       await db.updateImageWorkflowSession(session.id, {
-        step2UserEdit: input.userEdit,
+        step2UserEdit: JSON.stringify(normalized),
         step2Confirmed: 1,
         currentStep: 3,
       });
 
       return { success: true };
+    }),
+
+
+  // ─── Step 2: Re-optimize one A+ module after the user changes style ─
+  optimizeStep2AplusModule: protectedProcedure
+    .input(z.object({
+      projectId: z.number(),
+      moduleIndex: z.number().int().min(0),
+      moduleType: z.string().min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveProjectAccess(input.projectId, ctx.user);
+      if (!project) throw new Error("Project not found");
+      ensureWriteAccess(project, ctx.user);
+
+      const session = await resolveSessionAccess(input.projectId, ctx.user);
+      if (!session) throw new Error("No workflow session found");
+      if (session.step2Confirmed) throw new Error("请先解锁图片大纲，再调整A+模块");
+
+      const selectedModule = findImageWorkflowAplusModule(input.moduleType);
+      if (!selectedModule) throw new Error("不支持的A+模块样式");
+
+      const storedOutline = parseStoredJson(session.step2UserEdit || session.step2AiResult) as Record<string, any> | null;
+      if (!storedOutline) throw new Error("请先生成图片大纲");
+      const outline = normalizeImageOutline(storedOutline);
+      const currentModule = outline.aPlusModules?.[input.moduleIndex];
+      if (!currentModule) throw new Error("A+模块不存在");
+
+      if (currentModule.selectedModuleType === selectedModule.id) {
+        return { outline, module: currentModule };
+      }
+
+      const context = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || "未指定"}\n类目: ${project.category || "未指定"}\n\n--- 已确认卖点体系 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 当前A+模块 ---\n${JSON.stringify(currentModule)}\n\n--- 用户选择的目标模块 ---\n${JSON.stringify(selectedModule)}\n\n请只按目标模块结构重新优化当前这一个A+模块。`;
+      const optimized = await callImageWorkflowSkill({
+        skillSlug: "image.step2.aplus.single.optimize",
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId,
+        systemPrompt: STEP2_SINGLE_APLUS_MODULE_OPTIMIZE_PROMPT,
+        context,
+        validate: (value) => {
+          if (!value || typeof value !== "object" || Array.isArray(value)) {
+            throw new Error("A+模块优化结果无效");
+          }
+          return value;
+        },
+      });
+
+      const mergedModule = {
+        ...currentModule,
+        ...optimized,
+        moduleNumber: currentModule.moduleNumber ?? input.moduleIndex + 1,
+        moduleOptimizedForType: selectedModule.id,
+      };
+      outline.aPlusModules[input.moduleIndex] = applyImageWorkflowAplusStyle(mergedModule, selectedModule.id);
+
+      await db.updateImageWorkflowSession(session.id, {
+        step2UserEdit: JSON.stringify(outline),
+        currentStep: 2,
+      });
+
+      return { outline, module: outline.aPlusModules[input.moduleIndex] };
     }),
 
 
@@ -291,15 +384,26 @@ export const imageWorkflowStepProcedures = {
       } catch {}
 
 
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: STEP4_REFERENCE_PROMPT },
-          { role: "user", content: `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}\n\n--- 已确认的风格方案 ---\n${session.step3UserEdit || session.step3AiResult}\n${kbImageInfo}\n\n请为每张图推荐构图参考和效果图参考。若图片大纲中的A+模块包含selectedModuleType/selectedModuleName/selectedModuleStructure，必须按该模块结构生成参考：轮播模块拆成每个面板的构图/效果参考，四图模块拆成4张子图，热点模块包含底图和各热点位置，比较表模块包含产品列和特征行布局。` },
-        ],
-        response_format: { type: "json_object" },
+      const step4Context = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}\n\n--- 已确认的风格方案 ---\n${session.step3UserEdit || session.step3AiResult}\n${kbImageInfo}\n\n请为主图、全部辅图2-7和每个A+模块推荐构图参考和效果图参考，不得遗漏辅图7。若图片大纲中的A+模块包含selectedModuleType/selectedModuleName/selectedModuleStructure，必须按该模块结构生成参考：轮播模块拆成每个面板的构图/效果参考，四图模块拆成4张子图，热点模块包含底图和各热点位置，比较表模块包含产品列和特征行布局。`;
+      const result = await callImageWorkflowSkill({
+        skillSlug: "image.step4.reference",
+        userId: ctx.user.id,
+        workspaceId: ctx.workspaceId,
+        systemPrompt: STEP4_REFERENCE_PROMPT,
+        context: step4Context,
+        validate: (value) => {
+          const references = Array.isArray(value?.imageReferences) ? value.imageReferences : [];
+          const secondaryNumbers = new Set(
+            references
+              .filter((reference: any) => !String(reference?.imageType || "").toLowerCase().includes("a+"))
+              .map((reference: any) => Number(reference?.imageNumber)),
+          );
+          if ([2, 3, 4, 5, 6, 7].some((imageNumber) => !secondaryNumbers.has(imageNumber))) {
+            throw new Error("构图参考必须完整覆盖辅图2-7");
+          }
+          return value;
+        },
       });
-
-      const result = parseLLMJson(response);
       await db.updateImageWorkflowSession(session.id, {
         step4AiResult: JSON.stringify(result),
         currentStep: 4,

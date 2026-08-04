@@ -1,6 +1,10 @@
 import { eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../repositories/dbClient";
-import { projects } from "../../../../drizzle/schema/project";
+import {
+  competitorAnalyses,
+  competitorComparisonReports,
+  projects,
+} from "../../../../drizzle/schema/project";
 import {
   adStructures,
   keywords,
@@ -120,6 +124,63 @@ export async function registerListingArtifact(listingId: number, sourceType: Art
     sourceType,
     status: listing.isActive ? "final" : "draft",
     metadata: { listingVersion: listing.version, isActive: Boolean(listing.isActive) },
+  });
+}
+
+export async function registerCompetitorAnalysisArtifact(
+  analysisId: number,
+  sourceType: ArtifactSourceType = "ai_output",
+) {
+  const db = await getDb();
+  if (!db) return null;
+  const [analysis] = await db.select().from(competitorAnalyses)
+    .where(eq(competitorAnalyses.id, analysisId))
+    .limit(1);
+  if (!analysis) return null;
+  return registerBusinessArtifact({
+    domain: "listing",
+    artifactKey: `listing.competitor_analysis.${analysis.asin}`,
+    sourceTable: "competitorAnalyses",
+    sourceRowId: analysis.id,
+    projectId: analysis.projectId,
+    userId: analysis.summaryConfirmedBy,
+    content: analysis,
+    sourceType,
+    status: analysis.summaryStatus === "confirmed" ? "final" : "draft",
+    metadata: {
+      asin: analysis.asin,
+      summaryStatus: analysis.summaryStatus,
+      summaryVersion: analysis.summaryVersion,
+    },
+  });
+}
+
+export async function registerCompetitorComparisonArtifact(
+  reportId: number,
+  sourceType: ArtifactSourceType = "ai_output",
+) {
+  const db = await getDb();
+  if (!db) return null;
+  const [report] = await db.select().from(competitorComparisonReports)
+    .where(eq(competitorComparisonReports.id, reportId))
+    .limit(1);
+  if (!report) return null;
+  return registerBusinessArtifact({
+    domain: "listing",
+    artifactKey: `listing.competitor_comparison.${report.selectionKey}`,
+    sourceTable: "competitorComparisonReports",
+    sourceRowId: report.id,
+    workspaceId: report.workspaceId,
+    projectId: report.projectId,
+    userId: report.userId,
+    content: report,
+    sourceType,
+    status: report.status === "confirmed" ? "final" : "draft",
+    metadata: {
+      selectionKey: report.selectionKey,
+      reportStatus: report.status,
+      reportVersion: report.version,
+    },
   });
 }
 

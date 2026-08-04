@@ -83,6 +83,12 @@ describe("Image Workflow 5-Step Prompts", () => {
       expect(STEP2_IMAGE_OUTLINE_PROMPT).toContain('"brandStory"');
       expect(STEP2_IMAGE_OUTLINE_PROMPT).toContain('"aPlusModules"');
     });
+
+    it("requires exactly six secondary images numbered 2 through 7 and defaults A+ to full width", () => {
+      expect(STEP2_IMAGE_OUTLINE_PROMPT).toContain("辅图6张");
+      expect(STEP2_IMAGE_OUTLINE_PROMPT).toContain("2、3、4、5、6、7");
+      expect(STEP2_IMAGE_OUTLINE_PROMPT).toContain("premium_full_image");
+    });
   });
 
   // ─── Step 3: Style Prompt ──────────────────────────────────────

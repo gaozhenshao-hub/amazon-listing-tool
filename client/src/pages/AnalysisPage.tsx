@@ -11,6 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import ProjectSelector from "@/components/ProjectSelector";
 import { useProject } from "@/contexts/ProjectContext";
+import { CompetitorAnalysisSummaryEditor } from "@/pages/listing/CompetitorAnalysisSummaryEditor";
 import {
   Search,
   Loader2,
@@ -1472,6 +1473,11 @@ export default function AnalysisPage() {
                                 )}
                               </div>
                             )}
+
+                            <CompetitorAnalysisSummaryEditor
+                              projectId={selectedProjectId}
+                              analysis={analysis}
+                            />
 
                             <Tabs defaultValue="keywords">
                               <TabsList className="w-full justify-start">
