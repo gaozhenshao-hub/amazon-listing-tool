@@ -12,6 +12,8 @@ import { eq, desc, and, sql } from "drizzle-orm";
 import { budgetTracking } from "../../../../drizzle/schema";
 import { workspaceIdFromContext } from "../../../services/securityGovernance";
 import { opsWorkspaceCondition, withOpsWorkspace } from "../../../repositories/ops";
+import { ContextScopedCache } from "../../../infrastructure/cache/scopedCache";
+import { currentOpsCacheScope } from "../../ops/workspaceContext";
 
 // ─── 12-Category Classification Thresholds ──────────────────────
 interface ClassificationThresholds {
@@ -183,28 +185,20 @@ function deAnonymizeResults(results: any[], asinMap: Map<string, string>): any[]
 }
 
 // ─── In-Memory Cache (TTL-based) ──────────────────────────────
-const _queryCache = new Map<string, { data: any; ts: number }>();
-
 const CACHE_TTL = 5 * 60 * 1000;
-
-// 5 minutes
+const _queryCache = new ContextScopedCache<any>({
+  namespace: "ads.analysis.query",
+  visibility: "workspace",
+  defaultTtlMs: CACHE_TTL,
+  maxEntries: 100,
+}, () => currentOpsCacheScope("workspace"));
 
 function getCached<T>(key: string): T | null {
-  const entry = _queryCache.get(key);
-  if (entry && Date.now() - entry.ts < CACHE_TTL) return entry.data as T;
-  if (entry) _queryCache.delete(key);
-  return null;
+  return _queryCache.get(key) as T | null;
 }
 
 function setCache(key: string, data: any): void {
-  _queryCache.set(key, { data, ts: Date.now() });
-  // Evict old entries if cache grows too large
-  if (_queryCache.size > 100) {
-    const now = Date.now();
-    Array.from(_queryCache.entries()).forEach(([k, v]) => {
-      if (now - v.ts > CACHE_TTL) _queryCache.delete(k);
-    });
-  }
+  _queryCache.set(key, data);
 }
 
 // ─── Parallel batch helper (controls concurrency) ─────────────

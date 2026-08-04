@@ -2,6 +2,7 @@
 // Uses the Biz-provided storage proxy (Authorization: Bearer <token>)
 
 import { ENV } from './_core/env';
+import { safeHttpRequest } from './infrastructure/http/safeHttpClient';
 
 type StorageConfig = { baseUrl: string; apiKey: string };
 export type StorageProvider = "forge" | "s3" | "local" | "external";
@@ -45,11 +46,15 @@ async function buildDownloadUrl(
     ensureTrailingSlash(baseUrl)
   );
   downloadApiUrl.searchParams.set("path", normalizeKey(relKey));
-  const response = await fetch(downloadApiUrl, {
+  const response = await safeHttpRequest(downloadApiUrl, {
     method: "GET",
-    headers: buildAuthHeaders(apiKey),
+    headers: buildAuthHeaders(apiKey) as Record<string, string>,
+    timeoutMs: 30_000,
+    maxResponseBytes: 2 * 1024 * 1024,
+    allowedHosts: [downloadApiUrl.hostname],
+    auditContext: { operation: "storage.download_url" },
   });
-  return (await response.json()).url;
+  return response.json<{ url: string }>().url;
 }
 
 function ensureTrailingSlash(value: string): string {
@@ -87,19 +92,23 @@ export async function storagePut(
   const key = normalizeKey(relKey);
   const uploadUrl = buildUploadUrl(baseUrl, key);
   const formData = toFormData(data, contentType, key.split("/").pop() ?? key);
-  const response = await fetch(uploadUrl, {
+  const response = await safeHttpRequest(uploadUrl, {
     method: "POST",
-    headers: buildAuthHeaders(apiKey),
+    headers: buildAuthHeaders(apiKey) as Record<string, string>,
     body: formData,
+    timeoutMs: 120_000,
+    maxResponseBytes: 2 * 1024 * 1024,
+    allowedHosts: [uploadUrl.hostname],
+    auditContext: { operation: "storage.upload" },
   });
 
   if (!response.ok) {
-    const message = await response.text().catch(() => response.statusText);
+    const message = response.text() || response.statusText;
     throw new Error(
       `Storage upload failed (${response.status} ${response.statusText}): ${message}`
     );
   }
-  const url = (await response.json()).url;
+  const url = response.json<{ url: string }>().url;
   return { key, url, storageUri: buildStorageUri(key, "forge") };
 }
 

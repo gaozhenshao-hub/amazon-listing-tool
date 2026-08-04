@@ -8,110 +8,121 @@ import DashboardLayout from "./components/DashboardLayout";
 import { lazy, Suspense } from "react";
 
 // ─── Module 2: Listing (existing pages) ────────────────────────
-import Home from "./pages/Home";
-import AnalysisPage from "./pages/AnalysisPage";
-import GeneratePage from "./pages/GeneratePage";
-import PreviewPage from "./pages/PreviewPage";
-import ProjectDetailPage from "./pages/ProjectDetailPage";
-import ComparisonPage from "./pages/ComparisonPage";
-import ReviewHistoryPage from "./pages/ReviewHistoryPage";
-import DataFilesPage from "./pages/DataFilesPage";
-import ScorePage from "./pages/ScorePage";
-import ImageSuggestionsPage from "./pages/ImageSuggestionsPage";
-import ImageWorkflowPage from "./pages/ImageWorkflowPage";
-import KeywordPage from "./pages/KeywordPage";
-import AdStructurePage from "./pages/AdStructurePage";
-import ReviewAggregationPage from "./pages/ReviewAggregationPage";
-import VideoScriptPage from "./pages/VideoScriptPage";
-import BuyerQuestionsPage from "./pages/BuyerQuestionsPage";
-import WorkflowCanvasPage from "./pages/WorkflowCanvasPage";
+const Home = lazy(() => import("./pages/Home"));
+const AnalysisPage = lazy(() => import("./pages/AnalysisPage"));
+const GeneratePage = lazy(() => import("./pages/GeneratePage"));
+const PreviewPage = lazy(() => import("./pages/PreviewPage"));
+const ProjectDetailPage = lazy(() => import("./pages/ProjectDetailPage"));
+const ComparisonPage = lazy(() => import("./pages/ComparisonPage"));
+const ReviewHistoryPage = lazy(() => import("./pages/ReviewHistoryPage"));
+const DataFilesPage = lazy(() => import("./pages/DataFilesPage"));
+const ScorePage = lazy(() => import("./pages/ScorePage"));
+const ImageSuggestionsPage = lazy(() => import("./pages/ImageSuggestionsPage"));
+const ImageWorkflowPage = lazy(() => import("./pages/ImageWorkflowPage"));
+const KeywordPage = lazy(() => import("./pages/KeywordPage"));
+const AdStructurePage = lazy(() => import("./pages/AdStructurePage"));
+const ReviewAggregationPage = lazy(() => import("./pages/ReviewAggregationPage"));
+const VideoScriptPage = lazy(() => import("./pages/VideoScriptPage"));
+const BuyerQuestionsPage = lazy(() => import("./pages/BuyerQuestionsPage"));
+const WorkflowCanvasPage = lazy(() => import("./pages/WorkflowCanvasPage"));
 
 // ─── Module 1: Product Development ─────────────────────────────
-import DevDashboard from "./pages/dev/DevDashboard";
-import DevNewProject from "./pages/dev/DevNewProject";
-import DevProjects from "./pages/dev/DevProjects";
-import DevProjectDetail from "./pages/dev/DevProjectDetail";
-import DevCompare from "./pages/dev/DevCompare";
-import DevSupplierLibrary from "./pages/dev/DevSupplierLibrary";
-import DevAnalysisFlow from "./pages/dev/DevAnalysisFlow";
-import DevOffsiteAnalysis from "./pages/dev/DevOffsiteAnalysis";
+const DevDashboard = lazy(() => import("./pages/dev/DevDashboard"));
+const DevNewProject = lazy(() => import("./pages/dev/DevNewProject"));
+const DevProjects = lazy(() => import("./pages/dev/DevProjects"));
+const DevProjectDetail = lazy(() => import("./pages/dev/DevProjectDetail"));
+const DevCompare = lazy(() => import("./pages/dev/DevCompare"));
+const DevSupplierLibrary = lazy(() => import("./pages/dev/DevSupplierLibrary"));
+const DevAnalysisFlow = lazy(() => import("./pages/dev/DevAnalysisFlow"));
+const DevOffsiteAnalysis = lazy(() => import("./pages/dev/DevOffsiteAnalysis"));
 
 // ─── Module 5: Knowledge Base ───────────────────────────────────
-import KBOverview from "./pages/knowledge/KBOverview";
-import KBProducts from "./pages/knowledge/KBProducts";
-import KBListings from "./pages/knowledge/KBListings";
-import KBImages from "./pages/knowledge/KBImages";
-import KBSkills from "./pages/knowledge/KBSkills";
-import KBVideos from "./pages/knowledge/KBVideos";
-import KBBot from "./pages/knowledge/KBBot";
-import KBIntel from "./pages/knowledge/KBIntel";
+const KBOverview = lazy(() => import("./pages/knowledge/KBOverview"));
+const KBProducts = lazy(() => import("./pages/knowledge/KBProducts"));
+const KBListings = lazy(() => import("./pages/knowledge/KBListings"));
+const KBImages = lazy(() => import("./pages/knowledge/KBImages"));
+const KBSkills = lazy(() => import("./pages/knowledge/KBSkills"));
+const KBVideos = lazy(() => import("./pages/knowledge/KBVideos"));
+const KBBot = lazy(() => import("./pages/knowledge/KBBot"));
+const KBIntel = lazy(() => import("./pages/knowledge/KBIntel"));
 
 // ─── Module 3: Operations AI Tools ─────────────────────────────
-import OpsDashboard from "./pages/ops/OpsDashboard";
-import OpsInventory from "./pages/ops/OpsInventory";
-import OpsAds from "./pages/ops/OpsAds";
-import OpsProducts from "./pages/ops/OpsProducts";
-import OpsProductDetail from "./pages/ops/OpsProductDetail";
-import OpsCrawlerManager from "./pages/ops/OpsCrawlerManager";
-import OpsShippingBatchDetail from "./pages/ops/OpsShippingBatchDetail";
-import OpsLogistics from "./pages/ops/OpsLogistics";
-import OpsDashboardUpgrade from "./pages/ops/OpsDashboardUpgrade";
-import OpsCustomDashboard from "./pages/ops/OpsCustomDashboard";
-import OpsTaskManagement from "./pages/ops/OpsTaskManagement";
-import OpsDataImport from "./pages/ops/OpsDataImport";
-import OpsAdMapping from "./pages/ops/OpsAdMapping";
-import OpsAdDeep from "./pages/ops/OpsAdDeep";
+const OpsDashboard = lazy(() => import("./pages/ops/OpsDashboard"));
+const OpsInventory = lazy(() => import("./pages/ops/OpsInventory"));
+const OpsAds = lazy(() => import("./pages/ops/OpsAds"));
+const OpsProducts = lazy(() => import("./pages/ops/OpsProducts"));
+const OpsProductDetail = lazy(() => import("./pages/ops/OpsProductDetail"));
+const OpsCrawlerManager = lazy(() => import("./pages/ops/OpsCrawlerManager"));
+const OpsShippingBatchDetail = lazy(() => import("./pages/ops/OpsShippingBatchDetail"));
+const OpsLogistics = lazy(() => import("./pages/ops/OpsLogistics"));
+const OpsDashboardUpgrade = lazy(() => import("./pages/ops/OpsDashboardUpgrade"));
+const OpsCustomDashboard = lazy(() => import("./pages/ops/OpsCustomDashboard"));
+const OpsTaskManagement = lazy(() => import("./pages/ops/OpsTaskManagement"));
+const OpsDataImport = lazy(() => import("./pages/ops/OpsDataImport"));
+const OpsAdMapping = lazy(() => import("./pages/ops/OpsAdMapping"));
+const OpsAdDeep = lazy(() => import("./pages/ops/OpsAdDeep"));
 
 // ─── Module 4: After-sales Management ──────────────────────────
-import ComingSoonPage from "./pages/ComingSoonPage";
-import ServiceDashboard from "./pages/service/ServiceDashboard";
-import ServiceReviews from "./pages/service/ServiceReviews";
-import ServiceReturns from "./pages/service/ServiceReturns";
-import ServiceEmails from "./pages/service/ServiceEmails";
-import ServiceProfiles from "./pages/service/ServiceProfiles";
+const ComingSoonPage = lazy(() => import("./pages/ComingSoonPage"));
+const ServiceDashboard = lazy(() => import("./pages/service/ServiceDashboard"));
+const ServiceReviews = lazy(() => import("./pages/service/ServiceReviews"));
+const ServiceReturns = lazy(() => import("./pages/service/ServiceReturns"));
+const ServiceEmails = lazy(() => import("./pages/service/ServiceEmails"));
+const ServiceProfiles = lazy(() => import("./pages/service/ServiceProfiles"));
 
 // ─── Module 6: Off-site Marketing ──────────────────────────────
-import OffsiteOverview from "./pages/offsite/OffsiteOverview";
-import OffsiteInfluencers from "./pages/offsite/OffsiteInfluencers";
-import OffsiteCampaigns from "./pages/offsite/OffsiteCampaigns";
-import OffsiteOutreach from "./pages/offsite/OffsiteOutreach";
-import OffsiteContentReview from "./pages/offsite/OffsiteContentReview";
-import OffsiteSocialAccounts from "./pages/offsite/OffsiteSocialAccounts";
-import OffsiteContentCalendar from "./pages/offsite/OffsiteContentCalendar";
-import OffsiteTikTokMatrix from "./pages/offsite/OffsiteTikTokMatrix";
-import OffsiteAttribution from "./pages/offsite/OffsiteAttribution";
-import OffsiteAnalytics from "./pages/offsite/OffsiteAnalytics";
+const OffsiteOverview = lazy(() => import("./pages/offsite/OffsiteOverview"));
+const OffsiteInfluencers = lazy(() => import("./pages/offsite/OffsiteInfluencers"));
+const OffsiteCampaigns = lazy(() => import("./pages/offsite/OffsiteCampaigns"));
+const OffsiteOutreach = lazy(() => import("./pages/offsite/OffsiteOutreach"));
+const OffsiteContentReview = lazy(() => import("./pages/offsite/OffsiteContentReview"));
+const OffsiteSocialAccounts = lazy(() => import("./pages/offsite/OffsiteSocialAccounts"));
+const OffsiteContentCalendar = lazy(() => import("./pages/offsite/OffsiteContentCalendar"));
+const OffsiteTikTokMatrix = lazy(() => import("./pages/offsite/OffsiteTikTokMatrix"));
+const OffsiteAttribution = lazy(() => import("./pages/offsite/OffsiteAttribution"));
+const OffsiteAnalytics = lazy(() => import("./pages/offsite/OffsiteAnalytics"));
 
 // ─── Platform Home ──────────────────────────────────────────────
-import PlatformHome from "./pages/PlatformHome";
+const PlatformHome = lazy(() => import("./pages/PlatformHome"));
 
 // ─── System Settings ────────────────────────────────────────────
-import SystemSettings from "./pages/SystemSettings";
+const SystemSettings = lazy(() => import("./pages/SystemSettings"));
 
 // ─── User Management ────────────────────────────────────────────
-import LoginPage from "./pages/LoginPage";
-import UserManagement from "./pages/UserManagement";
-import ProfilePage from "./pages/ProfilePage";
-import ReviewCenter from "./pages/ReviewCenter";
-import SopAccessPage from "./pages/SopAccessPage";
-import ProjectAssignmentPage from "./pages/ProjectAssignmentPage";
-import SyncManagement from "./pages/SyncManagement";
-import RoleManagement from "./pages/RoleManagement";
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const UserManagement = lazy(() => import("./pages/UserManagement"));
+const ProfilePage = lazy(() => import("./pages/ProfilePage"));
+const ReviewCenter = lazy(() => import("./pages/ReviewCenter"));
+const SopAccessPage = lazy(() => import("./pages/SopAccessPage"));
+const ProjectAssignmentPage = lazy(() => import("./pages/ProjectAssignmentPage"));
+const SyncManagement = lazy(() => import("./pages/SyncManagement"));
+const RoleManagement = lazy(() => import("./pages/RoleManagement"));
 import { PermissionGuard } from "./components/PermissionGuard";
 
 // ─── Module 7: Emperor AI 能力中台 ────────────────────────────────────────────────────────
-import EmperorSkillLibrary from "./pages/emperor/EmperorSkillLibrary";
-import EmperorTrace from "./pages/emperor/EmperorTrace";
-import EmperorModels from "./pages/emperor/EmperorModels";
-import EmperorMCP from "./pages/emperor/EmperorMCP";
-import EmperorAgents from "./pages/emperor/EmperorAgents";
-import EmperorUsage from "./pages/emperor/EmperorUsage";
-import EmperorDiagnostics from "./pages/emperor/EmperorDiagnostics";
-import EmperorSettings from "./pages/emperor/EmperorSettings";
-import EmperorScheduled from "./pages/emperor/EmperorScheduled";
-import AgentCanvas from "./pages/emperor/AgentCanvas";
-import EmperorKnowledge from "./pages/emperor/EmperorKnowledge";
-import EmperorObservability from "./pages/emperor/EmperorObservability";
+const EmperorSkillLibrary = lazy(() => import("./pages/emperor/EmperorSkillLibrary"));
+const EmperorTrace = lazy(() => import("./pages/emperor/EmperorTrace"));
+const EmperorModels = lazy(() => import("./pages/emperor/EmperorModels"));
+const EmperorMCP = lazy(() => import("./pages/emperor/EmperorMCP"));
+const EmperorAgents = lazy(() => import("./pages/emperor/EmperorAgents"));
+const EmperorUsage = lazy(() => import("./pages/emperor/EmperorUsage"));
+const EmperorDiagnostics = lazy(() => import("./pages/emperor/EmperorDiagnostics"));
+const EmperorSettings = lazy(() => import("./pages/emperor/EmperorSettings"));
+const EmperorScheduled = lazy(() => import("./pages/emperor/EmperorScheduled"));
+const AgentCanvas = lazy(() => import("./pages/emperor/AgentCanvas"));
+const EmperorKnowledge = lazy(() => import("./pages/emperor/EmperorKnowledge"));
+const EmperorObservability = lazy(() => import("./pages/emperor/EmperorObservability"));
+const CoreWorkflowQaPage = import.meta.env.MODE === "e2e"
+  ? lazy(() => import("./pages/qa/CoreWorkflowQaPage"))
+  : null;
+
+export function RouteLoadingFallback() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center" role="status" aria-label="页面加载中">
+      <div className="h-7 w-7 animate-spin rounded-full border-2 border-muted border-t-primary" />
+    </div>
+  );
+}
 
 function Router() {
   return (
@@ -249,12 +260,17 @@ function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
-          <Switch>
-            <Route path="/login" component={LoginPage} />
-            {/* AgentCanvas is full-screen, outside DashboardLayout */}
-            <Route path="/emperor/agents/:slug/canvas">{(params) => <AgentCanvas />}</Route>
-            <Route>{() => <Router />}</Route>
-          </Switch>
+          <Suspense fallback={<RouteLoadingFallback />}>
+            <Switch>
+              {CoreWorkflowQaPage ? (
+                <Route path="/__qa__/workflows/:domain">{() => <CoreWorkflowQaPage />}</Route>
+              ) : null}
+              <Route path="/login" component={LoginPage} />
+              {/* AgentCanvas is full-screen, outside DashboardLayout */}
+              <Route path="/emperor/agents/:slug/canvas">{() => <AgentCanvas />}</Route>
+              <Route>{() => <Router />}</Route>
+            </Switch>
+          </Suspense>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

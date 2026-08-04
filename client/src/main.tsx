@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { UNAUTHED_ERR_MSG } from '@shared/const';
+import { APP_ERROR_CODES } from "@shared/_core/errors";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
 import { createRoot } from "react-dom/client";
@@ -9,30 +9,20 @@ import { ProjectProvider } from "./contexts/ProjectContext";
 import { MarketplaceProvider } from "./contexts/MarketplaceContext";
 import { getLoginUrl } from "./const";
 import "./index.css";
+import { ClientTransportError, isAuthRequiredError, isRetryableAppError } from "./lib/appError";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: (failureCount, error) => {
-        // Retry on 503 Service Unavailable (cold start) up to 3 times
-        if (error instanceof TRPCClientError) {
-          const msg = error.message || '';
-          if (msg.includes('Service Unavailable') || msg.includes('Unexpected token') || msg.includes('not valid JSON') || msg.includes('Failed to fetch') || msg.includes('服务暂时不可用') || msg.includes('请求超时') || msg.includes('正在重试')) {
-            return failureCount < 3;
-          }
-        }
+        if (isRetryableAppError(error)) return failureCount < 3;
         return failureCount < 1;
       },
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 8000),
     },
     mutations: {
       retry: (failureCount, error) => {
-        if (error instanceof TRPCClientError) {
-          const msg = error.message || '';
-          if (msg.includes('Service Unavailable') || msg.includes('Unexpected token') || msg.includes('not valid JSON') || msg.includes('Failed to fetch') || msg.includes('服务暂时不可用') || msg.includes('请求超时') || msg.includes('正在重试')) {
-            return failureCount < 2;
-          }
-        }
+        if (isRetryableAppError(error)) return failureCount < 2;
         return false;
       },
       retryDelay: (attemptIndex) => Math.min(1500 * 2 ** attemptIndex, 6000),
@@ -47,8 +37,7 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
   if (typeof window === "undefined") return;
 
-  const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
-  if (!isUnauthorized) return;
+  if (!isAuthRequiredError(error)) return;
 
   // Don't redirect if we're already on the login page
   if (window.location.pathname === '/login') return;
@@ -132,19 +121,19 @@ const trpcClient = trpc.createClient({
           clearTimeout(timeoutId);
           // Handle 502/503 - Cloud Run cold start or overload
           if (res.status === 503 || res.status === 502) {
-            throw new TRPCClientError('服务暂时不可用，正在重试...');
+            throw new ClientTransportError("服务暂时不可用，正在重试...", APP_ERROR_CODES.EXTERNAL_SERVICE_FAILED, true);
           }
           // Check if response is actually JSON before returning
           const contentType = res.headers.get('content-type') || '';
           if (!contentType.includes('application/json') && res.status >= 400) {
             const text = await res.text();
-            throw new TRPCClientError(`服务器返回异常: ${text.substring(0, 100)}`);
+            throw new ClientTransportError(`服务器返回异常: ${text.substring(0, 100)}`, APP_ERROR_CODES.EXTERNAL_SERVICE_FAILED, res.status >= 500);
           }
           return res;
         } catch (err) {
           clearTimeout(timeoutId);
           if (err instanceof DOMException && err.name === 'AbortError') {
-            throw new TRPCClientError('请求超时，正在重试...');
+            throw new ClientTransportError("请求超时，正在重试...", APP_ERROR_CODES.REQUEST_TIMEOUT, true);
           }
           throw err;
         }
@@ -153,14 +142,35 @@ const trpcClient = trpc.createClient({
   ],
 });
 
+function installAnalytics() {
+  if (import.meta.env.MODE === "e2e") return;
+  const endpoint = import.meta.env.VITE_ANALYTICS_ENDPOINT;
+  const websiteId = import.meta.env.VITE_ANALYTICS_WEBSITE_ID;
+  if (!endpoint || !websiteId) return;
+
+  try {
+    const script = document.createElement("script");
+    script.defer = true;
+    script.src = new URL("umami", endpoint.endsWith("/") ? endpoint : `${endpoint}/`).toString();
+    script.dataset.websiteId = websiteId;
+    document.head.appendChild(script);
+  } catch (error) {
+    console.warn("[Analytics] Invalid VITE_ANALYTICS_ENDPOINT; analytics disabled.", error);
+  }
+}
+
+installAnalytics();
+
+const application = import.meta.env.MODE === "e2e" ? <App /> : (
+  <ProjectProvider>
+    <MarketplaceProvider>
+      <App />
+    </MarketplaceProvider>
+  </ProjectProvider>
+);
+
 createRoot(document.getElementById("root")!).render(
   <trpc.Provider client={trpcClient} queryClient={queryClient}>
-    <QueryClientProvider client={queryClient}>
-      <ProjectProvider>
-        <MarketplaceProvider>
-          <App />
-        </MarketplaceProvider>
-      </ProjectProvider>
-    </QueryClientProvider>
-  </trpc.Provider>
+    <QueryClientProvider client={queryClient}>{application}</QueryClientProvider>
+  </trpc.Provider>,
 );

@@ -1,3 +1,4 @@
+import { failUnavailableDataSource } from "@shared/_core/errors";
 import { currentOpsWorkspaceId } from "../workspaceContext";
 import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
@@ -318,7 +319,7 @@ export const opsWeeklyProcedures = {
           let offset = 0;
           const pageSize = 100;
           while (true) {
-            const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+            const res = failUnavailableDataSource();
             const raw = res.data || [];
             const pageItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
             allItems.push(...pageItems);
@@ -529,7 +530,7 @@ export const opsWeeklyProcedures = {
       // Fetch 30-day profit data to compute averages
       let profitItems: any[] = [];
       try {
-        const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+        const res = failUnavailableDataSource();
         const raw = res.data || [];
         profitItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
       } catch (err: any) {
@@ -539,7 +540,7 @@ export const opsWeeklyProcedures = {
       // If no data from ASIN API, try parent ASIN
       if (profitItems.length === 0 && parentAsin) {
         try {
-          const parentRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+          const parentRes = failUnavailableDataSource();
           const raw = parentRes.data || [];
           profitItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
         } catch (err: any) {
@@ -719,7 +720,7 @@ export const opsWeeklyProcedures = {
           let offset = 0;
           const pageSize = 100;
           while (true) {
-            const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+            const res = failUnavailableDataSource();
             const raw = res.data || [];
             const pageItems = Array.isArray(raw) ? raw : (raw as any).records || (raw as any).list || [];
             allApiItems.push(...pageItems);

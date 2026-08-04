@@ -1,29 +1,21 @@
 import { toast } from "sonner";
-
-/**
- * Parse CONFLICT error message to extract existingId.
- * Server embeds id in format: "ASIN B0XXX 已存在于xxx知识库中 [id:123]"
- */
-export function parseConflictId(message: string): number | null {
-  const match = message.match(/\[id:(\d+)\]/);
-  return match ? parseInt(match[1], 10) : null;
-}
+import { APP_ERROR_CODES } from "@shared/_core/errors";
+import { getAppErrorInfo } from "./appError";
 
 /**
  * Show a CONFLICT toast with a "点击跳转查看" action button.
- * @param message - The CONFLICT error message from server
+ * @param error - Structured AppError returned by tRPC
  * @param onView - Callback to navigate to the existing item
  */
 export function showConflictToast(
-  message: string,
+  error: unknown,
   onView: (id: number) => void
 ) {
-  const existingId = parseConflictId(message);
-  // Strip the [id:xxx] suffix from the display message
-  const displayMsg = message.replace(/\s*\[id:\d+\]/, "");
+  const info = getAppErrorInfo(error);
+  const existingId = Number(info.details?.existingId);
 
-  if (existingId !== null) {
-    toast.warning(displayMsg, {
+  if (Number.isInteger(existingId) && existingId > 0) {
+    toast.warning(info.message, {
       description: "点击下方按钮可直接跳转到该记录",
       duration: 6000,
       action: {
@@ -32,7 +24,7 @@ export function showConflictToast(
       },
     });
   } else {
-    toast.error(displayMsg);
+    toast.error(info.message);
   }
 }
 
@@ -42,11 +34,11 @@ export function showConflictToast(
  */
 export function createImportOnError(onView: (id: number) => void) {
   return (e: any) => {
-    const code = e?.data?.code || e?.shape?.data?.code;
-    if (code === "CONFLICT") {
-      showConflictToast(e.message, onView);
+    const info = getAppErrorInfo(e);
+    if (info.code === APP_ERROR_CODES.RESOURCE_CONFLICT) {
+      showConflictToast(e, onView);
     } else {
-      toast.error(e.message || "操作失败");
+      toast.error(info.message || "操作失败");
     }
   };
 }

@@ -14,6 +14,7 @@ import { MANAGER_ROLES } from "../../shared/const";
 import { eq, desc, and, sql, or } from "drizzle-orm";
 import { parseExcelBuffer, parseDateRangeFromFilename, detectSourceType, type SourceType, type DateRange } from "../excelParser";
 import { storagePut } from "../storage";
+import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 
 /**
  * Helper: Resolve the effective userId for data queries.
@@ -211,9 +212,17 @@ export const dataImportRouter = router({
         const fileUrl = importRecord.fileUrl;
         if (!fileUrl) throw new Error("文件URL不存在");
 
-        const response = await fetch(fileUrl);
-        const arrayBuffer = await response.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
+        const response = await safeHttpRequest(fileUrl, {
+          timeoutMs: 30_000,
+          maxRedirects: 3,
+          maxResponseBytes: 50 * 1024 * 1024,
+          auditContext: {
+            workspaceId: currentOpsWorkspaceId(),
+            operation: "ops.data_import.download",
+          },
+        });
+        if (!response.ok) throw new Error(`文件下载失败: HTTP ${response.status}`);
+        const buffer = response.body;
         const result = parseExcelBuffer(buffer, importRecord.fileName);
 
         // Delete existing data for same user + source + date range (upsert behavior)

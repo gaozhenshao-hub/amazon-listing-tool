@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
+import { APP_ERROR_CODES } from "@shared/_core/errors";
 
 // We test the requestWithMockFallback logic by mocking the LingxingAdapter
 // Since the adapter is a class with private methods, we test the public behavior
@@ -11,83 +12,18 @@ describe("After-Sales Mock Fallback", () => {
     expect(typeof adapter.requestWithMockFallback).toBe("function");
   });
 
-  it("requestWithMockFallback should return mock data when API returns error code", async () => {
+  it("requestWithMockFallback rejects instead of fabricating after-sales data", async () => {
     const { getLingxingAdapter } = await import("./lingxingAdapter");
     const adapter = getLingxingAdapter();
-    
-    // Force mock mode off to test fallback behavior
-    // The real API will return code 400 for after-sales endpoints
-    // requestWithMockFallback should catch this and return mock data
-    const result = await adapter.requestWithMockFallback({
+
+    await expect(adapter.requestWithMockFallback({
       path: "/erp/sc/data/fba/returnAnalysis",
       body: {},
+    })).rejects.toMatchObject({
+      code: APP_ERROR_CODES.DATA_SOURCE_UNAVAILABLE,
+      statusCode: 503,
     });
-    
-    // Should return successful response (either real data or mock fallback)
-    expect(result).toBeDefined();
-    expect(result.code).toBe("200");
-    expect(result.data).toBeDefined();
-    // If it fell back to mock, _meta.source should be 'mock_fallback'
-    if (result._meta?.source === 'mock_fallback') {
-      // Reason could be "API returned code=XXX" or "API error: ..." (e.g. IP whitelist)
-      expect(result._meta.reason).toBeTruthy();
-    }
   });
-
-  it("requestWithMockFallback should return mock data for reviewReport", async () => {
-    const { getLingxingAdapter } = await import("./lingxingAdapter");
-    const adapter = getLingxingAdapter();
-    
-    const result = await adapter.requestWithMockFallback({
-      path: "/erp/sc/v2/ca/reviewReport/lists",
-      body: {},
-    });
-    
-    expect(result).toBeDefined();
-    expect(result.code).toBe("200");
-    expect(result.data).toBeDefined();
-  });
-
-  it("requestWithMockFallback should return mock data for mail lists", async () => {
-    const { getLingxingAdapter } = await import("./lingxingAdapter");
-    const adapter = getLingxingAdapter();
-    
-    const result = await adapter.requestWithMockFallback({
-      path: "/erp/sc/data/mail/lists",
-      body: { email: "all", flag: "all" },
-    });
-    
-    expect(result).toBeDefined();
-    expect(result.code).toBe("200");
-    expect(result.data).toBeDefined();
-  });
-
-  it("requestWithMockFallback should return mock data for performance list", async () => {
-    const { getLingxingAdapter } = await import("./lingxingAdapter");
-    const adapter = getLingxingAdapter();
-    
-    const result = await adapter.requestWithMockFallback({
-      path: "/erp/sc/cs/performance/list",
-      body: {},
-    });
-    
-    expect(result).toBeDefined();
-    expect(result.code).toBe("200");
-  });
-
-  it("requestWithMockFallback should return default empty mock for unknown paths", async () => {
-    const { getLingxingAdapter } = await import("./lingxingAdapter");
-    const adapter = getLingxingAdapter();
-    
-    const result = await adapter.requestWithMockFallback({
-      path: "/some/unknown/path",
-      body: {},
-    });
-    
-    expect(result).toBeDefined();
-    expect(result.code).toBe("200");
-  });
-
   it("getReturnAnalysis should return normalized data structure", async () => {
     // Test that the return analysis data normalization works correctly
     const mockRawData = {

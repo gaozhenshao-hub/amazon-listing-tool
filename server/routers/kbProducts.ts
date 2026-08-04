@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { resourceConflictError } from "@shared/_core/errors";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
 import { scrapeAmazonProduct } from "../scraper";
@@ -27,7 +28,7 @@ export const kbProductsRouter = router({
       // ASIN dedup: prevent duplicate entries
       const dupProduct = await kbDb.findProductInnovationByAsin(asin);
       if (dupProduct) {
-        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于产品知识库中 [id:${dupProduct.id}]` });
+        throw resourceConflictError(`ASIN ${asin} 已存在于产品知识库中`, { existingId: dupProduct.id, resource: "kb_product", asin });
       }
       const id = await kbDb.createProductInnovation({
         userId: ctx.user.id,
@@ -177,7 +178,7 @@ export const kbProductsRouter = router({
       // ASIN dedup: prevent duplicate entries
       const dupProduct = await kbDb.findProductInnovationByAsin(asin);
       if (dupProduct) {
-        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于产品知识库中 [id:${dupProduct.id}]` });
+        throw resourceConflictError(`ASIN ${asin} 已存在于产品知识库中`, { existingId: dupProduct.id, resource: "kb_product", asin });
       }
       const id = await kbDb.createProductInnovation({
         userId: ctx.user.id, asin, productUrl: input.url, status: "crawling",

@@ -5,6 +5,7 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
+import { expressAppErrorHandler, requestContextMiddleware } from "./requestContext";
 import { syncRouter } from "../syncRoutes";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -51,6 +52,7 @@ async function startServer() {
 
   const app = express();
   const server = createServer(app);
+  app.use(requestContextMiddleware);
   registerRuntimeHealthRoutes(app, { service: "web" });
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
@@ -75,8 +77,18 @@ async function startServer() {
     createExpressMiddleware({
       router: appRouter,
       createContext,
+      onError({ error, path, ctx }) {
+        const appError = error.cause && typeof error.cause === "object" ? error.cause as any : null;
+        console.error("[tRPC] request failed", {
+          requestId: ctx?.requestId || "internal",
+          path,
+          code: appError?.code || error.code,
+          retryable: appError?.retryable ?? false,
+        });
+      },
     })
   );
+  app.use(expressAppErrorHandler);
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);

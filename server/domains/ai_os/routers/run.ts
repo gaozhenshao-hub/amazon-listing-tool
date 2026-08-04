@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { protectedProcedure, router } from "../../../_core/trpc";
 import { invokeLLM } from "../../../_core/llm";
+import { safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
 import { renderSkillTemplate } from "../services/skillRunner";
 import { recordAiOsEvaluation, recordAiOsMetric } from "../services/observability";
 import { generateRunId, getSkillBySlug, parseManifest, rawExecute, resolveModel } from "../routerContext";
@@ -63,17 +64,24 @@ export const emperorRunRouter = router({
               content: externalPayload.messages[0].content + "\n\nIMPORTANT: You MUST respond with valid JSON only. No markdown code fences, no explanation, no extra text.",
             };
           }
-          const extResponse = await fetch(apiUrl, {
+          const extResponse = await safeHttpRequest(apiUrl, {
             method: "POST",
             headers: { "content-type": "application/json", authorization: `Bearer ${modelInfo.apiKeyRef}` },
             body: JSON.stringify(externalPayload),
-            signal: AbortSignal.timeout(120_000),
+            timeoutMs: 120_000,
+            maxResponseBytes: 20 * 1024 * 1024,
+            allowedHosts: [new URL(apiUrl).hostname],
+            allowPrivateNetwork: process.env.MODEL_PROVIDER_ALLOW_PRIVATE_NETWORK === "true",
+            auditContext: {
+              workspaceId: skillRow.workspaceId ?? null,
+              operation: "ai_os.skill.external_model",
+            },
           });
           if (!extResponse.ok) {
             const errText = await extResponse.text();
             throw new Error(`External LLM [${modelInfo.modelId}] failed: ${extResponse.status} – ${errText.slice(0, 300)}`);
           }
-          const extResult = await extResponse.json() as any;
+          const extResult = extResponse.json() as any;
           const msg = extResult?.choices?.[0]?.message;
           content = msg?.content || "";
           // DeepSeek V4 may return empty content with reasoning_content

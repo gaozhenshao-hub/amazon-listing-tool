@@ -17,7 +17,7 @@ import {
   kbIntelCollectLogs,
 } from "../drizzle/schema";
 import { eq, and, lte, isNotNull, sql } from "drizzle-orm";
-import { execSync } from "child_process";
+import { safeHttpRequest } from "./infrastructure/http/safeHttpClient";
 
 // ─── Interval Constants ────────────────────────────
 const INTERVAL_MAP: Record<string, number> = {
@@ -69,21 +69,7 @@ export function calculateNextRunTime(
 function randomUA(): string {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
-// ─── Helper: Fetch URL with curl fallback ───────────
-
-function fetchWithCurl(url: string): { ok: boolean; html: string } {
-  try {
-    const html = execSync(
-      `curl -sL --max-time 30 -H "User-Agent: ${randomUA()}" -H "Accept: text/html,application/xhtml+xml" -H "Accept-Language: zh-CN,zh;q=0.9,en;q=0.8" "${url.replace(/"/g, '\\"')}"`,
-      { maxBuffer: 20 * 1024 * 1024, encoding: "utf-8", timeout: 35000 }
-    );
-    return { ok: html.length > 100, html };
-  } catch {
-    return { ok: false, html: "" };
-  }
-}
-
-// ─── Helper: Fetch URL content with retry (fetch + curl fallback) ────────────
+// ─── Helper: Fetch URL content through the governed egress client ────────────
 async function fetchWithRetry(
   url: string,
   maxRetries: number = 3
@@ -91,32 +77,22 @@ async function fetchWithRetry(
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     let html = "";
     try {
-      // Try native fetch first
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000);
-      const response = await fetch(url, {
+      const response = await safeHttpRequest(url, {
         headers: {
           "User-Agent": randomUA(),
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
           "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
         },
-        signal: controller.signal,
-        redirect: "follow",
+        timeoutMs: 30_000,
+        maxRedirects: 5,
+        maxResponseBytes: 20 * 1024 * 1024,
+        auditContext: { operation: "intel.auto_collect" },
       });
-      clearTimeout(timeout);
       if (response.ok) {
-        html = await response.text();
+        html = response.text();
       }
     } catch {
-      // fetch failed, try curl fallback
-    }
-
-    // If fetch failed or returned empty, try curl
-    if (!html || html.length < 100) {
-      const curlResult = fetchWithCurl(url);
-      if (curlResult.ok) {
-        html = curlResult.html;
-      }
+      // Retry with a fresh fingerprint on the next attempt.
     }
 
     if (html && html.length >= 100) {

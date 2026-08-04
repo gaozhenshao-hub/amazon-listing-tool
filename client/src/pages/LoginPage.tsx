@@ -5,6 +5,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { trpc } from "@/lib/trpc";
+import { getAppErrorInfo } from "@/lib/appError";
+import { APP_ERROR_CODES } from "@shared/_core/errors";
 import { getLoginUrl } from "@/const";
 import { toast } from "sonner";
 import { Sparkles, Eye, EyeOff, Loader2, Shield } from "lucide-react";
@@ -52,13 +54,13 @@ export default function LoginPage() {
       }
     },
     onError: (error) => {
-      const msg = error.message || '';
-      if (msg.includes('服务暂时不可用') || msg.includes('请求超时') || msg.includes('正在重试')) {
-        toast.error('服务响应较慢，请稍后点击登录重试', { duration: 5000 });
-      } else if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
-        toast.error('网络连接失败，请检查网络后重试');
+      const info = getAppErrorInfo(error);
+      if (info.code === APP_ERROR_CODES.REQUEST_TIMEOUT) {
+        toast.error("服务响应较慢，请稍后点击登录重试", { duration: 5000 });
+      } else if (info.retryable) {
+        toast.error("服务暂时不可用，请稍后重试", { duration: 5000 });
       } else {
-        toast.error(msg);
+        toast.error(info.message);
       }
     },
   });

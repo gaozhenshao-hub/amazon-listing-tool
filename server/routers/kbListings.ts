@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
+import { resourceConflictError } from "@shared/_core/errors";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
 import { scrapeAmazonProduct } from "../scraper";
@@ -26,7 +27,7 @@ export const kbListingsRouter = router({
       // ASIN dedup: prevent duplicate entries
       const dupListing = await kbDb.findListingCopywritingByAsin(asin);
       if (dupListing) {
-        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于 Listing 知识库中 [id:${dupListing.id}]` });
+        throw resourceConflictError(`ASIN ${asin} 已存在于 Listing 知识库中`, { existingId: dupListing.id, resource: "kb_listing", asin });
       }
       const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, asin, status: "crawling" });
       (async () => {
@@ -147,7 +148,7 @@ export const kbListingsRouter = router({
       // ASIN dedup: prevent duplicate entries
       const dupListing = await kbDb.findListingCopywritingByAsin(asin);
       if (dupListing) {
-        throw new TRPCError({ code: "CONFLICT", message: `ASIN ${asin} 已存在于 Listing 知识库中 [id:${dupListing.id}]` });
+        throw resourceConflictError(`ASIN ${asin} 已存在于 Listing 知识库中`, { existingId: dupListing.id, resource: "kb_listing", asin });
       }
       const id = await kbDb.createListingCopywriting({ userId: ctx.user.id, asin, status: "crawling" });
       (async () => {

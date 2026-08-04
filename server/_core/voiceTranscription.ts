@@ -26,6 +26,7 @@
  * ```
  */
 import { ENV } from "./env";
+import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 
 export type TranscribeOptions = {
   audioUrl: string; // URL to the audio file (e.g., S3 URL)
@@ -94,7 +95,12 @@ export async function transcribeAudio(
     let audioBuffer: Buffer;
     let mimeType: string;
     try {
-      const response = await fetch(options.audioUrl);
+      const response = await safeHttpRequest(options.audioUrl, {
+        timeoutMs: 30_000,
+        maxRedirects: 3,
+        maxResponseBytes: 17 * 1024 * 1024,
+        auditContext: { operation: "voice.audio_download" },
+      });
       if (!response.ok) {
         return {
           error: "Failed to download audio file",
@@ -103,7 +109,7 @@ export async function transcribeAudio(
         };
       }
       
-      audioBuffer = Buffer.from(await response.arrayBuffer());
+      audioBuffer = response.body;
       mimeType = response.headers.get('content-type') || 'audio/mpeg';
       
       // Check file size (16MB limit)
@@ -152,17 +158,21 @@ export async function transcribeAudio(
       baseUrl
     ).toString();
 
-    const response = await fetch(fullUrl, {
+    const response = await safeHttpRequest(fullUrl, {
       method: "POST",
       headers: {
         authorization: `Bearer ${ENV.forgeApiKey}`,
         "Accept-Encoding": "identity",
       },
       body: formData,
+      timeoutMs: 120_000,
+      maxResponseBytes: 5 * 1024 * 1024,
+      allowedHosts: [new URL(fullUrl).hostname],
+      auditContext: { operation: "voice.transcription" },
     });
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
+      const errorText = response.text();
       return {
         error: "Transcription service request failed",
         code: "TRANSCRIPTION_FAILED",
@@ -171,7 +181,7 @@ export async function transcribeAudio(
     }
 
     // Step 5: Parse and return the transcription result
-    const whisperResponse = await response.json() as WhisperResponse;
+    const whisperResponse = response.json<WhisperResponse>();
     
     // Validate response structure
     if (!whisperResponse.text || typeof whisperResponse.text !== 'string') {

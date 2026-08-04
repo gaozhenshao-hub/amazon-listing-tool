@@ -1,4 +1,3 @@
-import { buildUrl } from "./executors";
 import { TRPCError } from "@trpc/server";
 
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
@@ -149,6 +148,11 @@ function parseJson(value: unknown, fallback: unknown = null): unknown {
 
 function toRecord(value: unknown): Record<string, any> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {};
+}
+
+function buildUrl(baseUrl: string, path = "") {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  return new URL(path.replace(/^\//, ""), normalizedBase).toString();
 }
 
 function stringifyJson(value: unknown): string {
@@ -972,4 +976,4 @@ async function queryKnowledge(params: unknown) {
   };
 }
 
-export { TRPCError, createCipheriv, createDecipheriv, createHash, randomBytes, drizzleSql, getDb, buildWorkspaceScopeFilter, recordAiOsMetric, ToolRunStatus, ToolCircuitRuntimeState, toolRunStoreState, toolRateLimitBuckets, toolInFlightCounts, toolCircuitStates, rawExecute, parseJson, toRecord, stringifyJson, generateToolRunId, SENSITIVE_KEY_PATTERN, SECRET_REF_PATTERN, SECRET_TEMPLATE_PATTERN, sanitizeForAudit, serializeToolError, parseArrayConfig, boundedToolAttempts, secretKeyMaterial, loadStoredToolSecret, isSecretReferenceString, assertNoPlaintextSecrets, resolveSecretRefString, resolveSecretRefs, publicSecretRefs, toolPermissionPolicy, assertToolPermission, toolRateLimitPolicy, rateLimitScopeKey, assertToolRateLimit, assertWindowLimit, incrementToolInFlight, toolCircuitPolicy, buildToolGovernanceDecision, circuitKey, getToolCircuitState, assertToolCircuitClosed, recordToolCircuitSuccess, recordToolCircuitFailure, schemaTypes, matchesJsonSchemaType, jsonSchemaPath, assertToolSchema, inferRequestUrl, inferToolRisk, isPrivateHost, assertHttpPolicy, createToolRunRecord, finishToolRunRecord, isPolicyBlock, normalizeToolOutput, isMissingDatabase, unwrapSkillResult, pickFirst, getNodeInput, composeListingPreview, mergeOutputs, captureInput, queryKnowledge };
+export { TRPCError, createCipheriv, createDecipheriv, createHash, randomBytes, drizzleSql, getDb, buildWorkspaceScopeFilter, recordAiOsMetric, ToolRunStatus, ToolCircuitRuntimeState, toolRunStoreState, toolRateLimitBuckets, toolInFlightCounts, toolCircuitStates, rawExecute, parseJson, toRecord, buildUrl, stringifyJson, generateToolRunId, SENSITIVE_KEY_PATTERN, SECRET_REF_PATTERN, SECRET_TEMPLATE_PATTERN, sanitizeForAudit, serializeToolError, parseArrayConfig, boundedToolAttempts, secretKeyMaterial, loadStoredToolSecret, isSecretReferenceString, assertNoPlaintextSecrets, resolveSecretRefString, resolveSecretRefs, publicSecretRefs, toolPermissionPolicy, assertToolPermission, toolRateLimitPolicy, rateLimitScopeKey, assertToolRateLimit, assertWindowLimit, incrementToolInFlight, toolCircuitPolicy, buildToolGovernanceDecision, circuitKey, getToolCircuitState, assertToolCircuitClosed, recordToolCircuitSuccess, recordToolCircuitFailure, schemaTypes, matchesJsonSchemaType, jsonSchemaPath, assertToolSchema, inferRequestUrl, inferToolRisk, isPrivateHost, assertHttpPolicy, createToolRunRecord, finishToolRunRecord, isPolicyBlock, normalizeToolOutput, isMissingDatabase, unwrapSkillResult, pickFirst, getNodeInput, composeListingPreview, mergeOutputs, captureInput, queryKnowledge };

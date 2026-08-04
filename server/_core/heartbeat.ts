@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { ENV } from "./env";
+import { safeHttpRequest, type SafeHttpResponse } from "../infrastructure/http/safeHttpClient";
 
 export type HeartbeatJob = {
   name: string;
@@ -78,12 +79,16 @@ const callForge = async <T>(
     headers["x-manus-user-session"] = userSession;
   }
 
-  let response: Response;
+  let response: SafeHttpResponse;
   try {
-    response = await fetch(endpoint, {
+    response = await safeHttpRequest(endpoint, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      timeoutMs: 30_000,
+      maxResponseBytes: 5 * 1024 * 1024,
+      allowedHosts: [new URL(endpoint).hostname],
+      auditContext: { operation: `forge.heartbeat.${rpc}` },
     });
   } catch (error) {
     throw new TRPCError({
@@ -93,14 +98,14 @@ const callForge = async <T>(
   }
 
   if (!response.ok) {
-    const detail = await response.text().catch(() => "");
+    const detail = response.text();
     throw mapForgeError(response, detail, rpc);
   }
-  return (await response.json()) as T;
+  return response.json<T>();
 };
 
 const mapForgeError = (
-  response: Response,
+  response: Pick<SafeHttpResponse, "status" | "statusText">,
   detail: string,
   rpc: string
 ): TRPCError => {

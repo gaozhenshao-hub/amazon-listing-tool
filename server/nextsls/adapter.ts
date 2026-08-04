@@ -235,11 +235,8 @@ class NextSlsAdapter {
     const url = `${this.config.baseUrl}${path}`;
     const startTime = Date.now();
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
-
     try {
-      const response = await fetch(url, {
+      const response = await safeHttpRequest(url, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${this.config.token}`,
@@ -248,12 +245,14 @@ class NextSlsAdapter {
           "Accept-Language": "zh-CN",
         },
         body: JSON.stringify(body),
-        signal: controller.signal,
+        timeoutMs: timeout,
+        maxResponseBytes: 10 * 1024 * 1024,
+        allowedHosts: [new URL(url).hostname],
+        auditContext: { operation: "nextsls.api" },
       });
 
-      clearTimeout(timer);
       const latencyMs = Date.now() - startTime;
-      const data = await response.json() as NextSlsResponse<T>;
+      const data = response.json<NextSlsResponse<T>>();
 
       this.addLog({
         timestamp: Date.now(),
@@ -266,7 +265,6 @@ class NextSlsAdapter {
 
       return data;
     } catch (err: any) {
-      clearTimeout(timer);
       const latencyMs = Date.now() - startTime;
       this.addLog({
         timestamp: Date.now(),
@@ -505,3 +503,4 @@ export async function initNextSlsAdapterFromDb() {
     console.warn("[NextSLS] Failed to load config from DB:", err);
   }
 }
+import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";

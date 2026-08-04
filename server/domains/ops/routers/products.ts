@@ -1,3 +1,4 @@
+import { failUnavailableDataSource } from "@shared/_core/errors";
 import { currentOpsWorkspaceId } from "../workspaceContext";
 import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
@@ -140,7 +141,7 @@ export const opsProductProcedures = {
     const parentAsinMap = new Map<string, SalesInfo>();
     const childAsinMap = new Map<string, SalesInfo>();
     try {
-      const profitRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+      const profitRes = failUnavailableDataSource();
       const profitRaw = profitRes.data || [];
       const profitList = Array.isArray(profitRaw) ? profitRaw : (profitRaw as any).records || (profitRaw as any).list || [];
 

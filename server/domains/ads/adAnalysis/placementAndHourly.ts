@@ -1,3 +1,4 @@
+import { failUnavailableDataSource } from "@shared/_core/errors";
 import { z, invokeLLM, protectedProcedure, router, getDb, eq, desc, and, sql, budgetTracking, ClassificationThresholds, DEFAULT_THRESHOLDS, TWELVE_CATEGORIES, classifySearchTerm, anonymizeForAI, deAnonymizeResults, _queryCache, CACHE_TTL, getCached, setCache, parallelBatch, getDateNDaysAgo, getDatesInRange, resolveDateRange, getAllSellerSids, MARKETPLACE_MAP, filterSidsByMarketplace } from "./context";
 
 export const placementAndHourlyProcedures = {
@@ -61,7 +62,7 @@ export const placementAndHourlyProcedures = {
             offset: 0,
             length: 1000,
           };
-          return ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+          return failUnavailableDataSource();
         }));
         for (const result of results) {
           if (result.status !== 'fulfilled') continue;
@@ -156,7 +157,7 @@ export const placementAndHourlyProcedures = {
       for (let i = 0; i < tasks.length; i += CONCURRENCY) {
         const batch = tasks.slice(i, i + CONCURRENCY);
         const results = await Promise.allSettled(batch.map(async ({ sid, date }) => {
-          return ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+          return failUnavailableDataSource();
         }));
         for (const result of results) {
           if (result.status !== 'fulfilled') continue;
@@ -196,7 +197,7 @@ export const placementAndHourlyProcedures = {
       for (let i = 0; i < tasks.length; i += CONCURRENCY) {
         const batch = tasks.slice(i, i + CONCURRENCY);
         const results = await Promise.allSettled(batch.map(async ({ sid, date }) => {
-          return ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+          return failUnavailableDataSource();
         }));
         for (const result of results) {
           if (result.status !== 'fulfilled') continue;
@@ -339,7 +340,7 @@ export const placementAndHourlyProcedures = {
             if (hasCampaignFilter_h && effectiveCampaignIds_h.length === 1) body.campaign_id = Number(effectiveCampaignIds_h[0]);
             else body.sid = sid;
             
-            const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+            const res = failUnavailableDataSource();
             const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
             for (const item of items) {
               // Filter by campaign IDs when multiple selected
@@ -400,7 +401,7 @@ export const placementAndHourlyProcedures = {
           : input.campaignId;
         if (heatmapCampaignId) body.summary_field_value = heatmapCampaignId;
 
-        const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+        const res = failUnavailableDataSource();
         const list = (res.data as any)?.list || res.data || [];
         
         // Build 24h × 7day heatmap

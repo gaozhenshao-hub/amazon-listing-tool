@@ -3,8 +3,16 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 // Read the source files for testing
-const devAnalysisRouter = readFileSync(join(__dirname, "routers/devAnalysis.ts"), "utf-8");
-const devAnalysisFlow = readFileSync(join(__dirname, "../client/src/pages/dev/DevAnalysisFlow.tsx"), "utf-8");
+const stageGatingPolicy = readFileSync(join(__dirname, "domains/product_development/analysis/stageGating.ts"), "utf-8");
+const stageResultDisplay = readFileSync(join(__dirname, "../client/src/pages/dev/analysis/StageResultDisplay.tsx"), "utf-8");
+const devAnalysisRouter = [
+  readFileSync(join(__dirname, "routers/devAnalysis.ts"), "utf-8"),
+  stageGatingPolicy,
+].join("\n");
+const devAnalysisFlow = [
+  readFileSync(join(__dirname, "../client/src/pages/dev/DevAnalysisFlow.tsx"), "utf-8"),
+  stageResultDisplay,
+].join("\n");
 
 describe("Stage Gating Mechanism", () => {
   describe("Backend: checkStageGating function", () => {
@@ -165,13 +173,12 @@ describe("Stage Gating Mechanism", () => {
 
   describe("Frontend: StageResultDisplay gating prop", () => {
     it("should accept gatingInfo prop", () => {
-      expect(devAnalysisFlow).toContain("gatingInfo?: { canRun: boolean; reason?: string | null; missingPrereqs?: string[] | null }");
+      expect(stageResultDisplay).toContain("gatingInfo?: { canRun: boolean; reason?: string | null; missingPrereqs?: string[] | null }");
     });
 
     it("should check isGated when status is pending", () => {
       // In the pending state, it should check gating
-      const displaySection = devAnalysisFlow.split("StageResultDisplay")[2] || "";
-      expect(displaySection).toContain("isGated");
+      expect(stageResultDisplay).toContain("isGated");
     });
   });
 });

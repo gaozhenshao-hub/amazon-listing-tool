@@ -1,3 +1,4 @@
+import { failUnavailableDataSource } from "@shared/_core/errors";
 /**
  * 转化率对比 — 数据采集引擎
  * 
@@ -507,10 +508,10 @@ async function collectAdData(asin: string, sid?: number): Promise<AdData | null>
   try {
     // 并行获取广告数据
     const [campaignsRes, keywordsRes, searchTermsRes, productReportsRes] = await Promise.allSettled([
-      ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
-      ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
-      ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
-      ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
+      failUnavailableDataSource(),
+      failUnavailableDataSource(),
+      failUnavailableDataSource(),
+      failUnavailableDataSource(),
     ]);
 
     return {

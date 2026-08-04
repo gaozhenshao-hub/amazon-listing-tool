@@ -1,6 +1,6 @@
 import { getLoginUrl } from "@/const";
+import { isAuthRequiredError, isRetryableAppError } from "@/lib/appError";
 import { trpc } from "@/lib/trpc";
-import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
 
 type UseAuthOptions = {
@@ -15,23 +15,7 @@ export function useAuth(options?: UseAuthOptions) {
   const meQuery = trpc.auth.me.useQuery(undefined, {
     // Retry on 503/network errors (Cloud Run cold start can take 5-10s)
     retry: (failureCount, error) => {
-      if (error instanceof TRPCClientError) {
-        const msg = error.message || '';
-        // Retry on service unavailable, network errors, and non-JSON responses
-        if (
-          msg.includes('Service Unavailable') ||
-          msg.includes('服务暂时不可用') ||
-          msg.includes('请求超时') ||
-          msg.includes('Unexpected token') ||
-          msg.includes('not valid JSON') ||
-          msg.includes('Failed to fetch') ||
-          msg.includes('NetworkError') ||
-          msg.includes('正在重试')
-        ) {
-          return failureCount < 4; // Up to 4 retries for cold start
-        }
-      }
-      return false; // Don't retry auth errors (UNAUTHORIZED etc.)
+      return isRetryableAppError(error) && failureCount < 4;
     },
     retryDelay: (attemptIndex) => Math.min(2000 * 2 ** attemptIndex, 10000),
     refetchOnWindowFocus: false,
@@ -49,12 +33,7 @@ export function useAuth(options?: UseAuthOptions) {
     try {
       await logoutMutation.mutateAsync();
     } catch (error: unknown) {
-      if (
-        error instanceof TRPCClientError &&
-        error.data?.code === "UNAUTHORIZED"
-      ) {
-        return;
-      }
+      if (isAuthRequiredError(error)) return;
       throw error;
     } finally {
       utils.auth.me.setData(undefined, null);

@@ -1,3 +1,4 @@
+import { failUnavailableDataSource } from "@shared/_core/errors";
 import { z, TRPCError, protectedProcedure, router, getDb, invokeLLM, inventoryConfig, inventorySnapshots, profitSnapshots, profitAlertRules, adAnalysisTasks, adAutomationRules, searchTermActions, competitorMonitors, competitorSnapshots, competitorReports, lingxingApiLogs, userSettings, asinStatusCache, asinPermissions, asinTagDefinitions, asinTagAssignments, productProfiles, productVariants, lingxingProductWeekly, operatorNameMappings, eq, desc, and, sql, gte, lte, or, MANAGER_ROLES, resolveDataUserId, CacheEntry, adCache, cacheGet, cacheSet, getCacheAge, getDateRange, MARKETPLACE_MAP, filterSidsByMarketplace, getAllSellerSids, getToday, getYesterday, getDateNDaysAgo } from "./context";
 
 export const profitProcedures = {
@@ -26,7 +27,7 @@ export const profitProcedures = {
       let hasMore = true;
       
       while (hasMore) {
-        const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+        const res = failUnavailableDataSource();
         
         const rawData = res.data || [];
         const records = Array.isArray(rawData) ? rawData : (rawData as any).records || (rawData as any).list || [];
@@ -142,7 +143,7 @@ getProfitByProduct: protectedProcedure
       let hasMore = true;
       
       while (hasMore) {
-        const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+        const res = failUnavailableDataSource();
         const rawItems = res.data || [];
         const records = Array.isArray(rawItems) ? rawItems : (rawItems as any).records || (rawItems as any).list || [];
         const total = (rawItems as any).total || 0;

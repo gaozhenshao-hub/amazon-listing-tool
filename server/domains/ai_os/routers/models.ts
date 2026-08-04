@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { adminProcedure, protectedProcedure, router } from "../../../_core/trpc";
 import { invokeLLM } from "../../../_core/llm";
+import { safeHttpRequest } from "../../../infrastructure/http/safeHttpClient";
 import { rawExecute } from "../routerContext";
 
 export const emperorModelsRouter = router({
@@ -77,13 +78,18 @@ export const emperorModelsRouter = router({
       let errorMsg = "";
       try {
         const baseUrl = model.baseUrl || "https://api.openai.com/v1";
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 10000);
-        const response = await fetch(`${baseUrl}/models`, {
+        const apiUrl = `${baseUrl.replace(/\/$/, "")}/models`;
+        const response = await safeHttpRequest(apiUrl, {
           headers: { Authorization: `Bearer ${model.apiKeyRef || ""}`, "Content-Type": "application/json" },
-          signal: controller.signal,
+          timeoutMs: 10_000,
+          maxResponseBytes: 2 * 1024 * 1024,
+          allowedHosts: [new URL(apiUrl).hostname],
+          allowPrivateNetwork: process.env.MODEL_PROVIDER_ALLOW_PRIVATE_NETWORK === "true",
+          auditContext: {
+            workspaceId: model.workspaceId ?? null,
+            operation: "ai_os.model.health_check",
+          },
         });
-        clearTimeout(timer);
         latencyMs = Date.now() - start;
         if (!response.ok) { status = "error"; errorMsg = `HTTP ${response.status}`; }
       } catch (e: any) {

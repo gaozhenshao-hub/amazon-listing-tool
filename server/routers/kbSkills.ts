@@ -2,6 +2,7 @@ import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import * as kbDb from "../kbDb";
 import { invokeLLM } from "../_core/llm";
+import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 import { storagePut } from "../storage";
 // @ts-ignore - pdf-parse v2 uses named export
 import { PDFParse } from "pdf-parse";
@@ -246,9 +247,14 @@ export const kbSkillsRouter = router({
       });
       (async () => {
         try {
-          const axios = (await import("axios")).default;
-          const response = await axios.get(input.url, { timeout: 15000, headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" } });
-          const html = typeof response.data === "string" ? response.data : JSON.stringify(response.data);
+          const response = await safeHttpRequest(input.url, {
+            timeoutMs: 15_000,
+            maxResponseBytes: 20 * 1024 * 1024,
+            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+            auditContext: { operation: "knowledge_base.url_import" },
+          });
+          if (!response.ok) throw new Error(`URL import failed with HTTP ${response.status}`);
+          const html = response.text();
           const cheerio = await import("cheerio");
           const $ = cheerio.load(html);
 
@@ -281,9 +287,14 @@ export const kbSkillsRouter = router({
             const ocrResults = await Promise.allSettled(
               imagesToProcess.map(async (imgUrl, idx) => {
                 try {
-                  const imgResp = await axios.get(imgUrl, { responseType: "arraybuffer", timeout: 10000 });
-                  const contentType = imgResp.headers["content-type"] || "image/jpeg";
-                  const base64 = Buffer.from(imgResp.data).toString("base64");
+                  const imgResp = await safeHttpRequest(imgUrl, {
+                    timeoutMs: 10_000,
+                    maxResponseBytes: 25 * 1024 * 1024,
+                    auditContext: { operation: "knowledge_base.image_ocr" },
+                  });
+                  if (!imgResp.ok) throw new Error(`OCR image download failed with HTTP ${imgResp.status}`);
+                  const contentType = imgResp.headers.get("content-type") || "image/jpeg";
+                  const base64 = imgResp.body.toString("base64");
                   const dataUrl = `data:${contentType};base64,${base64}`;
                   const ocrResp = await invokeLLM({
                     messages: [{

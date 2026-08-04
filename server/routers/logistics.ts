@@ -21,6 +21,7 @@ import {
   analyzeTransitTimes,
   aggregateTransitStats,
 } from "../nextsls/transitTimeService";
+import { dataSourceUnavailableError } from "@shared/_core/errors";
 
 // ─── NextSLS Setting Keys ───
 const NEXTSLS_KEYS = {
@@ -28,6 +29,16 @@ const NEXTSLS_KEYS = {
   TOKEN: "nextsls_token",
   ENABLED: "nextsls_enabled",
 } as const;
+
+function requireNextSls() {
+  if (!nextSlsAdapter.isReady()) {
+    throw dataSourceUnavailableError(
+      "NextSLS",
+      "NextSLS 物流服务尚未配置或启用",
+      { configurationProcedure: "logistics.saveConfig" },
+    );
+  }
+}
 
 export const logisticsRouter = router({
 
@@ -141,13 +152,13 @@ export const logisticsRouter = router({
       type: z.enum(["all", "b2b", "b2c", "ex"]).optional().default("all"),
     }))
     .query(async ({ input }) => {
-      if (!nextSlsAdapter.isReady()) return [];
+      requireNextSls();
       return await nextSlsAdapter.getServices(input.type);
     }),
 
   /** Get account balance */
   getAccountBalance: protectedProcedure.query(async () => {
-    if (!nextSlsAdapter.isReady()) return [];
+    requireNextSls();
     return await nextSlsAdapter.getAccountBalance();
   }),
 
@@ -161,7 +172,7 @@ export const logisticsRouter = router({
       pageSize: z.number().optional().default(20),
     }))
     .query(async ({ input }) => {
-      if (!nextSlsAdapter.isReady()) return { items: [], total: 0 };
+      requireNextSls();
       const items = await nextSlsAdapter.getShipmentList({
         status: input.status,
         start_created: input.startDate,
@@ -176,7 +187,7 @@ export const logisticsRouter = router({
   getShipmentDetail: protectedProcedure
     .input(z.object({ shipmentId: z.string() }))
     .query(async ({ input }) => {
-      if (!nextSlsAdapter.isReady()) return null;
+      requireNextSls();
       return await nextSlsAdapter.getShipment(input.shipmentId);
     }),
 
@@ -187,7 +198,7 @@ export const logisticsRouter = router({
       trackingNumber: z.string().optional(),
     }))
     .query(async ({ input }) => {
-      if (!nextSlsAdapter.isReady()) return null;
+      requireNextSls();
       return await nextSlsAdapter.getTracking({
         shipment_id: input.shipmentId,
         tracking_number: input.trackingNumber,
@@ -213,7 +224,7 @@ export const logisticsRouter = router({
       })).optional(),
     }))
     .mutation(async ({ input }) => {
-      if (!nextSlsAdapter.isReady()) throw new Error("NextSLS未配置");
+      requireNextSls();
       return await nextSlsAdapter.getRate({
         service: input.service,
         parcel_count: 1,
@@ -246,7 +257,7 @@ export const logisticsRouter = router({
       postcode: z.string(),
     }))
     .mutation(async ({ input }) => {
-      if (!nextSlsAdapter.isReady()) throw new Error("NextSLS未配置");
+      requireNextSls();
       return await nextSlsAdapter.checkRemote(input.service, {
         name: "Check",
         address_1: "N/A",
@@ -293,9 +304,7 @@ export const logisticsRouter = router({
       endDate: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      if (!nextSlsAdapter.isReady()) {
-        return { success: false, message: "NextSLS未配置", records: 0, stats: [] };
-      }
+      requireNextSls();
       
       clearTransitTimeCache();
       const records = await analyzeTransitTimes({

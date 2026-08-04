@@ -1,5 +1,4 @@
-import { TRPCError, buildWorkspaceScopeFilter, EmperorToolDefinition, rawExecute, parseJson, sanitizeForAudit, composeListingPreview, mergeOutputs, captureInput, queryKnowledge } from "./governanceCore";
-import { invokeHttpTool } from "./executors";
+import { TRPCError, buildWorkspaceScopeFilter, EmperorToolDefinition, rawExecute, parseJson, sanitizeForAudit } from "./governanceCore";
 const BUILTIN_TOOLS: EmperorToolDefinition[] = [
   {
     slug: "internal.agent.capture_input",
@@ -165,28 +164,4 @@ async function getToolDefinition(slug: string, workspaceId?: number | null): Pro
   throw new TRPCError({ code: "NOT_FOUND", message: `Tool not found: ${slug}` });
 }
 
-async function invokeInternalTool(slug: string, params: unknown, resolvedSecretRefs: string[] = [], workspaceId?: number | null) {
-  switch (slug) {
-    case "internal.agent.capture_input":
-      return captureInput(params);
-    case "internal.agent.merge_outputs":
-      return mergeOutputs(params);
-    case "internal.listing.compose_preview":
-      return composeListingPreview(params);
-    case "internal.knowledge.query":
-      return queryKnowledge(params);
-    case "internal.http.request": {
-      const result = await invokeHttpTool({
-        slug,
-        name: "HTTP API 请求",
-        type: "api",
-        config: {},
-      }, params, resolvedSecretRefs, workspaceId);
-      return result;
-    }
-    default:
-      throw new TRPCError({ code: "BAD_REQUEST", message: `Unsupported internal tool: ${slug}` });
-  }
-}
-
-export { BUILTIN_TOOLS, builtinBySlug, getToolDefinition, invokeInternalTool };
+export { BUILTIN_TOOLS, builtinBySlug, getToolDefinition };

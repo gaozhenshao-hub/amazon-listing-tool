@@ -1,3 +1,4 @@
+import { failUnavailableDataSource } from "@shared/_core/errors";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router } from "../../_core/trpc";
@@ -22,6 +23,8 @@ import {
 import { competitorMonitors, competitorSnapshots } from "../../../drizzle/schema/ads";
 import { users } from "../../../drizzle/schema/auth";
 import { eq, desc, and, or, sql, asc, isNull, inArray } from "drizzle-orm";
+import { ContextScopedCache } from "../../infrastructure/cache/scopedCache";
+import { currentOpsCacheScope } from "./workspaceContext";
 
 export {
   TRPCError,
@@ -86,28 +89,37 @@ export type ScoringProgress = {
   total: number;
   message: string;
 };
-export const scoringProgressMap = new Map<string, ScoringProgress>();
+export const scoringProgressMap = new ContextScopedCache<ScoringProgress>({
+  namespace: "ops.scoring.progress",
+  visibility: "user",
+  defaultTtlMs: 10 * 60 * 1000,
+  maxEntries: 500,
+}, () => currentOpsCacheScope("user"));
 // ═══════════════════════════════════════════════════════
 // Helper functions
 // ═══════════════════════════════════════════════════════
 
 // Seller cache shared across all productOps procedures
-export let _productOpsSellerCache: { sellers: any[], ts: number } | null = null;
 export const SELLER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+export const _productOpsSellerCache = new ContextScopedCache<any[]>({
+  namespace: "ops.sellers",
+  visibility: "workspace",
+  defaultTtlMs: SELLER_CACHE_TTL,
+  maxEntries: 100,
+}, () => currentOpsCacheScope("workspace"));
 
 export async function getCachedSellers(adapter: any): Promise<any[]> {
-  if (_productOpsSellerCache && Date.now() - _productOpsSellerCache.ts < SELLER_CACHE_TTL) {
-    return _productOpsSellerCache.sellers;
-  }
+  const cached = _productOpsSellerCache.get("seller-list");
+  if (cached) return cached;
   try {
-    const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+    const res = failUnavailableDataSource();
     const sellersRaw = res.data || [];
     const sellers = Array.isArray(sellersRaw) ? sellersRaw : (sellersRaw as any)?.records || (sellersRaw as any)?.list || [];
-    _productOpsSellerCache = { sellers, ts: Date.now() };
+    _productOpsSellerCache.set("seller-list", sellers);
     return sellers;
   } catch (err: any) {
     console.warn(`[ProductOps] Seller list fetch error: ${err.message}`);
-    return _productOpsSellerCache?.sellers || [];
+    return _productOpsSellerCache.get("seller-list") || [];
   }
 }
 

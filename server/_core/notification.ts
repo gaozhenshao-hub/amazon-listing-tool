@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { ENV } from "./env";
+import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 
 export type NotificationPayload = {
   title: string;
@@ -85,7 +86,7 @@ export async function notifyOwner(
   const endpoint = buildEndpointUrl(ENV.forgeApiUrl);
 
   try {
-    const response = await fetch(endpoint, {
+    const response = await safeHttpRequest(endpoint, {
       method: "POST",
       headers: {
         accept: "application/json",
@@ -94,10 +95,14 @@ export async function notifyOwner(
         "connect-protocol-version": "1",
       },
       body: JSON.stringify({ title, content }),
+      timeoutMs: 30_000,
+      maxResponseBytes: 5 * 1024 * 1024,
+      allowedHosts: [new URL(endpoint).hostname],
+      auditContext: { operation: "forge.notification" },
     });
 
     if (!response.ok) {
-      const detail = await response.text().catch(() => "");
+      const detail = response.text();
       console.warn(
         `[Notification] Failed to notify owner (${response.status} ${response.statusText})${
           detail ? `: ${detail}` : ""

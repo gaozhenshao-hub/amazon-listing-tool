@@ -1,4 +1,5 @@
 import { ENV } from "./env";
+import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
 
@@ -360,7 +361,8 @@ export async function invokeRawLLM(params: InvokeParams): Promise<InvokeResult> 
     payload.thinking = { budget_tokens: 128 };
   }
 
-  const response = await fetch(resolveApiUrl(), {
+  const apiUrl = resolveApiUrl();
+  const response = await safeHttpRequest(apiUrl, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -368,6 +370,10 @@ export async function invokeRawLLM(params: InvokeParams): Promise<InvokeResult> 
     },
     body: JSON.stringify(payload),
     signal: params.signal,
+    timeoutMs: 120_000,
+    maxResponseBytes: 20 * 1024 * 1024,
+    allowedHosts: [new URL(apiUrl).hostname],
+    auditContext: { operation: "forge.llm" },
   });
 
   if (!response.ok) {
@@ -377,7 +383,7 @@ export async function invokeRawLLM(params: InvokeParams): Promise<InvokeResult> 
     );
   }
 
-  const result = (await response.json()) as InvokeResult;
+  const result = response.json<InvokeResult>();
 
   // Post-process: strip markdown code fences from json_object fallback responses
   if (isJsonObjectFallback && result.choices?.[0]?.message?.content) {

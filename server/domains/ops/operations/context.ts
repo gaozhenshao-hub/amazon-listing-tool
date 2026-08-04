@@ -25,34 +25,28 @@ import { MANAGER_ROLES } from "../../../../shared/const";
 import { resolveDataUserId } from "../../../routers/dataImport";
 import { workspaceIdFromContext } from "../../../services/securityGovernance";
 import { opsWorkspaceCondition, withOpsWorkspace } from "../../../repositories/ops";
+import { ContextScopedCache } from "../../../infrastructure/cache/scopedCache";
+import { currentOpsCacheScope } from "../workspaceContext";
 
 // ─── Ad Data Memory Cache ─────────────────────────────────────────────
-interface CacheEntry<T> {
-  data: T;
-  timestamp: number;
-  ttl: number;
-}
-
-const adCache = new Map<string, CacheEntry<any>>();
+type CacheEntry<T> = T;
+const adCache = new ContextScopedCache<any>({
+  namespace: "ops.advertising",
+  visibility: "workspace",
+  defaultTtlMs: 10 * 60 * 1000,
+  maxEntries: 500,
+}, () => currentOpsCacheScope("workspace"));
 
 function cacheGet<T>(key: string): T | null {
-  const entry = adCache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.timestamp > entry.ttl) {
-    adCache.delete(key);
-    return null;
-  }
-  return entry.data as T;
+  return adCache.get(key) as T | null;
 }
 
 function cacheSet<T>(key: string, data: T, ttlMs: number): void {
-  adCache.set(key, { data, timestamp: Date.now(), ttl: ttlMs });
+  adCache.set(key, data, ttlMs);
 }
 
 function getCacheAge(key: string): number | null {
-  const entry = adCache.get(key);
-  if (!entry) return null;
-  return Math.floor((Date.now() - entry.timestamp) / 1000);
+  return adCache.ageSeconds(key);
 }
 
 // Helper: generate date range array

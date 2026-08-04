@@ -8,6 +8,7 @@
  */
 
 import { ENV } from "./env";
+import { safeHttpRequest } from "../infrastructure/http/safeHttpClient";
 
 // ============================================================================
 // Configuration
@@ -71,12 +72,16 @@ export async function makeRequest<T = unknown>(
     }
   });
 
-  const response = await fetch(url.toString(), {
+  const response = await safeHttpRequest(url, {
     method: options.method || "GET",
     headers: {
       "Content-Type": "application/json",
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
+    timeoutMs: 30_000,
+    maxResponseBytes: 10 * 1024 * 1024,
+    allowedHosts: [url.hostname],
+    auditContext: { operation: "forge.maps_proxy" },
   });
 
   if (!response.ok) {
@@ -86,7 +91,7 @@ export async function makeRequest<T = unknown>(
     );
   }
 
-  return (await response.json()) as T;
+  return response.json<T>();
 }
 
 // ============================================================================
@@ -313,7 +318,6 @@ export type RoadsResult = {
  * Output: Image URL (not JSON) - use directly in <img src={url} />
  * Note: Construct URL manually with getMapsConfig() for auth
  */
-
 
 
 

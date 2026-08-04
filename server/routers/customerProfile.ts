@@ -1,6 +1,7 @@
 import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
 import { opsWorkspaceCondition } from "../repositories/ops";
 import { z } from "zod";
+import { retiredFeatureError } from "@shared/_core/errors";
 import { router } from "../_core/trpc";
 import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { getDb } from "../repositories/dbClient";
@@ -122,68 +123,11 @@ export const customerProfileRouter = router({
   // 从领星同步客户数据
   syncFromLingxing: protectedProcedure
     .input(z.object({ sid: z.number().optional() }))
-    .mutation(async ({ ctx }) => {
-      const ordersRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
-      const orders = Array.isArray(ordersRes.data) ? ordersRes.data : (ordersRes.data as any)?.list || [];
-
-      // 按买家聚合
-      const buyerMap = new Map<string, any>();
-      for (const order of orders) {
-        const buyerId = order.buyer_id || order.buyerId || order.amazon_order_id || '';
-        if (!buyerId) continue;
-        if (!buyerMap.has(buyerId)) {
-          buyerMap.set(buyerId, {
-            buyerId,
-            buyerName: order.buyer_name || order.buyerName || 'Unknown',
-            email: order.buyer_email || '',
-            orders: [],
-            totalAmount: 0,
-          });
-        }
-        const buyer = buyerMap.get(buyerId)!;
-        buyer.orders.push(order);
-        buyer.totalAmount += Number(order.amount || order.order_total || 0);
-      }
-
-      const db = await getDb();
-      if (!db) return { synced: 0, total: 0 };
-      let synced = 0;
-
-      for (const [, buyer] of Array.from(buyerMap)) {
-        const existing = await db.select().from(customerProfiles)
-          .where(opsWorkspaceCondition(customerProfiles, currentOpsWorkspaceId(), and(eq(customerProfiles.userId, ctx.user.id), eq(customerProfiles.customerId, buyer.buyerId))));
-
-        const orderDates = buyer.orders.map((o: any) => o.purchase_date || o.purchaseDate || '').filter(Boolean).sort();
-        const avgVal = buyer.orders.length > 0 ? (buyer.totalAmount / buyer.orders.length).toFixed(2) : "0";
-
-        if (existing.length > 0) {
-          await db.update(customerProfiles).set({
-            buyerName: buyer.buyerName,
-            email: buyer.email || null,
-            totalOrders: buyer.orders.length,
-            totalSpent: buyer.totalAmount.toFixed(2),
-            firstOrderDate: orderDates[0] || null,
-            lastOrderDate: orderDates[orderDates.length - 1] || null,
-            avgOrderValue: avgVal,
-            lastSyncAt: new Date(),
-          }).where(opsWorkspaceCondition(customerProfiles, currentOpsWorkspaceId(), eq(customerProfiles.id, existing[0].id)));
-        } else {
-          await db.insert(customerProfiles).values({
-            userId: ctx.user.id,
-            customerId: buyer.buyerId,
-            buyerName: buyer.buyerName,
-            email: buyer.email || null,
-            totalOrders: buyer.orders.length,
-            totalSpent: buyer.totalAmount.toFixed(2),
-            firstOrderDate: orderDates[0] || null,
-            lastOrderDate: orderDates[orderDates.length - 1] || null,
-            avgOrderValue: avgVal,
-          });
-        }
-        synced++;
-      }
-
-      return { synced, total: buyerMap.size };
+    .mutation((): { synced: number; total: number } => {
+      throw retiredFeatureError("领星客户同步", "dataImport.uploadAndParse", {
+        replacementProcedure: "dataImport.uploadAndParse",
+        supportedSource: "Excel 订单报告",
+      });
     }),
 
   // AI客户价值评估

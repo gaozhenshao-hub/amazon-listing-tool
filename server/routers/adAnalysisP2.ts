@@ -1,3 +1,4 @@
+import { failUnavailableDataSource } from "@shared/_core/errors";
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { invokeLLM } from "../_core/llm";
@@ -79,7 +80,7 @@ export const adAnalysisP2Router = router({
       endDate: z.string().optional(),
     }))
     .query(async ({ input }) => {
-      const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+      const res = failUnavailableDataSource();
 
       const orders = Array.isArray(res.data) ? res.data : [];
 
@@ -242,7 +243,7 @@ ${input.topOrders ? `TOP DSP订单:\n${input.topOrders.map(o => `- ${o.order_nam
       if (input.campaignId) {
         try {
           // Fetch recent ad data for context
-          const adRes = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+          const adRes = failUnavailableDataSource();
           const adData = Array.isArray(adRes.data) ? adRes.data : [];
           if (adData.length > 0) {
             let totalCost = 0, totalSales = 0, totalClicks = 0, totalImpressions = 0, totalOrders = 0;
@@ -386,10 +387,10 @@ ${AD_KNOWLEDGE_BASE}
 
       // Fetch all 4 channels in parallel
       const [spRes, sbRes, sdRes, dspRes] = await Promise.all([
-        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
-        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
-        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
-        ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }),
+        failUnavailableDataSource(),
+        failUnavailableDataSource(),
+        failUnavailableDataSource(),
+        failUnavailableDataSource(),
       ]);
 
       function aggregateChannel(data: any[], channelName: string) {

@@ -1,3 +1,4 @@
+import { failUnavailableDataSource } from "@shared/_core/errors";
 import { z, invokeLLM, protectedProcedure, router, getDb, eq, desc, and, sql, budgetTracking, ClassificationThresholds, DEFAULT_THRESHOLDS, TWELVE_CATEGORIES, classifySearchTerm, anonymizeForAI, deAnonymizeResults, _queryCache, CACHE_TTL, getCached, setCache, parallelBatch, getDateNDaysAgo, getDatesInRange, resolveDateRange, getAllSellerSids, MARKETPLACE_MAP, filterSidsByMarketplace } from "./context";
 
 export const campaignsProcedures = {
@@ -68,7 +69,7 @@ export const campaignsProcedures = {
           let offset = 0;
           let hasMore = true;
           while (hasMore && offset < 1000) {
-            const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+            const res = failUnavailableDataSource();
             const rawData = res.data || [];
             const batch = Array.isArray(rawData) ? rawData : (rawData as any).records || [];
             items.push(...batch.map((b: any) => ({ ...b, _campaignId: campaignId })));
@@ -241,7 +242,7 @@ export const campaignsProcedures = {
             let offset = 0;
             let hasMore = true;
             while (hasMore && offset < 5000) {
-              const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+              const res = failUnavailableDataSource();
               const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
               for (const item of items) {
                 allAds.push({
@@ -366,7 +367,7 @@ export const campaignsProcedures = {
             let offset = 0;
             let hasMore = true;
             while (hasMore && offset < 5000) {
-              const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+              const res = failUnavailableDataSource();
               const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
               allAds.push(...items.map((item: any) => ({ ...item, sid, adType })));
               hasMore = items.length >= 100;
@@ -457,7 +458,7 @@ export const campaignsProcedures = {
         for (const sid of sidsToQuery) {
           for (const { path: adPath, type: adType } of adPaths) {
             try {
-              const res = ({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } });
+              const res = failUnavailableDataSource();
               const items = Array.isArray(res.data) ? res.data : (res.data as any)?.records || [];
               allAds.push(...items.map((item: any) => ({ ...item, sid, adType })));
             } catch (err: any) {
@@ -513,7 +514,7 @@ export const campaignsProcedures = {
         const results = await Promise.allSettled(
           batch.flatMap(cid =>
             datesToQuery.map(reportDate =>
-              Promise.resolve({ code: "200", data: {} as any, _meta: { source: "deprecated" as any } }).then(res => ({ cid, res })).catch(() => null)
+              Promise.resolve(failUnavailableDataSource()).then(res => ({ cid, res })).catch(() => null)
             )
           )
         );
