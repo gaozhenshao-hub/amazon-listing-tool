@@ -16,7 +16,6 @@ const supplementalMigrations = [
   "ad_tracking_migration.sql",
   "dsp_migration.sql",
   "ops_plan_migration.sql",
-  "ops_plan_migration_fix.sql",
   "review_migration.sql",
   "video_script_migration.sql",
   "video_script_v2_migration.sql",
@@ -48,6 +47,8 @@ const retiredMigrationFiles = new Set([
   "0006_chubby_hellion.sql",
   "0007_wakeful_flatman.sql",
   "0008_superb_blue_shield.sql",
+  // Historical fallback for ops_plan_migration.sql, not a subsequent migration.
+  "ops_plan_migration_fix.sql",
 ]);
 
 export function loadMigrationPlan() {
