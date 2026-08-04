@@ -198,6 +198,25 @@ describe("database migration safety", () => {
     expect(executable).toContain("`updatedAt` = `workspaces`.`updatedAt`");
   });
 
+  it("normalizes mixed collations in the legacy artifact backfill", async () => {
+    const module = await import("../scripts/run-database-migrations.mjs");
+    const sql = [
+      "UPDATE `emperor_agent_artifacts` aa",
+      "JOIN `ai_artifacts` ua ON ua.`sourceTable` = 'emperor_agent_artifacts'",
+      "AND ua.`sourceRowId` = CAST(aa.`id` AS CHAR)",
+      "SET aa.`unifiedArtifactId` = ua.`artifactId`;",
+    ].join(" ");
+
+    const executable = await module.prepareExecutableSql({ execute: vi.fn() }, sql);
+
+    expect(executable).toContain(
+      "CONVERT(ua.`sourceRowId` USING utf8mb4) COLLATE utf8mb4_unicode_ci",
+    );
+    expect(executable).toContain(
+      "CONVERT(CAST(aa.`id` AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci",
+    );
+  });
+
   it("rejects future SQL migrations that are omitted from the release plan", () => {
     const source = fs.readFileSync(repoPath("scripts/run-database-migrations.mjs"), "utf8");
     expect(source).toContain("Migration files are not registered in the release plan");

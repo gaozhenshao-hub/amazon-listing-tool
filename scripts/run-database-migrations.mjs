@@ -149,9 +149,18 @@ export async function prepareExecutableSql(connection, sql) {
     statement.replace(/`updatedAt`\s*=\s*`updatedAt`$/i, `\`updatedAt\` = \`${tableName}\`.\`updatedAt\``),
   );
 
+  // Old tables use utf8mb4_unicode_ci while fresh MySQL 8 databases default to
+  // utf8mb4_0900_ai_ci. Normalize the legacy artifact backfill comparison
+  // without changing the checksum of an already published migration.
+  const collationSafeSql = upsertSafeSql.replace(
+    /ua\.`sourceRowId`\s*=\s*CAST\(aa\.`id`\s+AS\s+CHAR\)/gi,
+    "CONVERT(ua.`sourceRowId` USING utf8mb4) COLLATE utf8mb4_unicode_ci = " +
+      "CONVERT(CAST(aa.`id` AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci",
+  );
+
   const workspaceBackfillPattern =
     /UPDATE\s+`?([A-Za-z0-9_$]+)`?\s+t\s+LEFT\s+JOIN\s+`?users`?\s+u\b[\s\S]*?;/gi;
-  const backfillMatches = [...upsertSafeSql.matchAll(workspaceBackfillPattern)];
+  const backfillMatches = [...collationSafeSql.matchAll(workspaceBackfillPattern)];
   let normalizedSql = "";
   let backfillCursor = 0;
   for (const match of backfillMatches) {
@@ -170,10 +179,10 @@ export async function prepareExecutableSql(connection, sql) {
         normalizedStatement = statement.replaceAll(/t\.`?userId`?/g, "t.`user_id`");
       }
     }
-    normalizedSql += upsertSafeSql.slice(backfillCursor, statementIndex) + normalizedStatement;
+    normalizedSql += collationSafeSql.slice(backfillCursor, statementIndex) + normalizedStatement;
     backfillCursor = statementIndex + statement.length;
   }
-  normalizedSql += upsertSafeSql.slice(backfillCursor);
+  normalizedSql += collationSafeSql.slice(backfillCursor);
 
   const conditionalDropPattern =
     /ALTER\s+TABLE\s+`?([A-Za-z0-9_$]+)`?\s+DROP\s+COLUMN\s+IF\s+EXISTS\s+`?([A-Za-z0-9_$]+)`?\s*;/gi;
