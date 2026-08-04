@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,7 +87,7 @@ export default function EmperorScheduled() {
   };
 
   return (
-    <DashboardLayout>
+    <>
       <div className="flex h-[calc(100vh-56px)] overflow-hidden bg-background">
         {/* Left: Task list */}
         <div className="w-[320px] flex-shrink-0 border-r flex flex-col">
@@ -292,6 +291,6 @@ export default function EmperorScheduled() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </DashboardLayout>
+    </>
   );
 }

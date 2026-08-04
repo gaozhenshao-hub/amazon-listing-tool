@@ -1,6 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -681,7 +680,7 @@ export default function EmperorSkillLibrary() {
   };
 
   return (
-    <DashboardLayout>
+    <>
       <div className="flex h-[calc(100vh-56px)] overflow-hidden bg-background">
         {/* ── Left: Category tree ── */}
         <div className="w-[200px] flex-shrink-0 border-r bg-muted/30 flex flex-col">
@@ -1045,6 +1044,6 @@ export default function EmperorSkillLibrary() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </DashboardLayout>
+    </>
   );
 }

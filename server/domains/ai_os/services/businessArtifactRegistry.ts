@@ -1,8 +1,11 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "../../../repositories/dbClient";
+import { aiArtifacts } from "../../../../drizzle/schema/ai_os";
 import {
   competitorAnalyses,
   competitorComparisonReports,
+  devAnalysisStages,
+  devProjects,
   projects,
 } from "../../../../drizzle/schema/project";
 import {
@@ -29,9 +32,16 @@ import {
 } from "../../../../drizzle/schema/video";
 import { registerUnifiedArtifact, type ArtifactSourceType, type RegisteredArtifact } from "./artifactLifecycle";
 
-async function projectScope(projectId: number) {
+async function projectScope(projectId: number, domain: "listing" | "image" | "ads" | "video" | "project") {
   const db = await getDb();
   if (!db) return null;
+  if (domain === "project") {
+    const [project] = await db.select({ userId: devProjects.userId })
+      .from(devProjects)
+      .where(eq(devProjects.id, projectId))
+      .limit(1);
+    return project ? { workspaceId: null, userId: project.userId } : null;
+  }
   const [project] = await db.select({
     workspaceId: projects.workspaceId,
     userId: projects.userId,
@@ -40,7 +50,7 @@ async function projectScope(projectId: number) {
 }
 
 async function registerBusinessArtifact(input: {
-  domain: "listing" | "image" | "ads" | "video";
+  domain: "listing" | "image" | "ads" | "video" | "project";
   artifactKey: string;
   sourceTable: string;
   sourceRowId: number | string;
@@ -52,7 +62,7 @@ async function registerBusinessArtifact(input: {
   status?: "draft" | "final";
   metadata?: Record<string, unknown>;
 }): Promise<RegisteredArtifact | null> {
-  const scope = input.projectId ? await projectScope(input.projectId) : null;
+  const scope = input.projectId ? await projectScope(input.projectId, input.domain) : null;
   return registerUnifiedArtifact({
     workspaceId: input.workspaceId ?? scope?.workspaceId ?? null,
     domain: input.domain,
@@ -68,6 +78,162 @@ async function registerBusinessArtifact(input: {
     content: input.content,
     metadata: { businessArtifact: true, projectId: input.projectId ?? null, ...input.metadata },
   });
+}
+
+function parseArtifactContent(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+export function compactDevAnalysisContent(stageType: string, content: unknown): unknown {
+  if (stageType !== "information_summary" || !content || typeof content !== "object" || Array.isArray(content)) return content;
+  const summary = content as Record<string, any>;
+  const competitors = Array.isArray(summary.competitors) ? summary.competitors : [];
+  const compactText = (value: unknown, maxLength = 600) => String(value || "").slice(0, maxLength);
+  const compactStrings = (value: unknown, maxItems = 8) => Array.isArray(value)
+    ? value.slice(0, maxItems).map((item) => compactText(item, 300))
+    : [];
+  const orderedCompetitors = [...competitors].sort((left: any, right: any) => {
+    const rank = (item: any) => item?.isBenchmark ? 2 : item?.aiRecommendedBenchmark ? 1 : 0;
+    return rank(right) - rank(left);
+  });
+  const selectedCompetitors = orderedCompetitors.slice(0, Math.min(8, Math.max(3, orderedCompetitors.length))).map((item: any) => ({
+    productId: item.productId,
+    asin: compactText(item.asin, 32),
+    title: compactText(item.title, 300),
+    variantSpec: compactText(item.variantSpec, 300),
+    competitorStatus: compactText(item.competitorStatus, 40),
+    primaryTags: compactStrings(item.primaryTags, 6),
+    priceTier: compactText(item.priceTier, 20),
+    monthlySales: item.monthlySales ?? null,
+    price: item.price ?? null,
+    rating: item.rating ?? null,
+    reviewNotes: compactText(item.reviewNotes, 400),
+    reviewCount: item.reviewCount ?? null,
+    listingDate: compactText(item.listingDate, 40),
+    fulfillment: compactText(item.fulfillment, 40),
+    aiRecommendedBenchmark: Boolean(item.aiRecommendedBenchmark),
+    isBenchmark: Boolean(item.isBenchmark),
+    benchmarkReason: compactText(item.benchmarkReason, 500),
+    manualNote: compactText(item.manualNote, 500),
+  }));
+  const opportunity = summary.productOpportunity || {};
+  return {
+    schemaVersion: summary.schemaVersion,
+    generatedAt: summary.generatedAt,
+    executiveSummary: compactText(summary.executiveSummary, 1_200),
+    project: {
+      ...summary.project,
+      keywords: compactStrings(summary.project?.keywords, 20),
+    },
+    competitors: selectedCompetitors,
+    marketEvidence: {
+      salesTrend: compactText(summary.marketEvidence?.salesTrend, 800),
+      seasonality: compactText(summary.marketEvidence?.seasonality, 500),
+      benchmarkAdvantages: compactStrings(summary.marketEvidence?.benchmarkAdvantages, 8),
+      benchmarkDisadvantages: compactStrings(summary.marketEvidence?.benchmarkDisadvantages, 8),
+      brandAnalysis: compactText(summary.marketEvidence?.brandAnalysis, 800),
+    },
+    productOpportunity: {
+      mainFunctions: compactStrings(opportunity.mainFunctions, 10),
+      usageScenarios: compactStrings(opportunity.usageScenarios, 8),
+      targetAudience: compactStrings(opportunity.targetAudience, 8),
+      positiveSignals: compactStrings(opportunity.positiveSignals, 8),
+      negativeSignals: compactStrings(opportunity.negativeSignals, 8),
+      sellingPoints: (opportunity.sellingPoints || []).slice(0, 8).map((item: any) => ({
+        point: compactText(item?.point, 300),
+        evidence: compactText(item?.evidence, 300),
+        implementation: compactText(item?.implementation, 300),
+      })),
+      painPoints: (opportunity.painPoints || []).slice(0, 8).map((item: any) => ({
+        point: compactText(item?.point, 300),
+        evidence: compactText(item?.evidence, 300),
+        resolved: Boolean(item?.resolved),
+        resolution: compactText(item?.resolution, 300),
+      })),
+    },
+    patentRisk: {
+      ...summary.patentRisk,
+      reportRefs: compactStrings(summary.patentRisk?.reportRefs, 6),
+      relatedPatents: compactStrings(summary.patentRisk?.relatedPatents, 8),
+      summary: compactText(summary.patentRisk?.summary, 600),
+      conclusion: compactText(summary.patentRisk?.conclusion, 600),
+      avoidancePlan: compactText(summary.patentRisk?.avoidancePlan, 600),
+    },
+    landingPlan: {
+      developmentSuggestions: compactStrings(summary.landingPlan?.developmentSuggestions, 8),
+      operationsSuggestions: compactStrings(summary.landingPlan?.operationsSuggestions, 8),
+      appearanceConcepts: compactStrings(summary.landingPlan?.appearanceConcepts, 6),
+      designConcept: compactText(summary.landingPlan?.designConcept, 600),
+      timeline: (summary.landingPlan?.timeline || []).slice(0, 8),
+    },
+    economics: {
+      ...summary.economics,
+      suppliers: (summary.economics?.suppliers || []).slice(0, 5),
+      assumptions: compactStrings(summary.economics?.assumptions, 8),
+    },
+    provenance: summary.provenance,
+    completeness: summary.completeness,
+    artifactProjection: {
+      fullSourceTable: "dev_analysis_stages",
+      purpose: "confirmed_decision_context",
+      omittedCompetitorCount: Math.max(0, competitors.length - selectedCompetitors.length),
+    },
+  };
+}
+
+export async function registerDevAnalysisArtifact(
+  stageId: number,
+  sourceType: ArtifactSourceType = "ai_output",
+) {
+  const db = await getDb();
+  if (!db) return null;
+  const [stage] = await db.select().from(devAnalysisStages)
+    .where(eq(devAnalysisStages.id, stageId))
+    .limit(1);
+  if (!stage) return null;
+  const content = compactDevAnalysisContent(
+    String(stage.stageType),
+    parseArtifactContent(stage.editedResult || stage.rawResult || null),
+  );
+  return registerBusinessArtifact({
+    domain: "project",
+    artifactKey: `dev.analysis.${stage.stageType}`,
+    sourceTable: "dev_analysis_stages",
+    sourceRowId: stage.id,
+    projectId: stage.projectId,
+    userId: stage.userId,
+    content,
+    sourceType,
+    status: stage.status === "confirmed" ? "final" : "draft",
+    metadata: {
+      stageType: stage.stageType,
+      stageStatus: stage.status,
+      confirmedAt: stage.confirmedAt,
+      schemaVersion: stage.stageType === "information_summary" ? "1.0" : null,
+    },
+  });
+}
+
+export async function resolveCurrentDevAnalysisArtifact(stageId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [artifact] = await db.select().from(aiArtifacts).where(and(
+    eq(aiArtifacts.sourceTable, "dev_analysis_stages"),
+    eq(aiArtifacts.sourceRowId, String(stageId)),
+    eq(aiArtifacts.status, "final"),
+    eq(aiArtifacts.isCurrent, 1),
+  )).orderBy(desc(aiArtifacts.version)).limit(1);
+  if (!artifact) return null;
+  return {
+    ...artifact,
+    content: parseArtifactContent(artifact.contentJson),
+    ref: `ai-artifact://${artifact.artifactId}@${artifact.version}`,
+  };
 }
 
 export async function registerAdArtifact(input: {

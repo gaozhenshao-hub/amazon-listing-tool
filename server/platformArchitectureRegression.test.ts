@@ -25,6 +25,37 @@ function tableFromQueryExpression(expression: ts.Expression, sourceFile: ts.Sour
 }
 
 describe("platform architecture regression", () => {
+  it("keeps the Emperor dashboard shell owned by the application router", () => {
+    const app = fs.readFileSync(repoPath("client/src/App.tsx"), "utf8");
+    expect(app.match(/<DashboardLayout>/g)).toHaveLength(1);
+
+    const nestedLayoutPages = fs.readdirSync(repoPath("client/src/pages/emperor"))
+      .filter((file) => file.endsWith(".tsx"))
+      .filter((file) => fs.readFileSync(repoPath("client/src/pages/emperor", file), "utf8").includes("DashboardLayout"));
+
+    expect(nestedLayoutPages).toEqual([]);
+  });
+
+  it("groups Listing preparation routes into one collapsible sidebar layer", () => {
+    const layout = fs.readFileSync(repoPath("client/src/components/DashboardLayout.tsx"), "utf8");
+    expect(layout).toContain('id: "listing-preparation"');
+    expect(layout).toContain('label: "前置准备层"');
+    expect(layout).toContain("aria-expanded={expanded}");
+
+    for (const route of [
+      "/listing",
+      "/listing/analysis",
+      "/listing/comparison",
+      "/listing/review-history",
+      "/listing/data-files",
+      "/listing/keywords",
+      "/listing/review-aggregation",
+      "/listing/buyer-questions",
+    ]) {
+      expect(layout.match(new RegExp(`path: "${route}"`, "g")), route).toHaveLength(1);
+    }
+  });
+
   it("keeps removed compatibility roots absent and domain schemas canonical", () => {
     expect(fs.existsSync(repoPath("server/db.ts"))).toBe(false);
     expect(fs.existsSync(repoPath("drizzle/schema.ts"))).toBe(false);

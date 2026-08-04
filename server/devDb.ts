@@ -616,14 +616,15 @@ export async function upsertDevAnalysisStage(data: InsertDevAnalysisStage) {
   return { id: result.insertId };
 }
 
-export async function confirmDevAnalysisStage(projectId: number, stageType: string, editedResult: string) {
+export async function confirmDevAnalysisStage(projectId: number, stageType: string, editedResult?: string) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(devAnalysisStages).set({
+  const update: Partial<InsertDevAnalysisStage> = {
     status: "confirmed",
-    editedResult,
     confirmedAt: new Date(),
-  }).where(
+  };
+  if (editedResult !== undefined) update.editedResult = editedResult;
+  await db.update(devAnalysisStages).set(update).where(
     and(eq(devAnalysisStages.projectId, projectId), eq(devAnalysisStages.stageType, stageType as any))
   );
 }
@@ -637,6 +638,19 @@ export async function unlockDevAnalysisStage(projectId: number, stageType: strin
   }).where(
     and(eq(devAnalysisStages.projectId, projectId), eq(devAnalysisStages.stageType, stageType as any))
   );
+}
+
+export async function invalidateDevAnalysisStages(projectId: number, stageTypes: string[]) {
+  if (stageTypes.length === 0) return;
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(devAnalysisStages).set({
+    status: "generated",
+    confirmedAt: null,
+  }).where(and(
+    eq(devAnalysisStages.projectId, projectId),
+    inArray(devAnalysisStages.stageType, stageTypes as any[]),
+  ));
 }
 
 // --- Dev Product Tags ---

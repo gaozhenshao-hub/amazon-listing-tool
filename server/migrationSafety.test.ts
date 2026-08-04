@@ -28,7 +28,7 @@ describe("database migration safety", () => {
     const plan = module.loadMigrationPlan();
     expect(plan.length).toBeGreaterThan(80);
     expect(new Set(plan.map((item: any) => item.fileName)).size).toBe(plan.length);
-    expect(plan.at(-1)?.fileName).toBe("0120_image_workflow_outline_contract.sql");
+    expect(plan.at(-1)?.fileName).toBe("0121_dev_information_summary_emperor_skills.sql");
     expect(plan.every((item: any) => /^[a-f0-9]{64}$/.test(item.checksum))).toBe(true);
   });
 

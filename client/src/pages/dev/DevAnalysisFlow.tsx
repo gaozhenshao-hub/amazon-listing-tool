@@ -112,6 +112,10 @@ export default function DevAnalysisFlow() {
     onSuccess: () => { toast.success("评论深度分析完成"); invalidateAll(); },
     onError: (e: any) => toast.error(`评论分析失败: ${e.message}`),
   });
+  const informationSummaryMutation = trpc.devAnalysis.runInformationSummary.useMutation({
+    onSuccess: () => { toast.success("信息汇总生成完成，请补充并确认关键字段"); invalidateAll(); },
+    onError: (e: any) => toast.error(`信息汇总失败: ${e.message}`),
+  });
   const dashboardMutation = trpc.devAnalysis.runDecisionDashboard.useMutation({
     onSuccess: () => { toast.success("综合决策看板生成完成"); invalidateAll(); },
     onError: (e: any) => toast.error(`决策看板生成失败: ${e.message}`),
@@ -129,7 +133,7 @@ export default function DevAnalysisFlow() {
     onError: (e: any) => toast.error(`解锁失败: ${e.message}`),
   });
 
-  const isAnyMutating = marketMutation.isPending || crossMutation.isPending || tagCrossMutation.isPending || priceMutation.isPending || brandMutation.isPending || reviewMutation.isPending || dashboardMutation.isPending;
+  const isAnyMutating = marketMutation.isPending || crossMutation.isPending || tagCrossMutation.isPending || priceMutation.isPending || brandMutation.isPending || reviewMutation.isPending || informationSummaryMutation.isPending || dashboardMutation.isPending;
 
   // ─── Run stage ───
   const runStage = useCallback((key: StageKey) => {
@@ -148,9 +152,10 @@ export default function DevAnalysisFlow() {
       case "price_analysis": priceMutation.mutate(input); break;
       case "brand_competition": brandMutation.mutate(input); break;
       case "review_kano": reviewMutation.mutate(input); break;
+      case "information_summary": informationSummaryMutation.mutate(input); break;
       case "decision_dashboard": dashboardMutation.mutate(input); break;
     }
-  }, [projectId, marketMutation, crossMutation, tagCrossMutation, priceMutation, brandMutation, reviewMutation, dashboardMutation, projectTags, selectedDim1, selectedDim2]);
+  }, [projectId, marketMutation, crossMutation, tagCrossMutation, priceMutation, brandMutation, reviewMutation, informationSummaryMutation, dashboardMutation, projectTags, selectedDim1, selectedDim2]);
 
   // ─── Start editing ───
   const startEditing = useCallback((key: StageKey) => {

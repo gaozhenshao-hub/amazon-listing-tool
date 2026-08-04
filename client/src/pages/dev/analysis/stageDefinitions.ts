@@ -1,5 +1,6 @@
 import {
   Building2,
+  ClipboardCheck,
   DollarSign,
   Grid3X3,
   LayoutDashboard,
@@ -15,6 +16,7 @@ export const DEV_ANALYSIS_STAGES = [
   { key: "price_analysis", label: "价格段分析", icon: DollarSign, desc: "价格区间分布与利润空间" },
   { key: "brand_competition", label: "品牌竞争", icon: Building2, desc: "品牌市占率与竞争格局" },
   { key: "review_kano", label: "评论深度", icon: MessageSquare, desc: "评论卡洛模型与痛点挖掘" },
+  { key: "information_summary", label: "信息汇总", icon: ClipboardCheck, desc: "汇总已确认证据、人工补充与初步利润假设" },
   { key: "decision_dashboard", label: "综合决策", icon: LayoutDashboard, desc: "综合看板与立项建议" },
 ] as const;
 

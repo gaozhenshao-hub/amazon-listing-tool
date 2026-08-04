@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -348,7 +347,7 @@ export default function EmperorKnowledge() {
     : 0;
 
   return (
-    <DashboardLayout>
+    <>
       <div className="flex flex-col h-full">
         {/* Header */}
         <div className="border-b bg-background px-6 py-4">
@@ -652,6 +651,6 @@ export default function EmperorKnowledge() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </DashboardLayout>
+    </>
   );
 }

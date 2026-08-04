@@ -40,6 +40,7 @@ const supplementalMigrations = [
   "0118_listing_competitor_human_review.sql",
   "0119_listing_competitor_emperor_skills.sql",
   "0120_image_workflow_outline_contract.sql",
+  "0121_dev_information_summary_emperor_skills.sql",
 ];
 
 const retiredMigrationFiles = new Set([
