@@ -26,11 +26,51 @@ describe("database migration safety", () => {
   it("keeps the controlled migration plan complete and duplicate-free", async () => {
     const module = await import("../scripts/run-database-migrations.mjs");
     const plan = module.loadMigrationPlan();
+    const migrationNames = plan.map((item: any) => item.fileName);
     expect(plan.length).toBeGreaterThan(80);
-    expect(new Set(plan.map((item: any) => item.fileName)).size).toBe(plan.length);
-    expect(plan.map((item: any) => item.fileName)).not.toContain("ops_plan_migration_fix.sql");
+    expect(new Set(migrationNames).size).toBe(plan.length);
+    expect(migrationNames).not.toContain("ops_plan_migration_fix.sql");
+    expect(migrationNames.indexOf("0102a_emperor_core_registry.sql"))
+      .toBeLessThan(migrationNames.indexOf("0103_emperor_agent_workflow.sql"));
     expect(plan.at(-1)?.fileName).toBe("0121_dev_information_summary_emperor_skills.sql");
     expect(plan.every((item: any) => /^[a-f0-9]{64}$/.test(item.checksum))).toBe(true);
+  });
+
+  it("creates Emperor registries before governance migrations depend on them", () => {
+    const sql = fs.readFileSync(repoPath("drizzle/0102a_emperor_core_registry.sql"), "utf8");
+    for (const tableName of [
+      "emperor_skills",
+      "emperor_skill_runs",
+      "emperor_knowledge",
+      "emperor_mcp_connectors",
+      "emperor_model_providers",
+    ]) {
+      expect(sql).toContain(`CREATE TABLE IF NOT EXISTS \`${tableName}\``);
+    }
+  });
+
+  it("never alters a table before the governed plan creates it", async () => {
+    const module = await import("../scripts/run-database-migrations.mjs");
+    const createdTables = new Set<string>();
+    const missingDependencies: string[] = [];
+
+    for (const migration of module.loadMigrationPlan()) {
+      const operations = [
+        ...[...migration.sql.matchAll(/CREATE TABLE(?: IF NOT EXISTS)?\s+`?([A-Za-z0-9_$]+)`?/gi)]
+          .map((match) => ({ type: "create", tableName: match[1], index: match.index ?? 0 })),
+        ...[...migration.sql.matchAll(/ALTER TABLE\s+`?([A-Za-z0-9_$]+)`?/gi)]
+          .map((match) => ({ type: "alter", tableName: match[1], index: match.index ?? 0 })),
+      ].sort((left, right) => left.index - right.index);
+
+      for (const operation of operations) {
+        if (operation.type === "create") createdTables.add(operation.tableName);
+        else if (!createdTables.has(operation.tableName)) {
+          missingDependencies.push(`${migration.fileName}: ${operation.tableName}`);
+        }
+      }
+    }
+
+    expect(missingDependencies).toEqual([]);
   });
 
   it("normalizes legacy conditional column drops for MySQL 8 without mutating migration files", async () => {
@@ -49,6 +89,20 @@ describe("database migration safety", () => {
     expect(executable).toContain("-- skipped missing column sample.missing_column");
     expect(executable).not.toContain("DROP COLUMN IF EXISTS");
     expect(execute).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the real snake-case owner column for legacy workspace backfills", async () => {
+    const module = await import("../scripts/run-database-migrations.mjs");
+    const execute = vi.fn(async () => [[{ columnName: "user_id" }]]);
+    const sql = [
+      "UPDATE `production_config` t LEFT JOIN `users` u ON u.`id` = t.`userId`",
+      "SET t.`workspaceId` = u.`defaultWorkspaceId`;",
+    ].join(" ");
+
+    const executable = await module.prepareExecutableSql({ execute }, sql);
+
+    expect(executable).toContain("u.`id` = t.`user_id`");
+    expect(executable).not.toContain("t.`userId`");
   });
 
   it("rejects future SQL migrations that are omitted from the release plan", () => {

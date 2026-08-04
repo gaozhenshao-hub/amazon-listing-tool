@@ -21,6 +21,7 @@ const supplementalMigrations = [
   "video_script_v2_migration.sql",
   "0101_image_workflow_step5_runs.sql",
   "0102_ai_jobs.sql",
+  "0102a_emperor_core_registry.sql",
   "0103_emperor_agent_workflow.sql",
   "0104_emperor_agent_artifacts.sql",
   "0105_emperor_tool_runs.sql",
@@ -34,6 +35,7 @@ const supplementalMigrations = [
   "0113_database_governance_v1.sql",
   "0114_security_tenant_governance_v1.sql",
   "0115_data_lifecycle_artifacts_v1.sql",
+  "0115a_ops_ads_base_tables.sql",
   "0116_ops_workspace_isolation.sql",
   "0117_database_runtime_observability.sql",
   "0118_listing_competitor_human_review.sql",
@@ -139,10 +141,36 @@ export async function readLedger(connection) {
 }
 
 export async function prepareExecutableSql(connection, sql) {
+  const workspaceBackfillPattern =
+    /UPDATE\s+`?([A-Za-z0-9_$]+)`?\s+t\s+LEFT\s+JOIN\s+`?users`?\s+u\b[\s\S]*?;/gi;
+  const backfillMatches = [...sql.matchAll(workspaceBackfillPattern)];
+  let normalizedSql = "";
+  let backfillCursor = 0;
+  for (const match of backfillMatches) {
+    const [statement, tableName] = match;
+    const statementIndex = match.index ?? backfillCursor;
+    let normalizedStatement = statement;
+    if (/t\.`?userId`?/i.test(statement)) {
+      const [rows] = await connection.execute(
+        `SELECT column_name AS columnName
+           FROM information_schema.columns
+          WHERE table_schema = DATABASE() AND table_name = ? AND column_name IN ('userId','user_id')`,
+        [tableName],
+      );
+      const columnNames = new Set(rows.map((row) => String(row.columnName)));
+      if (!columnNames.has("userId") && columnNames.has("user_id")) {
+        normalizedStatement = statement.replaceAll(/t\.`?userId`?/g, "t.`user_id`");
+      }
+    }
+    normalizedSql += sql.slice(backfillCursor, statementIndex) + normalizedStatement;
+    backfillCursor = statementIndex + statement.length;
+  }
+  normalizedSql += sql.slice(backfillCursor);
+
   const conditionalDropPattern =
     /ALTER\s+TABLE\s+`?([A-Za-z0-9_$]+)`?\s+DROP\s+COLUMN\s+IF\s+EXISTS\s+`?([A-Za-z0-9_$]+)`?\s*;/gi;
-  const matches = [...sql.matchAll(conditionalDropPattern)];
-  if (matches.length === 0) return sql.replaceAll("--> statement-breakpoint", "");
+  const matches = [...normalizedSql.matchAll(conditionalDropPattern)];
+  if (matches.length === 0) return normalizedSql.replaceAll("--> statement-breakpoint", "");
 
   let executableSql = "";
   let cursor = 0;
@@ -155,13 +183,14 @@ export async function prepareExecutableSql(connection, sql) {
       [tableName, columnName],
     );
     const columnExists = Number(rows?.[0]?.columnCount ?? 0) > 0;
-    executableSql += sql.slice(cursor, match.index);
+    const statementIndex = match.index ?? cursor;
+    executableSql += normalizedSql.slice(cursor, statementIndex);
     executableSql += columnExists
       ? `ALTER TABLE \`${tableName}\` DROP COLUMN \`${columnName}\`;`
       : `-- skipped missing column ${tableName}.${columnName}`;
-    cursor = Number(match.index) + statement.length;
+    cursor = statementIndex + statement.length;
   }
-  executableSql += sql.slice(cursor);
+  executableSql += normalizedSql.slice(cursor);
   return executableSql.replaceAll("--> statement-breakpoint", "");
 }
 
