@@ -123,6 +123,19 @@ vi.mock("./repositories/project", () => ({
   deleteProject: vi.fn().mockResolvedValue({ success: true }),
 }));
 
+vi.mock("./services/securityGovernance", async importOriginal => {
+  const actual = await importOriginal<
+    typeof import("./services/securityGovernance")
+  >();
+  return {
+    ...actual,
+    actorFromContext: vi.fn((ctx: TrpcContext) => ctx.user),
+    assertResourceAction: vi.fn().mockResolvedValue(undefined),
+    recordSecurityAuditLog: vi.fn().mockResolvedValue(undefined),
+    workspaceIdFromContext: vi.fn().mockReturnValue(null),
+  };
+});
+
 type AuthenticatedUser = NonNullable<TrpcContext["user"]>;
 
 function createAuthContext(): TrpcContext {

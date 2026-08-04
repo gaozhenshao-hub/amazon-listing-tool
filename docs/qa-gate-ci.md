@@ -1,7 +1,8 @@
-# QA Gate CI Template
+# QA Gate CI
 
-当前 GitHub OAuth token 如果没有 `workflow` scope，推送 `.github/workflows/*.yml` 会被 GitHub 拒绝。
-需要启用 CI 时，可以在 GitHub 仓库中创建 `.github/workflows/qa-gate.yml`，内容如下。
+仓库已启用 `.github/workflows/qa-gate.yml`。普通单元测试和真实数据库测试分为两个 Job：`pnpm qa:gate` 不依赖生产密钥或真实数据库；只有配置 `CI_DATABASE_URL` 后才运行 `pnpm test:real-db`。
+
+当前 workflow 内容如下。
 
 ```yaml
 name: QA Gate

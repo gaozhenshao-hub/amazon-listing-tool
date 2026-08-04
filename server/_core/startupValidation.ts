@@ -174,6 +174,20 @@ export function getStartupValidationReport(input: {
     );
   }
 
+  if (
+    isProduction &&
+    role === "web" &&
+    !env.SCHEDULED_TASK_SECRET &&
+    !env.SCHEDULED_TASK_UIDS
+  ) {
+    pushIssue(
+      issues,
+      "warning",
+      "scheduled_task_header_only",
+      "Scheduled endpoints accept the platform task UID header only. Configure SCHEDULED_TASK_UIDS or SCHEDULED_TASK_SECRET when the hosting platform supports it."
+    );
+  }
+
   const errors = issues.filter(issue => issue.severity === "error");
   const warnings = issues.filter(issue => issue.severity === "warning");
   return {

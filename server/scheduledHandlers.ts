@@ -13,6 +13,7 @@ import { lingxingProductWeekly, saihuProductWeekly, productProfiles } from "../d
 import { desc, eq, gte } from "drizzle-orm";
 import { invokeLLM } from "./_core/llm";
 import { notifyOwner } from "./_core/notification";
+import { authorizeScheduledRequest } from "./_core/scheduledRequestGuard";
 
 /**
  * Weekly Operations Report Handler
@@ -27,7 +28,8 @@ import { notifyOwner } from "./_core/notification";
  * Path: POST /api/scheduled/weekly-report
  */
 export async function weeklyReportHandler(req: Request, res: Response) {
-  const taskUid = req.headers["x-manus-cron-task-uid"] as string | undefined;
+  const taskUid = authorizeScheduledRequest(req, res);
+  if (!taskUid) return;
   
   try {
     console.log(`[WeeklyReport] Triggered by task_uid=${taskUid}`);
@@ -159,7 +161,8 @@ export async function weeklyReportHandler(req: Request, res: Response) {
  * Path: POST /api/scheduled/data-cleanup
  */
 export async function dataCleanupHandler(req: Request, res: Response) {
-  const taskUid = req.headers["x-manus-cron-task-uid"] as string | undefined;
+  const taskUid = authorizeScheduledRequest(req, res);
+  if (!taskUid) return;
   
   try {
     console.log(`[DataCleanup] Triggered by task_uid=${taskUid}`);
@@ -200,7 +203,8 @@ export async function dataCleanupHandler(req: Request, res: Response) {
  * Path: POST /api/scheduled/ai-worker-tick
  */
 export async function aiWorkerTickHandler(req: Request, res: Response) {
-  const taskUid = req.headers["x-manus-cron-task-uid"] as string | undefined;
+  const taskUid = authorizeScheduledRequest(req, res);
+  if (!taskUid) return;
   const startedAt = Date.now();
   try {
     const { isAiJobSchedulingEnabled, drainAiJobQueue } = await import("./services/aiJobRunner");

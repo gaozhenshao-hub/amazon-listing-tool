@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
+import { readRepoSources } from "./testPaths";
 
 // ─── Test: Generic ChecklistPanel Component ─────────────────────────
 describe("ChecklistPanel Component", () => {
@@ -581,8 +582,9 @@ describe("Backend Evaluation Prompts", () => {
 
 // ─── Test: Backend Router Endpoints ─────────────────────────────────
 describe("Backend Router Endpoints", () => {
-  const routerPath = path.join(__dirname, "routers/listing.ts");
-  const routerCode = fs.readFileSync(routerPath, "utf-8");
+  const routerCode = readRepoSources(
+    "server/domains/listing/routers/evaluation.ts"
+  );
 
   it("should have evaluateTitleChecklist endpoint", () => {
     expect(routerCode).toContain("evaluateTitleChecklist:");

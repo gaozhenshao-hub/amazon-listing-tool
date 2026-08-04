@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { resolve } from "path";
+import { readRepoSources } from "./testPaths";
 
 describe("Custom Todo Reminder Feature", () => {
   // ─── Schema Tests ───
@@ -92,7 +93,10 @@ describe("Custom Todo Reminder Feature", () => {
 
   // ─── Backend Router Tests ───
   describe("ProductOps Router - Reminder Fields", () => {
-    const router = readFileSync(resolve(__dirname, "routers/productOps.ts"), "utf-8");
+    const router = readRepoSources(
+      "server/domains/ops/routers/todosLogs.ts",
+      "server/domains/ops/routers/teamTasks.ts"
+    );
 
     it("createTodo accepts reminderDays parameter", () => {
       expect(router).toContain("reminderDays: z.string().optional()");
