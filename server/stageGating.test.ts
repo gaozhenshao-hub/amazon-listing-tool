@@ -90,7 +90,12 @@ describe("Stage Gating Mechanism", () => {
     });
 
     it("should have gate check in runReviewKano", () => {
-      const section = devAnalysisRouter.split("runReviewKano")[1]?.split("runDecisionDashboard")[0] || "";
+      const section = devAnalysisRouter.split("runReviewKano")[1]?.split("runInformationSummary")[0] || "";
+      expect(section).toContain("checkStageGating");
+    });
+
+    it("should have gate check in runInformationSummary", () => {
+      const section = devAnalysisRouter.split("runInformationSummary")[1]?.split("runDecisionDashboard")[0] || "";
       expect(section).toContain("checkStageGating");
     });
 
@@ -110,10 +115,10 @@ describe("Stage Gating Mechanism", () => {
       expect(section).toContain("projectId");
     });
 
-    it("should check all 7 stages", () => {
+    it("should check all platform and visible analysis stages", () => {
       const stageTypes = [
         "attribute_tagging", "market_overview", "attribute_cross",
-        "price_analysis", "brand_competition", "review_kano", "decision_dashboard"
+        "price_analysis", "brand_competition", "review_kano", "information_summary", "decision_dashboard"
       ];
       stageTypes.forEach(st => {
         expect(devAnalysisRouter).toContain(st);

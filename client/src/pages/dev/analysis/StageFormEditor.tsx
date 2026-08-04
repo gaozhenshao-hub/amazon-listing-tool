@@ -10,6 +10,7 @@ import { ArrowRight, BarChart3, Brain, Check, Edit3, Loader2, Lock, Unlock, Play
 import { Streamdown } from "streamdown";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ScatterChart, Scatter, ZAxis, LineChart, Line } from "recharts";
 import { CHART_COLORS, DEV_ANALYSIS_STAGES as STAGES, type DevAnalysisStageKey as StageKey } from "./stageDefinitions";
+import { InformationSummaryEditor } from "./InformationSummaryEditor";
 
 /* ─── Stage Form Editor ─── */
 function FormField({ label, value, onChange, multiline, type = "text" }: { label: string; value: any; onChange: (v: any) => void; multiline?: boolean; type?: string }) {
@@ -68,6 +69,9 @@ export function StageFormEditor({ stageKey, data, onChange }: { stageKey: StageK
   const ai = data.ai || {};
 
   switch (stageKey) {
+    case "information_summary":
+      return <InformationSummaryEditor data={data} onChange={onChange} />;
+
     case "market_overview":
       return (
         <div className="space-y-4">

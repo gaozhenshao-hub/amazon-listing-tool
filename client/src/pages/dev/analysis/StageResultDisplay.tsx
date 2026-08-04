@@ -17,6 +17,7 @@ import { PriceAnalysisResult } from "./PriceAnalysisResult";
 import { BrandCompetitionResult } from "./BrandCompetitionResult";
 import { ReviewKanoResult } from "./ReviewKanoResult";
 import { DecisionDashboardResult } from "./DecisionDashboardResult";
+import { InformationSummaryResult } from "./InformationSummaryResult";
 import { GenericResult } from "./GenericResult";
 
 /* ─── Stage Result Display Component ─── */
@@ -100,6 +101,7 @@ export function StageResultDisplay({ stageKey, stageData, productCount, gatingIn
     case "price_analysis": return <PriceAnalysisResult result={result} />;
     case "brand_competition": return <BrandCompetitionResult result={result} />;
     case "review_kano": return <ReviewKanoResult result={result} />;
+    case "information_summary": return <InformationSummaryResult result={result} />;
     case "decision_dashboard": return <DecisionDashboardResult result={result} />;
     default: return <GenericResult result={result} />;
   }

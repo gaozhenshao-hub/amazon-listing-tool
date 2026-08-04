@@ -16,12 +16,12 @@ const supplementalMigrations = [
   "ad_tracking_migration.sql",
   "dsp_migration.sql",
   "ops_plan_migration.sql",
-  "ops_plan_migration_fix.sql",
   "review_migration.sql",
   "video_script_migration.sql",
   "video_script_v2_migration.sql",
   "0101_image_workflow_step5_runs.sql",
   "0102_ai_jobs.sql",
+  "0102a_emperor_core_registry.sql",
   "0103_emperor_agent_workflow.sql",
   "0104_emperor_agent_artifacts.sql",
   "0105_emperor_tool_runs.sql",
@@ -32,6 +32,9 @@ const supplementalMigrations = [
   "0110_agent_artifacts_v1.sql",
   "0111_tool_gateway_governance_v2.sql",
   "0112_template_observability_qa.sql",
+  "0112a_listing_image_support_tables.sql",
+  "0112b_ops_ads_base_tables.sql",
+  "0112c_ad_dsp_product_link.sql",
   "0113_database_governance_v1.sql",
   "0114_security_tenant_governance_v1.sql",
   "0115_data_lifecycle_artifacts_v1.sql",
@@ -40,6 +43,7 @@ const supplementalMigrations = [
   "0118_listing_competitor_human_review.sql",
   "0119_listing_competitor_emperor_skills.sql",
   "0120_image_workflow_outline_contract.sql",
+  "0121_dev_information_summary_emperor_skills.sql",
 ];
 
 const retiredMigrationFiles = new Set([
@@ -47,6 +51,8 @@ const retiredMigrationFiles = new Set([
   "0006_chubby_hellion.sql",
   "0007_wakeful_flatman.sql",
   "0008_superb_blue_shield.sql",
+  // Historical fallback for ops_plan_migration.sql, not a subsequent migration.
+  "ops_plan_migration_fix.sql",
 ]);
 
 export function loadMigrationPlan() {
@@ -136,6 +142,75 @@ export async function readLedger(connection) {
   return new Map(rows.map((row) => [String(row.migrationName), row]));
 }
 
+export async function prepareExecutableSql(connection, sql) {
+  const ambiguousNoOpUpsertPattern =
+    /INSERT\s+INTO\s+`?([A-Za-z0-9_$]+)`?[\s\S]*?ON\s+DUPLICATE\s+KEY\s+UPDATE\s+`updatedAt`\s*=\s*`updatedAt`/gi;
+  const upsertSafeSql = sql.replace(ambiguousNoOpUpsertPattern, (statement, tableName) =>
+    statement.replace(/`updatedAt`\s*=\s*`updatedAt`$/i, `\`updatedAt\` = \`${tableName}\`.\`updatedAt\``),
+  );
+
+  // Old tables use utf8mb4_unicode_ci while fresh MySQL 8 databases default to
+  // utf8mb4_0900_ai_ci. Normalize the legacy artifact backfill comparison
+  // without changing the checksum of an already published migration.
+  const collationSafeSql = upsertSafeSql.replace(
+    /ua\.`sourceRowId`\s*=\s*CAST\(aa\.`id`\s+AS\s+CHAR\)/gi,
+    "CONVERT(ua.`sourceRowId` USING utf8mb4) COLLATE utf8mb4_unicode_ci = " +
+      "CONVERT(CAST(aa.`id` AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci",
+  );
+
+  const workspaceBackfillPattern =
+    /UPDATE\s+`?([A-Za-z0-9_$]+)`?\s+t\s+LEFT\s+JOIN\s+`?users`?\s+u\b[\s\S]*?;/gi;
+  const backfillMatches = [...collationSafeSql.matchAll(workspaceBackfillPattern)];
+  let normalizedSql = "";
+  let backfillCursor = 0;
+  for (const match of backfillMatches) {
+    const [statement, tableName] = match;
+    const statementIndex = match.index ?? backfillCursor;
+    let normalizedStatement = statement;
+    if (/t\.`?userId`?/i.test(statement)) {
+      const [rows] = await connection.execute(
+        `SELECT column_name AS columnName
+           FROM information_schema.columns
+          WHERE table_schema = DATABASE() AND table_name = ? AND column_name IN ('userId','user_id')`,
+        [tableName],
+      );
+      const columnNames = new Set(rows.map((row) => String(row.columnName)));
+      if (!columnNames.has("userId") && columnNames.has("user_id")) {
+        normalizedStatement = statement.replaceAll(/t\.`?userId`?/g, "t.`user_id`");
+      }
+    }
+    normalizedSql += collationSafeSql.slice(backfillCursor, statementIndex) + normalizedStatement;
+    backfillCursor = statementIndex + statement.length;
+  }
+  normalizedSql += collationSafeSql.slice(backfillCursor);
+
+  const conditionalDropPattern =
+    /ALTER\s+TABLE\s+`?([A-Za-z0-9_$]+)`?\s+DROP\s+COLUMN\s+IF\s+EXISTS\s+`?([A-Za-z0-9_$]+)`?\s*;/gi;
+  const matches = [...normalizedSql.matchAll(conditionalDropPattern)];
+  if (matches.length === 0) return normalizedSql.replaceAll("--> statement-breakpoint", "");
+
+  let executableSql = "";
+  let cursor = 0;
+  for (const match of matches) {
+    const [statement, tableName, columnName] = match;
+    const [rows] = await connection.execute(
+      `SELECT COUNT(*) AS columnCount
+         FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+      [tableName, columnName],
+    );
+    const columnExists = Number(rows?.[0]?.columnCount ?? 0) > 0;
+    const statementIndex = match.index ?? cursor;
+    executableSql += normalizedSql.slice(cursor, statementIndex);
+    executableSql += columnExists
+      ? `ALTER TABLE \`${tableName}\` DROP COLUMN \`${columnName}\`;`
+      : `-- skipped missing column ${tableName}.${columnName}`;
+    cursor = statementIndex + statement.length;
+  }
+  executableSql += normalizedSql.slice(cursor);
+  return executableSql.replaceAll("--> statement-breakpoint", "");
+}
+
 export async function baselineExistingSchema(connection, plan, options = {}) {
   const confirm = options.confirm ?? process.env.MIGRATION_BASELINE_CONFIRM;
   const allowProduction = options.allowProduction ?? process.env.ALLOW_PRODUCTION_MIGRATION_BASELINE === "true";
@@ -191,7 +266,7 @@ export async function applyMigrations(connection, plan, options = {}) {
       [migration.fileName, migration.checksum, executionId, migration.order],
     );
     try {
-      const executableSql = migration.sql.replaceAll("--> statement-breakpoint", "");
+      const executableSql = await prepareExecutableSql(connection, migration.sql);
       await connection.query(executableSql);
       await connection.execute(
         "UPDATE app_schema_migrations SET status='succeeded',finishedAt=NOW(),error=NULL WHERE migrationName=? AND executionId=?",

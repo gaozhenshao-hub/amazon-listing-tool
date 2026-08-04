@@ -317,7 +317,7 @@ export const devAnalysisStages = mysqlTable("dev_analysis_stages", {
     "data_parsing", "tag_annotation", "market_overview",
     "product_attributes", "price_analysis", "brand_competition",
     "review_analysis", "decision_dashboard",
-    "attribute_tagging", "attribute_cross", "review_kano"
+    "attribute_tagging", "attribute_cross", "review_kano", "information_summary"
   ]).notNull(),
   status: mysqlEnum("status", ["pending", "generating", "generated", "editing", "confirmed", "running", "completed"]).default("pending"),
   rawResult: text("rawResult"), // AI生成的原始结果(JSON)

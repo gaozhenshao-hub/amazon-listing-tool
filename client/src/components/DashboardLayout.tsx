@@ -37,6 +37,7 @@ import {
   Lightbulb,
   Video,
   ChevronLeft,
+  ChevronDown,
   Menu,
   Home,
   Settings,
@@ -98,6 +99,15 @@ interface MenuItem {
   path: string;
 }
 
+interface MenuGroup {
+  id: string;
+  icon: LucideIcon;
+  label: string;
+  items: MenuItem[];
+}
+
+type MenuEntry = MenuItem | MenuGroup;
+
 interface ModuleDef {
   id: ModuleId;
   icon: LucideIcon;
@@ -105,7 +115,11 @@ interface ModuleDef {
   shortLabel: string;
   prefix: string;
   enabled: boolean;
-  items: MenuItem[];
+  items: MenuEntry[];
+}
+
+function isMenuGroup(entry: MenuEntry): entry is MenuGroup {
+  return "items" in entry;
 }
 
 const modules: ModuleDef[] = [
@@ -133,18 +147,25 @@ const modules: ModuleDef[] = [
     enabled: true,
     items: [
       { icon: LayoutGrid, label: "工作流画布", path: "/listing/canvas" },
-      { icon: LayoutDashboard, label: "项目管理", path: "/listing" },
-      { icon: Search, label: "竞品分析", path: "/listing/analysis" },
-      { icon: GitCompareArrows, label: "竞品对比", path: "/listing/comparison" },
-      { icon: History, label: "导入历史", path: "/listing/review-history" },
-      { icon: MessageSquareText, label: "评论聚合分析", path: "/listing/review-aggregation" },
-      { icon: Key, label: "关键词管理", path: "/listing/keywords" },
+      {
+        id: "listing-preparation",
+        icon: Layers,
+        label: "前置准备层",
+        items: [
+          { icon: LayoutDashboard, label: "项目管理", path: "/listing" },
+          { icon: Search, label: "竞品分析", path: "/listing/analysis" },
+          { icon: GitCompareArrows, label: "竞品对比", path: "/listing/comparison" },
+          { icon: History, label: "导入历史", path: "/listing/review-history" },
+          { icon: Key, label: "关键词管理", path: "/listing/keywords" },
+          { icon: Database, label: "数据文件", path: "/listing/data-files" },
+          { icon: MessageSquareText, label: "评论聚合分析", path: "/listing/review-aggregation" },
+          { icon: HelpCircle, label: "买家问题库", path: "/listing/buyer-questions" },
+        ],
+      },
       { icon: Target, label: "广告架构", path: "/listing/ad-structure" },
-      { icon: Database, label: "数据文件", path: "/listing/data-files" },
       { icon: Sparkles, label: "Listing生成", path: "/listing/generate" },
       { icon: FileText, label: "结果预览", path: "/listing/preview" },
       { icon: Gauge, label: "Listing评分", path: "/listing/score" },
-      { icon: HelpCircle, label: "买家问题库", path: "/listing/buyer-questions" },
       { icon: Image, label: "智能图片建议", path: "/listing/image-workflow" },
       { icon: Video, label: "视频脚本生成", path: "/listing/video-script" },
     ],
@@ -377,14 +398,19 @@ function DashboardLayoutContent({
 
   // Mobile drawer state
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [expandedMenuGroups, setExpandedMenuGroups] = useState<Record<string, boolean>>({});
 
   const handleModuleClick = (mod: ModuleDef) => {
     if (!mod.enabled) {
       toast.info(`${mod.label}模块即将推出，敬请期待`);
       return;
     }
-    // Navigate to first item path if available, otherwise prefix
-    const target = mod.items.length > 0 ? mod.items[0].path : mod.prefix;
+    const firstEntry = mod.items[0];
+    const target = firstEntry
+      ? isMenuGroup(firstEntry)
+        ? firstEntry.items[0]?.path || mod.prefix
+        : firstEntry.path
+      : mod.prefix;
     setLocation(target);
     if (isMobile) setMobileOpen(false);
   };
@@ -406,6 +432,90 @@ function DashboardLayoutContent({
     }
     return location.startsWith(item.path);
   };
+
+  const renderMenuEntries = (mobile: boolean) => activeModule?.items.map((entry) => {
+    if (!isMenuGroup(entry)) {
+      const active = isMenuActive(entry);
+      return (
+        <button
+          key={entry.path}
+          type="button"
+          aria-current={active ? "page" : undefined}
+          onClick={() => handleMenuClick(entry.path)}
+          className={cn(
+            "w-full flex items-center gap-3 px-3 rounded-lg text-sm transition-all mb-0.5",
+            mobile ? "py-2.5" : "py-2",
+            active
+              ? "bg-primary/10 text-primary font-medium"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground"
+          )}
+        >
+          <entry.icon className={cn("h-4 w-4 shrink-0", active && "text-primary")} />
+          <span className="truncate">{entry.label}</span>
+        </button>
+      );
+    }
+
+    const groupActive = entry.items.some(isMenuActive);
+    const expanded = expandedMenuGroups[entry.id] ?? groupActive;
+    const contentId = `${mobile ? "mobile" : "desktop"}-menu-group-${entry.id}`;
+
+    return (
+      <div key={entry.id} className="mb-0.5">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={contentId}
+          onClick={() => setExpandedMenuGroups((current) => ({
+            ...current,
+            [entry.id]: !expanded,
+          }))}
+          className={cn(
+            "w-full flex items-center gap-3 px-3 rounded-lg text-sm transition-all",
+            mobile ? "py-2.5" : "py-2",
+            groupActive
+              ? "bg-primary/5 text-primary font-medium"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground"
+          )}
+        >
+          <entry.icon className={cn("h-4 w-4 shrink-0", groupActive && "text-primary")} />
+          <span className="min-w-0 flex-1 truncate text-left">{entry.label}</span>
+          <ChevronDown
+            className={cn(
+              "h-3.5 w-3.5 shrink-0 transition-transform duration-200",
+              expanded && "rotate-180"
+            )}
+          />
+        </button>
+
+        {expanded && (
+          <div id={contentId} className="ml-3 mt-0.5 border-l border-border/70 pl-2">
+            {entry.items.map((item) => {
+              const active = isMenuActive(item);
+              return (
+                <button
+                  key={item.path}
+                  type="button"
+                  aria-current={active ? "page" : undefined}
+                  onClick={() => handleMenuClick(item.path)}
+                  className={cn(
+                    "w-full flex items-center gap-2 rounded-md px-2 text-sm transition-all mb-0.5",
+                    mobile ? "py-2.5" : "py-2",
+                    active
+                      ? "bg-primary/10 text-primary font-medium"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  )}
+                >
+                  <item.icon className={cn("h-3.5 w-3.5 shrink-0", active && "text-primary")} />
+                  <span className="truncate">{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  });
 
   // ─── Mobile layout ───
   if (isMobile) {
@@ -522,24 +632,7 @@ function DashboardLayoutContent({
                       请选择左侧工具模块
                     </div>
                   ) : (
-                    activeModule?.items.map((item) => {
-                      const active = isMenuActive(item);
-                      return (
-                        <button
-                          key={item.path}
-                          onClick={() => handleMenuClick(item.path)}
-                          className={cn(
-                            "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all mb-0.5",
-                            active
-                              ? "bg-primary/10 text-primary font-medium"
-                              : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                          )}
-                        >
-                          <item.icon className={cn("h-4 w-4 shrink-0", active && "text-primary")} />
-                          <span className="truncate">{item.label}</span>
-                        </button>
-                      );
-                    })
+                    renderMenuEntries(true)
                   )}
                 </nav>
               </div>
@@ -697,24 +790,7 @@ function DashboardLayoutContent({
 
           {/* Menu items */}
           <nav className="flex-1 overflow-y-auto py-2 px-2">
-            {activeModule.items.map((item) => {
-              const active = isMenuActive(item);
-              return (
-                <button
-                  key={item.path}
-                  onClick={() => handleMenuClick(item.path)}
-                  className={cn(
-                    "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all mb-0.5",
-                    active
-                      ? "bg-primary/10 text-primary font-medium"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  )}
-                >
-                  <item.icon className={cn("h-4 w-4 shrink-0", active && "text-primary")} />
-                  <span className="truncate">{item.label}</span>
-                </button>
-              );
-            })}
+            {renderMenuEntries(false)}
           </nav>
 
           {/* Marketplace selector - only for ops module */}

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import DashboardLayout from "@/components/DashboardLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -150,8 +149,7 @@ export default function EmperorTrace() {
   };
 
   return (
-    <DashboardLayout>
-      <div className="flex h-[calc(100vh-56px)]">
+    <div className="flex h-[calc(100vh-56px)]">
         {/* Left: Run list */}
         <div className="w-80 flex-shrink-0 border-r flex flex-col">
           <div className="p-4 border-b flex items-center justify-between">
@@ -315,7 +313,6 @@ export default function EmperorTrace() {
             </div>
           )}
         </div>
-      </div>
-    </DashboardLayout>
+    </div>
   );
 }

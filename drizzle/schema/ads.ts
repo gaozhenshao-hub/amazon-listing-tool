@@ -603,6 +603,7 @@ export const adDspReports = mysqlTable("ad_dsp_reports", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("user_id").notNull(),
   uploadId: int("upload_id").notNull(),
+  productId: int("product_id"),
   // Date range
   weekStartDate: varchar("week_start_date", { length: 10 }),
   weekEndDate: varchar("week_end_date", { length: 10 }),

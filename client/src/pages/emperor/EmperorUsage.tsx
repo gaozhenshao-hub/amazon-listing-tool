@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
-import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, BarChart3, Cpu, Zap, TrendingUp, Calendar } from "lucide-react";
@@ -50,17 +49,14 @@ export default function EmperorUsage() {
 
   if (isLoading) {
     return (
-      <DashboardLayout>
-        <div className="flex items-center justify-center h-[calc(100vh-56px)]">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      </DashboardLayout>
+      <div className="flex items-center justify-center h-[calc(100vh-56px)]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
-      <div className="p-6 space-y-6 overflow-auto h-[calc(100vh-56px)]">
+    <div className="p-6 space-y-6 overflow-auto h-[calc(100vh-56px)]">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -272,7 +268,6 @@ export default function EmperorUsage() {
             </div>
           </CardContent>
         </Card>
-      </div>
-    </DashboardLayout>
+    </div>
   );
 }

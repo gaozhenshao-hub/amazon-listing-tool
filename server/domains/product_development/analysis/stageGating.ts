@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 
 export const STAGE_TYPES = [
   "attribute_tagging", "market_overview", "attribute_cross",
-  "price_analysis", "brand_competition", "review_kano", "decision_dashboard",
+  "price_analysis", "brand_competition", "review_kano", "information_summary", "decision_dashboard",
 ] as const;
 
 // ─── Stage Gating: Define prerequisites for each stage ─────────
@@ -36,10 +36,6 @@ export async function checkStageGating(projectId: number, stageType: StageType):
   const dataStatus = await devDb.getDataConfirmationStatus(projectId);
 
   const isStageConfirmed = (st: string) => stageMap.get(st as any)?.status === "confirmed";
-  const isStageCompleted = (st: string) => {
-    const s = stageMap.get(st as any);
-    return s?.status === "confirmed" || s?.status === "completed" || s?.status === "generated" || s?.status === "editing";
-  };
   // Type-safe data status access
   const ds = dataStatus as Record<string, { confirmed: boolean; confirmedAt: Date | null; fileCount: number; totalRows: number }>;
 
@@ -125,29 +121,36 @@ export async function checkStageGating(projectId: number, stageType: StageType):
       }
       break;
 
-    case "decision_dashboard":
-      // Needs: ALL previous 5 stages confirmed (except review_kano which is optional if no reviews)
-      // Check product tags confirmed (from separate tab)
+    case "information_summary": {
+      const requiredStages: StageType[] = ["market_overview", "attribute_cross", "price_analysis", "brand_competition"];
+      const labelMap: Record<string, string> = {
+        market_overview: "市场大盘",
+        attribute_cross: "属性交叉",
+        price_analysis: "价格分析",
+        brand_competition: "品牌竞争",
+      };
+      for (const requiredStage of requiredStages) {
+        if (!isStageConfirmed(requiredStage)) missing.push(`${labelMap[requiredStage]}未确认`);
+      }
+      if ((ds.reviews?.fileCount || 0) > 0 && !isStageConfirmed("review_kano")) {
+        missing.push("评论深度未确认");
+      }
+      if (missing.length > 0) reason = `请先完成并确认以下阶段: ${missing.join("、")}`;
+      break;
+    }
+
+    case "decision_dashboard": {
+      // The decision may only consume the human-confirmed information summary Artifact.
       const tagsOkD = await areProductTagsConfirmed(projectId);
       if (!tagsOkD) {
         missing.push("属性标注未确认");
       }
-      const requiredStages: StageType[] = ["market_overview", "attribute_cross", "price_analysis", "brand_competition"];
-      for (const rs of requiredStages) {
-        if (!isStageConfirmed(rs)) {
-          const labelMap: Record<string, string> = {
-            market_overview: "市场大盘",
-            attribute_cross: "属性交叉",
-            price_analysis: "价格分析",
-            brand_competition: "品牌竞争",
-          };
-          missing.push(`${labelMap[rs] || rs}未确认`);
-        }
-      }
+      if (!isStageConfirmed("information_summary")) missing.push("信息汇总未确认");
       if (missing.length > 0) {
         reason = `请先完成并确认以下阶段: ${missing.join("、")}`;
       }
       break;
+    }
   }
 
   return {

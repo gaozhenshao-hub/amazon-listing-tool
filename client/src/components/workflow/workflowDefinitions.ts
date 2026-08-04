@@ -235,6 +235,7 @@ export const DEV_ANALYSIS_WORKFLOW_STEPS: WorkflowStepDefinition[] = [
   { id: "price_analysis", label: "价格段分析", shortLabel: "价格", icon: DollarSign, description: "价格区间分布与利润空间", artifactKey: "dev.analysis.price_analysis" },
   { id: "brand_competition", label: "品牌竞争", shortLabel: "品牌", icon: Building2, description: "品牌市占率与竞争格局", artifactKey: "dev.analysis.brand_competition" },
   { id: "review_kano", label: "评论深度", shortLabel: "评论", icon: MessageSquareText, description: "评论卡洛模型与痛点挖掘", artifactKey: "dev.analysis.review_kano" },
+  { id: "information_summary", label: "信息汇总", shortLabel: "汇总", icon: FileCheck2, description: "决策证据、人工补充与初步利润假设", artifactKey: "dev.analysis.information_summary" },
   { id: "decision_dashboard", label: "综合决策", shortLabel: "决策", icon: Gauge, description: "综合看板与立项建议", artifactKey: "dev.analysis.decision_dashboard" },
 ];
 

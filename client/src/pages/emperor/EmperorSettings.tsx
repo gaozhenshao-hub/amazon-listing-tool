@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
-import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -57,17 +56,14 @@ export default function EmperorSettings() {
 
   if (isLoading) {
     return (
-      <DashboardLayout>
-        <div className="flex items-center justify-center h-[calc(100vh-56px)]">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      </DashboardLayout>
+      <div className="flex items-center justify-center h-[calc(100vh-56px)]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
-      <div className="p-6 space-y-6 overflow-auto h-[calc(100vh-56px)] max-w-2xl">
+    <div className="p-6 space-y-6 overflow-auto h-[calc(100vh-56px)] max-w-2xl">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-semibold">通用设置</h1>
@@ -199,7 +195,6 @@ export default function EmperorSettings() {
             </div>
           </CardContent>
         </Card>
-      </div>
-    </DashboardLayout>
+    </div>
   );
 }

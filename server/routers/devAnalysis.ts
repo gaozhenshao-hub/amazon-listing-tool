@@ -9,6 +9,12 @@ import { eq, and, asc } from "drizzle-orm";
 import { buildReportContext, getReportTitle } from "../domains/product_development/analysis/reportContext";
 import { checkStageGating, resolveDevProjectAccess, STAGE_TYPES, type GatingResult } from "../domains/product_development/analysis/stageGating";
 import { generateExternalSummary, mapToProductData } from "../domains/product_development/analysis/dataHelpers";
+import { validateInformationSummaryForConfirmation } from "../domains/product_development/analysis/informationSummary";
+import { registerDevAnalysisArtifact } from "../domains/ai_os/services/businessArtifactRegistry";
+import {
+  generateDecisionDashboard,
+  generateInformationSummary,
+} from "../domains/product_development/analysis/informationSummaryService";
 
 import {
   calcMarketOverview,
@@ -28,7 +34,6 @@ import {
   PRICE_ANALYSIS_PROMPT,
   BRAND_COMPETITION_PROMPT,
   REVIEW_KANO_PROMPT,
-  DECISION_DASHBOARD_PROMPT,
 } from "../devAnalysisPrompts";
 
 const REPORT_TYPES = [
@@ -170,7 +175,7 @@ export const devAnalysisRouter = router({
 
       const result = { stats, ai: aiResult };
 
-      await devDb.upsertDevAnalysisStage({
+      const completedStage = await devDb.upsertDevAnalysisStage({
         projectId: input.projectId,
         userId: ctx.user.id,
         stageType: "market_overview",
@@ -179,6 +184,7 @@ export const devAnalysisRouter = router({
         editedResult: null,
         confirmedAt: null,
       });
+      await registerDevAnalysisArtifact(completedStage.id, "ai_output");
 
       return result;
     }),
@@ -779,7 +785,24 @@ export const devAnalysisRouter = router({
       return result;
     }),
 
-  // ─── Stage 6: Decision Dashboard ──────────────────────────────
+  // ─── Stage 6: Information Summary ─────────────────────────────
+  runInformationSummary: protectedProcedure
+    .input(z.object({ projectId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const project = await resolveDevProjectAccess(input.projectId, ctx.user);
+      if (!project) throw new Error("Project not found");
+
+      const gating = await checkStageGating(input.projectId, "information_summary");
+      if (!gating.canRun) throw new Error(`门控检查未通过: ${gating.reason}`);
+      return generateInformationSummary({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        ownerName: (ctx.user as any).name || "",
+        project,
+      });
+    }),
+
+  // ─── Stage 7: Decision Dashboard ──────────────────────────────
   runDecisionDashboard: protectedProcedure
     .input(z.object({ projectId: z.number() }))
     .mutation(async ({ ctx, input }) => {
@@ -789,183 +812,14 @@ export const devAnalysisRouter = router({
       // Gate check
       const gating = await checkStageGating(input.projectId, "decision_dashboard");
       if (!gating.canRun) throw new Error(`门控检查未通过: ${gating.reason}`);
-
-      await devDb.upsertDevAnalysisStage({
+      return generateDecisionDashboard({
         projectId: input.projectId,
         userId: ctx.user.id,
-        stageType: "decision_dashboard",
-        status: "running",
-        rawResult: null,
-        editedResult: null,
-        confirmedAt: null,
+        project,
       });
-
-      // Collect confirmed results from all previous stages with status info
-      const stages = await devDb.getDevAnalysisStages(input.projectId);
-      const confirmedData: Record<string, unknown> = {};
-      const stageStatus: Record<string, string> = {};
-      for (const stage of stages) {
-        if (stage.stageType === "decision_dashboard") continue;
-        stageStatus[stage.stageType ?? "unknown"] = stage.status ?? "pending";
-        const data = stage.editedResult || stage.rawResult;
-        if (data) {
-          try {
-            confirmedData[stage.stageType ?? "unknown"] = JSON.parse(data);
-          } catch { /* skip */ }
-        }
-      }
-      const confirmedStages = Object.entries(stageStatus).filter(([, s]) => s === "confirmed").map(([k]) => k);
-      const unconfirmedStages = Object.entries(stageStatus).filter(([, s]) => s !== "confirmed" && s !== "pending").map(([k]) => k);
-
-      // [Emperor] 优先调用 Emperor Skill: dev.analysis.product
-
-
-
-
-
-      const response = await invokeLLM({
-        messages: [
-          { role: "system", content: DECISION_DASHBOARD_PROMPT },
-          {
-            role: "user",
-            content: `品类: ${project.name}\n关键词: ${project.keywords}\n目标市场: ${project.targetMarket}\n\n已确认阶段: ${confirmedStages.join(", ") || "无"}\n未确认阶段: ${unconfirmedStages.join(", ") || "无"}\n\n各阶段分析数据:\n${JSON.stringify(confirmedData, null, 2)}`,
-          },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "decision_dashboard_ai",
-            strict: true,
-            schema: {
-              type: "object",
-              properties: {
-                feasibilityScore: {
-                  type: "object",
-                  properties: {
-                    overall: { type: "number" },
-                    dimensions: {
-                      type: "array",
-                      items: {
-                        type: "object",
-                        properties: {
-                          name: { type: "string" },
-                          score: { type: "number" },
-                          reason: { type: "string" },
-                        },
-                        required: ["name", "score", "reason"],
-                        additionalProperties: false,
-                      },
-                    },
-                    recommendation: { type: "string" },
-                  },
-                  required: ["overall", "dimensions", "recommendation"],
-                  additionalProperties: false,
-                },
-                productPositioning: {
-                  type: "object",
-                  properties: {
-                    targetAttributes: {
-                      type: "object",
-                      additionalProperties: { type: "string" },
-                    },
-                    priceRange: {
-                      type: "object",
-                      properties: {
-                        min: { type: "number" },
-                        max: { type: "number" },
-                      },
-                      required: ["min", "max"],
-                      additionalProperties: false,
-                    },
-                    differentiationDirection: { type: "string" },
-                    targetAudience: { type: "string" },
-                    uniqueSellingPoints: { type: "array", items: { type: "string" } },
-                  },
-                  required: ["targetAttributes", "priceRange", "differentiationDirection", "targetAudience", "uniqueSellingPoints"],
-                  additionalProperties: false,
-                },
-                swotAnalysis: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      competitor: { type: "string" },
-                      strengths: { type: "array", items: { type: "string" } },
-                      weaknesses: { type: "array", items: { type: "string" } },
-                      opportunities: { type: "array", items: { type: "string" } },
-                      threats: { type: "array", items: { type: "string" } },
-                    },
-                    required: ["competitor", "strengths", "weaknesses", "opportunities", "threats"],
-                    additionalProperties: false,
-                  },
-                },
-                launchPlan: {
-                  type: "object",
-                  properties: {
-                    specifications: { type: "string" },
-                    targetPrice: { type: "number" },
-                    bestLaunchMonth: { type: "string" },
-                    initialOrderQuantity: { type: "number" },
-                    targetMonthlySales: { type: "number" },
-                    estimatedBreakEvenMonths: { type: "number" },
-                    keyMilestones: {
-                      type: "array",
-                      items: {
-                        type: "object",
-                        properties: {
-                          month: { type: "number" },
-                          milestone: { type: "string" },
-                        },
-                        required: ["month", "milestone"],
-                        additionalProperties: false,
-                      },
-                    },
-                  },
-                  required: ["specifications", "targetPrice", "bestLaunchMonth", "initialOrderQuantity", "targetMonthlySales", "estimatedBreakEvenMonths", "keyMilestones"],
-                  additionalProperties: false,
-                },
-                risks: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      risk: { type: "string" },
-                      probability: { type: "string" },
-                      impact: { type: "string" },
-                      mitigation: { type: "string" },
-                    },
-                    required: ["risk", "probability", "impact", "mitigation"],
-                    additionalProperties: false,
-                  },
-                },
-                summary: { type: "string" },
-              },
-              required: ["feasibilityScore", "productPositioning", "swotAnalysis", "launchPlan", "risks", "summary"],
-              additionalProperties: false,
-            },
-          },
-        },
-      });
-
-      const aiContent = response.choices?.[0]?.message?.content;
-      const aiResult = aiContent ? JSON.parse(aiContent as string) : {};
-
-      const result = { ai: aiResult };
-
-      await devDb.upsertDevAnalysisStage({
-        projectId: input.projectId,
-        userId: ctx.user.id,
-        stageType: "decision_dashboard",
-        status: "completed",
-        rawResult: JSON.stringify(result),
-        editedResult: null,
-        confirmedAt: null,
-      });
-
-      return result;
     }),
 
-  // ─── Confirm / Edit Stage ─────────────────────────────────────
+  // Confirm / Edit Stage
   confirmStage: protectedProcedure
     .input(z.object({
       projectId: z.number(),
@@ -973,11 +827,33 @@ export const devAnalysisRouter = router({
       editedResult: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      await resolveDevProjectAccess(input.projectId, ctx.user);
+      let editedResult = input.editedResult;
+      if (input.stageType === "information_summary") {
+        const current = await devDb.getDevAnalysisStage(input.projectId, input.stageType);
+        const raw = editedResult ?? current?.editedResult ?? current?.rawResult;
+        if (!raw) throw new Error("请先生成信息汇总");
+        editedResult = JSON.stringify(validateInformationSummaryForConfirmation(JSON.parse(raw)));
+      }
       await devDb.confirmDevAnalysisStage(
         input.projectId,
         input.stageType,
-        input.editedResult || ""
+        editedResult,
       );
+      const stage = await devDb.getDevAnalysisStage(input.projectId, input.stageType);
+      try {
+        const artifact = stage
+          ? await registerDevAnalysisArtifact(stage.id, stage.editedResult ? "user_edit" : "ai_output")
+          : null;
+        if (input.stageType === "information_summary" && !artifact) {
+          throw new Error("信息汇总 Artifact 注册失败");
+        }
+      } catch (error) {
+        if (input.stageType === "information_summary") {
+          await devDb.unlockDevAnalysisStage(input.projectId, input.stageType);
+        }
+        throw error;
+      }
       return { success: true };
     }),
 
@@ -988,15 +864,19 @@ export const devAnalysisRouter = router({
       editedResult: z.string(),
     }))
     .mutation(async ({ ctx, input }) => {
-      await devDb.upsertDevAnalysisStage({
+      await resolveDevProjectAccess(input.projectId, ctx.user);
+      const current = await devDb.getDevAnalysisStage(input.projectId, input.stageType);
+      if (!current?.rawResult && !current?.editedResult) throw new Error("请先生成阶段结果后再编辑");
+      const stage = await devDb.upsertDevAnalysisStage({
         projectId: input.projectId,
         userId: ctx.user.id,
         stageType: input.stageType as any,
         status: "editing",
-        rawResult: null, // keep existing rawResult via upsert
+        rawResult: current.rawResult,
         editedResult: input.editedResult,
         confirmedAt: null,
       });
+      await registerDevAnalysisArtifact(stage.id, "user_edit");
       return { success: true };
     }),
 
@@ -1007,7 +887,19 @@ export const devAnalysisRouter = router({
       stageType: z.enum(STAGE_TYPES),
     }))
     .mutation(async ({ ctx, input }) => {
+      await resolveDevProjectAccess(input.projectId, ctx.user);
       await devDb.unlockDevAnalysisStage(input.projectId, input.stageType);
+      const invalidate: string[] = [];
+      if (["market_overview", "attribute_cross", "price_analysis", "brand_competition", "review_kano"].includes(input.stageType)) {
+        invalidate.push("information_summary", "decision_dashboard");
+      } else if (input.stageType === "information_summary") {
+        invalidate.push("decision_dashboard");
+      }
+      await devDb.invalidateDevAnalysisStages(input.projectId, invalidate);
+      for (const stageType of [input.stageType, ...invalidate]) {
+        const stage = await devDb.getDevAnalysisStage(input.projectId, stageType);
+        if (stage) await registerDevAnalysisArtifact(stage.id, "user_edit");
+      }
       return { success: true };
     }),
 
