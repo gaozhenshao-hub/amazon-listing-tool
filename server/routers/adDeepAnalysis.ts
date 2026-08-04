@@ -1,3 +1,5 @@
+import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
+import { opsWorkspaceCondition } from "../repositories/ops";
 /**
  * Ad Deep Analysis Router - 6 Sub-modules AI Analysis Engines
  * Module 1: Product Stage Diagnosis (产品周期诊断)
@@ -8,8 +10,10 @@
  * Module 6: AI Clinic (疑难杂症AI诊所)
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/ops/workspaceProcedure";
+import { getDb } from "../repositories/dbClient";
+import { registerAdArtifact } from "../domains/ai_os/services/businessArtifactRegistry";
 import { invokeLLM } from "../_core/llm";
 import {
   adDailyPlacementReports,
@@ -35,6 +39,27 @@ async function getDbInstance() {
 function n(v: any): number { return Number(v) || 0; }
 function safePct(num: number, den: number): number {
   return den > 0 ? Math.round(num / den * 10000) / 100 : 0;
+}
+
+async function captureAdArtifact(
+  ctx: { user: { id: number }; workspaceId: number },
+  artifactKey: string,
+  sourceTable: string,
+  sourceRowId: number | string,
+  content: unknown,
+  sourceType: "ai_output" | "user_edit" = "ai_output",
+  status: "draft" | "final" = "draft",
+) {
+  await registerAdArtifact({
+    artifactKey,
+    sourceTable,
+    sourceRowId,
+    workspaceId: ctx.workspaceId,
+    userId: ctx.user.id,
+    content,
+    sourceType,
+    status,
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -533,10 +558,10 @@ export const adDeepAnalysisRouter = router({
       const d = await getDbInstance();
       // Fetch placement + search term data for stage diagnosis
       const placementData = await d.select().from(adDailyPlacementReports).where(
-        and(eq(adDailyPlacementReports.userId, ctx.user.id), inArray(adDailyPlacementReports.portfolioName, input.portfolioNames), gte(adDailyPlacementReports.reportDate, input.dateStart), lte(adDailyPlacementReports.reportDate, input.dateEnd))
+        opsWorkspaceCondition(adDailyPlacementReports, currentOpsWorkspaceId(), and(eq(adDailyPlacementReports.userId, ctx.user.id), inArray(adDailyPlacementReports.portfolioName, input.portfolioNames), gte(adDailyPlacementReports.reportDate, input.dateStart), lte(adDailyPlacementReports.reportDate, input.dateEnd)))
       );
       const searchTermData = await d.select().from(adDailySearchTermReports).where(
-        and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart), lte(adDailySearchTermReports.reportDate, input.dateEnd))
+        opsWorkspaceCondition(adDailySearchTermReports, currentOpsWorkspaceId(), and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart), lte(adDailySearchTermReports.reportDate, input.dateEnd)))
       );
 
       const dataSummary = `## 广告位数据\n${summarizePlacementData(placementData)}\n\n## 搜索词数据\n${summarizeSearchTermData(searchTermData)}`;
@@ -567,8 +592,9 @@ export const adDeepAnalysisRouter = router({
         transitionSignals: JSON.stringify(result.transition_signals || []),
         status: "draft",
       });
-
-      return { id: (insertResult as any).insertId, ...result };
+      const id = Number((insertResult as any).insertId);
+      await captureAdArtifact(ctx, "ads.product_stage", "ad_product_stages", id, result);
+      return { id, ...result };
     }),
 
   // ─── Module 2: Keyword Tier Analysis ────────────────────────
@@ -581,7 +607,7 @@ export const adDeepAnalysisRouter = router({
     .mutation(async ({ ctx, input }) => {
       const d = await getDbInstance();
       const searchTermData = await d.select().from(adDailySearchTermReports).where(
-        and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart), lte(adDailySearchTermReports.reportDate, input.dateEnd))
+        opsWorkspaceCondition(adDailySearchTermReports, currentOpsWorkspaceId(), and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart), lte(adDailySearchTermReports.reportDate, input.dateEnd)))
       );
 
       const dataSummary = summarizeSearchTermData(searchTermData);
@@ -624,7 +650,7 @@ export const adDeepAnalysisRouter = router({
           status: "pending",
         });
       }
-
+      await captureAdArtifact(ctx, "ads.keyword_tiers", "ad_keyword_tiers", batchId, { batchId, keywords });
       return { batchId, keywords };
     }),
 
@@ -638,11 +664,11 @@ export const adDeepAnalysisRouter = router({
     .mutation(async ({ ctx, input }) => {
       const d = await getDbInstance();
       const [placementData, searchTermData, impressionData, sbData, businessData] = await Promise.all([
-        d.select().from(adDailyPlacementReports).where(and(eq(adDailyPlacementReports.userId, ctx.user.id), inArray(adDailyPlacementReports.portfolioName, input.portfolioNames), gte(adDailyPlacementReports.reportDate, input.dateStart), lte(adDailyPlacementReports.reportDate, input.dateEnd))),
-        d.select().from(adDailySearchTermReports).where(and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart), lte(adDailySearchTermReports.reportDate, input.dateEnd))),
-        d.select().from(adDailyImpressionShareReports).where(and(eq(adDailyImpressionShareReports.userId, ctx.user.id), inArray(adDailyImpressionShareReports.portfolioName, input.portfolioNames), gte(adDailyImpressionShareReports.reportDate, input.dateStart), lte(adDailyImpressionShareReports.reportDate, input.dateEnd))),
-        d.select().from(adDailySbBenchmarkReports).where(and(eq(adDailySbBenchmarkReports.userId, ctx.user.id), gte(adDailySbBenchmarkReports.reportDate, input.dateStart), lte(adDailySbBenchmarkReports.reportDate, input.dateEnd))),
-        d.select().from(adDailyBusinessReports).where(and(eq(adDailyBusinessReports.userId, ctx.user.id), gte(adDailyBusinessReports.reportDate, input.dateStart), lte(adDailyBusinessReports.reportDate, input.dateEnd))),
+        d.select().from(adDailyPlacementReports).where(opsWorkspaceCondition(adDailyPlacementReports, currentOpsWorkspaceId(), and(eq(adDailyPlacementReports.userId, ctx.user.id), inArray(adDailyPlacementReports.portfolioName, input.portfolioNames), gte(adDailyPlacementReports.reportDate, input.dateStart), lte(adDailyPlacementReports.reportDate, input.dateEnd)))),
+        d.select().from(adDailySearchTermReports).where(opsWorkspaceCondition(adDailySearchTermReports, currentOpsWorkspaceId(), and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart), lte(adDailySearchTermReports.reportDate, input.dateEnd)))),
+        d.select().from(adDailyImpressionShareReports).where(opsWorkspaceCondition(adDailyImpressionShareReports, currentOpsWorkspaceId(), and(eq(adDailyImpressionShareReports.userId, ctx.user.id), inArray(adDailyImpressionShareReports.portfolioName, input.portfolioNames), gte(adDailyImpressionShareReports.reportDate, input.dateStart), lte(adDailyImpressionShareReports.reportDate, input.dateEnd)))),
+        d.select().from(adDailySbBenchmarkReports).where(opsWorkspaceCondition(adDailySbBenchmarkReports, currentOpsWorkspaceId(), and(eq(adDailySbBenchmarkReports.userId, ctx.user.id), gte(adDailySbBenchmarkReports.reportDate, input.dateStart), lte(adDailySbBenchmarkReports.reportDate, input.dateEnd)))),
+        d.select().from(adDailyBusinessReports).where(opsWorkspaceCondition(adDailyBusinessReports, currentOpsWorkspaceId(), and(eq(adDailyBusinessReports.userId, ctx.user.id), gte(adDailyBusinessReports.reportDate, input.dateStart), lte(adDailyBusinessReports.reportDate, input.dateEnd)))),
       ]);
 
       const dataSummary = `## 广告位数据\n${summarizePlacementData(placementData)}\n\n## 搜索词数据\n${summarizeSearchTermData(searchTermData)}\n\n## 展示量份额数据\n${summarizeImpressionShareData(impressionData)}\n\n## SB Benchmark数据\n${summarizeSbBenchmarkData(sbData)}\n\n## 业务×广告交叉数据\n${summarizeBusinessCrossData(businessData, searchTermData)}`;
@@ -669,8 +695,9 @@ export const adDeepAnalysisRouter = router({
         warning: result.warning || "",
         status: "draft",
       });
-
-      return { id: (insertResult as any).insertId, ...result };
+      const id = Number((insertResult as any).insertId);
+      await captureAdArtifact(ctx, "ads.cross_diagnosis", "ad_diagnoses", id, result);
+      return { id, ...result };
     }),
 
   // ─── Module 4: Five Reports Independent Analysis ────────────
@@ -683,7 +710,7 @@ export const adDeepAnalysisRouter = router({
     .mutation(async ({ ctx, input }) => {
       const d = await getDbInstance();
       const data = await d.select().from(adDailyPlacementReports).where(
-        and(eq(adDailyPlacementReports.userId, ctx.user.id), inArray(adDailyPlacementReports.portfolioName, input.portfolioNames), gte(adDailyPlacementReports.reportDate, input.dateStart), lte(adDailyPlacementReports.reportDate, input.dateEnd))
+        opsWorkspaceCondition(adDailyPlacementReports, currentOpsWorkspaceId(), and(eq(adDailyPlacementReports.userId, ctx.user.id), inArray(adDailyPlacementReports.portfolioName, input.portfolioNames), gte(adDailyPlacementReports.reportDate, input.dateStart), lte(adDailyPlacementReports.reportDate, input.dateEnd)))
       );
       const dataSummary = summarizePlacementData(data);
 
@@ -697,7 +724,9 @@ export const adDeepAnalysisRouter = router({
         dateRangeStart: input.dateStart, dateRangeEnd: input.dateEnd,
         analysisResult: JSON.stringify(result), actionItems: JSON.stringify(result.action_items || []), status: "draft",
       });
-      return { id: (insertResult as any).insertId, ...result };
+      const id = Number((insertResult as any).insertId);
+      await captureAdArtifact(ctx, "ads.report.placement", "ad_report_analysis_records", id, result);
+      return { id, ...result };
     }),
 
   analyzeSearchTermReport: protectedProcedure
@@ -709,7 +738,7 @@ export const adDeepAnalysisRouter = router({
     .mutation(async ({ ctx, input }) => {
       const d = await getDbInstance();
       const data = await d.select().from(adDailySearchTermReports).where(
-        and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart), lte(adDailySearchTermReports.reportDate, input.dateEnd))
+        opsWorkspaceCondition(adDailySearchTermReports, currentOpsWorkspaceId(), and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart), lte(adDailySearchTermReports.reportDate, input.dateEnd)))
       );
       const dataSummary = summarizeSearchTermData(data);
 
@@ -723,7 +752,9 @@ export const adDeepAnalysisRouter = router({
         dateRangeStart: input.dateStart, dateRangeEnd: input.dateEnd,
         analysisResult: JSON.stringify(result), actionItems: JSON.stringify(result.negative_candidates || []), status: "draft",
       });
-      return { id: (insertResult as any).insertId, ...result };
+      const id = Number((insertResult as any).insertId);
+      await captureAdArtifact(ctx, "ads.report.search_term", "ad_report_analysis_records", id, result);
+      return { id, ...result };
     }),
 
   analyzeImpressionShareReport: protectedProcedure
@@ -735,7 +766,7 @@ export const adDeepAnalysisRouter = router({
     .mutation(async ({ ctx, input }) => {
       const d = await getDbInstance();
       const data = await d.select().from(adDailyImpressionShareReports).where(
-        and(eq(adDailyImpressionShareReports.userId, ctx.user.id), inArray(adDailyImpressionShareReports.portfolioName, input.portfolioNames), gte(adDailyImpressionShareReports.reportDate, input.dateStart), lte(adDailyImpressionShareReports.reportDate, input.dateEnd))
+        opsWorkspaceCondition(adDailyImpressionShareReports, currentOpsWorkspaceId(), and(eq(adDailyImpressionShareReports.userId, ctx.user.id), inArray(adDailyImpressionShareReports.portfolioName, input.portfolioNames), gte(adDailyImpressionShareReports.reportDate, input.dateStart), lte(adDailyImpressionShareReports.reportDate, input.dateEnd)))
       );
       const dataSummary = summarizeImpressionShareData(data);
 
@@ -749,7 +780,9 @@ export const adDeepAnalysisRouter = router({
         dateRangeStart: input.dateStart, dateRangeEnd: input.dateEnd,
         analysisResult: JSON.stringify(result), actionItems: JSON.stringify(result.competitive_alerts || []), status: "draft",
       });
-      return { id: (insertResult as any).insertId, ...result };
+      const id = Number((insertResult as any).insertId);
+      await captureAdArtifact(ctx, "ads.report.impression_share", "ad_report_analysis_records", id, result);
+      return { id, ...result };
     }),
 
   analyzeSbBenchmarkReport: protectedProcedure
@@ -761,7 +794,7 @@ export const adDeepAnalysisRouter = router({
     .mutation(async ({ ctx, input }) => {
       const d = await getDbInstance();
       const data = await d.select().from(adDailySbBenchmarkReports).where(
-        and(eq(adDailySbBenchmarkReports.userId, ctx.user.id), gte(adDailySbBenchmarkReports.reportDate, input.dateStart), lte(adDailySbBenchmarkReports.reportDate, input.dateEnd))
+        opsWorkspaceCondition(adDailySbBenchmarkReports, currentOpsWorkspaceId(), and(eq(adDailySbBenchmarkReports.userId, ctx.user.id), gte(adDailySbBenchmarkReports.reportDate, input.dateStart), lte(adDailySbBenchmarkReports.reportDate, input.dateEnd)))
       );
       const dataSummary = summarizeSbBenchmarkData(data);
 
@@ -775,7 +808,9 @@ export const adDeepAnalysisRouter = router({
         dateRangeStart: input.dateStart, dateRangeEnd: input.dateEnd,
         analysisResult: JSON.stringify(result), actionItems: JSON.stringify(result.creative_recommendations || []), status: "draft",
       });
-      return { id: (insertResult as any).insertId, ...result };
+      const id = Number((insertResult as any).insertId);
+      await captureAdArtifact(ctx, "ads.report.sb_benchmark", "ad_report_analysis_records", id, result);
+      return { id, ...result };
     }),
 
   analyzeBusinessCrossReport: protectedProcedure
@@ -787,8 +822,8 @@ export const adDeepAnalysisRouter = router({
     .mutation(async ({ ctx, input }) => {
       const d = await getDbInstance();
       const [businessData, adData] = await Promise.all([
-        d.select().from(adDailyBusinessReports).where(and(eq(adDailyBusinessReports.userId, ctx.user.id), gte(adDailyBusinessReports.reportDate, input.dateStart), lte(adDailyBusinessReports.reportDate, input.dateEnd))),
-        d.select().from(adDailySearchTermReports).where(and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart), lte(adDailySearchTermReports.reportDate, input.dateEnd))),
+        d.select().from(adDailyBusinessReports).where(opsWorkspaceCondition(adDailyBusinessReports, currentOpsWorkspaceId(), and(eq(adDailyBusinessReports.userId, ctx.user.id), gte(adDailyBusinessReports.reportDate, input.dateStart), lte(adDailyBusinessReports.reportDate, input.dateEnd)))),
+        d.select().from(adDailySearchTermReports).where(opsWorkspaceCondition(adDailySearchTermReports, currentOpsWorkspaceId(), and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart), lte(adDailySearchTermReports.reportDate, input.dateEnd)))),
       ]);
       const dataSummary = summarizeBusinessCrossData(businessData, adData);
 
@@ -802,7 +837,9 @@ export const adDeepAnalysisRouter = router({
         dateRangeStart: input.dateStart, dateRangeEnd: input.dateEnd,
         analysisResult: JSON.stringify(result), actionItems: JSON.stringify(result.alerts || []), status: "draft",
       });
-      return { id: (insertResult as any).insertId, ...result };
+      const id = Number((insertResult as any).insertId);
+      await captureAdArtifact(ctx, "ads.report.business_cross", "ad_report_analysis_records", id, result);
+      return { id, ...result };
     }),
 
   // ─── Module 4: Get analysis history ─────────────────────────
@@ -815,7 +852,7 @@ export const adDeepAnalysisRouter = router({
       const d = await getDbInstance();
       const conditions: any[] = [eq(adReportAnalysisRecords.userId, ctx.user.id)];
       if (input.reportType) conditions.push(eq(adReportAnalysisRecords.reportType, input.reportType));
-      return d.select().from(adReportAnalysisRecords).where(and(...conditions)).orderBy(desc(adReportAnalysisRecords.createdAt)).limit(input.limit);
+      return d.select().from(adReportAnalysisRecords).where(opsWorkspaceCondition(adReportAnalysisRecords, currentOpsWorkspaceId(), and(...conditions))).orderBy(desc(adReportAnalysisRecords.createdAt)).limit(input.limit);
     }),
 
   // ─── Module 4: Update analysis (user edits) ─────────────────
@@ -829,7 +866,16 @@ export const adDeepAnalysisRouter = router({
       const d = await getDbInstance();
       const updates: any = { userEdits: input.userEdits };
       if (input.status) updates.status = input.status;
-      await d.update(adReportAnalysisRecords).set(updates).where(and(eq(adReportAnalysisRecords.id, input.id), eq(adReportAnalysisRecords.userId, ctx.user.id)));
+      await d.update(adReportAnalysisRecords).set(updates).where(opsWorkspaceCondition(adReportAnalysisRecords, currentOpsWorkspaceId(), and(eq(adReportAnalysisRecords.id, input.id), eq(adReportAnalysisRecords.userId, ctx.user.id))));
+      await captureAdArtifact(
+        ctx,
+        "ads.report.user_edit",
+        "ad_report_analysis_records",
+        input.id,
+        updates,
+        "user_edit",
+        input.status === "confirmed" ? "final" : "draft",
+      );
       return { success: true };
     }),
 
@@ -845,11 +891,11 @@ export const adDeepAnalysisRouter = router({
       const d = await getDbInstance();
       // Gather recent analysis results as context
       const recentAnalyses = await d.select().from(adReportAnalysisRecords).where(
-        and(eq(adReportAnalysisRecords.userId, ctx.user.id), eq(adReportAnalysisRecords.status, "confirmed"))
+        opsWorkspaceCondition(adReportAnalysisRecords, currentOpsWorkspaceId(), and(eq(adReportAnalysisRecords.userId, ctx.user.id), eq(adReportAnalysisRecords.status, "confirmed")))
       ).orderBy(desc(adReportAnalysisRecords.createdAt)).limit(5);
 
       const recentDiagnoses = await d.select().from(adDiagnoses).where(
-        and(eq(adDiagnoses.userId, ctx.user.id))
+        opsWorkspaceCondition(adDiagnoses, currentOpsWorkspaceId(), and(eq(adDiagnoses.userId, ctx.user.id)))
       ).orderBy(desc(adDiagnoses.createdAt)).limit(3);
 
       let context = "## 最近确认的分析结果:\n";
@@ -891,7 +937,7 @@ export const adDeepAnalysisRouter = router({
           status: "pending",
         });
       }
-
+      await captureAdArtifact(ctx, "ads.sop_tasks", "ad_sop_tasks", Date.now(), { tasks });
       return { tasks };
     }),
 
@@ -906,7 +952,7 @@ export const adDeepAnalysisRouter = router({
       const conditions: any[] = [eq(adSopTasks.userId, ctx.user.id)];
       if (input.status) conditions.push(eq(adSopTasks.status, input.status));
       if (input.period) conditions.push(eq(adSopTasks.period, input.period));
-      return d.select().from(adSopTasks).where(and(...conditions)).orderBy(desc(adSopTasks.createdAt)).limit(100);
+      return d.select().from(adSopTasks).where(opsWorkspaceCondition(adSopTasks, currentOpsWorkspaceId(), and(...conditions))).orderBy(desc(adSopTasks.createdAt)).limit(100);
     }),
 
   // ─── Module 5: Update SOP Task Status ──────────────────────
@@ -921,7 +967,7 @@ export const adDeepAnalysisRouter = router({
       const updates: any = { status: input.status };
       if (input.status === "completed") updates.completedAt = new Date();
       if (input.completedNote) updates.completedNote = input.completedNote;
-      await d.update(adSopTasks).set(updates).where(and(eq(adSopTasks.id, input.id), eq(adSopTasks.userId, ctx.user.id)));
+      await d.update(adSopTasks).set(updates).where(opsWorkspaceCondition(adSopTasks, currentOpsWorkspaceId(), and(eq(adSopTasks.id, input.id), eq(adSopTasks.userId, ctx.user.id))));
       return { success: true };
     }),
 
@@ -941,8 +987,8 @@ export const adDeepAnalysisRouter = router({
       let dataContext = "";
       if (input.dateStart && input.dateEnd && input.portfolioNames.length > 0) {
         const [placementData, searchTermData] = await Promise.all([
-          d.select().from(adDailyPlacementReports).where(and(eq(adDailyPlacementReports.userId, ctx.user.id), inArray(adDailyPlacementReports.portfolioName, input.portfolioNames), gte(adDailyPlacementReports.reportDate, input.dateStart!), lte(adDailyPlacementReports.reportDate, input.dateEnd!))),
-          d.select().from(adDailySearchTermReports).where(and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart!), lte(adDailySearchTermReports.reportDate, input.dateEnd!))),
+          d.select().from(adDailyPlacementReports).where(opsWorkspaceCondition(adDailyPlacementReports, currentOpsWorkspaceId(), and(eq(adDailyPlacementReports.userId, ctx.user.id), inArray(adDailyPlacementReports.portfolioName, input.portfolioNames), gte(adDailyPlacementReports.reportDate, input.dateStart!), lte(adDailyPlacementReports.reportDate, input.dateEnd!)))),
+          d.select().from(adDailySearchTermReports).where(opsWorkspaceCondition(adDailySearchTermReports, currentOpsWorkspaceId(), and(eq(adDailySearchTermReports.userId, ctx.user.id), inArray(adDailySearchTermReports.portfolioName, input.portfolioNames), gte(adDailySearchTermReports.reportDate, input.dateStart!), lte(adDailySearchTermReports.reportDate, input.dateEnd!)))),
         ]);
         dataContext = `\n\n## 相关数据\n### 广告位数据\n${summarizePlacementData(placementData)}\n\n### 搜索词数据\n${summarizeSearchTermData(searchTermData)}`;
       }
@@ -970,8 +1016,9 @@ export const adDeepAnalysisRouter = router({
         prescription: JSON.stringify(result.prescription || []),
         status: "diagnosed",
       });
-
-      return { id: (insertResult as any).insertId, ...result };
+      const id = Number((insertResult as any).insertId);
+      await captureAdArtifact(ctx, "ads.clinic", "ad_clinic_records", id, result);
+      return { id, ...result };
     }),
 
   // ─── Module 6: List Clinic Records ─────────────────────────
@@ -979,7 +1026,7 @@ export const adDeepAnalysisRouter = router({
     .input(z.object({ limit: z.number().default(20) }))
     .query(async ({ ctx, input }) => {
       const d = await getDbInstance();
-      return d.select().from(adClinicRecords).where(eq(adClinicRecords.userId, ctx.user.id)).orderBy(desc(adClinicRecords.createdAt)).limit(input.limit);
+      return d.select().from(adClinicRecords).where(opsWorkspaceCondition(adClinicRecords, currentOpsWorkspaceId(), eq(adClinicRecords.userId, ctx.user.id))).orderBy(desc(adClinicRecords.createdAt)).limit(input.limit);
     }),
 
   // ─── Module 6: Update Clinic Record ────────────────────────
@@ -994,7 +1041,16 @@ export const adDeepAnalysisRouter = router({
       const updates: any = {};
       if (input.userEdits) updates.userEdits = input.userEdits;
       if (input.status) updates.status = input.status;
-      await d.update(adClinicRecords).set(updates).where(and(eq(adClinicRecords.id, input.id), eq(adClinicRecords.userId, ctx.user.id)));
+      await d.update(adClinicRecords).set(updates).where(opsWorkspaceCondition(adClinicRecords, currentOpsWorkspaceId(), and(eq(adClinicRecords.id, input.id), eq(adClinicRecords.userId, ctx.user.id))));
+      await captureAdArtifact(
+        ctx,
+        "ads.clinic.user_edit",
+        "ad_clinic_records",
+        input.id,
+        updates,
+        "user_edit",
+        input.status === "resolved" ? "final" : "draft",
+      );
       return { success: true };
     }),
 
@@ -1003,7 +1059,7 @@ export const adDeepAnalysisRouter = router({
     .input(z.object({ limit: z.number().default(10) }))
     .query(async ({ ctx, input }) => {
       const d = await getDbInstance();
-      return d.select().from(adProductStages).where(eq(adProductStages.userId, ctx.user.id)).orderBy(desc(adProductStages.createdAt)).limit(input.limit);
+      return d.select().from(adProductStages).where(opsWorkspaceCondition(adProductStages, currentOpsWorkspaceId(), eq(adProductStages.userId, ctx.user.id))).orderBy(desc(adProductStages.createdAt)).limit(input.limit);
     }),
 
   // ─── Module 1: Update stage record ─────────────────────────
@@ -1018,7 +1074,7 @@ export const adDeepAnalysisRouter = router({
       const updates: any = {};
       if (input.userEdits) updates.userEdits = input.userEdits;
       if (input.status) updates.status = input.status;
-      await d.update(adProductStages).set(updates).where(and(eq(adProductStages.id, input.id), eq(adProductStages.userId, ctx.user.id)));
+      await d.update(adProductStages).set(updates).where(opsWorkspaceCondition(adProductStages, currentOpsWorkspaceId(), and(eq(adProductStages.id, input.id), eq(adProductStages.userId, ctx.user.id))));
       return { success: true };
     }),
 
@@ -1029,7 +1085,7 @@ export const adDeepAnalysisRouter = router({
       const d = await getDbInstance();
       const conditions: any[] = [eq(adKeywordTiers.userId, ctx.user.id)];
       if (input.batchId) conditions.push(eq(adKeywordTiers.batchId, input.batchId));
-      return d.select().from(adKeywordTiers).where(and(...conditions)).orderBy(desc(adKeywordTiers.createdAt)).limit(input.limit);
+      return d.select().from(adKeywordTiers).where(opsWorkspaceCondition(adKeywordTiers, currentOpsWorkspaceId(), and(...conditions))).orderBy(desc(adKeywordTiers.createdAt)).limit(input.limit);
     }),
 
   // ─── Module 2: Update keyword tier ─────────────────────────
@@ -1044,7 +1100,7 @@ export const adDeepAnalysisRouter = router({
       const updates: any = { userEdited: 1 };
       if (input.userAction) updates.userAction = input.userAction;
       if (input.status) updates.status = input.status;
-      await d.update(adKeywordTiers).set(updates).where(and(eq(adKeywordTiers.id, input.id), eq(adKeywordTiers.userId, ctx.user.id)));
+      await d.update(adKeywordTiers).set(updates).where(opsWorkspaceCondition(adKeywordTiers, currentOpsWorkspaceId(), and(eq(adKeywordTiers.id, input.id), eq(adKeywordTiers.userId, ctx.user.id))));
       return { success: true };
     }),
 
@@ -1053,7 +1109,7 @@ export const adDeepAnalysisRouter = router({
     .input(z.object({ limit: z.number().default(10) }))
     .query(async ({ ctx, input }) => {
       const d = await getDbInstance();
-      return d.select().from(adDiagnoses).where(eq(adDiagnoses.userId, ctx.user.id)).orderBy(desc(adDiagnoses.createdAt)).limit(input.limit);
+      return d.select().from(adDiagnoses).where(opsWorkspaceCondition(adDiagnoses, currentOpsWorkspaceId(), eq(adDiagnoses.userId, ctx.user.id))).orderBy(desc(adDiagnoses.createdAt)).limit(input.limit);
     }),
 
   // ─── Confirm Analysis (batch confirm action items) ─────────
@@ -1068,7 +1124,7 @@ export const adDeepAnalysisRouter = router({
         actionItems: input.confirmedActions,
         userEdits: input.confirmedActions,
         status: "confirmed",
-      }).where(and(eq(adReportAnalysisRecords.id, input.id), eq(adReportAnalysisRecords.userId, ctx.user.id)));
+      }).where(opsWorkspaceCondition(adReportAnalysisRecords, currentOpsWorkspaceId(), and(eq(adReportAnalysisRecords.id, input.id), eq(adReportAnalysisRecords.userId, ctx.user.id))));
       return { success: true };
     }),
 
@@ -1078,7 +1134,7 @@ export const adDeepAnalysisRouter = router({
     .query(async ({ ctx, input }) => {
       const d = await getDbInstance();
       const [record] = await d.select().from(adReportAnalysisRecords).where(
-        and(eq(adReportAnalysisRecords.id, input.id), eq(adReportAnalysisRecords.userId, ctx.user.id))
+        opsWorkspaceCondition(adReportAnalysisRecords, currentOpsWorkspaceId(), and(eq(adReportAnalysisRecords.id, input.id), eq(adReportAnalysisRecords.userId, ctx.user.id)))
       ).limit(1);
       return record || null;
     }),
@@ -1089,7 +1145,7 @@ export const adDeepAnalysisRouter = router({
     .mutation(async ({ ctx, input }) => {
       const d = await getDbInstance();
       await d.update(adReportAnalysisRecords).set({ status: "archived" })
-        .where(and(eq(adReportAnalysisRecords.id, input.id), eq(adReportAnalysisRecords.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(adReportAnalysisRecords, currentOpsWorkspaceId(), and(eq(adReportAnalysisRecords.id, input.id), eq(adReportAnalysisRecords.userId, ctx.user.id))));
       return { success: true };
     }),
 });

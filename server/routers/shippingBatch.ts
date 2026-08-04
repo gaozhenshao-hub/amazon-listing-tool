@@ -1,6 +1,9 @@
+import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
+import { opsWorkspaceCondition } from "../repositories/ops";
 import { z } from "zod";
-import { router, protectedProcedure } from "../_core/trpc";
-import { getDb } from "../db";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/ops/workspaceProcedure";
+import { getDb } from "../repositories/dbClient";
 import {
   shippingBatches, batchStepConfigs, batchProducts, batchLogs,
   stepTimeHistory, replenishmentPredictions, stepTimeTemplates, asinLogs
@@ -55,7 +58,7 @@ export const shippingBatchRouter = router({
       }
 
       const allBatches = await db.select().from(shippingBatches)
-        .where(and(...conditions))
+        .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), and(...conditions)))
         .orderBy(desc(shippingBatches.createdAt));
 
       let filtered = allBatches;
@@ -96,18 +99,18 @@ export const shippingBatchRouter = router({
     .query(async ({ ctx, input }) => {
       const db = (await getDb())!;
       const [batch] = await db.select().from(shippingBatches)
-        .where(and(eq(shippingBatches.id, input.id), eq(shippingBatches.userId, String(ctx.user.id))));
+        .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), and(eq(shippingBatches.id, input.id), eq(shippingBatches.userId, String(ctx.user.id)))));
       if (!batch) throw new Error("批次不存在");
 
       const steps = await db.select().from(batchStepConfigs)
-        .where(eq(batchStepConfigs.batchId, input.id))
+        .where(opsWorkspaceCondition(batchStepConfigs, currentOpsWorkspaceId(), eq(batchStepConfigs.batchId, input.id)))
         .orderBy(batchStepConfigs.stepNumber);
 
       const products = await db.select().from(batchProducts)
-        .where(eq(batchProducts.batchId, input.id));
+        .where(opsWorkspaceCondition(batchProducts, currentOpsWorkspaceId(), eq(batchProducts.batchId, input.id)));
 
       const logs = await db.select().from(batchLogs)
-        .where(eq(batchLogs.batchId, input.id))
+        .where(opsWorkspaceCondition(batchLogs, currentOpsWorkspaceId(), eq(batchLogs.batchId, input.id)))
         .orderBy(desc(batchLogs.createdAt));
 
       // Calculate loss rates
@@ -190,7 +193,7 @@ export const shippingBatchRouter = router({
       // Get next batch number
       const [maxBatch] = await db.select({ maxNum: sql<number>`COALESCE(MAX(batch_number), 0)` })
         .from(shippingBatches)
-        .where(eq(shippingBatches.userId, userId));
+        .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), eq(shippingBatches.userId, userId)));
       const batchNumber = (maxBatch?.maxNum || 0) + 1;
 
       // Calculate total planned quantity
@@ -224,7 +227,7 @@ export const shippingBatchRouter = router({
         stepDays = input.customStepDays;
       } else if (input.templateId) {
         const [template] = await db.select().from(stepTimeTemplates)
-          .where(eq(stepTimeTemplates.id, input.templateId));
+          .where(opsWorkspaceCondition(stepTimeTemplates, currentOpsWorkspaceId(), eq(stepTimeTemplates.id, input.templateId)));
         if (template) {
           stepDays = [template.step1Days, template.step2Days, template.step3Days, template.step4Days,
             template.step5Days, template.step6Days, template.step7Days, template.step8Days, template.step9Days];
@@ -304,7 +307,7 @@ export const shippingBatchRouter = router({
       const userId = String(ctx.user.id);
 
       const [batch] = await db.select().from(shippingBatches)
-        .where(and(eq(shippingBatches.id, input.batchId), eq(shippingBatches.userId, userId)));
+        .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), and(eq(shippingBatches.id, input.batchId), eq(shippingBatches.userId, userId))));
       if (!batch) throw new Error("批次不存在");
       if (batch.status !== "active") throw new Error("批次状态不允许推进");
       if (batch.currentStep >= 9) throw new Error("已是最后一步");
@@ -329,7 +332,7 @@ export const shippingBatchRouter = router({
 
       // Complete current step
       const [currentStepConfig] = await db.select().from(batchStepConfigs)
-        .where(and(eq(batchStepConfigs.batchId, input.batchId), eq(batchStepConfigs.stepNumber, currentStep)));
+        .where(opsWorkspaceCondition(batchStepConfigs, currentOpsWorkspaceId(), and(eq(batchStepConfigs.batchId, input.batchId), eq(batchStepConfigs.stepNumber, currentStep))));
 
       if (currentStepConfig) {
         const actualDays = currentStepConfig.actualStartAt
@@ -338,7 +341,7 @@ export const shippingBatchRouter = router({
 
         await db.update(batchStepConfigs)
           .set({ status: "completed", actualEndAt: now, actualDays, notes: input.notes || null, updatedAt: now })
-          .where(eq(batchStepConfigs.id, currentStepConfig.id));
+          .where(opsWorkspaceCondition(batchStepConfigs, currentOpsWorkspaceId(), eq(batchStepConfigs.id, currentStepConfig.id)));
 
         // Record time history for AI learning
         await db.insert(stepTimeHistory).values({
@@ -358,7 +361,7 @@ export const shippingBatchRouter = router({
       // Activate next step
       await db.update(batchStepConfigs)
         .set({ status: "active", actualStartAt: now, updatedAt: now })
-        .where(and(eq(batchStepConfigs.batchId, input.batchId), eq(batchStepConfigs.stepNumber, nextStep)));
+        .where(opsWorkspaceCondition(batchStepConfigs, currentOpsWorkspaceId(), and(eq(batchStepConfigs.batchId, input.batchId), eq(batchStepConfigs.stepNumber, nextStep))));
 
       // Update batch
       const updateData: any = { currentStep: nextStep, updatedAt: now };
@@ -392,7 +395,7 @@ export const shippingBatchRouter = router({
         // Don't auto-complete, user needs to confirm amazon inventory
       }
 
-      await db.update(shippingBatches).set(updateData).where(eq(shippingBatches.id, input.batchId));
+      await db.update(shippingBatches).set(updateData).where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), eq(shippingBatches.id, input.batchId)));
 
       // Log
       await db.insert(batchLogs).values({
@@ -455,7 +458,7 @@ export const shippingBatchRouter = router({
       }
 
       await db.update(shippingBatches).set(updateData)
-        .where(and(eq(shippingBatches.id, id), eq(shippingBatches.userId, String(ctx.user.id))));
+        .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), and(eq(shippingBatches.id, id), eq(shippingBatches.userId, String(ctx.user.id)))));
 
       // Log
       await db.insert(batchLogs).values({
@@ -486,7 +489,7 @@ export const shippingBatchRouter = router({
       const now = Date.now();
       await db.update(shippingBatches)
         .set({ [input.field]: input.value, updatedAt: now })
-        .where(and(eq(shippingBatches.id, input.batchId), eq(shippingBatches.userId, String(ctx.user.id))));
+        .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), and(eq(shippingBatches.id, input.batchId), eq(shippingBatches.userId, String(ctx.user.id)))));
 
       await db.insert(batchLogs).values({
         batchId: input.batchId,
@@ -511,11 +514,11 @@ export const shippingBatchRouter = router({
       // Complete last step
       await db.update(batchStepConfigs)
         .set({ status: "completed", actualEndAt: now, updatedAt: now })
-        .where(and(eq(batchStepConfigs.batchId, input.batchId), eq(batchStepConfigs.stepNumber, 10)));
+        .where(opsWorkspaceCondition(batchStepConfigs, currentOpsWorkspaceId(), and(eq(batchStepConfigs.batchId, input.batchId), eq(batchStepConfigs.stepNumber, 10))));
 
       await db.update(shippingBatches)
         .set({ status: "completed", updatedAt: now })
-        .where(and(eq(shippingBatches.id, input.batchId), eq(shippingBatches.userId, userId)));
+        .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), and(eq(shippingBatches.id, input.batchId), eq(shippingBatches.userId, userId))));
 
       await db.insert(batchLogs).values({
         batchId: input.batchId,
@@ -540,7 +543,7 @@ export const shippingBatchRouter = router({
       const now = Date.now();
       await db.update(shippingBatches)
         .set({ status: input.status, updatedAt: now })
-        .where(and(eq(shippingBatches.id, input.batchId), eq(shippingBatches.userId, String(ctx.user.id))));
+        .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), and(eq(shippingBatches.id, input.batchId), eq(shippingBatches.userId, String(ctx.user.id)))));
 
       const actionMap = { active: "恢复批次", paused: "暂停批次", cancelled: "取消批次" };
       await db.insert(batchLogs).values({
@@ -607,10 +610,10 @@ export const shippingBatchRouter = router({
       });
 
       // Update batch total planned quantity
-      const products = await db.select().from(batchProducts).where(eq(batchProducts.batchId, batchId));
+      const products = await db.select().from(batchProducts).where(opsWorkspaceCondition(batchProducts, currentOpsWorkspaceId(), eq(batchProducts.batchId, batchId)));
       const totalQty = products.reduce((sum, p) => sum + p.quantity, 0);
       await db.update(shippingBatches).set({ plannedQuantity: totalQty, updatedAt: Date.now() })
-        .where(eq(shippingBatches.id, batchId));
+        .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), eq(shippingBatches.id, batchId)));
 
       return { success: true };
     }),
@@ -619,12 +622,12 @@ export const shippingBatchRouter = router({
     .input(z.object({ productId: z.number(), batchId: z.number() }))
     .mutation(async ({ ctx, input }) => {
       const db = (await getDb())!;
-      await db.delete(batchProducts).where(eq(batchProducts.id, input.productId));
+      await db.delete(batchProducts).where(opsWorkspaceCondition(batchProducts, currentOpsWorkspaceId(), eq(batchProducts.id, input.productId)));
 
-      const products = await db.select().from(batchProducts).where(eq(batchProducts.batchId, input.batchId));
+      const products = await db.select().from(batchProducts).where(opsWorkspaceCondition(batchProducts, currentOpsWorkspaceId(), eq(batchProducts.batchId, input.batchId)));
       const totalQty = products.reduce((sum, p) => sum + p.quantity, 0);
       await db.update(shippingBatches).set({ plannedQuantity: totalQty, updatedAt: Date.now() })
-        .where(eq(shippingBatches.id, input.batchId));
+        .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), eq(shippingBatches.id, input.batchId)));
 
       return { success: true };
     }),
@@ -644,7 +647,7 @@ export const shippingBatchRouter = router({
       if (input.notes !== undefined) updateData.notes = input.notes;
 
       await db.update(batchStepConfigs).set(updateData)
-        .where(and(eq(batchStepConfigs.batchId, input.batchId), eq(batchStepConfigs.stepNumber, input.stepNumber)));
+        .where(opsWorkspaceCondition(batchStepConfigs, currentOpsWorkspaceId(), and(eq(batchStepConfigs.batchId, input.batchId), eq(batchStepConfigs.stepNumber, input.stepNumber))));
 
       return { success: true };
     }),
@@ -653,7 +656,7 @@ export const shippingBatchRouter = router({
   listTemplates: protectedProcedure.query(async ({ ctx }) => {
       const db = (await getDb())!;
     return db.select().from(stepTimeTemplates)
-      .where(eq(stepTimeTemplates.userId, String(ctx.user.id)))
+      .where(opsWorkspaceCondition(stepTimeTemplates, currentOpsWorkspaceId(), eq(stepTimeTemplates.userId, String(ctx.user.id))))
       .orderBy(desc(stepTimeTemplates.createdAt));
   }),
 
@@ -671,7 +674,7 @@ export const shippingBatchRouter = router({
 
       if (input.isDefault) {
         await db.update(stepTimeTemplates).set({ isDefault: 0, updatedAt: now })
-          .where(eq(stepTimeTemplates.userId, userId));
+          .where(opsWorkspaceCondition(stepTimeTemplates, currentOpsWorkspaceId(), eq(stepTimeTemplates.userId, userId)));
       }
 
       await db.insert(stepTimeTemplates).values({
@@ -700,7 +703,7 @@ export const shippingBatchRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = (await getDb())!;
       await db.delete(stepTimeTemplates)
-        .where(and(eq(stepTimeTemplates.id, input.id), eq(stepTimeTemplates.userId, String(ctx.user.id))));
+        .where(opsWorkspaceCondition(stepTimeTemplates, currentOpsWorkspaceId(), and(eq(stepTimeTemplates.id, input.id), eq(stepTimeTemplates.userId, String(ctx.user.id)))));
       return { success: true };
     }),
 
@@ -709,7 +712,7 @@ export const shippingBatchRouter = router({
       const db = (await getDb())!;
     const userId = String(ctx.user.id);
     const activeBatches = await db.select().from(shippingBatches)
-      .where(and(eq(shippingBatches.userId, userId), eq(shippingBatches.status, "active")));
+      .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), and(eq(shippingBatches.userId, userId), eq(shippingBatches.status, "active"))));
 
     const pipeline = SHIPPING_STEPS.map(step => {
       const batchesAtStep = activeBatches.filter(b => b.currentStep === step.number);
@@ -754,7 +757,7 @@ export const shippingBatchRouter = router({
     .query(async ({ ctx }) => {
       const db = (await getDb())!;
       const history = await db.select().from(stepTimeHistory)
-        .where(eq(stepTimeHistory.userId, String(ctx.user.id)))
+        .where(opsWorkspaceCondition(stepTimeHistory, currentOpsWorkspaceId(), eq(stepTimeHistory.userId, String(ctx.user.id))))
         .orderBy(desc(stepTimeHistory.createdAt));
 
       // Group by step and shipping method
@@ -783,11 +786,11 @@ export const shippingBatchRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = (await getDb())!;
       const userId = String(ctx.user.id);
-      await db.delete(batchLogs).where(eq(batchLogs.batchId, input.id));
-      await db.delete(batchProducts).where(eq(batchProducts.batchId, input.id));
-      await db.delete(batchStepConfigs).where(eq(batchStepConfigs.batchId, input.id));
+      await db.delete(batchLogs).where(opsWorkspaceCondition(batchLogs, currentOpsWorkspaceId(), eq(batchLogs.batchId, input.id)));
+      await db.delete(batchProducts).where(opsWorkspaceCondition(batchProducts, currentOpsWorkspaceId(), eq(batchProducts.batchId, input.id)));
+      await db.delete(batchStepConfigs).where(opsWorkspaceCondition(batchStepConfigs, currentOpsWorkspaceId(), eq(batchStepConfigs.batchId, input.id)));
       await db.delete(shippingBatches)
-        .where(and(eq(shippingBatches.id, input.id), eq(shippingBatches.userId, userId)));
+        .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), and(eq(shippingBatches.id, input.id), eq(shippingBatches.userId, userId))));
       return { success: true };
     }),
 
@@ -810,10 +813,10 @@ export const shippingBatchRouter = router({
       const db = await getDb();
       await db!.update(replenishmentPredictions)
         .set({ userConfirmed: input.confirmed ? 1 : 0, updatedAt: Date.now() })
-        .where(and(
+        .where(opsWorkspaceCondition(replenishmentPredictions, currentOpsWorkspaceId(), and(
           eq(replenishmentPredictions.userId, String(ctx.user.id)),
           eq(replenishmentPredictions.sku, input.sku),
-        ));
+        )));
       return { success: true };
     }),
 
@@ -836,7 +839,7 @@ export const shippingBatchRouter = router({
   getStepTemplates: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
     return await db!.select().from(stepTimeTemplates)
-      .where(eq(stepTimeTemplates.userId, String(ctx.user.id)))
+      .where(opsWorkspaceCondition(stepTimeTemplates, currentOpsWorkspaceId(), eq(stepTimeTemplates.userId, String(ctx.user.id))))
       .orderBy(desc(stepTimeTemplates.updatedAt));
   }),
 
@@ -867,7 +870,7 @@ export const shippingBatchRouter = router({
       if (input.id) {
         await db!.update(stepTimeTemplates)
           .set(stepData)
-          .where(and(eq(stepTimeTemplates.id, input.id), eq(stepTimeTemplates.userId, userId)));
+          .where(opsWorkspaceCondition(stepTimeTemplates, currentOpsWorkspaceId(), and(eq(stepTimeTemplates.id, input.id), eq(stepTimeTemplates.userId, userId))));
       } else {
         await db!.insert(stepTimeTemplates).values({
           ...stepData,
@@ -883,7 +886,7 @@ export const shippingBatchRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       await db!.delete(stepTimeTemplates)
-        .where(and(eq(stepTimeTemplates.id, input.id), eq(stepTimeTemplates.userId, String(ctx.user.id))));
+        .where(opsWorkspaceCondition(stepTimeTemplates, currentOpsWorkspaceId(), and(eq(stepTimeTemplates.id, input.id), eq(stepTimeTemplates.userId, String(ctx.user.id)))));
       return { success: true };
     }),
 
@@ -919,11 +922,11 @@ export const shippingBatchRouter = router({
     // 获取该用户所有批次的产品
     const userBatches = await db.select({ id: shippingBatches.id })
       .from(shippingBatches)
-      .where(eq(shippingBatches.userId, String(ctx.user.id)));
+      .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), eq(shippingBatches.userId, String(ctx.user.id))));
     if (userBatches.length === 0) return [];
     const batchIds = userBatches.map(b => b.id);
     const products = await db.select().from(batchProducts)
-      .where(inArray(batchProducts.batchId, batchIds));
+      .where(opsWorkspaceCondition(batchProducts, currentOpsWorkspaceId(), inArray(batchProducts.batchId, batchIds)));
     // 按ASIN聚合
     const asinMap = new Map<string, { asin: string; sku: string; productName: string; batchCount: number; totalQuantity: number }>();
     for (const p of products) {
@@ -954,12 +957,12 @@ export const shippingBatchRouter = router({
       // 找到包含该ASIN/SKU的所有batch_products
       const userBatches = await db.select({ id: shippingBatches.id })
         .from(shippingBatches)
-        .where(eq(shippingBatches.userId, String(ctx.user.id)));
+        .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), eq(shippingBatches.userId, String(ctx.user.id))));
       if (userBatches.length === 0) return { batches: [], totalQuantity: 0, inTransitQuantity: 0 };
       const batchIds = userBatches.map(b => b.id);
       // 查找匹配的产品记录
       const allProducts = await db.select().from(batchProducts)
-        .where(inArray(batchProducts.batchId, batchIds));
+        .where(opsWorkspaceCondition(batchProducts, currentOpsWorkspaceId(), inArray(batchProducts.batchId, batchIds)));
       const matchedProducts = allProducts.filter(p =>
         (input.asin && p.asin === input.asin) || (input.sku && p.sku === input.sku)
       );
@@ -967,11 +970,11 @@ export const shippingBatchRouter = router({
       const matchedBatchIds = Array.from(new Set(matchedProducts.map(p => p.batchId)));
       // 获取这些批次的详细信息
       const batches = await db.select().from(shippingBatches)
-        .where(inArray(shippingBatches.id, matchedBatchIds))
+        .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), inArray(shippingBatches.id, matchedBatchIds)))
         .orderBy(desc(shippingBatches.createdAt));
       // 获取这些批次的日志
       const logs = await db.select().from(batchLogs)
-        .where(inArray(batchLogs.batchId, matchedBatchIds))
+        .where(opsWorkspaceCondition(batchLogs, currentOpsWorkspaceId(), inArray(batchLogs.batchId, matchedBatchIds)))
         .orderBy(desc(batchLogs.createdAt));
       // 计算汇总
       let totalQuantity = 0;
@@ -1023,18 +1026,18 @@ export const shippingBatchRouter = router({
       // 获取用户所有批次
       const userBatches = await db.select({ id: shippingBatches.id })
         .from(shippingBatches)
-        .where(eq(shippingBatches.userId, userId));
+        .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), eq(shippingBatches.userId, userId)));
       if (userBatches.length === 0) return [];
       const batchIds = userBatches.map(b => b.id);
       // 查找包含该ASIN的产品记录
       const allProducts = await db.select().from(batchProducts)
-        .where(inArray(batchProducts.batchId, batchIds));
+        .where(opsWorkspaceCondition(batchProducts, currentOpsWorkspaceId(), inArray(batchProducts.batchId, batchIds)));
       const matchedProducts = allProducts.filter(p => p.asin === input.asin);
       if (matchedProducts.length === 0) return [];
       const matchedBatchIds = Array.from(new Set(matchedProducts.map(p => p.batchId)));
       // 获取批次详情
       const batches = await db.select().from(shippingBatches)
-        .where(inArray(shippingBatches.id, matchedBatchIds))
+        .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), inArray(shippingBatches.id, matchedBatchIds)))
         .orderBy(desc(shippingBatches.createdAt));
       return batches.map(batch => {
         const prod = matchedProducts.find(p => p.batchId === batch.id);
@@ -1056,10 +1059,10 @@ export const shippingBatchRouter = router({
     .query(async ({ ctx, input }) => {
       const db = (await getDb())!;
       const logs = await db.select().from(asinLogs)
-        .where(and(
+        .where(opsWorkspaceCondition(asinLogs, currentOpsWorkspaceId(), and(
           eq(asinLogs.asin, input.asin),
           eq(asinLogs.userId, String(ctx.user.id))
-        ))
+        )))
         .orderBy(desc(asinLogs.createdAt))
         .limit(50);
       return logs;
@@ -1074,18 +1077,18 @@ export const shippingBatchRouter = router({
       // 获取用户所有批次
       const userBatches = await db.select({ id: shippingBatches.id })
         .from(shippingBatches)
-        .where(and(eq(shippingBatches.userId, userId), eq(shippingBatches.status, 'active')));
+        .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), and(eq(shippingBatches.userId, userId), eq(shippingBatches.status, 'active'))));
       if (userBatches.length === 0) return null;
       const batchIds = userBatches.map(b => b.id);
       // 查找包含该ASIN的产品记录
       const allProducts = await db.select().from(batchProducts)
-        .where(inArray(batchProducts.batchId, batchIds));
+        .where(opsWorkspaceCondition(batchProducts, currentOpsWorkspaceId(), inArray(batchProducts.batchId, batchIds)));
       const matchedProducts = allProducts.filter(p => p.asin === input.asin);
       if (matchedProducts.length === 0) return null;
       const matchedBatchIds = new Set(matchedProducts.map(p => p.batchId));
       // 获取匹配的批次
       const batches = await db.select().from(shippingBatches)
-        .where(inArray(shippingBatches.id, Array.from(matchedBatchIds)));
+        .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), inArray(shippingBatches.id, Array.from(matchedBatchIds))));
       // 计算流水线统计
       const pipeline = {
         planned: 0, purchasing: 0, domesticTransit: 0, warehouse: 0,
@@ -1126,7 +1129,7 @@ export const shippingBatchRouter = router({
     
     // 2. 获取已有批次（通过fbaShipmentId匹配）
     const existingBatches = await db.select().from(shippingBatches)
-      .where(eq(shippingBatches.userId, userId));
+      .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), eq(shippingBatches.userId, userId)));
     const existingFbaIds = new Set(existingBatches.map(b => b.fbaShipmentId).filter(Boolean));
     
     let created = 0;
@@ -1152,10 +1155,10 @@ export const shippingBatchRouter = router({
         // 更新已有批次的状态
         await db.update(shippingBatches)
           .set({ currentStep, updatedAt: Date.now() })
-          .where(and(
+          .where(opsWorkspaceCondition(shippingBatches, currentOpsWorkspaceId(), and(
             eq(shippingBatches.userId, userId),
             eq(shippingBatches.fbaShipmentId, fbaId),
-          ));
+          )));
         updated++;
       } else {
         // 创建新批次

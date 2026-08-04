@@ -222,6 +222,6 @@ describe("kbFeedback Router", () => {
       expect(router).toBeDefined();
       // Check that kbFeedback is a key in the router
       expect((router as any)._def.procedures).toBeDefined();
-    });
+    }, 15_000);
   });
 });

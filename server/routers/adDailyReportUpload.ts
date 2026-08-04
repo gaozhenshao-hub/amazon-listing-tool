@@ -1,10 +1,13 @@
+import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
+import { opsWorkspaceCondition } from "../repositories/ops";
 /**
  * Ad Daily Report Upload Router - Upload and query 5 types of daily reports
  * for the Ad Deep Optimization module (Phase 0 data foundation)
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/ops/workspaceProcedure";
+import { getDb } from "../repositories/dbClient";
 import {
   adReportUploads,
   adDailyPlacementReports,
@@ -35,7 +38,7 @@ async function resolveParentAsinFromPortfolio(userId: number, portfolioName: str
   const mappings = await d
     .select()
     .from(adPortfolioMappings)
-    .where(and(eq(adPortfolioMappings.userId, userId), eq(adPortfolioMappings.portfolioName, portfolioName)))
+    .where(opsWorkspaceCondition(adPortfolioMappings, currentOpsWorkspaceId(), and(eq(adPortfolioMappings.userId, userId), eq(adPortfolioMappings.portfolioName, portfolioName))))
     .limit(1);
   return mappings[0]?.parentAsin || null;
 }
@@ -117,10 +120,10 @@ export const adDailyReportUploadRouter = router({
           })
         );
         await batchInsert(adDailyPlacementReports, dbRows);
-        await d.update(adReportUploads).set({ status: "completed", importedRows: parsedRows.length }).where(eq(adReportUploads.id, uploadId));
+        await d.update(adReportUploads).set({ status: "completed", importedRows: parsedRows.length }).where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
         return { uploadId, totalRows: parsedRows.length, importedRows: parsedRows.length };
       } catch (err: any) {
-        await d.update(adReportUploads).set({ status: "failed", errorMessage: err.message }).where(eq(adReportUploads.id, uploadId));
+        await d.update(adReportUploads).set({ status: "failed", errorMessage: err.message }).where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
         throw err;
       }
     }),
@@ -193,10 +196,10 @@ export const adDailyReportUploadRouter = router({
           })
         );
         await batchInsert(adDailySearchTermReports, dbRows);
-        await d.update(adReportUploads).set({ status: "completed", importedRows: parsedRows.length }).where(eq(adReportUploads.id, uploadId));
+        await d.update(adReportUploads).set({ status: "completed", importedRows: parsedRows.length }).where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
         return { uploadId, totalRows: parsedRows.length, importedRows: parsedRows.length };
       } catch (err: any) {
-        await d.update(adReportUploads).set({ status: "failed", errorMessage: err.message }).where(eq(adReportUploads.id, uploadId));
+        await d.update(adReportUploads).set({ status: "failed", errorMessage: err.message }).where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
         throw err;
       }
     }),
@@ -262,10 +265,10 @@ export const adDailyReportUploadRouter = router({
           })
         );
         await batchInsert(adDailyImpressionShareReports, dbRows);
-        await d.update(adReportUploads).set({ status: "completed", importedRows: parsedRows.length }).where(eq(adReportUploads.id, uploadId));
+        await d.update(adReportUploads).set({ status: "completed", importedRows: parsedRows.length }).where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
         return { uploadId, totalRows: parsedRows.length, importedRows: parsedRows.length };
       } catch (err: any) {
-        await d.update(adReportUploads).set({ status: "failed", errorMessage: err.message }).where(eq(adReportUploads.id, uploadId));
+        await d.update(adReportUploads).set({ status: "failed", errorMessage: err.message }).where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
         throw err;
       }
     }),
@@ -333,10 +336,10 @@ export const adDailyReportUploadRouter = router({
           acosVsBenchmark: r.acosVsBenchmark,
         }));
         await batchInsert(adDailySbBenchmarkReports, dbRows);
-        await d.update(adReportUploads).set({ status: "completed", importedRows: parsedRows.length }).where(eq(adReportUploads.id, uploadId));
+        await d.update(adReportUploads).set({ status: "completed", importedRows: parsedRows.length }).where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
         return { uploadId, totalRows: parsedRows.length, importedRows: parsedRows.length };
       } catch (err: any) {
-        await d.update(adReportUploads).set({ status: "failed", errorMessage: err.message }).where(eq(adReportUploads.id, uploadId));
+        await d.update(adReportUploads).set({ status: "failed", errorMessage: err.message }).where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
         throw err;
       }
     }),
@@ -396,10 +399,10 @@ export const adDailyReportUploadRouter = router({
           totalOrderItemsB2b: r.totalOrderItemsB2b,
         }));
         await batchInsert(adDailyBusinessReports, dbRows);
-        await d.update(adReportUploads).set({ status: "completed", importedRows: parsedRows.length }).where(eq(adReportUploads.id, uploadId));
+        await d.update(adReportUploads).set({ status: "completed", importedRows: parsedRows.length }).where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
         return { uploadId, totalRows: parsedRows.length, importedRows: parsedRows.length };
       } catch (err: any) {
-        await d.update(adReportUploads).set({ status: "failed", errorMessage: err.message }).where(eq(adReportUploads.id, uploadId));
+        await d.update(adReportUploads).set({ status: "failed", errorMessage: err.message }).where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, uploadId)));
         throw err;
       }
     }),
@@ -411,13 +414,13 @@ export const adDailyReportUploadRouter = router({
     const [p1, p2, p3] = await Promise.all([
       d.selectDistinct({ name: adDailyPlacementReports.portfolioName })
         .from(adDailyPlacementReports)
-        .where(eq(adDailyPlacementReports.userId, ctx.user.id)),
+        .where(opsWorkspaceCondition(adDailyPlacementReports, currentOpsWorkspaceId(), eq(adDailyPlacementReports.userId, ctx.user.id))),
       d.selectDistinct({ name: adDailySearchTermReports.portfolioName })
         .from(adDailySearchTermReports)
-        .where(eq(adDailySearchTermReports.userId, ctx.user.id)),
+        .where(opsWorkspaceCondition(adDailySearchTermReports, currentOpsWorkspaceId(), eq(adDailySearchTermReports.userId, ctx.user.id))),
       d.selectDistinct({ name: adDailyImpressionShareReports.portfolioName })
         .from(adDailyImpressionShareReports)
-        .where(eq(adDailyImpressionShareReports.userId, ctx.user.id)),
+        .where(opsWorkspaceCondition(adDailyImpressionShareReports, currentOpsWorkspaceId(), eq(adDailyImpressionShareReports.userId, ctx.user.id))),
     ]);
     const allNames = new Set<string>();
     [...p1, ...p2, ...p3].forEach((r) => { if (r.name) allNames.add(r.name); });
@@ -430,18 +433,18 @@ export const adDailyReportUploadRouter = router({
     const [result] = await d.select({
       minDate: sql<string>`MIN(report_date)`,
       maxDate: sql<string>`MAX(report_date)`,
-    }).from(adDailyPlacementReports).where(eq(adDailyPlacementReports.userId, ctx.user.id));
+    }).from(adDailyPlacementReports).where(opsWorkspaceCondition(adDailyPlacementReports, currentOpsWorkspaceId(), eq(adDailyPlacementReports.userId, ctx.user.id)));
     return { minDate: result?.minDate || "", maxDate: result?.maxDate || "" };
   }),
 
   // ─── Query: Daily data overview (counts per table) ──────────
   getDailyDataOverview: protectedProcedure.query(async ({ ctx }) => {
     const d = await getDbInstance();
-    const [c1] = await d.select({ count: sql<number>`COUNT(*)` }).from(adDailyPlacementReports).where(eq(adDailyPlacementReports.userId, ctx.user.id));
-    const [c2] = await d.select({ count: sql<number>`COUNT(*)` }).from(adDailySearchTermReports).where(eq(adDailySearchTermReports.userId, ctx.user.id));
-    const [c3] = await d.select({ count: sql<number>`COUNT(*)` }).from(adDailyImpressionShareReports).where(eq(adDailyImpressionShareReports.userId, ctx.user.id));
-    const [c4] = await d.select({ count: sql<number>`COUNT(*)` }).from(adDailySbBenchmarkReports).where(eq(adDailySbBenchmarkReports.userId, ctx.user.id));
-    const [c5] = await d.select({ count: sql<number>`COUNT(*)` }).from(adDailyBusinessReports).where(eq(adDailyBusinessReports.userId, ctx.user.id));
+    const [c1] = await d.select({ count: sql<number>`COUNT(*)` }).from(adDailyPlacementReports).where(opsWorkspaceCondition(adDailyPlacementReports, currentOpsWorkspaceId(), eq(adDailyPlacementReports.userId, ctx.user.id)));
+    const [c2] = await d.select({ count: sql<number>`COUNT(*)` }).from(adDailySearchTermReports).where(opsWorkspaceCondition(adDailySearchTermReports, currentOpsWorkspaceId(), eq(adDailySearchTermReports.userId, ctx.user.id)));
+    const [c3] = await d.select({ count: sql<number>`COUNT(*)` }).from(adDailyImpressionShareReports).where(opsWorkspaceCondition(adDailyImpressionShareReports, currentOpsWorkspaceId(), eq(adDailyImpressionShareReports.userId, ctx.user.id)));
+    const [c4] = await d.select({ count: sql<number>`COUNT(*)` }).from(adDailySbBenchmarkReports).where(opsWorkspaceCondition(adDailySbBenchmarkReports, currentOpsWorkspaceId(), eq(adDailySbBenchmarkReports.userId, ctx.user.id)));
+    const [c5] = await d.select({ count: sql<number>`COUNT(*)` }).from(adDailyBusinessReports).where(opsWorkspaceCondition(adDailyBusinessReports, currentOpsWorkspaceId(), eq(adDailyBusinessReports.userId, ctx.user.id)));
     return {
       placement: c1?.count || 0,
       searchTerm: c2?.count || 0,
@@ -461,12 +464,12 @@ export const adDailyReportUploadRouter = router({
     .query(async ({ ctx, input }) => {
       const d = await getDbInstance();
       const data = await d.select().from(adDailyPlacementReports).where(
-        and(
+        opsWorkspaceCondition(adDailyPlacementReports, currentOpsWorkspaceId(), and(
           eq(adDailyPlacementReports.userId, ctx.user.id),
           inArray(adDailyPlacementReports.portfolioName, input.portfolioNames),
           gte(adDailyPlacementReports.reportDate, input.dateStart),
           lte(adDailyPlacementReports.reportDate, input.dateEnd),
-        )
+        ))
       ).orderBy(adDailyPlacementReports.reportDate);
       return data;
     }),
@@ -481,12 +484,12 @@ export const adDailyReportUploadRouter = router({
     .query(async ({ ctx, input }) => {
       const d = await getDbInstance();
       const data = await d.select().from(adDailySearchTermReports).where(
-        and(
+        opsWorkspaceCondition(adDailySearchTermReports, currentOpsWorkspaceId(), and(
           eq(adDailySearchTermReports.userId, ctx.user.id),
           inArray(adDailySearchTermReports.portfolioName, input.portfolioNames),
           gte(adDailySearchTermReports.reportDate, input.dateStart),
           lte(adDailySearchTermReports.reportDate, input.dateEnd),
-        )
+        ))
       ).orderBy(adDailySearchTermReports.reportDate);
       return data;
     }),
@@ -501,12 +504,12 @@ export const adDailyReportUploadRouter = router({
     .query(async ({ ctx, input }) => {
       const d = await getDbInstance();
       const data = await d.select().from(adDailyImpressionShareReports).where(
-        and(
+        opsWorkspaceCondition(adDailyImpressionShareReports, currentOpsWorkspaceId(), and(
           eq(adDailyImpressionShareReports.userId, ctx.user.id),
           inArray(adDailyImpressionShareReports.portfolioName, input.portfolioNames),
           gte(adDailyImpressionShareReports.reportDate, input.dateStart),
           lte(adDailyImpressionShareReports.reportDate, input.dateEnd),
-        )
+        ))
       ).orderBy(adDailyImpressionShareReports.reportDate);
       return data;
     }),
@@ -520,11 +523,11 @@ export const adDailyReportUploadRouter = router({
     .query(async ({ ctx, input }) => {
       const d = await getDbInstance();
       const data = await d.select().from(adDailySbBenchmarkReports).where(
-        and(
+        opsWorkspaceCondition(adDailySbBenchmarkReports, currentOpsWorkspaceId(), and(
           eq(adDailySbBenchmarkReports.userId, ctx.user.id),
           gte(adDailySbBenchmarkReports.reportDate, input.dateStart),
           lte(adDailySbBenchmarkReports.reportDate, input.dateEnd),
-        )
+        ))
       ).orderBy(adDailySbBenchmarkReports.reportDate);
       return data;
     }),
@@ -546,7 +549,7 @@ export const adDailyReportUploadRouter = router({
       if (input.childAsins && input.childAsins.length > 0) {
         conditions.push(inArray(adDailyBusinessReports.childAsin, input.childAsins));
       }
-      const data = await d.select().from(adDailyBusinessReports).where(and(...conditions)).orderBy(adDailyBusinessReports.reportDate);
+      const data = await d.select().from(adDailyBusinessReports).where(opsWorkspaceCondition(adDailyBusinessReports, currentOpsWorkspaceId(), and(...conditions))).orderBy(adDailyBusinessReports.reportDate);
       return data;
     }),
 
@@ -567,7 +570,7 @@ export const adDailyReportUploadRouter = router({
         );
       }
       const uploads = await d.select().from(adReportUploads)
-        .where(and(...conditions))
+        .where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), and(...conditions)))
         .orderBy(desc(adReportUploads.createdAt))
         .limit(input.limit);
       return uploads;
@@ -580,7 +583,7 @@ export const adDailyReportUploadRouter = router({
       const d = await getDbInstance();
       // Verify ownership
       const [upload] = await d.select().from(adReportUploads)
-        .where(and(eq(adReportUploads.id, input.uploadId), eq(adReportUploads.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), and(eq(adReportUploads.id, input.uploadId), eq(adReportUploads.userId, ctx.user.id))));
       if (!upload) throw new Error("上传记录不存在");
 
       // Delete data from corresponding table
@@ -595,7 +598,7 @@ export const adDailyReportUploadRouter = router({
       if (table) {
         await d.delete(table).where(eq(table.uploadId, input.uploadId));
       }
-      await d.delete(adReportUploads).where(eq(adReportUploads.id, input.uploadId));
+      await d.delete(adReportUploads).where(opsWorkspaceCondition(adReportUploads, currentOpsWorkspaceId(), eq(adReportUploads.id, input.uploadId)));
       return { success: true };
     }),
 });

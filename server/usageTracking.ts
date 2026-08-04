@@ -5,7 +5,7 @@
  * 按用户+日期维度聚合到 usage_stats 表
  */
 
-import { getDb } from "./db";
+import { getDb } from "./repositories/dbClient";
 import { usageStats } from "../drizzle/schema";
 import { eq, and, sql } from "drizzle-orm";
 

@@ -1,7 +1,10 @@
+import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
+import { opsWorkspaceCondition } from "../repositories/ops";
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/ops/workspaceProcedure";
 import { invokeLLM } from "../_core/llm";
-import { getDb } from "../db";
+import { getDb } from "../repositories/dbClient";
 import {
   reviewRecords, reviewReplies, emailTemplates, emailReplies,
   returnAnalysisCache, serviceTasks
@@ -247,14 +250,14 @@ export const afterSalesRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { success: false };
-      const [existing] = await db.select().from(reviewReplies).where(eq(reviewReplies.reviewRecordId, input.reviewRecordId)).limit(1);
+      const [existing] = await db.select().from(reviewReplies).where(opsWorkspaceCondition(reviewReplies, currentOpsWorkspaceId(), eq(reviewReplies.reviewRecordId, input.reviewRecordId))).limit(1);
       if (existing) {
         await db.update(reviewReplies).set({
           editedReply: input.editedReply || existing.editedReply,
           finalReply: input.status === "confirmed" ? (input.editedReply || existing.editedReply || existing.aiDraftReply) : existing.finalReply,
           status: input.status,
           confirmedAt: input.status === "confirmed" ? new Date() : existing.confirmedAt,
-        }).where(eq(reviewReplies.id, existing.id));
+        }).where(opsWorkspaceCondition(reviewReplies, currentOpsWorkspaceId(), eq(reviewReplies.id, existing.id)));
         return { success: true, id: existing.id };
       } else {
         const [result] = await db.insert(reviewReplies).values({
@@ -275,11 +278,11 @@ export const afterSalesRouter = router({
       const db = await getDb();
       if (!db) return { total: 0, list: [] };
       const list = await db.select().from(reviewRecords)
-        .where(eq(reviewRecords.userId, ctx.user.id))
+        .where(opsWorkspaceCondition(reviewRecords, currentOpsWorkspaceId(), eq(reviewRecords.userId, ctx.user.id)))
         .orderBy(desc(reviewRecords.createdAt))
         .limit(input.pageSize)
         .offset((input.page - 1) * input.pageSize);
-      const [countRes] = await db.select({ count: sql<number>`count(*)` }).from(reviewRecords).where(eq(reviewRecords.userId, ctx.user.id));
+      const [countRes] = await db.select({ count: sql<number>`count(*)` }).from(reviewRecords).where(opsWorkspaceCondition(reviewRecords, currentOpsWorkspaceId(), eq(reviewRecords.userId, ctx.user.id)));
       return { total: countRes?.count || 0, list };
     }),
 
@@ -537,7 +540,7 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
           finalReply: input.status === "replied" ? input.editedReply : undefined,
           status: input.status,
           repliedAt: input.status === "replied" ? new Date() : undefined,
-        }).where(eq(emailReplies.id, input.id));
+        }).where(opsWorkspaceCondition(emailReplies, currentOpsWorkspaceId(), eq(emailReplies.id, input.id)));
         return { success: true, id: input.id };
       }
       const [result] = await db.insert(emailReplies).values({
@@ -555,7 +558,7 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) return [];
-      let query = db.select().from(emailTemplates).where(eq(emailTemplates.userId, ctx.user.id));
+      let query = db.select().from(emailTemplates).where(opsWorkspaceCondition(emailTemplates, currentOpsWorkspaceId(), eq(emailTemplates.userId, ctx.user.id)));
       return await query.orderBy(desc(emailTemplates.usageCount));
     }),
 
@@ -599,7 +602,7 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
       const { id, ...updates } = input;
       const filtered = Object.fromEntries(Object.entries(updates).filter(([_, v]) => v !== undefined));
       if (Object.keys(filtered).length > 0) {
-        await db.update(emailTemplates).set(filtered).where(and(eq(emailTemplates.id, id), eq(emailTemplates.userId, ctx.user.id)));
+        await db.update(emailTemplates).set(filtered).where(opsWorkspaceCondition(emailTemplates, currentOpsWorkspaceId(), and(eq(emailTemplates.id, id), eq(emailTemplates.userId, ctx.user.id))));
       }
       return { success: true };
     }),
@@ -609,7 +612,7 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
     .mutation(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return { success: false };
-      await db.delete(emailTemplates).where(and(eq(emailTemplates.id, input.id), eq(emailTemplates.userId, ctx.user.id)));
+      await db.delete(emailTemplates).where(opsWorkspaceCondition(emailTemplates, currentOpsWorkspaceId(), and(eq(emailTemplates.id, input.id), eq(emailTemplates.userId, ctx.user.id))));
       return { success: true };
     }),
 
@@ -686,11 +689,11 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
       const conditions = [eq(serviceTasks.userId, ctx.user.id)];
       if (input.status) conditions.push(eq(serviceTasks.status, input.status));
       const list = await db.select().from(serviceTasks)
-        .where(and(...conditions))
+        .where(opsWorkspaceCondition(serviceTasks, currentOpsWorkspaceId(), and(...conditions)))
         .orderBy(desc(serviceTasks.createdAt))
         .limit(input.pageSize)
         .offset((input.page - 1) * input.pageSize);
-      const [countRes] = await db.select({ count: sql<number>`count(*)` }).from(serviceTasks).where(and(...conditions));
+      const [countRes] = await db.select({ count: sql<number>`count(*)` }).from(serviceTasks).where(opsWorkspaceCondition(serviceTasks, currentOpsWorkspaceId(), and(...conditions)));
       return { total: countRes?.count || 0, list };
     }),
 
@@ -728,7 +731,7 @@ ${input.history ? `\n## 历史对话\n${input.history.map(h => `[${h.direction}]
       const { id, ...updates } = input;
       const filtered: any = Object.fromEntries(Object.entries(updates).filter(([_, v]) => v !== undefined));
       if (updates.status === "resolved") filtered.resolvedAt = new Date();
-      await db.update(serviceTasks).set(filtered).where(and(eq(serviceTasks.id, id), eq(serviceTasks.userId, ctx.user.id)));
+      await db.update(serviceTasks).set(filtered).where(opsWorkspaceCondition(serviceTasks, currentOpsWorkspaceId(), and(eq(serviceTasks.id, id), eq(serviceTasks.userId, ctx.user.id))));
       return { success: true };
     }),
 

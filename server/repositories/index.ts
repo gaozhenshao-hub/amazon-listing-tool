@@ -1,5 +1,16 @@
 export * from "./dbClient";
 export * from "./dbGovernance";
+export * from "./database";
+export * from "./auth";
+export * from "./ai_os";
+export * from "./image";
+export * from "./listing";
+export * from "./ops";
+export * from "./project";
+export * as authRepository from "./auth";
 export * as aiOsRepository from "./ai_os";
+export * as databaseRepository from "./database";
+export * as imageRepository from "./image";
+export * as listingRepository from "./listing";
+export * as opsRepository from "./ops";
 export * as projectRepository from "./project";
-

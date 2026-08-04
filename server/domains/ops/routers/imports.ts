@@ -1,3 +1,5 @@
+import { currentOpsWorkspaceId } from "../workspaceContext";
+import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
 
@@ -206,7 +208,7 @@ export const opsImportProcedures = {
 
       // Step 2: 保存卖家精灵原始数据到对比记录的crawlData中（先保存数据）
       const comparison = await db.select().from(conversionComparisons)
-        .where(eq(conversionComparisons.id, comparisonId))
+        .where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), eq(conversionComparisons.id, comparisonId)))
         .limit(1);
 
       if (comparison.length > 0) {
@@ -233,7 +235,7 @@ export const opsImportProcedures = {
         };
         await db.update(conversionComparisons)
           .set({ crawlData: JSON.stringify(existingCrawl) })
-          .where(eq(conversionComparisons.id, comparisonId));
+          .where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), eq(conversionComparisons.id, comparisonId)));
       }
 
       // Step 3: 设置评分进度跟踪
@@ -244,24 +246,24 @@ export const opsImportProcedures = {
       (async () => {
         try {
           const checkItems = await db.select().from(conversionCheckItems)
-            .where(isNull(conversionCheckItems.userId))
+            .where(opsWorkspaceCondition(conversionCheckItems, currentOpsWorkspaceId(), isNull(conversionCheckItems.userId)))
             .orderBy(asc(conversionCheckItems.categoryIndex), asc(conversionCheckItems.sortOrder));
 
           const existingScores = await db.select().from(conversionScores)
-            .where(and(
+            .where(opsWorkspaceCondition(conversionScores, currentOpsWorkspaceId(), and(
               eq(conversionScores.comparisonId, comparisonId),
               eq(conversionScores.asin, upperAsin),
-            ));
+            )));
           const lockedKeys = new Set(
             existingScores.filter(s => s.isLocked === 1).map(s => s.checkItemId)
           );
 
           await db.delete(conversionScores)
-            .where(and(
+            .where(opsWorkspaceCondition(conversionScores, currentOpsWorkspaceId(), and(
               eq(conversionScores.comparisonId, comparisonId),
               eq(conversionScores.asin, upperAsin),
               eq(conversionScores.isLocked, 0),
-            ));
+            )));
 
           const unlocked = checkItems.filter(item => !lockedKeys.has(item.id));
           console.log(`[applySellerSpriteData] Async scoring ${unlocked.length} items for ${upperAsin} (${lockedKeys.size} locked)`);
@@ -302,7 +304,7 @@ export const opsImportProcedures = {
 
           // 更新整体评分
           const allOwnScores = await db.select().from(conversionScores)
-            .where(and(eq(conversionScores.comparisonId, comparisonId), eq(conversionScores.asin, upperAsin)));
+            .where(opsWorkspaceCondition(conversionScores, currentOpsWorkspaceId(), and(eq(conversionScores.comparisonId, comparisonId), eq(conversionScores.asin, upperAsin))));
           const validScores = allOwnScores.filter(s => s.score !== null && s.score > 0);
           const avgScore = validScores.length > 0
             ? Math.round(validScores.reduce((sum, s) => sum + (s.score || 0), 0) / validScores.length * 10) / 10
@@ -311,7 +313,7 @@ export const opsImportProcedures = {
           if (comparison.length > 0 && comparison[0].ownAsin === upperAsin) {
             await db.update(conversionComparisons).set({
               overallOwnScore: String(avgScore),
-            }).where(eq(conversionComparisons.id, comparisonId));
+            }).where(opsWorkspaceCondition(conversionComparisons, currentOpsWorkspaceId(), eq(conversionComparisons.id, comparisonId)));
           }
 
           scoringProgressMap.set(taskKey, {
@@ -368,7 +370,7 @@ export const opsImportProcedures = {
         weekStartDate: lingxingProductWeekly.weekStartDate,
       })
         .from(lingxingProductWeekly)
-        .where(eq(lingxingProductWeekly.userId, effectiveUserId))
+        .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), eq(lingxingProductWeekly.userId, effectiveUserId)))
         .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
       // Filter by marketplace
@@ -391,7 +393,7 @@ export const opsImportProcedures = {
       if (!isManagerOrAbove && ctx.user.name) {
         // Apply operator name mapping
         const mappings = await db!.select().from(operatorNameMappings)
-          .where(eq(operatorNameMappings.userId, effectiveUserId));
+          .where(opsWorkspaceCondition(operatorNameMappings, currentOpsWorkspaceId(), eq(operatorNameMappings.userId, effectiveUserId)));
         const nameMap = new Map(mappings.map((m: any) => [m.externalName, m.systemUserName]));
         products = products.filter((p: any) => {
           const mappedName = nameMap.get(p.operator) || p.operator;
@@ -401,7 +403,7 @@ export const opsImportProcedures = {
 
       // Check existing plans for these ASINs
       const existingPlans = await db!.select().from(opsPlans)
-        .where(eq(opsPlans.userId, ctx.user.id));
+        .where(opsWorkspaceCondition(opsPlans, currentOpsWorkspaceId(), eq(opsPlans.userId, ctx.user.id)));
       const plansByProfileId = new Map<number, any>();
       for (const p of existingPlans) {
         plansByProfileId.set(p.productProfileId, p);
@@ -527,11 +529,11 @@ export const opsImportProcedures = {
 
       // Get existing plans for this user
       const existingPlans = await db!.select().from(opsPlans)
-        .where(eq(opsPlans.userId, ctx.user.id));
+        .where(opsWorkspaceCondition(opsPlans, currentOpsWorkspaceId(), eq(opsPlans.userId, ctx.user.id)));
 
       // Get productProfiles for this user to find productProfileId by parentAsin
       const profiles = await db!.select().from(productProfiles)
-        .where(eq(productProfiles.userId, ctx.user.id));
+        .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), eq(productProfiles.userId, ctx.user.id)));
       const profileByAsin = new Map(profiles.map((p: any) => [p.parentAsin, p]));
 
       // Also check plans with productProfileId=0 (import mode plans)
@@ -607,7 +609,7 @@ export const opsImportProcedures = {
           if (existingPlan) {
             // Update existing plan - also set parentAsin for data isolation
             await db!.update(opsPlans).set({ ...cleanData, parentAsin })
-              .where(and(eq(opsPlans.id, existingPlan.id), eq(opsPlans.userId, ctx.user.id)));
+              .where(opsWorkspaceCondition(opsPlans, currentOpsWorkspaceId(), and(eq(opsPlans.id, existingPlan.id), eq(opsPlans.userId, ctx.user.id))));
             results.push({ parentAsin, planName, status: "updated" as const });
           } else {
             // Create new plan with parentAsin for data isolation
@@ -676,7 +678,7 @@ export const opsImportProcedures = {
         weekStartDate: lingxingProductWeekly.weekStartDate,
       })
         .from(lingxingProductWeekly)
-        .where(eq(lingxingProductWeekly.userId, effectiveUserId))
+        .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), eq(lingxingProductWeekly.userId, effectiveUserId)))
         .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
       // Filter by marketplace
@@ -698,7 +700,7 @@ export const opsImportProcedures = {
       let products = Array.from(asinMap.values());
       if (!isManagerOrAbove && ctx.user.name) {
         const mappings = await db!.select().from(operatorNameMappings)
-          .where(eq(operatorNameMappings.userId, effectiveUserId));
+          .where(opsWorkspaceCondition(operatorNameMappings, currentOpsWorkspaceId(), eq(operatorNameMappings.userId, effectiveUserId)));
         const nameMap = new Map(mappings.map((m: any) => [m.externalName, m.systemUserName]));
         products = products.filter((p: any) => {
           const mappedName = nameMap.get(p.operator) || p.operator;
@@ -802,11 +804,11 @@ export const opsImportProcedures = {
 
       // Get existing reviews for this user
       const existingReviews = await db!.select().from(executionReviews)
-        .where(eq(executionReviews.userId, ctx.user.id));
+        .where(opsWorkspaceCondition(executionReviews, currentOpsWorkspaceId(), eq(executionReviews.userId, ctx.user.id)));
 
       // Get productProfiles for this user to find productProfileId by parentAsin
       const profiles = await db!.select().from(productProfiles)
-        .where(eq(productProfiles.userId, ctx.user.id));
+        .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), eq(productProfiles.userId, ctx.user.id)));
       const profileByAsin = new Map(profiles.map((p: any) => [p.parentAsin, p]));
 
       for (const row of rows) {
@@ -872,7 +874,7 @@ export const opsImportProcedures = {
           if (existingReview) {
             // Update existing review
             await db!.update(executionReviews).set(cleanData)
-              .where(and(eq(executionReviews.id, existingReview.id), eq(executionReviews.userId, ctx.user.id)));
+              .where(opsWorkspaceCondition(executionReviews, currentOpsWorkspaceId(), and(eq(executionReviews.id, existingReview.id), eq(executionReviews.userId, ctx.user.id))));
             (results as any[]).push({ parentAsin, period, status: "updated", recordId: existingReview.id });
           } else {
             // Create new review
@@ -929,10 +931,10 @@ export const opsImportProcedures = {
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
 
       const history = await db!.select().from(opsImportHistory)
-        .where(and(
+        .where(opsWorkspaceCondition(opsImportHistory, currentOpsWorkspaceId(), and(
           eq(opsImportHistory.userId, effectiveUserId),
           eq(opsImportHistory.importType, input.importType),
-        ))
+        )))
         .orderBy(desc(opsImportHistory.createdAt));
 
       return history.map((h: any) => ({
@@ -954,10 +956,10 @@ export const opsImportProcedures = {
 
       // Get the history record
       const [history] = await db!.select().from(opsImportHistory)
-        .where(and(
+        .where(opsWorkspaceCondition(opsImportHistory, currentOpsWorkspaceId(), and(
           eq(opsImportHistory.id, input.historyId),
           eq(opsImportHistory.userId, effectiveUserId),
-        ));
+        )));
 
       if (!history) {
         throw new TRPCError({ code: "NOT_FOUND", message: "导入记录不存在" });
@@ -970,29 +972,29 @@ export const opsImportProcedures = {
         if (history.importType === "plan") {
           // Delete plan actions first (foreign key)
           await db!.delete(opsPlanActions)
-            .where(inArray(opsPlanActions.planId, recordIds));
+            .where(opsWorkspaceCondition(opsPlanActions, currentOpsWorkspaceId(), inArray(opsPlanActions.planId, recordIds)));
           // Delete plan summaries
           await db!.delete(opsPlanSummaries)
-            .where(inArray(opsPlanSummaries.planId, recordIds));
+            .where(opsWorkspaceCondition(opsPlanSummaries, currentOpsWorkspaceId(), inArray(opsPlanSummaries.planId, recordIds)));
           // Delete plans
           await db!.delete(opsPlans)
-            .where(and(
+            .where(opsWorkspaceCondition(opsPlans, currentOpsWorkspaceId(), and(
               inArray(opsPlans.id, recordIds),
               eq(opsPlans.userId, effectiveUserId),
-            ));
+            )));
         } else if (history.importType === "review") {
           // Delete reviews
           await db!.delete(executionReviews)
-            .where(and(
+            .where(opsWorkspaceCondition(executionReviews, currentOpsWorkspaceId(), and(
               inArray(executionReviews.id, recordIds),
               eq(executionReviews.userId, effectiveUserId),
-            ));
+            )));
         }
       }
 
       // Delete the history record itself
       await db!.delete(opsImportHistory)
-        .where(eq(opsImportHistory.id, input.historyId));
+        .where(opsWorkspaceCondition(opsImportHistory, currentOpsWorkspaceId(), eq(opsImportHistory.id, input.historyId)));
 
       return {
         success: true,

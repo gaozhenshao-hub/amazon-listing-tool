@@ -1,5 +1,5 @@
 import { z } from "zod";
-import * as db from "../db";
+import * as db from "../repositories";
 import { invokeLLM } from "../_core/llm";
 import { protectedProcedure, router } from "../_core/trpc";
 import {

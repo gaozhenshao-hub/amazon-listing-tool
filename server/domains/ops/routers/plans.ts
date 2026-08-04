@@ -1,3 +1,5 @@
+import { currentOpsWorkspaceId } from "../workspaceContext";
+import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
 
@@ -87,7 +89,7 @@ export const opsPlanProcedures = {
       return [];
     }
     return db!.select().from(opsPlans)
-      .where(and(...conditions))
+      .where(opsWorkspaceCondition(opsPlans, currentOpsWorkspaceId(), and(...conditions)))
       .orderBy(desc(opsPlans.updatedAt));
   }),
 
@@ -100,7 +102,7 @@ export const opsPlanProcedures = {
     if (!isManager) {
       conditions.push(eq(opsPlans.userId, ctx.user.id));
     }
-    const [plan] = await db!.select().from(opsPlans).where(and(...conditions));
+    const [plan] = await db!.select().from(opsPlans).where(opsWorkspaceCondition(opsPlans, currentOpsWorkspaceId(), and(...conditions)));
     if (!plan) throw new TRPCError({ code: "NOT_FOUND", message: "Plan not found" });
     return plan;
   }),
@@ -178,7 +180,7 @@ export const opsPlanProcedures = {
     const isManager = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
     const updateConditions = [eq(opsPlans.id, planId)];
     if (!isManager) updateConditions.push(eq(opsPlans.userId, ctx.user.id));
-    await db!.update(opsPlans).set(cleanUpdates).where(and(...updateConditions));
+    await db!.update(opsPlans).set(cleanUpdates).where(opsWorkspaceCondition(opsPlans, currentOpsWorkspaceId(), and(...updateConditions)));
     return { success: true };
   }),
 
@@ -187,11 +189,11 @@ export const opsPlanProcedures = {
     const db = await getDb();
     const { MANAGER_ROLES } = await import("../../../../shared/const");
     const isManager = (MANAGER_ROLES as readonly string[]).includes(ctx.user.role);
-    await db!.delete(opsPlanActions).where(eq(opsPlanActions.planId, input.planId));
-    await db!.delete(opsPlanSummaries).where(eq(opsPlanSummaries.planId, input.planId));
+    await db!.delete(opsPlanActions).where(opsWorkspaceCondition(opsPlanActions, currentOpsWorkspaceId(), eq(opsPlanActions.planId, input.planId)));
+    await db!.delete(opsPlanSummaries).where(opsWorkspaceCondition(opsPlanSummaries, currentOpsWorkspaceId(), eq(opsPlanSummaries.planId, input.planId)));
     const delConditions = [eq(opsPlans.id, input.planId)];
     if (!isManager) delConditions.push(eq(opsPlans.userId, ctx.user.id));
-    await db!.delete(opsPlans).where(and(...delConditions));
+    await db!.delete(opsPlans).where(opsWorkspaceCondition(opsPlans, currentOpsWorkspaceId(), and(...delConditions)));
     return { success: true };
   }),
 
@@ -201,13 +203,13 @@ export const opsPlanProcedures = {
   listPlanActions: protectedProcedure.input(z.object({ planId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     const actions = await db!.select().from(opsPlanActions)
-      .where(eq(opsPlanActions.planId, input.planId))
+      .where(opsWorkspaceCondition(opsPlanActions, currentOpsWorkspaceId(), eq(opsPlanActions.planId, input.planId)))
       .orderBy(asc(opsPlanActions.sortOrder));
     // Enrich with linked todo status
     const enriched = await Promise.all(actions.map(async (a) => {
       let todoStatus = null;
       if (a.linkedTodoId) {
-        const [todo] = await db!.select().from(productTodos).where(eq(productTodos.id, a.linkedTodoId));
+        const [todo] = await db!.select().from(productTodos).where(opsWorkspaceCondition(productTodos, currentOpsWorkspaceId(), eq(productTodos.id, a.linkedTodoId)));
         todoStatus = todo?.status || null;
       }
       return { ...a, todoStatus };
@@ -276,17 +278,17 @@ export const opsPlanProcedures = {
     for (const [k, v] of Object.entries(updates)) {
       if (v !== undefined) cleanUpdates[k] = v;
     }
-    await db!.update(opsPlanActions).set(cleanUpdates).where(eq(opsPlanActions.id, actionId));
+    await db!.update(opsPlanActions).set(cleanUpdates).where(opsWorkspaceCondition(opsPlanActions, currentOpsWorkspaceId(), eq(opsPlanActions.id, actionId)));
 
     // Sync status to linked todo
     if (input.status) {
-      const [action] = await db!.select().from(opsPlanActions).where(eq(opsPlanActions.id, actionId));
+      const [action] = await db!.select().from(opsPlanActions).where(opsWorkspaceCondition(opsPlanActions, currentOpsWorkspaceId(), eq(opsPlanActions.id, actionId)));
       if (action?.linkedTodoId) {
         const todoStatusMap: Record<string, string> = {
           not_started: "pending", in_progress: "in_progress", completed: "completed", delayed: "pending"
         };
         await db!.update(productTodos).set({ status: todoStatusMap[input.status] as any })
-          .where(eq(productTodos.id, action.linkedTodoId));
+          .where(opsWorkspaceCondition(productTodos, currentOpsWorkspaceId(), eq(productTodos.id, action.linkedTodoId)));
       }
     }
     return { success: true };
@@ -295,7 +297,7 @@ export const opsPlanProcedures = {
 
   deletePlanAction: protectedProcedure.input(z.object({ actionId: z.number() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    await db!.delete(opsPlanActions).where(eq(opsPlanActions.id, input.actionId));
+    await db!.delete(opsPlanActions).where(opsWorkspaceCondition(opsPlanActions, currentOpsWorkspaceId(), eq(opsPlanActions.id, input.actionId)));
     return { success: true };
   }),
 
@@ -305,7 +307,7 @@ export const opsPlanProcedures = {
   listPlanSummaries: protectedProcedure.input(z.object({ planId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     return db!.select().from(opsPlanSummaries)
-      .where(eq(opsPlanSummaries.planId, input.planId))
+      .where(opsWorkspaceCondition(opsPlanSummaries, currentOpsWorkspaceId(), eq(opsPlanSummaries.planId, input.planId)))
       .orderBy(desc(opsPlanSummaries.createdAt));
   }),
 
@@ -369,7 +371,7 @@ export const opsPlanProcedures = {
     for (const [k, v] of Object.entries(updates)) {
       if (v !== undefined) cleanUpdates[k] = v;
     }
-    await db!.update(opsPlanSummaries).set(cleanUpdates).where(eq(opsPlanSummaries.id, summaryId));
+    await db!.update(opsPlanSummaries).set(cleanUpdates).where(opsWorkspaceCondition(opsPlanSummaries, currentOpsWorkspaceId(), eq(opsPlanSummaries.id, summaryId)));
     return { success: true };
   }),
 
@@ -383,16 +385,16 @@ export const opsPlanProcedures = {
     }))
       .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      const [plan] = await db!.select().from(opsPlans).where(eq(opsPlans.id, input.planId));
+      const [plan] = await db!.select().from(opsPlans).where(opsWorkspaceCondition(opsPlans, currentOpsWorkspaceId(), eq(opsPlans.id, input.planId)));
       if (!plan) throw new TRPCError({ code: 'NOT_FOUND', message: '计划不存在' });
       // Use resolveDataUserId to handle non-admin users querying admin-imported data
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
       // 从已导入的lingxing_product_weekly表中查询该产品的周度数据
       const weeklyRows = await db!.select().from(lingxingProductWeekly)
-        .where(and(
+        .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), and(
           eq(lingxingProductWeekly.userId, effectiveUserId),
           eq(lingxingProductWeekly.parentAsin, input.parentAsin),
-        ))
+        )))
         .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
       // 按周分组（去重）
@@ -479,7 +481,7 @@ export const opsPlanProcedures = {
         currentRatingScore: currentData.currentRatingScore,
         currentRatingCount: currentData.currentRatingCount,
         updatedAt: new Date(),
-      }).where(eq(opsPlans.id, input.planId));
+      }).where(opsWorkspaceCondition(opsPlans, currentOpsWorkspaceId(), eq(opsPlans.id, input.planId)));
 
       // 返回可用周列表供前端下拉选择
       const availableWeeks = sortedWeeks.map(([key], idx) => {
@@ -507,15 +509,15 @@ export const opsPlanProcedures = {
     }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      const [plan] = await db!.select().from(opsPlans).where(eq(opsPlans.id, input.planId));
+      const [plan] = await db!.select().from(opsPlans).where(opsWorkspaceCondition(opsPlans, currentOpsWorkspaceId(), eq(opsPlans.id, input.planId)));
       if (!plan) throw new TRPCError({ code: 'NOT_FOUND', message: '计划不存在' });
       const effectiveUserId = await resolveDataUserId(db!, ctx.user);
       // 查询该产品所有周度数据
       const weeklyRows = await db!.select().from(lingxingProductWeekly)
-        .where(and(
+        .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), and(
           eq(lingxingProductWeekly.userId, effectiveUserId),
           eq(lingxingProductWeekly.parentAsin, input.parentAsin),
-        ))
+        )))
         .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
       // 按周分组
@@ -598,7 +600,7 @@ export const opsPlanProcedures = {
       await db!.update(opsPlans).set({
         ...baselineData,
         updatedAt: new Date(),
-      }).where(eq(opsPlans.id, input.planId));
+      }).where(opsWorkspaceCondition(opsPlans, currentOpsWorkspaceId(), eq(opsPlans.id, input.planId)));
 
       return { synced: true, data: baselineData, weekLabel };
     }),
@@ -618,10 +620,10 @@ export const opsPlanProcedures = {
         weekEndDate: lingxingProductWeekly.weekEndDate,
       })
         .from(lingxingProductWeekly)
-        .where(and(
+        .where(opsWorkspaceCondition(lingxingProductWeekly, currentOpsWorkspaceId(), and(
           eq(lingxingProductWeekly.userId, effectiveUserId),
           eq(lingxingProductWeekly.parentAsin, input.parentAsin),
-        ))
+        )))
         .orderBy(desc(lingxingProductWeekly.weekStartDate));
 
       return weeklyRows.map((w, idx) => {

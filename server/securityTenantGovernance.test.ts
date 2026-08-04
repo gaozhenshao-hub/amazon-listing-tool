@@ -107,16 +107,19 @@ describe("security tenant governance v1", () => {
   });
 
   it("routes core surfaces through authorization and audit gates", () => {
-    const dbCompat = readRepoFile("server/db.ts");
+    const authRepository = readRepoFile("server/repositories/auth/authRepository.ts");
     const projectRouter = readRepoFile("server/routers/project.ts");
     const projectFileRouter = readRepoFile("server/routers/projectFile.ts");
-    const opsContext = readRepoFile("server/domains/ops/routerContext.ts");
+    const opsContext = [
+      readRepoFile("server/domains/ops/routerContext.ts"),
+      readRepoFile("server/domains/ops/workspaceProcedure.ts"),
+    ].join("\n");
     const toolsRouter = readRepoFile("server/domains/ai_os/routers/tools.ts");
     const mcpRouter = readRepoFile("server/domains/ai_os/routers/mcp.ts");
     const agentsRouter = readRepoFile("server/domains/ai_os/routers/agents.ts");
 
-    expect(dbCompat).toContain("ensureDefaultWorkspaceForUser");
-    expect(dbCompat).toContain("workspaceMemberships");
+    expect(authRepository).toContain("ensureDefaultWorkspaceForUser");
+    expect(authRepository).toContain("workspaceMemberships");
     expect(projectRouter).toContain('resource: "project"');
     expect(projectRouter).toContain("recordSecurityAuditLog");
     expect(projectFileRouter).toContain('resource: "file"');
@@ -130,7 +133,11 @@ describe("security tenant governance v1", () => {
   });
 
   it("forces Tool secret references and supports key rotation", () => {
-    const gateway = readRepoFile("server/domains/ai_os/services/toolGateway.ts");
+    const gateway = [
+      readRepoFile("server/domains/ai_os/services/toolGateway.ts"),
+      readRepoFile("server/domains/ai_os/services/toolGateway/governanceCore.ts"),
+      readRepoFile("server/domains/ai_os/services/toolGateway/management.ts"),
+    ].join("\n");
 
     expect(gateway).toContain("assertToolConfigUsesSecretRefs");
     expect(gateway).toContain("currentToolSecretKeyVersion");

@@ -476,7 +476,7 @@ export const nextSlsAdapter = new NextSlsAdapter();
  */
 export async function initNextSlsAdapterFromDb() {
   try {
-    const { getDb } = await import("../db");
+    const { getDb } = await import("../repositories/dbClient");
     const { systemSettings } = await import("../../drizzle/schema");
     const { eq, and } = await import("drizzle-orm");
 

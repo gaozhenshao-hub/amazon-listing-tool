@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
+import { readSchemaSources } from "./testPaths";
 
 // ─── Test: Data Confirmation Schema ─────────────────────────────
 describe("Data Confirmation - Schema", () => {
-  const schemaPath = path.join(__dirname, "../drizzle/schema.ts");
-  const schema = fs.readFileSync(schemaPath, "utf-8");
+  const schema = readSchemaSources();
 
   it("devUploadedFiles should have confirmed column", () => {
     expect(schema).toContain('confirmed: int("confirmed")');

@@ -1,14 +1,14 @@
 import { sql } from "drizzle-orm";
 import { requireDb } from "./dbClient";
 
-export type DatabaseDomainSlug = "auth" | "project" | "listing" | "image" | "ads" | "ops" | "ai_os";
+export type DatabaseDomainSlug = "auth" | "project" | "listing" | "image" | "ads" | "ops" | "video" | "knowledge" | "ai_os";
 
 export type DatabaseDomain = {
   slug: DatabaseDomainSlug;
   schemaModule: string;
   repositoryModule: string;
   tables: string[];
-  writePolicy: "repository_required" | "legacy_compat";
+  writePolicy: "repository_required";
 };
 
 export type SoftForeignKeyPolicy = {
@@ -107,7 +107,7 @@ export const DATABASE_DOMAINS: DatabaseDomain[] = [
       "notifications",
       "user_settings",
     ],
-    writePolicy: "legacy_compat",
+    writePolicy: "repository_required",
   },
   {
     slug: "project",
@@ -135,7 +135,7 @@ export const DATABASE_DOMAINS: DatabaseDomain[] = [
       "sellingPointDrafts",
       "buyer_questions",
     ],
-    writePolicy: "legacy_compat",
+    writePolicy: "repository_required",
   },
   {
     slug: "image",
@@ -147,7 +147,7 @@ export const DATABASE_DOMAINS: DatabaseDomain[] = [
       "expression_groups",
       "expression_group_images",
     ],
-    writePolicy: "legacy_compat",
+    writePolicy: "repository_required",
   },
   {
     slug: "ads",
@@ -173,7 +173,7 @@ export const DATABASE_DOMAINS: DatabaseDomain[] = [
       "ad_sop_tasks",
       "ad_clinic_records",
     ],
-    writePolicy: "legacy_compat",
+    writePolicy: "repository_required",
   },
   {
     slug: "ops",
@@ -197,7 +197,41 @@ export const DATABASE_DOMAINS: DatabaseDomain[] = [
       "product_weekly_ops",
       "product_monthly_summary",
     ],
-    writePolicy: "legacy_compat",
+    writePolicy: "repository_required",
+  },
+  {
+    slug: "video",
+    schemaModule: "drizzle/schema/video",
+    repositoryModule: "server/repositories/video",
+    tables: [
+      "video_scripts",
+      "video_competitor_scripts",
+      "video_product_snapshots",
+      "video_script_sections",
+      "video_script_subtopics",
+      "video_script_shots",
+      "video_edit_scripts",
+      "video_script_versions",
+      "video_spv_segments",
+    ],
+    writePolicy: "repository_required",
+  },
+  {
+    slug: "knowledge",
+    schemaModule: "drizzle/schema/knowledge",
+    repositoryModule: "server/repositories/knowledge",
+    tables: [
+      "kb_product_innovations",
+      "kb_listing_copywriting",
+      "kb_operation_skills",
+      "kb_videos",
+      "kb_intel_items",
+      "kb_feedback",
+      "kb_bot_conversations",
+      "kb_bot_messages",
+      "kb_tag_definitions",
+    ],
+    writePolicy: "repository_required",
   },
   {
     slug: "ai_os",
@@ -228,6 +262,7 @@ export const DATABASE_DOMAINS: DatabaseDomain[] = [
       "emperor_knowledge",
       "emperor_mcp_connectors",
       "emperor_model_providers",
+      "database_slow_query_samples",
     ],
     writePolicy: "repository_required",
   },
@@ -712,6 +747,16 @@ export const ARCHIVE_POLICIES: ArchivePolicy[] = [
   },
   {
     domain: "ai_os",
+    table: "database_slow_query_samples",
+    timeField: "sampledAt",
+    retainHotDays: 90,
+    archiveAfterDays: 180,
+    deleteAfterDays: 730,
+    partitionHint: "MONTH(sampledAt)",
+    reason: "慢查询摘要用于近期性能回归，长期只保留聚合趋势",
+  },
+  {
+    domain: "ai_os",
     table: "ai_artifacts",
     timeField: "createdAt",
     retainHotDays: 180,
@@ -830,6 +875,12 @@ export const CORE_TABLE_ROW_COUNT_BASELINES: CoreTableRowCountBaseline[] = [
     domain: "ai_os",
     table: "emperor_ai_os_evaluations",
     purpose: "Skill/Agent/Tool 质量评测样本趋势",
+    highGrowth: true,
+  },
+  {
+    domain: "ai_os",
+    table: "database_slow_query_samples",
+    purpose: "真实慢查询摘要快照增长趋势",
     highGrowth: true,
   },
   {
@@ -957,6 +1008,16 @@ export const DATABASE_PERFORMANCE_BASELINES: DatabasePerformanceBaseline[] = [
     migration: "0115_data_lifecycle_artifacts_v1.sql",
     risk: "high",
   },
+  {
+    slug: "slow_query_samples_window",
+    domain: "ai_os",
+    table: "database_slow_query_samples",
+    purpose: "按时间窗口审计真实慢查询摘要",
+    sql: "SELECT sampleId, digest, avgTimerWaitMs, sampledAt FROM database_slow_query_samples WHERE sampledAt >= DATE_SUB(NOW(), INTERVAL 30 DAY) ORDER BY avgTimerWaitMs DESC, sampledAt DESC LIMIT 100",
+    expectedIndexNames: ["idx_db_slow_samples_sampled", "idx_db_slow_samples_schema_avg"],
+    migration: "0117_database_runtime_observability.sql",
+    risk: "medium",
+  },
 ];
 
 export const MIGRATION_REGRESSION_BASELINE: MigrationRegressionBaseline = {
@@ -973,6 +1034,8 @@ export const MIGRATION_REGRESSION_BASELINE: MigrationRegressionBaseline = {
     "0113_database_governance_v1.sql",
     "0114_security_tenant_governance_v1.sql",
     "0115_data_lifecycle_artifacts_v1.sql",
+    "0116_ops_workspace_isolation.sql",
+    "0117_database_runtime_observability.sql",
   ],
   requiredTables: [
     "ai_jobs",
@@ -989,6 +1052,7 @@ export const MIGRATION_REGRESSION_BASELINE: MigrationRegressionBaseline = {
     "ai_artifacts",
     "ai_storage_objects",
     "ai_data_archive_runs",
+    "database_slow_query_samples",
   ],
   requiredIndexes: DATABASE_PERFORMANCE_BASELINES.flatMap((baseline) => baseline.expectedIndexNames),
   requiredChecks: [
@@ -1011,6 +1075,14 @@ export const MIGRATION_REGRESSION_BASELINE: MigrationRegressionBaseline = {
     {
       slug: "archive_health",
       description: "高增长表必须有归档策略和归档 run 成功率监控",
+    },
+    {
+      slug: "ops_workspace_isolation",
+      description: "运营和广告核心表必须具备 workspaceId 和工作区索引",
+    },
+    {
+      slug: "slow_query_sampling",
+      description: "必须从 performance_schema 采样参数归一化的慢查询摘要",
     },
   ],
 };

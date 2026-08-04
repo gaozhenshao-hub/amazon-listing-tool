@@ -1,3 +1,5 @@
+import { currentOpsWorkspaceId } from "../workspaceContext";
+import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
 
@@ -95,7 +97,7 @@ export const opsProductProcedures = {
     }
 
     let products = await db!.select().from(productProfiles)
-      .where(and(...conditions))
+      .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(...conditions)))
       .orderBy(desc(productProfiles.updatedAt));
 
     // Non-manager users: filter by operator field (supports multi-operator like "张三/李四")
@@ -112,11 +114,11 @@ export const opsProductProcedures = {
     const enriched = await Promise.all(products.map(async (p) => {
       const [variants, todos, firstVariant] = await Promise.all([
         db!.select({ count: sql<number>`count(*)` }).from(productVariants)
-          .where(eq(productVariants.productId, p.id)),
+          .where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.productId, p.id))),
         db!.select({ count: sql<number>`count(*)` }).from(productTodos)
-          .where(and(eq(productTodos.productId, p.id), sql`${productTodos.status} != 'completed'`)),
+          .where(opsWorkspaceCondition(productTodos, currentOpsWorkspaceId(), and(eq(productTodos.productId, p.id), sql`${productTodos.status} != 'completed'`))),
         db!.select({ childAsin: productVariants.childAsin }).from(productVariants)
-          .where(eq(productVariants.productId, p.id))
+          .where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.productId, p.id)))
           .limit(1),
       ]);
       return {
@@ -211,11 +213,11 @@ export const opsProductProcedures = {
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       const [product] = await db!.select().from(productProfiles)
-        .where(and(eq(productProfiles.id, input.id), eq(productProfiles.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.id), eq(productProfiles.userId, ctx.user.id))));
       if (!product) throw new TRPCError({ code: "NOT_FOUND", message: "产品不存在" });
 
       const variants = await db!.select().from(productVariants)
-        .where(eq(productVariants.productId, input.id))
+        .where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.productId, input.id)))
         .orderBy(asc(productVariants.createdAt));
 
       return { ...product, variants };
@@ -305,7 +307,7 @@ export const opsProductProcedures = {
       );
       if (Object.keys(cleanUpdates).length > 0) {
         await db!.update(productProfiles).set(cleanUpdates)
-          .where(and(eq(productProfiles.id, id), eq(productProfiles.userId, ctx.user.id)));
+          .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, id), eq(productProfiles.userId, ctx.user.id))));
       }
       return { updated: true };
     }),
@@ -316,19 +318,19 @@ export const opsProductProcedures = {
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       // Delete related data first
-      await db!.delete(productVariants).where(eq(productVariants.productId, input.id));
-      await db!.delete(productTodos).where(eq(productTodos.productId, input.id));
-      await db!.delete(productLogs).where(eq(productLogs.productId, input.id));
+      await db!.delete(productVariants).where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.productId, input.id)));
+      await db!.delete(productTodos).where(opsWorkspaceCondition(productTodos, currentOpsWorkspaceId(), eq(productTodos.productId, input.id)));
+      await db!.delete(productLogs).where(opsWorkspaceCondition(productLogs, currentOpsWorkspaceId(), eq(productLogs.productId, input.id)));
       // Delete keyword monitors and their snapshots
       const monitors = await db!.select({ id: keywordMonitors.id }).from(keywordMonitors)
-        .where(eq(keywordMonitors.productId, input.id));
+        .where(opsWorkspaceCondition(keywordMonitors, currentOpsWorkspaceId(), eq(keywordMonitors.productId, input.id)));
       for (const m of monitors) {
-        await db!.delete(keywordSnapshots).where(eq(keywordSnapshots.keywordMonitorId, m.id));
+        await db!.delete(keywordSnapshots).where(opsWorkspaceCondition(keywordSnapshots, currentOpsWorkspaceId(), eq(keywordSnapshots.keywordMonitorId, m.id)));
       }
-      await db!.delete(keywordMonitors).where(eq(keywordMonitors.productId, input.id));
+      await db!.delete(keywordMonitors).where(opsWorkspaceCondition(keywordMonitors, currentOpsWorkspaceId(), eq(keywordMonitors.productId, input.id)));
       // Delete the product itself
       await db!.delete(productProfiles)
-        .where(and(eq(productProfiles.id, input.id), eq(productProfiles.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.id), eq(productProfiles.userId, ctx.user.id))));
       return { deleted: true };
     }),
 
@@ -362,7 +364,7 @@ export const opsProductProcedures = {
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      await db!.delete(productVariants).where(eq(productVariants.id, input.id));
+      await db!.delete(productVariants).where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.id, input.id)));
       return { deleted: true };
     }),
 
@@ -385,12 +387,12 @@ export const opsProductProcedures = {
         if (input.mode === "replace") {
           await db!.update(productProfiles)
             .set({ operator: input.operator, updatedAt: now })
-            .where(and(eq(productProfiles.id, pid), eq(productProfiles.userId, effectiveUserId)));
+            .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, pid), eq(productProfiles.userId, effectiveUserId))));
         } else {
           // add or remove: read current value first
           const [current] = await db!.select({ operator: productProfiles.operator })
             .from(productProfiles)
-            .where(and(eq(productProfiles.id, pid), eq(productProfiles.userId, effectiveUserId)));
+            .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, pid), eq(productProfiles.userId, effectiveUserId))));
           if (!current) continue;
           const existing = (current.operator || "").split(/[\/、,，]+/).map((s: string) => s.trim()).filter(Boolean);
           let newNames: string[];
@@ -403,7 +405,7 @@ export const opsProductProcedures = {
           const newOperator = newNames.join("/") || null;
           await db!.update(productProfiles)
             .set({ operator: newOperator, updatedAt: now })
-            .where(and(eq(productProfiles.id, pid), eq(productProfiles.userId, effectiveUserId)));
+            .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, pid), eq(productProfiles.userId, effectiveUserId))));
         }
         updated++;
       }
@@ -417,10 +419,10 @@ export const opsProductProcedures = {
     // 1. 已分配过的运营名称
     const assigned = await db!.selectDistinct({ operator: productProfiles.operator })
       .from(productProfiles)
-      .where(and(
+      .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(
         eq(productProfiles.userId, ctx.user.id),
         sql`${productProfiles.operator} IS NOT NULL AND ${productProfiles.operator} != ''`
-      ));
+      )));
     const assignedNames = assigned.map(r => r.operator).filter(Boolean) as string[];
 
     // 2. 团队成员名称（活跃用户）

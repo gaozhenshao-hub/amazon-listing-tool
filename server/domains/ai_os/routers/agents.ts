@@ -631,6 +631,28 @@ export const emperorAgentsRouter = router({
       );
     }),
 
+  listProjectRuns: protectedProcedure
+    .input(z.object({ projectId: z.number().int().positive(), limit: z.number().int().min(1).max(50).optional().default(10) }))
+    .query(async ({ input, ctx }) => {
+      await assertAgentAction(ctx, "read", String(input.projectId));
+      const isAdmin = (ctx.user as any).role === "admin" || (ctx.user as any).role === "super_admin";
+      const scope = buildWorkspaceScopeFilter(workspaceIdFromContext(ctx));
+      if (isAdmin) {
+        return rawExecute(
+          `SELECT * FROM emperor_agent_runs
+           WHERE projectId=? AND ${scope.clause}
+           ORDER BY createdAt DESC LIMIT ?`,
+          [input.projectId, ...scope.params, input.limit],
+        );
+      }
+      return rawExecute(
+        `SELECT * FROM emperor_agent_runs
+         WHERE projectId=? AND userId=? AND ${scope.clause}
+         ORDER BY createdAt DESC LIMIT ?`,
+        [input.projectId, ctx.user.id, ...scope.params, input.limit],
+      );
+    }),
+
   executeNode: protectedProcedure
     .input(z.object({ runId: z.string(), nodeId: z.string() }))
     .mutation(async ({ ctx, input }) => {

@@ -72,11 +72,13 @@ TOOL_SECRET_KEY_VERSION=v2
 
 1. 备份生产数据库。
 2. 配置稳定的 `TOOL_SECRET_KEY` 和 `TOOL_SECRET_KEY_VERSION`。
-3. 执行 `drizzle/0114_security_tenant_governance_v1.sql`。
-4. 重启 Web、AI Worker、Scheduler。
-5. 验证默认 `organizations/default`、`workspaces/default` 和 `workspace_memberships` 已生成。
-6. 验证 Tool、MCP、Agent、Project、File、Ops mutation 会产生 `security_audit_logs`。
-7. 验证普通用户只能看到自己 workspace 范围内的项目、Agent、Tool/MCP。
+3. 按编号执行 `0114_security_tenant_governance_v1.sql`、`0115_data_lifecycle_artifacts_v1.sql`、`0116_ops_workspace_isolation.sql`、`0117_database_runtime_observability.sql`。
+4. `0116` 会为大量运营表补列和索引，应在维护窗口执行并观察元数据锁、复制延迟与磁盘空间。
+5. 重启 Web、AI Worker、Scheduler。
+6. 验证默认 `organizations/default`、`workspaces/default` 和 `workspace_memberships` 已生成，且 `0116` 回填后不存在意外的空 workspace。
+7. 确认 MySQL `performance_schema` 已启用，并仅授予应用账号读取 statement digest 汇总表的权限。
+8. 验证 Tool、MCP、Agent、Project、File、Ops mutation 会产生 `security_audit_logs`。
+9. 验证普通用户只能看到自己 workspace 范围内的项目、Agent、Tool/MCP 和运营数据。
 
 ## 回滚注意
 
@@ -85,4 +87,4 @@ TOOL_SECRET_KEY_VERSION=v2
 ## 已知边界
 
 - `emperor_tools.slug`、`emperor_tool_secrets.slug`、`emperor_agents.slug` 当前仍保持全局唯一，避免破坏旧数据；后续如需每个 workspace 同名 Tool/Agent，需要单独迁移到 `(workspaceId, slug)` 复合唯一。
-- 运营域通过统一 middleware 接入 `ops_data` 权限，细到单条运营记录的 workspace 过滤需要后续结合运营表补 `workspaceId` 后推进。
+- 运营与广告表已统一补齐 `workspaceId`，写入通过 workspace 上下文自动绑定，查询与更新统一使用 `opsWorkspaceCondition`；AST 架构回归测试会拒绝未隔离的表查询。

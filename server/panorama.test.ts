@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "fs";
 import path from "path";
+import { readSchemaSources } from "./testPaths";
 
 // ─── Test: devPanorama router structure ──────────────────────────
 describe("devPanorama router", () => {
@@ -56,8 +57,7 @@ describe("devPanorama router registration", () => {
 
 // ─── Test: Panorama status table in schema ──────────────────────
 describe("devPanoramaStatus schema", () => {
-  const schemaPath = path.join(__dirname, "../drizzle/schema.ts");
-  const schemaSrc = fs.readFileSync(schemaPath, "utf-8");
+  const schemaSrc = readSchemaSources();
 
   it("should define devPanoramaStatus table", () => {
     expect(schemaSrc).toContain("devPanoramaStatus");
@@ -79,8 +79,7 @@ describe("devPanoramaStatus schema", () => {
 
 // ─── Test: devProducts has panorama fields ──────────────────────
 describe("devProducts panorama fields", () => {
-  const schemaPath = path.join(__dirname, "../drizzle/schema.ts");
-  const schemaSrc = fs.readFileSync(schemaPath, "utf-8");
+  const schemaSrc = readSchemaSources();
 
   const panoramaFields = [
     "parentAsin", "sku", "bsrLarge", "bsrSmall",

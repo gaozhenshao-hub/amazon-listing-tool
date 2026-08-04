@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import fs from "fs";
 import path from "path";
+import { readSchemaSources } from "./testPaths";
 
 // ============================================================
 // Module 5: Knowledge Base - Router Structure
@@ -113,7 +114,7 @@ describe("KB - File structure", () => {
   });
 
   it("should have all kb_ tables in schema", () => {
-    const schema = fs.readFileSync(path.join(basePath, "drizzle/schema.ts"), "utf-8");
+    const schema = readSchemaSources();
     const requiredTables = [
       "kbProductInnovations", "kbListingCopywriting", "kbImageSets",
       "kbImages", "kbOperationSkills", "kbVideos",

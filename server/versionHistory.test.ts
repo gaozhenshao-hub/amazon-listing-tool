@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-// Mock the database module
-vi.mock("./db", () => {
+// Mock the domain repository barrel used by this unit test.
+vi.mock("./repositories", () => {
   const mockVersions = [
     {
       id: 1,
@@ -96,7 +96,7 @@ vi.mock("./_core/llm", () => ({
   }),
 }));
 
-import * as db from "./db";
+import * as db from "./repositories";
 
 describe("Version History - Database Helpers", () => {
   beforeEach(() => {

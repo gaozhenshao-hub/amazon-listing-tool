@@ -1,3 +1,5 @@
+import { currentOpsWorkspaceId } from "../workspaceContext";
+import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
 
@@ -73,7 +75,7 @@ export const opsTodoLogProcedures = {
     .query(async ({ input }) => {
       const db = await getDb();
       return db!.select().from(productTodos)
-        .where(eq(productTodos.productId, input.productId))
+        .where(opsWorkspaceCondition(productTodos, currentOpsWorkspaceId(), eq(productTodos.productId, input.productId)))
         .orderBy(asc(productTodos.sortOrder), desc(productTodos.createdAt));
     }),
 
@@ -130,7 +132,7 @@ export const opsTodoLogProcedures = {
         cleanUpdates.completedAt = new Date();
       }
       if (Object.keys(cleanUpdates).length > 0) {
-        await db!.update(productTodos).set(cleanUpdates).where(eq(productTodos.id, id));
+        await db!.update(productTodos).set(cleanUpdates).where(opsWorkspaceCondition(productTodos, currentOpsWorkspaceId(), eq(productTodos.id, id)));
       }
       return { updated: true };
     }),
@@ -140,7 +142,7 @@ export const opsTodoLogProcedures = {
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      await db!.delete(productTodos).where(eq(productTodos.id, input.id));
+      await db!.delete(productTodos).where(opsWorkspaceCondition(productTodos, currentOpsWorkspaceId(), eq(productTodos.id, input.id)));
       return { deleted: true };
     }),
 
@@ -152,7 +154,7 @@ export const opsTodoLogProcedures = {
     .query(async ({ input }) => {
       const db = await getDb();
       return db!.select().from(productLogs)
-        .where(eq(productLogs.productId, input.productId))
+        .where(opsWorkspaceCondition(productLogs, currentOpsWorkspaceId(), eq(productLogs.productId, input.productId)))
         .orderBy(desc(productLogs.createdAt));
     }),
 
@@ -180,7 +182,7 @@ export const opsTodoLogProcedures = {
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const db = await getDb();
-      await db!.delete(productLogs).where(eq(productLogs.id, input.id));
+      await db!.delete(productLogs).where(opsWorkspaceCondition(productLogs, currentOpsWorkspaceId(), eq(productLogs.id, input.id)));
       return { deleted: true };
     }),
 };

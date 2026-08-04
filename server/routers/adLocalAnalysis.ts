@@ -1,3 +1,5 @@
+import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
+import { opsWorkspaceCondition } from "../repositories/ops";
 /**
  * Ad Local Analysis Router
  * Reads from local uploaded ad report data (DB tables) and returns data
@@ -5,8 +7,9 @@
  * This allows the frontend to switch data sources seamlessly.
  */
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/ops/workspaceProcedure";
+import { getDb } from "../repositories/dbClient";
 import {
   adSearchTermReports,
   adCampaignReports,
@@ -144,7 +147,7 @@ export const adLocalAnalysisRouter = router({
       if (input.weekEndDate) conditions.push(lte(adCampaignReports.weekEndDate, input.weekEndDate));
       if (input.adType && input.adType !== 'all') conditions.push(eq(adCampaignReports.adType, input.adType));
 
-      const rows = await d.select().from(adCampaignReports).where(and(...conditions));
+      const rows = await d.select().from(adCampaignReports).where(opsWorkspaceCondition(adCampaignReports, currentOpsWorkspaceId(), and(...conditions)));
 
       // Aggregate by campaignName
       const campMap: Record<string, {
@@ -263,7 +266,7 @@ export const adLocalAnalysisRouter = router({
         conditions.push(inArray(adSearchTermReports.campaignName, input.campaignNames));
       }
 
-      const rows = await d.select().from(adSearchTermReports).where(and(...conditions));
+      const rows = await d.select().from(adSearchTermReports).where(opsWorkspaceCondition(adSearchTermReports, currentOpsWorkspaceId(), and(...conditions)));
 
       // Aggregate by search term + campaign + match type
       const termAggMap: Record<string, {
@@ -411,7 +414,7 @@ export const adLocalAnalysisRouter = router({
         conditions.push(inArray(adPlacementReports.campaignName, input.campaignNames));
       }
 
-      const rows = await d.select().from(adPlacementReports).where(and(...conditions));
+      const rows = await d.select().from(adPlacementReports).where(opsWorkspaceCondition(adPlacementReports, currentOpsWorkspaceId(), and(...conditions)));
 
       const placementMap: Record<string, {
         placement: string; impressions: number; clicks: number;
@@ -465,7 +468,7 @@ export const adLocalAnalysisRouter = router({
         hourlyConditions.push(inArray(adHourlyReports.campaignName, input.campaignNames));
       }
 
-      const hourlyRows = await d.select().from(adHourlyReports).where(and(...hourlyConditions));
+      const hourlyRows = await d.select().from(adHourlyReports).where(opsWorkspaceCondition(adHourlyReports, currentOpsWorkspaceId(), and(...hourlyConditions)));
 
       // If hourly data exists, use real keywords (targetingValue) + placement breakdown
       if (hourlyRows.length > 0) {
@@ -552,7 +555,7 @@ export const adLocalAnalysisRouter = router({
         conditions.push(inArray(adPlacementReports.campaignName, input.campaignNames));
       }
 
-      const rows = await d.select().from(adPlacementReports).where(and(...conditions));
+      const rows = await d.select().from(adPlacementReports).where(opsWorkspaceCondition(adPlacementReports, currentOpsWorkspaceId(), and(...conditions)));
 
       const kwMap: Record<string, {
         keyword: string; campaignName: string;
@@ -637,7 +640,7 @@ export const adLocalAnalysisRouter = router({
         conditions.push(inArray(adHourlyReports.campaignName, input.campaignNames));
       }
 
-      const rows = await d.select().from(adHourlyReports).where(and(...conditions));
+      const rows = await d.select().from(adHourlyReports).where(opsWorkspaceCondition(adHourlyReports, currentOpsWorkspaceId(), and(...conditions)));
 
       const hourMap: Record<number, { hour: number; impressions: number; clicks: number; spend: number; sales: number; orders: number }> = {};
       for (let h = 0; h < 24; h++) {
@@ -675,7 +678,7 @@ export const adLocalAnalysisRouter = router({
       const conditions: any[] = [eq(adOrderHourly.userId, ctx.user.id)];
       if (input.parentAsin) conditions.push(eq(adOrderHourly.parentAsin, input.parentAsin));
 
-      const rows = await d.select().from(adOrderHourly).where(and(...conditions));
+      const rows = await d.select().from(adOrderHourly).where(opsWorkspaceCondition(adOrderHourly, currentOpsWorkspaceId(), and(...conditions)));
 
       const heatmap: Record<string, { dayOfWeek: number; hour: number; orders: number; sales: number }> = {};
       for (let dow = 0; dow < 7; dow++) {
@@ -725,7 +728,7 @@ export const adLocalAnalysisRouter = router({
         conditions.push(inArray(adSearchTermReports.campaignName, input.campaignNames));
       }
 
-      const rows = await d.select().from(adSearchTermReports).where(and(...conditions));
+      const rows = await d.select().from(adSearchTermReports).where(opsWorkspaceCondition(adSearchTermReports, currentOpsWorkspaceId(), and(...conditions)));
 
       const targetMap: Record<string, {
         keyword: string; match_type: string;
@@ -804,7 +807,7 @@ export const adLocalAnalysisRouter = router({
         conditions.push(inArray(adSearchTermReports.campaignName, input.campaignNames));
       }
 
-      const rows = await d.select().from(adSearchTermReports).where(and(...conditions));
+      const rows = await d.select().from(adSearchTermReports).where(opsWorkspaceCondition(adSearchTermReports, currentOpsWorkspaceId(), and(...conditions)));
 
       const wordMap: Record<string, {
         word: string; frequency: number;
@@ -898,7 +901,7 @@ export const adLocalAnalysisRouter = router({
         conditions.push(inArray(adSearchTermReports.campaignName, input.campaignNames));
       }
 
-      const rows = await d.select().from(adSearchTermReports).where(and(...conditions));
+      const rows = await d.select().from(adSearchTermReports).where(opsWorkspaceCondition(adSearchTermReports, currentOpsWorkspaceId(), and(...conditions)));
 
       const termMap: Record<string, {
         query: string; impressions: number; clicks: number;
@@ -968,7 +971,7 @@ export const adLocalAnalysisRouter = router({
       if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekStartDate, input.weekStartDate));
       if (input.weekEndDate) conditions.push(lte(adCampaignReports.weekEndDate, input.weekEndDate));
 
-      const rows = await d.select().from(adCampaignReports).where(and(...conditions));
+      const rows = await d.select().from(adCampaignReports).where(opsWorkspaceCondition(adCampaignReports, currentOpsWorkspaceId(), and(...conditions)));
 
       const asinMap: Record<string, {
         asin: string; adTypes: Set<string>;
@@ -1062,7 +1065,7 @@ export const adLocalAnalysisRouter = router({
           conditions.push(inArray(adSearchTermReports.campaignName, input.campaignNames));
         }
 
-        const rows = await d.select().from(adSearchTermReports).where(and(...conditions));
+        const rows = await d.select().from(adSearchTermReports).where(opsWorkspaceCondition(adSearchTermReports, currentOpsWorkspaceId(), and(...conditions)));
 
         let impressions = 0, clicks = 0, cost = 0, sales = 0, orders = 0;
         const termMap: Record<string, { query: string; impressions: number; clicks: number; cost: number; sales: number; orders: number }> = {};
@@ -1135,7 +1138,7 @@ export const adLocalAnalysisRouter = router({
       if (input.campaignNames?.length) conditions.push(inArray(adCampaignReports.campaignName, input.campaignNames));
       if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekStartDate, input.weekStartDate));
       if (input.weekEndDate) conditions.push(lte(adCampaignReports.weekEndDate, input.weekEndDate));
-      const rows = await db.select().from(adCampaignReports).where(and(...conditions));
+      const rows = await db.select().from(adCampaignReports).where(opsWorkspaceCondition(adCampaignReports, currentOpsWorkspaceId(), and(...conditions)));
       let totalImpressions = 0, totalClicks = 0, totalCost = 0, totalSales = 0, totalOrders = 0;
       for (const r of rows) {
         totalImpressions += n(r.impressions); totalClicks += n(r.clicks);
@@ -1194,7 +1197,7 @@ export const adLocalAnalysisRouter = router({
       const conditions: any[] = [eq(adCampaignReports.userId, ctx.user.id)];
       if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekStartDate, input.weekStartDate));
       if (input.weekEndDate) conditions.push(lte(adCampaignReports.weekEndDate, input.weekEndDate));
-      const rows = await db.select().from(adCampaignReports).where(and(...conditions));
+      const rows = await db.select().from(adCampaignReports).where(opsWorkspaceCondition(adCampaignReports, currentOpsWorkspaceId(), and(...conditions)));
       // Aggregate by campaign
       const campPerf: Record<string, { name: string; budget: number; status: string; asin: string; impressions: number; clicks: number; cost: number; sales: number; orders: number }> = {};
       for (const r of rows) {
@@ -1262,14 +1265,14 @@ export const adLocalAnalysisRouter = router({
     .mutation(async ({ input, ctx }) => {
       const db = await getDbInstance();
       const [record] = await db.select().from(budgetTracking)
-        .where(and(eq(budgetTracking.id, input.trackingId), eq(budgetTracking.userId, ctx.user.id)))
+        .where(opsWorkspaceCondition(budgetTracking, currentOpsWorkspaceId(), and(eq(budgetTracking.id, input.trackingId), eq(budgetTracking.userId, ctx.user.id))))
         .limit(1);
       if (!record) throw new Error('记录不存在');
       const decisions = record.campaignDecisions ? JSON.parse(record.campaignDecisions as string) : [];
       const campaignNames = decisions.map((d: any) => d.campaignName).filter(Boolean);
       if (campaignNames.length === 0) return { success: false, error: '无广告活动数据' };
       const conditions: any[] = [eq(adCampaignReports.userId, ctx.user.id), inArray(adCampaignReports.campaignName, campaignNames)];
-      const rows = await db.select().from(adCampaignReports).where(and(...conditions));
+      const rows = await db.select().from(adCampaignReports).where(opsWorkspaceCondition(adCampaignReports, currentOpsWorkspaceId(), and(...conditions)));
       let totalSpend = 0, totalSales = 0, totalOrders = 0;
       for (const r of rows) { totalSpend += n(r.spend); totalSales += n(r.sales); totalOrders += n(r.orders); }
       const followupAcos = safePct(totalSpend, totalSales);
@@ -1305,7 +1308,7 @@ export const adLocalAnalysisRouter = router({
         followupAcos: String(followupAcos), followupRoas: String(followupRoas),
         followupOrders: totalOrders, followupEvaluatedAt: new Date(),
         effectSummary, effectScore,
-      }).where(eq(budgetTracking.id, input.trackingId));
+      }).where(opsWorkspaceCondition(budgetTracking, currentOpsWorkspaceId(), eq(budgetTracking.id, input.trackingId)));
       return {
         success: true,
         followup: { spend: Math.round(totalSpend*100)/100, sales: Math.round(totalSales*100)/100, acos: followupAcos, roas: followupRoas, orders: totalOrders },
@@ -1323,7 +1326,7 @@ export const adLocalAnalysisRouter = router({
       const conditions: any[] = [eq(adCampaignReports.userId, ctx.user.id)];
       if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekStartDate, input.weekStartDate));
       if (input.weekEndDate) conditions.push(lte(adCampaignReports.weekEndDate, input.weekEndDate));
-      const rows = await db.select().from(adCampaignReports).where(and(...conditions));
+      const rows = await db.select().from(adCampaignReports).where(opsWorkspaceCondition(adCampaignReports, currentOpsWorkspaceId(), and(...conditions)));
       const channelMap: Record<string, { cost: number; sales: number; clicks: number; impressions: number; orders: number; count: number }> = {};
       const dailyMap: Record<string, Record<string, { cost: number; sales: number; orders: number; clicks: number; impressions: number }>> = {};
       for (const r of rows) {
@@ -1393,7 +1396,7 @@ export const adLocalAnalysisRouter = router({
       if (input.campaignNames?.length) {
         const db = await getDbInstance();
         const rows = await db.select().from(adCampaignReports)
-          .where(and(eq(adCampaignReports.userId, ctx.user.id), inArray(adCampaignReports.campaignName, input.campaignNames)));
+          .where(opsWorkspaceCondition(adCampaignReports, currentOpsWorkspaceId(), and(eq(adCampaignReports.userId, ctx.user.id), inArray(adCampaignReports.campaignName, input.campaignNames))));
         if (rows.length > 0) {
           let tc=0,ts=0,tck=0,ti=0,to=0;
           rows.forEach(d => { tc+=n(d.spend); ts+=n(d.sales); tck+=n(d.clicks); ti+=n(d.impressions); to+=n(d.orders); });
@@ -1446,7 +1449,7 @@ export const adLocalAnalysisRouter = router({
       const conditions: any[] = [eq(adDspReports.userId, ctx.user.id)];
       if (input.weekStartDate) conditions.push(gte(adDspReports.weekStartDate, input.weekStartDate));
       if (input.weekEndDate) conditions.push(lte(adDspReports.weekEndDate, input.weekEndDate));
-      const rows = await db.select().from(adDspReports).where(and(...conditions));
+      const rows = await db.select().from(adDspReports).where(opsWorkspaceCondition(adDspReports, currentOpsWorkspaceId(), and(...conditions)));
 
       if (rows.length === 0) {
         return {
@@ -1508,7 +1511,7 @@ export const adLocalAnalysisRouter = router({
     .input(z.object({ question: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
       const db = await getDbInstance();
-      const rows = await db.select().from(adDspReports).where(eq(adDspReports.userId, ctx.user.id));
+      const rows = await db.select().from(adDspReports).where(opsWorkspaceCondition(adDspReports, currentOpsWorkspaceId(), eq(adDspReports.userId, ctx.user.id)));
 
       if (rows.length === 0) {
         return { strategy: null, error: '暂无DSP报告数据，请先上传DSP广告报告。' };
@@ -1571,7 +1574,7 @@ export const adLocalAnalysisRouter = router({
       const conditions: any[] = [eq(adCampaignReports.userId, ctx.user.id)];
       if (input.weekStartDate) conditions.push(gte(adCampaignReports.weekStartDate, input.weekStartDate));
       if (input.weekEndDate) conditions.push(lte(adCampaignReports.weekEndDate, input.weekEndDate));
-      const rows = await db.select().from(adCampaignReports).where(and(...conditions));
+      const rows = await db.select().from(adCampaignReports).where(opsWorkspaceCondition(adCampaignReports, currentOpsWorkspaceId(), and(...conditions)));
       const channelMap: Record<string, { cost:number; sales:number; orders:number }> = {};
       for (const r of rows) {
         const ch = (r.adType||'SP').toUpperCase();

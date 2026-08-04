@@ -5,9 +5,9 @@
 ## 已落地
 
 - `server/repositories/dbClient.ts`：统一 `getDb`、`requireDb`、`withDbTransaction`。
-- `server/repositories/ai_os`：AI Job 队列、worker、dead letter 读写已从 `server/db.ts` 抽离。
-- `server/repositories/project`：项目增删改查、管理员项目列表已从 `server/db.ts` 抽离；删除项目使用事务保护。
-- `drizzle/schema/{auth,project,listing,image,ads,ops,ai_os}.ts`：按领域提供 schema 导入入口，当前仍复用 `drizzle/schema.ts` 作为兼容源。
+- `server/repositories/ai_os`：AI Job 队列、worker、dead letter 由 AI OS repository 独立管理。
+- `server/repositories/project`：项目增删改查、管理员项目列表由 Project repository 管理；删除项目使用事务保护。
+- `drizzle/schema/{auth,project,listing,image,ads,ops,video,knowledge,ai_os}.ts`：表定义已物理分域，`index.ts` 只提供聚合导出。
 - `drizzle/relations.ts`：补齐用户、项目、Listing、图片工作流、AI OS、Tool Run 的 Drizzle relations 基线。
 - `server/repositories/dbGovernance.ts`：机器可读的 domain、软 FK、索引、归档策略基线。
 - `auditSoftForeignKeys()`：可执行的软 FK 孤儿数据审计入口，上线前可按策略逐项检查。
@@ -17,15 +17,17 @@
 
 | Domain | Schema | Repository | 当前策略 |
 | --- | --- | --- | --- |
-| auth | `drizzle/schema/auth` | `server/repositories/auth` | legacy compat |
+| auth | `drizzle/schema/auth` | `server/repositories/auth` | repository required |
 | project | `drizzle/schema/project` | `server/repositories/project` | repository required |
-| listing | `drizzle/schema/listing` | `server/repositories/listing` | legacy compat |
-| image | `drizzle/schema/image` | `server/repositories/image` | legacy compat |
-| ads | `drizzle/schema/ads` | `server/repositories/ads` | legacy compat |
-| ops | `drizzle/schema/ops` | `server/repositories/ops` | legacy compat |
+| listing | `drizzle/schema/listing` | `server/repositories/listing` | repository required |
+| image | `drizzle/schema/image` | `server/repositories/image` | repository required |
+| ads | `drizzle/schema/ads` | `server/domains/ads` | repository required |
+| ops | `drizzle/schema/ops` | `server/repositories/ops` | repository required |
+| video | `drizzle/schema/video` | `server/videoScriptDb.ts` | repository required |
+| knowledge | `drizzle/schema/knowledge` | `server/kbDb.ts` | repository required |
 | ai_os | `drizzle/schema/ai_os` | `server/repositories/ai_os` | repository required |
 
-`legacy compat` 表示还保留 `server/db.ts` 兼容出口，避免一次性迁移所有业务路由造成大面积回归；新增和重构代码应优先走对应 repository。
+所有数据库域都执行 `repository_required`，根级兼容出口不再允许恢复。
 
 ## 关系策略
 
@@ -65,7 +67,7 @@
 
 ## 剩余债务
 
-- `server/db.ts` 仍承担 Auth、Listing、Image 的历史兼容出口。
+- Auth、Listing、Image 已迁入各自 repository，并由架构回归测试阻止根级兼容出口复活。
 - `server/devDb.ts`、`server/kbDb.ts`、`server/offsiteDb.ts` 仍是独立 DB helper，后续应按 project/ops/kb/offsite 域继续收口。
 - 硬 FK 尚未直接落库，需要生产孤儿数据审计后分批执行。
 - 归档策略已标准化，但归档 worker 尚未实现。

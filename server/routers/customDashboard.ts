@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/ops/workspaceProcedure";
+import { getDb } from "../repositories/dbClient";
 import { customDashboards, dashboardWidgets, lingxingProductWeekly } from "../../drizzle/schema";
 import { eq, and, desc, sql, gte } from "drizzle-orm";
 
@@ -10,14 +11,14 @@ function getDateNDaysAgo(n: number) {
 }
 
 // Widget data fetchers - now reads from imported Excel data in DB
-async function fetchWidgetData(dataSource: string, _config: any) {
+async function fetchWidgetData(workspaceId: number, dataSource: string, _config: any) {
   const db = await getDb();
   if (!db) return { items: [] };
 
   switch (dataSource) {
     case 'sales': {
       const rows = await db.select().from(lingxingProductWeekly)
-        .where(gte(lingxingProductWeekly.weekStartDate, getDateNDaysAgo(30)))
+        .where(and(eq(lingxingProductWeekly.workspaceId, workspaceId), gte(lingxingProductWeekly.weekStartDate, getDateNDaysAgo(30))))
         .orderBy(desc(lingxingProductWeekly.weekStartDate))
         .limit(50);
       const totalRevenue = rows.reduce((s, r) => s + Number(r.salesAmount || 0), 0);
@@ -28,7 +29,7 @@ async function fetchWidgetData(dataSource: string, _config: any) {
     case 'ads_sp': {
       // Read from imported ad data
       const rows = await db.select().from(lingxingProductWeekly)
-        .where(gte(lingxingProductWeekly.weekStartDate, getDateNDaysAgo(30)))
+        .where(and(eq(lingxingProductWeekly.workspaceId, workspaceId), gte(lingxingProductWeekly.weekStartDate, getDateNDaysAgo(30))))
         .orderBy(desc(lingxingProductWeekly.weekStartDate))
         .limit(50);
       const totalSpend = rows.reduce((s, r) => s + Number(r.adSpend || 0), 0);
@@ -37,6 +38,7 @@ async function fetchWidgetData(dataSource: string, _config: any) {
     }
     case 'inventory': {
       const rows = await db.select().from(lingxingProductWeekly)
+        .where(eq(lingxingProductWeekly.workspaceId, workspaceId))
         .orderBy(desc(lingxingProductWeekly.weekStartDate))
         .limit(200);
       // Deduplicate by parentAsin to get latest inventory per product
@@ -55,7 +57,7 @@ async function fetchWidgetData(dataSource: string, _config: any) {
     }
     case 'profit': {
       const rows = await db.select().from(lingxingProductWeekly)
-        .where(gte(lingxingProductWeekly.weekStartDate, getDateNDaysAgo(30)))
+        .where(and(eq(lingxingProductWeekly.workspaceId, workspaceId), gte(lingxingProductWeekly.weekStartDate, getDateNDaysAgo(30))))
         .orderBy(desc(lingxingProductWeekly.weekStartDate))
         .limit(50);
       return { items: rows.slice(0, 20) };
@@ -114,7 +116,7 @@ export const customDashboardRouter = router({
     const db = await getDb();
     if (!db) throw new Error('DB not available');
     const dashboards = await db.select().from(customDashboards)
-      .where(eq(customDashboards.userId, ctx.user.id))
+      .where(and(eq(customDashboards.workspaceId, ctx.workspaceId), eq(customDashboards.userId, ctx.user.id)))
       .orderBy(desc(customDashboards.updatedAt));
     return dashboards;
   }),
@@ -126,10 +128,10 @@ export const customDashboardRouter = router({
       const db = await getDb();
       if (!db) throw new Error('DB not available');
       const [dashboard] = await db.select().from(customDashboards)
-        .where(and(eq(customDashboards.id, input.id), eq(customDashboards.userId, ctx.user.id)));
+        .where(and(eq(customDashboards.id, input.id), eq(customDashboards.workspaceId, ctx.workspaceId), eq(customDashboards.userId, ctx.user.id)));
       if (!dashboard) return null;
       const widgets = await db.select().from(dashboardWidgets)
-        .where(eq(dashboardWidgets.dashboardId, input.id));
+        .where(and(eq(dashboardWidgets.workspaceId, ctx.workspaceId), eq(dashboardWidgets.dashboardId, input.id)));
       return { ...dashboard, widgets };
     }),
 
@@ -184,7 +186,7 @@ export const customDashboardRouter = router({
       if (input.description !== undefined) updates.description = input.description;
       if (input.layout !== undefined) updates.layout = input.layout;
       await db.update(customDashboards).set(updates)
-        .where(and(eq(customDashboards.id, input.id), eq(customDashboards.userId, ctx.user.id)));
+        .where(and(eq(customDashboards.id, input.id), eq(customDashboards.workspaceId, ctx.workspaceId), eq(customDashboards.userId, ctx.user.id)));
       return { success: true };
     }),
 
@@ -194,9 +196,9 @@ export const customDashboardRouter = router({
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error('DB not available');
-      await db.delete(dashboardWidgets).where(eq(dashboardWidgets.dashboardId, input.id));
+      await db.delete(dashboardWidgets).where(and(eq(dashboardWidgets.workspaceId, ctx.workspaceId), eq(dashboardWidgets.dashboardId, input.id)));
       await db.delete(customDashboards)
-        .where(and(eq(customDashboards.id, input.id), eq(customDashboards.userId, ctx.user.id)));
+        .where(and(eq(customDashboards.id, input.id), eq(customDashboards.workspaceId, ctx.workspaceId), eq(customDashboards.userId, ctx.user.id)));
       return { success: true };
     }),
 
@@ -210,9 +212,12 @@ export const customDashboardRouter = router({
       config: z.any().optional(),
       position: z.any().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error('DB not available');
+      const [dashboard] = await db.select({ id: customDashboards.id }).from(customDashboards)
+        .where(and(eq(customDashboards.id, input.dashboardId), eq(customDashboards.workspaceId, ctx.workspaceId)));
+      if (!dashboard) throw new Error("Dashboard not found in current workspace");
       const [result] = await db.insert(dashboardWidgets).values({
         dashboardId: input.dashboardId,
         widgetType: input.widgetType,
@@ -232,24 +237,24 @@ export const customDashboardRouter = router({
       config: z.any().optional(),
       position: z.any().optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error('DB not available');
       const updates: any = {};
       if (input.title) updates.title = input.title;
       if (input.config !== undefined) updates.config = input.config;
       if (input.position !== undefined) updates.position = input.position;
-      await db.update(dashboardWidgets).set(updates).where(eq(dashboardWidgets.id, input.id));
+      await db.update(dashboardWidgets).set(updates).where(and(eq(dashboardWidgets.id, input.id), eq(dashboardWidgets.workspaceId, ctx.workspaceId)));
       return { success: true };
     }),
 
   // Delete widget
   deleteWidget: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error('DB not available');
-      await db.delete(dashboardWidgets).where(eq(dashboardWidgets.id, input.id));
+      await db.delete(dashboardWidgets).where(and(eq(dashboardWidgets.id, input.id), eq(dashboardWidgets.workspaceId, ctx.workspaceId)));
       return { success: true };
     }),
 
@@ -258,11 +263,11 @@ export const customDashboardRouter = router({
     .input(z.object({
       updates: z.array(z.object({ id: z.number(), position: z.any() })),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       if (!db) throw new Error('DB not available');
       for (const u of input.updates) {
-        await db.update(dashboardWidgets).set({ position: u.position }).where(eq(dashboardWidgets.id, u.id));
+        await db.update(dashboardWidgets).set({ position: u.position }).where(and(eq(dashboardWidgets.id, u.id), eq(dashboardWidgets.workspaceId, ctx.workspaceId)));
       }
       return { success: true };
     }),
@@ -270,8 +275,8 @@ export const customDashboardRouter = router({
   // Fetch widget data
   getWidgetData: protectedProcedure
     .input(z.object({ dataSource: z.string(), config: z.any().optional() }))
-    .query(async ({ input }) => {
-      return fetchWidgetData(input.dataSource, input.config || {});
+    .query(async ({ ctx, input }) => {
+      return fetchWidgetData(ctx.workspaceId, input.dataSource, input.config || {});
     }),
 
   // Get available templates

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../_core/trpc";
-import * as db from "../db";
+import * as db from "../repositories";
 import { ADMIN_ROLES, ALL_ROLES, ROLE_LABELS, ROLE_MODULE_ACCESS, SUB_MODULES, type ModulePermission } from "@shared/const";
 
 const ALL_MODULES = [

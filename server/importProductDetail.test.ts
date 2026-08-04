@@ -2,8 +2,8 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 
-// Mock the database module
-vi.mock("./db", async (importOriginal) => {
+// Mock only the database client used by the operations repositories.
+vi.mock("./repositories/dbClient", async (importOriginal) => {
   const actual = await importOriginal() as any;
   return {
     ...actual,
@@ -19,7 +19,8 @@ function createAuthContext(): TrpcContext {
       email: "test@example.com",
       name: "Test User",
       loginMethod: "manus",
-      role: "user",
+      role: "admin",
+      defaultWorkspaceId: 1,
       createdAt: new Date(),
       updatedAt: new Date(),
       lastSignedIn: new Date(),
@@ -31,6 +32,7 @@ function createAuthContext(): TrpcContext {
     res: {
       clearCookie: () => {},
     } as TrpcContext["res"],
+    workspaceId: 1,
   };
 }
 

@@ -29,7 +29,7 @@ const mockDb = {
   orderBy: mockOrderBy,
 };
 
-vi.mock("./db", () => ({
+vi.mock("./repositories/dbClient", () => ({
   getDb: vi.fn(() => Promise.resolve(mockDb)),
   upsertUser: vi.fn(),
 }));

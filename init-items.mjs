@@ -1,5 +1,5 @@
-import { getDb } from './server/db.ts';
-import { conversionCheckItems } from './drizzle/schema.ts';
+import { getDb } from './server/repositories/dbClient.ts';
+import { conversionCheckItems } from './drizzle/schema/ops.ts';
 import { isNull, sql } from 'drizzle-orm';
 
 const items = [];

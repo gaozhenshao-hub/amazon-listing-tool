@@ -1,31 +1,17 @@
+export * from "../../repositories/image";
 export {
-  countExpressionGroupImages,
-  createImageWorkflowSession,
-  deleteCompetitorImage,
-  deleteExpressionGroup,
-  deleteExpressionGroupImage,
-  deleteImageWorkflowSession,
   getActiveListingByProject,
-  getCompetitorAnalysesByProject,
-  getCompetitorImagesByProject,
-  getExpressionGroupsByProject,
-  getImageWorkflowSession,
-  getImageWorkflowSessionById,
-  getImageWorkflowSessionByProject,
   getKeywordsByProject,
   getListingsByProject,
+  getReviewAggregationByProject,
+  updateListing,
+} from "../../repositories/listing";
+export {
+  getCompetitorAnalysesByProject,
   getProjectById,
   getProjectByIdAdmin,
   getProjectFilesByProject,
   getProjectsByUser,
-  getReviewAggregationByProject,
-  insertCompetitorImage,
-  insertExpressionGroup,
-  insertExpressionGroupImage,
-  updateCompetitorImage,
-  updateExpressionGroup,
-  updateImageWorkflowSession,
-  updateListing,
-} from "../../db";
+} from "../../repositories/project";
 export * as devDb from "../../devDb";
 export * as kbDb from "../../kbDb";

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readRepoSources } from "./testPaths";
+import { readRepoSources, readSchemaSources } from "./testPaths";
 
 const listingSource = readRepoSources(
   "server/domains/listing/routerContext.ts",
@@ -53,8 +53,7 @@ describe("Sidebar navigation order", () => {
 // Test: Image advice bilingual support
 describe("Image advice bilingual support", () => {
   it("should have imageAdviceCn field in schema", async () => {
-    const fs = await import("fs");
-    const schema = fs.readFileSync("drizzle/schema.ts", "utf-8");
+    const schema = readSchemaSources();
     expect(schema).toContain("imageAdviceCn");
   });
 

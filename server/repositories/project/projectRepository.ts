@@ -1,6 +1,8 @@
 import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
-import type { InsertProject } from "../../../drizzle/schema";
-import { competitorAnalyses, listings, projects, users } from "../../../drizzle/schema";
+import type { InsertProject } from "../../../drizzle/schema/project";
+import { competitorAnalyses, projects } from "../../../drizzle/schema/project";
+import { listings } from "../../../drizzle/schema/listing";
+import { users } from "../../../drizzle/schema/auth";
 import { requireDb, withDbTransaction, type DbExecutor } from "../dbClient";
 
 export async function createProject(data: InsertProject) {

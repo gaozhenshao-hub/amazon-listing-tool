@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "crypto";
 import { sql as drizzleSql } from "drizzle-orm";
-import { getDb } from "../../../db";
+import { getDb } from "../../../repositories/dbClient";
 import { buildStorageUri, parseStorageUri, type StorageProvider } from "../../../storage";
 
 export type ArtifactDomain = "listing" | "image" | "ads" | "video" | "agent" | "project" | "file" | "ops" | "tool" | "other";

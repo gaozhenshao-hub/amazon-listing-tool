@@ -1,5 +1,5 @@
 import { eq, and, desc, asc } from "drizzle-orm";
-import { getDb } from "./db";
+import { getDb } from "./repositories/dbClient";
 import {
   videoScripts, InsertVideoScript,
   videoCompetitorScripts, InsertVideoCompetitorScript,
@@ -12,6 +12,27 @@ import {
   videoScriptVersions, InsertVideoScriptVersion,
   videoSpvSegments, InsertVideoSpvSegment,
 } from "../drizzle/schema";
+import { registerVideoArtifact } from "./domains/ai_os/services/businessArtifactRegistry";
+
+async function videoScriptIdForSection(sectionId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [section] = await db.select({ videoScriptId: videoScriptSections.videoScriptId })
+    .from(videoScriptSections).where(eq(videoScriptSections.id, sectionId)).limit(1);
+  return section?.videoScriptId ?? null;
+}
+
+async function videoScriptIdForSubtopic(subtopicId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const [subtopic] = await db.select({ sectionId: videoScriptSubtopics.sectionId })
+    .from(videoScriptSubtopics).where(eq(videoScriptSubtopics.id, subtopicId)).limit(1);
+  return subtopic ? videoScriptIdForSection(subtopic.sectionId) : null;
+}
+
+async function captureVideoChange(videoScriptId: number | null | undefined) {
+  if (videoScriptId) await registerVideoArtifact(videoScriptId, "user_edit");
+}
 
 // ─── Video Scripts CRUD ─────────────────────────────────────────
 
@@ -19,6 +40,7 @@ export async function createVideoScript(data: InsertVideoScript) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [result] = await db.insert(videoScripts).values(data);
+  await registerVideoArtifact(result.insertId, "ai_output");
   return result.insertId;
 }
 
@@ -41,6 +63,7 @@ export async function updateVideoScript(id: number, data: Partial<InsertVideoScr
   const db = await getDb();
   if (!db) return;
   await db.update(videoScripts).set(data).where(eq(videoScripts.id, id));
+  await registerVideoArtifact(id, "user_edit");
 }
 
 export async function deleteVideoScript(id: number) {
@@ -69,6 +92,7 @@ export async function addCompetitorScript(data: InsertVideoCompetitorScript) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [result] = await db.insert(videoCompetitorScripts).values(data);
+  await captureVideoChange(data.videoScriptId);
   return result.insertId;
 }
 
@@ -83,7 +107,9 @@ export async function getCompetitorScriptsByVideoScript(videoScriptId: number) {
 export async function updateCompetitorScript(id: number, data: Partial<InsertVideoCompetitorScript>) {
   const db = await getDb();
   if (!db) return;
+  const [existing] = await db.select({ videoScriptId: videoCompetitorScripts.videoScriptId }).from(videoCompetitorScripts).where(eq(videoCompetitorScripts.id, id));
   await db.update(videoCompetitorScripts).set(data).where(eq(videoCompetitorScripts.id, id));
+  await captureVideoChange(existing?.videoScriptId);
 }
 
 export async function deleteCompetitorScript(id: number) {
@@ -101,9 +127,11 @@ export async function upsertCompetitorSummary(data: InsertVideoCompetitorSummary
     .where(eq(videoCompetitorSummary.videoScriptId, data.videoScriptId!));
   if (existing.length > 0) {
     await db.update(videoCompetitorSummary).set(data).where(eq(videoCompetitorSummary.id, existing[0].id));
+    await captureVideoChange(data.videoScriptId);
     return existing[0].id;
   }
   const [result] = await db.insert(videoCompetitorSummary).values(data);
+  await captureVideoChange(data.videoScriptId);
   return result.insertId;
 }
 
@@ -124,9 +152,11 @@ export async function upsertProductSnapshot(data: InsertVideoProductSnapshot) {
     .where(eq(videoProductSnapshots.videoScriptId, data.videoScriptId!));
   if (existing.length > 0) {
     await db.update(videoProductSnapshots).set(data).where(eq(videoProductSnapshots.id, existing[0].id));
+    await captureVideoChange(data.videoScriptId);
     return existing[0].id;
   }
   const [result] = await db.insert(videoProductSnapshots).values(data);
+  await captureVideoChange(data.videoScriptId);
   return result.insertId;
 }
 
@@ -155,12 +185,17 @@ export async function saveSections(videoScriptId: number, sections: InsertVideoS
   }
   await db.delete(videoScriptSections).where(eq(videoScriptSections.videoScriptId, videoScriptId));
   // Insert new sections
-  if (sections.length === 0) return [];
+  if (sections.length === 0) {
+    await captureVideoChange(videoScriptId);
+    return [];
+  }
   const insertData = sections.map((s, i) => ({ ...s, videoScriptId, sortOrder: i }));
   await db.insert(videoScriptSections).values(insertData);
-  return db.select().from(videoScriptSections)
+  const saved = await db.select().from(videoScriptSections)
     .where(eq(videoScriptSections.videoScriptId, videoScriptId))
     .orderBy(asc(videoScriptSections.sortOrder));
+  await captureVideoChange(videoScriptId);
+  return saved;
 }
 
 export async function getSections(videoScriptId: number) {
@@ -175,6 +210,7 @@ export async function updateSection(id: number, data: Partial<InsertVideoScriptS
   const db = await getDb();
   if (!db) return;
   await db.update(videoScriptSections).set(data).where(eq(videoScriptSections.id, id));
+  await captureVideoChange(await videoScriptIdForSection(id));
 }
 
 // ─── Subtopics ──────────────────────────────────────────────────
@@ -188,12 +224,18 @@ export async function saveSubtopics(sectionId: number, subtopics: InsertVideoScr
     await db.delete(videoScriptShots).where(eq(videoScriptShots.subtopicId, sub.id));
   }
   await db.delete(videoScriptSubtopics).where(eq(videoScriptSubtopics.sectionId, sectionId));
-  if (subtopics.length === 0) return [];
+  const videoScriptId = await videoScriptIdForSection(sectionId);
+  if (subtopics.length === 0) {
+    await captureVideoChange(videoScriptId);
+    return [];
+  }
   const insertData = subtopics.map((s, i) => ({ ...s, sectionId, sortOrder: i }));
   await db.insert(videoScriptSubtopics).values(insertData);
-  return db.select().from(videoScriptSubtopics)
+  const saved = await db.select().from(videoScriptSubtopics)
     .where(eq(videoScriptSubtopics.sectionId, sectionId))
     .orderBy(asc(videoScriptSubtopics.sortOrder));
+  await captureVideoChange(videoScriptId);
+  return saved;
 }
 
 export async function getSubtopicsBySection(sectionId: number) {
@@ -222,12 +264,18 @@ export async function saveShots(subtopicId: number, sectionId: number, shots: In
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(videoScriptShots).where(eq(videoScriptShots.subtopicId, subtopicId));
-  if (shots.length === 0) return [];
+  const videoScriptId = await videoScriptIdForSection(sectionId);
+  if (shots.length === 0) {
+    await captureVideoChange(videoScriptId);
+    return [];
+  }
   const insertData = shots.map((s, i) => ({ ...s, subtopicId, sectionId, sortOrder: i }));
   await db.insert(videoScriptShots).values(insertData);
-  return db.select().from(videoScriptShots)
+  const saved = await db.select().from(videoScriptShots)
     .where(eq(videoScriptShots.subtopicId, subtopicId))
     .orderBy(asc(videoScriptShots.sortOrder));
+  await captureVideoChange(videoScriptId);
+  return saved;
 }
 
 export async function getShotsBySubtopic(subtopicId: number) {
@@ -269,13 +317,17 @@ export async function getAllShotsByVideoScript(videoScriptId: number) {
 export async function updateShot(id: number, data: Partial<InsertVideoScriptShot>) {
   const db = await getDb();
   if (!db) return;
+  const [existing] = await db.select({ subtopicId: videoScriptShots.subtopicId }).from(videoScriptShots).where(eq(videoScriptShots.id, id));
   await db.update(videoScriptShots).set(data).where(eq(videoScriptShots.id, id));
+  await captureVideoChange(existing ? await videoScriptIdForSubtopic(existing.subtopicId) : null);
 }
 
 export async function deleteShot(id: number) {
   const db = await getDb();
   if (!db) return;
+  const [existing] = await db.select({ subtopicId: videoScriptShots.subtopicId }).from(videoScriptShots).where(eq(videoScriptShots.id, id));
   await db.delete(videoScriptShots).where(eq(videoScriptShots.id, id));
+  await captureVideoChange(existing ? await videoScriptIdForSubtopic(existing.subtopicId) : null);
 }
 
 // ─── Edit Scripts ───────────────────────────────────────────────
@@ -284,12 +336,17 @@ export async function saveEditScripts(videoScriptId: number, editScripts: Insert
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(videoEditScripts).where(eq(videoEditScripts.videoScriptId, videoScriptId));
-  if (editScripts.length === 0) return [];
+  if (editScripts.length === 0) {
+    await captureVideoChange(videoScriptId);
+    return [];
+  }
   const insertData = editScripts.map((s, i) => ({ ...s, videoScriptId, sortOrder: i }));
   await db.insert(videoEditScripts).values(insertData);
-  return db.select().from(videoEditScripts)
+  const saved = await db.select().from(videoEditScripts)
     .where(eq(videoEditScripts.videoScriptId, videoScriptId))
     .orderBy(asc(videoEditScripts.sortOrder));
+  await captureVideoChange(videoScriptId);
+  return saved;
 }
 
 export async function getEditScripts(videoScriptId: number) {
@@ -303,7 +360,9 @@ export async function getEditScripts(videoScriptId: number) {
 export async function updateEditScript(id: number, data: Partial<InsertVideoEditScript>) {
   const db = await getDb();
   if (!db) return;
+  const [existing] = await db.select({ videoScriptId: videoEditScripts.videoScriptId }).from(videoEditScripts).where(eq(videoEditScripts.id, id));
   await db.update(videoEditScripts).set(data).where(eq(videoEditScripts.id, id));
+  await captureVideoChange(existing?.videoScriptId);
 }
 
 // ─── Version Management ────────────────────────────────────────
@@ -312,6 +371,7 @@ export async function createVersion(data: InsertVideoScriptVersion) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const [result] = await db.insert(videoScriptVersions).values(data);
+  await captureVideoChange(data.videoScriptId);
   return result.insertId;
 }
 
@@ -336,12 +396,17 @@ export async function saveSpvSegments(videoScriptId: number, segments: InsertVid
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(videoSpvSegments).where(eq(videoSpvSegments.videoScriptId, videoScriptId));
-  if (segments.length === 0) return [];
+  if (segments.length === 0) {
+    await captureVideoChange(videoScriptId);
+    return [];
+  }
   const insertData = segments.map((s, i) => ({ ...s, videoScriptId, sortOrder: i }));
   await db.insert(videoSpvSegments).values(insertData);
-  return db.select().from(videoSpvSegments)
+  const saved = await db.select().from(videoSpvSegments)
     .where(eq(videoSpvSegments.videoScriptId, videoScriptId))
     .orderBy(asc(videoSpvSegments.sortOrder));
+  await captureVideoChange(videoScriptId);
+  return saved;
 }
 
 export async function getSpvSegments(videoScriptId: number) {
@@ -355,13 +420,17 @@ export async function getSpvSegments(videoScriptId: number) {
 export async function updateSpvSegment(id: number, data: Partial<InsertVideoSpvSegment>) {
   const db = await getDb();
   if (!db) return;
+  const [existing] = await db.select({ videoScriptId: videoSpvSegments.videoScriptId }).from(videoSpvSegments).where(eq(videoSpvSegments.id, id));
   await db.update(videoSpvSegments).set(data).where(eq(videoSpvSegments.id, id));
+  await captureVideoChange(existing?.videoScriptId);
 }
 
 export async function deleteSpvSegment(id: number) {
   const db = await getDb();
   if (!db) return;
+  const [existing] = await db.select({ videoScriptId: videoSpvSegments.videoScriptId }).from(videoSpvSegments).where(eq(videoSpvSegments.id, id));
   await db.delete(videoSpvSegments).where(eq(videoSpvSegments.id, id));
+  await captureVideoChange(existing?.videoScriptId);
 }
 
 // ─── Reorder Helpers ───────────────────────────────────────────
@@ -374,6 +443,7 @@ export async function reorderSections(videoScriptId: number, sectionIds: number[
       .set({ sortOrder: i })
       .where(and(eq(videoScriptSections.id, sectionIds[i]), eq(videoScriptSections.videoScriptId, videoScriptId)));
   }
+  await captureVideoChange(videoScriptId);
 }
 
 export async function reorderShots(subtopicId: number, shotIds: number[]) {
@@ -384,6 +454,7 @@ export async function reorderShots(subtopicId: number, shotIds: number[]) {
       .set({ sortOrder: i })
       .where(and(eq(videoScriptShots.id, shotIds[i]), eq(videoScriptShots.subtopicId, subtopicId)));
   }
+  await captureVideoChange(await videoScriptIdForSubtopic(subtopicId));
 }
 
 export async function addShotToSubtopic(subtopicId: number, sectionId: number, data: Partial<InsertVideoScriptShot>) {
@@ -397,5 +468,6 @@ export async function addShotToSubtopic(subtopicId: number, sectionId: number, d
     sectionId,
     sortOrder: maxOrder,
   } as InsertVideoScriptShot);
+  await captureVideoChange(await videoScriptIdForSection(sectionId));
   return result.insertId;
 }

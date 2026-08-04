@@ -154,7 +154,7 @@ const mockDb = {
   delete: vi.fn().mockReturnThis(),
 };
 
-vi.mock("../db", () => ({
+vi.mock("../repositories/dbClient", () => ({
   getDb: vi.fn(async () => mockDb),
 }));
 

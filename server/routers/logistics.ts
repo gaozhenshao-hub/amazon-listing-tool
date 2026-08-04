@@ -1,3 +1,5 @@
+import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
+import { opsWorkspaceCondition } from "../repositories/ops";
 /**
  * NextSLS Logistics tRPC Router
  * 
@@ -5,8 +7,9 @@
  */
 
 import { z } from "zod";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/ops/workspaceProcedure";
+import { getDb } from "../repositories/dbClient";
 import { systemSettings } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { nextSlsAdapter } from "../nextsls/adapter";
@@ -39,7 +42,7 @@ export const logisticsRouter = router({
     
     // Also fetch DB values for display
     const rows = await db!.select().from(systemSettings)
-      .where(eq(systemSettings.category, "nextsls"));
+      .where(opsWorkspaceCondition(systemSettings, currentOpsWorkspaceId(), eq(systemSettings.category, "nextsls")));
     
     const dbConfig: Record<string, string> = {};
     for (const row of rows) {
@@ -79,12 +82,12 @@ export const logisticsRouter = router({
 
       for (const { key, value, desc } of updates) {
         const existing = await db!.select().from(systemSettings)
-          .where(eq(systemSettings.settingKey, key));
+          .where(opsWorkspaceCondition(systemSettings, currentOpsWorkspaceId(), eq(systemSettings.settingKey, key)));
         
         if (existing.length > 0) {
           await db!.update(systemSettings)
             .set({ settingValue: value, category: "nextsls", updatedBy: ctx.user.id })
-            .where(eq(systemSettings.settingKey, key));
+            .where(opsWorkspaceCondition(systemSettings, currentOpsWorkspaceId(), eq(systemSettings.settingKey, key)));
         } else {
           await db!.insert(systemSettings).values({
             settingKey: key,
@@ -98,7 +101,7 @@ export const logisticsRouter = router({
 
       // Reload adapter config
       const allRows = await db!.select().from(systemSettings)
-        .where(eq(systemSettings.category, "nextsls"));
+        .where(opsWorkspaceCondition(systemSettings, currentOpsWorkspaceId(), eq(systemSettings.category, "nextsls")));
       const settings: Record<string, string> = {};
       for (const row of allRows) {
         if (row.settingValue) settings[row.settingKey] = row.settingValue;

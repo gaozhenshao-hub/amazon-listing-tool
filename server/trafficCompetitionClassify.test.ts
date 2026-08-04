@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
 // Mock db module
-vi.mock("./db", () => ({
+vi.mock("./repositories", () => ({
   getProjectById: vi.fn().mockResolvedValue({ id: 1, name: "Test Product", brand: "TestBrand", category: "Electronics" }),
   getKeywordsByProject: vi.fn().mockResolvedValue([
     { id: 1, keyword: "wireless charger", monthlySearchVolume: 50000, spr: 120, isNegative: 0, trafficLevel: "medium", competition: "medium" },

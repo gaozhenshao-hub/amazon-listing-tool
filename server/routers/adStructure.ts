@@ -5,7 +5,7 @@ import {
   createAdStructure, getAdStructuresByProject, getAdStructureById,
   updateAdStructure, deleteAdStructure, getProjectById,
   getKeywordsByProject, getCompetitorAnalysesByProject,
-} from "../db";
+} from "../repositories";
 import { AD_STRUCTURE_PROMPT } from "../adStructurePrompt";
 
 // Helper: build product context string for AI prompts

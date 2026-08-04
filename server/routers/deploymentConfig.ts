@@ -7,7 +7,7 @@
 import { z } from "zod";
 import { protectedProcedure, router } from "../_core/trpc";
 import { ENV } from "../_core/env";
-import { getDb } from "../db";
+import { getDb } from "../repositories/dbClient";
 import { kbSyncLogs, remoteUsageSnapshots, users, usageStats, systemSettings } from "../../drizzle/schema";
 import { eq, desc, sql, and, gte, lte } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";

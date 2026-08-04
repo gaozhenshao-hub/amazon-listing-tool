@@ -15,8 +15,8 @@ This template gives you a React 19 + Tailwind 4 + Express 4 + tRPC 11 stack with
 
 ## Build Loop (Four Touch Points)
 
-1. Update schema in `drizzle/schema.ts`, then run `pnpm db:push`.
-2. Add database helpers in `server/db.ts` (return raw results).
+1. Update the owning file in `drizzle/schema/`, add a numbered SQL migration, then run the migration gate.
+2. Add database access through the owning module in `server/repositories/`.
 3. Add or extend procedures in `server/routers.ts`, then wire the UI with `trpc.*.useQuery/useMutation`.
 4. Build frontend experience according to `Frontend Workflow`
 5. Cover your changes with Vitest specs inside `server/*.test.ts` (see `server/auth.logout.test.ts`) and run `pnpm test`.
@@ -29,8 +29,8 @@ That's it—no manual REST routes, no Axios client, no shared contract files.
 
 ```
 server/auth.logout.test.ts → Reference sample vitest test file
-drizzle/schema.ts → Database tables & types
-server/db.ts → Query helpers (reuse across procedures)
+drizzle/schema/ → Domain database tables and types
+server/repositories/ → Domain repositories and transaction boundaries
 server/routers.ts → tRPC procedures (auth + features)
 client/src/App.tsx → Routes wiring & layout shells
 client/src/lib/trpc.ts → tRPC client binding
@@ -185,8 +185,8 @@ Bake motion taste in from the first line of code. Snappy, physically intuitive i
 
 ## Feature Checklist
 
-- [ ] Tables updated in `drizzle/schema.ts`, migrations pushed (`pnpm db:push`)
-- [ ] Query helper added in `server/db.ts` (returns raw Drizzle rows)
+- [ ] Owning domain schema updated and a numbered SQL migration added
+- [ ] Query added to the owning domain repository
 - [ ] Procedure created in `server/routers.ts` (choose `public` vs `protected`)
 - [ ] UI calls the procedure via `trpc.*.useQuery/useMutation`
 - [ ] Success + error paths verified in the browser
@@ -246,7 +246,7 @@ adminOnlyProcedure: protectedProcedure.use(({ ctx, next }) => {
 
 **Managing Admins**
 - To promote a user to admin, update the `role` field directly in the database via the system UI or SQL
-- If you need additional roles beyond `admin`/`user`, extend the enum in `drizzle/schema.ts` and push the migration
+- If you need additional roles, update `drizzle/schema/auth.ts` and add a migration
 
 ---
 
@@ -651,7 +651,7 @@ Note: All TODO comments are remarks for the agent (you), not for the user.
 }
 ```
 
-`drizzle/schema.ts`
+`drizzle/schema/index.ts`
 ```ts
 import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
@@ -683,7 +683,7 @@ export type InsertUser = typeof users.$inferInsert;
 // TODO: Add your tables here
 ```
 
-`server/db.ts`
+`server/repositories/index.ts`
 ```ts
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";

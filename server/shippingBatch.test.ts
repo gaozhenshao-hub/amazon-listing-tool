@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
+import { readSchemaSources } from "./testPaths";
 
 // ─── Test: Database Schema ───
 describe("Shipping Batch Database Schema", () => {
-  const schemaPath = path.resolve(__dirname, "../drizzle/schema.ts");
-  const schema = fs.readFileSync(schemaPath, "utf-8");
+  const schema = readSchemaSources();
 
   it("should define shipping_batches table with 9-step flow columns", () => {
     expect(schema).toContain('mysqlTable("shipping_batches"');

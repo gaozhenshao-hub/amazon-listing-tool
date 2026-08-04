@@ -11,6 +11,7 @@ import { serveStatic, setupVite } from "./vite";
 import { startUsageTracking, stopUsageTracking } from "../usageTracking";
 import {
   aiWorkerTickHandler,
+  databaseObservabilitySnapshotHandler,
   dataCleanupHandler,
   weeklyReportHandler,
 } from "../scheduledHandlers";
@@ -67,6 +68,7 @@ async function startServer() {
   app.post("/api/scheduled/data-cleanup", dataCleanupHandler);
   // AI Worker Tick: drains AI Job queue every minute (Heartbeat HTTP cron, replaces always-on Worker process)
   app.post("/api/scheduled/ai-worker-tick", aiWorkerTickHandler);
+  app.post("/api/scheduled/database-observability-snapshot", databaseObservabilitySnapshotHandler);
   // tRPC API
   app.use(
     "/api/trpc",

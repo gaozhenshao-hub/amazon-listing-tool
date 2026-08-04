@@ -6,7 +6,7 @@
  * L3 详情层（~1000+ tokens/条）：完整内容+图片+AI分析，真正需要引用时加载
  */
 
-import { getDb } from "./db";
+import { getDb } from "./repositories/dbClient";
 import { eq, and, desc, like, or, sql, inArray } from "drizzle-orm";
 import {
   kbProductInnovations,

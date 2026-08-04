@@ -8,7 +8,7 @@
  * - collectFromSource: 单个情报源的采集worker
  * - 支持动态增删改调度、连续失败自动暂停、采集日志记录
  */
-import { getDb } from "./db";
+import { getDb } from "./repositories/dbClient";
 import { invokeLLM } from "./_core/llm";
 import { notifyOwner } from "./_core/notification";
 import {

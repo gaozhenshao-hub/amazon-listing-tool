@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { WorkflowStepProgress } from "@/components/workflow";
+import { EmbeddedAgentRunPanel } from "@/components/workflow";
 import { AD_STRUCTURE_WORKFLOW_STEPS } from "@/components/workflow/workflowDefinitions";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -525,6 +526,7 @@ export default function AdStructurePage() {
 
   return (
     <div className="space-y-6">
+      <EmbeddedAgentRunPanel title="广告架构 Agent Run / Checkpoint" projectId={projectId} />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

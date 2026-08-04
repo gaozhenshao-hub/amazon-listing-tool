@@ -1,3 +1,5 @@
+import { currentOpsWorkspaceId } from "../domains/ops/workspaceContext";
+import { opsWorkspaceCondition } from "../repositories/ops";
 /**
  * Ad Keyword Tracking Router
  * - ASIN ↔ Portfolio mapping management
@@ -7,8 +9,9 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { protectedProcedure, router } from "../_core/trpc";
-import { getDb } from "../db";
+import { router } from "../_core/trpc";
+import { protectedProcedure } from "../domains/ops/workspaceProcedure";
+import { getDb } from "../repositories/dbClient";
 import {
   adPortfolioMappings,
   adReportImports,
@@ -32,7 +35,7 @@ export const adTrackingRouter = router({
     const db = await getDb();
     if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
     const mappings = await db.select().from(adPortfolioMappings)
-      .where(eq(adPortfolioMappings.userId, ctx.user.id))
+      .where(opsWorkspaceCondition(adPortfolioMappings, currentOpsWorkspaceId(), eq(adPortfolioMappings.userId, ctx.user.id)))
       .orderBy(desc(adPortfolioMappings.createdAt));
     return mappings;
   }),
@@ -82,7 +85,7 @@ export const adTrackingRouter = router({
       if (updates.notes !== undefined) cleanUpdates.notes = updates.notes;
       await db.update(adPortfolioMappings)
         .set(cleanUpdates)
-        .where(and(eq(adPortfolioMappings.id, id), eq(adPortfolioMappings.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(adPortfolioMappings, currentOpsWorkspaceId(), and(eq(adPortfolioMappings.id, id), eq(adPortfolioMappings.userId, ctx.user.id))));
       return { success: true };
     }),
 
@@ -93,7 +96,7 @@ export const adTrackingRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
       await db.delete(adPortfolioMappings)
-        .where(and(eq(adPortfolioMappings.id, input.id), eq(adPortfolioMappings.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(adPortfolioMappings, currentOpsWorkspaceId(), and(eq(adPortfolioMappings.id, input.id), eq(adPortfolioMappings.userId, ctx.user.id))));
       return { success: true };
     }),
 
@@ -134,7 +137,7 @@ export const adTrackingRouter = router({
       storeName: productProfiles.storeName,
       chineseName: productProfiles.chineseName,
     }).from(productProfiles)
-      .where(eq(productProfiles.userId, ctx.user.id))
+      .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), eq(productProfiles.userId, ctx.user.id)))
       .orderBy(productProfiles.parentAsin);
     return products;
   }),
@@ -170,7 +173,7 @@ export const adTrackingRouter = router({
 
       // Load portfolio mappings to determine which rows can be mapped
       const mappings = await db.select().from(adPortfolioMappings)
-        .where(eq(adPortfolioMappings.userId, ctx.user.id));
+        .where(opsWorkspaceCondition(adPortfolioMappings, currentOpsWorkspaceId(), eq(adPortfolioMappings.userId, ctx.user.id)));
       const portfolioToProduct = new Map<string, { productId: number; parentAsin: string }>();
       for (const m of mappings) {
         portfolioToProduct.set(m.portfolioName, { productId: m.productId, parentAsin: m.parentAsin });
@@ -232,7 +235,7 @@ export const adTrackingRouter = router({
       // Update status to importing
       await db.update(adReportImports)
         .set({ status: "importing" })
-        .where(and(eq(adReportImports.id, input.importId), eq(adReportImports.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(adReportImports, currentOpsWorkspaceId(), and(eq(adReportImports.id, input.importId), eq(adReportImports.userId, ctx.user.id))));
 
       try {
         const buffer = Buffer.from(input.fileData, "base64");
@@ -240,7 +243,7 @@ export const adTrackingRouter = router({
 
         // Load portfolio mappings
         const mappings = await db.select().from(adPortfolioMappings)
-          .where(eq(adPortfolioMappings.userId, ctx.user.id));
+          .where(opsWorkspaceCondition(adPortfolioMappings, currentOpsWorkspaceId(), eq(adPortfolioMappings.userId, ctx.user.id)));
         const portfolioToProduct = new Map<string, { productId: number; parentAsin: string }>();
         for (const m of mappings) {
           portfolioToProduct.set(m.portfolioName, { productId: m.productId, parentAsin: m.parentAsin });
@@ -248,11 +251,11 @@ export const adTrackingRouter = router({
 
         // Delete existing data for the same week to allow re-import
         await db.delete(adKeywordWeekly)
-          .where(and(
+          .where(opsWorkspaceCondition(adKeywordWeekly, currentOpsWorkspaceId(), and(
             eq(adKeywordWeekly.userId, ctx.user.id),
             eq(adKeywordWeekly.weekStartDate, input.weekStartDate),
             eq(adKeywordWeekly.weekEndDate, input.weekEndDate),
-          ));
+          )));
 
         // Insert rows in batches
         const BATCH_SIZE = 100;
@@ -310,13 +313,13 @@ export const adTrackingRouter = router({
         // Update import record
         await db.update(adReportImports)
           .set({ status: "completed", importedRows: imported } as any)
-          .where(eq(adReportImports.id, input.importId));
+          .where(opsWorkspaceCondition(adReportImports, currentOpsWorkspaceId(), eq(adReportImports.id, input.importId)));
 
         return { success: true, imported };
       } catch (err: any) {
         await db.update(adReportImports)
           .set({ status: "failed", errorMessage: err.message })
-          .where(eq(adReportImports.id, input.importId));
+          .where(opsWorkspaceCondition(adReportImports, currentOpsWorkspaceId(), eq(adReportImports.id, input.importId)));
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `导入失败: ${err.message}` });
       }
     }),
@@ -326,7 +329,7 @@ export const adTrackingRouter = router({
     const db = await getDb();
     if (!db) return [];
     return db.select().from(adReportImports)
-      .where(eq(adReportImports.userId, ctx.user.id))
+      .where(opsWorkspaceCondition(adReportImports, currentOpsWorkspaceId(), eq(adReportImports.userId, ctx.user.id)))
       .orderBy(desc(adReportImports.createdAt));
   }),
 
@@ -337,9 +340,9 @@ export const adTrackingRouter = router({
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Database not available" });
       await db.delete(adKeywordWeekly)
-        .where(and(eq(adKeywordWeekly.importId, input.importId), eq(adKeywordWeekly.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(adKeywordWeekly, currentOpsWorkspaceId(), and(eq(adKeywordWeekly.importId, input.importId), eq(adKeywordWeekly.userId, ctx.user.id))));
       await db.delete(adReportImports)
-        .where(and(eq(adReportImports.id, input.importId), eq(adReportImports.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(adReportImports, currentOpsWorkspaceId(), and(eq(adReportImports.id, input.importId), eq(adReportImports.userId, ctx.user.id))));
       return { success: true };
     }),
 
@@ -370,7 +373,7 @@ export const adTrackingRouter = router({
       }
 
       const data = await db.select().from(adKeywordWeekly)
-        .where(and(...conditions))
+        .where(opsWorkspaceCondition(adKeywordWeekly, currentOpsWorkspaceId(), and(...conditions)))
         .orderBy(desc(adKeywordWeekly.weekStartDate));
 
       // Get keyword metadata (monthly search volume, etc.)
@@ -379,7 +382,7 @@ export const adTrackingRouter = router({
         metaConditions.push(eq(adKeywordMeta.productId, input.productId));
       }
       const metaRows = await db.select().from(adKeywordMeta)
-        .where(and(...metaConditions));
+        .where(opsWorkspaceCondition(adKeywordMeta, currentOpsWorkspaceId(), and(...metaConditions)));
 
       // Build meta lookup: keyword → meta
       const metaMap: Record<string, any> = {};
@@ -484,7 +487,7 @@ export const adTrackingRouter = router({
         conditions.push(eq(adCompetitorRanks.keyword, input.keyword));
       }
       return db.select().from(adCompetitorRanks)
-        .where(and(...conditions))
+        .where(opsWorkspaceCondition(adCompetitorRanks, currentOpsWorkspaceId(), and(...conditions)))
         .orderBy(desc(adCompetitorRanks.weekStartDate));
     }),
 
@@ -507,11 +510,11 @@ export const adTrackingRouter = router({
 
       // Check if meta exists
       const existing = await db.select().from(adKeywordMeta)
-        .where(and(
+        .where(opsWorkspaceCondition(adKeywordMeta, currentOpsWorkspaceId(), and(
           eq(adKeywordMeta.userId, ctx.user.id),
           eq(adKeywordMeta.productId, input.productId),
           eq(adKeywordMeta.keyword, input.keyword),
-        ))
+        )))
         .limit(1);
 
       if (existing.length > 0) {
@@ -521,7 +524,7 @@ export const adTrackingRouter = router({
             searchVolumeUpdatedAt: new Date(),
             notes: input.notes !== undefined ? input.notes : undefined,
           })
-          .where(eq(adKeywordMeta.id, existing[0].id));
+          .where(opsWorkspaceCondition(adKeywordMeta, currentOpsWorkspaceId(), eq(adKeywordMeta.id, existing[0].id)));
       } else {
         await db.insert(adKeywordMeta).values({
           userId: ctx.user.id,
@@ -553,11 +556,11 @@ export const adTrackingRouter = router({
 
       for (const update of input.updates) {
         const existing = await db.select().from(adKeywordMeta)
-          .where(and(
+          .where(opsWorkspaceCondition(adKeywordMeta, currentOpsWorkspaceId(), and(
             eq(adKeywordMeta.userId, ctx.user.id),
             eq(adKeywordMeta.productId, input.productId),
             eq(adKeywordMeta.keyword, update.keyword),
-          ))
+          )))
           .limit(1);
 
         if (existing.length > 0) {
@@ -566,7 +569,7 @@ export const adTrackingRouter = router({
               monthlySearchVolume: update.monthlySearchVolume,
               searchVolumeUpdatedAt: new Date(),
             })
-            .where(eq(adKeywordMeta.id, existing[0].id));
+            .where(opsWorkspaceCondition(adKeywordMeta, currentOpsWorkspaceId(), eq(adKeywordMeta.id, existing[0].id)));
         } else {
           await db.insert(adKeywordMeta).values({
             userId: ctx.user.id,
@@ -594,12 +597,12 @@ export const adTrackingRouter = router({
     // Get unique portfolios from ad_keyword_weekly
     const weeklyPortfolios = await db.selectDistinct({ portfolioName: adKeywordWeekly.portfolioName })
       .from(adKeywordWeekly)
-      .where(eq(adKeywordWeekly.userId, ctx.user.id));
+      .where(opsWorkspaceCondition(adKeywordWeekly, currentOpsWorkspaceId(), eq(adKeywordWeekly.userId, ctx.user.id)));
 
     // Also get from unmappedPortfolios in ad_report_imports
     const imports = await db.select({ unmappedPortfolios: adReportImports.unmappedPortfolios })
       .from(adReportImports)
-      .where(eq(adReportImports.userId, ctx.user.id));
+      .where(opsWorkspaceCondition(adReportImports, currentOpsWorkspaceId(), eq(adReportImports.userId, ctx.user.id)));
 
     const allPortfolios = new Set<string>();
     for (const row of weeklyPortfolios) {
@@ -618,7 +621,7 @@ export const adTrackingRouter = router({
       parentAsin: adPortfolioMappings.parentAsin,
       storeName: adPortfolioMappings.storeName,
     }).from(adPortfolioMappings)
-      .where(eq(adPortfolioMappings.userId, ctx.user.id));
+      .where(opsWorkspaceCondition(adPortfolioMappings, currentOpsWorkspaceId(), eq(adPortfolioMappings.userId, ctx.user.id)));
 
     return {
       portfolios: [...allPortfolios].sort(),
@@ -637,12 +640,12 @@ export const adTrackingRouter = router({
       storeName: adKeywordWeekly.storeName,
       adType: adKeywordWeekly.adType,
     }).from(adKeywordWeekly)
-      .where(eq(adKeywordWeekly.userId, ctx.user.id));
+      .where(opsWorkspaceCondition(adKeywordWeekly, currentOpsWorkspaceId(), eq(adKeywordWeekly.userId, ctx.user.id)));
 
     // Also get from unmapped portfolios in imports
     const imports = await db.select({ unmappedPortfolios: adReportImports.unmappedPortfolios })
       .from(adReportImports)
-      .where(eq(adReportImports.userId, ctx.user.id));
+      .where(opsWorkspaceCondition(adReportImports, currentOpsWorkspaceId(), eq(adReportImports.userId, ctx.user.id)));
 
     // Build portfolio info map
     const portfolioInfo = new Map<string, { stores: Set<string>; adTypes: Set<string> }>();
@@ -668,7 +671,7 @@ export const adTrackingRouter = router({
 
     // Get existing mappings
     const existingMappings = await db.select().from(adPortfolioMappings)
-      .where(eq(adPortfolioMappings.userId, ctx.user.id));
+      .where(opsWorkspaceCondition(adPortfolioMappings, currentOpsWorkspaceId(), eq(adPortfolioMappings.userId, ctx.user.id)));
     const mappingMap = new Map<string, { parentAsin: string; storeName: string | null }>();
     for (const m of existingMappings) {
       mappingMap.set(m.portfolioName, { parentAsin: m.parentAsin, storeName: m.storeName });
@@ -741,7 +744,7 @@ export const adTrackingRouter = router({
         parentAsin: productProfiles.parentAsin,
         storeName: productProfiles.storeName,
       }).from(productProfiles)
-        .where(eq(productProfiles.userId, ctx.user.id));
+        .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), eq(productProfiles.userId, ctx.user.id)));
       const asinToProduct = new Map<string, { id: number; storeName: string | null }>();
       for (const p of products) {
         if (p.parentAsin) asinToProduct.set(p.parentAsin, { id: p.id, storeName: p.storeName });
@@ -749,7 +752,7 @@ export const adTrackingRouter = router({
 
       // Get existing mappings to avoid duplicates
       const existingMappings = await db.select().from(adPortfolioMappings)
-        .where(eq(adPortfolioMappings.userId, ctx.user.id));
+        .where(opsWorkspaceCondition(adPortfolioMappings, currentOpsWorkspaceId(), eq(adPortfolioMappings.userId, ctx.user.id)));
       const existingSet = new Set(existingMappings.map(m => `${m.portfolioName}||${m.parentAsin}`));
 
       // Parse rows
@@ -835,7 +838,7 @@ export const adTrackingRouter = router({
             productId: item.productId,
             storeName: item.storeName,
           })
-          .where(and(eq(adPortfolioMappings.id, item.id), eq(adPortfolioMappings.userId, ctx.user.id)));
+          .where(opsWorkspaceCondition(adPortfolioMappings, currentOpsWorkspaceId(), and(eq(adPortfolioMappings.id, item.id), eq(adPortfolioMappings.userId, ctx.user.id))));
         updated++;
       }
 

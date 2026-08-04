@@ -32,6 +32,7 @@ import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Streamdown } from "streamdown";
 import { WorkflowStepProgress } from "@/components/workflow/WorkflowStepProgress";
+import { EmbeddedAgentRunPanel } from "@/components/workflow/EmbeddedAgentRunPanel";
 import { DEV_ANALYSIS_WORKFLOW_STEPS } from "@/components/workflow/workflowDefinitions";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -238,6 +239,7 @@ export default function DevAnalysisFlow() {
 
   return (
     <div className="max-w-7xl mx-auto space-y-5 p-4">
+      <EmbeddedAgentRunPanel title="产品分析 Agent Run / Checkpoint" projectId={projectId} />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">

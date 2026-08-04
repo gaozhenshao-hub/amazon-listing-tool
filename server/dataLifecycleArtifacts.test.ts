@@ -78,7 +78,7 @@ describe("data lifecycle and unified artifact system v1", () => {
 
   it("connects ProjectFile, Agent Artifact, and admin lifecycle routes to the new service", () => {
     const projectFileRouter = readRepoFile("server/routers/projectFile.ts");
-    const agentRunner = readRepoFile("server/domains/ai_os/services/agentRunner.ts");
+    const agentRunner = readRepoFile("server/domains/ai_os/services/agentRunner/runtimeCore.ts");
     const observabilityRouter = readRepoFile("server/domains/ai_os/routers/observability.ts");
     const docs = readRepoFile("docs/data-lifecycle-artifacts-v1.md");
 

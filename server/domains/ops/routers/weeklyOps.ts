@@ -1,3 +1,5 @@
+import { currentOpsWorkspaceId } from "../workspaceContext";
+import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
 
@@ -76,7 +78,7 @@ export const opsWeeklyProcedures = {
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       const [info] = await db!.select().from(productBasicInfo)
-        .where(and(eq(productBasicInfo.productId, input.productId), eq(productBasicInfo.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(productBasicInfo, currentOpsWorkspaceId(), and(eq(productBasicInfo.productId, input.productId), eq(productBasicInfo.userId, ctx.user.id))));
       return info || null;
     }),
 
@@ -110,10 +112,10 @@ export const opsWeeklyProcedures = {
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       const [existing] = await db!.select().from(productBasicInfo)
-        .where(and(eq(productBasicInfo.productId, input.productId), eq(productBasicInfo.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(productBasicInfo, currentOpsWorkspaceId(), and(eq(productBasicInfo.productId, input.productId), eq(productBasicInfo.userId, ctx.user.id))));
       const { productId, ...data } = input;
       if (existing) {
-        await db!.update(productBasicInfo).set(data as any).where(eq(productBasicInfo.id, existing.id));
+        await db!.update(productBasicInfo).set(data as any).where(opsWorkspaceCondition(productBasicInfo, currentOpsWorkspaceId(), eq(productBasicInfo.id, existing.id)));
         return { id: existing.id };
       } else {
         const [result] = await db!.insert(productBasicInfo).values({ ...data as any, productId, userId: ctx.user.id });
@@ -132,7 +134,7 @@ export const opsWeeklyProcedures = {
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       const rows = await db!.select().from(productWeeklyOps)
-        .where(and(eq(productWeeklyOps.productId, input.productId), eq(productWeeklyOps.userId, ctx.user.id)))
+        .where(opsWorkspaceCondition(productWeeklyOps, currentOpsWorkspaceId(), and(eq(productWeeklyOps.productId, input.productId), eq(productWeeklyOps.userId, ctx.user.id))))
         .orderBy(desc(productWeeklyOps.weekStartDate))
         .limit(input.limit)
         .offset(input.offset);
@@ -173,14 +175,14 @@ export const opsWeeklyProcedures = {
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       const [existing] = await db!.select().from(productWeeklyOps)
-        .where(and(
+        .where(opsWorkspaceCondition(productWeeklyOps, currentOpsWorkspaceId(), and(
           eq(productWeeklyOps.productId, input.productId),
           eq(productWeeklyOps.userId, ctx.user.id),
           eq(productWeeklyOps.weekStartDate, input.weekStartDate),
-        ));
+        )));
       const { productId, ...data } = input;
       if (existing) {
-        await db!.update(productWeeklyOps).set(data as any).where(eq(productWeeklyOps.id, existing.id));
+        await db!.update(productWeeklyOps).set(data as any).where(opsWorkspaceCondition(productWeeklyOps, currentOpsWorkspaceId(), eq(productWeeklyOps.id, existing.id)));
         return { id: existing.id };
       } else {
         const [result] = await db!.insert(productWeeklyOps).values({ ...data as any, productId, userId: ctx.user.id });
@@ -195,7 +197,7 @@ export const opsWeeklyProcedures = {
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       await db!.delete(productWeeklyOps)
-        .where(and(eq(productWeeklyOps.id, input.id), eq(productWeeklyOps.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(productWeeklyOps, currentOpsWorkspaceId(), and(eq(productWeeklyOps.id, input.id), eq(productWeeklyOps.userId, ctx.user.id))));
       return { success: true };
     }),
 
@@ -209,7 +211,7 @@ export const opsWeeklyProcedures = {
     .query(async ({ ctx, input }) => {
       const db = await getDb();
       const rows = await db!.select().from(productMonthlySummary)
-        .where(and(eq(productMonthlySummary.productId, input.productId), eq(productMonthlySummary.userId, ctx.user.id)))
+        .where(opsWorkspaceCondition(productMonthlySummary, currentOpsWorkspaceId(), and(eq(productMonthlySummary.productId, input.productId), eq(productMonthlySummary.userId, ctx.user.id))))
         .orderBy(desc(productMonthlySummary.yearMonth))
         .limit(input.limit);
       return rows;
@@ -233,14 +235,14 @@ export const opsWeeklyProcedures = {
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       const [existing] = await db!.select().from(productMonthlySummary)
-        .where(and(
+        .where(opsWorkspaceCondition(productMonthlySummary, currentOpsWorkspaceId(), and(
           eq(productMonthlySummary.productId, input.productId),
           eq(productMonthlySummary.userId, ctx.user.id),
           eq(productMonthlySummary.yearMonth, input.yearMonth),
-        ));
+        )));
       const { productId, ...data } = input;
       if (existing) {
-        await db!.update(productMonthlySummary).set(data as any).where(eq(productMonthlySummary.id, existing.id));
+        await db!.update(productMonthlySummary).set(data as any).where(opsWorkspaceCondition(productMonthlySummary, currentOpsWorkspaceId(), eq(productMonthlySummary.id, existing.id)));
         return { id: existing.id };
       } else {
         const [result] = await db!.insert(productMonthlySummary).values({ ...data as any, productId, userId: ctx.user.id });
@@ -258,7 +260,7 @@ export const opsWeeklyProcedures = {
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       const [product] = await db!.select().from(productProfiles)
-        .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id))));
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
       const parentAsin = product.parentAsin;
 
@@ -385,21 +387,21 @@ export const opsWeeklyProcedures = {
           // Determine trend by comparing with previous week
           const prevWeekStart = new Date(new Date(week.start).getTime() - 7 * 86400000).toISOString().split('T')[0];
           const [prevRecord] = await db!.select().from(productWeeklyOps)
-            .where(and(
+            .where(opsWorkspaceCondition(productWeeklyOps, currentOpsWorkspaceId(), and(
               eq(productWeeklyOps.productId, input.productId),
               eq(productWeeklyOps.userId, ctx.user.id),
               eq(productWeeklyOps.weekStartDate, prevWeekStart),
-            ));
+            )));
           const prevSales = prevRecord?.salesQty || 0;
           const trend = totalSales > prevSales ? 'up' : totalSales < prevSales ? 'down' : 'stable';
 
           // Upsert
           const [existing] = await db!.select().from(productWeeklyOps)
-            .where(and(
+            .where(opsWorkspaceCondition(productWeeklyOps, currentOpsWorkspaceId(), and(
               eq(productWeeklyOps.productId, input.productId),
               eq(productWeeklyOps.userId, ctx.user.id),
               eq(productWeeklyOps.weekStartDate, week.start),
-            ));
+            )));
 
           const record = {
             salesTrend: trend as any,
@@ -428,7 +430,7 @@ export const opsWeeklyProcedures = {
           };
 
           if (existing) {
-            await db!.update(productWeeklyOps).set(record as any).where(eq(productWeeklyOps.id, existing.id));
+            await db!.update(productWeeklyOps).set(record as any).where(opsWorkspaceCondition(productWeeklyOps, currentOpsWorkspaceId(), eq(productWeeklyOps.id, existing.id)));
           } else {
             await db!.insert(productWeeklyOps).values({
               ...record as any,
@@ -457,16 +459,16 @@ export const opsWeeklyProcedures = {
       if (Object.keys(profileUpdates).length > 0) {
         await db!.update(productProfiles)
           .set(profileUpdates as any)
-          .where(eq(productProfiles.id, input.productId));
+          .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), eq(productProfiles.id, input.productId)));
       }
 
       // ── Auto-generate monthly summaries from weekly data ──
       const monthMap = new Map<string, { profit: number; orders: number; revenue: number; adSpend: number; adSales: number }>();
       const allWeeklyData = await db!.select().from(productWeeklyOps)
-        .where(and(
+        .where(opsWorkspaceCondition(productWeeklyOps, currentOpsWorkspaceId(), and(
           eq(productWeeklyOps.productId, input.productId),
           eq(productWeeklyOps.userId, ctx.user.id),
-        ));
+        )));
       for (const w of allWeeklyData) {
         const ym = w.weekStartDate.substring(0, 7);
         if (!monthMap.has(ym)) monthMap.set(ym, { profit: 0, orders: 0, revenue: 0, adSpend: 0, adSales: 0 });
@@ -480,11 +482,11 @@ export const opsWeeklyProcedures = {
 
       for (const [ym, data] of Array.from(monthMap.entries())) {
         const [existing] = await db!.select().from(productMonthlySummary)
-          .where(and(
+          .where(opsWorkspaceCondition(productMonthlySummary, currentOpsWorkspaceId(), and(
             eq(productMonthlySummary.productId, input.productId),
             eq(productMonthlySummary.userId, ctx.user.id),
             eq(productMonthlySummary.yearMonth, ym),
-          ));
+          )));
         const record = {
           financialProfit: data.profit.toFixed(2),
           orderProfitTotal: data.profit.toFixed(2),
@@ -496,7 +498,7 @@ export const opsWeeklyProcedures = {
           avgRating: '0',
         };
         if (existing) {
-          await db!.update(productMonthlySummary).set(record as any).where(eq(productMonthlySummary.id, existing.id));
+          await db!.update(productMonthlySummary).set(record as any).where(opsWorkspaceCondition(productMonthlySummary, currentOpsWorkspaceId(), eq(productMonthlySummary.id, existing.id)));
         } else {
           await db!.insert(productMonthlySummary).values({
             ...record as any,
@@ -517,10 +519,10 @@ export const opsWeeklyProcedures = {
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
       const [product] = await db!.select().from(productProfiles)
-        .where(and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(eq(productProfiles.id, input.productId), eq(productProfiles.userId, ctx.user.id))));
       if (!product) throw new TRPCError({ code: "NOT_FOUND" });
       const variants = await db!.select().from(productVariants)
-        .where(eq(productVariants.productId, input.productId));
+        .where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.productId, input.productId)));
       const childAsins = variants.map(v => v.childAsin).filter(Boolean);
       const parentAsin = product.parentAsin;
 
@@ -592,9 +594,9 @@ export const opsWeeklyProcedures = {
       };
 
       const [existing] = await db!.select().from(productBasicInfo)
-        .where(and(eq(productBasicInfo.productId, input.productId), eq(productBasicInfo.userId, ctx.user.id)));
+        .where(opsWorkspaceCondition(productBasicInfo, currentOpsWorkspaceId(), and(eq(productBasicInfo.productId, input.productId), eq(productBasicInfo.userId, ctx.user.id))));
       if (existing) {
-        await db!.update(productBasicInfo).set(data as any).where(eq(productBasicInfo.id, existing.id));
+        await db!.update(productBasicInfo).set(data as any).where(opsWorkspaceCondition(productBasicInfo, currentOpsWorkspaceId(), eq(productBasicInfo.id, existing.id)));
       } else {
         await db!.insert(productBasicInfo).values({ ...data as any, productId: input.productId, userId: ctx.user.id });
       }
@@ -626,10 +628,10 @@ export const opsWeeklyProcedures = {
 
       for (const pid of input.productIds) {
         const [latest] = await db!.select().from(productWeeklyOps)
-          .where(and(
+          .where(opsWorkspaceCondition(productWeeklyOps, currentOpsWorkspaceId(), and(
             eq(productWeeklyOps.productId, pid),
             eq(productWeeklyOps.userId, ctx.user.id),
-          ))
+          )))
           .orderBy(desc(productWeeklyOps.weekStartDate))
           .limit(1);
 
@@ -661,11 +663,11 @@ export const opsWeeklyProcedures = {
       // Get all active US products for this user (avoid syncing too much data)
       const products = await db!.select()
         .from(productProfiles)
-        .where(and(
+        .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(
           eq(productProfiles.userId, ctx.user.id),
           eq(productProfiles.status, 'active'),
           eq(productProfiles.marketplace, 'US'),
-        ));
+        )));
 
       if (products.length === 0) {
         return { total: 0, synced: 0, errors: 0, details: [] };
@@ -764,20 +766,20 @@ export const opsWeeklyProcedures = {
               // Trend
               const prevWeekStart = new Date(new Date(week.start).getTime() - 7 * 86400000).toISOString().split('T')[0];
               const [prevRecord] = await db!.select().from(productWeeklyOps)
-                .where(and(
+                .where(opsWorkspaceCondition(productWeeklyOps, currentOpsWorkspaceId(), and(
                   eq(productWeeklyOps.productId, product.id),
                   eq(productWeeklyOps.userId, ctx.user.id),
                   eq(productWeeklyOps.weekStartDate, prevWeekStart),
-                ));
+                )));
               const prevSales = prevRecord?.salesQty || 0;
               const trend = totalSales > prevSales ? 'up' : totalSales < prevSales ? 'down' : 'stable';
 
               const [existing] = await db!.select().from(productWeeklyOps)
-                .where(and(
+                .where(opsWorkspaceCondition(productWeeklyOps, currentOpsWorkspaceId(), and(
                   eq(productWeeklyOps.productId, product.id),
                   eq(productWeeklyOps.userId, ctx.user.id),
                   eq(productWeeklyOps.weekStartDate, week.start),
-                ));
+                )));
 
               const record = {
                 salesTrend: trend as any,
@@ -806,7 +808,7 @@ export const opsWeeklyProcedures = {
               };
 
               if (existing) {
-                await db!.update(productWeeklyOps).set(record as any).where(eq(productWeeklyOps.id, existing.id));
+                await db!.update(productWeeklyOps).set(record as any).where(opsWorkspaceCondition(productWeeklyOps, currentOpsWorkspaceId(), eq(productWeeklyOps.id, existing.id)));
               } else {
                 await db!.insert(productWeeklyOps).values({
                   ...record as any,
@@ -841,7 +843,7 @@ export const opsWeeklyProcedures = {
               if (Object.keys(batchProfileUpdates).length > 0) {
                 await db!.update(productProfiles)
                   .set(batchProfileUpdates as any)
-                  .where(eq(productProfiles.id, product.id));
+                  .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), eq(productProfiles.id, product.id)));
               }
             } catch (itemErr: any) {
               console.warn(`[batchSync] Product ${itemParentAsin} week ${week.start} error: ${itemErr.message}`);
@@ -902,7 +904,7 @@ export const opsWeeklyProcedures = {
       }
 
       const products = await db!.select().from(productProfiles)
-        .where(and(...conditions))
+        .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(...conditions)))
         .orderBy(desc(productProfiles.updatedAt));
 
       // For each product, get basic info + last N weeks + monthly summaries
@@ -910,22 +912,22 @@ export const opsWeeklyProcedures = {
         // Get variants, basic info
         const [variants, basicInfoArr, weeklyData, monthlySummaries] = await Promise.all([
           db!.select().from(productVariants)
-            .where(eq(productVariants.productId, p.id)),
+            .where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.productId, p.id))),
           db!.select().from(productBasicInfo)
-            .where(and(eq(productBasicInfo.productId, p.id), eq(productBasicInfo.userId, ctx.user.id)))
+            .where(opsWorkspaceCondition(productBasicInfo, currentOpsWorkspaceId(), and(eq(productBasicInfo.productId, p.id), eq(productBasicInfo.userId, ctx.user.id))))
             .limit(1),
           db!.select().from(productWeeklyOps)
-            .where(and(
+            .where(opsWorkspaceCondition(productWeeklyOps, currentOpsWorkspaceId(), and(
               eq(productWeeklyOps.productId, p.id),
               eq(productWeeklyOps.userId, ctx.user.id),
-            ))
+            )))
             .orderBy(desc(productWeeklyOps.weekStartDate))
             .limit(weeksToShow + 1), // +1 for previous week comparison
           db!.select().from(productMonthlySummary)
-            .where(and(
+            .where(opsWorkspaceCondition(productMonthlySummary, currentOpsWorkspaceId(), and(
               eq(productMonthlySummary.productId, p.id),
               eq(productMonthlySummary.userId, ctx.user.id),
-            ))
+            )))
             .orderBy(desc(productMonthlySummary.yearMonth))
             .limit(3),
         ]);

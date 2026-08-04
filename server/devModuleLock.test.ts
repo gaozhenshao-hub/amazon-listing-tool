@@ -13,7 +13,7 @@ const mockDb = {
   orderBy: vi.fn().mockResolvedValue([]),
 };
 
-vi.mock("./db", () => ({
+vi.mock("./repositories/dbClient", () => ({
   getDb: vi.fn().mockResolvedValue(mockDb),
 }));
 

@@ -1,4 +1,5 @@
 export * from "./types";
+export * from "./EmbeddedAgentRunPanel";
 export * from "./WorkflowArtifactVersionPicker";
 export * from "./WorkflowCheckpointControls";
 export * from "./WorkflowShell";

@@ -1,3 +1,5 @@
+import { currentOpsWorkspaceId } from "../workspaceContext";
+import { opsWorkspaceCondition } from "../../../repositories/ops";
 import * as shared from "../routerContext";
 import type { CheckItemScore, ConversionCrawlData, ImportResult, ScoringProgress, SellerSpriteProductData } from "../routerContext";
 
@@ -83,7 +85,7 @@ export const opsSyncProcedures = {
     // Get existing products for this user to avoid duplicates
     const existing = await db!.select({ parentAsin: productProfiles.parentAsin, marketplace: productProfiles.marketplace })
       .from(productProfiles)
-      .where(eq(productProfiles.userId, ctx.user.id));
+      .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), eq(productProfiles.userId, ctx.user.id)));
     const existingSet = new Set(existing.map(e => `${e.parentAsin}_${e.marketplace}`));
 
     let synced = 0;
@@ -163,11 +165,11 @@ export const opsSyncProcedures = {
             // Update existing product status, title, image, storeName
             const [existingProduct] = await db!.select({ id: productProfiles.id })
               .from(productProfiles)
-              .where(and(
+              .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), and(
                 eq(productProfiles.userId, ctx.user.id),
                 eq(productProfiles.parentAsin, asin),
                 eq(productProfiles.marketplace, marketplace)
-              ));
+              )));
             if (existingProduct) {
               await db!.update(productProfiles)
                 .set({
@@ -177,14 +179,14 @@ export const opsSyncProcedures = {
                   storeName: product.storeName || undefined,
                   brand: product.brand || undefined,
                 })
-                .where(eq(productProfiles.id, existingProduct.id));
+                .where(opsWorkspaceCondition(productProfiles, currentOpsWorkspaceId(), eq(productProfiles.id, existingProduct.id)));
 
               // Sync variants for existing products too
               if (product.variants.length > 0) {
                 // Get existing variants
                 const existingVariants = await db!.select({ childAsin: productVariants.childAsin, sku: productVariants.sku })
                   .from(productVariants)
-                  .where(eq(productVariants.productId, existingProduct.id));
+                  .where(opsWorkspaceCondition(productVariants, currentOpsWorkspaceId(), eq(productVariants.productId, existingProduct.id)));
                 const existingVariantSet = new Set(existingVariants.map(v => `${v.childAsin}_${v.sku}`));
 
                 // Insert only new variants

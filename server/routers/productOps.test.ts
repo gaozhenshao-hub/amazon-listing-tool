@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock dependencies
-vi.mock("../db", () => ({
+vi.mock("../repositories/dbClient", () => ({
   getDb: vi.fn(() => Promise.resolve({
     select: vi.fn().mockReturnThis(),
     from: vi.fn().mockReturnThis(),
