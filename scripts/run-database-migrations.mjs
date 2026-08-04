@@ -138,6 +138,33 @@ export async function readLedger(connection) {
   return new Map(rows.map((row) => [String(row.migrationName), row]));
 }
 
+export async function prepareExecutableSql(connection, sql) {
+  const conditionalDropPattern =
+    /ALTER\s+TABLE\s+`?([A-Za-z0-9_$]+)`?\s+DROP\s+COLUMN\s+IF\s+EXISTS\s+`?([A-Za-z0-9_$]+)`?\s*;/gi;
+  const matches = [...sql.matchAll(conditionalDropPattern)];
+  if (matches.length === 0) return sql.replaceAll("--> statement-breakpoint", "");
+
+  let executableSql = "";
+  let cursor = 0;
+  for (const match of matches) {
+    const [statement, tableName, columnName] = match;
+    const [rows] = await connection.execute(
+      `SELECT COUNT(*) AS columnCount
+         FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?`,
+      [tableName, columnName],
+    );
+    const columnExists = Number(rows?.[0]?.columnCount ?? 0) > 0;
+    executableSql += sql.slice(cursor, match.index);
+    executableSql += columnExists
+      ? `ALTER TABLE \`${tableName}\` DROP COLUMN \`${columnName}\`;`
+      : `-- skipped missing column ${tableName}.${columnName}`;
+    cursor = Number(match.index) + statement.length;
+  }
+  executableSql += sql.slice(cursor);
+  return executableSql.replaceAll("--> statement-breakpoint", "");
+}
+
 export async function baselineExistingSchema(connection, plan, options = {}) {
   const confirm = options.confirm ?? process.env.MIGRATION_BASELINE_CONFIRM;
   const allowProduction = options.allowProduction ?? process.env.ALLOW_PRODUCTION_MIGRATION_BASELINE === "true";
@@ -193,7 +220,7 @@ export async function applyMigrations(connection, plan, options = {}) {
       [migration.fileName, migration.checksum, executionId, migration.order],
     );
     try {
-      const executableSql = migration.sql.replaceAll("--> statement-breakpoint", "");
+      const executableSql = await prepareExecutableSql(connection, migration.sql);
       await connection.query(executableSql);
       await connection.execute(
         "UPDATE app_schema_migrations SET status='succeeded',finishedAt=NOW(),error=NULL WHERE migrationName=? AND executionId=?",

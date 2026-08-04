@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { repoPath } from "./testPaths";
 
 describe("database migration safety", () => {
@@ -31,6 +31,24 @@ describe("database migration safety", () => {
     expect(plan.map((item: any) => item.fileName)).not.toContain("ops_plan_migration_fix.sql");
     expect(plan.at(-1)?.fileName).toBe("0121_dev_information_summary_emperor_skills.sql");
     expect(plan.every((item: any) => /^[a-f0-9]{64}$/.test(item.checksum))).toBe(true);
+  });
+
+  it("normalizes legacy conditional column drops for MySQL 8 without mutating migration files", async () => {
+    const module = await import("../scripts/run-database-migrations.mjs");
+    const execute = vi.fn(async (_query: string, values: string[]) => [
+      [{ columnCount: values[1] === "legacy_column" ? 1 : 0 }],
+    ]);
+    const sql = [
+      "ALTER TABLE sample DROP COLUMN IF EXISTS legacy_column;",
+      "ALTER TABLE sample DROP COLUMN IF EXISTS missing_column;",
+    ].join("\n");
+
+    const executable = await module.prepareExecutableSql({ execute }, sql);
+
+    expect(executable).toContain("ALTER TABLE `sample` DROP COLUMN `legacy_column`;");
+    expect(executable).toContain("-- skipped missing column sample.missing_column");
+    expect(executable).not.toContain("DROP COLUMN IF EXISTS");
+    expect(execute).toHaveBeenCalledTimes(2);
   });
 
   it("rejects future SQL migrations that are omitted from the release plan", () => {
