@@ -156,6 +156,7 @@ export const LISTING_AGENT_WORKFLOW_STEPS: WorkflowStepDefinition[] = [
     description: "多维度质量评估",
     agentNodeId: "O2",
     artifactKey: "listingScore",
+    required: false,
   },
   {
     id: "O3",
@@ -165,6 +166,7 @@ export const LISTING_AGENT_WORKFLOW_STEPS: WorkflowStepDefinition[] = [
     description: "广告词与投放策略",
     agentNodeId: "O3",
     artifactKey: "adStructure",
+    required: false,
   },
   {
     id: "E1",
@@ -174,6 +176,7 @@ export const LISTING_AGENT_WORKFLOW_STEPS: WorkflowStepDefinition[] = [
     description: "图片结构与构图建议",
     agentNodeId: "E1",
     artifactKey: "imageAdvice",
+    required: false,
   },
   {
     id: "E2",
@@ -183,6 +186,7 @@ export const LISTING_AGENT_WORKFLOW_STEPS: WorkflowStepDefinition[] = [
     description: "产品视频脚本与分镜",
     agentNodeId: "E2",
     artifactKey: "videoScript",
+    required: false,
   },
 ];
 

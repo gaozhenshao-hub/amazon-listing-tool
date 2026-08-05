@@ -89,6 +89,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { toast } from "sonner";
+import {
+  ListingAgentNodeWorkbench,
+  parseListingAgentNodeContext,
+} from "@/components/workflow";
 
 // ─── Module definitions ────────────────────────────────────────
 type ModuleId = "home" | "dev" | "listing" | "ops" | "service" | "knowledge" | "admin" | "offsite" | "emperor";
@@ -382,6 +386,18 @@ function DashboardLayoutContent({
     () => modules.find(m => m.id === activeModuleId) || null,
     [activeModuleId]
   );
+  const listingAgentNodeContext = useMemo(
+    () => parseListingAgentNodeContext(
+      location,
+      typeof window === "undefined" ? "" : window.location.search,
+    ),
+    [location],
+  );
+  const pageContent = listingAgentNodeContext ? (
+    <ListingAgentNodeWorkbench context={listingAgentNodeContext}>
+      {children}
+    </ListingAgentNodeWorkbench>
+  ) : children;
 
   // Filter modules based on user role
   const accessibleModules = useMemo(
@@ -640,7 +656,7 @@ function DashboardLayoutContent({
           </div>
         )}
 
-        <main className="flex-1 p-4">{children}</main>
+        <main className="flex-1 p-4">{pageContent}</main>
       </div>
     );
   }
@@ -814,7 +830,7 @@ function DashboardLayoutContent({
             <span className="text-sm font-medium text-muted-foreground">{activeModule.label}</span>
           </div>
         )}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 md:p-6">{pageContent}</main>
       </div>
     </div>
   );

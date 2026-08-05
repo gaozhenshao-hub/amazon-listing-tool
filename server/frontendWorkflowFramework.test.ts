@@ -15,6 +15,8 @@ describe("frontend workflow framework", () => {
       "client/src/components/workflow/WorkflowStepProgress.tsx",
       "client/src/components/workflow/WorkflowCheckpointControls.tsx",
       "client/src/components/workflow/WorkflowArtifactVersionPicker.tsx",
+      "client/src/components/workflow/ListingAgentNodeWorkbench.tsx",
+      "client/src/components/workflow/listingAgentNavigation.ts",
       "client/src/components/workflow/useAgentWorkflowRun.ts",
       "client/src/components/workflow/workflowDefinitions.ts",
     ];
@@ -24,13 +26,23 @@ describe("frontend workflow framework", () => {
     }
   });
 
-  it("wires listing canvas, image, ads, video, and product development pages to the common workflow components", () => {
+  it("keeps the Listing canvas focused on scheduling and mounts HITL controls on existing node pages", () => {
     const canvas = read("client/src/pages/WorkflowCanvasPage.tsx");
+    const layout = read("client/src/components/DashboardLayout.tsx");
+    const workbench = read("client/src/components/workflow/ListingAgentNodeWorkbench.tsx");
     expect(canvas).toContain("listing.full.workflow");
     expect(canvas).toContain("useAgentWorkflowRun");
-    expect(canvas).toContain("WorkflowCheckpointControls");
-    expect(canvas).toContain("WorkflowArtifactVersionPicker");
     expect(canvas).toContain("WorkflowStepProgress");
+    expect(canvas).toContain("buildListingAgentNodeUrl");
+    expect(canvas).not.toContain("WorkflowCheckpointControls");
+    expect(canvas).not.toContain("WorkflowArtifactVersionPicker");
+    expect(layout).toContain("parseListingAgentNodeContext");
+    expect(layout).toContain("ListingAgentNodeWorkbench");
+    expect(workbench).toContain("WorkflowCheckpointControls");
+    expect(workbench).toContain("WorkflowArtifactVersionPicker");
+  });
+
+  it("wires image, ads, video, and product development pages to the common workflow components", () => {
     expect(read("client/src/pages/ImageWorkflowPage.tsx")).toContain("WorkflowShell");
     expect(read("client/src/pages/AdStructurePage.tsx")).toContain("WorkflowStepProgress");
     expect(read("client/src/pages/VideoScriptPage.tsx")).toContain("WorkflowStepProgress");

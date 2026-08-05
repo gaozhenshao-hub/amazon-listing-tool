@@ -5,5 +5,7 @@ export * from "./WorkflowCheckpointControls";
 export * from "./WorkflowShell";
 export * from "./WorkflowStepProgress";
 export * from "./useAgentWorkflowRun";
+export * from "./ListingAgentNodeWorkbench";
+export * from "./listingAgentNavigation";
 export * from "./workflowDefinitions";
 export * from "./workflowUtils";
