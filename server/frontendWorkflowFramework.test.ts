@@ -9,6 +9,18 @@ function read(relativePath: string): string {
 }
 
 describe("frontend workflow framework", () => {
+  it("keeps multi-page workspace tabs global across dashboard and full-screen Agent routes", () => {
+    const dashboard = read("client/src/components/DashboardLayout.tsx");
+    const agentCanvas = read("client/src/pages/emperor/AgentCanvas.tsx");
+    const workspaceTabs = read("client/src/components/workspace/WorkspaceTabs.tsx");
+
+    expect(dashboard).toContain("WorkspaceTabs");
+    expect(agentCanvas).toContain("WorkspaceTabs");
+    expect(workspaceTabs).toContain("WORKSPACE_TABS_STORAGE_KEY");
+    expect(workspaceTabs).toContain("closeOtherTabs");
+    expect(workspaceTabs).toContain("window.open");
+  });
+
   it("provides common human-in-the-loop workflow building blocks", () => {
     const files = [
       "client/src/components/workflow/WorkflowShell.tsx",

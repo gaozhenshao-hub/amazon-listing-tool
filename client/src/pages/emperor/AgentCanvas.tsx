@@ -26,6 +26,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { WorkspaceTabs } from "@/components/workspace";
 
 // ─── Node Type Definitions ───────────────────────────────────────────────────
 
@@ -881,14 +882,18 @@ function AgentCanvasInner({ slug }: { slug: string }) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#080b11]">
-        <Loader2 className="h-8 w-8 animate-spin text-violet-400" />
+      <div className="flex h-screen flex-col bg-[#080b11]">
+        <WorkspaceTabs variant="dark" currentLabel={`Agent画布 · ${slug}`} />
+        <div className="flex flex-1 items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-violet-400" />
+        </div>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col h-screen bg-[#080b11] overflow-hidden">
+      <WorkspaceTabs variant="dark" currentLabel={`Agent画布 · ${agent?.name ?? slug}`} />
       {/* Top Bar */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-[#0d1117] border-b border-white/8 flex-shrink-0 z-20">
         <div className="flex items-center gap-3">

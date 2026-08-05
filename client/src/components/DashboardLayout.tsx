@@ -93,6 +93,7 @@ import {
   ListingAgentNodeWorkbench,
   parseListingAgentNodeContext,
 } from "@/components/workflow";
+import { WorkspaceTabs } from "@/components/workspace";
 
 // ─── Module definitions ────────────────────────────────────────
 type ModuleId = "home" | "dev" | "listing" | "ops" | "service" | "knowledge" | "admin" | "offsite" | "emperor";
@@ -656,6 +657,7 @@ function DashboardLayoutContent({
           </div>
         )}
 
+        <WorkspaceTabs />
         <main className="flex-1 p-4">{pageContent}</main>
       </div>
     );
@@ -830,6 +832,7 @@ function DashboardLayoutContent({
             <span className="text-sm font-medium text-muted-foreground">{activeModule.label}</span>
           </div>
         )}
+        <WorkspaceTabs />
         <main className="flex-1 overflow-y-auto p-4 md:p-6">{pageContent}</main>
       </div>
     </div>
