@@ -26,13 +26,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  WorkflowArtifactVersionPicker,
-  WorkflowCheckpointControls,
+  LISTING_AGENT_WORKFLOW_STEPS,
   WorkflowStatusBadge,
   WorkflowStepProgress,
+  buildListingAgentNodeUrl,
   useAgentWorkflowRun,
 } from "@/components/workflow";
-import type { WorkflowCheckpointLike, WorkflowStepDefinition } from "@/components/workflow";
+import type { WorkflowCheckpointLike } from "@/components/workflow";
 import { getWorkflowRunProgress, normalizeCheckpointStatus } from "@/components/workflow";
 import ProjectSelector from "@/components/ProjectSelector";
 import { toast } from "sonner";
@@ -60,10 +60,11 @@ import {
   ClipboardList,
   Bot,
   Play,
+  Pause,
+  XCircle,
   Loader2,
   Settings2,
   GitBranch,
-  MousePointer2,
 } from "lucide-react";
 
 const LISTING_AGENT_SLUG = "listing.full.workflow";
@@ -681,18 +682,6 @@ function mergeNodeStatusWithAgent(localStatus: NodeStatus, checkpoint?: Workflow
   return agentStatus;
 }
 
-function buildListingWorkflowSteps(nodes: CanvasNode[]): WorkflowStepDefinition[] {
-  return nodes.map((node) => ({
-    id: node.agentNodeId || node.id,
-    label: `${node.id} · ${node.label}`,
-    shortLabel: node.id,
-    description: node.sublabel,
-    icon: node.icon,
-    agentNodeId: node.agentNodeId,
-    artifactKey: node.artifactKey,
-  }));
-}
-
 function storageKeyForProject(projectId: number | null): string {
   return `${LISTING_AGENT_RUN_STORAGE_PREFIX}:${projectId || "none"}`;
 }
@@ -801,7 +790,7 @@ function NodeCard({
           }}
         >
           <Bot className="h-3 w-3" />
-          AI OS
+          进入工作台
         </Button>
       )}
 
@@ -840,7 +829,6 @@ export default function WorkflowCanvasPage() {
   const { selectedProjectId } = useProject();
   const [, setLocation] = useLocation();
   const [activeAgentRunId, setActiveAgentRunId] = useState<string | null>(null);
-  const [selectedAgentNodeId, setSelectedAgentNodeId] = useState<string | null>(null);
 
   const { data: project } = trpc.project.getById.useQuery(
     { id: selectedProjectId! },
@@ -885,7 +873,7 @@ export default function WorkflowCanvasPage() {
       ),
     [runListQuery.data, selectedProjectId],
   );
-  const listingWorkflowSteps = useMemo(() => buildListingWorkflowSteps(NODES), []);
+  const listingWorkflowSteps = LISTING_AGENT_WORKFLOW_STEPS;
   const checkpointByNodeId = useMemo(() => {
     const map = new Map<string, WorkflowCheckpointLike>();
     for (const checkpoint of agentRun.checkpoints) {
@@ -893,10 +881,14 @@ export default function WorkflowCanvasPage() {
     }
     return map;
   }, [agentRun.checkpoints]);
-  const selectedCheckpoint = selectedAgentNodeId ? checkpointByNodeId.get(selectedAgentNodeId) : undefined;
-  const selectedNode = NODES.find((node) => (node.agentNodeId || node.id) === selectedAgentNodeId);
-  const selectedArtifactKey = selectedNode?.artifactKey || null;
   const agentProgress = getWorkflowRunProgress(agentRun.detail);
+  const activeAgentNodeId =
+    agentRun.checkpoints.find((checkpoint) => checkpoint.status === "waiting_human")?.nodeId ||
+    agentRun.checkpoints.find((checkpoint) => checkpoint.status === "running")?.nodeId ||
+    agentRun.checkpoints.find((checkpoint) => checkpoint.status === "ready")?.nodeId ||
+    agentRun.run?.currentNodeId ||
+    agentRun.checkpoints[0]?.nodeId ||
+    "N0";
   const agentCompletedNodeIds = useMemo(
     () =>
       new Set(
@@ -921,21 +913,28 @@ export default function WorkflowCanvasPage() {
     setActiveAgentRunId(fromUrl || stored || null);
   }, [selectedProjectId]);
 
-  useEffect(() => {
-    if (selectedAgentNodeId && checkpointByNodeId.has(selectedAgentNodeId)) return;
-    const next =
-      agentRun.checkpoints.find((checkpoint) => checkpoint.status === "waiting_human") ||
-      agentRun.checkpoints.find((checkpoint) => checkpoint.status === "ready") ||
-      agentRun.checkpoints.find((checkpoint) => checkpoint.status === "running") ||
-      agentRun.checkpoints[0];
-    setSelectedAgentNodeId(next?.nodeId || null);
-  }, [agentRun.checkpoints, checkpointByNodeId, selectedAgentNodeId]);
-
   const persistActiveRunId = (runId: string) => {
     setActiveAgentRunId(runId);
     if (selectedProjectId) {
       window.localStorage.setItem(storageKeyForProject(selectedProjectId), runId);
     }
+  };
+
+  const openNodeWorkbench = (node: CanvasNode) => {
+    if (!activeAgentRunId || !node.agentNodeId) {
+      setLocation(node.path);
+      return;
+    }
+    setLocation(buildListingAgentNodeUrl({
+      runId: activeAgentRunId,
+      nodeId: node.agentNodeId,
+      projectId: selectedProjectId || undefined,
+    }));
+  };
+
+  const openNodeWorkbenchById = (nodeId: string) => {
+    const node = NODES.find((item) => (item.agentNodeId || item.id) === nodeId);
+    if (node) openNodeWorkbench(node);
   };
 
   const handleStartListingAgent = () => {
@@ -1091,14 +1090,43 @@ export default function WorkflowCanvasPage() {
                   启动 Agent
                 </Button>
                 {activeAgentRunId && (
-                  <Button
-                    variant="outline"
-                    onClick={() => agentRun.actions.scheduleRun.mutate({ runId: activeAgentRunId, mode: "next" })}
-                    disabled={agentRun.actions.scheduleRun.isPending}
-                  >
-                    {agentRun.actions.scheduleRun.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitBranch className="h-4 w-4" />}
-                    推进
-                  </Button>
+                  <>
+                    <Button
+                      variant="outline"
+                      onClick={() => agentRun.actions.scheduleRun.mutate({ runId: activeAgentRunId, mode: "next" })}
+                      disabled={agentRun.actions.scheduleRun.isPending || agentRun.run?.status === "paused"}
+                    >
+                      {agentRun.actions.scheduleRun.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitBranch className="h-4 w-4" />}
+                      推进
+                    </Button>
+                    {agentRun.run?.status === "paused" ? (
+                      <Button
+                        variant="outline"
+                        onClick={() => agentRun.actions.resumeRun.mutate({ runId: activeAgentRunId })}
+                        disabled={agentRun.actions.resumeRun.isPending}
+                      >
+                        <Play className="h-4 w-4" />
+                        恢复
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        onClick={() => agentRun.actions.pauseRun.mutate({ runId: activeAgentRunId, reason: "Paused from listing canvas" })}
+                        disabled={agentRun.actions.pauseRun.isPending}
+                      >
+                        <Pause className="h-4 w-4" />
+                        暂停
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline"
+                      onClick={() => agentRun.actions.cancelRun.mutate({ runId: activeAgentRunId, reason: "Canceled from listing canvas" })}
+                      disabled={agentRun.actions.cancelRun.isPending}
+                    >
+                      <XCircle className="h-4 w-4" />
+                      取消
+                    </Button>
+                  </>
                 )}
               </div>
             </div>
@@ -1107,10 +1135,10 @@ export default function WorkflowCanvasPage() {
               <div className="mt-4">
                 <WorkflowStepProgress
                   steps={listingWorkflowSteps}
-                  activeStepId={selectedAgentNodeId || agentRun.run?.currentNodeId || "N1"}
+                  activeStepId={activeAgentNodeId}
                   completedStepIds={agentCompletedNodeIds}
                   checkpoints={agentRun.checkpoints}
-                  onStepClick={(stepId) => setSelectedAgentNodeId(String(stepId))}
+                  onStepClick={(stepId) => openNodeWorkbenchById(String(stepId))}
                   compact
                 />
               </div>
@@ -1239,9 +1267,9 @@ export default function WorkflowCanvasPage() {
                         status={displayStatus}
                         summary={s.summary}
                         agentCheckpoint={agentCheckpoint}
-                        selected={!!node.agentNodeId && selectedAgentNodeId === node.agentNodeId}
-                        onInspect={node.agentNodeId ? () => setSelectedAgentNodeId(node.agentNodeId!) : undefined}
-                        onClick={() => setLocation(node.path)}
+                        selected={!!node.agentNodeId && activeAgentNodeId === node.agentNodeId}
+                        onInspect={node.agentNodeId ? () => openNodeWorkbench(node) : undefined}
+                        onClick={() => openNodeWorkbench(node)}
                       />
                     );
                   })}
@@ -1271,9 +1299,9 @@ export default function WorkflowCanvasPage() {
                         status={displayStatus}
                         summary={s.summary}
                         agentCheckpoint={agentCheckpoint}
-                        selected={!!node.agentNodeId && selectedAgentNodeId === node.agentNodeId}
-                        onInspect={node.agentNodeId ? () => setSelectedAgentNodeId(node.agentNodeId!) : undefined}
-                        onClick={() => setLocation(node.path)}
+                        selected={!!node.agentNodeId && activeAgentNodeId === node.agentNodeId}
+                        onInspect={node.agentNodeId ? () => openNodeWorkbench(node) : undefined}
+                        onClick={() => openNodeWorkbench(node)}
                       />
                     );
                   })}
@@ -1306,9 +1334,9 @@ export default function WorkflowCanvasPage() {
                         status={displayStatus}
                         summary={s.summary}
                         agentCheckpoint={agentCheckpoint}
-                        selected={!!node.agentNodeId && selectedAgentNodeId === node.agentNodeId}
-                        onInspect={node.agentNodeId ? () => setSelectedAgentNodeId(node.agentNodeId!) : undefined}
-                        onClick={() => setLocation(node.path)}
+                        selected={!!node.agentNodeId && activeAgentNodeId === node.agentNodeId}
+                        onInspect={node.agentNodeId ? () => openNodeWorkbench(node) : undefined}
+                        onClick={() => openNodeWorkbench(node)}
                       />
                     );
                   })}
@@ -1316,76 +1344,6 @@ export default function WorkflowCanvasPage() {
               </div>
             </div>
           </div>
-
-          {activeAgentRunId && (
-            <Card className="border-primary/20">
-              <CardContent className="p-4">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <MousePointer2 className="h-4 w-4 text-primary" />
-                    <h3 className="text-sm font-semibold">当前 Agent 节点</h3>
-                    {selectedNode && (
-                      <Badge variant="secondary" className="rounded-md text-xs">
-                        {selectedNode.id} · {selectedNode.label}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {agentRun.run?.status === "paused" ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => agentRun.actions.resumeRun.mutate({ runId: activeAgentRunId })}
-                        disabled={agentRun.actions.resumeRun.isPending}
-                      >
-                        <Play className="h-4 w-4" />
-                        恢复
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => agentRun.actions.pauseRun.mutate({ runId: activeAgentRunId, reason: "Paused from listing canvas" })}
-                        disabled={agentRun.actions.pauseRun.isPending}
-                      >
-                        暂停
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => agentRun.actions.cancelRun.mutate({ runId: activeAgentRunId, reason: "Canceled from listing canvas" })}
-                      disabled={agentRun.actions.cancelRun.isPending}
-                    >
-                      取消 Run
-                    </Button>
-                  </div>
-                </div>
-
-                {selectedCheckpoint ? (
-                  <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-                    <WorkflowCheckpointControls
-                      runId={activeAgentRunId}
-                      checkpoint={selectedCheckpoint}
-                      executeNode={agentRun.actions.executeNode}
-                      rerunNode={agentRun.actions.rerunNode}
-                      updateDraft={agentRun.actions.updateDraft}
-                      confirmNode={agentRun.actions.confirmNode}
-                    />
-                    <WorkflowArtifactVersionPicker
-                      runId={activeAgentRunId}
-                      nodeId={selectedCheckpoint.nodeId}
-                      artifactKey={selectedArtifactKey}
-                    />
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-                    当前 Run 暂无可显示的 Checkpoint。启动或推进 Agent 后，这里会显示节点确认、重跑和版本操作。
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
 
           {/* ── 数据流说明 ── */}
           <Card className="bg-gray-50 border-gray-200">

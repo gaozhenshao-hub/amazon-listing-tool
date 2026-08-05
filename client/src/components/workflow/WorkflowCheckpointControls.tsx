@@ -27,6 +27,7 @@ export function WorkflowCheckpointControls({
   updateDraft,
   confirmNode,
   onAfterLocalEdit,
+  allowSkip = true,
   className,
 }: {
   runId?: string | null;
@@ -36,6 +37,7 @@ export function WorkflowCheckpointControls({
   updateDraft?: CheckpointMutation;
   confirmNode?: CheckpointMutation;
   onAfterLocalEdit?: (draft: unknown) => void;
+  allowSkip?: boolean;
   className?: string;
 }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -55,7 +57,8 @@ export function WorkflowCheckpointControls({
   if (!runId || !checkpoint) return null;
 
   const canExecute = status === "ready" || status === "failed";
-  const canConfirm = status === "waiting_human" || status === "running" || status === "ready";
+  const canConfirm = status === "waiting_human";
+  const canEdit = status === "waiting_human" || status === "failed";
   const isBusy =
     executeNode?.isPending ||
     rerunNode?.isPending ||
@@ -127,7 +130,7 @@ export function WorkflowCheckpointControls({
             保存草稿
           </Button>
         ) : (
-          <Button size="sm" variant="outline" disabled={isBusy} onClick={() => setIsEditing(true)}>
+          <Button size="sm" variant="outline" disabled={isBusy || !canEdit} onClick={() => setIsEditing(true)}>
             <Pencil className="h-4 w-4" />
             编辑
           </Button>
@@ -138,17 +141,19 @@ export function WorkflowCheckpointControls({
           onClick={() => confirmNode?.mutate({ runId, nodeId, userEdit: parseDraftText(draftText) })}
         >
           {confirmNode?.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-          确认锁定
+          确认并锁定
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={isBusy || !canConfirm}
-          onClick={() => confirmNode?.mutate({ runId, nodeId, skip: true })}
-        >
-          <SkipForward className="h-4 w-4" />
-          跳过
-        </Button>
+        {allowSkip && (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={isBusy || !canConfirm}
+            onClick={() => confirmNode?.mutate({ runId, nodeId, skip: true })}
+          >
+            <SkipForward className="h-4 w-4" />
+            跳过
+          </Button>
+        )}
       </div>
     </div>
   );
