@@ -49,7 +49,7 @@ ON DUPLICATE KEY UPDATE
 SET @product_analysis_version_number = (
   SELECT COALESCE(MAX(`versionNumber`),0) + 1
   FROM `emperor_agent_template_versions`
-  WHERE `agentSlug`=@product_analysis_agent_slug AND `workspaceId` IS NULL
+  WHERE BINARY `agentSlug`=BINARY @product_analysis_agent_slug AND `workspaceId` IS NULL
 );
 
 INSERT INTO `emperor_agent_template_versions`
@@ -60,15 +60,15 @@ SELECT
   @product_analysis_dag,'产品开发七阶段 Agent 主链路 v1',NOW(),NOW()
 WHERE NOT EXISTS (
   SELECT 1 FROM `emperor_agent_template_versions`
-  WHERE `agentSlug`=@product_analysis_agent_slug
+  WHERE BINARY `agentSlug`=BINARY @product_analysis_agent_slug
     AND `workspaceId` IS NULL
-    AND `dagHash`=@product_analysis_dag_hash
+    AND BINARY `dagHash`=BINARY @product_analysis_dag_hash
 );
 
 UPDATE `emperor_agent_template_versions`
-SET `isDefault`=IF(`dagHash`=@product_analysis_dag_hash,1,0),
-    `status`=IF(`dagHash`=@product_analysis_dag_hash,'released',`status`),
-    `rolloutPercent`=IF(`dagHash`=@product_analysis_dag_hash,100,`rolloutPercent`),
-    `activatedAt`=IF(`dagHash`=@product_analysis_dag_hash,COALESCE(`activatedAt`,NOW()),`activatedAt`),
+SET `isDefault`=IF(BINARY `dagHash`=BINARY @product_analysis_dag_hash,1,0),
+    `status`=IF(BINARY `dagHash`=BINARY @product_analysis_dag_hash,'released',`status`),
+    `rolloutPercent`=IF(BINARY `dagHash`=BINARY @product_analysis_dag_hash,100,`rolloutPercent`),
+    `activatedAt`=IF(BINARY `dagHash`=BINARY @product_analysis_dag_hash,COALESCE(`activatedAt`,NOW()),`activatedAt`),
     `updatedAt`=NOW()
-WHERE `agentSlug`=@product_analysis_agent_slug AND `workspaceId` IS NULL;
+WHERE BINARY `agentSlug`=BINARY @product_analysis_agent_slug AND `workspaceId` IS NULL;
