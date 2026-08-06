@@ -357,21 +357,39 @@ export const imageWorkflowStepProcedures = {
       // Phase 7: Get KB reference for style recommendations
       const kbReference = await getKBReference(project.category || '', ctx.user.id);
 
-      // 从知识库获取现有设计风格列表，用于约束 AI 只推荐已有风格
+      // 从知识库获取现有设计风格列表（按类目过滤，限制50个）
       let kbStylesText = "";
       try {
-        const allKbImages = await kbDb.listAllImages(ctx.user.id, "all", {});
+        const catImages = await kbDb.listAllImages(ctx.user.id, "all", {
+          tagCategory: project.category || undefined,
+        });
         const kbStyles = [...new Set(
-          (allKbImages as any[]).map((i: any) => i.tagDesignStyleV2 || i.tagDesignStyle).filter(Boolean)
-        )];
+          (catImages as any[]).map((i: any) => i.tagDesignStyleV2 || i.tagDesignStyle).filter(Boolean)
+        )].slice(0, 50);
         if (kbStyles.length > 0) {
           kbStylesText = `\n\n--- 知识库现有设计风格（请优先从这些风格中推荐）---\n${kbStyles.join("、")}`;
         }
       } catch (e) { console.warn("[Step3] Failed to load KB styles:", e); }
 
+      // 内容裁剪：防止 Prompt 过大导致 LLM 返回空/非 JSON
+      const truncateStr = (s: string | null | undefined, max: number) =>
+        s ? (s.length > max ? s.slice(0, max) + "…(已截断)" : s) : "";
 
-      const userMsg3 = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n${colorInfo}\n\n--- 已确认的卖点 ---\n${session.step1UserEdit || session.step1AiResult}\n\n--- 已确认的图片大纲 ---\n${session.step2UserEdit || session.step2AiResult}${kbReference}${kbStylesText}\n\n请参考知识库中同类目高分图片的风格分布，推荐3-4个适合的视觉风格方案。`;
+      // step2 内容：先尝试 parseJSON 规范化，再限制 8k 字符
+      let step2Content: string;
+      try {
+        const step2Raw = session.step2UserEdit || session.step2AiResult;
+        const step2Parsed = step2Raw ? JSON.parse(step2Raw) : null;
+        step2Content = step2Parsed ? JSON.stringify(step2Parsed, null, 0) : String(step2Raw || "");
+      } catch {
+        step2Content = String(session.step2UserEdit || session.step2AiResult || "");
+      }
+      step2Content = truncateStr(step2Content, 8000);
+      const step1Content = truncateStr(session.step1UserEdit || session.step1AiResult, 3000);
+      const kbRef2 = truncateStr(kbReference, 2000);
 
+      const userMsg3 = `产品名称: ${project.productName || project.name}\n品牌: ${project.brand || '未指定'}\n类目: ${project.category || '未指定'}\n${colorInfo}\n\n--- 已确认的卖点 ---\n${step1Content}\n\n--- 已确认的图片大纲 ---\n${step2Content}${kbRef2}${kbStylesText}\n\n请参考知识库中同类目高分图片的风格分布，推荐3-4个适合的视觉风格方案。`;
+      console.log(`[Step3] prompt length: ${userMsg3.length}, step2: ${step2Content.length}, kbRef: ${kbRef2.length}, kbStyles: ${kbStylesText.length}`);
       const result = await callLLMWithRetry(STEP3_STYLE_PROMPT, userMsg3);
       await db.updateImageWorkflowSession(session.id, {
         step3AiResult: JSON.stringify(result),
